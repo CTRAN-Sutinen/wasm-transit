@@ -63,6 +63,10 @@ pub struct Fares {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<FareTransferRule>>")]
     pub transfer_rules: Vec<FareTransferRule>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Fares {
@@ -90,6 +94,10 @@ pub struct ZoneFare {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub transfer_secs: Option<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Where a zone fare applies: on a route, from a zone to a zone, or
@@ -110,6 +118,10 @@ pub struct ZoneFareRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub contains_zone: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A fare area: a set of stops.
@@ -122,6 +134,10 @@ pub struct Area {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<StopId>>")]
     pub stops: Vec<StopId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -130,6 +146,10 @@ pub struct FareNetwork {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub name: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A span of a service type's day fares treat alike (peak, off-peak).
@@ -144,6 +164,10 @@ pub struct Timeframe {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub end_secs: Option<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Who a fare is for (adult, senior, youth).
@@ -158,6 +182,10 @@ pub struct RiderCategory {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub eligibility_url: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// What a fare is held on.
@@ -182,6 +210,10 @@ pub struct FareMedia {
     #[ts(optional)]
     pub name: Option<String>,
     pub kind: FareMediaKind,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// One way a fare product is sold: its price for a rider category on
@@ -200,6 +232,10 @@ pub struct FareOffer {
     pub media: Option<FareMediaId>,
     pub amount: f64,
     pub currency: String,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Which product a leg costs: by network, areas, and timeframes
@@ -230,6 +266,10 @@ pub struct FareLegRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub priority: Option<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Two consecutive legs that fares count as one.
@@ -244,6 +284,10 @@ pub struct FareLegJoinRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub to_stop: Option<StopId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// How the time limit of a fare transfer is measured.
@@ -295,4 +339,8 @@ pub struct FareTransferRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub product: Option<FareProductId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }

@@ -108,7 +108,7 @@
       requests={st.requests.map((r) => ({ id: r.id, job: r.request.job }))} fromRequest={st.request}
       amenityNames={st.questions.amenities} point={st.point} onpoint={picked} onlocate={locate}
       refusals={st.refusals} error={st.taskError}
-      onsave={(e, done) => addEvent(st.open, e, done)} oncorrect={(i, e, done) => correctEvent(st.open, i, e, done)} onclose={endTask} />
+      onsave={(e, done) => addEvent(st.open, e, done)} oncorrect={(eventId, e, done) => correctEvent(st.open, eventId, e, done)} onclose={endTask} />
   {/if}
 {/snippet}
 

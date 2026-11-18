@@ -359,7 +359,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     };
     let cap_rt::Response::Live { live_hash, live: day, summary } = live(None).unwrap() else { panic!("live") };
     let day = day.expect("the document by default");
-    let canonical = serde_json::to_string(&day).unwrap();
+    let canonical = cap_abi::canonical_bytes(&day).unwrap();
     assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module is the hash authority");
     assert!(day.trips.iter().any(|t| t.trip == "t10" && t.start_secs == 8 * 3600));
     assert_eq!(summary.vehicles, 1);

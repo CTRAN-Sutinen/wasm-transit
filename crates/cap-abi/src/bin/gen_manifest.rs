@@ -278,7 +278,7 @@ const MODULES: &[ModuleSpec] = &[
         ops: &["resolve", "validate", "periods", "publish", "in_force", "retire"],
         documents: &[],
         consumes: &[],
-        speaks: &[("plan_set", &[1])],
+        speaks: &[("plans", &[1])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-plans/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -734,8 +734,7 @@ fn kind<T: schemars::JsonSchema>(
 /// Every JSON document kind on the bus and in the store. Not here: the
 /// feed (a GTFS zip) and the rt snapshot (protobuf) are bytes with
 /// their own specs; the manifest is the Go host's own document
-/// (docs/FORMATS.md pins it); the watchlist is device-only and its
-/// type lives in cap-board, a module this generator cannot depend on.
+/// (docs/FORMATS.md pins it).
 fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<DocumentKind> {
     let plans_example = net.and_then(|n| {
         let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
@@ -754,7 +753,18 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             transit_sync::SCHEMA_VERSION,
             Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
         ),
-        kind::<Vec<transit_plans::PlanInfo>>("plan_set", None, 1, Some(value(&fixture_plan_set()))),
+        kind::<transit_network::PlanSet>(
+            "plan_set",
+            None,
+            transit_network::PLAN_SET_VERSION,
+            net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
+        ),
+        kind::<transit_dispatch::watchlist::Watchlist>(
+            "watchlist",
+            None,
+            2,
+            serde_json::from_value(serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "Home"}, {"id": "C", "label": "Work"}]})).ok().map(|w: transit_dispatch::watchlist::Watchlist| value(&w)),
+        ),
         kind::<transit_plans::PublishedPlans>("plans", Some("plans"), transit_plans::PUBLISHED_SCHEMA_VERSION, plans_example),
         kind::<transit_authz::Policy>(
             "policy",
@@ -765,6 +775,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
                 roles: vec!["dispatcher".into()],
                 pointers: vec!["edits".into()],
                 actions: vec!["write".into()],
+                extra: Default::default(),
             }]))),
         ),
         kind::<transit_streets::Streets>(
@@ -1139,6 +1150,7 @@ fn fixture_stops() -> transit_stops::Stops {
             ]
         }
     }))
+    .map(transit_stops::Stops::identified)
     .expect("the fixture stops parse")
 }
 
@@ -1167,13 +1179,13 @@ fn fixture_requests() -> transit_requests::StopRequests {
 /// eight-hour run under report and clear times.
 fn fixture_work_rules() -> transit_runs::WorkRules {
     transit_runs::WorkRules { kind: Default::default(),
-        version: transit_runs::SCHEMA_VERSION,
+        schema_version: Default::default(),
         name: "Fixture rules".into(),
         recovery: vec![
-            transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(300), pct_of_run: Some(10) },
-            transit_runs::RecoveryRule { route: Some("10".into()), service_type: None, min_secs: Some(240), pct_of_run: None },
+            transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(300), pct_of_run: Some(10), extra: Default::default() },
+            transit_runs::RecoveryRule { route: Some("10".into()), service_type: None, min_secs: Some(240), pct_of_run: None, extra: Default::default() },
         ],
-        interline: vec![transit_runs::RoutePair { a: "10".into(), b: "20".into() }],
+        interline: vec![transit_runs::RoutePair { a: "10".into(), b: "20".into(), extra: Default::default() }],
         runs: transit_runs::RunRules {
             max_platform_secs: Some(8 * 3600),
             report_secs: Some(900),
@@ -1181,6 +1193,7 @@ fn fixture_work_rules() -> transit_runs::WorkRules {
             ..Default::default()
         },
         pay: None,
+        extra: Default::default(),
     }
 }
 
@@ -1763,7 +1776,7 @@ fn example_for(
         }
         ("stops", "seed") => {
             let net = net?;
-            let seeded = transit_network::stop_record::seed(net.derived_network()).checked().ok()?;
+            let seeded = transit_network::stop_record::seed(net.derived_network()).identified().checked().ok()?;
             (
                 json!({ "op": "seed", "network_hash": net.network_hash }),
                 json!({ "ok": { "op": "seed", "stops_hash": cap_abi::canonical_hash(&seeded).ok()?, "stops": seeded } }),
@@ -1773,20 +1786,22 @@ fn example_for(
             // 6124 suspended for a week of paving: in its place by date.
             let stops = fixture_stops().checked().ok()?;
             let event: transit_stops::Event = serde_json::from_value(json!({"on": "2026-01-05", "event": "suspended", "until": "2026-01-12", "note": "paving"})).ok()?;
-            let next = stops.add_event("6124", event.clone()).checked().ok()?;
+            let next = stops.add_event("6124", event.clone()).identified().checked().ok()?;
             (
                 json!({ "op": "add_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "event": event }),
                 json!({ "ok": { "op": "add_event", "refusals": [], "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next } }),
             )
         }
         ("stops", "correct_event") => {
-            // 7001's permit was entered on the wrong date: the event is
-            // corrected, and the stop is permitted from 2027-04-19.
+            // 7001's permit was entered on the wrong date: the event,
+            // named by its id, is corrected, and the stop is permitted
+            // from 2027-04-19.
             let stops = fixture_stops().checked().ok()?;
+            let event_id = stops.stops["7001"][1].id.clone();
             let event: transit_stops::Event = serde_json::from_value(json!({"on": "2027-04-19", "event": "permitted"})).ok()?;
-            let next = stops.correct_event("7001", 1, Some(event.clone()))?.checked().ok()?;
+            let next = stops.correct_event_by_id("7001", &event_id, Some(event.clone()))?.identified().checked().ok()?;
             (
-                json!({ "op": "correct_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "7001", "index": 1, "event": event }),
+                json!({ "op": "correct_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "7001", "event_id": event_id, "event": event }),
                 json!({ "ok": { "op": "correct_event", "refusals": [], "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next } }),
             )
         }
@@ -1956,7 +1971,7 @@ fn example_for(
             let work_rules_hash = cap_abi::canonical_hash(&rules).ok()?;
             (
                 json!({ "op": "load_work_rules", "work_rules": fixture_work_rules() }),
-                json!({ "ok": { "op": "load_work_rules", "work_rules_hash": work_rules_hash, "version": rules.version } }),
+                json!({ "ok": { "op": "load_work_rules", "work_rules_hash": work_rules_hash, "version": rules.schema_version.0 } }),
             )
         }
         ("runcut", "recovery") => {
@@ -2389,6 +2404,7 @@ fn example_for(
                 roles: vec!["dispatcher".into()],
                 pointers: vec!["edits".into()],
                 actions: vec!["write".into()],
+                extra: Default::default(),
             }]);
             let identity = transit_authz::Identity { sub: "dispatcher-7".into(), roles: vec!["dispatcher".into()] };
             let decision = transit_authz::authorize(&policy, &identity, transit_authz::Action::Write, "edits");
@@ -2404,12 +2420,14 @@ fn example_for(
                     roles: vec!["dispatcher".into()],
                     pointers: vec!["edits".into()],
                     actions: vec!["read".into(), "write".into()],
+                    extra: Default::default(),
                 },
                 transit_authz::Rule {
                     name: "admin-all".into(),
                     roles: vec!["admin".into()],
                     pointers: vec!["*".into()],
                     actions: vec!["*".into()],
+                    extra: Default::default(),
                 },
             ]);
             let identity = transit_authz::Identity { sub: "dispatcher-7".into(), roles: vec!["dispatcher".into()] };
@@ -2432,6 +2450,7 @@ fn example_for(
                     id: "fall-2026".into(),
                     name: "Fall 2026".into(),
                     effective_from: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                    extra: Default::default(),
                 },
                 through: Some("2027-02-26".into()),
             }, transit_network::NetworkEdit::AddStop { id: None, lat: Some(45.5), lon: Some(-73.5) }];
@@ -2647,10 +2666,12 @@ fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {
             added_secs: 300,
             start_date: date,
             end_date: date,
+            extra: Default::default(),
         }),
         cancel: None,
         status: transit_sync::EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }]
 }

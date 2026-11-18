@@ -79,7 +79,7 @@ fn service_type(g: &GenType) -> ServiceType {
     let mut exceptions: Vec<CalendarException> = Vec::new();
     for &(o, added) in &g.exceptions {
         if exceptions.iter().all(|e| e.date != d(o)) {
-            exceptions.push(CalendarException { date: d(o), state: if added { DayState::Added } else { DayState::Removed } });
+            exceptions.push(CalendarException { date: d(o), state: if added { DayState::Added } else { DayState::Removed }, extra: Default::default() });
         }
     }
     exceptions.sort_by_key(|e| e.date);
@@ -87,9 +87,11 @@ fn service_type(g: &GenType) -> ServiceType {
         name: "T".into(),
         rule: CalendarRule {
             days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun },
-            ranges: g.ranges.iter().map(|&(s, len)| DateRange { start: d(s), end: d(s + len) }).collect(),
+            ranges: g.ranges.iter().map(|&(s, len)| DateRange { start: d(s), end: d(s + len), extra: Default::default() }).collect(),
             exceptions,
+            extra: Default::default(),
         },
+        extra: Default::default(),
     }
 }
 
@@ -135,7 +137,7 @@ fn weekly_by(rule: &CalendarRule, through: NaiveDate) -> bool {
 
 fn set_plan(from: i64, through: Option<NaiveDate>) -> NetworkEdit {
     NetworkEdit::SetPlan {
-        plan: PlanMeta { id: "winter".into(), name: "Winter".into(), effective_from: Some(d(from)) },
+        plan: PlanMeta { id: "winter".into(), name: "Winter".into(), effective_from: Some(d(from)), extra: Default::default() },
         through: through.map(iso),
     }
 }
@@ -203,7 +205,7 @@ proptest! {
                 // pulled back: the fork extends, it never backfills).
                 if d(from) <= date && date <= through && date > old_end {
                     prop_assert_eq!(runs(&after.rule, date), runs(&CalendarRule {
-                        ranges: vec![DateRange { start: date, end: date }],
+                        ranges: vec![DateRange { start: date, end: date, extra: Default::default() }],
                         ..before.rule.clone()
                     }, date), "{} on {}", id, date);
                 }
@@ -261,7 +263,7 @@ proptest! {
 fn a_period_end_that_is_not_a_date_is_refused() {
     let net = network(&[]);
     let edit = NetworkEdit::SetPlan {
-        plan: PlanMeta { id: "w".into(), name: "W".into(), effective_from: Some(d(0)) },
+        plan: PlanMeta { id: "w".into(), name: "W".into(), effective_from: Some(d(0)), extra: Default::default() },
         through: Some("2027-02-30".into()),
     };
     assert!(apply_edits(&net, &[edit]).expect_err("refused").reason.contains("invalid date"));
@@ -281,9 +283,12 @@ fn the_winter_fork_runs_past_the_import_calendar() {
                 ranges: vec![DateRange {
                     start: NaiveDate::from_ymd_opt(2026, 9, 13).unwrap(),
                     end: NaiveDate::from_ymd_opt(2027, 1, 9).unwrap(),
+                    extra: Default::default(),
                 }],
                 exceptions: vec![],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     net.service_types.insert(
@@ -296,8 +301,11 @@ fn the_winter_fork_runs_past_the_import_calendar() {
                 exceptions: vec![CalendarException {
                     date: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
                     state: DayState::Added,
+                    extra: Default::default(),
                 }],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     net.service_types.insert(
@@ -309,14 +317,17 @@ fn the_winter_fork_runs_past_the_import_calendar() {
                 ranges: vec![DateRange {
                     start: NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
                     end: NaiveDate::from_ymd_opt(2026, 10, 9).unwrap(),
+                    extra: Default::default(),
                 }],
                 exceptions: vec![],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     let pick = NaiveDate::from_ymd_opt(2027, 1, 25).unwrap();
     let edit = NetworkEdit::SetPlan {
-        plan: PlanMeta { id: "winter-2027".into(), name: "Winter 2027".into(), effective_from: Some(pick) },
+        plan: PlanMeta { id: "winter-2027".into(), name: "Winter 2027".into(), effective_from: Some(pick), extra: Default::default() },
         through: Some("2027-05-29".into()),
     };
     let next = apply_edits(&net, &[edit]).unwrap();

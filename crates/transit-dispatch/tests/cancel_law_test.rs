@@ -62,7 +62,7 @@ fn network() -> Network {
             route: "10".into(),
             name: "route 10".into(),
             stops: vec![timepoint("A", 0.0), timepoint("C", 1000.0), timepoint("B", 2000.0)],
-            timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: vec![0, 600, 1200] }],
+            timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: vec![0, 600, 1200], extra: Default::default() }],
             ..Default::default()
         },
     );
@@ -75,9 +75,12 @@ fn network() -> Network {
                 ranges: vec![DateRange {
                     start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    extra: Default::default(),
                 }],
                 exceptions: vec![],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     net.pattern_trips.insert(
@@ -91,22 +94,23 @@ fn network() -> Network {
                 trip(
                     "tfreq",
                     Departs::Every {
-                        bands: vec![HeadwayBand { start_secs: 36_000, end_secs: 39_600, headway_secs: 1_800 }],
+                        bands: vec![HeadwayBand { start_secs: 36_000, end_secs: 39_600, headway_secs: 1_800, extra: Default::default() }],
                         exact: true,
                     },
                 ),
             ],
+            extra: Default::default(),
         },
     );
     net
 }
 
 fn cancel(trip_id: &str, start_secs: Option<u32>, on: NaiveDate) -> TripCancel {
-    TripCancel { id: format!("c-{trip_id}"), trip_id: trip_id.into(), start_secs, date: on }
+    TripCancel { id: format!("c-{trip_id}"), trip_id: trip_id.into(), start_secs, date: on, extra: Default::default() }
 }
 
 fn record(id: &str, c: TripCancel, status: EditStatus) -> EditRecord {
-    EditRecord { id: id.into(), diversion: None, cancel: Some(c), status, rev: 1, updated_at: 1 }
+    EditRecord { id: id.into(), diversion: None, cancel: Some(c), status, rev: 1, updated_at: 1, extra: Default::default() }
 }
 
 fn instances(trips: &[transit_network::MaterializedTrip]) -> Vec<(String, u32)> {

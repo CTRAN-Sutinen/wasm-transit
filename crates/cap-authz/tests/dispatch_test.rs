@@ -19,12 +19,14 @@ fn policy() -> Policy {
             roles: vec!["dispatcher".into()],
             pointers: vec!["edits".into()],
             actions: vec!["write".into()],
+            extra: Default::default(),
         },
         Rule {
             name: "admin-all".into(),
             roles: vec!["admin".into()],
             pointers: vec!["*".into()],
             actions: vec!["*".into()],
+            extra: Default::default(),
         },
     ])
 }

@@ -61,7 +61,8 @@ test the software on real data. See
 bytes, like a fingerprint. The same contents always give the same
 hash. A one-character change gives a different hash. The software
 uses the hash as the document's name. It is written
-`sha256:` followed by 64 characters.
+`sha256:` followed by 64 characters. For a JSON document, the bytes
+are the document written by the JSON Canonicalization Scheme.
 
 **Core.** The part of every module that loads, checks, holds, and
 drops documents. The code and the technical documents call it the
@@ -129,6 +130,12 @@ delays, vehicle positions, and service alerts. wasm-transit reads it.
 **Host.** A program that runs modules: the browser, the server, or
 caps-run. A host fetches files, reads the clock, saves data, and draws
 the screen. It never calculates an answer itself.
+
+**JSON Canonicalization Scheme.** A published standard (RFC 8785) for
+writing a JSON document in exactly one way: the names in each part in
+a fixed order, no spaces, and each number written one way. The
+software writes every JSON document this way before it calculates its
+content hash, so other programs can check the hash too.
 
 **Kernel.** See **Core**.
 

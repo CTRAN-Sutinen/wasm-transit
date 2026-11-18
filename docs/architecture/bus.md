@@ -67,11 +67,13 @@ shared state.
   raw. The kernel does not buffer it into a generic tree.
 
 A load answers the document's identity. For most kinds that is the
-canonical hash of the parsed document (`canonical_hash`, streamed into
-the digest). For a feed, a layer, and an rt payload, it is the content
-hash of the bytes. A load also answers what the host shows: a feed's
-summary, a layer's headcount, a streets document's size, or a
-watchlist's version.
+canonical hash of the parsed document (`canonical_hash`: the sha256 of
+its RFC 8785 bytes, streamed into the digest). For a feed, a layer, and
+an rt payload, it is the content hash of the bytes. A load also answers
+what the host shows: a feed's summary, a layer's headcount, a streets
+document's size, or a watchlist's version. It names the fields the
+document carries that this build does not know (`unknown_fields`,
+D-167), and answers nothing more when there are none.
 
 **Reading and minting documents.** A capability declares the kinds it
 reads (`capability! { documents: [...] }`). It reads them through the
@@ -112,9 +114,9 @@ its pinned bytes.
 
 **Answers.** Every capability's JSON lane answers through `answer` or
 `outcome`. The answer is serialized directly from the typed response,
-with no generic tree. So an answer that carries a document, such as an
-import's network, carries the document's canonical bytes in struct
-field order (`docs/FORMATS.md`).
+with no generic tree. An answer that carries a document a host stores,
+such as an import's network, carries the document's canonical bytes
+exactly (RFC 8785, `cap_abi::Canonical`; `docs/FORMATS.md`).
 
 **Generators and gates.** gen-assemblies writes the assembly crates.
 arch-gates checks the dependency graph and the source of every
@@ -477,9 +479,9 @@ fixture.
    entry is only a cache, never a dependency.
 
 **The module is the hash authority.** Hosts never mint a document's
-identity. JavaScript's `JSON.stringify` formats floats differently from
-the module's canonical serde bytes. Query with the hash the module
-returned.
+identity. The canonical form is RFC 8785, so another tool can check an
+identity, but `JSON.stringify` is not that form: it keeps keys in the
+order they were inserted. Query with the hash the module returned.
 
 **Bulk op numbers.** A capability's own bulk ops number from 0, for
 example streets' `import` and rt's `decode`. In a module that links
@@ -586,6 +588,28 @@ rules whose reasons are not clear from the rules alone.
   - hashing once for each page and passing the identity on;
   - a strict canonical parser kept in step with serde.
 - **Decided:** D-71.
+
+### The canonical form is RFC 8785 (`cap_abi::jcs`, `canonical_hash`, `Canonical`)
+- **Holds:** a document's canonical bytes are RFC 8785's: keys sorted
+  by UTF-16 code units, no whitespace, numbers as ECMAScript writes
+  them. Its identity is their sha256.
+- **Because:** the agency owns the data, and any tool may read and write
+  it (D-146, D-152). With a standard form, a tool in any language
+  computes the same identity for the same content, without this repo.
+- **Costs:** the writer sorts each object's keys, and wasm memory never
+  shrinks back from a peak, so it holds no whole document. A map whose
+  keys arrive in order streams. Below the root's fields, a value is
+  staged in a small buffer, where an object out of order is taken back
+  and written key by key. The records a network holds by the hundred
+  thousand (a trip, a stop's times, an alignment point) declare their
+  fields in canonical order, so they stream. Measured natively on
+  C-TRAN's network (9.6 MB), with link-time optimization as the release
+  build has it: the hash takes 20.5 ms, against 12.4 ms for serde's
+  field order. Every hash moved once, before the first deployment.
+- **Rejected:** serde's field order (only this repo's Rust reproduces
+  it); buffering the whole document to sort it (megabytes of wasm
+  memory, kept).
+- **Decided:** D-169.
 
 ### Every document says what it is (`kind`, `schema_version`, `transit-version`, `registry/schemas/`)
 - **Holds:** every persisted document is plain JSON (gzip allowed) or an

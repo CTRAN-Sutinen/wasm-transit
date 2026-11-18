@@ -165,20 +165,20 @@ pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
         return None;
     }
     let flagged: Vec<NaiveDate> = dates.iter().copied().filter(|&d| on[index(d)]).collect();
-    let range = DateRange { start: flagged[0], end: *flagged.last().expect("a weekday qualified") };
+    let range = DateRange { start: flagged[0], end: *flagged.last().expect("a weekday qualified"), extra: Default::default() };
     let mut exceptions = Vec::new();
     let (mut d, end) = (first.min(range.start), last.max(range.end));
     while d <= end {
         let by_rule = on[index(d)] && range.start <= d && d <= range.end;
         match (by_rule, dates.contains(&d)) {
-            (true, false) => exceptions.push(CalendarException { date: d, state: DayState::Removed }),
-            (false, true) => exceptions.push(CalendarException { date: d, state: DayState::Added }),
+            (true, false) => exceptions.push(CalendarException { date: d, state: DayState::Removed, extra: Default::default() }),
+            (false, true) => exceptions.push(CalendarException { date: d, state: DayState::Added, extra: Default::default() }),
             _ => {}
         }
         d += Duration::days(1);
     }
     let [mon, tue, wed, thu, fri, sat, sun] = on;
-    Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions })
+    Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions, extra: Default::default() })
 }
 
 /// One thing the import could not carry into the document. Reported,
@@ -297,6 +297,7 @@ fn visit(row: &StopTimeRow) -> Visit {
         distance: parse_f64(&row.shape_dist_traveled),
         pickup_booking: text(&row.pickup_booking_rule_id),
         drop_off_booking: text(&row.drop_off_booking_rule_id),
+        extra: Default::default(),
     }
 }
 
@@ -350,6 +351,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             contactless: contactless(&row.cemv_support),
             vehicle_type: route_type.filter(|t| mode == Mode::Other || gtfs_route_type(mode) != *t),
             directions: Default::default(),
+            extra: Default::default(),
         };
         let label = route.label();
         route_names.insert(id, if label.is_empty() { id.clone() } else { label.to_string() });
@@ -377,7 +379,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             continue;
         };
         let entry = bands_of.entry(trip).or_default();
-        entry.0.push(HeadwayBand { start_secs: start, end_secs: end, headway_secs: headway });
+        entry.0.push(HeadwayBand { start_secs: start, end_secs: end, headway_secs: headway, extra: Default::default() });
         entry.1 |= flag(&row.exact_times);
     }
 
@@ -409,6 +411,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                     bikes: yes_no(&row.bikes_allowed),
                     cars: yes_no(&row.cars_allowed),
                     visits: rows.iter().map(|(_, r)| visit(r)).collect(),
+                    extra: Default::default(),
                 },
             );
             continue;
@@ -505,7 +508,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         if !sequences.iter().enumerate().all(|(i, &s)| s == i as u32 + 1) {
             boundary.shape_sequences.insert(id.to_string(), sequences);
         }
-        net.alignments.insert(id.to_string(), Alignment { points: points.into_iter().map(|(_, p)| p).collect() });
+        net.alignments.insert(id.to_string(), Alignment { points: points.into_iter().map(|(_, p)| p).collect(), extra: Default::default() });
     }
     let mut unknown_shapes: BTreeSet<String> = BTreeSet::new();
     let mut patterns: Vec<(String, Pattern)> = Vec::new();
@@ -527,6 +530,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                     .filter(|(_, f)| **f)
                     .map(|(o, _)| o.arrival_secs.unwrap_or(0))
                     .collect(),
+                    extra: Default::default(),
             })
             .into_iter()
             .collect();
@@ -560,9 +564,11 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                         continuous_drop_off: a.continuous_drop_off,
                         pickup_booking: a.pickup_booking.clone(),
                         drop_off_booking: a.drop_off_booking.clone(),
+                        extra: Default::default(),
                     })
                     .collect(),
                 timing,
+                extra: Default::default(),
             },
         ));
         for &i in members {
@@ -574,7 +580,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let key = format!("{}:{}", t.service, pattern_of[i]);
         net.pattern_trips
             .entry(key)
-            .or_insert_with(|| PatternTrips { pattern: pattern_of[i].clone(), service_type: t.service.to_string(), trips: vec![] })
+            .or_insert_with(|| PatternTrips { pattern: pattern_of[i].clone(), service_type: t.service.to_string(), trips: vec![], extra: Default::default() })
             .trips
             .push(Trip {
                 id: t.id.to_string(),
@@ -585,6 +591,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                 wheelchair: yes_no(&t.row.wheelchair_accessible),
                 bikes: yes_no(&t.row.bikes_allowed),
                 cars: yes_no(&t.row.cars_allowed),
+                extra: Default::default(),
             });
     }
 
@@ -616,7 +623,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             .and_then(&most)
             .unwrap_or_else(|| format!("To {}", most(ends).unwrap_or_default()));
         if let Some(r) = net.routes.get_mut(route) {
-            r.directions.insert(direction.clone(), Direction { name });
+            r.directions.insert(direction.clone(), Direction { name, extra: Default::default() });
         }
     }
 
@@ -638,7 +645,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         if let (Some(start), Some(end)) =
             (row.start_date.as_deref().and_then(parse_date), row.end_date.as_deref().and_then(parse_date))
         {
-            rule.ranges.push(DateRange { start, end });
+            rule.ranges.push(DateRange { start, end, extra: Default::default() });
         }
     }
     for row in &feed.calendar_dates {
@@ -648,7 +655,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             Some("2") => DayState::Removed,
             _ => continue,
         };
-        rules.entry(id.clone()).or_insert_with(empty_rule).exceptions.push(CalendarException { date, state });
+        rules.entry(id.clone()).or_insert_with(empty_rule).exceptions.push(CalendarException { date, state, extra: Default::default() });
     }
     for service in trips.iter().map(|t| t.service.to_string()).chain(demand_services) {
         rules.entry(service).or_insert_with(empty_rule);
@@ -673,7 +680,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                 rule = weekly;
             }
         }
-        net.service_types.insert(id.clone(), ServiceType { name: id, rule });
+        net.service_types.insert(id.clone(), ServiceType { name: id, rule, extra: Default::default() });
     }
 
     // Blocks: every trip under its block id, in the order they run
@@ -695,12 +702,12 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             };
             let end = from + a.times.last().and_then(|o| o.arrival_secs).unwrap_or(0);
             if a.service == b.service && end <= *to {
-                layovers.push(Layover { after_trip: k, secs: to - end, at: a.stops.last().cloned() });
+                layovers.push(Layover { after_trip: k, secs: to - end, at: a.stops.last().cloned(), extra: Default::default() });
             }
         }
         net.blocks.insert(
             id.to_string(),
-            Block { trips: members.iter().map(|&i| TripRef { trip: trips[i].id.to_string() }).collect(), layovers },
+            Block { trips: members.iter().map(|&i| TripRef { trip: trips[i].id.to_string(), extra: Default::default() }).collect(), layovers, extra: Default::default() },
         );
     }
 
@@ -741,7 +748,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
 }
 
 fn empty_rule() -> CalendarRule {
-    CalendarRule { days: WeekdaySet::none(), ranges: vec![], exceptions: vec![] }
+    CalendarRule { days: WeekdaySet::none(), ranges: vec![], exceptions: vec![], extra: Default::default() }
 }
 
 // ---------------------------------------------------------------------

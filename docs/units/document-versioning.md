@@ -64,19 +64,15 @@ stop display keeps a URL parameter it does not know. What is left:
    are no older versions to recover: the baseline is each kind's
    version at the first deployment, and the shapes are fixed in place
    before it is frozen.
-   - **The shapes, before the baseline** (no version bumps): the
-     browser's `plan_set` becomes a tagged object
-     (`{"kind":"plan_set","schema_version":N,"plans":[…]}`, not a bare
-     array); `work_rules` names its version `schema_version`, as every
-     other kind does; the watchlist joins `registry/documents.json`;
-     the Go host's `build` gets a hand-written schema, locked in
-     `server/`, checked by a Go test against what the server emits,
-     and indexed as host-owned. The `manifest`'s schema is the HTTP
-     contract's (`docs/architecture/release-artifacts.md`, "The HTTP
-     contract"). The storage model's shape
-     changes land in the same window
-     ([storage-model.md](storage-model.md), item 1; D-166, D-167), as
-     does the canonical form (D-169).
+   - **The shapes, before the baseline.** The shapes stand: the tagged
+     plan set, `work_rules`' `schema_version`, the watchlist in
+     `registry/documents.json`, the stop event ids (D-166), every
+     authored record's `extra` (D-167), and the RFC 8785 canonical form
+     (D-169). Left: the Go host's `build` gets a hand-written schema,
+     locked in `server/`, checked by a Go test against what the server
+     emits, and indexed as host-owned. The `manifest`'s schema is the
+     HTTP contract's (`docs/architecture/release-artifacts.md`, "The
+     HTTP contract").
    - **The lock.** Per kind, per version, checked into the owning
      crate: a frozen example, its generated JSON Schema, and the hash
      of its canonical bytes. `just test` fails when the current
@@ -84,8 +80,11 @@ stop display keeps a URL parameter it does not know. What is left:
      generated schema differs), when any older example no longer
      migrates to the current one, or when the current example's
      canonical hash moves (a byte change is an identity change for
-     every document of the kind, so it is a version change too). The
-     generator is the one the registry's documents use (gen-manifest's
+     every document of the kind, so it is a version change too). An
+     added optional field needs no bump (D-167): the gate accepts a
+     changed schema in the same version when the frozen example still
+     parses and its canonical hash does not move. The generator is the
+     one the registry's documents use (gen-manifest's
      schemas) — one schema emitter, which now compares rather than
      writes; `just caps` copies the locks into `registry/`, so the
      registry lists every locked version, each marked written or read

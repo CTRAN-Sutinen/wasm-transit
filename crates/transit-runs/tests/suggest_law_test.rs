@@ -35,9 +35,9 @@ fn rules(min_secs: Option<u32>, interline: bool) -> Option<WorkRules> {
         return None;
     }
     Some(WorkRules {
-        version: 1,
-        recovery: min_secs.map(|m| RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None }).into_iter().collect(),
-        interline: if interline { vec![RoutePair { a: "5".into(), b: "6".into() }] } else { vec![] },
+        schema_version: Default::default(),
+        recovery: min_secs.map(|m| RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None, extra: Default::default() }).into_iter().collect(),
+        interline: if interline { vec![RoutePair { a: "5".into(), b: "6".into(), extra: Default::default() }] } else { vec![] },
         ..Default::default()
     })
 }

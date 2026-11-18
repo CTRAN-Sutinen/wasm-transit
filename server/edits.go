@@ -84,7 +84,8 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		document, hash, err := s.commitEdits(json.RawMessage(body), writerOf(r, "anonymous"))
+		writer := writerOf(r, "anonymous")
+		document, hash, unknown, err := s.commitEdits(json.RawMessage(body), writer)
 		if err != nil {
 			if errors.Is(err, store.ErrUnavailable) {
 				fail(w, err, http.StatusServiceUnavailable)
@@ -97,6 +98,7 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 			fail(w, err, http.StatusBadRequest)
 			return
 		}
+		flagUnknown(w, "edits", writer, unknown)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("ETag", `"`+hash+`"`)
 		w.Write([]byte(document))
@@ -212,11 +214,12 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 	// the network is cap-divert's reports, asked through the bus (a
 	// record the network cannot answer is stored all the same, and
 	// patches nothing).
-	document, _, err := s.mergeEdits(json.RawMessage(body), serverDoc, time.Now().UnixMilli())
+	document, _, unknown, err := s.mergeEdits(json.RawMessage(body), serverDoc, time.Now().UnixMilli())
 	if err != nil {
 		http.Error(w, "sync op failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	flagUnknown(w, "edits", writerOf(r, "anonymous"), unknown)
 
 	if err := s.persistEdits(json.RawMessage(document)); err != nil {
 		http.Error(w, "persist edits: "+err.Error(), http.StatusInternalServerError)

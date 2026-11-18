@@ -85,6 +85,7 @@ fn network(types: &[GenType]) -> Network {
             ranges: vec![DateRange {
                 start: EPOCH + Duration::days(t.start as i64),
                 end: EPOCH + Duration::days((t.start + t.len) as i64),
+                extra: Default::default(),
             }],
             exceptions: t
                 .exceptions
@@ -93,10 +94,12 @@ fn network(types: &[GenType]) -> Network {
                 .map(|&(d, added)| CalendarException {
                     date: EPOCH + Duration::days(d as i64),
                     state: if added { DayState::Added } else { DayState::Removed },
+                    extra: Default::default(),
                 })
                 .collect(),
+                extra: Default::default(),
         };
-        net.service_types.insert(id.clone(), ServiceType { name: format!("Type {i}"), rule });
+        net.service_types.insert(id.clone(), ServiceType { name: format!("Type {i}"), rule, extra: Default::default() });
         if t.trips {
             let mut pt = template.clone();
             pt.service_type = id.clone();
@@ -240,9 +243,10 @@ fn successive_overlays_are_separate_combinations() {
     let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
     let ty = |start: &str, end: &str, exceptions: Vec<CalendarException>| ServiceType {
         name: String::new(),
-        rule: CalendarRule { days: weekdays.clone(), ranges: vec![DateRange { start: d(start), end: d(end) }], exceptions },
+        rule: CalendarRule { days: weekdays.clone(), ranges: vec![DateRange { start: d(start), end: d(end), extra: Default::default() }], exceptions, extra: Default::default() },
+        extra: Default::default(),
     };
-    let holiday = CalendarException { date: d("2026-10-01"), state: DayState::Removed };
+    let holiday = CalendarException { date: d("2026-10-01"), state: DayState::Removed, extra: Default::default() };
     net.service_types.insert("WKDY".into(), ty("2026-09-14", "2026-10-30", vec![holiday.clone()]));
     net.service_types.insert("WKDY/30".into(), ty("2026-09-14", "2026-10-09", vec![holiday]));
     net.service_types.insert("WKDY/31".into(), ty("2026-10-12", "2026-10-30", vec![]));
@@ -253,8 +257,10 @@ fn successive_overlays_are_separate_combinations() {
             rule: CalendarRule {
                 days: WeekdaySet::default(),
                 ranges: vec![],
-                exceptions: vec![CalendarException { date: d("2026-10-01"), state: DayState::Added }],
+                exceptions: vec![CalendarException { date: d("2026-10-01"), state: DayState::Added, extra: Default::default() }],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     for id in ["WKDY", "WKDY/30", "WKDY/31", "HOL"] {

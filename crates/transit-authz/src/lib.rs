@@ -68,6 +68,10 @@ pub struct Rule {
     pub pointers: Vec<String>,
     #[serde(default)]
     pub actions: Vec<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Rule {
@@ -106,11 +110,15 @@ pub struct Policy {
     pub schema_version: u32,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Policy {
     pub fn current(rules: Vec<Rule>) -> Self {
-        Policy { kind: PolicyKind, schema_version: SCHEMA_VERSION, rules }
+        Policy { kind: PolicyKind, schema_version: SCHEMA_VERSION, rules, extra: Default::default() }
     }
 }
 
@@ -226,6 +234,7 @@ mod laws {
             roles: roles.iter().map(|r| r.to_string()).collect(),
             pointers: pointers.iter().map(|p| p.to_string()).collect(),
             actions: actions.iter().map(|a| a.to_string()).collect(),
+            extra: Default::default(),
         }
     }
 
@@ -352,7 +361,7 @@ mod prop {
             vec(proptest::sample::select(vec!["*".to_string(), "edits".to_string(), "policy".to_string(), "manifest".to_string()]), 0..3),
             vec(proptest::sample::select(vec!["*".to_string(), "read".to_string(), "write".to_string()]), 0..3),
         )
-            .prop_map(|(name, roles, pointers, actions)| Rule { name, roles, pointers, actions })
+            .prop_map(|(name, roles, pointers, actions)| Rule { name, roles, pointers, actions, extra: Default::default() })
     }
 
     proptest! {

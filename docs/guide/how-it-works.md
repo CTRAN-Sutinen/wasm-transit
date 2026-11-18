@@ -28,7 +28,10 @@ Every document has a **content hash**: a long code calculated from its
 exact contents, like a fingerprint. Two documents with the same
 contents always have the same hash. If even one character changes,
 the hash changes. The software uses the hash as the document's name.
-This has two effects:
+Before it calculates the hash, it writes the document out in one
+standard way, the **JSON Canonicalization Scheme**. So any other
+program that follows that standard gets the same hash for the same
+contents. This has two effects:
 
 - A document can be checked: compute its hash and compare it with the
   name it was given. If they differ, the document was damaged or

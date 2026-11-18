@@ -158,9 +158,12 @@ fn build(routes: &[GenRoute]) -> Network {
                 ranges: vec![DateRange {
                     start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    extra: Default::default(),
                 }],
                 exceptions: vec![],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     for (r, route) in routes.iter().enumerate() {
@@ -184,7 +187,8 @@ fn build(routes: &[GenRoute]) -> Network {
                         .enumerate()
                         .map(|(i, s)| PatternStop { stop: s.clone(), timepoint: true, distance_m: i as f64 * 1000.0, ..Default::default() })
                         .collect(),
-                    timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.clone() }],
+                    timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.clone(), extra: Default::default() }],
+                    extra: Default::default(),
                 },
             );
             net.pattern_trips.insert(
@@ -205,6 +209,7 @@ fn build(routes: &[GenRoute]) -> Network {
                             ..Default::default()
                         })
                         .collect(),
+                        extra: Default::default(),
                 },
             );
         }

@@ -151,14 +151,14 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
 }
 
 /// A current-version document's canonical bytes and hash: through its
-/// type (struct field order), as every module that loads it hashes it.
+/// type (RFC 8785, D-169), as every module that loads it hashes it.
 fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), String> {
     fn typed<T: serde::de::DeserializeOwned + Serialize>(doc: &serde_json::Value) -> Result<(String, String), String> {
         // Read through the kernel's own parse (one deserializer for the
         // type in a linked assembly, not a second one over JSON values).
         let text = serde_json::to_string(doc).expect("documents serialize");
         let typed: T = cap_abi::parse_document(text.as_bytes()).map_err(|e| format!("the migrated document does not read: {e}"))?;
-        Ok((serde_json::to_string(&typed).expect("documents serialize"), cap_abi::canonical_hash(&typed)?))
+        Ok((cap_abi::canonical_bytes(&typed)?, cap_abi::canonical_hash(&typed)?))
     }
     match kind {
         transit_network::KIND => typed::<transit_network::Network>(doc),
@@ -168,10 +168,10 @@ fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), St
     }
 }
 
-/// An intermediate version has no type in this build: its bytes as
-/// JSON writes them (keys sorted).
+/// An intermediate version has no type in this build: its canonical
+/// bytes as a JSON value (RFC 8785, D-169).
 fn loose(doc: &serde_json::Value) -> Result<(String, String), String> {
-    let text = serde_json::to_string(doc).expect("documents serialize");
+    let text = cap_abi::canonical_bytes(doc)?;
     let hash = cap_abi::content_hash(text.as_bytes());
     Ok((text, hash))
 }

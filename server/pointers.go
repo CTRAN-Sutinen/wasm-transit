@@ -139,37 +139,40 @@ func (s *server) readEdits(raw json.RawMessage) (records json.RawMessage, docume
 // mergeEdits runs the sync protocol's merge step over the receive path:
 // both documents migrate at receive, the client's clock is clamped to
 // the server's (D-56), merge + submit run in the module, and the answer
-// is the canonical converged document and its hash.
-func (s *server) mergeEdits(clientRaw, serverRaw json.RawMessage, nowMs int64) (document string, hash string, err error) {
+// is the canonical converged document and its hash, with the fields
+// the client's records carry that this build does not know (D-167).
+func (s *server) mergeEdits(clientRaw, serverRaw json.RawMessage, nowMs int64) (document string, hash string, unknown []string, err error) {
 	clientRec, _, _, _, err := s.readEdits(clientRaw)
 	if err != nil {
-		return "", "", fmt.Errorf("read_edits client: %w", err)
+		return "", "", nil, fmt.Errorf("read_edits client: %w", err)
 	}
 	serverRec, _, _, _, err := s.readEdits(serverRaw)
 	if err != nil {
-		return "", "", fmt.Errorf("read_edits server: %w", err)
+		return "", "", nil, fmt.Errorf("read_edits server: %w", err)
 	}
 	var resp struct {
-		Document     string `json:"document"`
-		DocumentHash string `json:"document_hash"`
+		Document      string   `json:"document"`
+		DocumentHash  string   `json:"document_hash"`
+		UnknownFields []string `json:"unknown_fields"`
 	}
 	if err := s.syncOp(map[string]any{
 		"op": "sync_edits", "client": clientRec, "server": serverRec, "now_ms": nowMs,
 	}, &resp); err != nil {
-		return "", "", fmt.Errorf("sync_edits: %w", err)
+		return "", "", nil, fmt.Errorf("sync_edits: %w", err)
 	}
-	return resp.Document, resp.DocumentHash, nil
+	return resp.Document, resp.DocumentHash, resp.UnknownFields, nil
 }
 
 // commitEdits CAS-commits a merged edit document onto the edits
 // pointer, retrying against a moved pointer. Returns the response body
-// (the canonical document) and its hash.
-func (s *server) commitEdits(clientRaw json.RawMessage, writer string) (string, string, error) {
+// (the canonical document), its hash, and the fields the client's
+// records carry that this build does not know.
+func (s *server) commitEdits(clientRaw json.RawMessage, writer string) (string, string, []string, error) {
 	nowMs := time.Now().UnixMilli()
 	for attempt := 0; attempt < 5; attempt++ {
 		head, found, err := s.store.Head("edits")
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		serverRaw := json.RawMessage(emptyEdits)
 		from := ""
@@ -177,13 +180,13 @@ func (s *server) commitEdits(clientRaw json.RawMessage, writer string) (string, 
 			from = head.Hash
 			body, _, err := s.store.GetBlob(head.Hash)
 			if err != nil {
-				return "", "", err
+				return "", "", nil, err
 			}
 			serverRaw = body
 		}
-		document, hash, err := s.mergeEdits(clientRaw, serverRaw, nowMs)
+		document, hash, unknown, err := s.mergeEdits(clientRaw, serverRaw, nowMs)
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		_, _, err = s.store.CAS("edits", from, []byte(document), s.syncEnvelope(), hash, writer, nowMs)
 		if err != nil {
@@ -191,11 +194,11 @@ func (s *server) commitEdits(clientRaw json.RawMessage, writer string) (string, 
 			if asConflict(err, &ce) && attempt < 4 {
 				continue // re-read, re-merge, retry
 			}
-			return "", "", err
+			return "", "", nil, err
 		}
-		return document, hash, nil
+		return document, hash, unknown, nil
 	}
-	return "", "", fmt.Errorf("edits pointer moved on every attempt")
+	return "", "", nil, fmt.Errorf("edits pointer moved on every attempt")
 }
 
 func asConflict(err error, target **store.ConflictError) bool {
@@ -363,7 +366,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			}
 			serverRaw = b
 		}
-		document, hash, err := s.mergeEdits(req.Client, serverRaw, nowMs)
+		document, hash, unknown, err := s.mergeEdits(req.Client, serverRaw, nowMs)
 		if err != nil {
 			fail(w, err, http.StatusBadRequest)
 			return
@@ -380,6 +383,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			fail(w, err, http.StatusInternalServerError)
 			return
 		}
+		flagUnknown(w, "edits", writer, unknown)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("ETag", `"`+h+`"`)
 		json.NewEncoder(w).Encode(map[string]any{"name": name, "hash": h, "seq": seq})

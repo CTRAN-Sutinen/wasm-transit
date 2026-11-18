@@ -302,7 +302,7 @@ proptest! {
             let (_, _, trip) = find(&net, &id).ok_or_else(|| TestCaseError::fail(format!("{id} missing")))?;
             prop_assert_eq!(
                 &trip.departs,
-                &Departs::Every { bands: vec![HeadwayBand { start_secs: start, end_secs: end, headway_secs: headway }], exact }
+                &Departs::Every { bands: vec![HeadwayBand { start_secs: start, end_secs: end, headway_secs: headway, extra: Default::default() }], exact }
             );
             for (o, row) in trip.times.iter().zip(rows_of(t)) {
                 prop_assert_eq!(o.arrival_secs, row.arrival.map(|a| a - t.start));

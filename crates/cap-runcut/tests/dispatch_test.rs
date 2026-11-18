@@ -66,11 +66,13 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
             added_secs,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }
 }
 
@@ -82,8 +84,8 @@ fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
     // The same formula every network-consuming module uses: the
-    // canonical serde bytes hashed. One document, one truth.
-    let canonical = serde_json::to_string(&derived_network()).unwrap();
+    // canonical bytes (RFC 8785, D-169) hashed. One document, one truth.
+    let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
     // Idempotent: the same document loads to the same hash.
@@ -488,8 +490,8 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
 
 fn load_rules(min_secs: u32) -> String {
     let rules = transit_runs::WorkRules {
-        version: 1,
-        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(min_secs), pct_of_run: None }],
+        schema_version: Default::default(),
+        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(min_secs), pct_of_run: None, extra: Default::default() }],
         ..Default::default()
     };
     // The kernel's load: checked, normalized, under its canonical hash.

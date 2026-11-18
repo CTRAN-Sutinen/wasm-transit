@@ -23,7 +23,7 @@
 
   function what(e: Event): string {
     if (e.event === "changed") {
-      const fields = Object.keys(e).filter((k) => !["on", "event", "note", "from_feed", "extra"].includes(k));
+      const fields = Object.keys(e).filter((k) => !["id", "on", "event", "note", "from_feed", "extra"].includes(k));
       return `changed (${fields.map((f) => f.replaceAll("_", " ")).join(", ")})`;
     }
     return (EVENT_WORDS[e.event] ?? e.event).toLowerCase();

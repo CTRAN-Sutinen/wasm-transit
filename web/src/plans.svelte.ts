@@ -5,11 +5,14 @@
 /// metadata (identity, name, effective date); the plan set is keyed
 /// by a store id (the sync identity inside the document is `plan.id`
 /// — empty on unversioned imports). wasm only ever sees a document as
-/// an op argument. Persisted to IndexedDB (plans survive reloads —
-/// service changes span weeks).
+/// an op argument. Persisted to IndexedDB as one plan set document
+/// (transit-network `PlanSet`: its kind, its version, and the plans by
+/// store id; D-115), so plans survive reloads — service changes span
+/// weeks.
 
 import { get as idbGet, set as idbSet } from "idb-keyval";
 import type { Network } from "./types/Network";
+import type { PlanSet } from "./types/PlanSet";
 
 let plans = $state.raw<Record<string, Network>>({});
 let activePlanId = $state.raw<string>("");
@@ -53,11 +56,36 @@ let plansWrite: Promise<unknown> = Promise.resolve();
  * host (a module answered it) or read back through `readPlan`. */
 const readPlans = new Set<string>();
 
+/** The plan set version this build writes (transit-network
+ * `PLAN_SET_VERSION`). */
+const PLAN_SET_VERSION = 1;
+
+/** Set when the stored set is one this build does not read (another
+ * kind, or a newer version): the page then never writes over it. */
+let storeRefused = false;
+
 /** Persist the plan set — serialized writes, one pending at a time. */
 function persistPlans(): void {
+  if (storeRefused) return;
+  const set: PlanSet = { kind: "plan_set", schema_version: PLAN_SET_VERSION, plans };
   plansWrite = plansWrite
-    .then(() => idbSet(PLANS_KEY, plans))
+    .then(() => idbSet(PLANS_KEY, set))
     .catch((e) => console.warn("plan persistence failed:", e));
+}
+
+/** The plans a stored set holds: the tagged document, or a bare map of
+ * plans by store id (the shape written before the set had its tag). A
+ * set of another kind or a newer version is not read, and nothing is
+ * written over it. */
+function storedPlans(stored: unknown): Record<string, unknown> | null {
+  if (!stored || typeof stored !== "object") return null;
+  const tagged = stored as { kind?: unknown; schema_version?: unknown; plans?: unknown };
+  if (tagged.kind === undefined) return stored as Record<string, unknown>;
+  if (tagged.kind !== "plan_set" || (tagged.schema_version ?? 1) !== PLAN_SET_VERSION || !tagged.plans || typeof tagged.plans !== "object") {
+    storeRefused = true;
+    throw new Error(`the stored plans are ${String(tagged.kind)} v${String(tagged.schema_version)}, and this build reads plan_set v${PLAN_SET_VERSION}`);
+  }
+  return tagged.plans as Record<string, unknown>;
 }
 
 /** Restore the plan set on startup (documents cross IN from
@@ -69,10 +97,10 @@ function persistPlans(): void {
  * module refuses is kept as stored and reported, never dropped. */
 export async function restorePlans(read?: (stored: unknown) => Promise<Network | null>): Promise<void> {
   try {
-    const stored = await idbGet(PLANS_KEY);
-    if (stored && typeof stored === "object") {
+    const stored = storedPlans(await idbGet(PLANS_KEY));
+    if (stored) {
       const next: Record<string, Network> = {};
-      for (const [key, doc] of Object.entries(stored as Record<string, unknown>)) {
+      for (const [key, doc] of Object.entries(stored)) {
         try {
           next[key] = (read ? await read(doc) : null) ?? (doc as Network);
           if (read) readPlans.add(key);

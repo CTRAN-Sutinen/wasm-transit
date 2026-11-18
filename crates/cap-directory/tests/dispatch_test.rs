@@ -48,8 +48,8 @@ fn stops(limit: Option<u32>) -> Vec<cap_directory::DirectoryStop> {
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
     // The same formula every network-consuming module uses: the
-    // canonical serde bytes hashed. One document, one truth.
-    let canonical = serde_json::to_string(&derived_network()).unwrap();
+    // canonical bytes (RFC 8785, D-169) hashed. One document, one truth.
+    let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
     // Idempotent: the same document loads to the same hash.

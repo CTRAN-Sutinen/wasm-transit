@@ -176,27 +176,60 @@ pub fn content_hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-/// A document's identity: the content hash of its canonical
-/// serialization (serde_json, struct field order). Streamed into the
-/// digest, so hashing never holds a second copy of the document —
-/// byte-identical to hashing `serde_json::to_string(value)`.
-pub fn canonical_hash<T: serde::Serialize>(value: &T) -> Result<String, String> {
+/// A document's identity: the content hash of its canonical bytes,
+/// RFC 8785 (D-169, [`jcs`]). Streamed into the digest, so hashing never
+/// holds a copy of the document — byte-identical to hashing
+/// [`canonical_bytes`].
+pub fn canonical_hash<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, String> {
     use sha2::{Digest, Sha256};
 
     struct Digesting(Sha256);
-    impl std::io::Write for Digesting {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.update(buf);
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
+    impl jcs::Sink for Digesting {
+        fn put(&mut self, bytes: &[u8]) {
+            self.0.update(bytes);
         }
     }
 
     let mut digest = Digesting(Sha256::new());
-    serde_json::to_writer(&mut digest, value).map_err(|e| format!("document does not serialize: {e}"))?;
+    jcs::write(value, &mut digest).map_err(|e| format!("document does not serialize: {e}"))?;
     Ok(format!("sha256:{:x}", digest.0.finalize()))
+}
+
+/// A document's canonical bytes (RFC 8785, D-169): what a host stores
+/// and serves under [`canonical_hash`].
+pub fn canonical_bytes<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, String> {
+    jcs::to_string(value).map_err(|e| format!("document does not serialize: {e}"))
+}
+
+/// A document carried inside an op's answer as its canonical bytes,
+/// exactly: a host that serves it under its hash serves those bytes
+/// (the import's network and boundary, the streets, the walk table, a
+/// pick read over the stops). It reads back as the document. It writes
+/// those bytes only into an answer serde_json writes ([`outcome`]); to
+/// hash it, hash the document inside (`.0`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Canonical<T>(pub T);
+
+impl<T: serde::Serialize> serde::Serialize for Canonical<T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::Error;
+        let text = jcs::to_string(&self.0).map_err(S::Error::custom)?;
+        let raw = serde_json::value::RawValue::from_string(text).map_err(S::Error::custom)?;
+        raw.serialize(s)
+    }
+}
+
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Canonical<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        T::deserialize(d).map(Canonical)
+    }
+}
+
+impl<T> std::ops::Deref for Canonical<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
 }
 
 /// Whether bulk bytes are a gzip stream (its magic bytes — no JSON
@@ -306,17 +339,33 @@ pub fn answer<Q: serde::de::DeserializeOwned, A: serde::Serialize>(
     text: &str,
     dispatch: impl FnOnce(Q) -> Result<A, String>,
 ) -> String {
-    match serde_json::from_str::<Q>(text) {
+    let (request, unknown) = transit_version::noting_unknown(|| serde_json::from_str::<Q>(text));
+    REQUEST_UNKNOWN.with(|noted| *noted.borrow_mut() = unknown);
+    let answered = match request {
         Ok(request) => outcome(dispatch(request)),
         Err(error) => outcome::<()>(Err(format!("invalid request: {error}"))),
-    }
+    };
+    REQUEST_UNKNOWN.with(|noted| noted.borrow_mut().clear());
+    answered
+}
+
+thread_local! {
+    static REQUEST_UNKNOWN: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The names of the fields the documents in the request being answered
+/// carry that this build does not know (D-167), in name order. A
+/// receive op (a `validate`) answers them, so the receive path flags
+/// them for a person. Empty outside [`answer`].
+pub fn request_unknown_fields() -> Vec<String> {
+    REQUEST_UNKNOWN.with(|noted| noted.borrow().clone())
 }
 
 /// The `{"ok": ..} | {"error": ..}` outcome every op answers,
 /// serialized directly: no intermediate `serde_json::Value` — which
-/// would hold a second copy of the answer and sort its keys, so a
-/// document inside it (an import's network) would not cross as its
-/// canonical bytes (struct field order, docs/FORMATS.md).
+/// would hold a second copy of the answer, and in which a document
+/// carried as its canonical bytes ([`Canonical`]) would not cross as
+/// those bytes (docs/FORMATS.md).
 pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
     #[derive(serde::Serialize)]
     enum Outcome<T> {
@@ -332,6 +381,7 @@ pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
     serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
 }
 
+pub mod jcs;
 pub mod kernel;
 pub mod manifest;
 pub mod registry;

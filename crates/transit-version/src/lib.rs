@@ -10,6 +10,8 @@
 //!   for a kind whose untagged copies are that version.
 //! - [`Versioned`] is what a reader needs to refuse another version
 //!   at its load, naming both (`cap_abi::parse_versioned`).
+//! - [`Extra`] is a record's fields that this build does not know,
+//!   kept as written (D-167).
 
 #![forbid(unsafe_code)]
 
@@ -32,6 +34,111 @@ pub trait Versioned {
     const UNTAGGED: u32 = 1;
     /// The version this copy carries.
     fn schema_version(&self) -> u32;
+}
+
+/// The fields of a record that this build does not know (D-167): kept
+/// as written through a read and a write, so a writer on an older build
+/// does not drop what a newer one wrote. Every record of an authored
+/// kind carries one, flattened into the record (`#[serde(flatten)]`).
+/// A value (a point, a stop's two times, a set of weekdays) is not a
+/// record and carries none. The receive path flags a field kept here
+/// for a person, and never refuses it.
+///
+/// Equality, order, and hashing read the fields' JSON text, so a record
+/// that derives them may carry one.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct Extra(pub std::collections::BTreeMap<String, serde_json::Value>);
+
+thread_local! {
+    /// The names of the unknown fields read while [`noting_unknown`]
+    /// runs; none is kept outside it.
+    static NOTED: std::cell::RefCell<Option<std::collections::BTreeSet<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+impl<'de> serde::Deserialize<'de> for Extra {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let fields = <std::collections::BTreeMap<String, serde_json::Value>>::deserialize(d)?;
+        if !fields.is_empty() {
+            NOTED.with(|noted| {
+                if let Some(noted) = noted.borrow_mut().as_mut() {
+                    noted.extend(fields.keys().cloned());
+                }
+            });
+        }
+        Ok(Extra(fields))
+    }
+}
+
+/// Run `read` and answer, beside its answer, the names of the fields
+/// it read that this build does not know (D-167), in name order: what
+/// a receive path flags for a person. A read outside it notes nothing.
+pub fn noting_unknown<R>(read: impl FnOnce() -> R) -> (R, Vec<String>) {
+    let outer = NOTED.with(|noted| noted.borrow_mut().replace(Default::default()));
+    let answer = read();
+    let names = NOTED.with(|noted| {
+        let mine = noted.borrow_mut().take().unwrap_or_default();
+        // a reading nested in another one is noted in both
+        if let Some(mut outer) = outer {
+            outer.extend(mine.iter().cloned());
+            *noted.borrow_mut() = Some(outer);
+        }
+        mine
+    });
+    (answer, names.into_iter().collect())
+}
+
+impl Extra {
+    /// Whether every field is known.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The names of the fields not known, in order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+
+    fn text(&self) -> String {
+        serde_json::to_string(&self.0).expect("JSON values serialize")
+    }
+}
+
+impl Eq for Extra {}
+
+impl PartialOrd for Extra {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Extra {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.0.is_empty() && other.0.is_empty() {
+            return std::cmp::Ordering::Equal;
+        }
+        self.text().cmp(&other.text())
+    }
+}
+
+impl std::hash::Hash for Extra {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if !self.0.is_empty() {
+            self.text().hash(state);
+        }
+    }
+}
+
+impl schemars::JsonSchema for Extra {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Extra".into()
+    }
+    fn inline_schema() -> bool {
+        true
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({ "type": "object", "additionalProperties": true })
+    }
 }
 
 /// A version field whose absence reads as `N`.
@@ -123,6 +230,29 @@ mod tests {
         assert_eq!(serde_json::from_str::<Thing>(r#"{"n":3}"#).unwrap(), thing, "absent tags read as the kind, v1");
         let err = serde_json::from_str::<Thing>(r#"{"kind":"other","n":3}"#).unwrap_err().to_string();
         assert!(err.contains(r#"a "other" document is not a "thing" document"#), "{err}");
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Record {
+        #[allow(dead_code)]
+        n: u32,
+        #[serde(flatten)]
+        extra: super::Extra,
+        #[serde(default)]
+        inner: Vec<Record>,
+    }
+
+    #[test]
+    fn a_read_notes_the_fields_it_does_not_know_and_keeps_them() {
+        let text = r#"{"n":1,"later":true,"inner":[{"n":2,"newer":"x"},{"n":3}]}"#;
+        let (record, names) = super::noting_unknown(|| serde_json::from_str::<Record>(text).unwrap());
+        assert_eq!(names, vec!["later".to_string(), "newer".to_string()]);
+        assert_eq!(record.extra.names().collect::<Vec<_>>(), ["later"]);
+        assert_eq!(record.inner[0].extra.names().collect::<Vec<_>>(), ["newer"]);
+        assert!(record.inner[1].extra.is_empty());
+        // outside it, nothing is noted
+        let (_, none) = super::noting_unknown(|| ());
+        assert!(none.is_empty());
     }
 
     #[test]

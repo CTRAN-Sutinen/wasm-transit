@@ -34,6 +34,10 @@ pub struct Operator {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub contactless: Option<bool>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Whether contactless bank cards are accepted.
@@ -72,6 +76,10 @@ pub struct Publisher {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub contact_url: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// What an attribution credits: the whole dataset (`None` on the
@@ -114,6 +122,10 @@ pub struct Attribution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub phone: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// One text of the network in another language. `table` and `field`
@@ -137,6 +149,10 @@ pub struct Translation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub value: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl crate::Network {

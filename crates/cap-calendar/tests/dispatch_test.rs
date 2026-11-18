@@ -69,8 +69,8 @@ fn service_dates(
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
     // The same formula every network-consuming module uses: the
-    // canonical serde bytes hashed. One document, one truth.
-    let canonical = serde_json::to_string(&derived_network()).unwrap();
+    // canonical bytes (RFC 8785, D-169) hashed. One document, one truth.
+    let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
     // Idempotent: the same document loads to the same hash.
@@ -129,11 +129,13 @@ fn edits_can_take_a_key_off_the_board() {
             added_secs: 60,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }];
     let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0;
     // WK still runs (route 10 carries it); the answer is unchanged —
@@ -225,11 +227,13 @@ fn the_reverse_read_comes_from_the_effective_day() {
             added_secs: 60,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }];
     let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0;
     assert_eq!(
@@ -259,11 +263,13 @@ fn an_invalid_edit_record_moves_nothing() {
             added_secs: 60,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     };
     broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
     let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(vec![broken])).unwrap().0;

@@ -38,11 +38,13 @@ fn record(id: &str, status: EditStatus, rev: u64, updated_at: u64) -> EditRecord
             added_secs: 300,
             start_date: chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap(),
             end_date: chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status,
         rev,
         updated_at,
+        extra: Default::default(),
     }
 }
 
@@ -149,10 +151,11 @@ fn sync_edits_clamps_the_client_clock() {
 fn the_answer_carries_the_canonical_document_and_its_hash() {
     let client = vec![record("e1", EditStatus::Draft, 1, 1)];
     match dispatch(Request::SyncEdits { client, server: vec![], now_ms: 1_000 }).unwrap() {
-        Response::SyncEdits { records, document, document_hash } => {
+        Response::SyncEdits { records, document, document_hash, .. } => {
             let doc = transit_sync::EditDocument::new(records.clone());
-            assert_eq!(document, serde_json::to_string(&doc).unwrap(), "canonical bytes: the tagged document");
-            assert!(document.starts_with("{\"kind\":\"edit_records\",\"schema_version\":2,"), "{document}");
+            assert_eq!(document, cap_abi::canonical_bytes(&doc).unwrap(), "canonical bytes: the tagged document");
+            // canonical (RFC 8785, D-169): keys sorted, the tags among them
+            assert!(document.starts_with("{\"kind\":\"edit_records\",\"records\":[") && document.ends_with("],\"schema_version\":2}"), "{document}");
             assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap(), "the module is the hash authority");
             assert!(document_hash.starts_with("sha256:"), "{document_hash}");
         }
@@ -184,7 +187,7 @@ fn read_edits_reads_a_received_document_at_receive() {
             assert_eq!(records[1].diversion.as_ref().unwrap().added_secs, 0);
             assert_eq!(schema_version, transit_sync::SCHEMA_VERSION);
             let doc = transit_sync::EditDocument::new(records.clone());
-            assert_eq!(document, serde_json::to_string(&doc).unwrap());
+            assert_eq!(document, cap_abi::canonical_bytes(&doc).unwrap());
             assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap());
         }
         _ => panic!("read_edits"),
@@ -205,9 +208,27 @@ fn compact_edits_is_the_d57_tombstone_commit() {
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].id, "live", "in-force records are never dropped");
             let doc = transit_sync::EditDocument::new(records.clone());
-            assert_eq!(document, serde_json::to_string(&doc).unwrap());
+            assert_eq!(document, cap_abi::canonical_bytes(&doc).unwrap());
             assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap());
         }
         _ => panic!("compact_edits"),
     }
+}
+
+/// A field the client's record carries that this build does not know is
+/// kept through the merge and flagged, never refused (D-167); the
+/// server's own records are not flagged again.
+#[test]
+fn sync_edits_flags_the_clients_unknown_fields_and_keeps_them() {
+    let mut client = serde_json::to_value(record("e1", EditStatus::Draft, 1, 10)).unwrap();
+    client["diversion"]["flagger_needed"] = serde_json::json!(true);
+    let mut server = serde_json::to_value(record("e2", EditStatus::Accepted, 1, 5)).unwrap();
+    server["from_cad"] = serde_json::json!("CAD-7");
+    let request = serde_json::json!({"op": "sync_edits", "client": [client], "server": [server], "now_ms": 1_000});
+    let answer: serde_json::Value = serde_json::from_str(&dispatch_json(&request.to_string())).unwrap();
+    let ok = &answer["ok"];
+    assert_eq!(ok["unknown_fields"], serde_json::json!(["flagger_needed"]));
+    let records = ok["records"].as_array().unwrap();
+    assert_eq!(records[0]["diversion"]["flagger_needed"], true);
+    assert_eq!(records[1]["from_cad"], "CAD-7");
 }

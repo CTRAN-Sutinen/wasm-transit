@@ -86,9 +86,10 @@ func (s *server) handleStopRequests(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	var checked struct {
-		Refusals     json.RawMessage `json:"refusals"`
-		Document     *string         `json:"document"`
-		DocumentHash *string         `json:"document_hash"`
+		Refusals      json.RawMessage `json:"refusals"`
+		Document      *string         `json:"document"`
+		DocumentHash  *string         `json:"document_hash"`
+		UnknownFields []string        `json:"unknown_fields"`
 	}
 	var producedBy string
 	err = s.withRequests(ctx, func(host *WasmHost) error {
@@ -103,7 +104,8 @@ func (s *server) handleStopRequests(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"refusals": checked.Refusals})
 		return
 	}
-	hash, _, err := s.store.CAS(requestsPointer, req.From, []byte(*checked.Document), s.requestsEnvelope(producedBy), *checked.DocumentHash, writerOf(r, "anonymous"), time.Now().UnixMilli())
+	writer := writerOf(r, "anonymous")
+	hash, _, err := s.store.CAS(requestsPointer, req.From, []byte(*checked.Document), s.requestsEnvelope(producedBy), *checked.DocumentHash, writer, time.Now().UnixMilli())
 	if err != nil {
 		var ce *store.ConflictError
 		if asConflict(err, &ce) {
@@ -113,5 +115,6 @@ func (s *server) handleStopRequests(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
+	flagUnknown(w, "stop requests", writer, checked.UnknownFields)
 	writeJSON(w, http.StatusOK, map[string]any{"requests_hash": hash})
 }

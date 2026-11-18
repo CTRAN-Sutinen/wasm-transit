@@ -562,7 +562,7 @@ fn draw_alignment(
     if let Some(p) = points.iter().find(|p| !(p.lat.is_finite() && p.lon.is_finite() && p.lat.abs() <= 90.0 && p.lon.abs() <= 180.0)) {
         return Err(format!("point ({}, {}) is not on the globe", p.lat, p.lon));
     }
-    let line = Alignment { points: points.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect() };
+    let line = Alignment { points: points.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect(), extra: Default::default() };
     let (redrawn, created) = match (redraw, current) {
         (Redraw::All, Some(shared)) => {
             if id.is_some() {
@@ -899,7 +899,8 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                         PatternStop { stop: first, timepoint: true, distance_m: 0.0, ..Default::default() },
                         PatternStop { stop: second, timepoint: true, distance_m: 500.0, ..Default::default() },
                     ],
-                    timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, 600] }],
+                    timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, 600], extra: Default::default() }],
+                    extra: Default::default(),
                 },
             );
             created("pattern", &id)
@@ -946,7 +947,8 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     name: name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| format!("{label} → {last}")),
                     alignment: None,
                     stops: visits,
-                    timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, *run_secs] }],
+                    timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, *run_secs], extra: Default::default() }],
+                    extra: Default::default(),
                 },
             );
             created("pattern", &id)
@@ -960,9 +962,11 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     name: format!("Service type {id}"),
                     rule: CalendarRule {
                         days: WeekdaySet::weekdays(),
-                        ranges: vec![DateRange { start, end: start + chrono::Days::new(364) }],
+                        ranges: vec![DateRange { start, end: start + chrono::Days::new(364), extra: Default::default() }],
                         exceptions: vec![],
+                        extra: Default::default(),
                     },
+                    extra: Default::default(),
                 },
             );
             created("service_type", &id)
@@ -979,7 +983,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             exists(net.patterns.contains_key(&pattern), "pattern", &pattern)?;
             exists(net.service_types.contains_key(&service_type), "service type", &service_type)?;
             let id = mint(&net.pattern_trips, id, "svc", "pattern trips")?;
-            net.pattern_trips.insert(id.clone(), PatternTrips { pattern, service_type, trips: vec![] });
+            net.pattern_trips.insert(id.clone(), PatternTrips { pattern, service_type, trips: vec![], extra: Default::default() });
             if let Err(e) = add_trip(net, &id, &None, 8 * 3600) {
                 net.pattern_trips.remove(&id);
                 return Err(e);
@@ -988,7 +992,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
         }
         NetworkEdit::AddBlock { id } => {
             let id = mint(&net.blocks, id, "b", "block")?;
-            net.blocks.insert(id.clone(), Block { trips: vec![], layovers: vec![] });
+            net.blocks.insert(id.clone(), Block { trips: vec![], layovers: vec![], extra: Default::default() });
             created("block", &id)
         }
         NetworkEdit::UpdateStop { id, name, lat, lon, transfer } => {
@@ -1053,7 +1057,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             get_mut(&mut net.routes, route, "route")?
                 .directions
-                .insert(id.clone(), Direction { name: name.clone() });
+                .insert(id.clone(), Direction { name: name.clone(), extra: Default::default() });
             None
         }
         NetworkEdit::RemoveDirection { route, id } => {
@@ -1204,7 +1208,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                 Some(last) => (last.end_secs, last.at_timepoints.clone()),
                 None => (0, vec![0; p.stops.iter().filter(|s| s.timepoint).count()]),
             };
-            p.timing.push(TimingProfile { start_secs: start, end_secs: start + 6 * 3600, at_timepoints: times });
+            p.timing.push(TimingProfile { start_secs: start, end_secs: start + 6 * 3600, at_timepoints: times, extra: Default::default() });
             None
         }
         NetworkEdit::RemoveTimingProfile { pattern, index } => {
@@ -1257,7 +1261,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             if end < start {
                 return Err(format!("the range ends {end}, before it starts {start}"));
             }
-            ranges.push(DateRange { start, end });
+            ranges.push(DateRange { start, end, extra: Default::default() });
             None
         }
         NetworkEdit::SetServiceRange { id, index, start, end } => {
@@ -1283,7 +1287,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             let exceptions = &mut get_mut(&mut net.service_types, id, "service type")?.rule.exceptions;
             match exceptions.iter_mut().find(|e| e.date == day) {
                 Some(e) => e.state = *state,
-                None => exceptions.push(CalendarException { date: day, state: *state }),
+                None => exceptions.push(CalendarException { date: day, state: *state, extra: Default::default() }),
             }
             exceptions.sort_by_key(|e| e.date);
             None
@@ -1313,7 +1317,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
         NetworkEdit::AddBand { trip } => {
             let bands = bands(net, trip)?;
             let start = bands.last().map(|b| b.end_secs).unwrap_or(6 * 3600);
-            bands.push(HeadwayBand { start_secs: start, end_secs: start + 3 * 3600, headway_secs: 900 });
+            bands.push(HeadwayBand { start_secs: start, end_secs: start + 3 * 3600, headway_secs: 900, extra: Default::default() });
             None
         }
         NetworkEdit::RemoveBand { trip, index } => {
@@ -1356,7 +1360,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             match (secs, b.layovers.iter_mut().find(|l| l.after_trip == *after_trip)) {
                 (None, _) => b.layovers.retain(|l| l.after_trip != *after_trip),
                 (Some(s), Some(existing)) => existing.secs = *s,
-                (Some(s), None) => b.layovers.push(Layover { after_trip: *after_trip, secs: *s, at: None }),
+                (Some(s), None) => b.layovers.push(Layover { after_trip: *after_trip, secs: *s, at: None, extra: Default::default() }),
             }
             None
         }

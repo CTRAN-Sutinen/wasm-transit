@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn headway_bands_generate_end_exclusive() {
         let departs = Departs::Every {
-            bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 15 * 60 }],
+            bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 15 * 60, extra: Default::default() }],
             exact: true,
         };
         let starts = departs.instances();
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn zero_headway_yields_no_trips() {
         let departs = Departs::Every {
-            bands: vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0 }],
+            bands: vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0, extra: Default::default() }],
             exact: false,
         };
         assert!(departs.instances().is_empty());

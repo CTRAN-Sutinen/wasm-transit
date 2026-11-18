@@ -42,6 +42,12 @@ meets one contract, whichever application makes it:
   (`docs/FORMATS.md`).
 - **Attribution.** The pointer log records who wrote it and when
   (`writer`: the verified JWT subject when auth is on, D-58).
+- **Fields this build does not know.** Every authored kind keeps them
+  through a read and a write (D-167), so a writer on an older build does
+  not drop what a newer one wrote. The receive path never refuses one.
+  The module that checks the write names each such field
+  (`unknown_fields`), and the server names them on the response
+  (`X-Unknown-Fields`) and logs them with the writer.
 
 Every write goes through a receive path that holds that contract.
 Nothing writes the bucket directly (`docs/FORMATS.md`, "The HTTP
@@ -57,7 +63,7 @@ surface"). Where it holds today:
 
 The last row is the gap. A pointer commit for any kind other than the
 edits stores the document as given (`docs/units/storage-model.md`, item
-2, the kind table).
+1, the kind table).
 
 **The gate refuses only what makes the data wrong.** That means a broken
 shape or a broken invariant. A legitimate change with consequences is
@@ -104,9 +110,10 @@ open to any writer the store's permissions admit.
 - **Costs:** the formats cannot say what an edit means. A stop's point
   dragged is a survey correction or a move; only the person knows which.
   So the flags must cover edits made outside this repo's applications.
-  Many writers make versioning harder. A writer that does not know a
-  newer field can drop it, and migrating at receive guards readers, not
-  that. Permissions work per object, while stewardship is per field and
+  Many writers make versioning harder. Migrating at receive guards
+  readers, not writers. So every authored record keeps the fields it does
+  not know (D-167), and a misspelled field is kept too, flagged rather
+  than refused. Permissions work per object, while stewardship is per field and
   role. So documents are split where the agency's governance splits.
   Owning the data also gives the agency the work of keeping it clean. The
   applications make that cheap: flags, readable history, and an undo by

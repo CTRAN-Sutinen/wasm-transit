@@ -61,7 +61,8 @@
     refusals: Refusal[];
     error: string;
     onsave: (event: Event, done: string) => void;
-    oncorrect: (index: number, event: Event | null, done: string) => void;
+    /// A correction names the event by its id (D-166), never its place.
+    oncorrect: (eventId: string, event: Event | null, done: string) => void;
     onclose: () => void;
     /// In a page, as a card (the stop page); else a panel (beside the map,
     /// for a move).
@@ -150,7 +151,7 @@
       else delete fixed.until;
       if (note.trim()) fixed.note = note.trim();
       else delete fixed.note;
-      return oncorrect(fix, fixed, `Corrected the ${(EVENT_WORDS[fixing.event] ?? fixing.event).toLowerCase()} event on ${name}.`);
+      return oncorrect(fixing.id ?? "", fixed, `Corrected the ${(EVENT_WORDS[fixing.event] ?? fixing.event).toLowerCase()} event on ${name}.`);
     }
     if (chosen === "move") {
       if (!point) return;
@@ -255,7 +256,7 @@
     <div class="f-summary confirm" data-testid="fix-confirm">
       <p><strong>Delete this event?</strong> Only for an event entered by mistake.</p>
       <div class="row">
-        <button type="button" class="danger" disabled={busy} onclick={() => oncorrect(fix, null, `Removed an event entered by mistake on ${name}.`)} data-testid="fix-remove-yes">Delete</button>
+        <button type="button" class="danger" disabled={busy} onclick={() => oncorrect(fixing.id ?? "", null, `Removed an event entered by mistake on ${name}.`)} data-testid="fix-remove-yes">Delete</button>
         <button type="button" onclick={() => (removing = false)}>Back</button>
       </div>
     </div>

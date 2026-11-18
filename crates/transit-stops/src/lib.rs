@@ -39,7 +39,6 @@ use std::fmt;
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value;
 use ts_rs::TS;
 
 /// The version this build reads and writes.
@@ -73,16 +72,24 @@ pub struct Stops {
     /// Each stop's events, oldest first. The key is the stop's lasting
     /// id: it stays the same through a move (D-145).
     pub stops: BTreeMap<String, Vec<Event>>,
-    /// Fields this repo does not know, kept as written.
+    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 /// One thing that happened, or will happen, to a stop.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Event {
+    /// Its id, unique within its stop (D-166), so two writers' events
+    /// are told apart and a correction names the event it edits. A
+    /// writer may give one; an event written without one gets one at
+    /// the write, derived from its stop and its content
+    /// ([`Stops::identified`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub id: String,
     /// The service date it takes effect ("YYYY-MM-DD", the agency's
     /// zone). Only a stop's first event, an `in_service`, may have
     /// none: an imported stop whose start no feed records.
@@ -140,10 +147,10 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<Attachment>>")]
     pub attachments: Vec<Attachment>,
-    /// Fields this repo does not know, kept as written.
+    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 /// A photo or drawing a record carries (D-162): named by its content
@@ -170,7 +177,7 @@ pub struct Attachment {
     pub taken_on: Option<String>,
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 impl Attachment {
@@ -647,6 +654,8 @@ pub enum Problem {
     UnknownStop { stop: String },
     /// A consolidation naming the stop itself.
     ReplacesItself,
+    /// A second event in the stop with an id already used (D-166).
+    DuplicateEventId { id: String },
 }
 
 impl fmt::Display for Refusal {
@@ -670,6 +679,7 @@ impl fmt::Display for Refusal {
             Problem::BadAnswer { key, value } => format!("answers {key} with {value:?}, which it does not take"),
             Problem::UnknownStop { stop } => format!("replaces {stop:?}, which is not in the document"),
             Problem::ReplacesItself => "replaces itself".into(),
+            Problem::DuplicateEventId { id } => format!("has the id {id:?}, which an event above it has"),
         };
         match self.event {
             Some(i) => write!(f, "stop {:?} event {i} {what}", self.stop),
@@ -865,6 +875,45 @@ impl Stops {
         })
     }
 
+    /// The document with event `event_id` of stop `id` corrected, as
+    /// [`Stops::correct_event`] corrects one by its place: the event is
+    /// named by its id (D-166), so another writer's event added above it
+    /// does not change which event is edited. The corrected event keeps
+    /// the id. None when the stop or the id is not there.
+    pub fn correct_event_by_id(&self, id: &str, event_id: &str, event: Option<Event>) -> Option<Stops> {
+        let index = self.stops.get(id)?.iter().position(|e| e.id == event_id)?;
+        let event = event.map(|e| Event { id: event_id.to_string(), ..e });
+        self.correct_event(id, index, event)
+    }
+
+    /// The document with an id on every event (D-166): an id already
+    /// given is kept; an event with none gets one derived from its stop
+    /// and its content, so the same event in the same stop gets the same
+    /// id in any document (an import of the same feed mints the same
+    /// ids). A second event of the same content in a stop takes the next
+    /// free suffix ("-2", "-3"). Every write identifies before it is
+    /// checked.
+    pub fn identified(mut self) -> Stops {
+        use sha2::{Digest, Sha256};
+        for (id, events) in self.stops.iter_mut() {
+            let mut taken: BTreeSet<String> = events.iter().filter(|e| !e.id.is_empty()).map(|e| e.id.clone()).collect();
+            for e in events.iter_mut().filter(|e| e.id.is_empty()) {
+                let content = serde_json::to_string(&*e).expect("events serialize");
+                let digest = Sha256::new().chain_update(id.as_bytes()).chain_update([0]).chain_update(content.as_bytes()).finalize();
+                let base: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+                let mut minted = format!("e{base}");
+                let mut n = 2;
+                while taken.contains(&minted) {
+                    minted = format!("e{base}-{n}");
+                    n += 1;
+                }
+                taken.insert(minted.clone());
+                e.id = minted;
+            }
+        }
+        self
+    }
+
     /// `next` with its surveys attributed to `by`, the signed-in
     /// writer, as a write receives it (D-158): every survey event (one
     /// with `surveyed_by`, a name or empty) that this document — the one
@@ -909,8 +958,12 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
     }
     let mut last: Option<NaiveDate> = None;
     let mut retired = false;
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, e) in events.iter().enumerate() {
         let mut refuse = |problem| out.push(Refusal { stop: id.into(), event: Some(i as u32), problem });
+        if !e.id.is_empty() && !seen.insert(e.id.as_str()) {
+            refuse(Problem::DuplicateEventId { id: e.id.clone() });
+        }
         if retired {
             refuse(Problem::AfterRetired);
             continue;

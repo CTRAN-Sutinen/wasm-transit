@@ -430,7 +430,7 @@
       "post": {
         "operationId": "postEdits",
         "summary": "Merge the client's edit document into the server's.",
-        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer.",
+        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -602,7 +602,7 @@
       "post": {
         "operationId": "postPointer",
         "summary": "Commit a document to a pointer (compare and swap).",
-        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. For other host-owned kinds it stores `document` verbatim. The server refuses the kinds and pointers that have their own route: plans, network_document, plan.*, stops, stop_requests, build, and build_file. X-Produced-By sets the envelope's producer for a verbatim kind (default server). X-Writer names the writer when sign-in is off. When sign-in is on, it needs write on the pointer.",
+        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. For other host-owned kinds it stores `document` verbatim. The server refuses the kinds and pointers that have their own route: plans, network_document, plan.*, stops, stop_requests, build, and build_file. X-Produced-By sets the envelope's producer for a verbatim kind (default server). X-Writer names the writer when sign-in is off. When sign-in is on, it needs write on the pointer. For edit_records, a field the client's records carry that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field.",
         "parameters": [
           {
             "name": "name",
@@ -827,7 +827,7 @@
       "post": {
         "operationId": "publishPick",
         "summary": "Publish a plan's network as a pick.",
-        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans answers the next published set. The server commits the network to plan.<id> and then the set to plans. When sign-in is on, it needs write on the plans pointer.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans answers the next published set. The server commits the network to plan.<id> and then the set to plans. When sign-in is on, it needs write on the plans pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1102,7 +1102,7 @@
       "post": {
         "operationId": "writeStops",
         "summary": "Write the stops document.",
-        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer.",
+        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1232,7 +1232,7 @@
       "post": {
         "operationId": "writeStopRequests",
         "summary": "Write the stop requests document.",
-        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer.",
+        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {

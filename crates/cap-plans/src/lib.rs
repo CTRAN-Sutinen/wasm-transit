@@ -77,7 +77,7 @@ pub enum Response {
 fn answered(next: Result<PublishedPlans, Vec<PlanIssue>>) -> Result<(Vec<PlanIssue>, Option<PublishedPlans>, Option<String>, Option<String>), String> {
     match next {
         Ok(set) => {
-            let document = serde_json::to_string(&set).map_err(|e| e.to_string())?;
+            let document = cap_abi::canonical_bytes(&set)?;
             let document_hash = cap_abi::content_hash(document.as_bytes());
             Ok((vec![], Some(set), Some(document), Some(document_hash)))
         }

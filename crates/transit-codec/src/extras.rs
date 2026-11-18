@@ -56,6 +56,7 @@ pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Bo
                 fare_url: text(&row.agency_fare_url),
                 email: text(&row.agency_email),
                 contactless: yes_no(&row.cemv_support),
+                extra: Default::default(),
             },
         );
     }
@@ -69,6 +70,7 @@ pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Bo
         version: text(&row.feed_version),
         contact_email: text(&row.feed_contact_email),
         contact_url: text(&row.feed_contact_url),
+        extra: Default::default(),
     });
     net.attributions = feed
         .attributions
@@ -88,6 +90,7 @@ pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Bo
             url: text(&row.attribution_url),
             email: text(&row.attribution_email),
             phone: text(&row.attribution_phone),
+            extra: Default::default(),
         })
         .collect();
     net.translations = feed
@@ -101,6 +104,7 @@ pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Bo
             record: text(&row.record_id),
             sub_record: text(&row.record_sub_id),
             value: text(&row.field_value),
+            extra: Default::default(),
         })
         .collect();
 }
@@ -190,6 +194,7 @@ fn stop_info(row: &StopRow) -> StopInfo {
         level: text(&row.level_id),
         timezone: text(&row.stop_timezone),
         street_access: opt_bit(&row.stop_access),
+        extra: Default::default(),
     }
 }
 
@@ -231,6 +236,7 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                     name: text(&row.stop_name),
                     at,
                     info: stop_info(row),
+                    extra: Default::default(),
                 },
             );
             continue;
@@ -248,6 +254,7 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 transfer: false,
                 kind: if int::<u8>(&row.location_type) == Some(1) { StopKind::Station } else { StopKind::Stop },
                 info: stop_info(row),
+                extra: Default::default(),
             },
         );
     }
@@ -255,7 +262,7 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
         let Some(id) = &row.level_id else { continue };
         net.levels.insert(
             id.clone(),
-            Level { index: parse_f64(&row.level_index).unwrap_or(0.0), name: text(&row.level_name) },
+            Level { index: parse_f64(&row.level_index).unwrap_or(0.0), name: text(&row.level_name), extra: Default::default() },
         );
     }
     for row in &feed.pathways {
@@ -283,6 +290,7 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 min_width: parse_f64(&row.min_width),
                 signposted_as: text(&row.signposted_as),
                 reversed_signposted_as: text(&row.reversed_signposted_as),
+                extra: Default::default(),
             },
         );
     }
@@ -294,8 +302,9 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 stop: text(&row.from_stop_id),
                 route: text(&row.from_route_id),
                 trip: text(&row.from_trip_id),
+                extra: Default::default(),
             },
-            to: TransferEnd { stop: text(&row.to_stop_id), route: text(&row.to_route_id), trip: text(&row.to_trip_id) },
+            to: TransferEnd { stop: text(&row.to_stop_id), route: text(&row.to_route_id), trip: text(&row.to_trip_id), extra: Default::default() },
             kind: match int::<u8>(&row.transfer_type) {
                 Some(1) => TransferKind::Timed,
                 Some(2) => TransferKind::MinimumTime,
@@ -305,6 +314,7 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 _ => TransferKind::Recommended,
             },
             min_transfer_secs: int(&row.min_transfer_time),
+            extra: Default::default(),
         })
         .collect();
 }
@@ -418,6 +428,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
                 transfers: int(&row.transfers),
                 operator: text(&row.agency_id),
                 transfer_secs: int(&row.transfer_duration),
+                extra: Default::default(),
             },
         );
     }
@@ -430,6 +441,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             origin_zone: text(&row.origin_id),
             destination_zone: text(&row.destination_id),
             contains_zone: text(&row.contains_id),
+            extra: Default::default(),
         })
         .collect();
     for row in &feed.areas {
@@ -442,7 +454,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
     }
     for row in &feed.networks {
         let Some(id) = &row.network_id else { continue };
-        fares.networks.insert(id.clone(), FareNetwork { name: text(&row.network_name) });
+        fares.networks.insert(id.clone(), FareNetwork { name: text(&row.network_name), extra: Default::default() });
     }
     for row in &feed.timeframes {
         let Some(id) = &row.timeframe_group_id else { continue };
@@ -450,6 +462,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             service_type: row.service_id.clone().unwrap_or_default(),
             start_secs: time(&row.start_time),
             end_secs: time(&row.end_time),
+            extra: Default::default(),
         });
     }
     for row in &feed.rider_categories {
@@ -460,6 +473,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
                 name: row.rider_category_name.clone().unwrap_or_default(),
                 default: flag(&row.is_default_fare_category),
                 eligibility_url: text(&row.eligibility_url),
+                extra: Default::default(),
             },
         );
     }
@@ -472,7 +486,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             Some(4) => FareMediaKind::MobileApp,
             _ => FareMediaKind::None,
         };
-        fares.media.insert(id.clone(), FareMedia { name: text(&row.fare_media_name), kind });
+        fares.media.insert(id.clone(), FareMedia { name: text(&row.fare_media_name), kind, extra: Default::default() });
     }
     for row in &feed.fare_products {
         let Some(id) = &row.fare_product_id else { continue };
@@ -482,6 +496,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             media: text(&row.fare_media_id),
             amount: parse_f64(&row.amount).unwrap_or(0.0),
             currency: row.currency.clone().unwrap_or_default(),
+            extra: Default::default(),
         });
     }
     fares.leg_rules = feed
@@ -496,6 +511,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             to_timeframe: text(&row.to_timeframe_group_id),
             product: row.fare_product_id.clone().unwrap_or_default(),
             priority: int::<u32>(&row.rule_priority).filter(|p| *p != 0),
+            extra: Default::default(),
         })
         .collect();
     fares.leg_join_rules = feed
@@ -506,6 +522,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             to_network: row.to_network_id.clone().unwrap_or_default(),
             from_stop: text(&row.from_stop_id),
             to_stop: text(&row.to_stop_id),
+            extra: Default::default(),
         })
         .collect();
     fares.transfer_rules = feed
@@ -529,6 +546,7 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
                 _ => FareTransferKind::FirstLegPlusTransfer,
             },
             product: text(&row.fare_product_id),
+            extra: Default::default(),
         })
         .collect();
 }
@@ -694,6 +712,7 @@ pub(crate) fn import_demand_catalog(feed: &Feed, net: &mut Network) {
                 phone: text(&row.phone_number),
                 info_url: text(&row.info_url),
                 booking_url: text(&row.booking_url),
+                extra: Default::default(),
             },
         );
     }

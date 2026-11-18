@@ -96,14 +96,15 @@ pub enum Request {
     /// checked as a write is: every refusal, or the document registered
     /// and answered with its hash.
     AddEvent { stops_hash: String, stop_id: String, event: Event },
-    /// The document with event `index` of stop `stop_id` corrected —
-    /// taken out and `event` placed by date, or, with no `event`, taken
-    /// out — then checked as a write is. A correction edits the event
-    /// that was wrong (D-153).
+    /// The document with the event `event_id` of stop `stop_id`
+    /// corrected — taken out and `event` placed by date, keeping its id,
+    /// or, with no `event`, taken out — then checked as a write is. A
+    /// correction edits the event that was wrong (D-153), named by its
+    /// id (D-166).
     CorrectEvent {
         stops_hash: String,
         stop_id: String,
-        index: u32,
+        event_id: String,
         #[serde(default)]
         #[ts(optional)]
         event: Option<Event>,
@@ -184,7 +185,17 @@ pub enum Request {
 #[ts(export, export_to = "cap_stops/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    Validate { refusals: Vec<Refusal>, document: Option<String>, document_hash: Option<String> },
+    Validate {
+        refusals: Vec<Refusal>,
+        document: Option<String>,
+        document_hash: Option<String>,
+        /// The fields the document carries that this build does not
+        /// know (D-167): kept in it, and flagged for a person, never
+        /// refused. Absent when every field is known.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(optional, as = "Option<Vec<String>>")]
+        unknown_fields: Vec<String>,
+    },
     StopsOn { stops: Vec<StopOn>, counts: Vec<StatusCount> },
     StopsNear { stops: Vec<transit_stops::NearStop> },
     Stop {
@@ -196,10 +207,20 @@ pub enum Response {
     Seed { stops_hash: String, stops: Stops },
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
     CorrectEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
-    ReadRecords { network_hash: String, network: transit_network::Network },
+    /// The pick as its canonical bytes exactly (RFC 8785, D-169): a
+    /// host stores and serves it under `network_hash` as it stands.
+    ReadRecords {
+        network_hash: String,
+        #[ts(as = "transit_network::Network")]
+        network: cap_abi::Canonical<transit_network::Network>,
+    },
     Records { records: std::collections::BTreeMap<String, transit_network::Stop> },
     VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
-    ExportVersions { network_hash: String, network: transit_network::Network },
+    ExportVersions {
+        network_hash: String,
+        #[ts(as = "transit_network::Network")]
+        network: cap_abi::Canonical<transit_network::Network>,
+    },
     ImportEvents {
         stops_hash: String,
         stops: Stops,
@@ -236,13 +257,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Validate { stops } => {
             use transit_version::Versioned;
             cap_abi::speaks(Stops::KIND, stops.schema_version(), Stops::READS)?;
-            Ok(match stops.checked() {
+            Ok(match stops.identified().checked() {
                 Ok(stops) => {
-                    let document = serde_json::to_string(&stops).map_err(|e| e.to_string())?;
+                    let document = cap_abi::canonical_bytes(&stops)?;
                     let document_hash = cap_abi::content_hash(document.as_bytes());
-                    Response::Validate { refusals: vec![], document: Some(document), document_hash: Some(document_hash) }
+                    Response::Validate { refusals: vec![], document: Some(document), document_hash: Some(document_hash), unknown_fields: cap_abi::request_unknown_fields() }
                 }
-                Err(refusals) => Response::Validate { refusals, document: None, document_hash: None },
+                Err(refusals) => Response::Validate { refusals, document: None, document_hash: None, unknown_fields: cap_abi::request_unknown_fields() },
             })
         }
         Request::StopsOn { stops_hash, date, stop_ids, statuses } => {
@@ -282,7 +303,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Seed { network_hash } => {
             let network = NETWORK.require(&network_hash)?;
-            let seeded = transit_network::stop_record::seed(&network).checked().map_err(|refusals| {
+            let seeded = transit_network::stop_record::seed(&network).identified().checked().map_err(|refusals| {
                 let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
                 format!("the network's stops do not make a stops document: {}", reasons.join("; "))
             })?;
@@ -291,7 +312,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::AddEvent { stops_hash, stop_id, event } => {
             let next = STOPS.require(&stops_hash)?.add_event(&stop_id, event);
-            Ok(match next.checked() {
+            Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = STOPS.register(next)?;
                     Response::AddEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()) }
@@ -299,12 +320,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 Err(refusals) => Response::AddEvent { refusals, stops_hash: None, stops: None },
             })
         }
-        Request::CorrectEvent { stops_hash, stop_id, index, event } => {
+        Request::CorrectEvent { stops_hash, stop_id, event_id, event } => {
             let next = STOPS
                 .require(&stops_hash)?
-                .correct_event(&stop_id, index as usize, event)
-                .ok_or_else(|| format!("no event {index} of stop {stop_id:?} in the stops document"))?;
-            Ok(match next.checked() {
+                .correct_event_by_id(&stop_id, &event_id, event)
+                .ok_or_else(|| format!("no event {event_id:?} of stop {stop_id:?} in the stops document"))?;
+            Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = STOPS.register(next)?;
                     Response::CorrectEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()) }
@@ -318,7 +339,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let stops = STOPS.require(&stops_hash)?;
             let read = transit_network::stop_record::read_records(&network, &stops, on);
             let (network_hash, read) = NETWORK.register(read)?;
-            Ok(Response::ReadRecords { network_hash, network: (*read).clone() })
+            Ok(Response::ReadRecords { network_hash, network: cap_abi::Canonical((*read).clone()) })
         }
         Request::Records { stops_hash, stop_ids, on } => {
             let on = parse_date(&on)?;
@@ -345,7 +366,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let stops = STOPS.require(&stops_hash)?;
             let exported = transit_network::stop_record::export_versions(&network, &stops, from, until);
             let (network_hash, exported) = NETWORK.register(exported)?;
-            Ok(Response::ExportVersions { network_hash, network: (*exported).clone() })
+            Ok(Response::ExportVersions { network_hash, network: cap_abi::Canonical((*exported).clone()) })
         }
         Request::FeedEvents { stops_hash, feed } => {
             let stops = STOPS.require(&stops_hash)?;

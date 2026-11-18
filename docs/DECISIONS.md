@@ -1269,11 +1269,34 @@ is behind an adapter, and optional".
 Blocks: the real adapter, which waits on the system's OpenAPI spec.
 
 ### D-166 — What is the smallest part of the stops document two writers can change at once?
-State: Unanswered.
+State: Decided. The event ids are built; the merge by event id waits on
+the stops stored record by record (`docs/units/storage-model.md`, item 2).
+Answer: 2026-11-17 — the record is the stop, and every event carries a
+stable id, unique within its stop. The writer mints the id (so a
+device with no signal can); the import mints it from the event's
+content, so the same feed gives the same ids; the receive path refuses
+a duplicate. The module merges by event id: two added events both
+land, and one event changed by both writers is the conflict. A
+correction names the event by id, not by its index. The user: "166,
+yes".
+Built: `transit_stops::Event::id`, `Stops::identified` (every write in
+cap-stops identifies before it checks), `Stops::correct_event_by_id`
+and cap-stops `correct_event {event_id}`, `Problem::DuplicateEventId`.
+The page sends no id; an event without one gets its id from its stop
+and content at the write, which a device with no signal computes the
+same way.
+Pinned by: `crates/transit-stops/tests/stops_law_test.rs`
+(`identifying_gives_each_event_a_lasting_id`,
+`a_minted_id_depends_on_the_stop_and_the_event_only`,
+`a_correction_by_id_edits_that_event_wherever_it_stands`,
+`two_events_with_one_id_in_a_stop_are_refused`), cap-stops'
+`dispatch_test.rs` (`correct_event_edits_the_event_that_was_wrong`,
+`a_write_gives_each_event_an_id_and_refuses_one_used_twice`).
+Why: `docs/architecture/crates.md`, transit-stops.
 Context: `POST /stops` replaces the whole document under `from`, so
 two surveyors saving different stops conflict, and the page asks the
 second to make the change again (`web/src/uis/stops/host.svelte.ts`).
-Stored record by record (`docs/units/storage-model.md`, item 3), a
+Stored record by record (`docs/units/storage-model.md`, item 2), a
 write that changes other stops rebases with no conflict; two writers
 changing one stop still meet. A stop's events carry no id
 (`transit_stops::Event`), so the module cannot tell two added events
@@ -1287,11 +1310,34 @@ Options:
   longer matches the document's one record per stop.
 - The record is the stop, no event ids: any two writes to one stop
   conflict.
-Blocks: the stop event ids and the stops merge in
-`docs/units/storage-model.md` (items 1 and 3).
+Blocks: the stops merge in `docs/units/storage-model.md` (item 2). The
+stop event ids are built.
 
 ### D-167 — Do authored documents keep the fields they do not know?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-17 — keep, for every authored kind. Each type carries
+`extra`, and its schema says so; the receive path flags a field it
+does not know for a person, and never refuses it. The schema lock
+accepts an added optional field within a version only when the frozen
+example still parses and its canonical hash does not move; any other
+change is a version bump. The user: "167, yes, looks reasonable to
+me".
+Built: `transit_version::Extra` flattened into every record of the
+network, the edit document, the published plans, the policy, the work
+rules, the stops, and the stop requests; the values (`AlignmentPoint`,
+`Coord`, `StopOffset`, `WeekdaySet`, `DetourPoint`) carry none, so the
+network's millions of stop times cost no memory. Measured on C-TRAN's
+network, natively: the parse is 1.1–1.2× slower with `extra` on its trip
+records. `noting_unknown` names the fields a read did not know; every
+kernel load, cap-stops' and cap-requests' `validate`, and cap-sync's
+`sync_edits` answer them (`unknown_fields`); the server sends them as
+`X-Unknown-Fields` and logs the write. The schema lock's rule waits on
+the lock (`docs/units/document-versioning.md`, item 5).
+Pinned by: `crates/cap-abi/tests/unknown_fields_law_test.rs`, the
+dispatch tests of cap-stops, cap-requests and cap-sync,
+`server/unknown_test.go`.
+Why: `docs/architecture/agency-data.md`, "Writes are governed";
+`docs/FORMATS.md`, "Versions".
 Context: the parts of a deployment ship at different times
 (`docs/architecture/release-artifacts.md`), so a writer on an older build can
 save a document a newer one wrote. The stops and stop requests types
@@ -1309,8 +1355,8 @@ Options:
   bump through the two releases of D-79, and an older writer is
   refused and reloads.
 - As today: keep for stops and stop requests, drop for the rest.
-Blocks: the shapes and the kind table's strictness in
-`docs/units/storage-model.md` (items 1 and 2).
+Blocks: the kind table's strictness in `docs/units/storage-model.md`
+(item 1). The shapes are built.
 
 ### D-168 — Where does personal data live, and how is it removed when the law requires?
 State: Unanswered.
@@ -1330,10 +1376,25 @@ Options:
 - Out of the bucket: the record holds a reference to a person
   (an IdP subject), never their details.
 - As today: names in the open documents, kept forever.
-Blocks: restricted reads in `docs/units/storage-model.md` (item 6).
+Blocks: restricted reads in `docs/units/storage-model.md` (item 5).
 
 ### D-169 — Is a document's canonical form serde's field order, or RFC 8785?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-17 — RFC 8785 (JSON Canonicalization Scheme). The
+user: "yeah if that is the standard, i don't see why we wouldn't
+follow it". Every hash moves once, before the first deployment's
+baseline (`docs/units/document-versioning.md`, item 5).
+Built: `cap_abi::jcs` (the writer), `canonical_hash` and
+`canonical_bytes` over it, every module's canonical `document`, and
+`cap_abi::Canonical` for the documents an answer carries that a host
+stores or serves. `Trip`, `StopOffset`, and `AlignmentPoint` declare
+their fields in canonical order, so they stream.
+Pinned by: `crates/cap-abi/tests/jcs_law_test.rs` (the standard's
+sample byte for byte, its key order, its numbers; any JSON value and
+every real document against a reference written from the standard; the
+network's many records in canonical order), every capability's identity
+test, `server/version_test.go`, and the Go publish tests.
+Why: `docs/architecture/bus.md`, "The canonical form is RFC 8785".
 Context: a document's identity is the sha256 of its canonical bytes,
 today serde_json in struct field order (`docs/FORMATS.md`, "Addressing
 and hash"), which only this repo's Rust reproduces. Any writer's
@@ -1349,7 +1410,16 @@ Blocks: nothing (it is cheapest before the first deployment's
 baseline, `docs/units/document-versioning.md`, item 5).
 
 ### D-170 — Are the migration steps from before the first deployment kept?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-17 — keep them (D-66 as encoded). The first answer the
+same day was to drop them at the baseline ("170, yes"). It was
+withdrawn when dropping them left the migration machinery (the
+server's receive and startup, a browser's restore, the two-release
+rollback) with no older version to be tested on. The user: "it is also
+fine to just keep the existing versions, i would rather have this in
+place before having prod workloads". The three steps stay as the
+machinery's real older versions, and the whole of
+`docs/units/document-versioning.md` lands before production.
 Context: D-66 keeps every authored kind's migration chain forever, so
 an old document anywhere can be read. Three steps predate any
 deployment — the network's v1→v2, the edit document's v1→v2, and the
@@ -2650,7 +2720,7 @@ With D-122, detours and cancels are the only row-shaped data this
 repo holds, so the answer also settles whether it needs a row store at
 all: record by record in the bucket keeps it to one durable service.
 The storage model proposes the second for every collection — edits,
-stops, stop requests (`docs/units/storage-model.md`, item 3).
+stops, stop requests (`docs/units/storage-model.md`, item 2).
 Blocks: collections in `docs/units/storage-model.md`.
 
 ### D-122 — Is the dispatcher's day in scope?

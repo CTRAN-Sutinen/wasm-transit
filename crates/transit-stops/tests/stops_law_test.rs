@@ -461,10 +461,13 @@ proptest! {
         if remove {
             prop_assert_eq!(doc.correct_event(&id, i, None), Some(taken));
         } else {
+            let before = was.clone();
             if was.on.is_some() || i > 0 {
                 was.on = Some(date(on));
             }
-            prop_assert_eq!(doc.correct_event(&id, i, Some(was.clone())), Some(taken.add_event(&id, was)));
+            // a "correction" to the same event is no edit (above)
+            let want = if was == before { doc.clone() } else { taken.add_event(&id, was.clone()) };
+            prop_assert_eq!(doc.correct_event(&id, i, Some(was)), Some(want));
         }
         prop_assert_eq!(doc.correct_event(&id, doc.stops[&id].len(), None), None);
         prop_assert_eq!(doc.correct_event("no-such-stop", 0, None), None);
@@ -803,4 +806,133 @@ fn every_stop_on_a_date_in_id_order() {
     ]);
     let ids: Vec<String> = d.on_date(day(1)).into_iter().map(|s| s.stop_id).collect();
     assert_eq!(ids, vec!["a", "b"], "a stop not yet there is not listed; a planned one is");
+}
+
+// ---------------------------------------------------------------------
+// event ids (D-166): the stop is the record, and each of its events
+// carries an id unique within the stop, so two writers' events can be
+// told apart and a correction names the event it edits
+// ---------------------------------------------------------------------
+
+proptest! {
+    /// Identifying gives every event an id, unique within its stop,
+    /// keeps every id already given, and changes nothing else.
+    /// Identifying twice is identifying once.
+    #[test]
+    fn identifying_gives_each_event_a_lasting_id(doc in arb_doc(), given in proptest::collection::vec(any::<bool>(), 0..40)) {
+        // some events already carry an id, as a writer may give one
+        let mut doc = doc;
+        let mut n = 0;
+        for events in doc.stops.values_mut() {
+            for e in events.iter_mut() {
+                if given.get(n).copied().unwrap_or(false) {
+                    e.id = format!("w{n}");
+                }
+                n += 1;
+            }
+        }
+        let ided = doc.clone().identified();
+        for (id, events) in &ided.stops {
+            let before = &doc.stops[id];
+            prop_assert_eq!(events.len(), before.len());
+            let mut seen = std::collections::BTreeSet::new();
+            for (e, b) in events.iter().zip(before) {
+                prop_assert!(!e.id.is_empty(), "every event has an id");
+                prop_assert!(seen.insert(e.id.clone()), "ids are unique within a stop: {:?}", e.id);
+                if !b.id.is_empty() {
+                    prop_assert_eq!(&e.id, &b.id, "a given id is kept");
+                }
+                let mut same = e.clone();
+                same.id = b.id.clone();
+                prop_assert_eq!(&same, b, "nothing but the id changes");
+            }
+        }
+        prop_assert_eq!(ided.clone().identified(), ided);
+    }
+
+    /// An id minted for an event without one is derived from the stop
+    /// and the event's content: the same event in the same stop gets the
+    /// same id in any document, so an import of the same feed mints the
+    /// same ids.
+    #[test]
+    fn a_minted_id_depends_on_the_stop_and_the_event_only(a in arb_doc(), b in arb_doc()) {
+        let (a, b) = (a.identified(), b.identified());
+        for (id, events) in &a.stops {
+            let Some(other) = b.stops.get(id) else { continue };
+            for e in events {
+                for o in other {
+                    let (mut x, mut y) = (e.clone(), o.clone());
+                    x.id.clear();
+                    y.id.clear();
+                    let once = |v: &Vec<Event>, ev: &Event| v.iter().filter(|w| { let mut w = (*w).clone(); w.id.clear(); w == *ev }).count() == 1;
+                    if x == y && once(events, &x) && once(other, &y) {
+                        prop_assert_eq!(&e.id, &o.id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A correction names its event by id: the event with that id is
+    /// edited whatever its place, and the corrected event keeps the id.
+    /// Another writer's event added earlier in the list does not change
+    /// which event a correction edits.
+    #[test]
+    fn a_correction_by_id_edits_that_event_wherever_it_stands(doc in arb_doc(), pick in any::<prop::sample::Index>(), remove in any::<bool>()) {
+        let doc = doc.identified().checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        let all: Vec<(String, usize)> = doc.stops.iter().flat_map(|(id, es)| (0..es.len()).map(move |i| (id.clone(), i))).collect();
+        let (stop, i) = pick.get(&all).clone();
+        let target = doc.stops[&stop][i].clone();
+        // another writer's undated note-free event can't be added before
+        // a first event, so add a dated `changed` before the target
+        // where the stop allows one: the index moves, the id does not
+        let mut moved = doc.clone();
+        if let Some(on) = target.on.clone().filter(|_| i > 0) {
+            let early = Event { on: Some(on), event: EventKind::Changed, id: "other-writer".into(), note: Some("theirs".into()), ..Event::default() };
+            let events = moved.stops.get_mut(&stop).unwrap();
+            events.insert(i, early);
+        }
+        let mut fixed = target.clone();
+        fixed.id.clear();
+        fixed.note = Some("corrected".into());
+        let event = if remove { None } else { Some(fixed.clone()) };
+        let next = moved.correct_event_by_id(&stop, &target.id, event).expect("the event is found by its id");
+        let events = &next.stops[&stop];
+        prop_assert!(events.iter().any(|e| e.id == "other-writer") == moved.stops[&stop].iter().any(|e| e.id == "other-writer"), "the other writer's event stays");
+        if remove {
+            prop_assert!(events.iter().all(|e| e.id != target.id), "the event is taken out");
+        } else {
+            let got: Vec<&Event> = events.iter().filter(|e| e.id == target.id).collect();
+            prop_assert_eq!(got.len(), 1);
+            prop_assert_eq!(got[0].note.as_deref(), Some("corrected"), "the corrected event keeps its id");
+        }
+        prop_assert_eq!(doc.correct_event_by_id(&stop, "no-such-event", None), None);
+    }
+}
+
+#[test]
+fn two_events_with_one_id_in_a_stop_are_refused() {
+    let mut first = in_service(Some(0), 45.0, -122.0, "A");
+    first.id = "e1".into();
+    let mut second = event(EventKind::Suspended, Some(3));
+    second.id = "e1".into();
+    assert_eq!(refused(doc(vec![("a", vec![first, second])])), vec![Problem::DuplicateEventId { id: "e1".into() }]);
+}
+
+#[test]
+fn the_same_id_in_two_stops_is_two_events() {
+    let mut a = in_service(Some(0), 45.0, -122.0, "A");
+    a.id = "e1".into();
+    let mut b = in_service(Some(0), 45.0, -122.0, "B");
+    b.id = "e1".into();
+    assert!(doc(vec![("a", vec![a]), ("b", vec![b])]).checked().is_ok());
+}
+
+#[test]
+fn an_identified_document_round_trips_its_ids() {
+    let d = doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]).identified();
+    let text = serde_json::to_string(&d).unwrap();
+    let back: Stops = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, d);
+    assert!(text.contains("\"id\":"), "{text}");
 }

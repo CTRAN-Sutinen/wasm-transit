@@ -90,8 +90,13 @@ pub enum Response {
     /// ("YYYY-MM-DD"; absent when nothing runs) — the date the import
     /// picks on (D-140).
     Import {
-        network: Network,
-        boundary: Boundary,
+        /// The network and its boundary as their canonical bytes
+        /// exactly (RFC 8785, D-169): a host serves them under their
+        /// hashes as they stand.
+        #[ts(as = "Network")]
+        network: cap_abi::Canonical<Network>,
+        #[ts(as = "Boundary")]
+        boundary: cap_abi::Canonical<Boundary>,
         notes: Vec<ImportNote>,
         network_hash: String,
         boundary_hash: String,
@@ -126,7 +131,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let (boundary_hash, _) = BOUNDARY.register(boundary.clone())?;
             let timezone = network.timezone().map(str::to_string);
             let first_service_date = transit_network::first_service_date(&network).map(|d| d.to_string());
-            Ok(Response::Import { network, boundary, notes, network_hash, boundary_hash, timezone, first_service_date })
+            Ok(Response::Import {
+                network: cap_abi::Canonical(network),
+                boundary: cap_abi::Canonical(boundary),
+                notes,
+                network_hash,
+                boundary_hash,
+                timezone,
+                first_service_date,
+            })
         }
         Request::Validate { network_hash } => {
             let network = NETWORK.require(&network_hash)?;
@@ -149,7 +162,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Document { network_hash } => {
             let network = NETWORK.require(&network_hash)?;
-            let document = serde_json::to_string(&*network).map_err(|e| e.to_string())?;
+            let document = cap_abi::canonical_bytes(&*network)?;
             let document_hash = content_hash(document.as_bytes());
             if document_hash != network_hash {
                 return Err(format!("registered under {network_hash} but serializes to {document_hash}"));

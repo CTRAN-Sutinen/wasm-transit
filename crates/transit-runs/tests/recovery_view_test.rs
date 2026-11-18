@@ -80,8 +80,8 @@ proptest! {
         let mut net = shuttle();
         shift(&mut net, &trip_id("5", false, 9 * H), back);
         let rules = min_secs.map(|m| WorkRules {
-            version: 1,
-            recovery: vec![RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None }],
+            schema_version: Default::default(),
+            recovery: vec![RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None, extra: Default::default() }],
             ..Default::default()
         });
         let view = recovery(&net, &materialize(&net, date()).unwrap(), rules.as_ref());

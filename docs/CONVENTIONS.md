@@ -69,9 +69,11 @@ gotchas, for Rust, wasm, ops, and the frontend.
   to full debug info in the shared profile. A local debugging session
   sets `CARGO_PROFILE_DEV_DEBUG=true` for itself.
 - **An op answers through `cap_abi::answer` / `outcome`**, never a
-  `serde_json::json!` tree. The tree is a second copy of the answer
-  and sorts its keys, so a document inside it stops being its
-  canonical bytes. Runner gates grep answers in struct field order.
+  `serde_json::json!` tree. The tree is a second copy of the answer,
+  and a document carried as its canonical bytes (`cap_abi::Canonical`)
+  stops being those bytes inside it. Runner gates grep an answer's own
+  fields in struct field order, and a carried document's keys in
+  canonical order (RFC 8785, D-169).
   They read the whole answer (`grep … > /dev/null`, never `grep -q`).
   `grep -q` quits at the first match and closes the pipe while the
   runner is still writing, and the runner dies with EPIPE.

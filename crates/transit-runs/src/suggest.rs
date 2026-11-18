@@ -173,7 +173,7 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option
         let mut trips = Vec::new();
         for (pos, &k) in chain.iter().enumerate() {
             let c = &candidates[k];
-            edits.push(NetworkEdit::AddBlockTrip { block: block_id.clone(), trip: TripRef { trip: c.trip.trip.clone() } });
+            edits.push(NetworkEdit::AddBlockTrip { block: block_id.clone(), trip: TripRef { trip: c.trip.trip.clone(), extra: Default::default() } });
             let wait = chain.get(pos + 1).map(|&n| {
                 let gap = candidates[n].start - c.end;
                 let required = c.required.map_or(0, |r| r.0);

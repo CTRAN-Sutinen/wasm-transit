@@ -107,3 +107,17 @@ fn a_work_order_is_recorded_on_its_request() {
     assert_eq!(out["requests"]["requests"]["R-1"]["work_order"]["id"], "STUB-R-1");
     assert!(run(json!({ "op": "record_work_order", "requests_hash": held["requests_hash"], "id": "nope", "work_order": { "id": "x" } }))["error"].is_string());
 }
+
+/// A field this build does not know is kept and flagged, never refused
+/// (D-167).
+#[test]
+fn validate_flags_an_unknown_field_and_keeps_it() {
+    let mut newer = sample();
+    let first = newer["requests"].as_object().unwrap().keys().next().unwrap().clone();
+    newer["requests"][&first]["permit_fee"] = json!(125);
+    let valid = ok(json!({"op": "validate", "requests": newer}));
+    assert_eq!(valid["refusals"], json!([]));
+    assert_eq!(valid["unknown_fields"], json!(["permit_fee"]));
+    let document: Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
+    assert_eq!(document["requests"][&first]["permit_fee"], 125);
+}

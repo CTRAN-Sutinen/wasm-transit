@@ -218,9 +218,10 @@ func (s *server) handleStops(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	var checked struct {
-		Refusals     json.RawMessage `json:"refusals"`
-		Document     *string         `json:"document"`
-		DocumentHash *string         `json:"document_hash"`
+		Refusals      json.RawMessage `json:"refusals"`
+		Document      *string         `json:"document"`
+		DocumentHash  *string         `json:"document_hash"`
+		UnknownFields []string        `json:"unknown_fields"`
 	}
 	// The surveyor is the signed-in writer (D-158): every survey the held
 	// document does not hold names them, whatever name the client sent
@@ -272,6 +273,7 @@ func (s *server) handleStops(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
+	flagUnknown(w, "stops", writer, checked.UnknownFields)
 	writeJSON(w, http.StatusOK, map[string]any{"stops_hash": hash})
 }
 

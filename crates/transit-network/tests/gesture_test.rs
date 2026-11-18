@@ -144,12 +144,12 @@ fn bands_belong_to_frequency_trips() {
     assert!(refused(&net, NetworkEdit::AddBand { trip: "10-weekday@91800".into() }).contains("runs once"));
     let mut every = net.clone();
     every.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
-        bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 900 }],
+        bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 900, extra: Default::default() }],
         exact: true,
     };
     let added = apply(&every, vec![NetworkEdit::AddBand { trip: "10-weekday@91800".into() }]);
     let Departs::Every { bands, .. } = &added.trip("10-weekday@91800").unwrap().2.departs else { panic!("every") };
-    assert_eq!(bands[1], HeadwayBand { start_secs: 9 * 3600, end_secs: 12 * 3600, headway_secs: 900 });
+    assert_eq!(bands[1], HeadwayBand { start_secs: 9 * 3600, end_secs: 12 * 3600, headway_secs: 900, extra: Default::default() });
     assert!(refused(&every, NetworkEdit::RemoveBand { trip: "10-weekday@91800".into(), index: 0 }).contains("at least one"));
     assert!(refused(&every, NetworkEdit::RetimeTrip { trip: "10-weekday@91800".into(), to_secs: 1 }).contains("frequency"));
     assert_eq!(starts(&net, "10-weekday"), vec![28_800, 30_600, 91_800]);
@@ -162,7 +162,7 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     // a pair, the one past the end is pruned.
     let early = apply(
         &net,
-        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "10-weekday@91800".into() } }],
+        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "10-weekday@91800".into(), extra: Default::default() } }],
     );
     let order: Vec<&str> = early.blocks["400"].trips.iter().map(|t| t.trip.as_str()).collect();
     assert_eq!(order, vec!["10-weekday@28800", "10-weekday@30600", "10-weekday@91800"]);
@@ -175,7 +175,7 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     assert!(refused(&net, NetworkEdit::SetLayover { block: "400".into(), after_trip: 1, secs: Some(60) }).contains("between two"));
     assert!(refused(
         &net,
-        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "ghost".into() } }
+        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "ghost".into(), extra: Default::default() } }
     )
     .contains("unknown trip"));
 }

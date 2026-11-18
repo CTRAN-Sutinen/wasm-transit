@@ -98,8 +98,10 @@ fn record(on: &StopOn) -> Stop {
             level: d.level.clone(),
             timezone: d.timezone.clone(),
             street_access: d.street_access,
+            extra: Default::default(),
         },
         transfer: d.transfer.unwrap_or(false),
+        extra: Default::default(),
     }
 }
 
@@ -312,10 +314,11 @@ fn clip(rule: &CalendarRule, lo: Option<NaiveDate>, hi: Option<NaiveDate>) -> Ca
             .filter_map(|r| {
                 let start = lo.map_or(r.start, |l| r.start.max(l));
                 let end = hi.map_or(r.end, |h| r.end.min(h));
-                (start <= end).then_some(DateRange { start, end })
+                (start <= end).then_some(DateRange { start, end, extra: Default::default() })
             })
             .collect(),
         exceptions: rule.exceptions.iter().filter(|e| inside(e.date)).cloned().collect(),
+        extra: Default::default(),
     }
 }
 
@@ -327,7 +330,7 @@ fn with_copies(block: &Block, copies: &BTreeMap<String, Vec<String>>) -> Block {
         trips.push(t.clone());
         for made in copies.get(&t.trip).into_iter().flatten() {
             here.push(trips.len());
-            trips.push(TripRef { trip: made.clone() });
+            trips.push(TripRef { trip: made.clone(), extra: Default::default() });
         }
         at.push(here);
     }
@@ -337,7 +340,7 @@ fn with_copies(block: &Block, copies: &BTreeMap<String, Vec<String>>) -> Block {
             layovers.push(Layover { after_trip: i, ..l.clone() });
         }
     }
-    Block { trips, layovers }
+    Block { trips, layovers, extra: Default::default() }
 }
 
 /// One event an import added, and the stop it is for.

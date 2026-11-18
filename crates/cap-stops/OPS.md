@@ -13,6 +13,8 @@ Every detail changes only by an event. The details are:
 
 A correction edits the event that was wrong. A real change adds an event. The stop's id is its lasting key, and a move keeps it.
 
+Each event has an `id`, unique within its stop. A writer may give one. Every write gives an id to an event that has none. The id comes from the stop and the event's content, so the same event in the same stop gets the same id in any document. A second event with the same content in a stop gets the next free suffix (`-2`, `-3`). An id never changes after that. A correction names its event by this id.
+
 A stops document registers on the kernel's `load_stops`. The kernel refuses it unless `validate` would pass it. A pick only reads the document.
 
 ## validate
@@ -41,11 +43,12 @@ The refusals are:
 - a point off the earth;
 - a `surveyed_by` on an event that sets no details;
 - a core site question answered outside its kind (`bad_answer`): an answer not on its list, or a count that is not a whole number (the agency's own questions are not checked);
-- a consolidation that names the stop itself, or a stop that the document does not hold.
+- a consolidation that names the stop itself, or a stop that the document does not hold;
+- two events in one stop with the same `id` (`duplicate_event_id`).
 
 An event out of date order is refused for that alone.
 
-With no refusal, `validate` answers the canonical document and its `document_hash`. The canonical document holds the stops by id and each stop's events as written. It keeps every field that this repo does not know. The module is the hash authority: the hash is the same one that `load_stops` answers.
+Before it checks, `validate` gives an id to each event that has none. With no refusal, `validate` answers the canonical document and its `document_hash`. The canonical document holds the stops by id and each stop's events as written, each with its id. It keeps every field that this repo does not know. The module is the hash authority: the hash is the same one that `load_stops` answers.
 
 A document whose `schema_version` this build does not read is an error.
 
@@ -112,9 +115,9 @@ A page writes the answer through the deployment's receive path (POST /stops), wh
 
 What is the document after one correction? A correction edits the event that was wrong (the store keeps the earlier version).
 
-`correct_event` takes out event `index` of stop `stop_id` (its place in the stop's list, from 0). Then it does one of two things:
+`correct_event` takes out the event `event_id` of stop `stop_id`. Another writer's event added above it does not change which event it edits. Then it does one of two things:
 
-- With `event`: it places `event` by date, as `add_event` places one. The same event in its place changes nothing.
+- With `event`: it places `event` by date, as `add_event` places one. The corrected event keeps the id. The same event in its place changes nothing.
 - With no `event`: it only takes the event out.
 
 Then it checks the result as a write is checked. It answers one of two things:
@@ -122,7 +125,7 @@ Then it checks the result as a write is checked. It answers one of two things:
 - every refusal and no document;
 - no refusal, and the document registered and answered with its `stops_hash`.
 
-A stop or an index that the document does not hold is an error.
+A stop or an event id that the document does not hold is an error.
 
 ## read_records
 

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// One stop as version 1 authored it.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_board/")]
 pub struct WatchStopV1 {
     pub id: String,
@@ -23,15 +23,19 @@ pub struct WatchStopV1 {
 }
 
 /// One stop as version 2 authors it.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_board/")]
 pub struct WatchStopV2 {
     pub id: String,
     pub label: String,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A watchlist, version-tagged so a reader can dispatch on it.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_board/")]
 #[serde(tag = "version", rename_all = "snake_case")]
 pub enum Watchlist {
@@ -88,7 +92,7 @@ pub fn migrate(document: &Watchlist) -> Result<(Watchlist, Vec<MigrationNote>), 
                     if s.color.is_some() {
                         dropped_colors += 1;
                     }
-                    WatchStopV2 { id: s.id.clone(), label: s.note.clone() }
+                    WatchStopV2 { id: s.id.clone(), label: s.note.clone(), extra: Default::default() }
                 })
                 .collect();
             let mut notes = Vec::new();

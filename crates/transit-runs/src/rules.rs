@@ -15,15 +15,14 @@ transit_version::kind_tag!(
 impl transit_version::Versioned for WorkRules {
     const KIND: &'static str = "work_rules";
     const READS: u32 = SCHEMA_VERSION;
-    const VERSION_FIELD: &'static str = "version";
     fn schema_version(&self) -> u32 {
-        self.version
+        self.schema_version.0
     }
 }
 
 /// The rules work is cut under: generic, every rule optional, an
 /// agency's values as data. Nothing unset is written, so an empty
-/// document is `{"kind":"work_rules","version":1}`.
+/// document is `{"kind":"work_rules","schema_version":1}`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct WorkRules {
@@ -32,7 +31,11 @@ pub struct WorkRules {
     #[serde(default)]
     #[ts(type = "\"work_rules\"")]
     pub kind: WorkRulesKind,
-    pub version: u32,
+    /// The document's version, as every kind names it; a copy without
+    /// one is version 1.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub schema_version: transit_version::Version<1>,
     /// What the agency calls this rule set ("Winter 2027 agreement").
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[ts(optional, as = "Option<String>")]
@@ -58,6 +61,10 @@ pub struct WorkRules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub pay: Option<Pay>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// One recovery requirement: the larger of `min_secs` and
@@ -79,6 +86,10 @@ pub struct RecoveryRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub pct_of_run: Option<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Two routes one vehicle may run back to back, either order.
@@ -87,6 +98,10 @@ pub struct RecoveryRule {
 pub struct RoutePair {
     pub a: String,
     pub b: String,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// The rules a run is cut under — each optional; the runs cut reads
@@ -124,6 +139,10 @@ pub struct RunRules {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
     pub relief_points: Vec<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl RunRules {
@@ -139,6 +158,10 @@ impl RunRules {
 pub struct MealBreak {
     pub within_secs: u32,
     pub min_secs: u32,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// What a run is paid, in time (D-51: no dollars — operators' rates
@@ -165,6 +188,10 @@ pub struct Pay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub spread_pct: Option<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl RecoveryRule {
@@ -192,8 +219,8 @@ impl WorkRules {
     /// pair that is one route or listed twice, a minimum piece over
     /// the maximum.
     pub fn checked(mut self) -> Result<WorkRules, String> {
-        if self.version != SCHEMA_VERSION {
-            return Err(format!("work rules version {} (this build speaks version {SCHEMA_VERSION})", self.version));
+        if self.schema_version.0 != SCHEMA_VERSION {
+            return Err(format!("work rules version {} (this build speaks version {SCHEMA_VERSION})", self.schema_version.0));
         }
         for r in &self.recovery {
             if r.min_secs.is_none() && r.pct_of_run.is_none() {

@@ -77,7 +77,7 @@ fn an_export_naming_the_import_boundary_round_trips() {
     else {
         panic!("import")
     };
-    assert_eq!(boundary_hash, cap_abi::canonical_hash(&boundary).unwrap(), "the boundary's identity is its canonical hash");
+    assert_eq!(boundary_hash, cap_abi::canonical_hash(&boundary.0).unwrap(), "the boundary's identity is its canonical hash");
     let Response::Export { zip_b64, .. } =
         dispatch(Request::Export { network_hash: network_hash.clone(), boundary_hash: Some(boundary_hash.clone()) }).unwrap()
     else {
@@ -298,7 +298,7 @@ fn import_answers_the_first_service_date() {
 fn publishable_answers_what_refuses_a_pick() {
     let mut doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
     let start = doc.service_types.values().flat_map(|st| st.rule.ranges.iter().map(|r| r.start)).min().unwrap();
-    doc.plan = transit_network::PlanMeta { id: "fall".into(), name: "Fall".into(), effective_from: Some(start) };
+    doc.plan = transit_network::PlanMeta { id: "fall".into(), name: "Fall".into(), effective_from: Some(start), extra: Default::default() };
     let in_calendar = cap_abi::kernel::NETWORK.register(doc.clone()).unwrap().0;
     match dispatch(Request::Publishable { network_hash: in_calendar }).unwrap() {
         Response::Publishable { issues, refusals, .. } => {

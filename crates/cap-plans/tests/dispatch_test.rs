@@ -75,7 +75,7 @@ fn publish_answers_the_canonical_document_and_its_hash() {
             }
             other => panic!("publish: {other:?}"),
         };
-    assert_eq!(document, serde_json::to_string(&published).unwrap(), "the document is the canonical serialization");
+    assert_eq!(document, cap_abi::canonical_bytes(&published).unwrap(), "the document is the canonical serialization");
     assert_eq!(document_hash, cap_abi::content_hash(document.as_bytes()), "the hash names those exact bytes");
     let reread: PublishedPlans = serde_json::from_str(&document).unwrap();
     assert_eq!(reread, published);

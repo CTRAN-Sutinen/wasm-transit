@@ -64,17 +64,23 @@ pub struct Coord {
 #[ts(export)]
 pub struct Alignment {
     pub points: Vec<AlignmentPoint>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// One point of an [`Alignment`], with the distance along it where
 /// one was published (in the units of the pattern stops' distances).
+/// Its fields are declared in canonical key order (RFC 8785, D-169), so
+/// its canonical bytes stream in one pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlignmentPoint {
-    pub lat: f64,
-    pub lon: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<f64>,
+    pub lat: f64,
+    pub lon: f64,
 }
 
 /// Serde helper: dates cross every boundary as `"YYYY-MM-DD"`.
@@ -165,6 +171,10 @@ pub struct Stop {
     /// the timed connections it enables).
     #[serde(default)]
     pub transfer: bool,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A route as a planner authors it: its public name (the short one
@@ -229,6 +239,10 @@ pub struct Route {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>")]
     pub directions: BTreeMap<DirectionId, Direction>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Route {
@@ -268,6 +282,10 @@ impl StopRule {
 #[ts(export)]
 pub struct Direction {
     pub name: String,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Vehicle modes as a domain concept, not GTFS's numeric codes.
@@ -332,6 +350,10 @@ pub struct PatternStop {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub drop_off_booking: Option<crate::demand::BookingRuleId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Run-time profile for NEW trips departing in a time band
@@ -347,6 +369,10 @@ pub struct TimingProfile {
     pub start_secs: u32,
     pub end_secs: u32,
     pub at_timepoints: Vec<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl TimingProfile {
@@ -358,12 +384,11 @@ impl TimingProfile {
 
 /// A route pattern: the stop sequence a planner draws along its
 /// alignment, with the profiles new trips are timed from. Every trip
-/// runs a pattern. Unknown fields are refused, so a document written
-/// before alignments (an inline `path`) migrates rather than losing
-/// its line (`migrate.rs`).
+/// runs a pattern. A document written before alignments (an inline
+/// `path`) is version 1, refused at its load and brought forward by
+/// the migration (`migrate.rs`), which moves its line.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
-#[serde(deny_unknown_fields)]
 pub struct Pattern {
     pub route: RouteId,
     /// Which of the route's [`Route::directions`] this pattern runs
@@ -380,6 +405,10 @@ pub struct Pattern {
     pub stops: Vec<PatternStop>,
     #[serde(default)]
     pub timing: Vec<TimingProfile>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Pattern {
@@ -411,6 +440,10 @@ pub struct ServiceType {
     /// The days it runs: weekday flags plus date ranges, with
     /// explicit per-date exceptions that always win.
     pub rule: CalendarRule,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Which days a service type runs on, as authored rules rather than
@@ -428,6 +461,10 @@ pub struct CalendarRule {
     /// Explicit per-date overrides; always beat the weekly rule.
     #[serde(default)]
     pub exceptions: Vec<CalendarException>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl CalendarRule {
@@ -454,6 +491,10 @@ pub struct DateRange {
     #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub end: NaiveDate,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -464,6 +505,10 @@ pub struct CalendarException {
     #[ts(type = "string")]
     pub date: NaiveDate,
     pub state: DayState,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
@@ -594,6 +639,10 @@ pub struct HeadwayBand {
     pub start_secs: u32,
     pub end_secs: u32,
     pub headway_secs: u32,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A trip's time at one pattern stop: seconds after the instance's
@@ -612,32 +661,38 @@ pub struct StopOffset {
 }
 
 /// One trip: the agency's id, when it departs, and its own time at
-/// every stop of its pattern (`times[i]` is `pattern.stops[i]`).
+/// every stop of its pattern (`times[i]` is `pattern.stops[i]`). Its
+/// fields are declared in canonical key order (RFC 8785, D-169), so its
+/// canonical bytes stream in one pass (`cap-abi`, `jcs_law_test.rs`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Trip {
-    pub id: TripId,
-    pub departs: Departs,
-    pub times: Vec<StopOffset>,
-    /// What the vehicle's sign says.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub headsign: Option<String>,
-    /// The trip's public number, where riders know it by one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub short_name: Option<String>,
-    /// Whether the vehicle takes a wheelchair (bikes, cars); `None` =
-    /// unknown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub wheelchair: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub bikes: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cars: Option<bool>,
+    pub departs: Departs,
+    /// What the vehicle's sign says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headsign: Option<String>,
+    pub id: TripId,
+    /// The trip's public number, where riders know it by one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub short_name: Option<String>,
+    pub times: Vec<StopOffset>,
+    /// Whether the vehicle takes a wheelchair (bikes, cars); `None` =
+    /// unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wheelchair: Option<bool>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Trip {
@@ -657,6 +712,10 @@ pub struct PatternTrips {
     pub pattern: PatternId,
     pub service_type: ServiceTypeId,
     pub trips: Vec<Trip>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// One vehicle's work: trips in order with the layovers between
@@ -668,6 +727,10 @@ pub struct PatternTrips {
 pub struct Block {
     pub trips: Vec<TripRef>,
     pub layovers: Vec<Layover>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A block's reference to a trip, by id. A block runs a trip whole
@@ -677,6 +740,10 @@ pub struct Block {
 #[ts(export)]
 pub struct TripRef {
     pub trip: TripId,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Recovery time between two trips of a block.
@@ -689,6 +756,10 @@ pub struct Layover {
     /// Where the vehicle waits, if it matters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<StopId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// The service-plan frame of a network document. Agencies implement
@@ -713,6 +784,10 @@ pub struct PlanMeta {
     #[schemars(with = "Option<chrono::NaiveDate>")]
     #[ts(type = "string | null")]
     pub effective_from: Option<NaiveDate>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// The authored network document. BTreeMap-keyed so serialization is
@@ -783,6 +858,10 @@ pub struct Network {
     #[serde(default, skip_serializing_if = "DemandResponsive::is_empty")]
     #[ts(optional, as = "Option<DemandResponsive>")]
     pub demand: DemandResponsive,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Network {

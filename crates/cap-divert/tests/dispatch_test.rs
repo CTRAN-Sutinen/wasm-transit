@@ -175,11 +175,13 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
             added_secs: 300,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     };
     let records = vec![record("e1", "10"), record("e2", "ghost")];
     let Response::Reports { reports } = dispatch(Request::Reports { network_hash, edits: doc(records) }).unwrap() else {

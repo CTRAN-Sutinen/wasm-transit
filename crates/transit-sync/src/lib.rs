@@ -68,6 +68,10 @@ pub struct Diversion {
     #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub end_date: chrono::NaiveDate,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl Diversion {
@@ -101,6 +105,10 @@ pub struct TripCancel {
     #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub date: chrono::NaiveDate,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl TripCancel {
@@ -186,6 +194,10 @@ pub struct EditRecord {
     /// Unix epoch milliseconds, stamped by the writer.
     #[ts(type = "number")]
     pub updated_at: u64,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl EditRecord {
@@ -365,6 +377,7 @@ fn put(
             status: EditStatus::Draft,
             rev: 1,
             updated_at: now_ms,
+            extra: Default::default(),
         }),
     }
     next
@@ -420,6 +433,23 @@ pub struct Envelope {
     pub schema_version: u32,
     /// e.g. "cap-sync@sha256:<hex>" or "server".
     pub produced_by: String,
+}
+
+/// The names of the fields `records` carry that this build does not
+/// know (D-167), in name order: kept in each record, and flagged by the
+/// receive path for a person, never refused.
+pub fn unknown_fields(records: &[EditRecord]) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for r in records {
+        names.extend(r.extra.names().map(String::from));
+        if let Some(d) = &r.diversion {
+            names.extend(d.extra.names().map(String::from));
+        }
+        if let Some(c) = &r.cancel {
+            names.extend(c.extra.names().map(String::from));
+        }
+    }
+    names.into_iter().collect()
 }
 
 /// The receive path's clock rule (D-56): a record claiming a future
@@ -522,11 +552,13 @@ mod tests {
                 added_secs: 60,
                 start_date: NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 end_date: NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                extra: Default::default(),
             }),
             cancel: None,
             status,
             rev: 1,
             updated_at: 1_000,
+            extra: Default::default(),
         }
     }
 
@@ -585,7 +617,7 @@ mod tests {
     }
 
     fn cancel(trip: &str, start_secs: Option<u32>, date: NaiveDate) -> TripCancel {
-        TripCancel { id: format!("c-{trip}"), trip_id: trip.into(), start_secs, date }
+        TripCancel { id: format!("c-{trip}"), trip_id: trip.into(), start_secs, date, extra: Default::default() }
     }
 
     #[test]
@@ -712,11 +744,13 @@ mod receive_tests {
                 added_secs: 60,
                 start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                extra: Default::default(),
             }),
             cancel: None,
             status,
             rev,
             updated_at,
+            extra: Default::default(),
         }
     }
 
@@ -808,11 +842,13 @@ mod merge_tests {
                 added_secs: (updated_at % 300) as u32,
                 start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap(),
+                extra: Default::default(),
             }),
             cancel: None,
             status,
             rev,
             updated_at,
+            extra: Default::default(),
         }
     }
 
@@ -826,6 +862,7 @@ mod merge_tests {
                 trip_id: format!("t{}", updated_at % 3),
                 start_secs: (updated_at % 2 == 0).then_some(3_600),
                 date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                extra: Default::default(),
             }),
             ..sample_record(id, rev, updated_at, status)
         }

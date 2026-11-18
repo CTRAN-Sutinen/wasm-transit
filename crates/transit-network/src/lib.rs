@@ -38,6 +38,7 @@ pub mod migrate;
 pub mod model;
 pub mod operators;
 pub mod places;
+pub mod plan_set;
 pub mod signs;
 pub mod stop_record;
 pub mod timetable_edit;
@@ -61,6 +62,7 @@ pub use model::{
     HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route,
     ServiceType, ServiceTypeId, Stop, StopOffset, StopRule, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
 };
+pub use plan_set::{PlanSet, PlanSetKind, PLAN_SET_VERSION};
 pub use signs::visit_destination;
 pub use validate::{
     publish_refusals, recovery_floors, required_recovery, validation_issues_under, RecoveryAt, routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,

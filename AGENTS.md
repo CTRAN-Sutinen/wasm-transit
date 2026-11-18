@@ -352,16 +352,19 @@ transit-live     the live document: rt in the model's vocabulary, each instance'
                  date, the on-time window, and what does not run (a cancelled trip, a
                  skipped stop). Pure.
 transit-version  a document's kind tag and version (D-115): the tag every persisted
-                 document writes, and what a reader checks to refuse another version
+                 document writes, and what a reader checks to refuse another version;
+                 and a record's fields this build does not know, kept and named
+                 (`Extra`, D-167)
 transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), merge, and
                  the record envelope. Pure.
 transit-plans    the service-plan chain (resolve, periods, validity; pure and derived),
                  and the published plan set (publish, the pick in force)
 transit-stops    the stops document, beside the plans. Each stop is a list of dated
                  events (planned, permitted, built, in_service, suspended, moved,
-                 changed, retired). It answers the stop on a date, the stops near a
-                 point, served, what a write must pass, its edits (an event placed by
-                 date, a correction), and what a stop may become. Pure. A stop's life
+                 changed, retired), each with an id unique in its stop (D-166). It
+                 answers the stop on a date, the stops near a point, served, what a
+                 write must pass, its edits (an event placed by date, a correction
+                 named by event id), and what a stop may become. Pure. A stop's life
                  is its own, and a pick only reads it (D-157).
 transit-requests the stop requests document: the planning team's requests for work at a
                  stop (new, reinstall, relocate/remove, repair/improve, temporary). Each
@@ -380,8 +383,9 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  with a private constructor), each kind's load, derived entries (the
                  held day, graphs), the routing that an assembly's exports run
                  (`assembly!`; a capability only registers, with `capability!`), the
-                 kernel ops (loads, evict, held, about), the manifest, the validator,
-                 gen-manifest, gen-assemblies, and arch-gates
+                 kernel ops (loads, evict, held, about), the canonical form (RFC 8785,
+                 `jcs`; D-169), the manifest, the validator, gen-manifest,
+                 gen-assemblies, and arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)

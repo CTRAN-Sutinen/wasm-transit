@@ -65,9 +65,11 @@ fn network() -> Network {
                 name: st.into(),
                 rule: CalendarRule {
                     days,
-                    ranges: vec![DateRange { start: date("2026-10-01"), end: date("2026-11-30") }],
+                    ranges: vec![DateRange { start: date("2026-10-01"), end: date("2026-11-30"), extra: Default::default() }],
                     exceptions: vec![],
+                    extra: Default::default(),
                 },
+                extra: Default::default(),
             },
         );
     }
@@ -86,7 +88,8 @@ fn network() -> Network {
                     .enumerate()
                     .map(|(i, s)| PatternStop { stop: s.to_string(), timepoint: true, distance_m: i as f64 * 1000.0, ..Default::default() })
                     .collect(),
-                timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.to_vec() }],
+                timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.to_vec(), extra: Default::default() }],
+                extra: Default::default(),
             },
         );
         net.pattern_trips.insert(
@@ -103,6 +106,7 @@ fn network() -> Network {
                         ..Default::default()
                     })
                     .collect(),
+                    extra: Default::default(),
             },
         );
     }
@@ -148,10 +152,11 @@ fn cancel_late_on(on: &str) -> EditRecord {
     EditRecord {
         id: "c-late".into(),
         diversion: None,
-        cancel: Some(TripCancel { id: "cancel-late".into(), trip_id: "late".into(), start_secs: None, date: date(on) }),
+        cancel: Some(TripCancel { id: "cancel-late".into(), trip_id: "late".into(), start_secs: None, date: date(on), extra: Default::default() }),
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }
 }
 

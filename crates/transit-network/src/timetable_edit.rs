@@ -187,7 +187,7 @@ fn rewrite(
                 }
                 net.pattern_trips.insert(
                     id.clone(),
-                    PatternTrips { pattern: pattern.clone(), service_type: service_type.to_string(), trips: Vec::new() },
+                    PatternTrips { pattern: pattern.clone(), service_type: service_type.to_string(), trips: Vec::new(), extra: Default::default() },
                 );
                 created.get_or_insert(CreatedEntity { kind: "pattern_trips".into(), id: id.clone() });
                 id

@@ -161,6 +161,7 @@ fn build(spec: &Spec) -> Network {
                     start_secs: 0,
                     end_secs: 40 * 3600,
                     at_timepoints: (0..timepoints).map(|k| k * 300).collect(),
+                    extra: Default::default(),
                 }],
                 ..Default::default()
             },
@@ -169,6 +170,7 @@ fn build(spec: &Spec) -> Network {
     let range = DateRange {
         start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
         end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+        extra: Default::default(),
     };
     let weekday = WeekdaySet::weekdays();
     let saturday = WeekdaySet { sat: true, ..WeekdaySet::none() };
@@ -177,7 +179,8 @@ fn build(spec: &Spec) -> Network {
             id.into(),
             ServiceType {
                 name: id.into(),
-                rule: CalendarRule { days, ranges: vec![range.clone()], exceptions: vec![] },
+                rule: CalendarRule { days, ranges: vec![range.clone()], exceptions: vec![], extra: Default::default() },
+                extra: Default::default(),
             },
         );
     }
@@ -188,7 +191,7 @@ fn build(spec: &Spec) -> Network {
         let departs = match t.start_secs {
             Some(start_secs) => Departs::At { start_secs },
             None => Departs::Every {
-                bands: vec![HeadwayBand { start_secs: t.every.0, end_secs: t.every.1, headway_secs: t.every.2 }],
+                bands: vec![HeadwayBand { start_secs: t.every.0, end_secs: t.every.1, headway_secs: t.every.2, extra: Default::default() }],
                 exact: t.every.3,
             },
         };
@@ -198,6 +201,7 @@ fn build(spec: &Spec) -> Network {
                 pattern: format!("p{}", t.pattern),
                 service_type: service.into(),
                 trips: vec![],
+                extra: Default::default(),
             })
             .trips
             .push(Trip { id: format!("t{i}"), departs, times: offsets(&t.rows, &timepoints), ..Default::default() });
@@ -236,19 +240,19 @@ fn add_blocks(net: &mut Network) {
             if t.0 < last.1 {
                 continue;
             }
-            layovers.push(Layover { after_trip: chain.len() - 1, secs: (t.0 - last.1).min(300), at: None });
+            layovers.push(Layover { after_trip: chain.len() - 1, secs: (t.0 - last.1).min(300), at: None, extra: Default::default() });
         }
         chain.push(t);
     }
     let chained: BTreeSet<String> = if chain.len() >= 2 {
-        let trips = chain.iter().map(|(_, _, id)| TripRef { trip: id.clone() }).collect();
-        net.blocks.insert("b0".into(), Block { trips, layovers });
+        let trips = chain.iter().map(|(_, _, id)| TripRef { trip: id.clone(), extra: Default::default() }).collect();
+        net.blocks.insert("b0".into(), Block { trips, layovers, extra: Default::default() });
         chain.iter().map(|(_, _, id)| id.clone()).collect()
     } else {
         BTreeSet::new()
     };
     if let Some(id) = every {
-        net.blocks.insert("b1".into(), Block { trips: vec![TripRef { trip: id }], layovers: vec![] });
+        net.blocks.insert("b1".into(), Block { trips: vec![TripRef { trip: id, extra: Default::default() }], layovers: vec![], extra: Default::default() });
     }
     // A trip is one vehicle's: b2 takes a weekday trip b0 does not run.
     let free = weekday.iter().find(|(_, _, id)| !chained.contains(id));
@@ -257,10 +261,11 @@ fn add_blocks(net: &mut Network) {
             "b2".into(),
             Block {
                 trips: vec![
-                    TripRef { trip: wk.clone() },
-                    TripRef { trip: sa.clone() },
+                    TripRef { trip: wk.clone(), extra: Default::default() },
+                    TripRef { trip: sa.clone(), extra: Default::default() },
                 ],
                 layovers: vec![],
+                extra: Default::default(),
             },
         );
     }
@@ -444,7 +449,7 @@ proptest! {
             mutate(&|n| {
                 n.blocks.insert(
                     "ghost".into(),
-                    Block { trips: vec![TripRef { trip: "no-such-trip".into() }], layovers: vec![] },
+                    Block { trips: vec![TripRef { trip: "no-such-trip".into(), extra: Default::default() }], layovers: vec![], extra: Default::default() },
                 );
             }),
             // One vehicle cannot run it: a one-start trip in two blocks,
@@ -454,9 +459,9 @@ proptest! {
                 if let Departs::Every { bands, .. } = &mut trip_mut(n, &key, &id).departs {
                     bands[0].headway_secs = 1;
                 } else {
-                    n.blocks.insert("twice-a".into(), Block { trips: vec![TripRef { trip: id.clone() }], layovers: vec![] });
+                    n.blocks.insert("twice-a".into(), Block { trips: vec![TripRef { trip: id.clone(), extra: Default::default() }], layovers: vec![], extra: Default::default() });
                 }
-                n.blocks.insert("twice-b".into(), Block { trips: vec![TripRef { trip: id.clone() }], layovers: vec![] });
+                n.blocks.insert("twice-b".into(), Block { trips: vec![TripRef { trip: id.clone(), extra: Default::default() }], layovers: vec![], extra: Default::default() });
             }),
         ];
         for (i, b) in broken.iter().enumerate() {
@@ -831,7 +836,7 @@ proptest! {
             let first = *s.starts.iter().next().unwrap();
             prop_assert_eq!(
                 &net.blocks["b0"].trips,
-                &vec![TripRef { trip: format!("wk:p0@{first}") }]
+                &vec![TripRef { trip: format!("wk:p0@{first}"), extra: Default::default() }]
             );
         }
     }

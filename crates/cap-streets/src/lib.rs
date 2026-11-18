@@ -108,10 +108,24 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     /// The document the host now holds, its hash, and its size.
-    Import { streets_hash: String, streets: Streets, ways: u32, segments: u32, nodes: u32 },
+    /// The streets as their canonical bytes exactly (RFC 8785, D-169):
+    /// a host serves them under `streets_hash` as they stand.
+    Import {
+        streets_hash: String,
+        #[ts(as = "Streets")]
+        streets: cap_abi::Canonical<Streets>,
+        ways: u32,
+        segments: u32,
+        nodes: u32,
+    },
     /// The walk table and its hash (the router's `load_walks` answers
     /// the same).
-    Walks { walks_hash: String, walks: WalkTable },
+    /// The walk table as its canonical bytes exactly (RFC 8785, D-169).
+    Walks {
+        walks_hash: String,
+        #[ts(as = "WalkTable")]
+        walks: cap_abi::Canonical<WalkTable>,
+    },
     /// `direct`: the walk to `to` (null when none was asked, or none
     /// is within the limit).
     Access { walks: Vec<PointWalk>, direct: Option<DirectWalk> },
@@ -168,7 +182,7 @@ fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_wal
         max_walk_secs,
         walks: walking.walks(&stops, speed_mps, max_walk_secs),
     };
-    Ok(Response::Walks { walks_hash: cap_abi::canonical_hash(&table)?, walks: table })
+    Ok(Response::Walks { walks_hash: cap_abi::canonical_hash(&table)?, walks: cap_abi::Canonical(table) })
 }
 
 fn access(
@@ -202,7 +216,7 @@ fn import(bytes: &[u8]) -> Result<Response, String> {
     // in an assembly, every capability) addresses it by hash.
     let (ways, segments, nodes) = streets.counts();
     let (streets_hash, streets) = STREETS.register(streets)?;
-    Ok(Response::Import { streets_hash, streets: (*streets).clone(), ways, segments, nodes })
+    Ok(Response::Import { streets_hash, streets: cap_abi::Canonical((*streets).clone()), ways, segments, nodes })
 }
 
 /// The typed dispatch (native hosts call this directly). Failures

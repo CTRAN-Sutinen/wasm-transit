@@ -204,8 +204,8 @@ fn trip_counts_are_the_days_trips() {
     let mut net = network();
     net.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
         bands: vec![
-            HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 1800 },
-            HeadwayBand { start_secs: 7200, end_secs: 3600, headway_secs: 600 },
+            HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 1800, extra: Default::default() },
+            HeadwayBand { start_secs: 7200, end_secs: 3600, headway_secs: 600, extra: Default::default() },
         ],
         exact: true,
     };
@@ -237,7 +237,7 @@ fn with_a_bay_variant() -> Network {
                     trips: vec![Trip {
                         id: "bay@every".into(),
                         departs: Departs::Every {
-                            bands: vec![HeadwayBand { start_secs: 32_400, end_secs: 36_000, headway_secs: 1800 }],
+                            bands: vec![HeadwayBand { start_secs: 32_400, end_secs: 36_000, headway_secs: 1800, extra: Default::default() }],
                             exact: true,
                         },
                         times: vec![
@@ -247,6 +247,7 @@ fn with_a_bay_variant() -> Network {
                         ],
                         ..Default::default()
                     }],
+                    extra: Default::default(),
                 },
             },
         ],

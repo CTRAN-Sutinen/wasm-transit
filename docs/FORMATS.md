@@ -57,9 +57,21 @@ directory.
   fails loudly on a mismatch. The host canonicalizes and hashes
   host-owned documents (the manifest) with the same formula. No module
   ever claims their identity.
-- The canonical serialization of a document is its serde_json bytes
-  (struct field order). So `sha256(canonical bytes)` is the document's
-  identity on every host.
+- The canonical serialization of a document is RFC 8785, the JSON
+  Canonicalization Scheme (D-169): every object's keys sorted by their
+  UTF-16 code units, no whitespace, numbers as ECMAScript writes them,
+  and only `"`, `\`, and control characters escaped. So
+  `sha256(canonical bytes)` is the document's identity on every host,
+  and any implementation of the standard, in any language, computes the
+  same identity for the same content (`cap_abi::jcs`).
+- A number in a document is an IEEE double, as RFC 8785 reads it. A
+  whole number above 2^53 loses its exact value in another tool. The
+  documents hold none: times are seconds, counts are small, and ids are
+  strings.
+- An op's answer that carries a document a host stores or serves (an
+  import's network and boundary, the streets, the walk table, a pick
+  read over the stops) carries the document's canonical bytes exactly
+  (`cap_abi::Canonical`).
 
 ## The envelope
 
@@ -351,12 +363,12 @@ Every document says what it is inside it (D-62, D-115). So a copy
 anywhere names its kind and version without the app. A copy can be a
 blob, an export, or a file that another tool reads.
 
-- Each of our kinds carries `"kind"` and its version inside it. The
-  table below says which field. Two kinds differ. `work_rules` names
-  its version `version`. The browser's `plan_set` is a bare array whose
-  plans each carry their own network. A network with no
+- Each of our kinds carries `"kind"` and `"schema_version"` inside it,
+  except the watchlist (the table says which field). A network with no
   `schema_version` is v1. This is every shape written before the tag. A
-  bare array of edit records is edit document v1.
+  bare array of edit records is edit document v1. A browser's plan set
+  written before its tag is a bare map of plans by store id, and a page
+  reads it as the set.
 - The byte kinds are a GTFS feed, a GTFS-rt snapshot, and a GeoJSON
   layer. They are open formats that their own specs version, and they
   carry no tag of ours.
@@ -368,10 +380,10 @@ Every persisted kind, by what a version change does to it:
 | `edit_records` | transit-sync | authored | `kind`, `schema_version` |
 | `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
-| `plan_set` (a browser's stored plans) | transit-plans | authored | each plan's network |
+| `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |
 | `watchlist` | transit-dispatch | authored | `"version": "vN"` |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
-| `work_rules` | transit-runs | authored | `kind`, `version` |
+| `work_rules` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
 | `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | no tag (never persisted yet) |
@@ -385,7 +397,13 @@ Every persisted kind, by what a version change does to it:
 | `build`, `build_file` | the Go server | host-owned | its own shape ("Builds", below) |
 
 - A person writes *authored* kinds, and the system cannot re-derive
-  them. Their chains are kept forever (D-66).
+  them. Their chains are kept forever (D-66). Every record of an
+  authored kind keeps the fields this build does not know through a read
+  and a write (D-167), and its schema says so
+  (`"additionalProperties": true`). So an added optional field needs no
+  new version, and a writer on an older build keeps it. A value (a
+  point, a stop's two times, a set of weekdays) is not a record and
+  takes no unknown field.
 - *Derived* kinds are a pure function of other documents. A version
   change re-derives them from the inputs that the server holds. The tag
   is there so that a reader refuses a mismatch instead of misreading

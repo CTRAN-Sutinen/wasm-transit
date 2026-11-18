@@ -56,6 +56,7 @@ A pattern's timing profiles are the planner's tool for producing a new trip's ti
 - Its chain (`version.rs`, kept forever, wrapped by cap-migrate) brings v1 forward. v1 is any untagged document. This includes documents written before trips were stored: each old departure becomes a trip `{pattern_trips}@{start}`. It also includes documents written before alignments stood alone: a pattern's inline `path` becomes an alignment under the pattern's id.
 - `trip_instance` answers one instance without a date. A one-start trip answers at its start. An exact frequency trip answers on its grid. A non-exact frequency trip answers at any start inside a band.
 - A trip instance is addressed (trip, start) everywhere.
+- A planner's page keeps its plans as one plan set (`PlanSet`, `plan_set.rs`): `"kind": "plan_set"`, `"schema_version"` (1), and each plan's network document by the store's id for it. The page owns and writes the set; the type is its shape, schema, and tag.
 
 **Where a bus is going** is one rule (`signs.rs`, `visit_destination`). The first of these applies:
 1. The visit's own headsign. It overrides the trip's headsign at that visit only, as GTFS's stop_headsign does.
@@ -366,6 +367,7 @@ What every persisted document says about itself (D-115).
 - `Version<N>` is a version field whose absence reads as N.
 - `Versioned` is what a reader needs to refuse another version, naming both versions (`cap_abi::parse_versioned` at every kernel load, `cap_abi::Current` on a request field).
 - Each owning library declares its kind's tag. The kinds and their versions are in docs/FORMATS.md's "Versions".
+- `Extra` is a record's fields that this build does not know (D-167). Every record of an authored kind flattens one in, so a read and a write keep them. A value (a point, a stop's two times, a set of weekdays) is not a record and carries none. `noting_unknown` runs a read and names the unknown fields it met. Every kernel load answers them (`unknown_fields`), and so does each receive op (`validate` for stops and stop requests, `sync_edits` for the client's records).
 
 ## transit-sync
 
@@ -462,14 +464,15 @@ The stops document, beside the plans (D-147, D-153). It depends on no other mode
 - `near` gives the stops on a date nearest a point. It uses great-circle distance, nearest first, ties by id, at most a limit, within a radius where asked, at the statuses asked.
 
 **Writes.**
-- `checked` is what a write must pass. Each refusal names its stop, event, and problem.
+- Each event has an `id`, unique within its stop (D-166). `identified` gives an id to each event that has none, from the stop and the event's content, so the same event in the same stop gets the same id in any document. Every write identifies before it checks. Another writer's event added above an event does not change which event a correction edits.
+- `checked` is what a write must pass. Each refusal names its stop, event, and problem. Two events in one stop with one id are refused.
 - `attribute_surveys` names the signed-in writer as the surveyor of every survey that a write adds (the receive path's, D-158).
 - A document that passes is canonical as it stands (stops by id, events as written).
-- The crate keeps what it does not know through a read and a write, such as another tool's field or an agency's amenity.
+- The crate keeps what it does not know through a read and a write, such as another tool's field or an agency's amenity (D-167).
 - A correction edits the event that was wrong. A real change adds an event.
 - The edits answer the next document:
   - `add_event` places one event by date.
-  - `correct_event` takes out the event that was wrong and places the corrected one by date.
+  - `correct_event_by_id` takes out the event that was wrong, named by its id, and places the corrected one by date. The corrected event keeps the id.
 
 ## transit-requests
 
@@ -576,10 +579,10 @@ The stops capability: what is a stop on a date? transit-stops and transit-networ
 - `questions` gives what a site survey asks: the core site questions with the kind of answer each takes, and the core amenity names.
 
 **Writes.**
-- `validate` gives what a write must pass: every refusal, or the canonical document and its hash. This is the document that the kernel's `load_stops` answers.
+- `validate` gives what a write must pass: every refusal, or the canonical document and its hash, each event with its id. This is the document that the kernel's `load_stops` answers. It names the fields the document carries that this build does not know (`unknown_fields`, D-167).
 - `seed` makes a stops document from a network's stops.
 - `add_event` places one edit by date.
-- `correct_event` corrects an event that was wrong, or takes it out.
+- `correct_event` corrects an event that was wrong, named by its id (D-166), or takes it out.
 - Each of the three is checked as a write is.
 - `attribute_surveys` names the write's new surveys for the writer. It runs before `validate`.
 

@@ -29,7 +29,8 @@ fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, String
 #[test]
 fn the_identity_is_the_canonical_hash() {
     let net = network();
-    let expected = format!("sha256:{:x}", sha2::Sha256::digest(serde_json::to_string(&net).unwrap().as_bytes()));
+    // the sha256 of its canonical bytes (RFC 8785, D-169)
+    let expected = format!("sha256:{:x}", sha2::Sha256::digest(cap_abi::canonical_bytes(&net).unwrap().as_bytes()));
     assert_eq!(load(net), expected);
 }
 
@@ -45,6 +46,7 @@ fn changes_chain_by_hash_and_report_the_result() {
                 id: "spring".into(),
                 name: "Spring 2027".into(),
                 effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+                extra: Default::default(),
             },
             through: None,
         }],
@@ -95,6 +97,7 @@ fn changes_chain_by_hash_and_report_the_result() {
                 id: "spring".into(),
                 name: "Spring 2027".into(),
                 effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+                extra: Default::default(),
             },
             through: None,
         }],
@@ -114,6 +117,7 @@ fn changes_chain_by_hash_and_report_the_result() {
                 id: "spring".into(),
                 name: "Spring 2027".into(),
                 effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+                extra: Default::default(),
             },
             through: Some("2027-05-29".into()),
         }],
@@ -211,8 +215,8 @@ fn work_rules_judge_the_waits_of_the_next_document() {
     };
     assert_eq!(issues(None), vec![], "block 400 keeps the floor at its terminal");
     let rules = transit_runs::WorkRules {
-        version: 1,
-        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(86_400), pct_of_run: None }],
+        schema_version: Default::default(),
+        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(86_400), pct_of_run: None, extra: Default::default() }],
         ..Default::default()
     };
     let loaded = cap_abi::kernel::invoke(

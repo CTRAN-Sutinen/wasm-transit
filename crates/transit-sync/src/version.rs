@@ -63,6 +63,10 @@ pub struct EditDocument {
     pub kind: EditsKind,
     pub schema_version: u32,
     pub records: Vec<EditRecord>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A copy with no `schema_version` — the bare array — is v1.
@@ -77,7 +81,7 @@ impl transit_version::Versioned for EditDocument {
 impl EditDocument {
     /// A current-version document over these records.
     pub fn new(records: Vec<EditRecord>) -> Self {
-        EditDocument { kind: EditsKind, schema_version: SCHEMA_VERSION, records }
+        EditDocument { kind: EditsKind, schema_version: SCHEMA_VERSION, records, extra: Default::default() }
     }
 }
 

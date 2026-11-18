@@ -103,6 +103,21 @@ pub struct AboutCap {
 /// A capability's own bulk ops number below this; the kernel's from it.
 pub const KERNEL_OPS: u32 = 256;
 
+/// A load's whole answer: what the kind answers ([`Loaded`]), and the
+/// names of the fields the document carries that this build does not
+/// know (D-167). They are kept in the document; a receive path flags
+/// them for a person. Absent when every field is known.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "cap_abi/")]
+pub struct LoadAnswer {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub loaded: Loaded,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub unknown_fields: Vec<String>,
+}
+
 /// What a load answers: the document's identity under its kind's
 /// field, and what the host shows about it. Tagged like every op's
 /// answer.
@@ -193,7 +208,7 @@ impl<'a> Envelope<'a> {
 
 /// How a kind's identity is derived.
 enum Identity<T> {
-    /// The canonical hash of the parsed document (struct field order):
+    /// The canonical hash of the parsed document (RFC 8785, D-169):
     /// byte variants of one document are one document.
     Canonical(fn(&T) -> Result<String, String>),
     /// The content hash of the bytes as they crossed (a zip, a
@@ -264,16 +279,20 @@ impl<T: Send + Sync + 'static> Kind<T> {
         self.registry.is_empty()
     }
 
-    fn load(&self, bytes: &[u8]) -> Result<Loaded, String> {
-        let (hash, held) = match self.identity {
+    fn load(&self, bytes: &[u8]) -> Result<LoadAnswer, String> {
+        let (hash, held, unknown_fields) = match self.identity {
             Identity::Canonical(identity) => {
-                let document = (self.parse)(bytes)?;
+                let (document, unknown_fields) = transit_version::noting_unknown(|| (self.parse)(bytes));
+                let document = document?;
                 let hash = identity(&document)?;
-                (hash.clone(), self.registry.insert(hash, document))
+                (hash.clone(), self.registry.insert(hash, document), unknown_fields)
             }
-            Identity::Bytes => self.register_bytes(bytes)?,
+            Identity::Bytes => {
+                let (hash, held) = self.register_bytes(bytes)?;
+                (hash, held, vec![])
+            }
         };
-        Ok((self.answer)(hash, &held))
+        Ok(LoadAnswer { loaded: (self.answer)(hash, &held), unknown_fields })
     }
 }
 
@@ -436,7 +455,7 @@ pub static WORK_RULES: Kind<WorkRules> = Kind {
         rules.checked().map_err(|e| format!("work rules: {e}"))
     },
     json: |e| e.field(e.work_rules, "work_rules").map(Cow::Borrowed),
-    answer: |work_rules_hash, rules| Loaded::LoadWorkRules { work_rules_hash, version: rules.version },
+    answer: |work_rules_hash, rules| Loaded::LoadWorkRules { work_rules_hash, version: rules.schema_version.0 },
 };
 
 /// Stops documents (transit-stops: every stop a list of dated events,

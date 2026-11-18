@@ -50,7 +50,10 @@ fn validate_and_the_load_agree_on_one_identity() {
     let hash = checked["document_hash"].as_str().unwrap();
     assert_eq!(cap_abi::content_hash(document.as_bytes()), hash, "the hash is the document's bytes'");
 
-    let loaded = ok(json!({"op": "load_stops", "stops": sample()}));
+    // the document a write stores is validate's answer, ids given
+    // (D-166); the load registers it under the same identity
+    let answered: Value = serde_json::from_str(document).unwrap();
+    let loaded = ok(json!({"op": "load_stops", "stops": answered}));
     assert_eq!(loaded, json!({"op": "load_stops", "stops_hash": hash, "stops": 2}));
     // the bulk lane: the document's bytes, no envelope — the same answer
     let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(OP_LOAD_STOPS, document.as_bytes())).unwrap();
@@ -188,16 +191,35 @@ fn stops_near_answers_the_nearest_stops_on_the_date() {
 
 #[test]
 fn correct_event_edits_the_event_that_was_wrong() {
-    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
-    let fixed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 2,
+    // a write gives every event an id (D-166); a correction names it
+    let valid = ok(json!({"op": "validate", "stops": sample()}));
+    let stops: serde_json::Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
+    let ids: Vec<String> = stops["stops"]["6124"].as_array().unwrap().iter().map(|e| e["id"].as_str().expect("every event has an id").to_string()).collect();
+    let hash = ok(json!({"op": "load_stops", "stops": stops}))["stops_hash"].clone();
+    let fixed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "event_id": ids[2],
         "event": {"on": "2027-03-10", "event": "suspended", "until": "2027-07-01", "note": "water main"}}));
     assert_eq!(fixed["refusals"], json!([]));
     assert_eq!(fixed["stops"]["stops"]["6124"][2]["on"], "2027-03-10");
-    let removed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 3}));
+    assert_eq!(fixed["stops"]["stops"]["6124"][2]["id"], ids[2].as_str(), "the corrected event keeps its id");
+    let removed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "event_id": ids[3]}));
     assert_eq!(removed["stops"]["stops"]["6124"].as_array().unwrap().len(), 3);
-    let refused = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 0}));
+    let refused = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "event_id": ids[0]}));
     assert_eq!(refused["refusals"][0]["problem"]["kind"], "first_event", "taking out the first event leaves no beginning");
-    assert!(err(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 9})).contains("no event 9"));
+    assert!(err(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "event_id": "e-none"})).contains("no event \"e-none\""));
+}
+
+#[test]
+fn a_write_gives_each_event_an_id_and_refuses_one_used_twice() {
+    let added = ok(json!({"op": "add_event", "stops_hash": ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"], "stop_id": "7001",
+        "event": {"on": "2027-08-01", "event": "changed", "name": "Main & 2nd"}}));
+    for e in added["stops"]["stops"]["7001"].as_array().unwrap() {
+        assert!(e["id"].as_str().is_some_and(|id| !id.is_empty()), "{e}");
+    }
+    let mut twice = sample();
+    twice["stops"]["6124"][1]["id"] = json!("same");
+    twice["stops"]["6124"][2]["id"] = json!("same");
+    let valid = ok(json!({"op": "validate", "stops": twice}));
+    assert_eq!(valid["refusals"][0]["problem"], json!({"kind": "duplicate_event_id", "id": "same"}));
 }
 
 #[test]
@@ -319,4 +341,24 @@ fn attribute_surveys_names_the_writer() {
     assert_eq!(first["stops"]["stops"]["6124"][4]["surveyed_by"], "Rosa Ortiz");
     // a held document the module does not hold is an error
     assert!(err(json!({ "op": "attribute_surveys", "stops_hash": "sha256:00", "stops": next, "by": "x" })).len() > 0);
+}
+
+/// A field this build does not know is kept and flagged, never refused
+/// (D-167): validate answers its name, the document keeps it, and the
+/// kernel's load names it too.
+#[test]
+fn validate_flags_an_unknown_field_and_keeps_it() {
+    let mut newer = sample();
+    newer["stops"]["6124"][0]["shelter_model"] = json!("Tolar 2027");
+    newer["survey_round"] = json!(3);
+    let valid = ok(json!({"op": "validate", "stops": newer}));
+    assert_eq!(valid["refusals"], json!([]));
+    assert_eq!(valid["unknown_fields"], json!(["shelter_model", "survey_round"]));
+    let document: Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
+    assert_eq!(document["stops"]["6124"][0]["shelter_model"], "Tolar 2027");
+    assert_eq!(document["survey_round"], 3);
+    let loaded = ok(json!({"op": "load_stops", "stops": document}));
+    assert_eq!(loaded["unknown_fields"], json!(["shelter_model", "survey_round"]));
+    // every field known: no flag at all
+    assert!(ok(json!({"op": "validate", "stops": sample()})).get("unknown_fields").is_none());
 }

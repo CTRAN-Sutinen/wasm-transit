@@ -78,9 +78,12 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
                     ranges: vec![DateRange {
                         start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                         end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                        extra: Default::default(),
                     }],
                     exceptions: vec![],
+                    extra: Default::default(),
                 },
+                extra: Default::default(),
             },
         )]
         .into_iter()
@@ -92,7 +95,7 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
         let at = |t: u32| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) };
         net.pattern_trips
             .entry(format!("{pattern}-wk"))
-            .or_insert_with(|| PatternTrips { pattern: pattern.clone(), service_type: "wk".into(), trips: vec![] })
+            .or_insert_with(|| PatternTrips { pattern: pattern.clone(), service_type: "wk".into(), trips: vec![], extra: Default::default() })
             .trips
             .push(Trip {
                 id: trip_id(route, outbound, start),
@@ -108,7 +111,7 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
     for (id, members) in blocks {
         net.blocks.insert(
             id.to_string(),
-            Block { trips: members.iter().map(|t| TripRef { trip: t.clone() }).collect(), layovers: vec![] },
+            Block { trips: members.iter().map(|t| TripRef { trip: t.clone(), extra: Default::default() }).collect(), layovers: vec![], extra: Default::default() },
         );
     }
     net
@@ -116,5 +119,5 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
 
 /// A layover after trip `after` of block `block`.
 pub fn layover(net: &mut Network, block: &str, after: usize, secs: u32) {
-    net.blocks.get_mut(block).unwrap().layovers.push(Layover { after_trip: after, secs, at: None });
+    net.blocks.get_mut(block).unwrap().layovers.push(Layover { after_trip: after, secs, at: None, extra: Default::default() });
 }

@@ -74,9 +74,12 @@ fn network() -> Network {
                     ranges: vec![DateRange {
                         start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                         end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                        extra: Default::default(),
                     }],
                     exceptions: vec![],
+                    extra: Default::default(),
                 },
+                extra: Default::default(),
             },
         )]
         .into_iter()
@@ -88,11 +91,12 @@ fn network() -> Network {
                     pattern: "p5".into(),
                     service_type: "wk".into(),
                     trips: vec![trip("t0700", 7 * H), trip("t0750", 7 * H + 3000), trip("t0900", 9 * H)],
+                    extra: Default::default(),
                 },
             ),
             (
                 "p6-wk".to_string(),
-                PatternTrips { pattern: "p6".into(), service_type: "wk".into(), trips: vec![trip("t1000", 10 * H)] },
+                PatternTrips { pattern: "p6".into(), service_type: "wk".into(), trips: vec![trip("t1000", 10 * H)], extra: Default::default() },
             ),
         ]
         .into_iter()
@@ -101,15 +105,17 @@ fn network() -> Network {
             (
                 "b1".to_string(),
                 Block {
-                    trips: vec![TripRef { trip: "t0700".into() }, TripRef { trip: "t0750".into() }],
-                    layovers: vec![Layover { after_trip: 0, secs: 600, at: None }],
+                    trips: vec![TripRef { trip: "t0700".into(), extra: Default::default() }, TripRef { trip: "t0750".into(), extra: Default::default() }],
+                    layovers: vec![Layover { after_trip: 0, secs: 600, at: None, extra: Default::default() }],
+                    extra: Default::default(),
                 },
             ),
             (
                 "b2".to_string(),
                 Block {
-                    trips: vec![TripRef { trip: "t0900".into() }, TripRef { trip: "t1000".into() }],
-                    layovers: vec![Layover { after_trip: 0, secs: 2400, at: None }],
+                    trips: vec![TripRef { trip: "t0900".into(), extra: Default::default() }, TripRef { trip: "t1000".into(), extra: Default::default() }],
+                    layovers: vec![Layover { after_trip: 0, secs: 2400, at: None, extra: Default::default() }],
+                    extra: Default::default(),
                 },
             ),
         ]

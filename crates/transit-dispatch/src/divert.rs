@@ -233,6 +233,7 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
         added_secs: (draft.added_mins * 60.0).round() as u32,
         start_date: parse_date(&draft.start_date).expect("checked by the view"),
         end_date: parse_date(&draft.end_date).expect("checked by the view"),
+        extra: Default::default(),
     })
 }
 
@@ -260,7 +261,7 @@ pub fn cancel_of(
     if !runs {
         return Err(format!("trip {trip_id} does not run on {date}"));
     }
-    Ok(TripCancel { id: id.to_string(), trip_id: trip_id.to_string(), start_secs, date: on })
+    Ok(TripCancel { id: id.to_string(), trip_id: trip_id.to_string(), start_secs, date: on, extra: Default::default() })
 }
 
 /// One record of the edit document as the dispatcher's list shows it:

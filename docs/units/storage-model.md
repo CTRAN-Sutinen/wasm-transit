@@ -31,14 +31,7 @@ that keep the bucket the one record.
 
 ## Scope, in order
 
-1. **The shapes, before the baseline.** Every stop event gets a stable
-   id, so two writers adding events to one stop can be merged
-   (Blocked: D-166). Every authored kind keeps what it does not know —
-   the `extra` map the stops and stop requests types carry — or none
-   does (Blocked: D-167). Both land before the schema lock freezes the
-   first deployment's versions
-   ([document-versioning.md](document-versioning.md), item 5).
-2. **The kind table, and governed writes.** One table per build,
+1. **The kind table, and governed writes.** One table per build,
    generated beside the registry's documents: each kind's layout
    (document, collection, table), its module and validation op, its
    merge rule, its read class (open or restricted), and its change
@@ -47,7 +40,7 @@ that keep the bucket the one record.
    is refused — today a pointer commit for any kind but the edits,
    picks, stops and stop requests is stored as given
    (`docs/architecture/agency-data.md`, "Writes are governed").
-3. **Collections, record by record** (Blocked: D-121). A collection's
+2. **Collections, record by record** (Blocked: D-121). A collection's
    pointer names a root, `{"kind":"collection","of":"<kind>",
    "schema_version":N,"records":{"<id>":"sha256:…"}}`, which splits
    into shards keyed by the first byte of the hashed id past a few
@@ -63,7 +56,7 @@ that keep the bucket the one record.
    the modules' input, assembled from the tree. Edits, stops and stop
    requests move to it; `store verify` checks every root names only
    records that exist and hash to their names.
-4. **The bucket describes itself.** At setup the store creates (create
+3. **The bucket describes itself.** At setup the store creates (create
    only) a `layout` object naming its layout version and hash scheme,
    the build's locked schemas under `schemas/` by content hash, and a
    plain-language README of the layout. Each kind's schema marks every
@@ -73,7 +66,7 @@ that keep the bucket the one record.
    (D-162; [stop-site-and-requests.md](stop-site-and-requests.md),
    item 2) — and an outside reader learns the links from the same
    schemas.
-5. **Projections over the change feed.** A projection is a pure
+4. **Projections over the change feed.** A projection is a pure
    function of pointer heads run by a module; its output names its
    inputs and producer
    (`{"kind":"view","of":{"stops":"sha256:…"},"by":"cap-stops@sha256:…"}`,
@@ -86,7 +79,7 @@ that keep the bucket the one record.
    is the deployment's; the contract is this repo's. The first: the
    stops as GeoJSON for a GIS, the stops on a date, and the pages'
    incremental sync of edits, stops and requests.
-6. **Permissions per change, restricted reads** (restricted reads
+5. **Permissions per change, restricted reads** (restricted reads
    Blocked: D-168). The receive path knows which records a write
    changed; the kind's module sorts each change into its change
    classes (stops: a survey, a planned event, an in-service event…),
@@ -94,7 +87,7 @@ that keep the bucket the one record.
    role, without splitting documents along the org chart. A kind
    whose read class is restricted is never served by hash and is read
    only through authz.
-7. **The rebuild drill.** A gate drops every projection, rebuilds each
+6. **The rebuild drill.** A gate drops every projection, rebuilds each
    from the bucket, and compares by hash. A store that cannot pass it
    has become a record.
 
@@ -130,4 +123,4 @@ that keep the bucket the one record.
 - The stops GeoJSON projection and the pages' incremental sync run on
   the C-TRAN store, dogfooded with two people saving stops at once.
 - The rebuild drill runs in `just test`.
-- D-121, D-166, D-167 and D-168 are decided and encoded.
+- D-121 and D-168 are decided and encoded.

@@ -95,7 +95,9 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                 start_secs: 0,
                 end_secs: 172_800,
                 at_timepoints: vec![0, 600, 1200],
+                extra: Default::default(),
             }],
+            extra: Default::default(),
         },
     );
     let mut pattern_trips = std::collections::BTreeMap::new();
@@ -119,7 +121,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                     ranges: rule
                         .ranges
                         .iter()
-                        .map(|&(s, e)| DateRange { start: day(s), end: day(e) })
+                        .map(|&(s, e)| DateRange { start: day(s), end: day(e), extra: Default::default() })
                         .collect(),
                     exceptions: rule
                         .exceptions
@@ -127,9 +129,12 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                         .map(|&(d, added)| CalendarException {
                             date: day(d),
                             state: if added { DayState::Added } else { DayState::Removed },
+                            extra: Default::default(),
                         })
                         .collect(),
+                        extra: Default::default(),
                 },
+                extra: Default::default(),
             },
         );
         if (i as u8) < trips_per_type {
@@ -144,6 +149,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                         times: [0, 600, 1200].map(|t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).to_vec(),
                         ..Default::default()
                     }],
+                    extra: Default::default(),
                 },
             );
         }

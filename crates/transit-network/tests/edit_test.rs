@@ -95,7 +95,7 @@ fn upserts_are_the_planners_verbs() {
         &[
             NetworkEdit::UpsertPatternTrips { id: "10-weekday".into(), pattern_trips },
             NetworkEdit::SetPlan {
-                plan: PlanMeta { id: "spring".into(), name: "Spring".into(), effective_from: Some(tuesday()) },
+                plan: PlanMeta { id: "spring".into(), name: "Spring".into(), effective_from: Some(tuesday()), extra: Default::default() },
                 through: None,
             },
         ],

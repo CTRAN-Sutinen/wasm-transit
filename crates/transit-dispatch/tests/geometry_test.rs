@@ -20,7 +20,7 @@ fn network() -> Network {
     let line = [c(45.5, -73.5), c(45.505, -73.5), c(45.51, -73.51), c(45.515, -73.51), c(45.52, -73.52)];
     net.alignments.insert(
         "line".into(),
-        Alignment { points: line.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect() },
+        Alignment { points: line.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect(), extra: Default::default() },
     );
     net.patterns.get_mut("10-inbound").unwrap().alignment = Some("line".into());
     net
@@ -56,6 +56,7 @@ fn diversion(first: &str, last: &str, skipped: &[&str], detour: Option<&[Coord]>
         added_secs: 0,
         start_date: date(),
         end_date: date(),
+        extra: Default::default(),
     }
 }
 

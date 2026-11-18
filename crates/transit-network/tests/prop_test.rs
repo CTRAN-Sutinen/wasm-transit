@@ -155,7 +155,7 @@ fn build_network(spec: &Spec) -> Network {
                 route: "r0".into(),
                 name: format!("Pattern {j}"),
                 stops,
-                timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints }],
+                timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints, extra: Default::default() }],
                 ..Default::default()
             },
         );
@@ -170,16 +170,20 @@ fn build_network(spec: &Spec) -> Network {
             ranges: vec![DateRange {
                 start: YEAR_START,
                 end: YEAR_START + Duration::days(364),
+                extra: Default::default(),
             }],
             exceptions: if spec.with_exception {
                 vec![CalendarException {
                     date: EXCEPTION_DATE,
                     state: DayState::Added,
+                    extra: Default::default(),
                 }]
             } else {
                 vec![]
             },
+            extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
 
@@ -197,6 +201,7 @@ fn build_network(spec: &Spec) -> Network {
                         start_secs: 6 * 3600 + i * 600,
                         end_secs: 9 * 3600 + i * 600,
                         headway_secs: spec.headway,
+                        extra: Default::default(),
                     }],
                     exact: true,
                 },
@@ -214,7 +219,7 @@ fn build_network(spec: &Spec) -> Network {
                 })
                 .collect()
         };
-        net.pattern_trips.insert(key, PatternTrips { pattern, service_type: "cal".into(), trips });
+        net.pattern_trips.insert(key, PatternTrips { pattern, service_type: "cal".into(), trips, extra: Default::default() });
     }
 
     if spec.with_block {
@@ -224,7 +229,7 @@ fn build_network(spec: &Spec) -> Network {
         let every = &net.pattern_trips["svc0"].trips[0];
         let run = every.times.last().and_then(|o| o.arrival_secs).unwrap();
         if spec.headway >= run {
-            net.blocks.insert("b0".into(), Block { trips: vec![TripRef { trip: every.id.clone() }], layovers: vec![] });
+            net.blocks.insert("b0".into(), Block { trips: vec![TripRef { trip: every.id.clone(), extra: Default::default() }], layovers: vec![], extra: Default::default() });
         }
     }
     net

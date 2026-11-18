@@ -10,6 +10,8 @@ transit-version = { path = "../transit-version" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+ryu-js = { workspace = true }
+itoa = { workspace = true }
 flate2 = { workspace = true }
 ts-rs = { workspace = true }
 # gen-manifest computes the network capability's worked examples from

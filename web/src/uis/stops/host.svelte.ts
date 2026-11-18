@@ -544,8 +544,10 @@ export function addEvent(stopId: string, event: Event, done: string): Promise<bo
 }
 
 /// An event that was wrong, corrected — or, with no event, taken out.
-export function correctEvent(stopId: string, index: number, event: Event | null, done: string): Promise<boolean> {
-  return write(done, (doc) => ask("stops", "correct_event", { stops_hash: doc, stop_id: stopId, index, event: event ?? undefined }), stopId);
+/// The event is named by its id (D-166), so another writer's event
+/// saved above it does not change which event is corrected.
+export function correctEvent(stopId: string, eventId: string, event: Event | null, done: string): Promise<boolean> {
+  return write(done, (doc) => ask("stops", "correct_event", { stops_hash: doc, stop_id: stopId, event_id: eventId, event: event ?? undefined }), stopId);
 }
 
 /// A new stop: its first event, at the point chosen. An id the document

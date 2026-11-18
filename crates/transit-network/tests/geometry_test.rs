@@ -14,7 +14,7 @@ fn c(lat: f64, lon: f64) -> Coord {
 /// `pattern` runs a new alignment drawn through `points`.
 fn run(net: &mut Network, pattern: &str, points: &[Coord]) {
     let points = points.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect();
-    net.alignments.insert("line".into(), Alignment { points });
+    net.alignments.insert("line".into(), Alignment { points, extra: Default::default() });
     net.patterns.get_mut(pattern).unwrap().alignment = Some("line".into());
 }
 

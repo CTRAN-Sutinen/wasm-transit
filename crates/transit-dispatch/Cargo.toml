@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 transit-version = { path = "../transit-version" }
+schemars = { workspace = true }
 serde = { workspace = true }
 ts-rs = { workspace = true }
 chrono = { workspace = true }

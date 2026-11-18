@@ -67,7 +67,8 @@ func canonicalPick(ctx context.Context, wasmPath string, body []byte) (doc canon
 	}
 	defer host.Close(ctx)
 	var loaded struct {
-		NetworkHash string `json:"network_hash"`
+		NetworkHash   string   `json:"network_hash"`
+		UnknownFields []string `json:"unknown_fields"`
 	}
 	if err := host.InvokeBytes(ctx, opLoadNetwork, body, &loaded); err != nil {
 		return doc, nil, fmt.Errorf("not a network document: %w", err)
@@ -89,6 +90,7 @@ func canonicalPick(ctx context.Context, wasmPath string, body []byte) (doc canon
 	}
 	doc.Warnings = checked.Warnings
 	doc.ProducedBy = "cap-network@" + host.Hash()
+	doc.UnknownFields = loaded.UnknownFields
 	return doc, nil, nil
 }
 
@@ -101,6 +103,8 @@ type canonicalNetwork struct {
 	Timezone     string          `json:"timezone"`
 	Warnings     json.RawMessage `json:"-"`
 	ProducedBy   string          `json:"-"`
+	// The fields the pick carries that this build does not know (D-167).
+	UnknownFields []string `json:"-"`
 }
 
 func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +211,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusConflict)
 		return
 	}
+	flagUnknown(w, "plans", writer, pick.UnknownFields)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"plan_id": frame.ID, "network_hash": pick.DocumentHash, "plans_hash": plansHash, "warnings": withWarnings(pick.Warnings, stopWarnings),
 	})

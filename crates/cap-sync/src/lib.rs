@@ -84,6 +84,12 @@ pub enum Response {
         document: String,
         /// The document's canonical hash — its identity.
         document_hash: String,
+        /// The fields the client's records carry that this build does
+        /// not know (D-167): kept in them, and flagged for a person,
+        /// never refused. Absent when every field is known.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(optional, as = "Option<Vec<String>>")]
+        unknown_fields: Vec<String>,
     },
     ReadEdits {
         records: Vec<transit_sync::EditRecord>,
@@ -108,10 +114,11 @@ pub enum Response {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::SyncEdits { client, server, now_ms } => {
+            let unknown_fields = transit_sync::unknown_fields(&client);
             let client = transit_sync::clamp_timestamps(&client, now_ms);
             let records = transit_sync::submit(transit_sync::merge(&client, &server), now_ms);
             let (document, document_hash) = canonical(&records)?;
-            Ok(Response::SyncEdits { records, document, document_hash })
+            Ok(Response::SyncEdits { records, document, document_hash, unknown_fields })
         }
         Request::ReadEdits { document } => {
             let (read, dropped) = transit_sync::read_document(&document)?;
@@ -136,7 +143,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// canonical bytes and their hash.
 fn canonical(records: &[transit_sync::EditRecord]) -> Result<(String, String), String> {
     let document = transit_sync::EditDocument::new(records.to_vec());
-    Ok((serde_json::to_string(&document).expect("documents serialize"), cap_abi::canonical_hash(&document)?))
+    Ok((cap_abi::canonical_bytes(&document)?, cap_abi::canonical_hash(&document)?))
 }
 
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`

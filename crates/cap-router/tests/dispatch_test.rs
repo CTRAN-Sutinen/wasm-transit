@@ -60,11 +60,13 @@ fn record(added_secs: u32) -> EditRecord {
             added_secs,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }
 }
 
@@ -80,7 +82,7 @@ fn the_document_identity_is_the_canonical_hash_the_bus_agrees_on() {
     // they agree. Verified against the hash computed independently
     // (the same formula every capability and the manifest use).
     let network = derived_network();
-    let canonical = serde_json::to_string(&network).unwrap();
+    let canonical = cap_abi::canonical_bytes(&network).unwrap();
     use sha2::Digest as _;
     let expected = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     // Through the module's seam, as every host registers it.
@@ -359,7 +361,7 @@ fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::It
 fn the_live_documents_identity_is_its_canonical_hash() {
     let live = live_t10(120);
     use sha2::Digest as _;
-    let expected = format!("sha256:{:x}", sha2::Sha256::digest(serde_json::to_string(&live).unwrap().as_bytes()));
+    let expected = format!("sha256:{:x}", sha2::Sha256::digest(cap_abi::canonical_bytes(&live).unwrap().as_bytes()));
     assert_eq!(load_live(live), expected);
 }
 
@@ -688,10 +690,12 @@ fn a_cancelled_trip_is_never_ridden() {
             trip_id: "t10".into(),
             start_secs: None,
             date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         status: EditStatus::Submitted,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     };
     let edits = load_edits(&hash, vec![cancel]);
     let after = plan(Some(edits));

@@ -208,6 +208,10 @@ pub struct PublishedPlan {
     pub network_hash: String,
     #[serde(default)]
     pub status: PickStatus,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl PublishedPlan {
@@ -236,11 +240,15 @@ pub struct PublishedPlans {
     pub kind: PlansKind,
     pub schema_version: u32,
     pub plans: Vec<PublishedPlan>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl PublishedPlans {
     pub fn empty() -> Self {
-        PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans: Vec::new() }
+        PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans: Vec::new(), extra: Default::default() }
     }
 }
 
@@ -285,13 +293,14 @@ pub fn publish(
         effective_from: from.clone(),
         network_hash: network_hash.to_string(),
         status: PickStatus::Published,
+        extra: Default::default(),
     });
     plans.sort_by(|a, b| (a.effective_from.as_str(), a.id.as_str()).cmp(&(b.effective_from.as_str(), b.id.as_str())));
     let issues = validate(&chain(&plans));
     if !issues.is_empty() {
         return Err(issues);
     }
-    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans })
+    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
 }
 
 /// Retire a pick (D-75): the set with it marked retired — it stays in
@@ -317,7 +326,7 @@ pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<Publis
         .iter()
         .map(|p| if p.id == id { PublishedPlan { status: PickStatus::Retired, ..p.clone() } } else { p.clone() })
         .collect();
-    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans })
+    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
 }
 
 /// The published pick in force on `date` — the chain's `resolve` over

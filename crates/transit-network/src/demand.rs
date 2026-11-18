@@ -33,6 +33,10 @@ pub struct DemandResponsive {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<TripId, DemandTrip>>")]
     pub trips: BTreeMap<TripId, DemandTrip>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl DemandResponsive {
@@ -51,6 +55,10 @@ pub struct LocationGroup {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<StopId>>")]
     pub stops: Vec<StopId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// How far ahead a ride must be booked.
@@ -115,6 +123,10 @@ pub struct BookingRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub booking_url: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// Where a demand-responsive visit happens.
@@ -181,6 +193,10 @@ pub struct Visit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub drop_off_booking: Option<BookingRuleId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// A demand-responsive trip: a route's service under a service type,
@@ -216,4 +232,8 @@ pub struct DemandTrip {
     #[ts(optional)]
     pub cars: Option<bool>,
     pub visits: Vec<Visit>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }

@@ -43,7 +43,8 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
                 PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0, ..Default::default() },
                 PatternStop { stop: "B".into(), timepoint: true, distance_m: 1000.0, ..Default::default() },
             ],
-            timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: vec![0, 600] }],
+            timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: vec![0, 600], extra: Default::default() }],
+            extra: Default::default(),
         },
     );
     let mut service_types = std::collections::BTreeMap::new();
@@ -56,9 +57,12 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
                 ranges: vec![DateRange {
                     start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    extra: Default::default(),
                 }],
                 exceptions: vec![],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     let mut pattern_trips = std::collections::BTreeMap::new();
@@ -76,6 +80,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
                     ..Default::default()
                 })
                 .collect(),
+                extra: Default::default(),
         },
     );
     // Partition the (sorted, unique) starts into consecutive blocks;
@@ -93,7 +98,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
         let end = (index + size as usize).min(trips.len());
         blocks.insert(
             format!("b{n}"),
-            Block { trips: trips[index..end].iter().map(|&s| TripRef { trip: format!("s0@{s}") }).collect(), layovers: vec![] },
+            Block { trips: trips[index..end].iter().map(|&s| TripRef { trip: format!("s0@{s}"), extra: Default::default() }).collect(), layovers: vec![], extra: Default::default() },
         );
         index = end;
     }

@@ -52,11 +52,13 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
             added_secs,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            extra: Default::default(),
         }),
         cancel: None,
         status,
         rev: 1,
         updated_at: 1,
+        extra: Default::default(),
     }
 }
 
@@ -89,8 +91,8 @@ fn departures(network_hash: &str, edits_hash: Option<String>, stop_id: &str) -> 
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
     // The same formula every network-consuming module uses: the
-    // canonical serde bytes hashed. One document, one truth.
-    let canonical = serde_json::to_string(&derived_network()).unwrap();
+    // canonical bytes (RFC 8785, D-169) hashed. One document, one truth.
+    let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
     // Idempotent: the same document loads to the same hash.
@@ -236,7 +238,7 @@ fn the_board_reads_a_live_document() {
     use transit_live::LiveStatus;
     let network_hash = load_network();
     let (live_hash, live, row) = late_at_a(&network_hash);
-    let canonical = serde_json::to_string(&live).unwrap();
+    let canonical = cap_abi::canonical_bytes(&live).unwrap();
     assert_eq!(live_hash, format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes())));
 
     let board = stop_board(&network_hash, None, "A", row.departure_secs + 60, Some(live_hash));
@@ -385,7 +387,7 @@ fn the_watchlist_board_is_the_stop_board() {
     let watched = Watchlist::V2 {
         stops: ["A", "STN", "C"]
             .into_iter()
-            .map(|id| cap_board::WatchStopV2 { id: id.into(), label: id.to_lowercase() })
+            .map(|id| cap_board::WatchStopV2 { id: id.into(), label: id.to_lowercase(), extra: Default::default() })
             .collect(),
     };
     let (watchlist_hash, _) = load_watchlist(&watched);

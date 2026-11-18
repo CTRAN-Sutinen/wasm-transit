@@ -157,9 +157,12 @@ fn build(spec: &Spec) -> (Network, Boundary) {
                 ranges: vec![DateRange {
                     start: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     end: chrono::NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    extra: Default::default(),
                 }],
                 exceptions: vec![],
+                extra: Default::default(),
             },
+            extra: Default::default(),
         },
     );
     let mut boundary = Boundary::default();
@@ -182,7 +185,7 @@ fn build(spec: &Spec) -> (Network, Boundary) {
         let departs = match t.departs {
             GenDeparts::At(start_secs) => Departs::At { start_secs },
             GenDeparts::Every(s, len, h, exact) => Departs::Every {
-                bands: vec![HeadwayBand { start_secs: s, end_secs: s + len, headway_secs: h }],
+                bands: vec![HeadwayBand { start_secs: s, end_secs: s + len, headway_secs: h, extra: Default::default() }],
                 exact,
             },
         };
@@ -200,6 +203,7 @@ fn build(spec: &Spec) -> (Network, Boundary) {
                         .collect(),
                     ..Default::default()
                 }],
+                extra: Default::default(),
             },
         );
         if let Some(seq) = &t.sequences {

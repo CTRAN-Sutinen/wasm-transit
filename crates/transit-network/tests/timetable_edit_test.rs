@@ -181,7 +181,7 @@ fn a_stop_change_reaches_every_pattern_of_the_direction() {
 #[test]
 fn removing_a_block_trip_keeps_the_other_layovers_where_they_were() {
     let net = network();
-    let late = TripRef { trip: "10-weekday@91800".into() };
+    let late = TripRef { trip: "10-weekday@91800".into(), extra: Default::default() };
     let three = apply(
         &net,
         vec![
@@ -204,7 +204,7 @@ fn what_a_timetable_gesture_cannot_do_is_named() {
     // the one-start trips beside them.
     let mut bands = net.clone();
     bands.pattern_trips.get_mut("10-weekday").unwrap().trips[0].departs = Departs::Every {
-        bands: vec![HeadwayBand { start_secs: 8 * H, end_secs: 9 * H, headway_secs: 900 }],
+        bands: vec![HeadwayBand { start_secs: 8 * H, end_secs: 9 * H, headway_secs: 900, extra: Default::default() }],
         exact: true,
     };
     bands.blocks.clear();

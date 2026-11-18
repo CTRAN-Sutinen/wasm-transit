@@ -30,8 +30,10 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   20260913-20270109. rt payloads: trip updates and vehicle positions
   from gtfs-rt.c-tran.org, service alerts from
   https://gtfs-rt.c-tran.com/Alerts.
-- Network import: `sha256:d4b9b78074b65ab2c073e52e225e146fb1c2547d
-  c5d3e678c8a1daf34879d201`, re-measured 2026-11-17 (the whole spec:
+- Network import: `sha256:e99a1cc1abe2ca8a719a96e3990cf657c17693ba
+  8d4d43170bd82d88d8f2671c`, re-measured 2026-11-18 (the RFC 8785
+  canonical form, D-169: the same document as `d4b9b780…`, on which the
+  findings before 2026-11-18 were seen; the whole spec:
   every file round-trips; C-TRAN's dated calendars read as weekly
   rules, D-105; findings before 2026-11-13 were seen on `c6847464…`;
   findings before 2026-11-06 were seen on `2beddcb3…`, the import that kept them

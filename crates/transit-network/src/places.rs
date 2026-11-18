@@ -72,6 +72,10 @@ pub struct StopInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub street_access: Option<bool>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 impl StopInfo {
@@ -111,6 +115,10 @@ pub struct StationPart {
     #[serde(default, skip_serializing_if = "StopInfo::is_empty")]
     #[ts(optional, as = "Option<StopInfo>")]
     pub info: StopInfo,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// One floor of a station.
@@ -122,6 +130,10 @@ pub struct Level {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub name: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// How a pathway is walked.
@@ -176,6 +188,10 @@ pub struct Pathway {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reversed_signposted_as: Option<String>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// What a transfer rule says about changing vehicles.
@@ -212,6 +228,10 @@ pub struct TransferEnd {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub trip: Option<TripId>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }
 
 /// How riders change vehicles between two places, routes, or trips.
@@ -224,4 +244,8 @@ pub struct TransferRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub min_transfer_secs: Option<u32>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
 }

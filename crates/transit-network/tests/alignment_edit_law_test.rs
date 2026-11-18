@@ -87,6 +87,7 @@ fn build(spec: &Spec) -> Network {
                     .enumerate()
                     .map(|(k, &(lat, lon))| AlignmentPoint { lat, lon, distance: Some(k as f64 * 100.0) })
                     .collect(),
+                    extra: Default::default(),
             },
         );
     }

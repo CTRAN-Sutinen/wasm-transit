@@ -87,6 +87,7 @@ fn alignment_of(g: &GenAlignment) -> Alignment {
                 distance: g.with_distances.then_some(i as f64 * 123.25),
             })
             .collect(),
+            extra: Default::default(),
     }
 }
 

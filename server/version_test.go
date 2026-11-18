@@ -21,7 +21,12 @@ import (
 	"rustwasm/server/store"
 )
 
-const currentEditsPrefix = `{"kind":"edit_records","schema_version":2,`
+// isCurrentEdits reports whether body is an edit document in the
+// current version, as its canonical bytes (RFC 8785, D-169) write it:
+// keys sorted, so the records sit between the two tags.
+func isCurrentEdits(body string) bool {
+	return strings.HasPrefix(body, `{"kind":"edit_records","records":[`) && strings.HasSuffix(strings.TrimSpace(body), `],"schema_version":2}`)
+}
 
 func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
@@ -32,7 +37,7 @@ func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("an older client's document is accepted: %d %s", code, body)
 	}
-	if !strings.HasPrefix(body, currentEditsPrefix) {
+	if !isCurrentEdits(body) {
 		t.Fatalf("the answer is the current version: %s", body)
 	}
 	head, _, _ := s.store.Head("edits")
@@ -40,7 +45,7 @@ func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 		t.Fatalf("the head's envelope says v%d, want v%d", head.Envelope.SchemaVersion, editsVersion)
 	}
 	data, _, _ := s.store.GetBlob(head.Hash)
-	if !strings.HasPrefix(string(data), currentEditsPrefix) || !strings.Contains(string(data), `"id":"e1"`) {
+	if !isCurrentEdits(string(data)) || !strings.Contains(string(data), `"id":"e1"`) {
 		t.Fatalf("the head is the migrated document, its record kept: %s", data)
 	}
 

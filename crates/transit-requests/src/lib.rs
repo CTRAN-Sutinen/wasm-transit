@@ -29,7 +29,6 @@ use std::fmt;
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use ts_rs::TS;
 
 /// The version this build reads and writes.
@@ -78,10 +77,10 @@ pub struct StopRequests {
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
     pub requests: BTreeMap<String, StopRequest>,
-    /// Fields this repo does not know, kept as written.
+    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 /// One request for work at a stop: the worksheet, and the work order it
@@ -176,10 +175,10 @@ pub struct StopRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<Attachment>>")]
     pub attachments: Vec<Attachment>,
-    /// Fields this repo does not know, kept as written.
+    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 /// A photo or drawing a record carries (D-162): named by its content
@@ -206,7 +205,7 @@ pub struct Attachment {
     pub taken_on: Option<String>,
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 impl Attachment {
@@ -239,7 +238,7 @@ pub struct Locate {
     pub utilities: Vec<String>,
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 /// The work order a request tracks, as the work order system says:
@@ -264,7 +263,7 @@ pub struct WorkOrder {
     pub read_on: Option<String>,
     #[serde(flatten)]
     #[ts(skip)]
-    pub extra: BTreeMap<String, Value>,
+    pub extra: transit_version::Extra,
 }
 
 /// How many requests stand at one status.

@@ -83,7 +83,17 @@ pub struct IdRequest {
 #[ts(export, export_to = "cap_requests/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    Validate { refusals: Vec<RequestRefusal>, document: Option<String>, document_hash: Option<String> },
+    Validate {
+        refusals: Vec<RequestRefusal>,
+        document: Option<String>,
+        document_hash: Option<String>,
+        /// The fields the document carries that this build does not
+        /// know (D-167): kept in it, and flagged for a person, never
+        /// refused. Absent when every field is known.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(optional, as = "Option<Vec<String>>")]
+        unknown_fields: Vec<String>,
+    },
     RequestsFor { requests: Vec<IdRequest> },
     List { requests: Vec<IdRequest>, counts: Vec<transit_requests::RequestCount> },
     Put { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
@@ -104,11 +114,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             cap_abi::speaks(StopRequests::KIND, requests.schema_version(), StopRequests::READS)?;
             Ok(match requests.checked() {
                 Ok(requests) => {
-                    let document = serde_json::to_string(&requests).map_err(|e| e.to_string())?;
+                    let document = cap_abi::canonical_bytes(&requests)?;
                     let document_hash = cap_abi::content_hash(document.as_bytes());
-                    Response::Validate { refusals: vec![], document: Some(document), document_hash: Some(document_hash) }
+                    Response::Validate { refusals: vec![], document: Some(document), document_hash: Some(document_hash), unknown_fields: cap_abi::request_unknown_fields() }
                 }
-                Err(refusals) => Response::Validate { refusals, document: None, document_hash: None },
+                Err(refusals) => Response::Validate { refusals, document: None, document_hash: None, unknown_fields: cap_abi::request_unknown_fields() },
             })
         }
         Request::RequestsFor { requests_hash, stop } => {
