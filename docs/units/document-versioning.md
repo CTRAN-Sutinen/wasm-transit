@@ -37,10 +37,8 @@ ahead, lossless or read-only, and an operator can move a pointer back
    version, the write refusal, the page's request for the deployment's
    build, the emergency procedure (`store revert`), and the rules stand
    (`docs/FORMATS.md`, "Rolling a version back"). What is left:
-   - A page with no service worker (service design, service change,
-     the stops app) refused for its version. The engine passes the
-     refusal on (`web/src/versions.ts`), and nothing on those pages
-     acts on it yet.
+   - A staff page refused for its version gets the deployment's build
+     when it joins the update cycle (`offline-apps.md`, D-189).
    - cap-plans' published set reads only its own version. Its ops take
      the set as a plain typed field. They move to `cap_abi::Current`
      and `cap_abi::Base` with the set's first format change.
@@ -52,5 +50,3 @@ ahead, lossless or read-only, and an operator can move a pointer back
   real vN+1, so it lands with the first format change after the
   baseline. The laws over fixture kinds stand (cap-abi
   `tests/read_ahead_test.rs`, the kernel's read-ahead test).
-- e2e: a page with no service worker, refused for its version, gets
-  the deployment's build.

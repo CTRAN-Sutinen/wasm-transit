@@ -51,6 +51,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule; the schema lock and the published spec |
+| [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
 | [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, backup and restore (D-82) |
 | [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |
 

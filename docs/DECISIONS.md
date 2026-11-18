@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-189**.
+- IDs are never reused; the next new decision is **D-190**.
 
 ## Summary
 
@@ -241,6 +241,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-186 | What does a build that reads one version ahead write over a document in that version? | decided; built | nothing |
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
+| D-189 | Do the staff pages work offline, and queue their writes? | decided; not built | nothing |
 
 ## The trip model
 
@@ -3887,3 +3888,37 @@ Options:
 - Keep it whole for now, and cut it when its size or a new chain
   makes the cost matter.
 Blocks: nothing.
+
+### D-189 — Do the staff pages work offline, and queue their writes?
+State: Decided.
+Answer: 2026-11-18 — yes. The user: "i would like all these apps to
+work offline/at least have some level of graceful failure mode. the
+server is ultimately the authority on writes, but there is no reason
+why a planner, etc can't queue work offline and sync when back on."
+"there is a difference between needing a server occasionally and
+needing a server *always*." On the restated design: "yes, looks good
+to me." Encoded as:
+- Service design, service change, and the stops app install and boot
+  offline like ride-now and the stop display (D-65), and join the
+  update cycle (D-63): a new build waits, and the person applies it.
+- A write that cannot reach the server waits in the device's outbox,
+  in order, always shown, and is sent through the normal receive path
+  when the server answers. A queued write waits for a valid sign-in.
+- The edit document merges per record. A stops or stop requests change
+  is queued as its op and arguments, and runs again over the current
+  head at send time. A publish runs at send time against the set as it
+  is then. Photos and drawings are sent before the write that names
+  them.
+- A refusal at send time keeps the work and shows it with the server's
+  reasons. Nothing is dropped without a word.
+Context: D-65 made only the two rider pages offline. The staff pages
+need the server only at moments (loading the published documents,
+publishing, writing the stops document). Planning itself runs in the
+browser, over documents in the device's store.
+Options:
+- Online only: a write fails while the server is away, and the work
+  stays local.
+- Offline, with a write failing while the server is away.
+- Offline, with the outbox: writes queue and sync when the server
+  answers.
+Blocks: nothing. The work is `docs/units/offline-apps.md`.
