@@ -1,4 +1,4 @@
-//! cap-migrate's seam laws (docs/units/document-versioning.md):
+//! cap-migrate's seam laws (docs/FORMATS.md, "Versions"):
 //!
 //! * a v1 network, edit document, and watchlist each come forward to
 //!   the version this build reads, and the answer's hash is the one

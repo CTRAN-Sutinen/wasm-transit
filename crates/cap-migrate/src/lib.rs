@@ -8,7 +8,7 @@
 //! a consumer reads the current version only and never carries an old
 //! chain; a host assembles it only when an older document needs it
 //! (the receive boundaries: the server store, a browser's restore,
-//! `caps-run --load` — docs/units/document-versioning.md).
+//! `caps-run --load` — docs/FORMATS.md, "Versions").
 //!
 //! The chains:
 //!

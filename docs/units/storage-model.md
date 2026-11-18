@@ -26,8 +26,9 @@ that keep the bucket the one record.
 4. **Views are disposable.** A cache, index, projection or replica
    names the versions it was built from, and is rebuilt from the
    bucket at any time.
-5. **History is append-only.** Deletion is a tombstone; the one
-   exception is data the law requires removed (D-168).
+5. **History is append-only.** Deletion is a tombstone. No document
+   tracks personal data. A kind that ever does designs its removal
+   with it (D-168).
 
 ## Scope, in order
 
@@ -79,8 +80,7 @@ that keep the bucket the one record.
    is the deployment's; the contract is this repo's. The first: the
    stops for a GIS (GeoJSON for a date, JSON-FG over a range), the stops on a date, and the pages'
    incremental sync of edits, stops and requests.
-5. **Permissions per change, restricted reads** (restricted reads
-   Blocked: D-168). The receive path knows which records a write
+5. **Permissions per change, restricted reads.** The receive path knows which records a write
    changed; the kind's module sorts each change into its change
    classes (stops: a survey, a planned event, an in-service event…),
    and cap-authz maps roles to classes — stewardship per field and
@@ -108,4 +108,4 @@ that keep the bucket the one record.
 - The stops GeoJSON projection and the pages' incremental sync run on
   the C-TRAN store, dogfooded with two people saving stops at once.
 - The rebuild drill runs in `just test`.
-- D-121 and D-168 are decided and encoded.
+- D-121 is decided and encoded.

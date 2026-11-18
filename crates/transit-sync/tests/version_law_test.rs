@@ -1,5 +1,5 @@
 //! The edit document's version laws (D-62, D-66, D-115;
-//! docs/units/document-versioning.md).
+//! docs/FORMATS.md, "Versions").
 //!
 //! * The document names its kind and version, first:
 //!   `{"kind":"edit_records","schema_version":2,"records":[…]}`.

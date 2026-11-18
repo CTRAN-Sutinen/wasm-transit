@@ -1,5 +1,5 @@
 //! The network document's version laws (D-62, D-66, D-115;
-//! docs/units/document-versioning.md).
+//! docs/FORMATS.md, "Versions").
 //!
 //! * Every network written names its kind and its version, first:
 //!   `{"kind":"network","schema_version":2,…}`.

@@ -14,10 +14,10 @@ it depends on is:
 - **Memory** — the runaway check in
   [perf-harness.md](perf-harness.md): a soak fails when memory does
   not level off. There is no fixed budget (D-187).
-- **Versioning** — a display's cached build meets newer documents:
-  [document-versioning.md](document-versioning.md), "Rolling a version
-  back". A display refused for its version looks for the deployment's
-  build at once (`web/src/versions.ts`).
+- **Versioning** stands: a display's cached build that meets newer
+  documents refuses them, naming both versions, and looks for the
+  deployment's build at once (`docs/FORMATS.md`, "Rolling a version
+  back").
 - **The static bundle** stands (`just export`; docs/architecture/static-deployment.md).
 
 The server's units ([store-durability.md](store-durability.md),
@@ -57,8 +57,7 @@ What is left here:
 
 ## Done when
 
-- [perf-harness.md](perf-harness.md)'s runaway check stands, and
-  document-versioning's browser items are pinned.
+- [perf-harness.md](perf-harness.md)'s runaway check stands.
 - A real Cloudflare Workers deployment, set up as `DEPLOYMENTS.md`
   says, checked against it and recorded in `DEPLOYMENTS.md`:
   - each page's `Content-Security-Policy` against the deployment's

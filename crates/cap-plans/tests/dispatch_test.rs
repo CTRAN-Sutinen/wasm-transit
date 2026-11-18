@@ -5,6 +5,7 @@
 //! is pinned: the tagged wire form round-trips, and garbage or
 //! bulk bytes are honest errors, never panics.
 
+use cap_abi::{Base, Current};
 use cap_plans::{dispatch, dispatch_bytes, dispatch_json, PlanInfo, Request, Response};
 
 fn info(id: &str, name: &str, from: Option<&str>) -> PlanInfo {
@@ -81,23 +82,23 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     assert_eq!(reread, published);
 
     // in_force answers the pick and its network.
-    match dispatch(Request::InForce { published: published.clone(), date: "2026-11-05".into() }).unwrap() {
+    match dispatch(Request::InForce { published: Current(published.clone()), date: "2026-11-05".into() }).unwrap() {
         Response::InForce { plan: Some(p) } => assert_eq!((p.id.as_str(), p.network_hash.as_str()), ("fall", h.as_str())),
         other => panic!("in_force: {other:?}"),
     }
-    match dispatch(Request::InForce { published: published.clone(), date: "2026-01-01".into() }).unwrap() {
+    match dispatch(Request::InForce { published: Current(published.clone()), date: "2026-01-01".into() }).unwrap() {
         Response::InForce { plan: None } => {}
         other => panic!("before the first pick nothing is in force: {other:?}"),
     }
 
     // in_use answers the pick in force and the picks still to come.
-    match dispatch(Request::InUse { published: published.clone(), today: "2026-11-05".into() }).unwrap() {
+    match dispatch(Request::InUse { published: Current(published.clone()), today: "2026-11-05".into() }).unwrap() {
         Response::InUse { plans } => assert_eq!(plans.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["fall"]),
         other => panic!("in_use: {other:?}"),
     }
 
     // A refusal is an answer with its reasons, never a stored document.
-    match dispatch(Request::Publish { published: Some(published.clone()), plan: info("", "import", None), network_hash: h.clone(), today: "2026-08-01".into() }).unwrap() {
+    match dispatch(Request::Publish { published: Some(Base(published.clone())), plan: info("", "import", None), network_hash: h.clone(), today: "2026-08-01".into() }).unwrap() {
         Response::Publish { issues, document: None, document_hash: None, published: None } => assert!(!issues.is_empty()),
         other => panic!("refusal: {other:?}"),
     }
@@ -105,9 +106,9 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     // A set from a newer schema is refused naming both, not guessed at.
     let mut newer = published;
     newer.schema_version = 99;
-    let err = dispatch(Request::InForce { published: newer.clone(), date: "2026-11-05".into() }).unwrap_err();
+    let err = dispatch(Request::InForce { published: Current(newer.clone()), date: "2026-11-05".into() }).unwrap_err();
     assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
-    let err = dispatch(Request::InUse { published: newer, today: "2026-11-05".into() }).unwrap_err();
+    let err = dispatch(Request::InUse { published: Current(newer), today: "2026-11-05".into() }).unwrap_err();
     assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
 }
 
@@ -128,7 +129,7 @@ fn retire_answers_the_next_set_or_why_not() {
         Response::Publish { published: Some(p), .. } => p,
         other => panic!("publish: {other:?}"),
     };
-    match dispatch(Request::Retire { published: published.clone(), id: "spring".into(), today: "2026-11-05".into() }).unwrap() {
+    match dispatch(Request::Retire { published: Base(published.clone()), id: "spring".into(), today: "2026-11-05".into() }).unwrap() {
         Response::Retire { document: Some(d), document_hash: Some(dh), published: Some(p), issues } => {
             assert!(issues.is_empty());
             assert_eq!(dh, cap_abi::content_hash(d.as_bytes()));
@@ -136,7 +137,7 @@ fn retire_answers_the_next_set_or_why_not() {
         }
         other => panic!("retire: {other:?}"),
     }
-    match dispatch(Request::Retire { published, id: "spring".into(), today: "2027-03-01".into() }).unwrap() {
+    match dispatch(Request::Retire { published: Base(published), id: "spring".into(), today: "2027-03-01".into() }).unwrap() {
         Response::Retire { issues, document: None, .. } => assert!(!issues.is_empty()),
         other => panic!("a pick that took effect is refused: {other:?}"),
     }

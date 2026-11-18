@@ -208,6 +208,16 @@ store. Rolling one app back means choosing an older version of that
 app and uploading it to the app's address again. The other apps do not
 change.
 
+Sometimes a new version stores some data in a new format. That change
+comes in two releases. The first release learns to read the new format
+but still writes the old one. The second release writes the new one.
+So the release before any update can always read what the update
+wrote, and rolling back one release is safe. Where the old format
+cannot hold everything the new one says, the older release shows that
+data but does not change it, so nothing is lost. An app that meets
+data from a newer version says so, and looks for the newer version of
+itself.
+
 ## When staff enter a detour
 
 This needs the server. A detour or a trip cancellation is a

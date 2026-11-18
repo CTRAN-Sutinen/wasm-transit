@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 
+use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -42,19 +43,38 @@ pub enum Request {
     /// Answers the canonical document and its hash — the module is the
     /// hash authority; a host stores exactly those bytes — or every
     /// reason and no document.
-    Publish { published: Option<PublishedPlans>, plan: PlanInfo, network_hash: String, today: String },
+    Publish {
+        #[ts(as = "Option<PublishedPlans>")]
+        published: Option<Base<PublishedPlans>>,
+        plan: PlanInfo,
+        network_hash: String,
+        today: String,
+    },
     /// Retire a pick that has not taken effect (D-75): it stays in the
     /// set as the tombstone and never governs. Answers like publish.
-    Retire { published: PublishedPlans, id: String, today: String },
+    Retire {
+        #[ts(as = "PublishedPlans")]
+        published: Base<PublishedPlans>,
+        id: String,
+        today: String,
+    },
     /// The published pick in force on `date` and its network hash —
     /// how a client chooses which network to load. Null before the
     /// first pick takes effect.
-    InForce { published: PublishedPlans, date: String },
+    InForce {
+        #[ts(as = "PublishedPlans")]
+        published: Current<PublishedPlans>,
+        date: String,
+    },
     /// The picks in use on `today`, the host's date: the pick in force,
     /// then every published pick still to come. The server brings their
     /// networks forward at startup. A pick that stopped governing, or a
     /// retired one, stays in its version.
-    InUse { published: PublishedPlans, today: String },
+    InUse {
+        #[ts(as = "PublishedPlans")]
+        published: Current<PublishedPlans>,
+        today: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -93,7 +113,9 @@ fn answered(next: Result<PublishedPlans, Vec<PlanIssue>>) -> Result<(Vec<PlanIss
 }
 
 /// A published set in another version is refused, never guessed —
-/// naming both (docs/FORMATS.md, "Versions").
+/// naming both (docs/FORMATS.md, "Versions"). A set from the JSON lane
+/// reads through `Current` or `Base` (one version ahead, D-186); this
+/// check holds a typed request from a native host to the same rule.
 fn spoken(published: &PublishedPlans) -> Result<(), String> {
     use transit_version::Versioned;
     cap_abi::speaks(PublishedPlans::KIND, published.schema_version(), PublishedPlans::READS)
@@ -119,7 +141,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Periods { periods: transit_plans::periods(&plans) })
         }
         Request::Publish { published, plan, network_hash, today } => {
-            let base = published.unwrap_or_else(PublishedPlans::empty);
+            let base = published.map(|b| b.0).unwrap_or_else(PublishedPlans::empty);
             spoken(&base)?;
             let today = parse_date(&today)?;
             let (issues, published, document, document_hash) =
@@ -127,20 +149,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Publish { issues, published, document, document_hash })
         }
         Request::Retire { published, id, today } => {
-            spoken(&published)?;
+            spoken(&published.0)?;
             let today = parse_date(&today)?;
-            let (issues, published, document, document_hash) = answered(transit_plans::retire(&published, &id, today))?;
+            let (issues, published, document, document_hash) = answered(transit_plans::retire(&published.0, &id, today))?;
             Ok(Response::Retire { issues, published, document, document_hash })
         }
         Request::InForce { published, date } => {
-            spoken(&published)?;
+            spoken(&published.0)?;
             let parsed = parse_date(&date)?;
-            Ok(Response::InForce { plan: transit_plans::in_force(&published, parsed)?.cloned() })
+            Ok(Response::InForce { plan: transit_plans::in_force(&published.0, parsed)?.cloned() })
         }
         Request::InUse { published, today } => {
-            spoken(&published)?;
+            spoken(&published.0)?;
             let today = parse_date(&today)?;
-            Ok(Response::InUse { plans: transit_plans::in_use(&published, today)?.into_iter().cloned().collect() })
+            Ok(Response::InUse { plans: transit_plans::in_use(&published.0, today)?.into_iter().cloned().collect() })
         }
     }
 }

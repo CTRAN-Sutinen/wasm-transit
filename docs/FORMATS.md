@@ -511,10 +511,9 @@ Every reader reads ahead the same way: a kernel load, a request field
 document through `Kind::require_writable`; transit-sync's
 `read_document`). A copy read ahead is held under the hash it is stored
 with, so the page and the store name it alike. The laws are in cap-abi
-`tests/read_ahead_test.rs`. A kind whose ops still take the document as
-a plain typed field (cap-plans' published set) reads only its own
-version, and refuses the next one, until its change moves that field to
-`Current` or `Base`.
+`tests/read_ahead_test.rs`. cap-plans takes the published set the same
+way: `in_force` and `in_use` read it, and `publish` and `retire` write
+over it.
 
 A page whose module refuses a document as newer, or whose write the
 server refuses for its version, asks for the deployment's build

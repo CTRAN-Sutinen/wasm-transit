@@ -219,12 +219,13 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-163 | Who is a survey's surveyor? | decided | nothing |
 | D-164 | Does the store log hide who wrote each change from callers without audit? | unanswered | nothing |
 | D-165 | How does a request reach the work order system before its API is wired? | decided | nothing |
-| D-166 | What is the smallest part of the stops document two writers can change at once? | unanswered | the stop event ids and the stops merge in `storage-model` |
-| D-167 | Do authored documents keep the fields they do not know? | unanswered | the shapes and the kind table's strictness in `storage-model` |
-| D-168 | Where does personal data live, and how is it removed when the law requires? | unanswered | restricted reads in `storage-model` |
-| D-169 | Is a document's canonical form serde's field order, or RFC 8785? | unanswered | nothing (before the first deployment's baseline) |
-| D-170 | Are the migration steps from before the first deployment kept? | unanswered | nothing |
+| D-166 | What is the smallest part of the stops document two writers can change at once? | decided; partly built | the stops merge in `storage-model` |
+| D-167 | Do authored documents keep the fields they do not know? | decided | the kind table's strictness in `storage-model` |
+| D-168 | Where does personal data live, and how is it removed when the law requires? | decided | nothing |
+| D-169 | Is a document's canonical form serde's field order, or RFC 8785? | decided | nothing |
+| D-170 | Are the migration steps from before the first deployment kept? | decided | nothing |
 | D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | decided | nothing |
+| D-172 | Where do the server's settings live? | decided | nothing |
 | D-173 | How does a stop the stops app made reach a plan? | decided | nothing |
 | D-174 | How are code comments and the developer documents written? | decided | nothing |
 | D-175 | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
@@ -1365,7 +1366,19 @@ Blocks: the kind table's strictness in `docs/units/storage-model.md`
 (item 1). The shapes are built.
 
 ### D-168 — Where does personal data live, and how is it removed when the law requires?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-18 — no document tracks personal data, so there is no
+deletion mechanism. The user: "nothing in this repo tracks personal
+data", and on the names listed below, "that isn't personal data". Staff
+attribution on their own work (`writer`, a surveyor, a request's
+`called_by`, `marked_by`, `completed_by`), a request's `requested_by`,
+and site photos are the agency's records, and the open documents keep
+them. A rider's device records stay on the device and are never
+reported (D-83). If a kind ever tracks personal data, its removal is
+designed with that kind ("unless we actually start tracking personal
+data there is no reason to have a deletion mechanism/it can be built
+into the way the personal data is tracked"). Restricted reads in
+`docs/units/storage-model.md` no longer wait on this entry.
 Context: the open documents name people — a stop request's
 `requested_by`, `called_by`, `marked_by`, `completed_by`; a survey's
 surveyor (D-163); the pointer log's `writer` (D-164). The record is
@@ -1382,7 +1395,7 @@ Options:
 - Out of the bucket: the record holds a reference to a person
   (an IdP subject), never their details.
 - As today: names in the open documents, kept forever.
-Blocks: restricted reads in `docs/units/storage-model.md` (item 5).
+Blocks: nothing.
 
 ### D-169 — Is a document's canonical form serde's field order, or RFC 8785?
 State: Decided.
@@ -1425,7 +1438,7 @@ rollback) with no older version to be tested on. The user: "it is also
 fine to just keep the existing versions, i would rather have this in
 place before having prod workloads". The three steps stay as the
 machinery's real older versions, and the whole of
-`docs/units/document-versioning.md` lands before production.
+the `document-versioning` unit (its file is in git) lands before production.
 Context: D-66 keeps every authored kind's migration chain forever, so
 an old document anywhere can be read. Three steps predate any
 deployment — the network's v1→v2, the edit document's v1→v2, and the
@@ -2105,7 +2118,7 @@ State: Encoded provisionally.
 Context: D-45 cancels a whole trip. A trip instance is (trip, start);
 a frequency trip's instances share one stored trip. A diversion
 spans a date range; the edit document has no version tag inside it
-yet (`docs/units/document-versioning.md`).
+yet (the `document-versioning` unit; its file is in git).
 Options:
 - **One trip on one service date (encoded):** `{id, trip_id,
   start_secs, date}` — `start_secs` one instance, null every instance
@@ -2917,7 +2930,7 @@ layer; anything only it answered becomes a gap recorded in a unit.
 Why: `docs/architecture/web.md`, Why, "Every page is a generated UI".
 Blocks: nothing. The gaps it left are paid by `ui-disruptions` and
 `ui-runcut`; the migrate/rollback pin is
-`docs/units/document-versioning.md`'s browser e2e.
+the browser e2e of the `document-versioning` unit (its file is in git).
 
 ### D-70 — How do the module runtime's bounds default?
 State: Encoded provisionally.
@@ -3358,7 +3371,7 @@ Answer: 2026-11-06 — "i like option 1." Read one version ahead. Then, on old a
 - An archive reads two ways. As it was: its bytes and its version's published schema, the default for an audit. Or as it is today: brought forward on read, deterministically, never stored; an audit view offers this where a migration note says something was dropped.
 - The migration module is cut by use: operational pieces linked only where their documents arrive (the server's receive, a page's restore), and one archive piece holding every chain.
 - A backup restores into a build at least as new as the backup; an older build refuses it, naming both versions.
-Context: `docs/units/document-versioning.md`. Rollback is a pointer
+Context: the `document-versioning` unit (its file is in git). Rollback is a pointer
 moved back, never an inverse migration, so the bytes from before an
 upgrade stay addressable. But a newer build that has written vN+1
 documents leaves a rolled-back vN build unable to read them (a module
@@ -3377,7 +3390,7 @@ Options:
 - Roll back the data too: a rollback moves every pointer back to its
   pre-upgrade head; commits made since are replayed through the old
   build or lost. Simplest code; it can lose edits.
-Blocks: rollback in `docs/units/document-versioning.md`.
+Blocks: rollback in the `document-versioning` unit (its file is in git).
 Amended: 2026-11-18 by D-188. The migration module stays whole for
 now: it is not cut into operational and archive pieces.
 
