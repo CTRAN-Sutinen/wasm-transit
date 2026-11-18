@@ -104,16 +104,18 @@ Change it only with the user, and only after you read **Because**.
 - **Rejected:** the HTTP cache only, offline later.
 - **Decided:** D-65.
 
-### Budgets from what the page needs (D-68 numbers; `just perf`, the cost ratchet)
-- **Holds:** The stop display uses at most 40 MB of wasm and JS heap.
-  The heap stays flat across 24 h, on a Raspberry Pi 4. Ride-now uses at
-  most 80 MB. Its first board appears under 3 s cold and under 1 s
-  cached. No main-thread task runs over 50 ms after first paint. The
-  page does not poll while hidden. Ride-now has budgets, not a device
-  floor. A deployment that follows a GTFS URL is exempt (D-132).
-- **Because:** Budgets come from what the page needs. They never come
-  from the hardware's headroom: "why would we be allowing a departure
-  board to tax 2 GB of RAM". Most phones handle a properly optimized
-  page. So ride-now targets browsers, not a minimum device.
-- **Rejected:** a named minimum phone and a looser page budget.
-- **Decided:** D-64, D-68.
+### Costs are measured, not budgeted (`just perf`)
+- **Holds:** No page has a fixed memory or time budget. `just perf`
+  measures what each step costs, and a person weighs a change's cost
+  against what it adds. Memory that does not level off while a page
+  stays open is wrong for every deployment. The stop display runs on a
+  Raspberry Pi 4. Ride-now targets browsers, with no minimum device.
+  The page does not poll while hidden.
+- **Because:** Deployments and features change. A fixed number would
+  fail a feature that is worth its cost on one deployment and not on
+  another. What is always wrong is use that is out of control. Most
+  phones handle a properly optimized page.
+- **Rejected:** fixed budgets for each page (40 MB for the display,
+  80 MB for ride-now); a ratchet whose ceilings only come down; a named
+  minimum phone.
+- **Decided:** D-64, D-187.

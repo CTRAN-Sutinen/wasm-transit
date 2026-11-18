@@ -123,7 +123,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-65 | Do ride-now and the stop display work offline? | decided | nothing |
 | D-66 | How long is a migration kept? | decided | nothing |
 | D-67 | Whose feeds does the server's proxy fetch? | decided | nothing |
-| D-68 | What are ride-now's and the stop display's performance budgets? | decided | nothing |
+| D-68 | What are ride-now's and the stop display's performance budgets? | decided; replaced by D-187 | nothing |
 | D-69 | What happens to the original app when host calls move into the engine? | decided | nothing |
 | D-70 | How do the module runtime's bounds default? | encoded | nothing |
 | D-71 | May a module register a document under a pinned hash it did not compute? | decided | nothing |
@@ -237,6 +237,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-182 | Does the server compress its own static files? | encoded | nothing |
 | D-183 | What policy do the rider pages send, and who writes the export's `_headers`? | encoded | nothing |
 | D-184 | What color is the text on a route's badge? | encoded | nothing |
+| D-185 | Are the Go host's own documents (`build`, `manifest`) typed and hashed by a module? | unanswered | the `build` schema's form |
+| D-186 | What does a build that reads one version ahead write over a document in that version? | decided; not built | nothing |
+| D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 
 ## The trip model
 
@@ -2875,7 +2878,7 @@ Blocks: `deploy-rider-apps` following a publish.
 ### D-64 — Which devices must the rider apps run well on?
 State: Decided.
 Answer: 2026-11-03 — the stop displays run on Raspberry Pi 4s. Ride-now targets browsers: "it shouldn't be about 'minimum support' most phones these days can handle a properly optimized page." So ride-now has performance budgets, not a device floor; the numbers are D-68.
-Why: `docs/architecture/updates-offline.md`, Why, "Budgets from what the page needs".
+Why: `docs/architecture/updates-offline.md`, Why, "Costs are measured, not budgeted".
 Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
 phone dogfood.
 
@@ -2900,9 +2903,10 @@ Blocks: `deploy-rider-apps` the proxy.
 ### D-68 — What are ride-now's and the stop display's performance budgets?
 State: Decided.
 Answer: 2026-11-03 — "ok" to the proposal below, after asking "why would we be allowing a departure board to tax 2 GB of RAM": budgets are set from what the page needs, never the hardware's headroom — the display at most 40 MB of wasm + JS heap flat across 24 h, ride-now at most 80 MB, with the timing budgets below.
-Why: `docs/architecture/updates-offline.md`, Why, "Budgets from what the page needs".
+Why: `docs/architecture/updates-offline.md`, Why, "Costs are measured, not budgeted".
 Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
 dogfood.
+Replaced: 2026-11-18 by D-187. The budgets are gone.
 
 ### D-69 — What happens to the original app when host calls move into the engine?
 State: Decided.
@@ -2972,7 +2976,7 @@ Context: registration is the hot path every module runs on every
 page, and the network is registered from its gzip stream
 (`cap_abi::parse_document`), a per-byte decode that opt-level "s"
 leaves un-inlined. Measured in Node on the C-TRAN network
-(`docs/units/runtime-cost-gate.md`): board at "s" registers the
+(the `runtime-cost-gate` unit, replaced by D-187; its file is in git): board at "s" registers the
 gzip stream in 302 ms (1.75 MB module); at 3 in 187 ms (2.17 MB).
 The plain-JSON slice parse at "s" was 168 ms and 1.70 MB.
 Encoded (provisional): `opt-level = 3` for the whole workspace's
@@ -3002,7 +3006,7 @@ loads, `assembly!` emits the exports, each generated UI loads one
 linked module, and the four gates run in `just test`
 (`docs/architecture/bus.md`, "Bus rules"). Measured on C-TRAN the same
 day: the stop display 41.5 → 21.0 MB (wasm 31.8 → 16.2), ride-now's
-wasm 45.7 → 17.8 MB (`docs/units/runtime-cost-gate.md`); the server
+wasm 45.7 → 17.8 MB (the `runtime-cost-gate` unit, replaced by D-187; its file is in git); the server
 stays on single-capability modules (D-78).
 
 ### D-78 — Does the Go server host linked assemblies?
@@ -3543,6 +3547,8 @@ Options:
   the D-68 budget, no reset under the ceiling, for the window.
 Blocks: nothing; the revert's window is pinned by the revert e2e in
 `docs/units/observability-rollout.md` when it lands.
+Amended: 2026-11-18 by D-187. Health no longer checks memory against
+a budget. A reset under the ceiling still counts.
 
 ### D-135 — Which browsers must the generated UIs support?
 State: Decided.
@@ -3800,4 +3806,55 @@ Options:
   recheck) and rollback stay. Every committed build hashes differently
   once, which touches only development stores.
 Blocks: the `build` schema's form in `docs/units/document-versioning.md`,
-item 3 (the hand-written schema stands until this is answered).
+"The Go host's own documents" (the hand-written schema stands until
+this is answered).
+
+### D-186 — What does a build that reads one version ahead write over a document in that version?
+State: Decided.
+Answer: 2026-11-18 — "lets go with 3": lossless where the change can
+be, read-only where it cannot. Each format change declares its case.
+- Lossless: release A carries the step down, vN+1 to vN, and reads and
+  writes as usual after a rollback. A law pins the step: vN+1 read
+  down and brought forward again is the same document.
+- Read-only: release A reads a vN+1 document through the step down,
+  and refuses to write over it, naming both versions, until the
+  deployment moves forward again. Edits to that kind pause during the
+  rollback, and nothing is dropped without a word.
+Context: D-79 has release A read vN and vN+1 and write vN. A version
+change that is not an added optional field (D-167) renames, moves, or
+adds meaning, so A's code works on vN and reads vN+1 by stepping it
+down. A write by A then stores vN over a head that B wrote as vN+1.
+Where vN+1 holds what vN cannot, that write drops it.
+Options:
+1. Lossless only: every change must step down without loss, or it does
+   not ship as one change.
+2. Read-only only: A never writes over a vN+1 head.
+3. Both: each change declares lossless or read-only, and a law checks
+   the lossless claim.
+Blocks: nothing. Built with rollback in
+`docs/units/document-versioning.md`.
+
+### D-187 — Is performance held to fixed budgets?
+State: Decided.
+Answer: 2026-11-18 — no. "A fixed budget at all times doesn't account
+for the changing deployment strategies and features I may need to
+support. All I really want is a clean performance test harness that
+allows me to check to see if resource utilization is out of control and
+allows me to balance the needs of the application against performance
+constraints." D-68's budgets "should go away entirely": no memory or
+time budget, no target that the reports compare against, and no
+ratchet whose ceilings only come down.
+- `just perf` measures, and compares a run with a named baseline. A
+  person weighs each change's cost against what it adds.
+- Runaway use fails: memory or held documents that do not level off in
+  a soak, and a module reset under its ceiling. This is wrong for every
+  deployment.
+- D-84's health check loses "memory past the D-68 budget". A reset
+  under the ceiling still counts.
+Context: D-68 set the display at 40 MB and ride-now at 80 MB, with
+timing budgets, and `runtime-cost-gate` planned a ratchet spec under
+them. `deploy-rider-apps` could not close until the ceilings came under
+the budgets.
+Why: `docs/architecture/updates-offline.md`, Why, "Costs are measured,
+not budgeted".
+Blocks: nothing. Built in `docs/units/perf-harness.md`.

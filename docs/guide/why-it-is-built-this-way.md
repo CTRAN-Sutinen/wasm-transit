@@ -33,8 +33,8 @@ because each phone does its own work. The agency only serves files,
 and any web host does that cheaply.
 
 **The cost.** The device does real work, so the software must be
-careful with memory and speed. The project sets budgets for both, and
-measures against them. The first visit downloads the data. For
+careful with memory and speed. The project measures both for every
+change, and treats memory that keeps growing as a defect. The first visit downloads the data. For
 C-TRAN, the network is about 0.6 MB compressed, and the street data
 that walking directions use is about 4.5 MB.
 

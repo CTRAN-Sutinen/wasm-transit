@@ -11,12 +11,9 @@ bundle any static host serves.
 This unit owns what no other unit does, and is done only when what
 it depends on is:
 
-- **Memory and the main thread** — the measured ceilings,
-  [runtime-cost-gate.md](runtime-cost-gate.md).
-  The budgets those ceilings must come under (D-68): wasm + JS heap
-  at most 40 MB on the display, flat across 24 h; at most 80 MB for
-  ride-now, its first board under 3 s cold and 1 s cached, no
-  main-thread task over 50 ms after first paint.
+- **Memory** — the runaway check in
+  [perf-harness.md](perf-harness.md): a soak fails when memory does
+  not level off. There is no fixed budget (D-187).
 - **Versioning** — a display's cached build meets newer documents:
   [document-versioning.md](document-versioning.md)'s browser items
   (2, the migration module cut by use, and 4's reader of the next
@@ -61,10 +58,8 @@ What is left here:
 
 ## Done when
 
-- [runtime-cost-gate.md](runtime-cost-gate.md) is deleted, with
-  ceilings under the D-68 budgets (for a deployment that publishes its
-  network; one that follows the GTFS URL is exempt, D-132), and document-versioning's browser
-  items are pinned.
+- [perf-harness.md](perf-harness.md)'s runaway check stands, and
+  document-versioning's browser items are pinned.
 - The static host chosen and its headers configured to the rule in
   docs/architecture/static-deployment.md, the config recorded
   here.
@@ -72,7 +67,7 @@ What is left here:
   stop display on a Pi 4 left open 24 h across a service-day
   rollover and one redeploy (memory sampled, plateaued; the re-pin
   and a build applied at a poll), reading the fixed feeds directly;
-  a ride-now session on a phone under the D-68 budgets, installed,
+  a ride-now session on a phone, its costs recorded, installed,
   then offline at a stop.
 
 The pins that stand: `e2e/deploy-updates.spec.mjs` (re-pin, plateau),

@@ -26,8 +26,7 @@ yet scoped").
   offline and back) are durable.
   - a stop display: a heartbeat with its build, its module or
     assembly hashes, the manifest, network, and plan-set hashes it
-    has pinned, its last good poll, its memory against the D-68
-    budget, and its errors;
+    has pinned, its last good poll, its memory, and its errors;
   - the server: structured logs of imports, publishes, store commits
     and conflicts (the store log already audits writes and their
     writers), and failed requests;
@@ -40,9 +39,9 @@ yet scoped").
 - **Automatic revert** (D-84). A display judges its own health; it
   needs no server and no heartbeat, so a static-only deployment has
   it too. Health counts only failures the build causes: its assembly
-  does not load, an op refuses, the board does not render, memory
-  passes the D-68 budget or the display resets under its ceiling, an
-  uncaught error. A fetch that fails (the network, the server, or a
+  does not load, an op refuses, the board does not render, the
+  display resets under its memory ceiling (D-187), an uncaught
+  error. A fetch that fails (the network, the server, or a
   feed down) is reported, never a cause to revert. Within the
   probation window after it applies a build (one service day,
   across its rollover), a display whose health fails reverts to the

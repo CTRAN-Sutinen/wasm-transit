@@ -106,7 +106,7 @@ keeps the last zip in Cache Storage (`gtfs-feed`). A device therefore
 boots offline on that zip. The feed must answer with CORS.
 
 This mode has costs. Every device imports the feed (C-TRAN: ~2.7 s, a
-~187 MB network module). The budgets (D-68) do not hold here. No walk
+~187 MB network module). No walk
 table between stops ships, because the walk table derives from the
 network, and only the page has the network. A street layer still ships.
 
@@ -146,9 +146,9 @@ Change it only with the user, and only after you read **Because**.
   zip in Cache Storage. It adopts a changed zip without a reload. With a
   server, pages never parse GTFS.
 - **Because:** A fully serverless deployment should not need a redeploy
-  for each new feed. The import on every device goes beyond the budgets
-  (D-68), and there is no walk table between stops. The cost was
-  accepted for that mode only.
+  for each new feed. The import costs every device time and memory,
+  and there is no walk table between stops. The cost was accepted for
+  that mode only.
 - **Rejected:** a scheduled re-export and redeploy; a Cloudflare Worker
   cron running the import.
 - **Decided:** D-132. **Pinned:** `web/e2e/static-feed-url.spec.mjs`,
