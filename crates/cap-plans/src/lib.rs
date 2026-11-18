@@ -4,7 +4,8 @@
 //! plan set a planner holds (resolve / validate / periods) and over
 //! the PUBLISHED plan set the server's `plans` pointer holds (publish
 //! answers its next canonical document; in_force answers the pick
-//! and network a client loads). The domain
+//! and network a client loads; in_use answers the picks whose networks
+//! the server brings forward at startup). The domain
 //! code (resolution, governing periods, chain validity) lives in the
 //! shared `transit-plans` library — the cross-document counterpart
 //! of transit-sync's merge; this module is the seam. Pure,
@@ -49,6 +50,11 @@ pub enum Request {
     /// how a client chooses which network to load. Null before the
     /// first pick takes effect.
     InForce { published: PublishedPlans, date: String },
+    /// The picks in use on `today`, the host's date: the pick in force,
+    /// then every published pick still to come. The server brings their
+    /// networks forward at startup. A pick that stopped governing, or a
+    /// retired one, stays in its version.
+    InUse { published: PublishedPlans, today: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -65,6 +71,7 @@ pub enum Response {
         document_hash: Option<String>,
     },
     InForce { plan: Option<PublishedPlan> },
+    InUse { plans: Vec<PublishedPlan> },
     Retire {
         issues: Vec<PlanIssue>,
         published: Option<PublishedPlans>,
@@ -129,6 +136,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             spoken(&published)?;
             let parsed = parse_date(&date)?;
             Ok(Response::InForce { plan: transit_plans::in_force(&published, parsed)?.cloned() })
+        }
+        Request::InUse { published, today } => {
+            spoken(&published)?;
+            let today = parse_date(&today)?;
+            Ok(Response::InUse { plans: transit_plans::in_use(&published, today)?.into_iter().cloned().collect() })
         }
     }
 }

@@ -1428,7 +1428,7 @@ watchlist's v1→v2 — and only development stores hold their older
 versions. The user, 2026-11-13: "this is all pre deployment right now
 so there is no old schema compatibility to worry about." cap-migrate
 carries every chain into each assembly that links it (about 0.8 MB in
-service design; `docs/units/document-versioning.md`, item 2), and the
+service design; `docs/units/document-versioning.md`, "The migration module cut by use"), and the
 watchlist's v1 was why the kernel read two watchlist versions.
 Options:
 - Keep them (D-66 as encoded): nothing changes.

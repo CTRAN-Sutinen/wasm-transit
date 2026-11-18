@@ -33,6 +33,10 @@
     "directory.stops_by_ids",
     "rt.trip_progress"
   ],
+  "fetched_ops": [
+    "migrate.version",
+    "migrate.migrate"
+  ],
   "components": [
     "RideMap",
     "LiveFeeds",

@@ -336,3 +336,19 @@ pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<Publis
 pub fn in_force(set: &PublishedPlans, date: NaiveDate) -> Result<Option<&PublishedPlan>, String> {
     Ok(resolve(&chain(&set.plans), date)?.and_then(|id| set.plans.iter().find(|p| p.id == id)))
 }
+
+/// The picks in use on `today`, the host's date: the pick in force,
+/// then every published pick dated after it, in the set's order. A
+/// pick that stopped governing, or a retired one, is not in use. The
+/// server brings these picks' networks forward at startup
+/// (docs/FORMATS.md, "Versions"). The others stay in their version.
+pub fn in_use(set: &PublishedPlans, today: NaiveDate) -> Result<Vec<&PublishedPlan>, String> {
+    let current = in_force(set, today)?.map(|p| p.id.as_str());
+    let mut used = Vec::new();
+    for pick in set.plans.iter().filter(|p| p.status == PickStatus::Published) {
+        if Some(pick.id.as_str()) == current || parse_date(&pick.effective_from)? > today {
+            used.push(pick);
+        }
+    }
+    Ok(used)
+}

@@ -405,6 +405,7 @@ The service-plan chain, and the published plan set. cap-plans is the seam. This 
 - `publish` gives the next set, or every reason the pick is refused. The reasons are the chain, or a new, restored, or moved pick dated before today (D-76).
 - `retire` retires a pick that has not taken effect. The pick is kept as the tombstone (D-75).
 - `in_force` gives the published pick, and so the network, that governs a date. Retired picks never govern.
+- `in_use` gives the picks in use on a date: the pick in force, then every published pick dated after it. A pick that stopped governing, or a retired one, is not in use.
 
 ## transit-runs
 
@@ -568,7 +569,7 @@ Validation is not here. What a record amounts to on a network is cap-divert's re
 
 The plan-chain capability: which service plan governs a date? transit-plans is the library. The ops are pure and there are no registries.
 - `resolve`, `periods`, and `validate` work over the plan set's metadata.
-- `publish`, `retire`, and `in_force` work over the published plan set. `publish` and `retire` take the host's date.
+- `publish`, `retire`, `in_force`, and `in_use` work over the published plan set. `publish`, `retire`, and `in_use` take the host's date.
 - The host owns the plan set and pushes its metadata on each call.
 - `publish` answers the next set's canonical bytes and hash, which the server stores as given.
 

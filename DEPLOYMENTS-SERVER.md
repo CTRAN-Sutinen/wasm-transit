@@ -341,6 +341,13 @@ replace the containers with it, one at a time. When the new version
 starts, it records its pages in the bucket. Open apps download the
 new version in the background and switch to it safely.
 
+A new version can store some data in a newer format. When it starts,
+it converts the data in use to that format: the edits, the schedule in
+force, and the schedules still to come. Each conversion is a new entry
+in that data's history, with the writer `migrate:<module>`. The old
+copy stays in the bucket. An older schedule that is no longer in force
+is not converted.
+
 **To roll back,** ask the server to serve an earlier version. Every
 version stays in the bucket. List them:
 

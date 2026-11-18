@@ -461,9 +461,20 @@ reports every loss. The answer is a new document under its own hash,
 and the old bytes stay. It runs where a document arrives:
 
 - The server's receive: an older `POST` body comes forward before the
-  merge. At startup, an older `edits` head is committed forward as an
-  ordinary logged CAS, with the writer `migrate:<module hash>`. The
-  older blob stays under its hash.
+  merge.
+- The server's startup. Only the documents in use come forward, each
+  as an ordinary logged CAS with the writer `migrate:<module hash>`.
+  The older blobs stay under their hashes.
+  - An older `edits` head is committed forward.
+  - The networks of the picks in use come forward. cap-plans `in_use`
+    names these picks: the pick in force, and every pick still to
+    come. Each migrated network is published again under its own date,
+    through the same path as `POST /plans`. So cap-plans writes the
+    set's new `network_hash`, and the host rewrites no hash. A pick
+    that stopped governing, or a retired one, stays in its version. It
+    comes forward when it is published again.
+  - The plan set, the policy, and the work rules have only v1. They
+    join this step when a second version of their kind ships.
 - A browser's restore. The planners' pages bring a stored plan
   forward, and ride-now a stored watchlist. The old record stays in
   the device's document store.

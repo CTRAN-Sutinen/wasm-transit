@@ -99,6 +99,7 @@ func main() {
 		s.requestsWasm = *f.requestsWasm
 		s.seedStore(*f.editsPath)
 		s.commitForward()
+		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
 		s.maybeCompactEdits()
 		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm}

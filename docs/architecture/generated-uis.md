@@ -312,7 +312,11 @@ to the directory), its page, and its spec. No `.svelte` file imports
 the bus. No UI imports another UI's files. No component imports a
 UI's host layer. Every op that a host asks is in its `ui.json` `ops`
 list, unless it is a kernel op, and every capability a host names
-has an op there (`tools/ui-ops.mjs`). An op missing from the list
+has an op there (`tools/ui-ops.mjs`). An op of a capability that the
+page fetches alone, only when the deployment serves it, is in
+`fetched_ops` instead. `just caps` does not link those into the UI's
+assembly. Ride-now lists cap-migrate's ops there: it fetches cap-migrate
+only for a stored watchlist older than the board reads. An op missing from the list
 would turn its frame off at runtime with no error. The build also
 refuses a UI directory without its page (`vite.config.js`). The picker's spec
 (`e2e/picker.spec.mjs`) checks one card per `ui.json`.

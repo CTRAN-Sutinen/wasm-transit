@@ -48,6 +48,16 @@ A client uses this to choose the network to load from the published plan set tha
 
 A set whose `schema_version` this build does not speak is an error. The op never guesses.
 
+## in_use
+
+The picks in use on `today`, the host's date: the pick in force, then every published pick dated after today, in the set's order.
+
+A pick that stopped governing is not in use. A retired pick is not in use either.
+
+The sync server asks this at startup. It brings the networks of these picks forward to the version its modules read, and republishes each one under its own date (`docs/FORMATS.md`, "Versions"). The other picks stay in their version.
+
+A set whose `schema_version` this build does not speak is an error.
+
 ## retire
 
 Retire a pick that has not taken effect. Such a pick is dated after today, the host's date. The answer is the set with the pick marked retired.

@@ -277,7 +277,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "plans",
         file: "module_plans.wasm",
-        ops: &["resolve", "validate", "periods", "publish", "in_force", "retire"],
+        ops: &["resolve", "validate", "periods", "publish", "in_force", "in_use", "retire"],
         documents: &[],
         consumes: &[],
         speaks: &[("plans", &[1])],
@@ -2751,6 +2751,18 @@ fn example_for(
             (
                 json!({ "op": "in_force", "published": published, "date": "2026-10-23" }),
                 json!({ "ok": { "op": "in_force", "plan": plan } }),
+            )
+        }
+        ("plans", "in_use") => {
+            let net = net?;
+            let published = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
+                transit_plans::publish(&set, plan, &net.network_hash, fixture_today()).unwrap_or(set)
+            });
+            let plans: Vec<_> =
+                transit_plans::in_use(&published, chrono::NaiveDate::from_ymd_opt(2026, 10, 23)?).ok()?.into_iter().cloned().collect();
+            (
+                json!({ "op": "in_use", "published": published, "today": "2026-10-23" }),
+                json!({ "ok": { "op": "in_use", "plans": plans } }),
             )
         }
         ("plans", "retire") => {

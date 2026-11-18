@@ -106,7 +106,7 @@ fn the_live_document_reads_v2_only() {
 }
 
 /// A module reads the network version it was built for, and only that
-/// (docs/units/document-versioning.md, rule 5): an older document is
+/// (docs/FORMATS.md, "Versions"): an older document is
 /// refused with the op that brings it forward, a newer one naming both
 /// versions — at the load, never three layers deep in an op.
 #[test]

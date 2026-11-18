@@ -8,8 +8,11 @@
 //
 // - Every `ask("cap", "op", …)` in the host names an op that `ui.json`
 //   lists, unless the op is a kernel op (every module answers those).
+//   The list is `ops` (linked into the UI's assembly) and
+//   `fetched_ops`: the ops of a capability the page fetches alone, only
+//   when the deployment serves it. gen-assemblies does not link those.
 // - Every capability the host names in `available`, `load`, or
-//   `together` has at least one op in the list, so it is linked.
+//   `together` has at least one op in either list.
 // - Every `ask(` in the host names its capability and op as string
 //   literals, so this check can read it.
 //
@@ -26,11 +29,12 @@ const LITERAL_ASK = /^ask\(\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"/;
 const CAP_CALL = /(?<![\w.$])(available|load|together)\(([^)]*)\)/g;
 
 /// The problems in one UI: `source` is its host code, `ops` the
-/// `ui.json` list ("cap.op"), `kernelOps` the op names every module
-/// answers. An empty list means the UI passes.
-export function checkUi({ id, source, ops, kernelOps }) {
-  const listed = new Set(ops);
-  const linked = new Set(ops.map((o) => o.split(".")[0]));
+/// `ui.json` lists ("cap.op": `ops`, and `fetchedOps` from
+/// `fetched_ops`), `kernelOps` the op names every module answers. An
+/// empty list means the UI passes.
+export function checkUi({ id, source, ops, fetchedOps = [], kernelOps }) {
+  const listed = new Set([...ops, ...fetchedOps]);
+  const linked = new Set([...ops, ...fetchedOps].map((o) => o.split(".")[0]));
   const kernel = new Set(kernelOps);
   const problems = [];
   for (const match of source.matchAll(ASK)) {
@@ -81,8 +85,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const dir = join(uis, entry.name);
     const descriptor = join(dir, "ui.json");
     if (!existsSync(descriptor)) continue;
-    const { ops = [] } = JSON.parse(readFileSync(descriptor, "utf8"));
-    problems.push(...checkUi({ id: entry.name, source: hostSource(dir), ops, kernelOps }));
+    const { ops = [], fetched_ops: fetchedOps = [] } = JSON.parse(readFileSync(descriptor, "utf8"));
+    problems.push(...checkUi({ id: entry.name, source: hostSource(dir), ops, fetchedOps, kernelOps }));
   }
   if (problems.length) {
     for (const p of problems) console.error(`UI OPS FAIL: ${p}`);

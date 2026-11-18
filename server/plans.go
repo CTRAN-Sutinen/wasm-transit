@@ -121,16 +121,65 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	pick, issues, err := canonicalPick(r.Context(), s.networkWasm, body)
-	if err != nil {
-		fail(w, err, http.StatusBadRequest)
+	writer := writerOf(r, "anonymous")
+	out, refused := s.publishNetwork(r.Context(), body, writer)
+	if refused != nil {
+		refused.write(w)
 		return
 	}
-	if issues != nil {
+	flagUnknown(w, "plans", writer, out.unknownFields)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"plan_id": out.planID, "network_hash": out.networkHash, "plans_hash": out.plansHash, "warnings": out.warnings,
+	})
+}
+
+// publishedPick is what one publish committed.
+type publishedPick struct {
+	planID, networkHash, plansHash string
+	warnings                       json.RawMessage
+	unknownFields                  []string
+}
+
+// publishRefusal is why a publish did not commit, as its HTTP answer.
+type publishRefusal struct {
+	code int
+	json json.RawMessage // a JSON body, else text
+	text string
+}
+
+func (p *publishRefusal) write(w http.ResponseWriter) {
+	if p.json != nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		w.Write(issues)
+		w.WriteHeader(p.code)
+		w.Write(p.json)
 		return
+	}
+	http.Error(w, p.text, p.code)
+}
+
+func (p *publishRefusal) Error() string {
+	if p.json != nil {
+		return fmt.Sprintf("%d %s", p.code, p.json)
+	}
+	return fmt.Sprintf("%d %s", p.code, p.text)
+}
+
+func refusedWith(code int, err error) *publishRefusal {
+	return &publishRefusal{code: code, text: err.Error()}
+}
+
+// publishNetwork is one publish, for POST /plans and for the startup
+// commit of a pick's network forward: cap-network checks the network
+// and answers its canonical bytes and plan frame, cap-plans answers the
+// next set, and the host commits both under writer.
+func (s *server) publishNetwork(ctx context.Context, body []byte, writer string) (publishedPick, *publishRefusal) {
+	var out publishedPick
+	pick, issues, err := canonicalPick(ctx, s.networkWasm, body)
+	if err != nil {
+		return out, refusedWith(http.StatusBadRequest, err)
+	}
+	if issues != nil {
+		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: issues}
 	}
 	var frame struct {
 		ID string `json:"id"`
@@ -149,14 +198,12 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	defer s.plansMu.Unlock()
 	head, found, err := s.store.Head("plans")
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
+		return out, refusedWith(http.StatusInternalServerError, err)
 	}
 	var current json.RawMessage = json.RawMessage("null")
 	if found {
 		if current, _, err = s.store.GetBlob(head.Hash); err != nil {
-			fail(w, err, http.StatusInternalServerError)
-			return
+			return out, refusedWith(http.StatusInternalServerError, err)
 		}
 	}
 	var next struct {
@@ -167,28 +214,24 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	// A pick only reads the stops document (D-157): each stop's record
 	// on its first date, and the warnings of the stops it visits that
 	// are not in service over its period.
-	stopWarnings, err := s.readPick(r.Context(), &pick, current)
+	stopWarnings, err := s.readPick(ctx, &pick, current)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
+		return out, refusedWith(http.StatusInternalServerError, err)
 	}
-	if err := s.plans.Invoke(r.Context(), map[string]any{
+	if err := s.plans.Invoke(ctx, map[string]any{
 		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
 	}, &next); err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
+		return out, refusedWith(http.StatusInternalServerError, err)
 	}
 	if next.Document == nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"issues": next.Issues})
-		return
+		refused, _ := json.Marshal(map[string]any{"issues": next.Issues})
+		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: refused}
 	}
 	pointer := "plan." + frame.ID
 	if !store.ValidPointerName(pointer) {
-		http.Error(w, fmt.Sprintf("plan id %q cannot name a pointer (letters, digits, '.', '_', '-')", frame.ID), http.StatusBadRequest)
-		return
+		return out, &publishRefusal{code: http.StatusBadRequest, text: fmt.Sprintf("plan id %q cannot name a pointer (letters, digits, '.', '_', '-')", frame.ID)}
 	}
 
-	writer := writerOf(r, "anonymous")
 	nowMs := time.Now().UnixMilli()
 	// The network first: once it is committed it is referenced, and a
 	// crash before the set's commit leaves the old set in force.
@@ -199,8 +242,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		planFrom = planHead.Hash
 	}
 	if _, _, err := s.store.CAS(pointer, planFrom, []byte(pick.Document), netEnv, pick.DocumentHash, writer, nowMs); err != nil {
-		fail(w, err, http.StatusConflict)
-		return
+		return out, refusedWith(http.StatusConflict, err)
 	}
 	from := ""
 	if found {
@@ -208,13 +250,69 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	}
 	plansHash, _, err := s.store.CAS("plans", from, []byte(*next.Document), s.plansEnvelope(), *next.DocumentHash, writer, nowMs)
 	if err != nil {
-		fail(w, err, http.StatusConflict)
+		return out, refusedWith(http.StatusConflict, err)
+	}
+	return publishedPick{
+		planID: frame.ID, networkHash: pick.DocumentHash, plansHash: plansHash,
+		warnings: withWarnings(pick.Warnings, stopWarnings), unknownFields: pick.UnknownFields,
+	}, nil
+}
+
+// commitPicksForward brings the networks of the picks in use to the
+// version the hosted modules read, at startup (docs/FORMATS.md,
+// "Versions"). cap-plans answers which picks are in use: the pick in
+// force and those still to come. cap-migrate brings an older network
+// forward. The pick is then republished under its own date through
+// publishNetwork, so cap-plans moves the set's network_hash. The writer
+// names the migration module. A pick that stopped governing, or a
+// retired one, stays in its version, and comes forward when it is
+// republished. The older blobs stay readable under their hashes.
+func (s *server) commitPicksForward() {
+	if s.store == nil || s.plans == nil {
 		return
 	}
-	flagUnknown(w, "plans", writer, pick.UnknownFields)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"plan_id": frame.ID, "network_hash": pick.DocumentHash, "plans_hash": plansHash, "warnings": withWarnings(pick.Warnings, stopWarnings),
-	})
+	head, found, err := s.store.Head("plans")
+	if err != nil || !found {
+		return
+	}
+	set, _, err := s.store.GetBlob(head.Hash)
+	if err != nil {
+		log.Printf("commit forward: plans head %s: %v", head.Hash, err)
+		return
+	}
+	var used struct {
+		Plans []struct {
+			ID          string `json:"id"`
+			NetworkHash string `json:"network_hash"`
+		} `json:"plans"`
+	}
+	ctx := context.Background()
+	if err := s.plans.Invoke(ctx, map[string]any{"op": "in_use", "published": json.RawMessage(set), "today": s.today()}, &used); err != nil {
+		log.Printf("commit forward: plans: %v", err)
+		return
+	}
+	for _, pick := range used.Plans {
+		body, _, err := s.store.GetBlob(pick.NetworkHash)
+		if err != nil {
+			log.Printf("commit forward: pick %s network %s: %v", pick.ID, pick.NetworkHash, err)
+			continue
+		}
+		doc, migrated, err := s.forward("network", body)
+		if err != nil {
+			log.Printf("commit forward: pick %s: %v", pick.ID, err)
+			continue
+		}
+		if !migrated {
+			continue
+		}
+		m, _ := s.migrator()
+		out, refused := s.publishNetwork(ctx, doc, "migrate:"+m.Hash())
+		if refused != nil {
+			log.Printf("commit forward: pick %s stays in its version: %v", pick.ID, refused)
+			continue
+		}
+		log.Printf("commit forward: pick %s network %s -> %s (network v%d), plans %s", pick.ID, pick.NetworkHash, out.networkHash, networkVersion, out.plansHash)
+	}
 }
 
 // today is the agency's date, "YYYY-MM-DD": the host's clock

@@ -9,7 +9,7 @@
 use chrono::NaiveDate;
 use proptest::prelude::*;
 use transit_plans::{
-    in_force, publish, resolve, retire, PickStatus, PlanInfo, PlanIssue, PublishedPlans, PUBLISHED_SCHEMA_VERSION,
+    in_force, in_use, publish, resolve, retire, PickStatus, PlanInfo, PlanIssue, PublishedPlans, PUBLISHED_SCHEMA_VERSION,
 };
 
 fn info(id: &str, from: Option<&str>) -> PlanInfo {
@@ -110,6 +110,42 @@ fn arb_steps() -> impl Strategy<Value = Vec<(PlanInfo, String)>> {
 }
 
 proptest! {
+    /// The picks in use on a day are exactly the pick in force and every
+    /// published pick still to come: no pick that stopped governing, no
+    /// retired pick. Each pick that governs any day from today on is one
+    /// of them, and each of them republishes under its own date today
+    /// (the commit of its network forward, docs/FORMATS.md "Versions").
+    #[test]
+    fn the_picks_in_use_are_the_pick_in_force_and_those_to_come(
+        steps in arb_steps(), day in 0u32..500, retire_first in any::<bool>()
+    ) {
+        let mut set = published(&steps);
+        let today = date("2025-12-01") + chrono::Days::new(day as u64);
+        if retire_first {
+            let later = set.plans.iter().find(|p| date(&p.effective_from) > today).map(|p| p.id.clone());
+            if let Some(id) = later {
+                set = retire(&set, &id, today).unwrap();
+            }
+        }
+        let used: Vec<String> = in_use(&set, today).unwrap().iter().map(|p| p.id.clone()).collect();
+        let in_force_today = in_force(&set, today).unwrap().map(|p| p.id.clone());
+        let expected: Vec<String> = set.plans.iter()
+            .filter(|p| p.status == PickStatus::Published)
+            .filter(|p| Some(&p.id) == in_force_today.as_ref() || date(&p.effective_from) > today)
+            .map(|p| p.id.clone())
+            .collect();
+        prop_assert_eq!(&used, &expected);
+        for later in 0..600u64 {
+            if let Some(p) = in_force(&set, today + chrono::Days::new(later)).unwrap() {
+                prop_assert!(used.contains(&p.id), "{} governs a day from today on", p.id);
+            }
+        }
+        for pick in in_use(&set, today).unwrap() {
+            let again = publish(&set, &info(&pick.id, Some(&pick.effective_from)), &hash(250), today);
+            prop_assert!(again.is_ok(), "{} republishes under its own date: {:?}", pick.id, again);
+        }
+    }
+
     /// The document is canonical: one set of picks is one value (and so
     /// one byte sequence, one hash) whatever order they were published in.
     #[test]
@@ -188,6 +224,20 @@ fn a_pick_that_has_taken_effect_cannot_be_retired() {
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickTookEffect { .. })), "{issues:?}");
     let issues = retire(&set, "nope", today()).unwrap_err();
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::UnknownPick { .. })), "{issues:?}");
+}
+
+#[test]
+fn the_picks_in_use_leave_out_the_ones_that_stopped_governing() {
+    let set = published(&[
+        (info("spring", Some("2026-03-01")), hash(1)),
+        (info("fall", Some("2026-09-07")), hash(2)),
+        (info("winter", Some("2027-01-04")), hash(3)),
+    ]);
+    let ids = |d: &str| in_use(&set, date(d)).unwrap().iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids("2026-11-05"), ["fall", "winter"], "spring stopped governing when fall took effect");
+    assert_eq!(ids("2026-01-01"), ["spring", "fall", "winter"], "before the first pick, every pick is to come");
+    assert_eq!(ids("2027-02-01"), ["winter"]);
+    assert!(in_use(&PublishedPlans::empty(), today()).unwrap().is_empty());
 }
 
 #[test]

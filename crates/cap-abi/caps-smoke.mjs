@@ -738,9 +738,9 @@ assert(
 );
 const againMigrate = migrate.raw({ op: "migrate", kind: "watchlist", document: migrated.document });
 assert(againMigrate.error && againMigrate.error.includes("nothing to migrate"), "re-migrating v2 errors, not panics");
-const refusedV1 = board.raw({ op: "load_watchlist", document: v1 });
+const watchlistV1 = board.raw({ op: "load_watchlist", document: v1 });
 assert(
-  refusedV1.error && refusedV1.error.includes("watchlist v1") && refusedV1.error.includes("migrate"),
+  watchlistV1.error && watchlistV1.error.includes("watchlist v1") && watchlistV1.error.includes("migrate"),
   "the board refuses v1 at the load, naming the migration",
 );
 const loadedWatch = board.invoke({ op: "load_watchlist", document: migrated.document });

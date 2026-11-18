@@ -21,8 +21,9 @@ request field taking one refuses another version naming both
 (`cap_abi::parse_versioned`, `cap_abi::Current`); the network's, the
 edit document's and the watchlist's chains live in the owning
 libraries and cap-migrate wraps them; the Go server brings an older
-edit document forward at receive and commits an older `edits` head
-forward at startup; the planners' pages and ride-now bring a stored
+edit document forward at receive, and at startup commits forward an
+older `edits` head and the older networks of the picks in use
+(cap-plans `in_use`), republishing the plan set through cap-plans; the planners' pages and ride-now bring a stored
 plan or watchlist forward at restore, keeping the old record, and
 ride-now's device records are tagged documents in the browser's store;
 cap-divert takes and answers the tagged edit document; a stop display
@@ -30,15 +31,7 @@ keeps a URL parameter it does not know. What is left:
 
 ## Scope
 
-1. **The documents in use, at the server's startup (D-79).** Only
-   what is in use comes forward: beside `edits`, the published plan
-   set, the policy, the work rules, and the networks of the pick in
-   force and the picks still to come. A pick's network committed
-   forward moves the plans document's `network_hash` with it (a
-   republish through cap-plans, never a host rewriting hashes). A
-   retired or expired pick stays in its version, and comes forward
-   when it is republished.
-2. **The migration module cut by use (D-79).** cap-migrate carries
+1. **The migration module cut by use (D-79).** cap-migrate carries
    every chain, so linking it into service design costs about
    0.8 MB of assembly for chains that page never meets. Ride-now
    fetches all of it, alone beside its assembly, when a stored
@@ -47,12 +40,12 @@ keeps a URL parameter it does not know. What is left:
    only where its documents arrive (the server's receive, a page's
    restore), and one archive piece holding every chain (D-66), which
    reads an archive in today's shape on request.
-3. **The Go host's own documents (D-185).** The schema lock, its
+2. **The Go host's own documents (D-185).** The schema lock, its
    gates, `/schemas/`, and the soak stand (`docs/FORMATS.md`, "The
    schema lock"). The `build` document keeps its hand-written schema in
    `server/schemas/`, and the manifest its HTTP contract, until D-185 is
    answered.
-4. **Rolling a version back (D-79).** A format change ships in two
+3. **Rolling a version back (D-79).** A format change ships in two
    releases: A reads vN and vN+1 and writes vN, B writes vN+1, so
    rollback one release back always reads what the store holds.
    - The reader of the next version: a kind's load accepts its
@@ -73,9 +66,6 @@ keeps a URL parameter it does not know. What is left:
 
 ## Done when
 
-- Go: a server started on a store holding an older pick commits it
-  forward and republishes the plan set (the edit document's receive
-  and startup are pinned: `server/version_test.go`).
 - e2e: a page served a newer edit document than it reads does not
   write it (a newer plan set is pinned:
   `ui-service-design.spec.mjs`).

@@ -38,6 +38,12 @@ test("a capability with no listed op fails", () => {
   );
 });
 
+test("an op of a capability fetched alone passes when fetched_ops lists it", () => {
+  const source = `if (await available("migrate")) await ask("migrate", "migrate", {});`;
+  assert.equal(checkUi({ ...base, source }).length, 2, "neither list names it");
+  assert.deepEqual(checkUi({ ...base, fetchedOps: ["migrate.migrate"], source }), []);
+});
+
 test("an ask that is not a string literal fails", () => {
   const source = `const op = "stop_board";\nawait ask("board", op, {});`;
   const problems = checkUi({ ...base, source });

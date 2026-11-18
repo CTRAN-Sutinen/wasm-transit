@@ -90,6 +90,12 @@ fn publish_answers_the_canonical_document_and_its_hash() {
         other => panic!("before the first pick nothing is in force: {other:?}"),
     }
 
+    // in_use answers the pick in force and the picks still to come.
+    match dispatch(Request::InUse { published: published.clone(), today: "2026-11-05".into() }).unwrap() {
+        Response::InUse { plans } => assert_eq!(plans.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["fall"]),
+        other => panic!("in_use: {other:?}"),
+    }
+
     // A refusal is an answer with its reasons, never a stored document.
     match dispatch(Request::Publish { published: Some(published.clone()), plan: info("", "import", None), network_hash: h.clone(), today: "2026-08-01".into() }).unwrap() {
         Response::Publish { issues, document: None, document_hash: None, published: None } => assert!(!issues.is_empty()),
@@ -99,7 +105,9 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     // A set from a newer schema is refused naming both, not guessed at.
     let mut newer = published;
     newer.schema_version = 99;
-    let err = dispatch(Request::InForce { published: newer, date: "2026-11-05".into() }).unwrap_err();
+    let err = dispatch(Request::InForce { published: newer.clone(), date: "2026-11-05".into() }).unwrap_err();
+    assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
+    let err = dispatch(Request::InUse { published: newer, today: "2026-11-05".into() }).unwrap_err();
     assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
 }
 
