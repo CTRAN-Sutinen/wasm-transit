@@ -162,3 +162,27 @@ fn alerts_from_several_snapshots_are_one_set() {
     let day = live_day(&net, &boundary, Some(&rt), None, Some(&alerts_feed), OnTimeWindow::default());
     assert_eq!(day.alerts.len(), 1);
 }
+
+/// GTFS-rt's `direction_id` (D-204). The spec requires `route_id` with
+/// it. The code maps to the route's model direction by the export's
+/// rule, so the scope names that direction alone. An entity with a
+/// direction and no route, or a code the route does not have, names
+/// nothing and is counted. The fixture's route 40 runs directions
+/// 0 and 1; route 10 runs direction 0 only.
+#[test]
+fn a_direction_scopes_the_alert_to_that_direction_of_its_route() {
+    let rt = snapshot(vec![
+        alert_entity("r40-1", vec![EntitySelector { route_id: Some("40".into()), direction_id: Some(1), ..selector() }], vec![]),
+        alert_entity("no-route", vec![EntitySelector { direction_id: Some(0), ..selector() }], vec![]),
+        alert_entity("no-such-direction", vec![EntitySelector { route_id: Some("10".into()), direction_id: Some(1), ..selector() }], vec![]),
+    ]);
+    let day = alerts_of(&rt);
+    let scopes = |id: &str| day.alerts.iter().find(|a| a.id == id).map(|a| a.scopes.clone());
+    assert_eq!(
+        scopes("r40-1"),
+        Some(vec![AlertScope { route: Some("40".into()), direction: Some("1".into()), ..Default::default() }])
+    );
+    assert_eq!(scopes("no-route"), None);
+    assert_eq!(scopes("no-such-direction"), None);
+    assert_eq!(day.unmatched_alerts, 2);
+}

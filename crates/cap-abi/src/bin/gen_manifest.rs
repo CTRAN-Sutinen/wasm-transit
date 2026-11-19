@@ -113,8 +113,8 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "rt",
         file: "module_rt.wasm",
-        ops: &["decode", "trip_progress", "late_trips", "live"],
-        documents: &["network", "boundary", "rt", "live"],
+        ops: &["decode", "trip_progress", "late_trips", "live", "encode_alerts"],
+        documents: &["network", "boundary", "rt", "live", "service_alerts"],
         consumes: &[("network", "network")],
         // The gtfs-rt payload: an ephemeral document (polled every
         // few seconds), versioned by the protobuf schema it speaks;
@@ -124,7 +124,9 @@ const MODULES: &[ModuleSpec] = &[
         // THE LIVE DOCUMENT is minted here and read by the board —
         // optional edges both: neither module needs the other to
         // answer its own questions, so they are spoken, not consumed.
-        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1])],
+        // encode_alerts writes the service alerts document as an Alerts
+        // feed: GTFS-rt is its serialization.
+        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1]), ("service_alerts", &[transit_alerts::SCHEMA_VERSION])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-rt/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -335,6 +337,28 @@ const MODULES: &[ModuleSpec] = &[
         docs: include_str!("../../../cap-requests/OPS.md"),
     },
     ModuleSpec {
+        id: "alerts",
+        file: "module_alerts.wasm",
+        ops: &["validate", "put", "end", "list", "flags", "gaps", "validate_templates", "put_template", "fill"],
+        documents: &["service_alerts", "alert_templates", "network", "edits", "stops"],
+        // The service alerts and alert templates documents are the
+        // host's (D-206, D-210): validate answers their canonical bytes
+        // and hash, which the kernel's loads answer too; put, end, and
+        // put_template answer the next one. flags and fill read the
+        // network's names; gaps reads the edits and the stops.
+        consumes: &[],
+        speaks: &[
+            ("service_alerts", &[transit_alerts::SCHEMA_VERSION]),
+            ("alert_templates", &[transit_alerts::SCHEMA_VERSION]),
+            ("network", &[transit_network::SCHEMA_VERSION]),
+            ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+            ("stops", &[transit_stops::SCHEMA_VERSION]),
+        ],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-alerts/OPS.md.
+        docs: include_str!("../../../cap-alerts/OPS.md"),
+    },
+    ModuleSpec {
         id: "migrate",
         file: "module_migrate.wasm",
         ops: &["migrate", "version"],
@@ -399,6 +423,8 @@ fn kernel_ops(feed_hash: &str, net: Option<&NetworkExampleContext>) -> Vec<Kerne
         load(kernel::OP_LOAD_WORK_RULES, "load_work_rules", "Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional, D-50) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_STOPS, "load_stops", "Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired; D-153, D-157) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_STOP_REQUESTS, "load_stop_requests", "Register a STOP REQUESTS document (transit-requests: the planning team's requests for work at a stop — new, reinstall, relocate/remove, repair/improve, temporary — each tracking the work order the work order system opens for it; D-159) under its canonical hash — the same hash the requests capability's validate answers — with how many requests it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stop_requests\", \"requests\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_SERVICE_ALERTS, "load_service_alerts", "Register a SERVICE ALERTS document (transit-alerts: the agency's alerts in the network's ids, each with its cause, effect, severity, texts in each language, periods, and informed entities; D-206) under its canonical hash, the same hash the alerts capability's validate answers, with how many alerts it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_service_alerts\", \"alerts\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_ALERT_TEMPLATES, "load_alert_templates", "Register an ALERT TEMPLATES document (transit-alerts: the agency's standard language for alerts, with blanks; D-210) under its canonical hash, the same hash the alerts capability's validate_templates answers, with how many templates it holds. Refused unless validate_templates would pass it, every refusal named. JSON: {\"op\": \"load_alert_templates\", \"templates\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_RT, "load_rt", "Register a GTFS-rt protobuf payload (a snapshot) under the content hash of its bytes, answering the hash only (the rt capability's decode answers the overview too). Ephemeral: the last 8 stay. Bulk: the raw payload."),
         KernelOp {
             code: OP_EVICT,
@@ -927,6 +953,8 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
         ),
         kind::<transit_stops::Stops>("stops", None, "transit-stops", Some(value(&fixture_stops())), None),
         kind::<transit_requests::StopRequests>("stop_requests", None, "transit-requests", Some(value(&fixture_requests())), None),
+        kind::<transit_alerts::ServiceAlerts>("service_alerts", None, "transit-alerts", Some(value(&fixture_alerts())), None),
+        kind::<transit_alerts::AlertTemplates>("alert_templates", None, "transit-alerts", Some(value(&fixture_templates())), None),
         kind::<transit_live::LiveDay>("live", None, "transit-live", live_example().map(|(live, _)| value(&live)), None),
     ]
 }
@@ -1412,6 +1440,51 @@ fn fixture_stops() -> transit_stops::Stops {
     }))
     .map(transit_stops::Stops::identified)
     .expect("the fixture stops parse")
+}
+
+/// The moment the alerts examples are asked at (Unix seconds): the
+/// fixture Friday, 2026-10-23, in the morning.
+const ALERTS_NOW: u64 = 1_792_756_800;
+
+/// Two alerts over the fixture network: route 10's detour at stop C,
+/// in English and Spanish, explaining the fixture's diversion; and
+/// route 40's reduced service in one direction, for a day.
+fn fixture_alerts() -> transit_alerts::ServiceAlerts {
+    serde_json::from_value(serde_json::json!({
+        "kind": "service_alerts", "schema_version": 1,
+        "alerts": {
+            "detour-10": {
+                "status": "published", "cause": "construction", "effect": "detour", "severity": "warning",
+                "header": [{"text": "Route 10 detour at Main & 3rd"}, {"lang": "es", "text": "Desvío de la ruta 10 en Main & 3rd"}],
+                "description": [{"text": "Stop C is closed. Use stop B."}],
+                "communication": [{"start": ALERTS_NOW - 3600, "end": null}],
+                "informed": [{"route": "10", "stop": "C"}],
+                "explains": [{"kind": "edit", "id": "e1"}]
+            },
+            "shuttle-40": {
+                "status": "published", "cause": "maintenance", "effect": "reduced_service",
+                "header": [{"text": "Fewer Station Shuttle trips today"}],
+                "communication": [{"start": ALERTS_NOW - 7200, "end": ALERTS_NOW + 50_000}],
+                "informed": [{"route": "40", "direction": "1"}]
+            }
+        }
+    }))
+    .expect("the fixture alerts parse")
+}
+
+/// One template: a stop closure, with blanks, in English and Spanish.
+fn fixture_templates() -> transit_alerts::AlertTemplates {
+    serde_json::from_value(serde_json::json!({
+        "kind": "alert_templates", "schema_version": 1,
+        "templates": {
+            "stop-closure": {
+                "name": "Stop closure", "cause": "construction", "effect": "no_service",
+                "header": [{"text": "The stop at {stop} is closed starting {start date}"}, {"lang": "es", "text": "La parada {stop} está cerrada"}],
+                "description": [{"text": "Use {route} at the nearby stops until {end date}."}]
+            }
+        }
+    }))
+    .expect("the fixture templates parse")
 }
 
 /// Two stop requests: a new stop at 7001 with its work order open, and
@@ -2232,6 +2305,131 @@ fn example_for(
             json!({ "ok": { "op": "vocabulary", "jobs": transit_requests::JOBS, "statuses": transit_requests::STATUSES,
                 "sides": transit_requests::SIDES, "directions": transit_requests::DIRECTIONS, "markings": transit_requests::MARKINGS } }),
         ),
+        ("kernel", "load_service_alerts") => {
+            let alerts = fixture_alerts().checked().ok()?;
+            (
+                json!({ "op": "load_service_alerts", "alerts": alerts }),
+                json!({ "ok": { "op": "load_service_alerts", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "alerts": alerts.alerts.len() } }),
+            )
+        }
+        ("kernel", "load_alert_templates") => {
+            let templates = fixture_templates().checked().ok()?;
+            (
+                json!({ "op": "load_alert_templates", "templates": templates }),
+                json!({ "ok": { "op": "load_alert_templates", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "templates": templates.templates.len() } }),
+            )
+        }
+        ("alerts", "validate") => {
+            let alerts = fixture_alerts().checked().ok()?;
+            let document = cap_abi::canonical_bytes(&alerts).ok()?;
+            (
+                json!({ "op": "validate", "alerts": alerts }),
+                json!({ "ok": { "op": "validate", "refusals": [], "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
+            )
+        }
+        ("alerts", "put") => {
+            // Snow: an agency-wide alert, published now.
+            let alerts = fixture_alerts().checked().ok()?;
+            let alert: transit_alerts::ServiceAlert = serde_json::from_value(json!({
+                "status": "published", "cause": "weather", "effect": "significant_delays",
+                "header": [{"text": "Snow: expect delays on every route"}], "informed": [{}]
+            })).ok()?;
+            let next = alerts.put("snow", alert.clone()).checked().ok()?;
+            (
+                json!({ "op": "put", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "id": "snow", "alert": alert }),
+                json!({ "ok": { "op": "put", "refusals": [], "alerts_hash": cap_abi::canonical_hash(&next).ok()?, "alerts": next } }),
+            )
+        }
+        ("alerts", "end") => {
+            // The detour lifts now.
+            let alerts = fixture_alerts().checked().ok()?;
+            let next = alerts.end("detour-10", ALERTS_NOW)?.checked().ok()?;
+            (
+                json!({ "op": "end", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "id": "detour-10", "at": ALERTS_NOW }),
+                json!({ "ok": { "op": "end", "refusals": [], "alerts_hash": cap_abi::canonical_hash(&next).ok()?, "alerts": next } }),
+            )
+        }
+        ("alerts", "list") => {
+            let alerts = fixture_alerts().checked().ok()?;
+            let mut answer = serde_json::to_value(alerts.list(ALERTS_NOW)).ok()?;
+            answer["op"] = json!("list");
+            (
+                json!({ "op": "list", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "now": ALERTS_NOW }),
+                json!({ "ok": answer }),
+            )
+        }
+        ("alerts", "flags") => {
+            // The deployment speaks English and Spanish.
+            let ctx = net?;
+            let alerts = fixture_alerts().checked().ok()?;
+            let languages = vec!["en".to_string(), "es".to_string()];
+            (
+                json!({ "op": "flags", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "network_hash": ctx.network_hash, "languages": languages }),
+                json!({ "ok": { "op": "flags", "flags": alerts.flags(ctx.derived_network(), &languages) } }),
+            )
+        }
+        ("alerts", "gaps") => {
+            // During stop 6124's suspension: no alert explains it.
+            let alerts = fixture_alerts().checked().ok()?;
+            let edits = transit_sync::EditDocument::new(dispatch_fixture_edits());
+            let stops = fixture_stops().checked().ok()?;
+            let date = chrono::NaiveDate::from_ymd_opt(2027, 3, 10)?;
+            let gaps = transit_alerts::gaps(&alerts, &edits.records, &stops, date, ALERTS_NOW);
+            (
+                json!({ "op": "gaps", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "edits_hash": cap_abi::canonical_hash(&edits).ok()?,
+                        "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "date": "2027-03-10", "now": ALERTS_NOW }),
+                json!({ "ok": { "op": "gaps", "gaps": gaps } }),
+            )
+        }
+        ("alerts", "validate_templates") => {
+            let templates = fixture_templates().checked().ok()?;
+            let document = cap_abi::canonical_bytes(&templates).ok()?;
+            (
+                json!({ "op": "validate_templates", "templates": templates }),
+                json!({ "ok": { "op": "validate_templates", "refusals": [], "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
+            )
+        }
+        ("alerts", "put_template") => {
+            // A detour template beside the closure.
+            let templates = fixture_templates().checked().ok()?;
+            let template: transit_alerts::AlertTemplate = serde_json::from_value(json!({
+                "name": "Detour", "cause": "construction", "effect": "detour",
+                "header": [{"text": "Route {route} is on detour from {start date}"}]
+            })).ok()?;
+            let next = templates.put("detour", template.clone()).checked().ok()?;
+            (
+                json!({ "op": "put_template", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "id": "detour", "template": template }),
+                json!({ "ok": { "op": "put_template", "refusals": [], "templates_hash": cap_abi::canonical_hash(&next).ok()?, "templates": next } }),
+            )
+        }
+        ("alerts", "fill") => {
+            // The closure at stop A, served by routes 10 and 20. The
+            // Spanish header's {stop} fills; its dates are not written.
+            let ctx = net?;
+            let templates = fixture_templates().checked().ok()?;
+            let input = transit_alerts::FillInput {
+                stops: vec!["A".into()],
+                routes: vec!["10".into(), "20".into()],
+                start_date: Some("2026-10-26".into()),
+                end_date: Some("2026-11-20".into()),
+            };
+            let filled = transit_alerts::fill(&templates.templates["stop-closure"], ctx.derived_network(), &input);
+            (
+                json!({ "op": "fill", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "template": "stop-closure",
+                        "network_hash": ctx.network_hash, "input": input }),
+                json!({ "ok": { "op": "fill", "filled": filled } }),
+            )
+        }
+        ("rt", "encode_alerts") => {
+            // The fixture alerts as the Alerts feed riders' apps read.
+            let ctx = net?;
+            let alerts = fixture_alerts().checked().ok()?;
+            let encoded = transit_rt::encode_alerts(ctx.derived_network(), &alerts, ALERTS_NOW);
+            (
+                json!({ "op": "encode_alerts", "network_hash": ctx.network_hash, "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "timestamp": ALERTS_NOW }),
+                json!({ "ok": { "op": "encode_alerts", "rt_hash": cap_abi::content_hash(&encoded.bytes), "feed_b64": transit_codec::base64_encode(&encoded.bytes), "skipped": encoded.skipped } }),
+            )
+        }
         ("kernel", "load_work_rules") => {
             let rules = fixture_work_rules().checked().ok()?;
             let work_rules_hash = cap_abi::canonical_hash(&rules).ok()?;

@@ -41,6 +41,8 @@ transit-runs = { path = "../transit-runs" }
 transit-stops = { path = "../transit-stops" }
 # …and the stop requests kind (D-159).
 transit-requests = { path = "../transit-requests" }
+# …and the service alerts and alert templates kinds (D-206..D-210).
+transit-alerts = { path = "../transit-alerts" }
 # …and the router's examples compute REAL itineraries over the same
 # composition (materialize, patch, build, query) the module runs.
 transit-router = { path = "../transit-router", optional = true }
@@ -84,6 +86,7 @@ cap-migrate = { path = "../cap-migrate" }
 cap-network = { path = "../cap-network" }
 cap-plans = { path = "../cap-plans" }
 cap-requests = { path = "../cap-requests" }
+cap-alerts = { path = "../cap-alerts" }
 cap-router = { path = "../cap-router" }
 cap-rt = { path = "../cap-rt" }
 cap-runcut = { path = "../cap-runcut" }

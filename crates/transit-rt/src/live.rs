@@ -183,8 +183,9 @@ fn live_alert(view: &AlertView, scopes: Vec<AlertScope>) -> LiveAlert {
 
 /// One informed entity → the scopes it names (a route_type names every
 /// route published under it). Every named field must resolve, or the
-/// entity names nothing. The direction is not matched: an alert for
-/// one direction of a route reaches both (over-telling beats silence).
+/// entity names nothing. A `direction_id` needs a `route_id` (the
+/// spec's rule) and names that route's model direction by the
+/// export's code (D-204).
 fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
     if e.route_id.is_none() && e.route_type.is_none() && e.trip_id.is_none() && e.stop_id.is_none() {
         return if e.agency_id.is_some() { vec![AlertScope::default()] } else { Vec::new() };
@@ -208,6 +209,14 @@ fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
         }
         None => (None, None, None),
     };
+    let direction = match (e.direction_id, &e.route_id) {
+        (None, _) => None,
+        (Some(_), None) => return Vec::new(),
+        (Some(code), Some(r)) => match network.routes.get(r).and_then(|route| transit_codec::model_direction(route, code)) {
+            Some(d) => Some(d.clone()),
+            None => return Vec::new(),
+        },
+    };
     let routes: Vec<Option<String>> = match (&e.route_id, e.route_type) {
         (None, None) => vec![None],
         (Some(r), t) => match network.routes.get(r) {
@@ -223,6 +232,6 @@ fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
     };
     routes
         .into_iter()
-        .map(|route| AlertScope { route, stop: stop.clone(), trip: trip.clone(), date: date.clone(), start_secs })
+        .map(|route| AlertScope { route, direction: direction.clone(), stop: stop.clone(), trip: trip.clone(), date: date.clone(), start_secs })
         .collect()
 }

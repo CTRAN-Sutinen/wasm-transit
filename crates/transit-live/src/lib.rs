@@ -231,6 +231,11 @@ pub struct AlertPeriod {
 #[ts(export)]
 pub struct AlertScope {
     pub route: Option<String>,
+    /// One of the route's model directions (GTFS-rt's `direction_id`,
+    /// resolved; D-204). It is present only with `route`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub direction: Option<String>,
     pub stop: Option<String>,
     pub trip: Option<String>,
     /// A trip-scoped alert's instance service date, "YYYY-MM-DD", as the feed states
@@ -246,6 +251,8 @@ pub struct AlertScope {
 #[derive(Debug, Clone, Copy)]
 pub struct Visit<'a> {
     pub route: &'a str,
+    /// The direction of the visit's pattern, if the pattern is in one.
+    pub direction: Option<&'a str>,
     pub stop: &'a str,
     pub trip: &'a str,
     pub start_secs: u32,
@@ -254,6 +261,7 @@ pub struct Visit<'a> {
 impl AlertScope {
     fn admits(&self, v: &Visit) -> bool {
         self.route.as_deref().is_none_or(|r| r == v.route)
+            && self.direction.as_deref().is_none_or(|d| Some(d) == v.direction)
             && self.stop.as_deref().is_none_or(|s| s == v.stop)
             && self.trip.as_deref().is_none_or(|t| t == v.trip)
             && self.start_secs.is_none_or(|s| s == v.start_secs)

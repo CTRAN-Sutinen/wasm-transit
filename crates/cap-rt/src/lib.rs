@@ -20,12 +20,17 @@
 //! same snapshot) so later ops can address it, and `live` registers
 //! the live document it mints, so in an assembly the board and the
 //! router read it by hash without it crossing to the host and back.
+//!
+//! GTFS-rt is also the serialization of the agency's service alerts:
+//! `encode_alerts` writes the service alerts document (transit-alerts)
+//! as an Alerts feed and registers it as a snapshot, so `live` reads it
+//! as a rider's app would.
 
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{BOUNDARY, LIVE, NETWORK, RT};
+use cap_abi::kernel::{BOUNDARY, LIVE, NETWORK, RT, SERVICE_ALERTS};
 use serde::{Deserialize, Serialize};
 use transit_codec::Boundary;
 use transit_live::{LiveDay, LiveSummary, OnTimeWindow};
@@ -113,6 +118,17 @@ pub enum Request {
         #[ts(optional)]
         with_document: Option<bool>,
     },
+    /// The service alerts document written as a GTFS-rt Alerts feed
+    /// (`FULL_DATASET`): the published alerts not yet ended at
+    /// `timestamp` (Unix seconds, the host's clock), one entity for
+    /// each, under the alert's id. The feed registers as an rt snapshot
+    /// under the content hash of its bytes, so `live` reads it at once.
+    EncodeAlerts {
+        network_hash: String,
+        alerts_hash: String,
+        #[ts(type = "number")]
+        timestamp: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -124,6 +140,10 @@ pub enum Response {
     LateTrips { trips: Vec<LateTrip> },
     /// `live`: the document, unless the request declined it.
     Live { live_hash: String, live: Option<LiveDay>, summary: LiveSummary },
+    /// The feed's bytes (base64) under their content hash, which is
+    /// also the rt snapshot's hash, and each informed entity it could
+    /// not write.
+    EncodeAlerts { rt_hash: String, feed_b64: String, skipped: Vec<transit_rt::SkippedEntity> },
 }
 
 /// The boundary a join pairs rt sequences by: the registered one, or
@@ -190,6 +210,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let live = with_document.unwrap_or(true).then(|| (*live).clone());
             Ok(Response::Live { live_hash, live, summary })
         }
+        Request::EncodeAlerts { network_hash, alerts_hash, timestamp } => {
+            let network = NETWORK.require(&network_hash)?;
+            let alerts = SERVICE_ALERTS.require(&alerts_hash)?;
+            let encoded = transit_rt::encode_alerts(&network, &alerts, timestamp);
+            let (rt_hash, _) = RT.register_bytes(&encoded.bytes)?;
+            Ok(Response::EncodeAlerts { rt_hash, feed_b64: transit_codec::base64_encode(&encoded.bytes), skipped: encoded.skipped })
+        }
     }
 }
 
@@ -212,5 +239,5 @@ cap_abi::capability! {
     id: "rt",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, BOUNDARY, RT, LIVE],
+    documents: [NETWORK, BOUNDARY, RT, LIVE, SERVICE_ALERTS],
 }

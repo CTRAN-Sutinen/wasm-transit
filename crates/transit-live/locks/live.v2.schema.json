@@ -68,6 +68,13 @@
             "null"
           ]
         },
+        "direction": {
+          "description": "One of the route's model directions (GTFS-rt's `direction_id`,\nresolved; D-204). It is present only with `route`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "route": {
           "type": [
             "string",

@@ -360,7 +360,8 @@ transit-dispatch the operator's day library: the patched materialized day (diver
                  layover ripple, diversion drafts, and trip cancels; and a rider's own
                  documents (the watchlist and its chain, the device records)
 transit-rt       GTFS-rt prost types and the joins over the network. An rt trip id is a
-                 model trip id. A trip instance is (trip, service date, start).
+                 model trip id. A trip instance is (trip, service date, start). It
+                 also writes the service alerts document as an Alerts feed.
 transit-live     the live document: rt in the model's vocabulary, each instance's service
                  date, the on-time window, and what does not run (a cancelled trip, a
                  skipped stop). Pure.
@@ -394,6 +395,14 @@ transit-log      the append-only log of the agency's record, kind-agnostic (D-19
                  record the entry created leaves the fold, D-198), the gap and
                  quarantine rules, and the idempotency keys. A document becomes
                  records and back by its collection. Pure.
+transit-alerts   the service alerts document and the alert templates document (D-206,
+                 D-210): the agency's alerts in the network's ids (cause, effect,
+                 severity, texts in each language, periods, informed entities, and
+                 the disruptions each explains). It answers what a write must pass,
+                 what a person is told about one that passes, ending an alert, the
+                 agency's list, the gap list (what is in force that no alert
+                 explains), and a template's blanks filled. Pure. transit-rt writes
+                 it as a GTFS-rt Alerts feed.
 transit-runs     the runs layer beside the network: the work-rule document (recovery,
                  interlining for each route pair, run rules, pay; every rule optional),
                  the recovery a wait requires and its slack, and the suggested blocking.
@@ -412,7 +421,7 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  kept in the owning crate's locks/; and the kind table, how
                  each kind the store keeps is written, checked, and read,
                  web/pkg/kinds.json; D-202), gen-assemblies, and arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-log
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-alerts cap-log
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)
 assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability

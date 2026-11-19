@@ -692,6 +692,22 @@ fn the_board_carries_the_alerts_about_it() {
     assert!(stop_board(&net, &day, "A", 0, 10, None, None).alerts.is_empty());
 }
 
+/// An alert about one direction of a route (D-204) reaches the rows of
+/// that route's patterns in that direction, and no other row.
+#[test]
+fn a_direction_alert_reaches_only_its_direction_on_the_board() {
+    let mut net = network();
+    net.patterns.get_mut("p10").unwrap().direction = Some("0".into());
+    let day = transit_network::materialize(&net, date()).unwrap();
+    let dir = |d: &str| transit_live::AlertScope { route: Some("10".into()), direction: Some(d.into()), ..Default::default() };
+    let mut live = live_at("s10@28800", 28_800, "A", 28_800, 0);
+    live.alerts = vec![alert("10-dir-0", vec![dir("0")]), alert("10-dir-1", vec![dir("1")])];
+    let a = stop_board(&net, &day, "A", 0, 10, Some(&live), None);
+    assert_eq!(a.rows[0].departure.route, "10");
+    assert_eq!(a.rows[0].alerts, ["10-dir-0"]);
+    assert_eq!(a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["10-dir-0"]);
+}
+
 // ---------------------------------------------------------------------
 // The grouped board — a stop's display: the board by route and
 // destination (its own laws: grouped_board_prop_test.rs).

@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-192**.
+- IDs are never reused; the next new decision is **D-212**.
 
 ## Summary
 
@@ -74,7 +74,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-16 | Where does the runs layer live? | encoded | nothing |
 | D-17 | What does "the last bus" mean with no deadline? | encoded | nothing |
 | D-18 | How do live delays meet a diverted trip? | encoded | nothing |
-| D-19 | Does an alert for one direction reach both? | encoded | nothing |
+| D-19 | Does an alert for one direction reach both? | replaced by D-204 | nothing |
 | D-20 | Which language does an alert speak? | encoded | nothing |
 | D-21 | Where is a trip going when nothing signs it? | encoded | nothing |
 | D-22 | How is a route's rider variant named and ordered? | encoded | nothing |
@@ -257,6 +257,14 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-201 | How does the server serve freezing and adopting? | encoded | nothing |
 | D-202 | Where does the kind table live, and what does it govern? | encoded | nothing |
 | D-203 | How does the store describe itself? | encoded | nothing |
+| D-204 | Does an alert's direction_id scope it to one direction? | decided; built | nothing |
+| D-205 | Who turns an alert's local times into GTFS-rt's Unix seconds? | decided; not built | nothing |
+| D-206 | Who writes service alerts? | decided; not built | nothing |
+| D-207 | How do dispatch and communications staff share the alerts workspace? | decided; not built | nothing |
+| D-208 | Which alert fields does authoring carry first? | decided; built | nothing |
+| D-209 | Are service alerts and disruptions one UI? | decided; not built | nothing |
+| D-210 | What does an alert template fill in? | decided; built | nothing |
+| D-211 | How is the service alerts document shaped? | encoded | nothing |
 
 ## The trip model
 
@@ -1884,7 +1892,7 @@ Pinned by: transit-router `live_law_test`, cap-router
 Blocks: nothing.
 
 ### D-19 — Does an alert for one direction reach both?
-State: Encoded provisionally.
+State: Replaced by D-204 (2026-11-19).
 Context: a GTFS-rt informed entity may name a `direction_id`. The
 model matches patterns, not GTFS directions (the diversion record
 keeps `direction_id` for the boundary path only).
@@ -1893,8 +1901,7 @@ Options:
   the route. Telling too many riders beats telling none.
 - Resolve the GTFS direction to the route's model directions at the
   boundary and scope the alert to them.
-Pinned by: transit-rt `alert_test` (`resolve_scope` ignores the
-direction).
+Pinned by: none. D-204's laws replace this answer's.
 Blocks: nothing.
 
 ### D-20 — Which language does an alert speak?
@@ -2189,6 +2196,141 @@ Blocks: nothing.
 Pinned by: `crates/transit-rt/tests/cancel_law_test.rs`; law 6 in
 `crates/transit-dispatch/tests/grouped_board_prop_test.rs`; law 5 in
 `crates/transit-router/tests/live_law_test.rs`.
+
+### D-204 — Does an alert's direction_id scope it to one direction?
+State: Decided; built. It replaces D-19.
+Answer: 2026-11-19 — "D-19 is wrong, follow the GTFS spec."
+Pinned by: transit-rt `alert_test`
+(`a_direction_scopes_the_alert_to_that_direction_of_its_route`);
+transit-live `alert_law_test`
+(`a_direction_scope_touches_only_its_direction`); transit-dispatch
+`dispatch_laws_test`
+(`a_direction_alert_reaches_only_its_direction_on_the_board`);
+transit-codec `direction_code_law_test`.
+Why: `docs/architecture/crates.md`, Why, "An alert's direction is the
+route's model direction".
+Blocks: nothing.
+
+### D-205 — Who turns an alert's local times into GTFS-rt's Unix seconds?
+State: Decided; not built.
+Answer: 2026-11-19 — "the host would handle time, as it does today."
+Context: GTFS-rt alert periods are Unix seconds. A person enters
+times in the agency's zone. The modules have no time zone rules, and
+the hosts own the clock and the zone (`web/src/clock.ts`).
+Options:
+- **The host converts (the answer):** the alerts document stores Unix
+  seconds, and the host converts what a person enters.
+- The module converts: time zone rules go into the module, which
+  makes it bigger.
+Pinned by: none yet (`docs/units/service-alerts.md`).
+Blocks: nothing.
+
+### D-206 — Who writes service alerts?
+State: Decided; not built.
+Answer: 2026-11-19 — "multiple people enter alerts, actually. it may
+be dispatch (they are the ones who know what is happening on the road
+*now*), it is also likely agency comms staff."
+Context: the dispatcher's day is out of scope (D-122). An alert is a
+record in the agency's record, written through the receive path. A
+dispatcher who writes one is a person using this repo's page, not the
+dispatcher's day moved into the repo.
+Pinned by: none yet (`docs/units/service-alerts.md`).
+Blocks: nothing. How the two teams share the page is D-207.
+
+### D-207 — How do dispatch and communications staff share the alerts workspace?
+State: Decided; not built.
+Answer: 2026-11-19 — on review: "agreed no required review." On the
+list: "yes, one list. it is one list for the *agency* not both teams.
+it is going to be read and referenced by many other teams as well."
+On a detour or cancel with no alert: "yes!" On how an alert ends:
+"tough problem, agree that the key thing is visibility though. will
+require some iteration the get right." On languages: "agreed" (the
+deployment's settings name the languages; a missing translation is
+marked, never refused). On the existing app: "we acutally have an
+existing ui that communications uses ... what we build will supercede
+the existing custom app." Its "Impact type" menu "allows the comms
+team to create templates that automatically fill in form fields with
+standard language."
+2026-11-19 — a gap list for stop closures (a stop suspended in the
+stops document with no alert): "a gap list would be great."
+Context: the existing app's feed (`gtfs-rt.c-tran.com/Alerts`,
+2026-11-19) holds 16 alerts. Each names its stops paired with each
+chosen route, or a route alone. 12 of the 16 have no end time.
+Pinned by: none yet (`docs/units/service-alerts.md`).
+Blocks: nothing. The rule that makes a long-open alert visible is set
+by trying it on real data.
+
+### D-208 — Which alert fields does authoring carry first?
+State: Decided; built.
+Answer: 2026-11-19 — "makes sense" to: cause, effect, severity, the
+header, description, and URL (each with its translations), the
+communication and impact periods, and the informed entities first.
+`cause_detail`, `effect_detail`, the image, and the TTS text come
+later.
+Pinned by: transit-alerts `alerts_law_test`; transit-rt `encode_law_test`.
+Why: `docs/architecture/crates.md`, Why, "A service alert is its own
+record, in the network's ids".
+Blocks: nothing.
+
+### D-209 — Are service alerts and disruptions one UI?
+State: Decided; not built.
+Answer: 2026-11-19 — "i don't think that disruptions and service
+alerts are different UIs. service alerts are drivens straight off
+disruptions. dispatch will be entering detours and also entering
+alerts. customer service needs to be able to read all of this as
+well ... maybe these all get their own uis in the end but i think it
+makes more sense to start with one and split once it is clear that
+the workspace is overloaded, rather than the reverse. there is a
+level of familiarity across departments that users will benefit
+from."
+Context: each generated UI is its own product. The alerts page was
+first planned as its own UI.
+Pinned by: none yet (`docs/units/ui-disruptions.md`).
+Blocks: nothing.
+
+### D-210 — What does an alert template fill in?
+State: Decided; built.
+Answer: 2026-11-19 — a template's text has blanks: "it is similar to
+'The stop at {stop} is closed starting {start date}'."
+Pinned by: transit-alerts `alerts_law_test`
+(`the_fill_writes_names_and_dates_in_the_agencys_words`,
+`every_blank_is_filled_or_named`).
+Why: `docs/architecture/crates.md`, Why, "A service alert is its own
+record, in the network's ids".
+Blocks: nothing.
+
+### D-211 — How is the service alerts document shaped?
+State: Encoded provisionally.
+Context: `docs/units/service-alerts.md` set the alerts document beside
+the stops and stop requests documents. Building it left these choices
+open. Each is encoded.
+Options (each encoded, with the other answer):
+- **A record has no `rev` or `updated_at`.** The log records who wrote
+  each state and when, as for stops and stop requests. The other
+  answer was the edit document's envelope.
+- **An alert is `draft`, `published`, or `retired`.** Only a published
+  alert is told to riders. The other answer was published at once,
+  with no draft.
+- **Ending an alert clips its periods at the moment.** A period after
+  the moment goes. An alert never told to riders before the moment is
+  withdrawn instead. The other answer was always `retired`.
+- **The gap list counts submitted and accepted edits.** A draft edit is
+  not yet anyone's news. A draft alert explains a gap, and an ended or
+  withdrawn alert does not. The other answer counted every edit that
+  is not retired, as `in_force_on` does.
+- **An alert names a stop's suspension by the stop's id**, not by the
+  event's id. The other answer was the suspension event's id.
+- **The encode is cap-rt's op** (`encode_alerts`), beside decode, since
+  cap-rt is GTFS-rt's home (law 1). The feed holds the published alerts
+  not yet ended. A direction with no GTFS code leaves its entity out,
+  named. The other answer was an op of cap-alerts.
+- **The fill writes dates and lists only in English.** In another
+  language such a blank stays, named, for a person. The other answer
+  was a date format for each language.
+Pinned by: transit-alerts `alerts_law_test`; transit-rt
+`encode_law_test`; cap-alerts `dispatch_test`; cap-rt `dispatch_test`
+(`encode_alerts_writes_a_feed_that_live_reads_back`).
+Blocks: nothing. A change rewrites those laws.
 
 ## Geography
 

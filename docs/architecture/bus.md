@@ -60,7 +60,8 @@ shared state.
 
 - A bulk op over the document's bytes: 256 network, 259 edits, 260 live,
   261 boundary, 262 walks, 263 streets, 264 watchlist, 265 layer,
-  266 feed, 267 rt, 269 work_rules, 270 stops, and 271 stop_requests.
+  266 feed, 267 rt, 269 work_rules, 270 stops, 271 stop_requests,
+  272 service_alerts, and 273 alert_templates.
 - The same op in JSON, for example
   `{"op": "load_network", "network": …}`. The kernel removes it from the
   request before any capability decodes the request. The document stays
@@ -261,6 +262,12 @@ It never crosses to the host and back. With `with_document: false`, the
 answer leaves the document out too. The stop display uses this
 (QAF-49). The browser's live views render the live document. No
 capability joins rt again.
+
+**The alerts feed.** GTFS-rt is also the serialization of the
+agency's own service alerts. `encode_alerts` writes the service alerts
+document (cap-alerts' kind) as an Alerts feed, and registers it as an
+rt snapshot under the content hash of its bytes. So `live` reads the
+agency's alerts by that hash, as a rider's app reads the feed.
 
 ### cap-board
 
@@ -491,7 +498,8 @@ module that answers it.
 
 - Each kind's load: 256 network, 259 edits, 260 live, 261 boundary,
   262 walks, 263 streets, 264 watchlist, 265 layer, 266 feed, 267 rt,
-  269 work_rules, 270 stops, and 271 stop_requests. A module answers
+  269 work_rules, 270 stops, 271 stop_requests, 272 service_alerts,
+  and 273 alert_templates. A module answers
   the load of each kind its capabilities read. The browser host
   registers every document this way: the engine has a loader for each
   kind, and it encodes a document once however many instances register

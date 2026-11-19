@@ -54,6 +54,7 @@ pub use transit_dispatch::watchlist::Watchlist;
 pub use transit_runs::WorkRules;
 pub use transit_requests::StopRequests;
 pub use transit_stops::Stops;
+pub use transit_alerts::{AlertTemplates, ServiceAlerts};
 
 // ---------------------------------------------------------------------
 // the kernel ops
@@ -84,6 +85,12 @@ pub const OP_LOAD_STOPS: u32 = 270;
 
 /// The stop requests document's load.
 pub const OP_LOAD_STOP_REQUESTS: u32 = 271;
+
+/// The service alerts document's load.
+pub const OP_LOAD_SERVICE_ALERTS: u32 = 272;
+
+/// The alert templates document's load.
+pub const OP_LOAD_ALERT_TEMPLATES: u32 = 273;
 
 /// [`OP_ABOUT`]'s answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -155,6 +162,10 @@ pub enum Loaded {
     LoadStops { stops_hash: String, stops: u32 },
     /// How many requests the document holds.
     LoadStopRequests { requests_hash: String, requests: u32 },
+    /// How many alerts the document holds.
+    LoadServiceAlerts { alerts_hash: String, alerts: u32 },
+    /// How many templates the document holds.
+    LoadAlertTemplates { templates_hash: String, templates: u32 },
 }
 
 /// The JSON lane's envelope: the op, the capability it names, and the
@@ -186,6 +197,10 @@ pub struct Envelope<'a> {
     stops: Option<&'a RawValue>,
     #[serde(borrow, default)]
     requests: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    alerts: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    templates: Option<&'a RawValue>,
     #[serde(borrow, default)]
     bytes: Option<&'a RawValue>,
 }
@@ -529,6 +544,48 @@ pub static STOP_REQUESTS: Kind<StopRequests> = Kind {
     },
     json: |e| e.field(e.requests, "requests").map(Cow::Borrowed),
     answer: |requests_hash, requests| Loaded::LoadStopRequests { requests_hash, requests: requests.requests.len() as u32 },
+};
+
+/// Service alerts documents (transit-alerts: the agency's alerts in the
+/// network's ids, D-206), refused unless a write could store them, each
+/// refusal named.
+pub static SERVICE_ALERTS: Kind<ServiceAlerts> = Kind {
+    id: "service_alerts",
+    name: "service alerts document",
+    load_op: "load_service_alerts",
+    op: OP_LOAD_SERVICE_ALERTS,
+    identity: Identity::Canonical(crate::canonical_hash),
+    registry: Registry::documents("service alerts document", "load_service_alerts", Retain::Host),
+    parse: |bytes| {
+        let alerts: ServiceAlerts = crate::parse_versioned(bytes).map_err(|e| format!("service alerts document: {e}"))?;
+        alerts.checked().map_err(|refusals| {
+            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+            format!("service alerts document: {}", reasons.join("; "))
+        })
+    },
+    json: |e| e.field(e.alerts, "alerts").map(Cow::Borrowed),
+    answer: |alerts_hash, alerts| Loaded::LoadServiceAlerts { alerts_hash, alerts: alerts.alerts.len() as u32 },
+};
+
+/// Alert templates documents (transit-alerts: the agency's standard
+/// language with blanks, D-210), refused unless a write could store
+/// them, each refusal named.
+pub static ALERT_TEMPLATES: Kind<AlertTemplates> = Kind {
+    id: "alert_templates",
+    name: "alert templates document",
+    load_op: "load_alert_templates",
+    op: OP_LOAD_ALERT_TEMPLATES,
+    identity: Identity::Canonical(crate::canonical_hash),
+    registry: Registry::documents("alert templates document", "load_alert_templates", Retain::Host),
+    parse: |bytes| {
+        let templates: AlertTemplates = crate::parse_versioned(bytes).map_err(|e| format!("alert templates document: {e}"))?;
+        templates.checked().map_err(|refusals| {
+            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+            format!("alert templates document: {}", reasons.join("; "))
+        })
+    },
+    json: |e| e.field(e.templates, "templates").map(Cow::Borrowed),
+    answer: |templates_hash, templates| Loaded::LoadAlertTemplates { templates_hash, templates: templates.templates.len() as u32 },
 };
 
 /// Weighted layers (GeoJSON points and polygons — people, jobs,

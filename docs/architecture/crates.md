@@ -349,6 +349,12 @@ prost types from the official GTFS-rt proto, and the joins over the network.
 - It is the one place that resolves rt trip ids (tests/rt_join_law_test).
 - It is the one place that turns an alert's informed entities into routes, stops, and trip instances. An alert is kept when it is in force at the snapshot's moment (tests/alert_test).
 
+**The alerts encode** (`encode_alerts`).
+- Input: the service alerts document (transit-alerts) and the network, at a moment.
+- Output: a GTFS-rt Alerts feed (`FULL_DATASET`). It holds each published alert not yet ended, one entity for each, under the alert's id, in id order. The same document and moment give the same bytes.
+- Each text keeps every translation. A direction is the GTFS code that the export writes. A direction with no code is left out and named, never widened to the whole route.
+- Decoding the feed and resolving it gives back the authored alerts in force (tests/encode_law_test).
+
 ## transit-live
 
 The live document: one rt moment in model vocabulary. It is pure data and has no GTFS layer (arch gate). cap-rt mints it and cap-board reads it. No host computes a delay.
@@ -360,7 +366,7 @@ The live document: one rt moment in model vocabulary. It is pure data and has no
 - Vehicles on their trip instances.
 - Every status, classified under the on-time window that the document records. There is one window, never a threshold per view. By default any earliness is early, because a bus that leaves early is a missed bus.
 - What does not run: a trip instance that the feed cancels (`CANCELED`/`DELETED`: `canceled`) and a stop that it skips (`SKIPPED`: `skipped`). Every reader asks through one rule, `LiveDay::runs`.
-- The service alerts in force. Each alert is a set of scopes: route / stop / trip instance. Fields within a scope are ANDed, scopes are ORed, and all absent means the agency.
+- The service alerts in force. Each alert is a set of scopes: route (and one of its directions) / stop / trip instance. Fields within a scope are ANDed, scopes are ORed, and all absent means the agency.
 
 The crate also holds the classification, the runs and alert-matching rules, and the status summary.
 
@@ -529,6 +535,30 @@ The document is canonical as it stands (requests by id). The crate keeps what it
 
 A stop's event names the request that it carries out (transit-stops `request`). Nothing checks this across the two documents. Both are kept in the stops log, so completing a request and adding its stop's event can be one entry (D-197).
 
+## transit-alerts
+
+The service alerts document and the alert templates document (D-206..D-210). An alert is what the agency tells riders. Dispatch and the communications staff write alerts, and every team reads the one list. cap-alerts is the seam, and transit-rt writes the feed.
+
+**An alert** is a record by id. The id is its GTFS-rt entity id. It has:
+- its status: draft, published, or retired (withdrawn). There is no review step.
+- its cause, effect, and severity (the transit-live enums);
+- its header, description, and link, each a list of texts with their languages;
+- its communication periods and impact periods, in Unix seconds. The host converts the agency's local times (D-205).
+- its informed entities, in the network's ids: a route, a route type, a direction of a route, a stop, or a trip instance. Every present field must match. An entity with every field absent is the whole agency.
+- the disruptions it explains: an edit record, or a stop's suspension.
+
+**A template** is a record by id: its name in the menu, the cause, effect, and severity it sets, and its texts with blanks (`{stop}`, `{route}`, `{start date}`, `{end date}`). A template no longer offered is `retired`.
+
+**Operations.**
+- `checked` refuses only what makes a record wrong. Each refusal names its alert or template.
+- `flags` tells a person about an alert that passes: an id the network does not have, or a missing translation for a language the deployment names.
+- `put` places one record by id. `end` ends an alert at a moment, and changes nothing before it.
+- `list` gives the agency's list at a moment: in force, upcoming, ended, and drafts. An alert in force with no end says how long it has been open.
+- `gaps` gives what is in force that no alert explains: a submitted or accepted edit record, or a suspended stop.
+- `fill` writes a template's blanks: names from the network, and dates and lists in English. A blank it cannot fill stays, and is named.
+
+Each document is canonical as it stands (records by id). The crate keeps what it does not know.
+
 ## transit-streets
 
 The streets model. Open work: `docs/units/streets-model.md`.
@@ -637,6 +667,18 @@ The stop requests capability: what work has been asked for at a stop, and where 
 - `record_work_order` records what the work order system answered, on its request.
 - `vocabulary` gives the lists that a request's answers come from.
 - `log_records` and `log_document` turn the document into the stops log's records (a `stop_request` record for each request, and the document's own record) and back (D-197).
+
+## cap-alerts
+
+The service alerts capability: what is the agency telling riders? transit-alerts is the library.
+- `validate` gives what a write must pass, or the canonical document and its hash. This is the document that `load_service_alerts` answers.
+- `put` places one alert by id, checked. With no document, the first alert begins one. `end` ends one alert at a moment.
+- `list` gives the agency's list at a moment.
+- `flags` gives what a person is told about the alerts that pass.
+- `gaps` gives what is in force that no alert explains, over the edit document and the stops document.
+- `validate_templates`, `put_template`, and `fill` are the templates: what a write must pass, one template placed, and one template written out over the network.
+
+cap-rt's `encode_alerts` writes the document as an Alerts feed.
 
 ## cap-log
 
@@ -803,6 +845,17 @@ Each entry covers one choice that other code depends on. The heading names the c
 - **Rejected:** events on the stop (it mixes the work into the stop's facts); a built-in list of utilities (one agency's list, not the format's).
 - **Decided:** D-159.
 
+### A service alert is its own record, in the network's ids (transit-alerts, cap-alerts, rt `encode_alerts`)
+- **Holds:** an alert is a record of its own, in a document of its own, by id. It is not a payload of the edit document: the board and the router patch the day from edits, and an alert changes no service.
+- **Holds:** an alert names what it is about in the network's ids. GTFS-rt is its serialization, and transit-rt writes it as an Alerts feed. Decoding that feed gives back the authored alerts.
+- **Holds:** an alert keeps every translation of its texts. The live document carries one (D-20).
+- **Holds:** there is no review step. A person with the write role publishes at once, and the log records who wrote what.
+- **Holds:** an alert explains a disruption by naming it. Nothing writes an alert from a detour, a cancel, or a closed stop. The gap list shows what no alert explains.
+- **Holds:** a template's blanks are filled by an op, so a stop's name and a date read the same in every alert.
+- **Because:** dispatch knows what is happening on the road now, and the communications staff write the agency's standard language. Both write in one place, and every team reads the one list. The record replaces a custom app whose feed riders' apps read.
+- **Rejected:** a third payload in the edit document; an alert written from a detour automatically; a required review.
+- **Decided:** D-206, D-207, D-208, D-210.
+
 ### Stop search is fuzzy on the stops' own names (directory `stops`)
 - **Holds:** typos and abbreviations match the names the feed gives. There are no authored aliases.
 - **Because:** aliases would be a hand-maintained separate dataset. A geocoder covers everyday names where a deployment runs one (D-36).
@@ -815,6 +868,12 @@ Each entry covers one choice that other code depends on. The heading names the c
 - **Because:** cancel is a dispatcher's first answer to a late trip, so it lands first. Partial cancel, cover, hold, and swap each need a meaning on every reader. A live cancellation shown at its scheduled time misled riders. The user chose to drop it silently.
 - **Rejected:** the full dispatcher set at once; showing a live cancel marked, or noting it on the group.
 - **Decided:** D-45, D-73 (the shape: D-100..D-102).
+
+### An alert's direction is the route's model direction (transit-rt `live_day`, `AlertScope::direction`, transit-codec `gtfs_direction`)
+- **Holds:** a GTFS-rt informed entity's `direction_id` names one direction of its route. The read side maps the code to the route's model direction by the rule the export writes (`gtfs_direction` and its inverse `model_direction`). The alert touches only the visits of that direction's patterns. An entity with a direction and no route, or a code the route does not have, names nothing and is counted in `unmatched_alerts`.
+- **Because:** the GTFS-rt spec scopes the alert to the trips with that `direction_id`, and a rider in the other direction is not affected. One rule for both the export and the read keeps a code naming the same direction both ways.
+- **Rejected:** ignoring the direction, so an alert reaches both directions of the route.
+- **Decided:** D-204 (it replaces D-19).
 
 ### Streets: any source, per-mode profiles (transit-streets import, `walks`, `access`, streets `route` `to_confirm`)
 - **Holds:** every street op reads a streets document by hash, whatever source filled it.

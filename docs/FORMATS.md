@@ -735,6 +735,8 @@ Every persisted kind, by what a version change does to it:
 | `work_rules` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
 | `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
+| `service_alerts` | transit-alerts | authored | `kind`, `schema_version` |
+| `alert_templates` | transit-alerts | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | no tag (never persisted yet) |
 | `recent_places` (a rider's recent places, on one device) | transit-dispatch | authored | `kind`, `schema_version` |
 | `live_feeds` (a rider's own live-feed URLs, on one device) | transit-dispatch | authored | `kind`, `schema_version` |

@@ -12,6 +12,8 @@
 //! capability and any host that holds both documents. [`live`]
 //! resolves a snapshot into THE live document (transit-live): model
 //! vocabulary, so model-side consumers never re-join rt by hand.
+//! [`encode`] writes the service alerts document as an Alerts feed:
+//! GTFS-rt is the alerts' serialization.
 
 pub mod gtfs_rt {
     include!(concat!(env!("OUT_DIR"), "/transit_realtime.rs"));
@@ -20,6 +22,7 @@ pub mod gtfs_rt {
 pub mod overview;
 pub mod progress;
 pub mod live;
+pub mod encode;
 
 pub use overview::{
     AlertView, InformedView,
@@ -27,6 +30,7 @@ pub use overview::{
 };
 pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, TripProgress};
 pub use live::live_day;
+pub use encode::{encode_alerts, EncodedAlerts, SkippedEntity};
 
 use prost::Message;
 

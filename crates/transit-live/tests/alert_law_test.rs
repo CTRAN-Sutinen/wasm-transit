@@ -7,6 +7,7 @@ use transit_live::{AlertScope, LiveAlert, Visit};
 
 fn scope(route: Option<&str>, stop: Option<&str>, trip: Option<&str>, start: Option<u32>) -> AlertScope {
     AlertScope { date: None,
+        direction: None,
         route: route.map(Into::into),
         stop: stop.map(Into::into),
         trip: trip.map(Into::into),
@@ -19,7 +20,26 @@ fn alert(scopes: Vec<AlertScope>) -> LiveAlert {
 }
 
 fn visit<'a>(route: &'a str, stop: &'a str, trip: &'a str, start: u32) -> Visit<'a> {
-    Visit { route, stop, trip, start_secs: start }
+    Visit { route, direction: None, stop, trip, start_secs: start }
+}
+
+fn visit_in<'a>(route: &'a str, direction: Option<&'a str>, stop: &'a str) -> Visit<'a> {
+    Visit { route, direction, stop, trip: "t1", start_secs: 0 }
+}
+
+/// GTFS-rt's direction_id (D-204): a scope naming a direction of a
+/// route touches that route's visits in that direction, and no visit
+/// in another direction or in none.
+#[test]
+fn a_direction_scope_touches_only_its_direction() {
+    let a = alert(vec![AlertScope { route: Some("12".into()), direction: Some("0".into()), ..Default::default() }]);
+    assert!(a.touches(&visit_in("12", Some("0"), "6277")));
+    assert!(!a.touches(&visit_in("12", Some("1"), "6277")), "the other direction");
+    assert!(!a.touches(&visit_in("12", None, "6277")), "a pattern placed in no direction");
+    assert!(!a.touches(&visit_in("34", Some("0"), "6277")), "another route's direction 0");
+    assert!(!a.touches_stop("6277"), "a direction scope is about a route, not the whole stop");
+    let both = alert(vec![AlertScope { route: Some("12".into()), ..Default::default() }]);
+    assert!(both.touches(&visit_in("12", Some("1"), "6277")), "no direction: every direction");
 }
 
 #[test]

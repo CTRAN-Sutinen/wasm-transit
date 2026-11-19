@@ -13,6 +13,8 @@ It mints the live document. The live document is the snapshot resolved against t
 
 An rt trip id is a model trip id. The capability resolves it once, here.
 
+It also writes the agency's service alerts document as an Alerts feed (`encode_alerts`).
+
 Assemble this capability for riders (live boards) and dispatchers (the operation view) alike.
 
 ## decode
@@ -94,7 +96,7 @@ What does not run:
 
 - An alert is in force when the header timestamp is inside a communication period. Else the deprecated active period decides. An alert with no period is always in force.
 - The op gathers alerts from every snapshot given, one for each entity id.
-- Each informed entity resolves to a scope: `route`, `stop`, `trip`, `start_secs`. Every present field must match. A scope with every field absent is the whole agency. A `route_type` names every route published under it. `direction` is not matched.
+- Each informed entity resolves to a scope: `route`, `direction`, `stop`, `trip`, `start_secs`. Every present field must match. A scope with every field absent is the whole agency. A `route_type` names every route published under it. A `direction_id` needs a `route_id`, and resolves to the route's model direction (`direction`) by the code the export writes. Else the entity names nothing.
 - `unmatched_alerts` counts an alert when none of its entities names anything in the network.
 
 The response also carries the summary that a status panel reads:
@@ -103,3 +105,16 @@ The response also carries the summary that a status panel reads:
 - The late list, worst first. `late_limit` sets its length (default 15). It lists late buses when positions exist, and late trips (predictions) when they do not.
 
 The live document registers where the op mints it. A module that links the board or the router reads it by `live_hash` at once. A host there may decline the document itself: `with_document: false` answers `live` as null. A module of its own registers the document with the kernel's `load_live`.
+
+## encode_alerts
+
+Write the service alerts document as a GTFS-rt Alerts feed. GTFS-rt is the alerts' serialization, as GTFS is the network's.
+
+The feed is a full dataset (`FULL_DATASET`) at `timestamp`, the host's clock in Unix seconds:
+
+- It holds each published alert that has not ended at `timestamp`, one entity for each, under the alert's id, in id order. A draft or a withdrawn alert is not in it.
+- Each text keeps every translation, with its language.
+- Each informed entity is written in the network's ids. The whole agency is the network's operator. A direction is the GTFS `direction_id` that the export gives it.
+- A direction with no GTFS code cannot be written as the author meant it. The entity is left out and named in `skipped`, and never widened to the whole route. An alert left with no entity is not written.
+
+The same document and timestamp give the same bytes. The answer is the bytes (`feed_b64`) under their content hash (`rt_hash`). The feed is also registered as an rt snapshot under that hash, so `live` with `alerts_hash` reads it at once, as a rider's app would.

@@ -159,6 +159,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 name = "cap-abi"
 version = "0.1.0"
 dependencies = [
+ "cap-alerts",
  "cap-analysis",
  "cap-author",
  "cap-authz",
@@ -188,6 +189,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-alerts",
  "transit-analysis",
  "transit-authz",
  "transit-codec",
@@ -203,6 +205,19 @@ dependencies = [
  "transit-stops",
  "transit-streets",
  "transit-sync",
+ "transit-version",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-alerts"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "transit-alerts",
  "transit-version",
  "ts-rs",
 ]
@@ -992,6 +1007,14 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "module-alerts"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-alerts",
 ]
 
 [[package]]
@@ -1914,6 +1937,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "transit-alerts"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "transit-codec",
+ "transit-live",
+ "transit-network",
+ "transit-stops",
+ "transit-sync",
+ "transit-version",
+ "ts-rs",
+]
+
+[[package]]
 name = "transit-analysis"
 version = "0.1.0"
 dependencies = [
@@ -2066,6 +2107,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "transit-alerts",
  "transit-codec",
  "transit-live",
  "transit-network",

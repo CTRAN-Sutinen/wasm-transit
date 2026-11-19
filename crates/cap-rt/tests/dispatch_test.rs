@@ -458,3 +458,43 @@ fn live_carries_the_alerts_in_force() {
     assert_eq!(live.alerts[0].header, "Route 10 detour");
     assert_eq!(live.alerts[0].scopes[0].route.as_deref(), Some("10"));
 }
+
+/// The agency's own alerts: encode_alerts writes the service alerts
+/// document as an Alerts feed, registered as a snapshot, so `live`
+/// reads it as a rider's app would. A direction with no GTFS code is
+/// named, not widened.
+#[test]
+fn encode_alerts_writes_a_feed_that_live_reads_back() {
+    let (network_hash, boundary_hash) = load_fixture();
+    let alerts = serde_json::json!({ "op": "load_service_alerts", "alerts": {
+        "kind": "service_alerts", "schema_version": 1,
+        "alerts": {
+            "a1": { "status": "published", "effect": "detour",
+                    "header": [{ "text": "Route 40 detour" }, { "lang": "es", "text": "Desvío de la ruta 40" }],
+                    "informed": [{ "route": "40", "direction": "1" }, { "route": "40", "direction": "9" }] },
+            "a2": { "status": "draft", "header": [{ "text": "not yet" }], "informed": [{ "route": "10" }] }
+        }
+    }});
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_json(&alerts.to_string())).unwrap();
+    let alerts_hash = loaded["ok"]["alerts_hash"].as_str().unwrap_or_else(|| panic!("{loaded}")).to_string();
+    let Response::EncodeAlerts { rt_hash, feed_b64, skipped } =
+        dispatch(Request::EncodeAlerts { network_hash: network_hash.clone(), alerts_hash, timestamp: 1_800_000_000 }).unwrap()
+    else { panic!("encode_alerts") };
+    assert!(!feed_b64.is_empty());
+    assert_eq!(skipped.len(), 1);
+    assert_eq!((skipped[0].alert.as_str(), skipped[0].entity), ("a1", 1));
+    let Response::Live { live: Some(live), .. } = dispatch(Request::Live {
+        network_hash,
+        boundary_hash: Some(boundary_hash),
+        rt_hash: None,
+        vp_hash: None,
+        alerts_hash: Some(rt_hash),
+        window: None,
+        late_limit: None,
+        with_document: None,
+    })
+    .unwrap() else { panic!("live") };
+    assert_eq!(live.alerts.len(), 1, "the draft is not in the feed");
+    assert_eq!(live.alerts[0].header, "Route 40 detour");
+    assert_eq!(live.alerts[0].scopes[0].direction.as_deref(), Some("1"));
+}

@@ -39,7 +39,8 @@ serialization.
     document (D-127) and is never written (D-128).
   - GTFS-rt is read for the live picture. It is also the serialization
     of the authored cancellations and detours, which the edit document
-    models (D-124).
+    models (D-124), and of the agency's service alerts, which the
+    service alerts document models (D-206).
 
   Their row shapes stay at the boundary.
 

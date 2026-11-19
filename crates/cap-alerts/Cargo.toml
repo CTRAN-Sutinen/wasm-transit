@@ -1,0 +1,15 @@
+[package]
+name = "cap-alerts"
+description = "The service alerts capability (transit-alerts; D-206..D-210): what the agency tells riders, in the network's ids. validate answers what a write must pass, each refusal named, or the canonical document and its hash; put and end answer the next document; list answers the agency's list at a moment; flags answers what a person is told about alerts that pass; gaps answers what is in force that no alert explains; validate_templates, put_template, and fill are the agency's standard language with blanks. The kernel's load_service_alerts and load_alert_templates register documents the host holds. The module writes nothing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+chrono = { workspace = true }
+transit-alerts = { path = "../transit-alerts" }
+cap-abi = { path = "../cap-abi" }

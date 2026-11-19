@@ -23,6 +23,7 @@ const OP_LOAD_RT: u32 = 267;
 /// One capability's two lanes, by id.
 fn lanes(id: &str) -> (fn(&str) -> String, fn(u32, &[u8]) -> String) {
     match id {
+        "alerts" => (cap_alerts::invoke, cap_alerts::invoke_bytes),
         "analysis" => (cap_analysis::invoke, cap_analysis::invoke_bytes),
         "author" => (cap_author::invoke, cap_author::invoke_bytes),
         "authz" => (cap_authz::invoke, cap_authz::invoke_bytes),
@@ -59,6 +60,8 @@ const LOADS: &[(&str, &str)] = &[
     ("load_work_rules", "work_rules"),
     ("load_stops", "stops"),
     ("load_stop_requests", "stop_requests"),
+    ("load_service_alerts", "service_alerts"),
+    ("load_alert_templates", "alert_templates"),
 ];
 
 #[test]

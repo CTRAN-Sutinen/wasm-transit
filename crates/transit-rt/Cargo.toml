@@ -1,6 +1,6 @@
 [package]
 name = "transit-rt"
-description = "GTFS-realtime types generated from the official proto, plus decode helpers"
+description = "GTFS-realtime types generated from the official proto, decode helpers, the joins over the network, and the service alerts document encoded as an Alerts feed"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,6 +17,8 @@ transit-network = { path = "../transit-network" }
 # Boundary).
 transit-codec = { path = "../transit-codec" }
 transit-live = { path = "../transit-live" }
+# The service alerts document, which the Alerts feed serializes.
+transit-alerts = { path = "../transit-alerts" }
 # A descriptor's start_date read as the instance's service date.
 chrono = { workspace = true }
 

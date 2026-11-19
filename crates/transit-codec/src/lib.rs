@@ -793,24 +793,10 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
         }
     }
 
-    // GTFS's direction_id is binary. Directions "0" and "1" (what an
-    // import names them) export as themselves; any other id takes a
-    // free one in id order, and a route's third direction exports
-    // without one.
     let direction_of = |pattern: &Pattern| {
         let id = pattern.direction.as_ref()?;
         let route = net.routes.get(&pattern.route)?;
-        let literal = |k: &str| match k {
-            "0" => Some(0u8),
-            "1" => Some(1u8),
-            _ => None,
-        };
-        let code = literal(id).or_else(|| {
-            let mut free = [0u8, 1].into_iter().filter(|c| !route.directions.keys().any(|k| literal(k) == Some(*c)));
-            let rank = route.directions.keys().filter(|k| literal(k).is_none()).position(|k| k == id)?;
-            free.nth(rank)
-        })?;
-        Some((code, &route.directions[id]))
+        Some((gtfs_direction(route, id)?, &route.directions[id]))
     };
     let block_of: BTreeMap<&str, &str> =
         net.blocks.iter().flat_map(|(b, block)| block.trips.iter().map(move |r| (r.trip.as_str(), b.as_str()))).collect();
@@ -1048,6 +1034,34 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
         }
     }
     Ok(feed)
+}
+
+/// The GTFS `direction_id` that a route's model direction is
+/// published under. GTFS's code is binary. Directions "0" and "1"
+/// (the ids an import gives them) are themselves. Any other id takes
+/// a free code in id order. A route's third direction, or an id the
+/// route does not have, has no code.
+pub fn gtfs_direction(route: &transit_network::Route, id: &str) -> Option<u8> {
+    if !route.directions.contains_key(id) {
+        return None;
+    }
+    let literal = |k: &str| match k {
+        "0" => Some(0u8),
+        "1" => Some(1u8),
+        _ => None,
+    };
+    literal(id).or_else(|| {
+        let mut free = [0u8, 1].into_iter().filter(|c| !route.directions.keys().any(|k| literal(k) == Some(*c)));
+        let rank = route.directions.keys().filter(|k| literal(k).is_none()).position(|k| k == id)?;
+        free.nth(rank)
+    })
+}
+
+/// The route's model direction that a GTFS `direction_id` names: the
+/// inverse of [`gtfs_direction`]. A GTFS-rt alert's `direction_id`
+/// resolves through it (D-204).
+pub fn model_direction(route: &transit_network::Route, code: u32) -> Option<&transit_network::DirectionId> {
+    route.directions.keys().find(|k| gtfs_direction(route, k).map(u32::from) == Some(code))
 }
 
 /// The route_type a route is published under: its own vehicle type

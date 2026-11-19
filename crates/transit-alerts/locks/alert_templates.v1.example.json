@@ -1,0 +1,1 @@
+{"kind":"alert_templates","schema_version":1,"templates":{"stop-closure":{"cause":"construction","description":[{"text":"Use {route} at the nearby stops until {end date}."}],"effect":"no_service","header":[{"text":"The stop at {stop} is closed starting {start date}"},{"lang":"es","text":"La parada {stop} está cerrada"}],"name":"Stop closure","severity":"unknown"}}}

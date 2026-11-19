@@ -1,0 +1,149 @@
+{
+  "$defs": {
+    "AlertCause": {
+      "description": "Why an alert was raised (GTFS-rt's cause, by name).",
+      "enum": [
+        "unknown",
+        "other",
+        "technical_problem",
+        "strike",
+        "demonstration",
+        "accident",
+        "holiday",
+        "weather",
+        "maintenance",
+        "construction",
+        "police_activity",
+        "medical_emergency",
+        "special_event"
+      ],
+      "type": "string"
+    },
+    "AlertEffect": {
+      "description": "What an alert does to service (GTFS-rt's effect, by name).",
+      "enum": [
+        "no_service",
+        "reduced_service",
+        "significant_delays",
+        "detour",
+        "additional_service",
+        "modified_service",
+        "other",
+        "unknown",
+        "stop_moved",
+        "no_effect",
+        "accessibility_issue"
+      ],
+      "type": "string"
+    },
+    "AlertSeverity": {
+      "description": "How serious the agency says an alert is.",
+      "enum": [
+        "unknown",
+        "info",
+        "warning",
+        "severe"
+      ],
+      "type": "string"
+    },
+    "AlertTemplate": {
+      "additionalProperties": true,
+      "description": "One template: its name in the menu, the cause, effect, and severity\nit sets, and its texts with blanks.",
+      "properties": {
+        "cause": {
+          "$ref": "#/$defs/AlertCause",
+          "default": "unknown"
+        },
+        "description": {
+          "items": {
+            "$ref": "#/$defs/AlertText"
+          },
+          "type": "array"
+        },
+        "effect": {
+          "$ref": "#/$defs/AlertEffect",
+          "default": "unknown"
+        },
+        "header": {
+          "items": {
+            "$ref": "#/$defs/AlertText"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "retired": {
+          "description": "No longer offered in the menu. It is kept.",
+          "type": "boolean"
+        },
+        "severity": {
+          "$ref": "#/$defs/AlertSeverity",
+          "default": "unknown"
+        },
+        "url": {
+          "items": {
+            "$ref": "#/$defs/AlertText"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "header"
+      ],
+      "type": "object"
+    },
+    "AlertTemplatesKind": {
+      "const": "alert_templates"
+    },
+    "AlertText": {
+      "description": "A text in one language. No language means the agency's default.",
+      "properties": {
+        "lang": {
+          "description": "A BCP 47 language tag (\"en\", \"es\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Every alert template, by its id: the agency's standard language\n(D-207, D-210).",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/AlertTemplatesKind",
+      "default": "alert_templates",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    },
+    "templates": {
+      "additionalProperties": {
+        "$ref": "#/$defs/AlertTemplate"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "templates"
+  ],
+  "title": "AlertTemplates",
+  "type": "object"
+}

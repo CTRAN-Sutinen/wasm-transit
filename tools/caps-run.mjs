@@ -145,6 +145,8 @@ const KIND_LOADS = {
   work_rules: "load_work_rules",
   stops: "load_stops",
   stop_requests: "load_stop_requests",
+  service_alerts: "load_service_alerts",
+  alert_templates: "load_alert_templates",
 };
 
 /// A --load prefix as a bulk op code: a number, or a kind's load.

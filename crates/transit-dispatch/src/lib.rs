@@ -529,10 +529,10 @@ pub fn stop_board(
         if group.len() >= 2 {
             let rows = live_rows(network, day, &group, from_secs, limit, live);
             let skipped = skipped_visits(network, day, &group, from_secs, limit, edits);
-            return with_alerts(rows, skipped, &group, true, live);
+            return with_alerts(network, rows, skipped, &group, true, live);
         }
     }
-    with_alerts(rows, skipped, &own, false, live)
+    with_alerts(network, rows, skipped, &own, false, live)
 }
 
 /// One group on a stop's display: a route to one destination, its
@@ -678,7 +678,7 @@ pub fn grouped_board(
     }
     let rows = live_rows(network, day, &stops, from_secs, usize::MAX, live);
     let skipped = skipped_visits(network, day, &stops, from_secs, usize::MAX, edits);
-    let board = with_alerts(rows, skipped, &stops, pooled, live);
+    let board = with_alerts(network, rows, skipped, &stops, pooled, live);
 
     let mut keys: Vec<(String, String)> = keys.into_iter().collect();
     let order = |route: &str| network.routes.get(route).and_then(|r| r.sort_order);
@@ -913,6 +913,7 @@ pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_grou
 /// the ids that touch it; on the board every alert touching either,
 /// or the stops themselves, in the document's order.
 fn with_alerts(
+    network: &Network,
     mut rows: Vec<BoardRow>,
     mut skipped: Vec<SkippedVisit>,
     stops: &[String],
@@ -921,7 +922,8 @@ fn with_alerts(
 ) -> StopBoard {
     let all = live.map(|l| l.alerts.as_slice()).unwrap_or_default();
     let ids = |d: &BoardDeparture| -> Vec<String> {
-        let visit = Visit { route: &d.route, stop: &d.stop, trip: &d.trip, start_secs: d.start_secs };
+        let direction = network.patterns.get(&d.pattern).and_then(|p| p.direction.as_deref());
+        let visit = Visit { route: &d.route, direction, stop: &d.stop, trip: &d.trip, start_secs: d.start_secs };
         all.iter().filter(|a| a.touches(&visit) || a.touches_stop(&d.stop)).map(|a| a.id.clone()).collect()
     };
     for r in &mut rows {
