@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -171,6 +172,50 @@ func TestVerifyChecksEachLog(t *testing.T) {
 		b.Delete(ctx, entryKey("disruptions", 2))
 		if _, err := Verify(ctx, b); !errors.As(err, &ve) || !strings.Contains(ve.Reason, "a gap") {
 			t.Fatalf("a gap: %v", err)
+		}
+	})
+}
+
+// With a folder, verify folds each checkpoint from the one before it and
+// compares the bytes: a checkpoint that differs is a break.
+func TestVerifyFoldsEachCheckpoint(t *testing.T) {
+	eachBackend(t, func(t *testing.T, b Backend) {
+		ctx := context.Background()
+		s := New(b)
+		for seq := int64(1); seq <= 4; seq++ {
+			if err := s.AppendEntry("disruptions", seq, entry(seq, "w")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// The test's fold: the checkpoint names the last entry it read,
+		// and the checkpoint it started from.
+		var calls []string
+		fold := func(log string, from []byte, entries []StoredEntry) ([]byte, error) {
+			last := entries[len(entries)-1].Seq
+			calls = append(calls, fmt.Sprintf("%s:%d..%d", from, entries[0].Seq, last))
+			return []byte(fmt.Sprintf(`{"kind":"disruptions_checkpoint","log":"disruptions","seq":%d}`, last)), nil
+		}
+		for _, seq := range []int64{2, 4} {
+			cp, _ := fold("disruptions", nil, []StoredEntry{{Seq: seq}})
+			if err := s.PutCheckpoint("disruptions", seq, cp); err != nil {
+				t.Fatal(err)
+			}
+		}
+		calls = nil
+		r, err := VerifyFolding(ctx, b, fold)
+		if err != nil || r.Folded != 2 {
+			t.Fatalf("both checkpoints fold: %+v %v", r, err)
+		}
+		if calls[0] != ":1..2" || calls[1] != `{"kind":"disruptions_checkpoint","log":"disruptions","seq":2}:3..4` {
+			t.Fatalf("each fold starts from the checkpoint before it: %q", calls)
+		}
+
+		wrong := func(log string, from []byte, entries []StoredEntry) ([]byte, error) {
+			return []byte(`{"other":true}`), nil
+		}
+		var ve *VerifyError
+		if _, err := VerifyFolding(ctx, b, wrong); !errors.As(err, &ve) || !strings.Contains(ve.Reason, "differs from the fold of entries 1..2") {
+			t.Fatalf("a checkpoint that differs from the fold: %v", err)
 		}
 	})
 }

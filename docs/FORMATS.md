@@ -211,11 +211,15 @@ non-zero on the first break. A break is one of these:
   no envelope;
 - under `logs/`: a key that is no entry or checkpoint, a gap in a log's
   entries, or an entry or checkpoint whose `kind`, `log`, or `seq`
-  differs from its key, or a checkpoint past the log's last entry.
+  differs from its key, or a checkpoint past the log's last entry;
+- a checkpoint whose bytes differ from the fold of the entries after
+  the checkpoint before it (or from the first entry).
 
-`store verify` runs no module, so it does not fold a log. A server
-checks its newest checkpoint against the fold from the checkpoint before
-it when it boots ("The logs").
+The fold is the module's, so `store verify` runs the module that owns
+each log: cap-sync for the disruptions log (`-sync`, default
+`../web/pkg/cap_sync.wasm`). A store with no checkpoints needs no
+module. The rest of verify is plain Go. A server also checks its newest
+checkpoint when it boots ("The logs").
 
 ## The logs
 

@@ -33,22 +33,22 @@ Everything but the edit document is small: twenty pick revisions and a
 few street imports are well under 1 GB a year. The edit document is
 the one that grows. Stored whole per commit, as the `edits` pointer
 did, it reaches terabytes over a decade at a busy agency's edit rate. The disruptions
-log (D-121, D-190; [storage-model.md](storage-model.md)) stores only
-the changed records, and its dogfood measures the bytes again.
+log (D-121, D-190; `docs/FORMATS.md`, "The logs") stores only the
+changed records.
 
 ## Contract runs
 
 `just store-contract` runs the contract suite and every engine law
-(20 laws) against each endpoint; `just test` runs them on `mem://`.
+(the pointers', the logs', and verify's) against each endpoint; `just test` runs them on `mem://`.
 The local endpoints are for validation only — none is a production
 choice, and none has a code path of its own. An operator runs the same
 suite against their own bucket (`just store-contract URL`).
 
 | Endpoint | Release | Date | Result |
 |---|---|---|---|
-| SeaweedFS (S3, podman) | 4.50 | 2026-11-07 | all pass (racing creates ~4 s against ~ms in memory) |
-| Azurite (Azure Blob, podman) | 3.37.0 | 2026-11-07 | all pass |
-| fake-gcs-server (GCS, podman) | `sha256:797ce226…` (2026-08-24) | 2026-11-07 | all pass |
+| SeaweedFS (S3, podman) | 4.50 | 2026-11-18 | all pass (racing creates ~4 s against ~ms in memory) |
+| Azurite (Azure Blob, podman) | 3.37.0 | 2026-11-18 | all pass |
+| fake-gcs-server (GCS, podman) | `sha256:797ce226…` (2026-08-24) | 2026-11-18 | all pass |
 
 ## Scope
 

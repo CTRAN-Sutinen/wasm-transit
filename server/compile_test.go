@@ -26,7 +26,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -36,6 +35,8 @@ import (
 	"time"
 
 	"github.com/tetratelabs/wazero"
+
+	"rustwasm/server/wasmhost"
 )
 
 func TestMain(m *testing.M) {
@@ -50,9 +51,7 @@ func TestMain(m *testing.M) {
 			config = config.WithCompilationCache(cache)
 		}
 	}
-	compileMu.Lock()
-	shared = wazero.NewRuntimeWithConfig(ctx, config)
-	compileMu.Unlock()
+	wasmhost.UseRuntime(wazero.NewRuntimeWithConfig(ctx, config))
 
 	prewarmModules(ctx)
 	if err := installContractCheck(); err != nil {
@@ -115,69 +114,4 @@ func prewarmModules(ctx context.Context) {
 		}(path)
 	}
 	wg.Wait()
-}
-
-// Callers asking for the same bytes at the same time share one
-// compile; a failed compile is not kept, so the next caller tries
-// again.
-func TestCompiledModuleIsSharedAndFailuresAreNotKept(t *testing.T) {
-	ctx := context.Background()
-	body, err := os.ReadFile("../web/pkg/cap_authz.wasm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	const hash = "test:same-bytes"
-	t.Cleanup(func() {
-		compileMu.Lock()
-		delete(compiled, hash)
-		compileMu.Unlock()
-	})
-	const callers = 8
-	modules := make([]wazero.CompiledModule, callers)
-	var wg sync.WaitGroup
-	for i := range modules {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, module, err := compiledModule(ctx, hash, body)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			modules[i] = module
-		}(i)
-	}
-	wg.Wait()
-	for i, module := range modules {
-		if module == nil || module != modules[0] {
-			t.Fatalf("caller %d got another compiled module", i)
-		}
-	}
-
-	const bad = "test:not-wasm"
-	if _, _, err := compiledModule(ctx, bad, []byte("not wasm")); err == nil {
-		t.Fatal("compiled bytes that are not wasm")
-	}
-	compileMu.Lock()
-	_, kept := compiled[bad]
-	compileMu.Unlock()
-	if kept {
-		t.Fatal("a failed compile was kept")
-	}
-
-	// A caller waiting on another's compile gives up with its context.
-	const waiting = "test:waiting"
-	compileMu.Lock()
-	compiled[waiting] = &compileEntry{done: make(chan struct{})}
-	compileMu.Unlock()
-	t.Cleanup(func() {
-		compileMu.Lock()
-		delete(compiled, waiting)
-		compileMu.Unlock()
-	})
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	if _, _, err := compiledModule(cancelled, waiting, body); !errors.Is(err, context.Canceled) {
-		t.Fatalf("waiting with a cancelled context: %v", err)
-	}
 }

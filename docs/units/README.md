@@ -13,7 +13,8 @@ archive — nothing here records what is finished.
   exist (tests, gates, e2e specs, a dogfood session on real data)
   before the file is deleted.
 - **Grades are not merged.** On the bus (module + tests), the UI
-  reads it, and dogfooded on real data are three claims. A unit
+  reads it, and dogfooded on real data (the user workflow it serves,
+  as a person doing QA would run it; D-196) are three claims. A unit
   whose work is on the bus but not read by a UI or not dogfooded
   stays open, edited down to the missing grade. An op that no UI
   plans to read is not open work.
@@ -51,7 +52,7 @@ work; a group is only a way to find them.
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
-| [storage-model.md](storage-model.md) | append-only logs as the record for what people edit, starting with the disruptions log; a working store for drafts; freezing apart from adopting; the kind table; exports for a GIS and the lake |
+| [storage-model.md](storage-model.md) | append-only logs for the stops, the plans, and the policy, beside the disruptions log; a working store for drafts; freezing apart from adopting; the kind table; exports for a GIS and the lake |
 
 ### Stops and streets
 

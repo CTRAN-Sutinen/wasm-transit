@@ -274,10 +274,12 @@ and before a release.
    A screen reader run by hand (VoiceOver, TalkBack, NVDA) is the part
    no gate covers. It is a dogfood session
    (`docs/units/web-conformance.md`).
-8. **Dogfood on real data.** Capability work that touches feeds or
-   payload size runs a `caps-run` session against the C-TRAN feed
-   before it is done. Fixture-scale gates do not catch real-data
-   defects. A change to a document's shape also runs `just soak`, whose
+8. **Dogfood on real data.** Work that a user workflow reads is
+   dogfooded through that workflow on the C-TRAN feed: a `caps-run`
+   session or a UI walk that does what a person doing QA would do
+   (D-196). Fixture-scale gates do not catch real-data defects. Work
+   that no workflow reads directly (the store, a log) is held by its
+   laws, contract runs, and the e2e of the pages that read it. A change to a document's shape also runs `just soak`, whose
    schema part checks what the C-TRAN feed's import and publish answer
    against the locks.
 
@@ -289,8 +291,11 @@ The founding C-TRAN session found four real defects that fixture gates
 missed. A 64 KiB output truncation was one of them. The session earned
 these rules:
 
-- **All capability work is dogfooded on real data before it is done.**
-  Anything that touches feeds or payload size runs against
+- **A dogfood session mirrors a person doing QA in a user workflow**
+  (D-196). Capabilities map to user workflows, so a capability is
+  dogfooded through the workflow that uses it, on real data, before
+  that workflow's work is done. It is not required because the work is
+  a capability. A session runs against
   `testdata/ctran-gtfs.zip` through `caps-run`. This is the real C-TRAN
   GTFS. It is not committed, because the data is licensed. Fetch it
   from c-tran.com. The reference hashes are in `docs/QA-FINDINGS.md`'s

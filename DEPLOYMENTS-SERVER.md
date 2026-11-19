@@ -530,6 +530,8 @@ image.
   ```
 
   It reads everything and stops with an error at the first problem.
+  It needs the modules that `just caps` builds: it uses one of them to
+  check the saved summaries of detours and cancellations.
 
 - **Clean up** files that nothing refers to any more. Use the
   credentials **with** delete permission:

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,7 +21,15 @@ type VerifyReport struct {
 	Logs        int `json:"logs"`
 	Entries     int `json:"entries"`
 	Checkpoints int `json:"checkpoints"`
+	// Folded is how many checkpoints verify compared with the fold of
+	// the entries before them (VerifyFolding).
+	Folded int `json:"folded"`
 }
+
+// A LogFolder is the module that owns a log's kinds: the fold of the
+// entries after a checkpoint (nil: from the empty document), answered
+// as the checkpoint at the last entry, in its exact bytes.
+type LogFolder func(log string, checkpoint []byte, entries []StoredEntry) ([]byte, error)
 
 // VerifyError is the first break verify found, naming its object.
 type VerifyError struct {
@@ -43,11 +52,18 @@ func broken(key, format string, args ...any) error {
 // from entry 1 with no gap, each entry says its log's kind, its log,
 // and the seq in its key, and each checkpoint does the same, at a seq
 // whose entry exists (verifyLogs). Whether a checkpoint equals the fold
-// is the module's question: a server checks its newest checkpoint at
-// boot. The copy, the backup, and the restore run it.
+// is the module's question: VerifyFolding asks it. The copy, the
+// backup, and the restore run it.
 func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
+	return VerifyFolding(ctx, b, nil)
+}
+
+// VerifyFolding is Verify, and with fold, each checkpoint is compared
+// with the fold of the entries after the checkpoint before it (or from
+// the first entry). A checkpoint that differs is a break.
+func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport, error) {
 	var r VerifyReport
-	if err := verifyLogs(ctx, b, &r); err != nil {
+	if err := verifyLogs(ctx, b, &r, fold); err != nil {
 		return r, err
 	}
 	objs, err := b.List(ctx, "pointers/", "")
@@ -181,7 +197,7 @@ type logHeader struct {
 
 // verifyLogs checks every log under logs/: the keys, the entries from 1
 // with no gap, and each object's header against its key.
-func verifyLogs(ctx context.Context, b Backend, r *VerifyReport) error {
+func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder) error {
 	objs, err := b.List(ctx, "logs/", "")
 	if err != nil {
 		return err
@@ -237,6 +253,8 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport) error {
 			}
 			r.Entries++
 		}
+		var prev []byte
+		var prevSeq int64
 		for _, seq := range l.checkpoints {
 			key := checkpointKey(name, seq)
 			if seq > int64(len(l.entries)) {
@@ -246,6 +264,30 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport) error {
 				return err
 			}
 			r.Checkpoints++
+			if fold == nil {
+				continue
+			}
+			stored, _, err := b.Get(ctx, key)
+			if err != nil {
+				return err
+			}
+			entries := make([]StoredEntry, 0, seq-prevSeq)
+			for e := prevSeq + 1; e <= seq; e++ {
+				data, _, err := b.Get(ctx, entryKey(name, e))
+				if err != nil {
+					return err
+				}
+				entries = append(entries, StoredEntry{Seq: e, Text: string(data)})
+			}
+			got, err := fold(name, prev, entries)
+			if err != nil {
+				return broken(key, "the fold of entries %d..%d: %v", prevSeq+1, seq, err)
+			}
+			if !bytes.Equal(got, stored) {
+				return broken(key, "differs from the fold of entries %d..%d", prevSeq+1, seq)
+			}
+			r.Folded++
+			prev, prevSeq = stored, seq
 		}
 	}
 	return nil

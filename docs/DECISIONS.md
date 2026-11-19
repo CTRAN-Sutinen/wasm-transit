@@ -174,7 +174,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-118 | Where does a server read its inputs at boot? | decided | nothing |
 | D-119 | What does the server serve when the store is unreachable? | decided | nothing |
 | D-120 | Does compaction drop a record whose dates have passed? | unanswered | nothing |
-| D-121 | Does the store keep the edit document whole per commit, or record by record? | decided by D-190; not built | nothing |
+| D-121 | Does the store keep the edit document whole per commit, or record by record? | decided by D-190 | nothing |
 | D-122 | Is the dispatcher's day in scope? | decided | nothing |
 | D-123 | Do trip, block, and run ids survive from one pick to the next? | unanswered | nothing |
 | D-124 | Does this repo publish its cancels and detours as GTFS-rt? | decided; deferred | nothing |
@@ -243,8 +243,13 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
 | D-189 | Do the staff pages work offline, and queue their writes? | decided; not built | nothing |
-| D-190 | How does the agency's record store the data people edit? | decided; not built | nothing |
+| D-190 | How does the agency's record store the data people edit? | decided; the disruptions log built | nothing |
 | D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; not built | nothing |
+| D-192 | Are the edit document's existing names renamed to "disruptions"? | unanswered | nothing |
+| D-193 | What does a revert write back? | encoded | nothing |
+| D-194 | Who may read a log's entries? | encoded | nothing |
+| D-195 | How does the server keep and check a log's checkpoints? | encoded | nothing |
+| D-196 | When is work dogfooded? | decided | nothing |
 
 ## The trip model
 
@@ -2740,14 +2745,12 @@ records it changed (D-190).
 Pinned by: `transit_sync::log` laws (`fold_equals_whole_document_commits`,
 `a_resend_gives_no_changes`); `server/store_mode_test.go`
 (`TestStoreEditsSurviveRestart`, `TestStoreDeltaSyncAndRevalidation`).
-The bytes at C-TRAN's rate are measured by the dogfood in
-`docs/units/storage-model.md`.
 Why: `docs/architecture/storage.md`, Why, "What people edit is an
 append-only log".
 Blocks: nothing.
 
 ### D-190 — How does the agency's record store the data people edit?
-State: Decided; the disruptions log is encoded (open: `docs/units/storage-model.md`, item 1).
+State: Decided; the disruptions log is built. The other logs are `docs/units/storage-model.md`.
 Answer: 2026-11-18 — a mixed model, chosen by lifecycle stage, with
 an append-only log as the record for what people edit. The user: "i
 think realistically a mixed data model makes the most sense. i don't
@@ -2759,7 +2762,9 @@ we can adapt at that point." On one log for each consistency domain:
 "looks good". On the order: "starting small is my preference".
 2026-11-18, on the first log's name (proposed: `disruptions`, the word
 the disruptions UI already uses, in place of `edits`): "disruptions
-sounds good, go ahead". Encoded as:
+sounds good, go ahead". 2026-11-18, on a C-TRAN dogfood session for
+the disruptions log: "dogfooding isn't necessary for this, it is a waste
+of time". Encoded as:
 - The lifecycle stage decides the store. Drafts, attachments, and
   caches are in a working store that allows deletes. What the agency
   froze or adopted, and the logs, are in the record, which is create
@@ -2783,7 +2788,9 @@ Pinned by: `crates/transit-sync/src/log.rs` (the laws of the log);
 `server/store/log_test.go` and `verify_test.go`;
 `server/store_mode_test.go` (`TestStoreRevertIsANewEntry`,
 `TestStoreQuarantineAndGap`, `TestStoreBootsFromACheckpoint`);
-`server/version_test.go` (`TestAnOlderEditsPointerSeedsTheDisruptionsLog`).
+`server/version_test.go` (`TestAnOlderEditsPointerSeedsTheDisruptionsLog`);
+`just store-contract` (2026-11-18: SeaweedFS, Azurite, fake-gcs-server);
+`web/e2e/disruptions-log.spec.mjs`.
 Why: `docs/architecture/storage.md`, Why, "What people edit is an
 append-only log".
 Blocks: nothing.
@@ -2840,19 +2847,20 @@ Blocks: nothing.
 ### D-195 — How does the server keep and check a log's checkpoints?
 State: Encoded provisionally.
 Context: a checkpoint lets a server boot without folding every entry.
-`store verify` runs no module, so it cannot fold.
+`store verify` is plain Go apart from the fold.
 Options:
 - (encoded) A server stores a checkpoint every 256 entries past the
   newest. At boot it checks the newest checkpoint against the fold from
   the one before it (or from the empty document), and starts from an
   older one when it differs, with an alarm. While the log has a gap,
   the server serves the fold up to the entry before the gap.
-  `store verify` checks the logs' structure only (open in
-  `docs/units/storage-model.md`).
+  `store verify` folds every checkpoint through the log's module
+  (cap-sync, `-sync`).
 - Checkpoints on a schedule (daily), or none until a measured boot
   needs them.
 Pinned by: `server/store_mode_test.go` (`TestStoreBootsFromACheckpoint`,
-`TestStoreQuarantineAndGap`).
+`TestStoreQuarantineAndGap`); `server/store/verify_test.go`
+(`TestVerifyFoldsEachCheckpoint`); `server/cmd/store/main_test.go`.
 Blocks: nothing.
 
 ### D-122 — Is the dispatcher's day in scope?
@@ -3811,6 +3819,20 @@ built.
 Blocks: nothing.
 
 ## Documentation
+
+### D-196 — When is work dogfooded?
+State: Decided.
+Answer: 2026-11-18. A dogfood session mirrors what a person doing QA
+would do in a user workflow. Work is dogfooded through the workflow it
+serves, not because it is capability work. The user: "dogfooding is
+just mirroring what a human qa would do. saying capability testing
+categorically requires it is a misapplication. typically capabilities
+are mapped to some sort of user workflow." On the disruptions log
+(D-190): "dogfooding isn't necessary for this, it is a waste of time".
+Pinned by: review. `docs/TESTING.md`, "Dogfood QA", states the rule.
+Why: `docs/TESTING.md`, "Dogfood QA — the agent interface mirrors the
+human UI".
+Blocks: nothing.
 
 ### D-174 — How are code comments and the developer documents written?
 State: Decided.

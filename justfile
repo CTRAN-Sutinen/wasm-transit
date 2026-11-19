@@ -973,8 +973,9 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
     if [ -n "$live" ]; then args+=(-live-feeds "$live"); fi
     exec go run . "${args[@]}"
 
-# The sync store's offline tools (server/cmd/store; Go, no wasm):
-#   just store verify <url>          read the whole store, exit 1 on the first break
+# The sync store's offline tools (server/cmd/store; only verify runs a module):
+#   just store verify [-sync M] <url>  read the whole store, exit 1 on the first
+#                                    break; cap-sync (M) folds each log checkpoint
 #   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's
 #                                    own delete-capable credentials
 #   just store copy <dir> <url>      carry an older build's directory store into

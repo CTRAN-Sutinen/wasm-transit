@@ -547,7 +547,8 @@ user. Do not pick an answer and encode it. The rules are in
 Every change lands with tests at the layer that owns the logic.
 `docs/TESTING.md` states the expectations: unit and property tests in
 the owning crate, a module dispatch test, caps-smoke and the runner
-gates, a Go round trip, Playwright e2e, and a real-data dogfood.
+gates, a Go round trip, Playwright e2e, and, for work a user workflow
+reads, a real-data dogfood of that workflow (D-196).
 
 ## Deliberate non-goals (do not "fix" these)
 

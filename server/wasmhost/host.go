@@ -1,0 +1,268 @@
+// Package wasmhost is the wazero host for a capability module, the
+// only place Go touches the module ABI. The module has zero imports and
+// four exports (crates/cap-abi/src/lib.rs states the ABI): staging
+// buffers move through transit_alloc/transit_free, JSON requests
+// through transit_invoke, bulk payloads through transit_invoke_bytes.
+// Results are [u32 LE length][payload] buffers holding {"ok": ...} or
+// {"error": ...}. The server (server/wasm.go) and the store's offline
+// tool (server/cmd/store, to fold a log) both use it.
+package wasmhost
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sync"
+
+	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
+)
+
+// Host wraps one instance of the artifact: its own linear memory,
+// instantiated from the module compiled once for the process.
+//
+// The artifact is NOT reentrant: its heap and linear memory are
+// single-instance state, and its internal Mutex only guards the feed
+// registry map. Every invoke is therefore serialized here — one
+// module instance, one call at a time (net/http serves each request
+// on its own goroutine; without this lock concurrent /edits and
+// /manifest handling would corrupt wasm memory).
+type Host struct {
+	module      api.Module
+	memory      api.Memory
+	alloc       api.Function
+	free        api.Function
+	invoke      api.Function
+	invokeBytes api.Function
+	hash        string // sha256 of the loaded bytes — the manifest pins this
+
+	mu sync.Mutex
+}
+
+// The process's one runtime and each artifact compiled in it, by the
+// sha256 of its bytes: compiling (decoding, validating, generating
+// machine code) is the whole cost of a module — 1–3 s for cap-network,
+// many times that under the race detector — and an instance made from
+// the compiled module costs well under a millisecond. Compiled modules
+// live as long as the process; new bytes (a new build's modules) compile
+// once more beside the old.
+//
+// The lock guards only the map: each module compiles under its own
+// entry, so different modules compile at the same time (wazero's
+// runtime is safe for concurrent use) and a caller asking for one
+// module never waits behind another's compile. Callers asking for the
+// same bytes wait for the one compile. A failed compile is not kept:
+// the next caller tries again.
+var (
+	compileMu sync.Mutex
+	shared    wazero.Runtime
+	compiled  = map[string]*compileEntry{}
+)
+
+// compileEntry is one module's compile: done closes once module or err
+// is set.
+type compileEntry struct {
+	done   chan struct{}
+	module wazero.CompiledModule
+	err    error
+}
+
+// compiledModule is the artifact's compiled module, compiling it the
+// first time its bytes are seen.
+func compiledModule(ctx context.Context, hash string, body []byte) (wazero.Runtime, wazero.CompiledModule, error) {
+	compileMu.Lock()
+	if shared == nil {
+		shared = wazero.NewRuntime(context.Background())
+	}
+	runtime := shared
+	entry, ok := compiled[hash]
+	if !ok {
+		entry = &compileEntry{done: make(chan struct{})}
+		compiled[hash] = entry
+	}
+	compileMu.Unlock()
+
+	if ok {
+		select {
+		case <-entry.done:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	} else {
+		entry.module, entry.err = runtime.CompileModule(ctx, body)
+		if entry.err != nil {
+			compileMu.Lock()
+			delete(compiled, hash)
+			compileMu.Unlock()
+		}
+		close(entry.done)
+	}
+	if entry.err != nil {
+		return nil, nil, entry.err
+	}
+	return runtime, entry.module, nil
+}
+
+// New loads the artifact and instantiates it. The bytes are
+// hashed once: the manifest's wasm_hash claim is about exactly what
+// runs here.
+func New(ctx context.Context, artifactPath string) (*Host, error) {
+	body, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(body)
+	hash := "sha256:" + hex.EncodeToString(sum[:])
+	runtime, code, err := compiledModule(ctx, hash, body)
+	if err != nil {
+		return nil, fmt.Errorf("compile %s: %w", artifactPath, err)
+	}
+	// Zero imports: instantiation is the whole integration story. An
+	// anonymous instance: any number share the runtime.
+	module, err := runtime.InstantiateModule(ctx, code, wazero.NewModuleConfig().WithName(""))
+	if err != nil {
+		return nil, fmt.Errorf("instantiate %s: %w", artifactPath, err)
+	}
+	return &Host{
+		module:      module,
+		memory:      module.Memory(),
+		alloc:       module.ExportedFunction("transit_alloc"),
+		free:        module.ExportedFunction("transit_free"),
+		invoke:      module.ExportedFunction("transit_invoke"),
+		invokeBytes: module.ExportedFunction("transit_invoke_bytes"),
+		hash:        hash,
+	}, nil
+}
+
+// Close releases the instance and its memory (the compiled module stays
+// for the next instance).
+func (h *Host) Close(ctx context.Context) error {
+	return h.module.Close(ctx)
+}
+
+// Hash returns the sha256 of the artifact this host runs.
+func (h *Host) Hash() string { return h.hash }
+
+// Invoke runs a JSON op. `request` marshals to a serialized
+// capability Request; `out` receives the unmarshalled ok-payload.
+func (h *Host) Invoke(ctx context.Context, request, out any) error {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	raw, err := h.call(ctx, h.invoke, payload)
+	if err != nil {
+		return err
+	}
+	return h.decode(raw, out)
+}
+
+// The kernel's loads this host calls (cap_abi::kernel — the same op in
+// every module whose capabilities read the kind): raw bytes on
+// transit_invoke_bytes.
+const (
+	OpLoadNetwork = 256
+	OpLoadStreets = 263
+	OpLoadFeed    = 266
+)
+
+// InvokeBytes runs a bulk op: `payload` crosses as raw bytes (a GTFS
+// zip, a bare network document); `out` receives the ok-payload.
+func (h *Host) InvokeBytes(ctx context.Context, op uint32, payload []byte, out any) error {
+	raw, err := h.call(ctx, h.invokeBytes, payload, uint64(op))
+	if err != nil {
+		return err
+	}
+	return h.decode(raw, out)
+}
+
+// InvokeRaw runs a JSON op and returns its ok-payload's bytes
+// untouched — for answers the host serves without reading.
+func (h *Host) InvokeRaw(ctx context.Context, request any) (json.RawMessage, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := h.call(ctx, h.invoke, payload)
+	if err != nil {
+		return nil, err
+	}
+	var ok json.RawMessage
+	return ok, h.decode(raw, &ok)
+}
+
+// call stages `payload` at an allocated pointer, calls `fn` (with an
+// optional leading extra arg for the bytes-op code), reads the
+// length-prefixed result, frees both buffers, and returns the payload
+// of a successful {"ok": ...} outcome.
+//
+// The whole alloc→free sequence is atomic: the artifact is not
+// reentrant, so interleaved calls would race on its heap.
+func (h *Host) call(ctx context.Context, fn api.Function, payload []byte, extra ...uint64) ([]byte, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ptr, err := h.alloc.Call(ctx, uint64(len(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("alloc: %w", err)
+	}
+	in := uint32(ptr[0])
+	if !h.memory.Write(in, payload) {
+		return nil, fmt.Errorf("memory write at %d failed", in)
+	}
+	args := append(extra, uint64(in), uint64(len(payload)))
+	out, err := fn.Call(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	result := uint32(out[0])
+	length, ok := h.memory.ReadUint32Le(result)
+	if !ok {
+		return nil, fmt.Errorf("result length read at %d failed", result)
+	}
+	body, ok := h.memory.Read(result+4, length)
+	if !ok {
+		return nil, fmt.Errorf("result read at %d (%d bytes) failed", result+4, length)
+	}
+	// Read returns a view into linear memory; the frees below would
+	// let the Rust allocator reuse (and overwrite) that region, so
+	// the payload must leave the module's memory before freeing.
+	resultCopy := make([]byte, len(body))
+	copy(resultCopy, body)
+	if _, err := h.free.Call(ctx, uint64(result), uint64(length+4)); err != nil {
+		return nil, fmt.Errorf("free result: %w", err)
+	}
+	if _, err := h.free.Call(ctx, uint64(in), uint64(len(payload))); err != nil {
+		return nil, fmt.Errorf("free input: %w", err)
+	}
+	return resultCopy, nil
+}
+
+// decode parses an outcome; {"error": ...} becomes a Go error.
+func (h *Host) decode(raw []byte, out any) error {
+	var outcome struct {
+		OK    json.RawMessage `json:"ok"`
+		Error *string         `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &outcome); err != nil {
+		return fmt.Errorf("unparseable outcome: %w", err)
+	}
+	if outcome.Error != nil {
+		return fmt.Errorf("op failed: %s", *outcome.Error)
+	}
+	if out == nil || len(outcome.OK) == 0 {
+		return nil
+	}
+	return json.Unmarshal(outcome.OK, out)
+}
+
+// UseRuntime makes r the runtime that every later compile uses (a test
+// binary's runtime with a compilation cache). Call it before the first
+// New.
+func UseRuntime(r wazero.Runtime) {
+	compileMu.Lock()
+	defer compileMu.Unlock()
+	shared = r
+}
