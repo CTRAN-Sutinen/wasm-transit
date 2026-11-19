@@ -50,6 +50,12 @@ variation as information, never as an error.
   first day itself).
 - **A link to the review.** The plan being changed opens in the
   review UI, so the planner can judge its coverage and corridors.
+- **Freezing a version, and adopting one** (D-191). The planner freezes
+  the plan with what it is (a proposal for public comment, a board
+  packet), sees the frozen versions, and adopts one. The server has it
+  (`POST /plans/freeze`, `/plans/adopt`, the `frozen_versions`
+  document in `GET /logs/plans`). Today the UI only publishes, which
+  freezes and adopts in one step.
 
 ## Done when
 

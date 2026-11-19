@@ -418,6 +418,12 @@ The service-plan chain, and the published plan set. cap-plans is the seam. This 
 - `retire` retires a pick that has not taken effect. The pick is kept as the tombstone (D-75).
 - `in_force` gives the published pick, and so the network, that governs a date. Retired picks never govern.
 - `in_use` gives the picks in use on a date: the pick in force, then every published pick dated after it. A pick that stopped governing, or a retired one, is not in use.
+- A pick names the stops log entry its adoption read (`stops_seq`, optional).
+
+**The frozen versions** (store kind `frozen_versions`, `FrozenVersions`; D-191).
+- They hold every network version the agency froze, by network hash: the plan's id, name, and date, and what the version is (`purpose`).
+- `freeze` gives the next frozen versions. It refuses a blank purpose and a plan that is not a dated pick. A freeze puts nothing in force.
+- `adopt` puts a frozen version in force: it is `publish` under the version's own frame, naming `stops_seq`. A network that no frozen version has is refused (`NotFrozen`). So every network in a published set is a frozen version.
 
 ## transit-runs
 
@@ -585,6 +591,8 @@ The plan-chain capability: which service plan governs a date? transit-plans is t
 - `publish`, `retire`, `in_force`, and `in_use` work over the published plan set. `publish`, `retire`, and `in_use` take the host's date.
 - The host owns the plan set and pushes its metadata on each call.
 - `publish` answers the next set's canonical bytes and hash, which the server stores as given.
+- `freeze` and `adopt` answer the next frozen versions and the next set, each with its records for the plans log (`next`).
+- `log_records` and `log_document` turn the published set and the frozen versions into the plans log's records (`pick`, `frozen_version`, and each document's own record) and back. cap-log keeps the log and never reads a record.
 
 ## cap-stops
 
@@ -637,7 +645,7 @@ The log capability: what does this write add to the log, and what does the log h
 - `revert` gives the entry that writes back the states before an entry. A record the entry created leaves the fold (D-198). A record a later entry changed refuses it. Its answer gives each record's state now and before (`states`). A kind's capability may answer other records to write back (`written`), and the host sends them with the revert again.
 - `close_gap` gives the empty entry that closes a gap, with its cause.
 
-The server keeps the disruptions log and the stops log through it ([server.md](server.md)).
+The server keeps the disruptions log, the stops log, and the plans log through it ([server.md](server.md)).
 
 ## cap-author
 

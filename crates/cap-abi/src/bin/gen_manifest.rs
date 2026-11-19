@@ -292,10 +292,10 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "plans",
         file: "module_plans.wasm",
-        ops: &["resolve", "validate", "periods", "publish", "in_force", "in_use", "retire"],
+        ops: &["resolve", "validate", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "log_document"],
         documents: &[],
         consumes: &[],
-        speaks: &[("plans", &[1])],
+        speaks: &[("plans", &[1]), ("frozen_versions", &[1])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-plans/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -864,6 +864,16 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             Some(migrate_watchlist),
         ),
         kind::<transit_plans::PublishedPlans>("plans", Some("plans"), "transit-plans", plans_example, None),
+        kind::<transit_plans::FrozenVersions>(
+            "frozen_versions",
+            None,
+            "transit-plans",
+            net.and_then(|n| {
+                let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), &fixture_plan_set()[0], &n.network_hash, "proposal for public comment").ok()?;
+                serde_json::to_value(frozen).ok()
+            }),
+            None,
+        ),
         kind::<transit_dispatch::device::RecentPlaces>(
             "recent_places",
             None,
@@ -2898,6 +2908,54 @@ fn example_for(
                 json!({ "op": "retire", "published": published, "id": "fall", "today": "2026-01-01" }),
                 json!({ "ok": { "op": "retire", "issues": [], "published": retired,
                     "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
+            )
+        }
+        ("plans", "freeze") => {
+            let net = net?;
+            let first = &fixture_plan_set()[0];
+            let purpose = "proposal for public comment";
+            let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), first, &net.network_hash, purpose).ok()?;
+            let document = cap_abi::canonical_bytes(&frozen).ok()?;
+            let next = transit_log::document_records(&serde_json::to_value(&frozen).ok()?, "versions", "frozen_version", "frozen_versions", 1).ok()?;
+            (
+                json!({ "op": "freeze", "frozen": null, "plan": first, "network_hash": net.network_hash, "purpose": purpose }),
+                json!({ "ok": { "op": "freeze", "issues": [], "frozen": frozen,
+                    "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()), "next": next } }),
+            )
+        }
+        ("plans", "adopt") => {
+            let net = net?;
+            let first = &fixture_plan_set()[0];
+            let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), first, &net.network_hash, "board packet").ok()?;
+            let adopted = transit_plans::adopt(&transit_plans::PublishedPlans::empty(), &frozen, &net.network_hash, fixture_today(), Some(3)).ok()?;
+            let document = cap_abi::canonical_bytes(&adopted).ok()?;
+            let next = transit_log::document_records(&serde_json::to_value(&adopted).ok()?, "plans", "pick", "plans", 1).ok()?;
+            (
+                json!({ "op": "adopt", "published": null, "frozen": frozen, "network_hash": net.network_hash, "today": "2026-01-01", "stops_seq": 3 }),
+                json!({ "ok": { "op": "adopt", "issues": [], "published": adopted,
+                    "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()), "next": next } }),
+            )
+        }
+        ("plans", "log_records") => {
+            let net = net?;
+            let published = transit_plans::publish(&transit_plans::PublishedPlans::empty(), &fixture_plan_set()[0], &net.network_hash, fixture_today()).ok()?;
+            let next = transit_log::document_records(&serde_json::to_value(&published).ok()?, "plans", "pick", "plans", 1).ok()?;
+            (
+                json!({ "op": "log_records", "published": published }),
+                json!({ "ok": { "op": "log_records", "next": next } }),
+            )
+        }
+        ("plans", "log_document") => {
+            let net = net?;
+            let published = transit_plans::publish(&transit_plans::PublishedPlans::empty(), &fixture_plan_set()[0], &net.network_hash, fixture_today()).ok()?;
+            let next = transit_log::document_records(&serde_json::to_value(&published).ok()?, "plans", "pick", "plans", 1).ok()?;
+            let held = |k: &transit_log::KindRecords| -> serde_json::Map<String, serde_json::Value> {
+                k.records.iter().map(|(id, v)| (id.clone(), json!({ "version": k.version, "value": v }))).collect()
+            };
+            let document = cap_abi::canonical_bytes(&published).ok()?;
+            (
+                json!({ "op": "log_document", "kind": "plans", "records": held(&next[0]), "document": held(&next[1]).remove("document") }),
+                json!({ "ok": { "op": "log_document", "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
             )
         }
         ("plans", "periods") => {

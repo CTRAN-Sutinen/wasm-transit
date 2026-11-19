@@ -370,6 +370,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "transit-log",
  "transit-plans",
  "transit-version",
  "ts-rs",

@@ -243,8 +243,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
 | D-189 | Do the staff pages work offline, and queue their writes? | decided; not built | nothing |
-| D-190 | How does the agency's record store the data people edit? | decided; the disruptions and stops logs built | nothing |
-| D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; not built | nothing |
+| D-190 | How does the agency's record store the data people edit? | decided; the disruptions, stops, and plans logs built | nothing |
+| D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; freezing and adopting built on the server | nothing |
 | D-192 | Are the edit document's existing names renamed to "disruptions"? | unanswered | nothing |
 | D-193 | What does a revert write back? | encoded | nothing |
 | D-194 | Who may read a log's entries? | encoded | nothing |
@@ -254,6 +254,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-198 | What does a revert do to a record the reverted entry created? | decided | nothing |
 | D-199 | Does the record store the documents the server derives from its inputs? | decided; built | nothing |
 | D-200 | How does a stored derived document name the inputs it was made from? | encoded | nothing |
+| D-201 | How does the server serve freezing and adopting? | encoded | nothing |
 
 ## The trip model
 
@@ -2754,7 +2755,8 @@ append-only log".
 Blocks: nothing.
 
 ### D-190 — How does the agency's record store the data people edit?
-State: Decided; the disruptions log is built. The other logs are `docs/units/storage-model.md`.
+State: Decided; the disruptions, stops, and plans logs are built. The work rules and
+the policy are `docs/units/storage-model.md`.
 Answer: 2026-11-18 — a mixed model, chosen by lifecycle stage, with
 an append-only log as the record for what people edit. The user: "i
 think realistically a mixed data model makes the most sense. i don't
@@ -2950,6 +2952,34 @@ Pinned by: `server/derived_test.go` (`TestABootOverStoredDerivationsRunsNoModule
 Why: `docs/architecture/storage.md`, Why, "The derived documents are
 stored when they are made".
 Blocks: nothing.
+
+### D-201 — How does the server serve freezing and adopting?
+State: Encoded provisionally.
+Context: D-191 decides that a freeze and an adoption are two acts, and
+that the plan set moves into the plans log. The server's surface, the
+place a frozen network is stored, the correction of a mistake, and the
+picks published before the log were left open.
+Options (each encoded):
+- `POST /plans/freeze?purpose=`, `POST /plans/adopt {network_hash}`,
+  and `POST /plans` kept as a freeze and an adoption in one entry, the
+  purpose `published` unless the caller names one. So the current UI
+  and caps-run keep working.
+- A frozen network is committed as the head of its plan's `plan.<id>`
+  pointer, so gc keeps it. The other option is to have gc follow the
+  plans log's hashes, which is the store's later step ("The store
+  describes itself").
+- An adoption's date is the frozen version's own (its plan frame). A
+  new date is a new network, frozen again.
+- The plans log has no generic revert. A pick is corrected by
+  republishing it, or retired before it takes effect (D-75, D-76).
+- The log's first entry copies the `plans` pointer's head and freezes
+  each of its picks with the purpose "published before the plans log",
+  writer `migrate:plans`. The pointer is read only after that.
+- The adoption names the stops log's head when the pick is read
+  (`stops_seq`), absent with no stops document.
+Pinned by: `server/planslog_test.go`; `server/version_test.go`
+(`TestThePicksInUseCommitForwardAtStartup`); `server/openapi.json`.
+Blocks: nothing. A change rewrites `server/planslog.go`.
 
 ### D-200 — How does a stored derived document name the inputs it was made from?
 State: Encoded provisionally.
@@ -3917,7 +3947,9 @@ Why: `docs/architecture/bus.md`, Why, "Every document says what it is".
 Blocks: nothing; `document-versioning` scope 2 and 6 carry it.
 
 ### D-191 — Is a service-change draft part of the agency's record, and what does publishing mean?
-State: Decided; not built.
+State: Decided; freezing and adopting are built on the bus and the
+server. The drafts' working store is `docs/units/storage-model.md`, and
+the UI is `docs/units/ui-service-change.md`.
 Answer: 2026-11-18 — a draft is a workspace, and publishing is two
 acts. The user: "drafts, yes to a workspace, for public records, they
 would be considered 'transient' when they are truly drafts. the
@@ -3937,10 +3969,16 @@ Context: today a draft lives only on the planner's device (the plan
 set, `plan_set`), and publishing a pick both records it and puts it in
 force from its `effective_from`. A proposal shown for comment, and
 not yet adopted, has no place in the record.
-Pinned by: none yet (`docs/units/storage-model.md`, "The plans log,
-and freezing").
-Why: moves to `docs/architecture/storage.md`, Why, when freezing is
-built.
+Pinned by: `crates/transit-plans/tests/frozen_test.rs`
+(`only_a_frozen_version_is_adopted`, `every_network_in_force_was_frozen`,
+`an_adoption_names_the_stops_log_entry_it_read`);
+`crates/cap-plans/tests/dispatch_test.rs`; `server/planslog_test.go`
+(`TestAFreezePutsNothingInForce`, `TestOnlyAFrozenVersionIsAdopted`,
+`TestAPublishIsAFreezeAndAnAdoptionInOneEntry`); `server/stops_test.go`
+(`TestAPublishedPickReadsTheStops`); `server/reader_test.go`
+(`TestStoreReadsWithoutTheModules`).
+Why: `docs/architecture/storage.md`, Why, "Freezing and adopting are
+two acts in one log".
 Blocks: nothing.
 
 ## Documentation

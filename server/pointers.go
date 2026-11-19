@@ -330,7 +330,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	// The published set and the picks' networks are written only by
 	// POST /plans (plans.go): their identity is a module's, and a raw
 	// write would skip cap-network's validation and cap-plans' chain.
-	if kind == "plans" || kind == "network_document" || name == "plans" || strings.HasPrefix(name, "plan.") {
+	if kind == "plans" || kind == "frozen_versions" || kind == "network_document" || name == "plans" || strings.HasPrefix(name, "plan.") {
 		http.Error(w, "picks publish through POST /plans", http.StatusBadRequest)
 		return
 	}
@@ -431,7 +431,11 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	if err == store.ErrNotFound {
 		// The stops log's documents, served under the hashes the manifest
 		// pins (stopslog.go).
-		if kind, doc, ok := s.stopsLogDoc(hash); ok {
+		kind, doc, ok := s.stopsLogDoc(hash)
+		if !ok {
+			kind, doc, ok = s.plansLogDoc(hash)
+		}
+		if ok {
 			w.Header().Set("X-Document-Kind", kind)
 			w.Header().Set("X-Schema-Version", "1")
 			if link := s.storedSchemaLink(kind, 1); link != "" {

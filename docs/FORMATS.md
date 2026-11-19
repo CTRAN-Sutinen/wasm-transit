@@ -147,12 +147,14 @@ Each commit is one record object,
     disruptions log ("The logs", below). No server writes it.
   - `policy`.
   - `manifest`.
-  - `plans` (the published plan set).
+  - `plans`, read only. It is the published plan set's history before
+    the plans log ("The logs", below). No server writes it.
   - `stops` and `stop_requests`, read only. They are the stops
     document's and the stop requests document's history before the
     stops log ("The logs", below). No server writes them.
-  - `plan.<id>` for each published pick (its network document). Every
-    revision stays in the log.
+  - `plan.<id>` for each plan's frozen versions (its network
+    documents). Each freeze commits its network as the head, so every
+    version stays in the log, and the plans log names it by hash.
   - `build` (each release committed from `-dist`, and each move;
     see "Builds").
   - `build.<id>` for each UI the server keeps (`-ui-dist`): each of
@@ -225,8 +227,8 @@ non-zero on the first break. A break is one of these:
   the checkpoint before it (or from the first entry);
 - a head manifest that names a document no record names. The fields
   read are `feed_hash`, `network_hash`, `boundary_hash`, `streets_hash`,
-  `walks_hash`, `plans_hash`, `policy_hash`, and `build_hash`. The
-  stops and the stop requests are folds their log keeps, and the
+  `walks_hash`, `policy_hash`, and `build_hash`. The plan set, the
+  stops, and the stop requests are folds their logs keep, and the
   modules' hashes name modules.
 
 The fold is the module's, so `store verify` runs cap-log, which keeps
@@ -249,7 +251,7 @@ transaction. The current document is the fold of the entries, which the
 module that owns the log's kinds computes. A mistake is fixed by a new
 entry, so the truth before the mistake stays in the record.
 
-The store has two logs. cap-log keeps both (`log_entry`,
+The store has three logs. cap-log keeps them all (`log_entry`,
 `log_checkpoint`; D-197), and never reads a record. The capability that
 owns each kind turns its document into records and back:
 
@@ -258,6 +260,11 @@ owns each kind turns its document into records and back:
 - `stops`: the stops document and the stop requests document, in one
   log because completing a request and adding the stop's event is one
   transaction. cap-stops and cap-requests answer their records.
+- `plans`: the published plan set and the frozen versions (D-191), in
+  one log because publishing freezes a version and adopts it in one
+  transaction. cap-plans answers both documents' records. The plans log
+  has no `revert`: a pick is corrected by republishing it, or retired
+  before it takes effect (D-75).
 
 An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
 a `log_entry` document. It names each record's kind and version,
@@ -271,9 +278,11 @@ because one entry may change the records of two capabilities:
 - `writer` is the verified sign-in subject, or the tool: `gc` for the
   edit document's tombstone compaction, `migrate:edits` for the first
   entry of a store that had the `edits` pointer, `migrate:-edits` for
-  one seeded from the dev store's file, and `migrate:stops` for the
+  one seeded from the dev store's file, `migrate:stops` for the
   first entry of a store that had the `stops` or `stop_requests`
-  pointer.
+  pointer, and `migrate:plans` for the first entry of a store that had
+  the `plans` pointer. That entry freezes each pick it copies, with the
+  purpose "published before the plans log".
 - `module` is the cap-log build that answered the entry.
 - `intent` is what asked for the write: `op` (the endpoint or the op),
   `args_hash` (the hash of the request's body, or of the pointer head a
@@ -298,8 +307,14 @@ The records of each log:
   its events whole and in their order. An event's place among events on
   the same day is the order of writing, so an event is not a record of
   its own. A `stop_request` record is one request, by its id.
+- In the plans log, a `pick` record is one published pick, by its plan
+  id. A `frozen_version` record is one frozen version, by its network's
+  hash: the plan's id, name, and date, and what the version is
+  (`purpose`). A pick names the stops log entry its adoption read
+  (`stops_seq`, absent when it read no stops or was published before the
+  log).
 - Each document also has its own record: kind `edit_records`, `stops`,
-  or `stop_requests`, id `document`, the document with its collection
+  `stop_requests`, `plans`, or `frozen_versions`, id `document`, the document with its collection
   empty. It is a valid document of its kind and version. So a field
   outside the collection that a build does not know is kept (D-167).
 
@@ -391,9 +406,22 @@ entry 1 from their heads, with writer `migrate:stops` and
   that a static bundle carries
   (docs/architecture/static-deployment.md). The server never serves a
   `policy` blob.
+- `POST /plans/freeze?purpose=<what it is>` takes a network document
+  as the body, in any serialization, gzipped or not. The server commits
+  the network to `plan.<id>`, then writes the frozen version as one
+  entry of the plans log. Nothing is put in force. It answers `200
+  {plan_id, network_hash, frozen_versions_hash, seq, warnings}`, `422`
+  as `POST /plans` does, or `400` (no purpose).
+- `POST /plans/adopt` takes the body `{"network_hash"}`, a frozen
+  version's network. It puts the version in force from its date, as one
+  entry of the plans log, and the pick names the stops log entry it read
+  (`stops_seq`). It answers like `POST /plans`, and `422 {issues}` with
+  `not_frozen` for a network that no frozen version has.
 - `POST /plans` takes a network document as the body, in any
-  serialization, gzipped or not. It answers one of these:
-  - `200 {plan_id, network_hash, plans_hash, warnings}`. The warnings
+  serialization, gzipped or not. It freezes the network and adopts it
+  in one entry of the plans log. `?purpose=` says what the frozen
+  version is (default `published`). It answers one of these:
+  - `200 {plan_id, network_hash, plans_hash, seq, warnings}`. The warnings
     are the network's warnings. With a stops document, they also name
     each stop that the pick visits and that is not in service over its
     period (`stop_not_in_service`).
@@ -445,10 +473,10 @@ entry 1 from their heads, with writer `migrate:stops` and
   period (cap-stops `export_versions`). Before the first pick takes
   effect, the answer is the `-feed` zip.
 - `POST /plans/retire` takes the body `{"id"}`. It answers `200
-  {plans_hash}`, or `422 {issues}` (the pick has taken effect, or no
+  {plans_hash, seq}`, or `422 {issues}` (the pick has taken effect, or no
   pick has the id), or `404` when nothing is published (D-75). The
-  server commits cap-plans' next set to `plans`. The pick's network
-  stays where it is.
+  retirement is one entry of the plans log. The pick's network stays
+  where it is.
 - `POST /builds` takes the body `{"build": "<hash>"}`. It answers `200
   {build, seq}`. It moves the `build` pointer to a build that its log
   holds. With `?ui=<id>`, it moves that UI's pointer, `build.<id>`, and
@@ -622,6 +650,7 @@ Every persisted kind, by what a version change does to it:
 | `log_checkpoint` (a log's fold up to an entry) | transit-log | derived | `kind`, `schema_version`; each record its version |
 | `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
+| `frozen_versions` (every version frozen, by network hash) | transit-plans | authored | `kind`, `schema_version` |
 | `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |
 | `watchlist` | transit-dispatch | authored | `kind`, `schema_version` (before its tags, `"version": "vN"`) |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
@@ -739,8 +768,8 @@ document through `Kind::require_writable`; transit-sync's
 `read_document`). A copy read ahead is held under the hash it is stored
 with, so the page and the store name it alike. The laws are in cap-abi
 `tests/read_ahead_test.rs`. cap-plans takes the published set the same
-way: `in_force` and `in_use` read it, and `publish` and `retire` write
-over it.
+way: `in_force` and `in_use` read it, and `publish`, `adopt`, and
+`retire` write over it. `freeze` takes the frozen versions the same way.
 
 A page whose module refuses a document as newer, or whose write the
 server refuses for its version, asks for the deployment's build
@@ -762,6 +791,10 @@ as well as the code, and an operator runs it by hand:
    entry after that head. Each one names its writer and its document
    by hash, and the documents stay in the store as plain JSON (D-115).
    A person enters their content again by hand, in the older build.
+
+The logs are not moved back this way. An entry of the disruptions log
+or the stops log is undone by its revert, and a pick in the plans log
+by republishing it or retiring it (D-75).
 
 A backup restores into a build at least as new as the backup. An older
 build refuses its newer documents, naming both versions.
@@ -869,16 +902,25 @@ A `manifest` blob is the manifest object itself
 the optional ones omitted when empty). Its envelope is
 `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 
-A `plans` blob is the published plan set, with its version inside it
-(D-62). The picks are in (effective_from, id) order. A retired pick
-stays in the set as the tombstone (D-75; `status` reads `published`
-when absent):
+The `plans` document is the published plan set, with its version inside
+it (D-62). It is the plans log's fold, served by hash from `/blobs`; the
+`plans` pointer's blobs are the same shape. The picks are in
+(effective_from, id) order. A retired pick stays in the set as the
+tombstone (D-75; `status` reads `published` when absent). A pick that an
+adoption put in force names the stops log entry it read (`stops_seq`):
 
 ```json
 {"schema_version":1,"plans":[{"id":"fall-2026","name":"Fall 2026 pick","effective_from":"2026-09-13","network_hash":"sha256:5206f419…","status":"published"},{"id":"winter-2027","name":"Winter 2027 pick","effective_from":"2027-03-01","network_hash":"sha256:d122b6af…","status":"retired"}]}
 ```
 
-Its envelope is
+A blob of the old `plans` pointer has the envelope
 `{"kind":"plans","schema_version":1,"produced_by":"cap-plans@sha256:<hex>"}`.
-Each `network_hash` is the head of that pick's `plan.<id>` pointer, a
-`network_document` blob.
+Each `network_hash` is a frozen version: a `network_document` blob that
+the pick's `plan.<id>` pointer logs.
+
+The `frozen_versions` document is the plans log's other fold: every
+version the agency froze, by network hash (D-191):
+
+```json
+{"kind":"frozen_versions","schema_version":1,"versions":{"sha256:5206f419…":{"effective_from":"2026-09-13","name":"Fall 2026 pick","network_hash":"sha256:5206f419…","plan_id":"fall-2026","purpose":"proposal for public comment"}}}
+```

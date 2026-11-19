@@ -592,23 +592,26 @@ image.
   when an update wrote data that the earlier version cannot use, and
   rolling the app back ([section 9](#9-update-or-roll-back-the-app))
   is not enough. First roll the app back. Then, for each kind of data
-  the update changed (for example `plans`), list its history:
+  the update changed (for example `policy`), list its history:
 
   ```
-  curl https://<your address>/pointers/plans/log
+  curl https://<your address>/pointers/policy/log
   ```
 
   Choose the last entry from before the update. Its `to` is the
   version to go back to. Then run:
 
   ```
-  just store revert -writer <your name> 's3://agency-transit/prod?region=us-west-2' plans sha256:…
+  just store revert -writer <your name> 's3://agency-transit/prod?region=us-west-2' policy sha256:…
   ```
 
   The tool moves the data back and lists every change made since then,
   with who made it. Those changes stay in the bucket. A person enters
-  them again by hand in the app. Detours and cancellations are not
-  undone this way: undo their entries one by one, as above.
+  them again by hand in the app. Detours, cancellations, and stops are
+  not undone this way: undo their entries one by one, as above. The
+  published schedules are not undone this way either: publish the
+  right schedule again, or retire one that has not started, in the
+  service change app.
 
 - **Backups.** Choose where copies go and how often with your
   provider's own tools: bucket versioning and replication to a second

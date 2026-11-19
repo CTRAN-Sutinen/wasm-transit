@@ -12,4 +12,5 @@ serde_json = { workspace = true }
 ts-rs = { workspace = true }
 chrono = { workspace = true }
 transit-plans = { path = "../transit-plans" }
+transit-log = { path = "../transit-log" }
 cap-abi = { path = "../cap-abi" }

@@ -1721,7 +1721,7 @@
       "post": {
         "operationId": "publishPick",
         "summary": "Publish a plan's network as a pick.",
-        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans answers the next published set. The server commits the network to plan.<id> and then the set to plans. When sign-in is on, it needs write on the plans pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans freezes the network and adopts it (D-191). The server commits the network to plan.<id>, then writes the freeze and the adoption as one entry of the plans log. ?purpose= says what the frozen version is (default \"published\"). When sign-in is on, it needs write on the plans pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1863,7 +1863,18 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": false,
+            "description": "What the frozen version is, in the agency's words. Absent: \"published\".",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/plans/retire": {
@@ -1871,7 +1882,7 @@
       "post": {
         "operationId": "retirePick",
         "summary": "Retire a pick that has not taken effect.",
-        "description": "Store mode only. cap-plans answers the next set, with the pick kept as a tombstone. When sign-in is on, it needs write on the plans pointer.",
+        "description": "Store mode only. cap-plans answers the next set, with the pick kept as a tombstone, written as one entry of the plans log. When sign-in is on, it needs write on the plans pointer.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1949,7 +1960,7 @@
             }
           },
           "409": {
-            "description": "The plans pointer moved.",
+            "description": "The plans log moved on every attempt.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3643,6 +3654,547 @@
           }
         }
       }
+    },
+    "/plans/freeze": {
+      "x-mux": "/plans/freeze",
+      "post": {
+        "operationId": "freezeVersion",
+        "summary": "Freeze a network version into the record, with what it is.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, and cap-plans freezes it (D-191): the server commits the network to plan.<id>, then writes the frozen version as one entry of the plans log. Nothing is put in force. When sign-in is on, it needs write on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "x-document": "network",
+                "description": "The pick's network document."
+              }
+            },
+            "application/gzip": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "x-document": "network",
+                "description": "The network document, gzipped."
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version is frozen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansFrozen"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No purpose, a body that is not a network document, or a plan id that cannot name a pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publishing needs the store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plans log moved on every attempt.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-network refuses the network ({issues, refusals}), or cap-plans refuses the freeze ({issues}).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "cap-network refuses the network as a pick (issues and refusals), or cap-plans refuses the change (issues only).",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "refusals": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "issues"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": true,
+            "description": "What the version is, in the agency's words: a proposal for public comment, a board packet.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/plans/adopt": {
+      "x-mux": "/plans/adopt",
+      "post": {
+        "operationId": "adoptVersion",
+        "summary": "Put a frozen version in force from its date.",
+        "description": "Store mode only. The body names a frozen version by its network hash. cap-network checks the stored network, a stops document is read over it, and cap-plans adopts it (D-191). Only a frozen version is adopted. The adoption is one entry of the plans log, and the pick names the stops log entry it read (stops_seq). When sign-in is on, it needs write on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "network_hash": {
+                    "type": "string",
+                    "description": "A frozen version's network hash."
+                  }
+                },
+                "required": [
+                  "network_hash"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version is adopted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansPublished"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"network_hash\": \"<hash>\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publishing needs the store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plans log moved on every attempt.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-plans refuses the adoption ({issues}): the network is not frozen, or the pick would break the chain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "cap-network refuses the network as a pick (issues and refusals), or cap-plans refuses the change (issues only).",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "refusals": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "issues"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/plans": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getPlansLog",
+        "summary": "Get the plans log's entries after a seq.",
+        "description": "Store mode only. Each entry is one freeze, adoption, or retirement (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the plans pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/plans/close-gap": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "closePlansGap",
+        "summary": "Close a gap in the plans log with an entry that names the cause.",
+        "description": "Store mode only. A missing entry below the head stops writes to the log. This writes an entry with no changes at the missing seq, with the cause as its note. When sign-in is on, it needs the audit rule on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The missing entry."
+                  },
+                  "cause": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why the entry is missing."
+                  }
+                },
+                "required": [
+                  "seq",
+                  "cause"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry that closes the gap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N, \"cause\": \"…\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The log has no gap at `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3922,6 +4474,10 @@
               "type": "object"
             },
             "description": "The network's warnings, then each visited stop not in service over the pick's period."
+          },
+          "seq": {
+            "type": "integer",
+            "description": "The plans log's entry."
           }
         },
         "required": [
@@ -3936,6 +4492,10 @@
         "properties": {
           "plans_hash": {
             "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "description": "The plans log's entry."
           }
         },
         "required": [
@@ -4480,6 +5040,127 @@
                 "reason"
               ]
             }
+          }
+        },
+        "required": [
+          "log",
+          "head",
+          "checkpoint",
+          "entries",
+          "quarantined"
+        ]
+      },
+      "PlansFrozen": {
+        "type": "object",
+        "description": "The frozen version.",
+        "properties": {
+          "plan_id": {
+            "type": "string"
+          },
+          "network_hash": {
+            "type": "string"
+          },
+          "frozen_versions_hash": {
+            "type": "string",
+            "description": "The frozen versions document, served at /blobs/<hash>."
+          },
+          "seq": {
+            "type": "integer",
+            "description": "The plans log's entry."
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            },
+            "description": "The network's warnings."
+          }
+        },
+        "required": [
+          "plan_id",
+          "network_hash",
+          "frozen_versions_hash",
+          "seq",
+          "warnings"
+        ]
+      },
+      "PlansLog": {
+        "type": "object",
+        "description": "The plans log's entries after a seq, and its state.",
+        "properties": {
+          "log": {
+            "type": "string",
+            "const": "plans"
+          },
+          "head": {
+            "type": "integer",
+            "description": "The highest entry."
+          },
+          "gaps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            },
+            "description": "The missing entries below the head. Writes stop while there is one."
+          },
+          "checkpoint": {
+            "type": "integer",
+            "description": "The newest checkpoint's seq (0: none)."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "entry": {
+                  "type": "object",
+                  "description": "The entry, a log_entry document."
+                },
+                "unreadable": {
+                  "type": "string",
+                  "description": "The entry's bytes, when they are not JSON."
+                }
+              },
+              "required": [
+                "seq"
+              ]
+            }
+          },
+          "quarantined": {
+            "type": "array",
+            "description": "The entries the fold did not apply, in seq order, each with the reason.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "seq",
+                "reason"
+              ]
+            }
+          },
+          "plans_hash": {
+            "type": "string",
+            "description": "The published plan set the fold holds (the manifest's plans_hash)."
+          },
+          "frozen_versions_hash": {
+            "type": "string",
+            "description": "The frozen versions the fold holds."
           }
         },
         "required": [

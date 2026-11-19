@@ -195,12 +195,12 @@ func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport
 // manifestDocuments are the manifest's fields that name a document the
 // store keeps under a pointer (D-199): the feed and the street layer
 // (source.*), the derived documents (network, boundary, streets, walks),
-// the plan set, the policy, and the build. The stops and the stop
+// the policy, and the build. The plan set, the stops, and the stop
 // requests are folds their logs keep, and the modules' hashes name
 // modules, so verify does not look for them as blobs.
 var manifestDocuments = []string{
 	"feed_hash", "network_hash", "boundary_hash", "streets_hash", "walks_hash",
-	"plans_hash", "policy_hash", "build_hash",
+	"policy_hash", "build_hash",
 }
 
 // verifyManifest checks that the head manifest (its record at key) names

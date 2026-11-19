@@ -28,20 +28,18 @@ The entry, the checkpoint, the commit, and the six rules are built:
 cap-log keeps the disruptions log and the stops log (`docs/FORMATS.md`,
 "The logs"; `docs/architecture/storage.md`). Each later log is kept by
 cap-log too, and each of its kinds' capabilities answers its records
-(D-197). The documents the server derives from its inputs are stored in
-the record when they are made (D-199; `docs/FORMATS.md`,
-"Derivations").
+(D-197). The plans log holds the published plan set and the frozen
+versions, and the server freezes and adopts through it (D-191;
+`docs/architecture/storage.md`). The documents the server derives from
+its inputs are stored in the record when they are made (D-199;
+`docs/FORMATS.md`, "Derivations").
 
 ## Scope, in order
 
-1. **The plans log, and freezing** (D-191).
-   - A freeze writes a network version to the record by hash, with an
-     entry that says what it is (for example, a proposal for public
-     comment). A frozen version can be in the record and not in force.
-   - Adopting puts a frozen version in force from a date, through an
-     entry that changes the plan set. Only a frozen version can be
-     adopted. An adoption names the `(stops, seq)` it read.
-   - The plan set and the work rules move into this log.
+1. **The work rules in the plans log** (D-191). The server holds no
+   work rules today: they live in the planner's browser. This needs a
+   write path for them (their records, answered by the capability that
+   owns transit-runs' work rules), and the server serving them by hash.
 2. **The working store, and drafts.**
    - A second store holds what may be deleted: drafts, attachments,
      and caches. The server keeps create, read, and list rights to the

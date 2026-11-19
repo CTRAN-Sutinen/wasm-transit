@@ -67,6 +67,12 @@ pub enum PlanIssue {
     /// A pick that is new, restored, or moved never lands before today
     /// (D-76); a pick republished under its own date always publishes.
     PickDatedInPast { id: String, effective_from: String, today: String },
+    /// A freeze says what the version is (D-191): a proposal for public
+    /// comment, a board packet.
+    FreezeWithoutPurpose,
+    /// Only a frozen version is adopted (D-191): no frozen version has
+    /// this network.
+    NotFrozen { network_hash: String },
 }
 
 fn parse_date(s: &str) -> Result<NaiveDate, String> {
@@ -208,6 +214,12 @@ pub struct PublishedPlan {
     pub network_hash: String,
     #[serde(default)]
     pub status: PickStatus,
+    /// The stops log entry the adoption read (D-191): the pick's stops
+    /// are the stops document at that entry. Absent when the adoption
+    /// read no stops, or the pick was published before the plans log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub stops_seq: Option<u64>,
     /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
@@ -293,6 +305,7 @@ pub fn publish(
         effective_from: from.clone(),
         network_hash: network_hash.to_string(),
         status: PickStatus::Published,
+        stops_seq: None,
         extra: Default::default(),
     });
     plans.sort_by(|a, b| (a.effective_from.as_str(), a.id.as_str()).cmp(&(b.effective_from.as_str(), b.id.as_str())));
@@ -351,4 +364,125 @@ pub fn in_use(set: &PublishedPlans, today: NaiveDate) -> Result<Vec<&PublishedPl
         }
     }
     Ok(used)
+}
+
+// ---------------------------------------------------------------------
+// The frozen versions (store kind `frozen_versions`; D-191).
+// ---------------------------------------------------------------------
+
+/// The frozen versions' schema version, inside the document (D-62).
+pub const FROZEN_SCHEMA_VERSION: u32 = 1;
+
+transit_version::kind_tag!(
+    /// The frozen versions' kind tag: always `"frozen_versions"`.
+    FrozenKind = "frozen_versions"
+);
+
+impl transit_version::Versioned for FrozenVersions {
+    const KIND: &'static str = "frozen_versions";
+    const READS: u32 = FROZEN_SCHEMA_VERSION;
+    fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+}
+
+/// One frozen version: a network the agency wrote to the record by its
+/// hash, and what it is. Its plan frame (the plan's id, name, and date)
+/// is the network's own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct FrozenVersion {
+    /// "sha256:<hex>" of the version's canonical network document.
+    pub network_hash: String,
+    pub plan_id: String,
+    pub name: String,
+    /// "YYYY-MM-DD": the date the plan would take effect.
+    pub effective_from: String,
+    /// What the version is, in the agency's words: "proposal for public
+    /// comment", "board packet".
+    pub purpose: String,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
+}
+
+/// Every version the agency froze, by network hash: the document the
+/// plans log holds beside the published plan set. A version stays when
+/// it is adopted, so every network that was ever in force is here, with
+/// the proposals that led to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct FrozenVersions {
+    /// The kind tag (D-115): `"frozen_versions"`.
+    #[serde(default)]
+    #[ts(type = "\"frozen_versions\"")]
+    pub kind: FrozenKind,
+    pub schema_version: u32,
+    /// The versions by network hash.
+    pub versions: std::collections::BTreeMap<String, FrozenVersion>,
+    /// Fields this build does not know, kept as written (D-167).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: transit_version::Extra,
+}
+
+impl FrozenVersions {
+    pub fn empty() -> Self {
+        FrozenVersions { kind: FrozenKind, schema_version: FROZEN_SCHEMA_VERSION, versions: Default::default(), extra: Default::default() }
+    }
+}
+
+/// Freeze a version (D-191): the frozen versions with the network of
+/// `plan`, by `network_hash`, and what it is. A freeze changes no plan
+/// set: a frozen version is not in force. Freezing a network again
+/// replaces what it says it is. Refused when `purpose` is blank, or the
+/// plan is not a dated pick. The input is never mutated.
+pub fn freeze(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purpose: &str) -> Result<FrozenVersions, Vec<PlanIssue>> {
+    if plan.id.is_empty() {
+        return Err(vec![PlanIssue::UnversionedPlan]);
+    }
+    let Some(from) = plan.effective_from.as_ref().filter(|f| parse_date(f).is_ok()) else {
+        return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+    };
+    if purpose.trim().is_empty() {
+        return Err(vec![PlanIssue::FreezeWithoutPurpose]);
+    }
+    let mut next = frozen.clone();
+    let extra = frozen.versions.get(network_hash).map(|v| v.extra.clone()).unwrap_or_default();
+    next.versions.insert(
+        network_hash.to_string(),
+        FrozenVersion {
+            network_hash: network_hash.to_string(),
+            plan_id: plan.id.clone(),
+            name: plan.name.clone(),
+            effective_from: from.clone(),
+            purpose: purpose.trim().to_string(),
+            extra,
+        },
+    );
+    Ok(next)
+}
+
+/// Adopt a frozen version (D-191): the published set with the version's
+/// pick (re)placed, as `publish` makes it under the version's own frame
+/// and `today`, naming `stops_seq`, the stops log entry the adoption
+/// read. Refused when no frozen version has `network_hash`, and for
+/// every reason `publish` refuses. The inputs are never mutated.
+pub fn adopt(
+    set: &PublishedPlans,
+    frozen: &FrozenVersions,
+    network_hash: &str,
+    today: NaiveDate,
+    stops_seq: Option<u64>,
+) -> Result<PublishedPlans, Vec<PlanIssue>> {
+    let Some(version) = frozen.versions.get(network_hash) else {
+        return Err(vec![PlanIssue::NotFrozen { network_hash: network_hash.to_string() }]);
+    };
+    let plan = PlanInfo { id: version.plan_id.clone(), name: version.name.clone(), effective_from: Some(version.effective_from.clone()) };
+    let mut next = publish(set, &plan, network_hash, today)?;
+    if let Some(pick) = next.plans.iter_mut().find(|p| p.id == plan.id) {
+        pick.stops_seq = stops_seq;
+    }
+    Ok(next)
 }

@@ -16,7 +16,9 @@ into web/pkg/:
   back. The server holds it for its whole lifetime.
 - cap-authz (-authz-wasm) runs when authentication is on.
 - cap-plans (-plans-wasm) runs in store mode. It is the op behind
-  POST /plans.
+  POST /plans, /plans/freeze, /plans/adopt, and /plans/retire, and it
+  turns the published plan set and the frozen versions into the plans
+  log's records and back.
 - cap-stops (-stops-wasm) runs in store mode. The server makes one
   instance on first use and empties it after each use (the kernel's
   `evict`). It does the validation behind a stops write. It also reads
@@ -405,25 +407,38 @@ Its HTTP surface:
   valid token) returns the caller's effective-permissions projection
   (cap-authz `effective`). It is the only client-readable form of the
   policy.
-- `POST /plans` (store mode): publish a pick (docs/ROADMAP.md 1, D-74).
-  The body is the pick's network in any serialization.
+- `POST /plans/freeze?purpose=…` (store mode): freeze a version
+  (D-191). The body is a network, checked as `POST /plans` checks it.
+  cap-plans `freeze` answers the next frozen versions. The server
+  commits the network to `plan.<id>`, then writes the frozen version as
+  one entry of the plans log. Nothing is put in force.
+- `POST /plans/adopt` `{"network_hash"}` (store mode): put a frozen
+  version in force from its date (D-191). cap-plans `adopt` refuses a
+  network that no frozen version has (422 `not_frozen`). The pick names
+  the stops log entry it read (`stops_seq`).
+- `POST /plans` (store mode): publish a pick (docs/ROADMAP.md 1, D-74):
+  a freeze and an adoption in one entry of the plans log, the version's
+  purpose `?purpose=` or `published`. The body is the pick's network in
+  any serialization.
   - A fresh cap-network registers it. It answers what refuses it
     (`publishable`: its issues, and a pick with no service in its
     period, which gives 422 with `issues` and `refusals`). It also
     answers the pick's canonical bytes and plan frame.
-  - cap-plans `publish` answers the next published set, or why it
-    refuses the pick (422: the chain, or a pick dated before today,
-    D-76).
+  - cap-plans `freeze`, then `adopt`, answer the next frozen versions
+    and published set, or why they refuse the pick (422: the chain, or a
+    pick dated before today, D-76).
   - `POST /plans/retire` `{"id"}` retires a pick that has not taken
-    effect (D-75).
+    effect (D-75), as one entry of the plans log.
   - "Today" is the agency's date. It is the host clock read in the
     network's zone, as cap-network answers it beside the hash (the
     feed's import, else the last published pick's `document`). Until a
     zone is known, it uses the host's own zone. `-today` pins it on a
     test server.
-  - The server commits the network to `plan.<id>`, then the set to
-    `plans`. The manifest pins the set as `plans_hash`. Clients read the
-    set and each pick's network from `/blobs`.
+  - The server commits the network to `plan.<id>`, then writes the
+    plans log's entry. The log's fold is the set, and the manifest pins
+    it as `plans_hash`. Clients read the set and each pick's network
+    from `/blobs`. `GET /logs/plans` answers the entries. The plans log
+    has no revert: a pick is corrected by its own rules.
   - With a stops document, the pick reads it first (D-157). It reads
     each stop's record on its first date (cap-stops `read_records`), so
     the network that the server stores is the read one, whatever copy

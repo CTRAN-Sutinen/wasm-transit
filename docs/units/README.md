@@ -52,7 +52,7 @@ work; a group is only a way to find them.
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
-| [storage-model.md](storage-model.md) | append-only logs for the plans and the policy; a working store for drafts; freezing apart from adopting; the kind table; permissions per change |
+| [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; the kind table; permissions per change |
 
 ### Stops and streets
 
@@ -66,7 +66,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [ui-service-change.md](ui-service-change.md) | changing and publishing a plan's service: the frequency target, the layover ripple, the pattern strip, the rider preview |
+| [ui-service-change.md](ui-service-change.md) | changing and publishing a plan's service: the frequency target, the layover ripple, the pattern strip, the rider preview, freezing and adopting |
 | [ui-service-design.md](ui-service-design.md) | reviewing how a plan's network performs (coverage, corridors, waits), read-only; the edit views come out |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | the public comparing service proposals |
 

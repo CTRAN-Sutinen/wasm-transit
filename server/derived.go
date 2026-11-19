@@ -146,7 +146,7 @@ func commitDerivation(st *store.Store, pointer string, inputs []string, module s
 	d := Derivation{Kind: DerivationKind, SchemaVersion: 1, Inputs: inputs, Module: module, Documents: []DerivedDocument{}, Answer: answer}
 	for _, doc := range docs {
 		env := store.Envelope{Kind: doc.storeKind, SchemaVersion: doc.version, ProducedBy: module}
-		if err := commitHead(st, doc.tag, doc.body, env, doc.hash); err != nil {
+		if err := commitHead(st, doc.tag, doc.body, env, doc.hash, "server"); err != nil {
 			log.Printf("%s: commit its %s: %v", pointer, doc.tag, err)
 			return
 		}
@@ -158,16 +158,16 @@ func commitDerivation(st *store.Store, pointer string, inputs []string, module s
 		return
 	}
 	env := store.Envelope{Kind: DerivationKind, SchemaVersion: 1, ProducedBy: "server"}
-	if err := commitHead(st, pointer, body, env, ""); err != nil {
+	if err := commitHead(st, pointer, body, env, "", "server"); err != nil {
 		log.Printf("%s: commit the derivation: %v", pointer, err)
 	}
 }
 
-// commitHead makes body the head of pointer. Another process that
+// commitHead makes body the head of pointer under writer. Another process that
 // committed the same bytes first is a success. Another head is retried
 // over, a few times: a derivation of the same inputs makes the same
 // bytes, so the last commit of the inputs just read stands.
-func commitHead(st *store.Store, pointer string, body []byte, env store.Envelope, wantHash string) error {
+func commitHead(st *store.Store, pointer string, body []byte, env store.Envelope, wantHash, writer string) error {
 	for attempt := 0; ; attempt++ {
 		head, found, err := st.Head(pointer)
 		if err != nil {
@@ -177,7 +177,7 @@ func commitHead(st *store.Store, pointer string, body []byte, env store.Envelope
 		if found {
 			from = head.Hash
 		}
-		_, _, err = st.CAS(pointer, from, body, env, wantHash, "server", time.Now().UnixMilli())
+		_, _, err = st.CAS(pointer, from, body, env, wantHash, writer, time.Now().UnixMilli())
 		var ce *store.ConflictError
 		switch {
 		case err == nil:

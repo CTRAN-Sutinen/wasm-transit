@@ -36,7 +36,7 @@ Publish a pick: the op answers the published plan set with the plan (re)placed b
 - `today` is the host's date. A pick that is new, restored, or moved never lands before it.
 - A pick republished under its own date always publishes. This is a correction to the pick in force.
 
-When the plan can publish, the answer is the canonical document and its `document_hash`. The module is the hash authority. The sync server stores exactly these bytes under its plans pointer.
+When the plan can publish, the answer is the canonical document and its `document_hash`. The module is the hash authority. The sync server freezes and adopts a pick in one entry of its plans log (`adopt`), and a browser's plan set publishes through it.
 
 A plan cannot publish when it is unversioned, undated, or dated before today. It also cannot publish when it would put two picks on one day. In that case the answer lists every reason in `issues` and has no document.
 
@@ -65,3 +65,36 @@ Retire a pick that has not taken effect. Such a pick is dated after today, the h
 The mark is the tombstone. The pick stays in the set and never governs. Republishing it restores it.
 
 A pick that has taken effect is refused. To correct it, republish it. The op answers like `publish`.
+
+## freeze
+
+Freeze a version: write a network to the record by its hash, with what it is. The answer is the frozen versions with the network of `plan` by `network_hash`.
+
+- The input is the frozen versions (null for the first freeze), the plan's frame, the network's hash, and `purpose`, in the agency's words ("proposal for public comment", "board packet").
+- A freeze puts nothing in force. A frozen version is in the record and not in force.
+- Freezing a network again replaces what it says it is. The plans log keeps what it said before.
+- Each network of a plan is its own version.
+
+The answer is the canonical document, its `document_hash`, and its records for the plans log (`next`). A blank `purpose`, an unversioned plan, or an undated plan is refused: the answer lists the reasons in `issues` and has no document.
+
+## adopt
+
+Adopt a frozen version: put it in force from its date. The answer is the published plan set with the version's pick placed under its own frame, as `publish` places it.
+
+- Only a frozen version is adopted. A network that no frozen version has is refused (`not_frozen`).
+- `stops_seq` is the stops log entry the adoption read. The pick names it, so its stops are the stops document at that entry.
+- Every rule of `publish` holds: a pick never lands before `today`, and a chain stays valid.
+
+The answer is like `publish`, with the set's records for the plans log (`next`). So every network that was ever in force is a frozen version.
+
+## log_records
+
+The plans log's records of a published plan set and of the frozen versions, as the log capability's `compose` takes them. Each document gives the records of its collection (`pick`, `frozen_version`) and its own record (`plans`, `frozen_versions`), which keeps the fields outside the collection.
+
+The sync server asks this once, to seed the plans log from the plans pointer.
+
+## log_document
+
+A document assembled from the plans log's records: `plans` from the `pick` records, or `frozen_versions` from the `frozen_version` records, with the document's own record. The answer is the canonical bytes and their hash. The picks are in (effective_from, id) order.
+
+A record in another version is refused, and the refusal names both versions.

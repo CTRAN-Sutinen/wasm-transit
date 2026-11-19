@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sort"
 	"strings"
 	"testing"
 
@@ -196,16 +197,53 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	idx := loadDocumentIndex(t)
 	r := storeReader{bucket}
 
-	head := r.head(t, "plans")
-	data, env := r.blob(t, head.To)
-	if env.Kind != "plans" || head.Kind != "plans" {
-		t.Fatalf("plans envelope: %+v", env)
+	// The published picks are the plans log's `pick` records: each
+	// entry, in seq order, holds each changed record's new state (D-191).
+	picks := map[string]json.RawMessage{}
+	frozen := map[string]bool{}
+	plansEntries, err := bucket.List(context.Background(), "logs/plans/entries/", "")
+	if err != nil || len(plansEntries) == 0 {
+		t.Fatalf("the plans log: %d entries, %v", len(plansEntries), err)
 	}
-	validateBytes(t, schemaFor(t, idx, env.Kind, env.SchemaVersion), "the published plan set", data)
+	for _, o := range plansEntries { // listed in seq order
+		raw, _, err := bucket.Get(context.Background(), o.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		validateBytes(t, schemaForKind(t, idx, "log_entry", 1), o.Key, raw)
+		var entry struct {
+			Changes []struct {
+				Kind  string          `json:"kind"`
+				ID    string          `json:"id"`
+				After json.RawMessage `json:"after"`
+			} `json:"changes"`
+		}
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range entry.Changes {
+			switch c.Kind {
+			case "pick":
+				picks[c.ID] = c.After
+			case "frozen_version":
+				frozen[c.ID] = len(c.After) > 0 && string(c.After) != "null"
+			}
+		}
+	}
+	var all []json.RawMessage
+	for _, raw := range picks {
+		all = append(all, raw)
+	}
 	var set publishedSet
-	if err := json.Unmarshal(data, &set); err != nil {
+	if err := json.Unmarshal(must(json.Marshal(map[string]any{"plans": all})), &set); err != nil {
 		t.Fatal(err)
 	}
+	for _, p := range set.Plans {
+		if !frozen[p.NetworkHash] {
+			t.Fatalf("pick %s names %s, which no frozen version has", p.ID, p.NetworkHash)
+		}
+	}
+	sort.Slice(set.Plans, func(i, j int) bool { return set.Plans[i].EffectiveFrom < set.Plans[j].EffectiveFrom })
 	// The plan chain, read straight off the document.
 	var chain []string
 	for _, p := range set.Plans {

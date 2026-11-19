@@ -2,7 +2,7 @@ package main
 
 // Publish → serve → resolve (docs/ROADMAP.md 1): a pick is published
 // to the store — its network under the plan.<id> pointer, the
-// published plan set under the plans pointer — the manifest pins the
+// published plan set as the plans log's fold — the manifest pins the
 // set as plans_hash, and a client resolves the pick in force through
 // cap-plans and loads that network by hash. The modules own every
 // byte and every answer: cap-network canonicalizes the network and
@@ -51,6 +51,8 @@ func newPlansServer(t *testing.T, b store.Backend) (*server, string) {
 	mux := storeMux(s)
 	mux.HandleFunc("/plans", s.handlePlans)
 	mux.HandleFunc("/plans/retire", s.handleRetire)
+	mux.HandleFunc("/plans/freeze", s.handleFreeze)
+	mux.HandleFunc("/plans/adopt", s.handleAdopt)
 	mux.HandleFunc("/feed", s.handleFeed)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -250,7 +252,7 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
 		t.Fatalf("publish: %d %v", code, out)
 	}
-	before := mustHead(t, s, "plans")
+	before := plansHash(t, s)
 
 	cases := map[string]map[string]any{
 		"an unversioned import": fixtureNetwork(t, "", "", ""),
@@ -271,8 +273,8 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 		if code != http.StatusUnprocessableEntity && code != http.StatusBadRequest {
 			t.Fatalf("%s must be refused: %d %v", what, code, out)
 		}
-		if mustHead(t, s, "plans") != before {
-			t.Fatalf("%s moved the plans pointer", what)
+		if plansHash(t, s) != before {
+			t.Fatalf("%s moved the published set", what)
 		}
 	}
 	// An invalid network (validation issues) never publishes.
@@ -325,7 +327,7 @@ func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
 		t.Fatalf("publish: %d %v", code, out)
 	}
-	before := mustHead(t, s, "plans")
+	before := plansHash(t, s)
 	forged := `{"schema_version":1,"plans":[{"id":"x","name":"x","effective_from":"2026-01-01","network_hash":"sha256:` + strings.Repeat("00", 32) + `"}]}`
 	for _, req := range []struct{ pointer, body string }{
 		{"plans", `{"from":"` + before + `","document":` + strconv.Quote(forged) + `}`},
@@ -338,7 +340,7 @@ func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 			t.Fatalf("raw write to %s: %d %s", req.pointer, code, body)
 		}
 	}
-	if mustHead(t, s, "plans") != before {
+	if plansHash(t, s) != before {
 		t.Fatal("a raw write moved the published set")
 	}
 	if _, found, _ := s.store.Head("elsewhere"); found {
@@ -377,7 +379,7 @@ func TestRetiringAPick(t *testing.T) {
 	if code, _, body := httpPost(t, base+"/plans/retire", `{"id":"winter"}`); code != 200 {
 		t.Fatalf("retire: %d %s", code, body)
 	}
-	_, _, body := httpGet(t, base+"/blobs/"+mustHead(t, s, "plans"))
+	_, _, body := httpGet(t, base+"/blobs/"+plansHash(t, s))
 	if !strings.Contains(body, `"id":"winter"`) || !strings.Contains(body, `"status":"retired"`) {
 		t.Fatalf("the retired pick stays in the set as the tombstone: %s", body)
 	}
@@ -390,7 +392,7 @@ func TestRetiringAPick(t *testing.T) {
 	if code, out := publishPick(t, base, winter); code != 200 {
 		t.Fatalf("restore: %d %v", code, out)
 	}
-	_, _, body = httpGet(t, base+"/blobs/"+mustHead(t, s, "plans"))
+	_, _, body = httpGet(t, base+"/blobs/"+plansHash(t, s))
 	if strings.Contains(body, `"status":"retired"`) {
 		t.Fatalf("restored: %s", body)
 	}
@@ -481,4 +483,24 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 	if got := fed.today(); got != "2026-11-05" {
 		t.Fatalf("today from the feed's zone: %s, want 2026-11-05", got)
 	}
+}
+
+// plansHash is the published plan set's hash: the plans log's fold.
+func plansHash(t *testing.T, s *server) string {
+	t.Helper()
+	hash, _, found, err := s.plansHead()
+	if err != nil || !found {
+		t.Fatalf("the plans log's set: %v %v", found, err)
+	}
+	return hash
+}
+
+// plansSet is the published plan set's bytes.
+func plansSet(t *testing.T, s *server) []byte {
+	t.Helper()
+	_, doc, found, err := s.plansHead()
+	if err != nil || !found {
+		t.Fatalf("the plans log's set: %v %v", found, err)
+	}
+	return doc
 }

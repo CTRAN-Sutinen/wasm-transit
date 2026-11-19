@@ -260,6 +260,8 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/logs/", s.protectLog(s.handleLogs))
 	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
+	mux.HandleFunc("/plans/freeze", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleFreeze))
+	mux.HandleFunc("/plans/adopt", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleAdopt))
 	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
 	mux.HandleFunc("/stop-requests", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleStopRequests))
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
@@ -355,6 +357,12 @@ type server struct {
 	stopsFold    *logFold
 	stopsDoc     logDoc
 	requestsDoc  logDoc
+	// The plans log's fold, and the documents it holds (planslog.go);
+	// the documents are guarded by the fold's lock.
+	plansLogOnce sync.Once
+	plansFold    *logFold
+	plansDoc     logDoc
+	frozenDoc    logDoc
 	// The attachments' own bucket (attachments.go, -attachments); nil:
 	// none are taken.
 	attachments store.Backend
@@ -367,7 +375,6 @@ type server struct {
 	migrateOnce sync.Once
 	migrateHost *WasmHost
 	migrateErr  error
-	plansMu     sync.Mutex
 	fixedToday  string           // -today: the date publishing reads, for test servers; "" = the host clock
 	now         func() time.Time // the host clock (nil = time.Now); tests pin it
 	// The agency's zone, as the last published pick answered it
@@ -577,7 +584,7 @@ type Manifest struct {
 	WasmHash    string  `json:"wasm_hash"`              // sha256 of the sync module this server runs
 	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
-	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
+	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans log's fold), store mode
 	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops log's fold), store mode
 	// The stop requests document (the stop_requests pointer head), store mode (D-159).
 	StopRequestsHash string  `json:"stop_requests_hash,omitempty"`
@@ -675,8 +682,8 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("policy"); err == nil && found {
 			manifest.PolicyHash = head.Hash
 		}
-		if head, found, err := s.store.Head("plans"); err == nil && found {
-			manifest.PlansHash = head.Hash
+		if hash, _, found, err := s.plansHead(); err == nil && found {
+			manifest.PlansHash = hash
 		}
 		if hash, _, found, err := s.stopsHead(); err == nil && found {
 			manifest.StopsHash = hash
@@ -799,8 +806,10 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 // log's first entry from the old edits pointer's head, else from the
 // dev store's -edits file (disruptions.go, seedDisruptions); and the
 // stops log's first entry from the old stops and stop_requests pointers'
-// heads (stopslog.go, seedStopsLog).
+// heads (stopslog.go, seedStopsLog); and the plans log's first entry
+// from the old plans pointer's head (planslog.go, seedPlansLog).
 func (s *server) seedStore(editsPath string) {
 	s.seedDisruptions(editsPath)
 	s.seedStopsLog()
+	s.seedPlansLog()
 }

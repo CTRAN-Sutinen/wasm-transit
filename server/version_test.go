@@ -177,17 +177,22 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The startup order: the plans log seeds from the old pointer, then
+	// the picks in use come forward.
+	s.seedPlansLog()
+	if got := plansHash(t, s); got != oldSet {
+		t.Fatalf("the seeded log holds the pointer's set: %s, want %s", got, oldSet)
+	}
 
 	// Fall is in force, winter is still to come, and summer stopped
 	// governing when fall took effect.
 	s.fixedToday = "2026-10-01"
 	s.commitPicksForward()
 
-	head, _, _ := s.store.Head("plans")
-	if head.Hash == oldSet {
+	if plansHash(t, s) == oldSet {
 		t.Fatal("the set was republished with the migrated networks")
 	}
-	data, _, _ := s.store.GetBlob(head.Hash)
+	data := plansSet(t, s)
 	var published publishedSet
 	if err := json.Unmarshal(data, &published); err != nil {
 		t.Fatal(err)
@@ -225,14 +230,18 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 			t.Errorf("pick %s: the older network stays readable under its hash: %v", p.ID, err)
 		}
 	}
-	entries, _, _ := s.store.Log("plans", "")
-	if last := entries[len(entries)-1]; last.Writer != "migrate:"+m.Hash() {
-		t.Fatalf("the set's last commit names the migration module: %+v", last)
+	head, _ := s.store.LogHeadOf(plansLogName)
+	last, _ := s.store.Entries(plansLogName, head.Seq-1, head.Seq)
+	var entry struct {
+		Writer string `json:"writer"`
+	}
+	if len(last) != 1 || json.Unmarshal([]byte(last[0].Text), &entry) != nil || entry.Writer != "migrate:"+m.Hash() {
+		t.Fatalf("the plans log's last entry names the migration module: %+v", last)
 	}
 
 	// Already current: a second start commits nothing.
 	s.commitPicksForward()
-	if after, _, _ := s.store.Log("plans", ""); len(after) != len(entries) {
-		t.Fatalf("current picks are not committed again: %d entries, want %d", len(after), len(entries))
+	if after, _ := s.store.LogHeadOf(plansLogName); after.Seq != head.Seq {
+		t.Fatalf("current picks are not committed again: entry %d, want %d", after.Seq, head.Seq)
 	}
 }

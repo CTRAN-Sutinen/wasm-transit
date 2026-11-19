@@ -371,7 +371,9 @@ transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), me
                  the record envelope; and the record a revert of the disruptions log
                  writes back, stamped to win the merge (D-193). Pure.
 transit-plans    the service-plan chain (resolve, periods, validity; pure and derived),
-                 and the published plan set (publish, the pick in force)
+                 the published plan set (publish, the pick in force), and the
+                 frozen versions: a freeze writes a version with what it is, and
+                 only a frozen version is adopted (D-191)
 transit-stops    the stops document, beside the plans. Each stop is a list of dated
                  events (planned, permitted, built, in_service, suspended, moved,
                  changed, retired), each with an id unique in its stop (D-166). It
@@ -418,8 +420,8 @@ server/          the Go and wazero host. It runs cap-sync (the edit document and
                  table it publishes; in store mode, each stored when it is made, so
                  a boot imports nothing it already holds (D-199), and every build
                  it serves, kept and rolled back by pointer; D-80). It also runs cap-migrate (an older
-                 document, at receive), cap-log (the disruptions log and the stops log:
-                 logs/disruptions/ and logs/stops/ in the bucket), cap-stops
+                 document, at receive), cap-log (the disruptions log, the stops log, and
+                 the plans log: logs/<log>/ in the bucket), cap-stops
                  (the stops document's writes and records, and what a published pick
                  reads of it), cap-requests (the stop requests document's writes and
                  records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
@@ -579,13 +581,13 @@ reads, a real-data dogfood of that workflow (D-196).
   needs becomes a capability module. The server hosts:
   - cap-sync;
   - cap-network, for the import and the picks it publishes;
-  - cap-plans, for the published plan set;
+  - cap-plans, for the published plan set and the frozen versions;
   - cap-streets, for the streets and walk table it publishes;
   - cap-migrate, for an older document at receive;
   - cap-stops, for the stops document's writes;
   - cap-requests, for the stop requests document's writes;
   - cap-log, for the logs that record the edit document, the stops,
-    and the stop requests.
+    the stop requests, the published plan set, and the frozen versions.
 - **The bus is the architecture.**
   - No capability grows a private document format. Shared data crosses
     capabilities only as kernel documents named by content hash.

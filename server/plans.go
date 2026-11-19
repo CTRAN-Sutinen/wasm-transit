@@ -12,14 +12,16 @@ package main
 //     the pick would break the chain — as canonical bytes and hash.
 //
 // The host stores exactly those bytes: the network under the
-// plan.<id> pointer (its log keeps every revision referenced, so GC
-// never collects a published network), then the set under the plans
-// pointer, which the manifest pins as plans_hash. A client reads the
-// set by hash, asks cap-plans in_force for the date, and loads that
-// network by hash from /blobs.
+// plan.<id> pointer (its log keeps every version referenced, so GC
+// never collects a frozen network), then the freeze and the adoption
+// as one entry of the plans log (planslog.go), whose fold is the set
+// the manifest pins as plans_hash. A client reads the set by hash, asks
+// cap-plans in_force for the date, and loads that network by hash from
+// /blobs.
 //
-//	POST /plans          body: the network document
-//	                     200 {plan_id, network_hash, plans_hash, warnings}
+//	POST /plans          body: the network document; ?purpose= what the
+//	                     frozen version is (default "published")
+//	                     200 {plan_id, network_hash, plans_hash, seq, warnings}
 //	                     422 {issues, refusals} (an invalid network, a pick that
 //	                         runs no service in its period, or a pick the chain
 //	                         refuses — one dated before today, D-76)
@@ -28,8 +30,8 @@ package main
 //	                     cap-network's export of the pick in force, or the
 //	                     -feed zip before the first pick takes effect
 //	POST /plans/retire   body: {"id"} — retire a pick that has not taken
-//	                     effect (D-75): 200 {plans_hash}, 422 {issues}, 404
-//	                     when nothing is published
+//	                     effect (D-75), as one entry: 200 {plans_hash, seq},
+//	                     422 {issues}, 404 when nothing is published
 //
 // "Today" is the host's: the server's local date, or -today on a test
 // server. The modules decide what it means.
@@ -122,20 +124,25 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writer := writerOf(r, "anonymous")
-	out, refused := s.publishNetwork(r.Context(), body, writer)
+	purpose := r.URL.Query().Get("purpose")
+	if purpose == "" {
+		purpose = publishPurpose
+	}
+	out, refused := s.adoptNetwork(r.Context(), body, purpose, writer, "POST /plans")
 	if refused != nil {
 		refused.write(w)
 		return
 	}
 	flagUnknown(w, "plans", writer, out.unknownFields)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"plan_id": out.planID, "network_hash": out.networkHash, "plans_hash": out.plansHash, "warnings": out.warnings,
+		"plan_id": out.planID, "network_hash": out.networkHash, "plans_hash": out.plansHash, "seq": out.seq, "warnings": out.warnings,
 	})
 }
 
 // publishedPick is what one publish committed.
 type publishedPick struct {
 	planID, networkHash, plansHash string
+	seq                            int64
 	warnings                       json.RawMessage
 	unknownFields                  []string
 }
@@ -168,11 +175,24 @@ func refusedWith(code int, err error) *publishRefusal {
 	return &publishRefusal{code: code, text: err.Error()}
 }
 
+// publishPurpose is what a version frozen by POST /plans says it is,
+// unless the caller names it (?purpose=).
+const publishPurpose = "published"
+
 // publishNetwork is one publish, for POST /plans and for the startup
-// commit of a pick's network forward: cap-network checks the network
-// and answers its canonical bytes and plan frame, cap-plans answers the
-// next set, and the host commits both under writer.
+// commit of a pick's network forward: the network frozen and adopted in
+// one entry of the plans log (planslog.go).
 func (s *server) publishNetwork(ctx context.Context, body []byte, writer string) (publishedPick, *publishRefusal) {
+	return s.adoptNetwork(ctx, body, publishPurpose, writer, "POST /plans")
+}
+
+// adoptNetwork puts a network in force: cap-network checks it and
+// answers its canonical bytes and plan frame, the pick reads the stops
+// document (its warnings, and the stops log entry it read), and
+// cap-plans answers the next published set over the frozen versions.
+// With purpose, the network is frozen in the same entry; without, it
+// must be frozen already. One entry of the plans log under writer.
+func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, writer, op string) (publishedPick, *publishRefusal) {
 	var out publishedPick
 	pick, issues, err := canonicalPick(ctx, s.networkWasm, body)
 	if err != nil {
@@ -181,79 +201,42 @@ func (s *server) publishNetwork(ctx context.Context, body []byte, writer string)
 	if issues != nil {
 		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: issues}
 	}
-	var frame struct {
-		ID string `json:"id"`
-	}
-	json.Unmarshal(pick.Plan, &frame)
 	// The pick names the agency's zone: today below is its date.
 	if pick.Timezone != "" {
 		s.zoneMu.Lock()
 		s.zone = pick.Timezone
 		s.zoneMu.Unlock()
 	}
-
-	// One publish at a time: the set is read, extended and committed
-	// as one step (the CAS below still guards against any other writer).
-	s.plansMu.Lock()
-	defer s.plansMu.Unlock()
-	head, found, err := s.store.Head("plans")
+	_, current, _, err := s.plansHead()
 	if err != nil {
 		return out, refusedWith(http.StatusInternalServerError, err)
-	}
-	var current json.RawMessage = json.RawMessage("null")
-	if found {
-		if current, _, err = s.store.GetBlob(head.Hash); err != nil {
-			return out, refusedWith(http.StatusInternalServerError, err)
-		}
-	}
-	var next struct {
-		Issues       json.RawMessage `json:"issues"`
-		Document     *string         `json:"document"`
-		DocumentHash *string         `json:"document_hash"`
 	}
 	// A pick only reads the stops document (D-157): each stop's record
 	// on its first date, and the warnings of the stops it visits that
-	// are not in service over its period.
-	stopWarnings, err := s.readPick(ctx, &pick, current)
+	// are not in service over its period. The adoption names the stops
+	// log entry it read (D-191).
+	stopsSeq := s.stopsSeqRead()
+	stopWarnings, err := s.readPick(ctx, &pick, orNull(current))
 	if err != nil {
 		return out, refusedWith(http.StatusInternalServerError, err)
 	}
-	if err := s.plans.Invoke(ctx, map[string]any{
-		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
-	}, &next); err != nil {
-		return out, refusedWith(http.StatusInternalServerError, err)
-	}
-	if next.Document == nil {
-		refused, _ := json.Marshal(map[string]any{"issues": next.Issues})
-		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: refused}
-	}
-	pointer := "plan." + frame.ID
-	if !store.ValidPointerName(pointer) {
-		return out, &publishRefusal{code: http.StatusBadRequest, text: fmt.Sprintf("plan id %q cannot name a pointer (letters, digits, '.', '_', '-')", frame.ID)}
-	}
-
-	nowMs := time.Now().UnixMilli()
-	// The network first: once it is committed it is referenced, and a
-	// crash before the set's commit leaves the old set in force.
-	netEnv := store.Envelope{Kind: "network_document", SchemaVersion: networkVersion, ProducedBy: pick.ProducedBy}
-	planHead, planFound, _ := s.store.Head(pointer)
-	planFrom := ""
-	if planFound {
-		planFrom = planHead.Hash
-	}
-	if _, _, err := s.store.CAS(pointer, planFrom, []byte(pick.Document), netEnv, pick.DocumentHash, writer, nowMs); err != nil {
-		return out, refusedWith(http.StatusConflict, err)
-	}
-	from := ""
-	if found {
-		from = head.Hash
-	}
-	plansHash, _, err := s.store.CAS("plans", from, []byte(*next.Document), s.plansEnvelope(), *next.DocumentHash, writer, nowMs)
+	seq, refusal, err := s.writePlan(ctx, planWrite{pick: pick, purpose: purpose, adopt: true, stopsSeq: stopsSeq}, writer, op)
 	if err != nil {
 		return out, refusedWith(http.StatusConflict, err)
 	}
+	if refusal != nil {
+		if m, ok := refusal.body.(map[string]any); ok && refusal.status == http.StatusBadRequest {
+			return out, &publishRefusal{code: refusal.status, text: fmt.Sprint(m["error"])}
+		}
+		body, _ := json.Marshal(refusal.body)
+		return out, &publishRefusal{code: refusal.status, json: body}
+	}
+	f := s.plansLog()
+	f.mu.Lock()
+	plansHash := s.plansDoc.hash
+	f.mu.Unlock()
 	return publishedPick{
-		planID: frame.ID, networkHash: pick.DocumentHash, plansHash: plansHash,
+		planID: planID(pick), networkHash: pick.DocumentHash, plansHash: plansHash, seq: seq,
 		warnings: withWarnings(pick.Warnings, stopWarnings), unknownFields: pick.UnknownFields,
 	}, nil
 }
@@ -271,13 +254,11 @@ func (s *server) commitPicksForward() {
 	if s.store == nil || s.plans == nil {
 		return
 	}
-	head, found, err := s.store.Head("plans")
+	_, set, found, err := s.plansHead()
 	if err != nil || !found {
-		return
-	}
-	set, _, err := s.store.GetBlob(head.Hash)
-	if err != nil {
-		log.Printf("commit forward: plans head %s: %v", head.Hash, err)
+		if err != nil {
+			log.Printf("commit forward: the plans log: %v", err)
+		}
 		return
 	}
 	var used struct {
@@ -306,7 +287,7 @@ func (s *server) commitPicksForward() {
 			continue
 		}
 		m, _ := s.migrator()
-		out, refused := s.publishNetwork(ctx, doc, "migrate:"+m.Hash())
+		out, refused := s.adoptNetwork(ctx, doc, fmt.Sprintf("a published pick, brought forward to network v%d", networkVersion), "migrate:"+m.Hash(), "migrate")
 		if refused != nil {
 			log.Printf("commit forward: pick %s stays in its version: %v", pick.ID, refused)
 			continue
@@ -379,43 +360,42 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `body: {"id": "<plan id>"}`, http.StatusBadRequest)
 		return
 	}
-	s.plansMu.Lock()
-	defer s.plansMu.Unlock()
-	head, found, err := s.store.Head("plans")
+	if _, _, found, err := s.plansHead(); err != nil || !found {
+		if err != nil {
+			fail(w, err, http.StatusInternalServerError)
+		} else {
+			http.Error(w, "nothing is published", http.StatusNotFound)
+		}
+		return
+	}
+	ctx := r.Context()
+	seq, _, refusal, err := s.writeLog(s.plansLog(), logWrite{writer: writerOf(r, "anonymous"), op: "POST /plans/retire", note: req.ID}, func() ([]json.RawMessage, *logRefusal, error) {
+		var next planAnswer
+		if err := s.plans.Invoke(ctx, map[string]any{
+			"op": "retire", "published": orNull(s.plansDoc.doc), "id": req.ID, "today": s.today(),
+		}, &next); err != nil {
+			return nil, nil, err
+		}
+		if r := next.refused(); r != nil {
+			return nil, r, nil
+		}
+		var records logNext
+		err := s.plans.Invoke(ctx, map[string]any{"op": "log_records", "published": json.RawMessage(*next.Document)}, &records)
+		return records.Next, nil, err
+	})
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		logWriteFailed(w, err, http.StatusInternalServerError)
 		return
 	}
-	if !found {
-		http.Error(w, "nothing is published", http.StatusNotFound)
+	if refusal != nil {
+		writeJSON(w, refusal.status, refusal.body)
 		return
 	}
-	current, _, err := s.store.GetBlob(head.Hash)
-	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
-	var next struct {
-		Issues       json.RawMessage `json:"issues"`
-		Document     *string         `json:"document"`
-		DocumentHash *string         `json:"document_hash"`
-	}
-	if err := s.plans.Invoke(r.Context(), map[string]any{
-		"op": "retire", "published": json.RawMessage(current), "id": req.ID, "today": s.today(),
-	}, &next); err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
-	if next.Document == nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"issues": next.Issues})
-		return
-	}
-	plansHash, _, err := s.store.CAS("plans", head.Hash, []byte(*next.Document), s.plansEnvelope(), *next.DocumentHash, writerOf(r, "anonymous"), time.Now().UnixMilli())
-	if err != nil {
-		fail(w, err, http.StatusConflict)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"plans_hash": plansHash})
+	f := s.plansLog()
+	f.mu.Lock()
+	plansHash := s.plansDoc.hash
+	f.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"plans_hash": plansHash, "seq": seq})
 }
 
 // handleFeed serves the GTFS feed in force on a date (?date=, default
@@ -439,13 +419,13 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	var set []byte
 	if s.store != nil && s.plans != nil {
-		if head, found, err := s.store.Head("plans"); err == nil && found {
-			var err error
-			set, _, err = s.store.GetBlob(head.Hash)
-			if err != nil {
-				fail(w, err, http.StatusInternalServerError)
-				return
-			}
+		_, held, found, err := s.plansHead()
+		if err != nil {
+			fail(w, err, http.StatusInternalServerError)
+			return
+		}
+		if found {
+			set = held
 			var ans struct {
 				Plan *struct {
 					ID          string `json:"id"`

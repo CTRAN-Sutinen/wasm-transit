@@ -32,6 +32,15 @@
         "status": {
           "$ref": "#/$defs/PickStatus",
           "default": "published"
+        },
+        "stops_seq": {
+          "description": "The stops log entry the adoption read (D-191): the pick's stops\nare the stops document at that entry. Absent when the adoption\nread no stops, or the pick was published before the plans log.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [

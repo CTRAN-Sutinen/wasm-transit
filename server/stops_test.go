@@ -118,14 +118,7 @@ func manifestStopsHash(t *testing.T, base string) string {
 
 func pickHashes(t *testing.T, s *server) map[string]string {
 	t.Helper()
-	head, found, err := s.store.Head("plans")
-	if err != nil || !found {
-		t.Fatalf("plans head: %v %v", found, err)
-	}
-	blob, _, err := s.store.GetBlob(head.Hash)
-	if err != nil {
-		t.Fatal(err)
-	}
+	blob := plansSet(t, s)
 	var set publishedSet
 	json.Unmarshal(blob, &set)
 	out := map[string]string{}
@@ -222,6 +215,17 @@ func TestAPublishedPickReadsTheStops(t *testing.T) {
 	json.Unmarshal([]byte(body), &net)
 	if net.Stops["A"].Name != "A Street Station" {
 		t.Fatalf("the pick takes A's name from the stops document: %+v", net.Stops["A"])
+	}
+	// The adoption names the stops log entry it read (D-191).
+	stopsHead, _ := s.store.LogHeadOf(stopsLogName)
+	var set struct {
+		Plans []struct {
+			StopsSeq int64 `json:"stops_seq"`
+		} `json:"plans"`
+	}
+	json.Unmarshal(plansSet(t, s), &set)
+	if len(set.Plans) != 1 || set.Plans[0].StopsSeq != stopsHead.Seq || stopsHead.Seq == 0 {
+		t.Fatalf("the pick names stops entry %d: %+v", stopsHead.Seq, set)
 	}
 }
 

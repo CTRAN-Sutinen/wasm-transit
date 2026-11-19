@@ -8,8 +8,8 @@ package main
 // (`assemble`). This host only orders and keeps the entries, and treats
 // every entry, checkpoint, record, and document as opaque bytes.
 //
-// One logFold per log: the disruptions log (disruptions.go) and the
-// stops log (stopslog.go).
+// One logFold per log: the disruptions log (disruptions.go), the stops
+// log (stopslog.go), and the plans log (planslog.go).
 
 import (
 	"context"

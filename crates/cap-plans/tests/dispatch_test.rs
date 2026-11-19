@@ -155,3 +155,64 @@ fn retire_answers_the_next_set_or_why_not() {
     }
     assert!(dispatch_json(r#"{"op":"retire","published":{"schema_version":1,"plans":[]},"id":"x","today":"nope"}"#).contains("error"));
 }
+
+fn hash(n: u8) -> String {
+    format!("sha256:{}", format!("{n:02x}").repeat(32))
+}
+
+fn answer(req: serde_json::Value) -> serde_json::Value {
+    let out: serde_json::Value = serde_json::from_str(&dispatch_json(&req.to_string())).unwrap();
+    out.get("ok").cloned().unwrap_or_else(|| panic!("{req}: {out}"))
+}
+
+/// A held record as the log's fold has it.
+fn held(kinds: &serde_json::Value, kind: &str) -> (serde_json::Value, Option<serde_json::Value>) {
+    let mut records = serde_json::Map::new();
+    let mut own = None;
+    for k in kinds.as_array().unwrap() {
+        for (id, value) in k["records"].as_object().unwrap() {
+            let h = serde_json::json!({"version": k["version"], "value": value});
+            if k["kind"] == kind {
+                records.insert(id.clone(), h);
+            } else if id == "document" && (k["kind"] == "plans" && kind == "pick" || k["kind"] == "frozen_versions" && kind == "frozen_version") {
+                own = Some(h);
+            }
+        }
+    }
+    (serde_json::Value::Object(records), own)
+}
+
+#[test]
+fn a_freeze_then_an_adoption_through_the_seam() {
+    let plan = serde_json::json!({"id": "fall", "name": "Fall 2026", "effective_from": "2026-09-07"});
+    let frozen = answer(serde_json::json!({"op": "freeze", "frozen": null, "plan": plan, "network_hash": hash(1), "purpose": "proposal for public comment"}));
+    assert!(frozen["issues"].as_array().unwrap().is_empty());
+    let refused = answer(serde_json::json!({"op": "adopt", "published": null, "frozen": frozen["frozen"], "network_hash": hash(2), "today": "2026-01-01"}));
+    assert_eq!(refused["issues"][0]["kind"], "not_frozen", "only a frozen version is adopted: {refused}");
+    assert!(refused["document"].is_null());
+    let adopted = answer(serde_json::json!({"op": "adopt", "published": null, "frozen": frozen["frozen"], "network_hash": hash(1), "today": "2026-01-01", "stops_seq": 7}));
+    assert_eq!(adopted["published"]["plans"][0]["stops_seq"], 7);
+    assert_eq!(adopted["published"]["plans"][0]["network_hash"], hash(1));
+    assert_eq!(adopted["next"][0]["kind"], "pick");
+}
+
+#[test]
+fn the_documents_round_trip_through_the_log_records() {
+    let frozen = answer(serde_json::json!({"op": "freeze", "frozen": null, "plan": {"id": "fall", "name": "Fall", "effective_from": "2026-09-07"}, "network_hash": hash(1), "purpose": "board packet"}));
+    let frozen = answer(serde_json::json!({"op": "freeze", "frozen": frozen["frozen"], "plan": {"id": "spring", "name": "Spring", "effective_from": "2026-03-01"}, "network_hash": hash(2), "purpose": "proposal"}));
+    let mut set = serde_json::Value::Null;
+    for n in [1u8, 2] {
+        set = answer(serde_json::json!({"op": "adopt", "published": set, "frozen": frozen["frozen"], "network_hash": hash(n), "today": "2026-01-01"}))["published"].clone();
+    }
+    let records = answer(serde_json::json!({"op": "log_records", "published": set, "frozen": frozen["frozen"]}))["next"].clone();
+    let (picks, own) = held(&records, "pick");
+    let plans = answer(serde_json::json!({"op": "log_document", "kind": "plans", "records": picks, "document": own}));
+    let direct = answer(serde_json::json!({"op": "log_records", "published": set}));
+    assert!(!direct["next"].as_array().unwrap().is_empty());
+    let reread: serde_json::Value = serde_json::from_str(plans["document"].as_str().unwrap()).unwrap();
+    assert_eq!(reread, set, "the set in its one order, from its records");
+    let (versions, own) = held(&records, "frozen_version");
+    let back = answer(serde_json::json!({"op": "log_document", "kind": "frozen_versions", "records": versions, "document": own}));
+    assert_eq!(back["document"].as_str().unwrap(), cap_abi::canonical_bytes(&serde_json::from_value::<cap_plans::FrozenVersions>(frozen["frozen"].clone()).unwrap()).unwrap());
+    assert!(dispatch_json(r#"{"op":"log_document","kind":"other","records":{}}"#).contains("error"));
+}

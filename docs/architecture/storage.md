@@ -48,10 +48,11 @@ against one store's address (an operator's own bucket).
   of the entries, which the owning module computes. A checkpoint,
   `logs/<log>/checkpoints/<seq>.json`, is the fold up to an entry. A
   commit is the same conditional create as a pointer record. The engine
-  then reads the entry back and compares the bytes. The store has two
-  logs, both kept by cap-log, which never reads a record: `disruptions`
-  (detours and trip cancels) and `stops` (the stops and the stop
-  requests). Their rules are in `docs/FORMATS.md`, "The logs".
+  then reads the entry back and compares the bytes. The store has three
+  logs, all kept by cap-log, which never reads a record: `disruptions`
+  (detours and trip cancels), `stops` (the stops and the stop
+  requests), and `plans` (the frozen versions and the published plan
+  set). Their rules are in `docs/FORMATS.md`, "The logs".
 - **Many processes, one bucket.** Several server processes may share
   one bucket. Each caches heads. Each reads at most 2 s behind another
   process's commit. The model (`store.tla`, `just spec`) checks processes
@@ -69,10 +70,21 @@ The `manifest` pointer is the root. Publishing is one CAS on it. The
 disruptions log is the multi-writer LWW edit document, and the stops
 log holds the stops document and the stop requests document. The
 `edits`, `stops`, and `stop_requests` pointers are their history from
-before the logs, read only. The `plans` pointer
-is the published plan set. Each pick's network is its own `plan.<id>`
-pointer (D-74). Every pointer the server keeps is listed in
-`docs/FORMATS.md`, "The pointer log".
+before the logs, read only. The plans log holds the published plan set
+and the frozen versions, and the `plans` pointer is the set's history
+from before the log, read only. Each frozen network is the head of its
+plan's `plan.<id>` pointer when it is frozen, so the pointer's log
+keeps every version (D-74, D-191). Every pointer the server keeps is
+listed in `docs/FORMATS.md`, "The pointer log".
+
+**Freezing and adopting are two acts** (D-191). A freeze writes a
+network version to the record by its hash, with what it is in the
+agency's words (a proposal for public comment, a board packet). A
+frozen version is in the record and not in force. Adopting puts a
+frozen version in force from its date, through the published plan set.
+Only a frozen version is adopted, and the pick names the stops log
+entry it read (`stops_seq`). So every network that was ever in force is
+in the record, with the proposals that led to it.
 
 **The derived documents are in the record** (D-199). The server reads
 two inputs, the GTFS zip and the street layer, and commits each read
@@ -102,7 +114,8 @@ and the document is the fold).
 | Shape | Kinds | Writes | Growth | Layout today |
 |---|---|---|---|---|
 | Artifacts: large, published whole | network, streets, walk table, the GTFS feed and street layer read at boot, builds | rare: a publish, an import, a release | per revision | document |
-| Config: small, whole | policy, the published plan set, manifest | rare | none | document |
+| Config: small, whole | policy, manifest | rare | none | document |
+| Collections: records by id, few writers | the published plan set (picks), the frozen versions | rare: a freeze, an adoption, a retirement | without bound (frozen versions) | log (`plans`) |
 | Collections: records by id, many writers | the edit document (detours, trip cancels) | frequent, one record at a time | without bound | log (`disruptions`) |
 | Collections: records by id, many writers | stops, stop requests | frequent, one record at a time | without bound | log (`stops`) |
 | Attachments: binary | photos and site drawings (D-162) | per record | steady | not stored yet |
@@ -151,8 +164,12 @@ by kind:
   whole document under `from`, and a moved head is a `409`; each such
   write is one entry too. The work order system's answer and the feed's
   differences run over the head and need no `from`.
-- **Picks and the plan set** (`POST /plans`, `/plans/retire`) commit the
-  module's canonical documents by CAS.
+- **Picks and the plan set** (`POST /plans/freeze`, `/plans/adopt`,
+  `/plans`, `/plans/retire`) are each one entry of the plans log.
+  cap-plans answers the next frozen versions and plan set over the head,
+  and refuses what breaks the chain. `POST /plans` freezes and adopts in
+  one entry. The plans log has no generic revert: a pick is corrected
+  by republishing it, or retired before it takes effect.
 - **Any other pointer commit** stores the document as given, unchecked.
   This is the gap in agency-data.md's table.
 
@@ -187,14 +204,13 @@ they need the `audit` rule.
 ## Where it is going
 
 The storage model's direction is decided (D-190, D-191). The
-disruptions log, the stops log, and the stored derived documents are
-built. The rest is
+disruptions log, the stops log, the plans log with freezing and
+adopting, and the stored derived documents are built. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
-- the logs for the other consistency domains: the plans and the policy.
+- the work rules in the plans log, and the policy's log.
 - a working store for drafts, attachments, and caches, apart from the
   record.
-- freezing a version into the record, apart from adopting it.
 - one receive path driven by each kind's entry in the kind table.
 - a bucket that carries its own schemas.
 - permissions and restricted reads per change.
@@ -235,9 +251,9 @@ reading **Because**.
   transactions a database offers are not what is scarce. History,
   availability of reads, and independence from one vendor are.
 - **Costs:** each shape needs a layout designed for it, not one taken from
-  a database. The edit document, the stops, and the stop requests have
-  one (their logs). The plans and the policy do not yet
-  (`docs/units/storage-model.md`).
+  a database. The edit document, the stops, the stop requests, the plan
+  set, and the frozen versions have one (their logs). The work rules and
+  the policy do not yet (`docs/units/storage-model.md`).
   Queries over the record are projections someone builds, not SQL against
   the record. A workload that needs transactions across records under
   contention needs an engine in front of the bucket.
@@ -333,3 +349,25 @@ reading **Because**.
   no home); one root that names its documents, as a build does (gc and
   verify would follow one more kind of reference).
 - **Decided:** D-199. **Provisional:** D-200 (the derivation record).
+
+### Freezing and adopting are two acts in one log (`server/planslog.go`, `crates/transit-plans`, `crates/cap-plans`)
+- **Holds:** a freeze writes a network version to the record by hash,
+  with what it is, and puts nothing in force. Only a frozen version is
+  adopted, and the pick names the stops log entry it read. The published
+  plan set and the frozen versions are one log, `plans`, so a publish
+  (`POST /plans`) freezes and adopts in one entry. Each frozen network is
+  the head of its plan's `plan.<id>` pointer when it is frozen. The plans
+  log has no generic revert.
+- **Because:** a service change often goes to public comment, so
+  "published" is not the same as "in force". The record must hold every
+  proposal and every network that was ever in force. The pointer keeps
+  each frozen network named, so gc keeps it while the log names it by
+  hash. A pick is corrected by its own rules (D-75, D-76): a revert of an
+  adoption would put an older pick back in force without the chain's
+  checks.
+- **Costs:** the frozen versions grow without bound, one small record
+  for each freeze. An adoption's date is the version's own: a new date
+  is a new version, frozen again.
+- **Rejected:** freezing as a status on a pick (a proposal that is never
+  adopted would have no place); a generic revert of the plans log.
+- **Decided:** D-191. **Provisional:** D-201 (how the server serves it).

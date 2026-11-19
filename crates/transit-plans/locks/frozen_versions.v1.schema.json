@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "FrozenKind": {
+      "const": "frozen_versions"
+    },
+    "FrozenVersion": {
+      "additionalProperties": true,
+      "description": "One frozen version: a network the agency wrote to the record by its\nhash, and what it is. Its plan frame (the plan's id, name, and date)\nis the network's own.",
+      "properties": {
+        "effective_from": {
+          "description": "\"YYYY-MM-DD\": the date the plan would take effect.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "network_hash": {
+          "description": "\"sha256:<hex>\" of the version's canonical network document.",
+          "type": "string"
+        },
+        "plan_id": {
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What the version is, in the agency's words: \"proposal for public\ncomment\", \"board packet\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "network_hash",
+        "plan_id",
+        "name",
+        "effective_from",
+        "purpose"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Every version the agency froze, by network hash: the document the\nplans log holds beside the published plan set. A version stays when\nit is adopted, so every network that was ever in force is here, with\nthe proposals that led to it.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/FrozenKind",
+      "default": "frozen_versions",
+      "description": "The kind tag (D-115): `\"frozen_versions\"`."
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "versions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FrozenVersion"
+      },
+      "description": "The versions by network hash.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "versions"
+  ],
+  "title": "FrozenVersions",
+  "type": "object"
+}
