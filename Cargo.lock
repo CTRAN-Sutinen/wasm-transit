@@ -166,6 +166,7 @@ dependencies = [
  "cap-board",
  "cap-calendar",
  "cap-directory",
+ "cap-disruptions",
  "cap-divert",
  "cap-gtfs",
  "cap-log",
@@ -195,6 +196,7 @@ dependencies = [
  "transit-authz",
  "transit-codec",
  "transit-dispatch",
+ "transit-disruptions",
  "transit-live",
  "transit-log",
  "transit-network",
@@ -216,7 +218,6 @@ name = "cap-alerts"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "serde",
  "serde_json",
  "transit-alerts",
@@ -316,6 +317,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-disruptions"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "transit-alerts",
+ "transit-disruptions",
+ "transit-live",
+ "transit-notes",
+ "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-divert"
 version = "0.1.0"
 dependencies = [
@@ -360,6 +377,7 @@ dependencies = [
  "cap-abi",
  "serde",
  "serde_json",
+ "transit-alerts",
  "transit-dispatch",
  "transit-network",
  "transit-sync",
@@ -1079,6 +1097,14 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "cap-directory",
+]
+
+[[package]]
+name = "module-disruptions"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-disruptions",
 ]
 
 [[package]]
@@ -1972,8 +1998,6 @@ dependencies = [
  "transit-codec",
  "transit-live",
  "transit-network",
- "transit-stops",
- "transit-sync",
  "transit-version",
  "ts-rs",
 ]
@@ -2035,6 +2059,24 @@ dependencies = [
  "transit-network",
  "transit-sync",
  "transit-version",
+ "ts-rs",
+]
+
+[[package]]
+name = "transit-disruptions"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "schemars",
+ "serde",
+ "serde_json",
+ "transit-alerts",
+ "transit-codec",
+ "transit-live",
+ "transit-network",
+ "transit-notes",
+ "transit-stops",
+ "transit-sync",
  "ts-rs",
 ]
 

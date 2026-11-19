@@ -1,0 +1,469 @@
+//! What is disrupted on a day, and whether an alert explains it
+//! (D-213, D-218).
+//!
+//! A disruption is a change to the day's service from one of three
+//! documents:
+//!
+//! - the edit document: a submitted or accepted diversion or trip
+//!   cancel in force on the day (a draft is not yet anyone's news);
+//! - the live document: a trip instance that the live feed cancels;
+//! - the stops document: a stop suspended on the day.
+//!
+//! Each is listed as its document gives it. A trip that both the edit
+//! document and the live feed cancel is listed twice, once from each,
+//! and no rule picks one. Each disruption carries the names a rider
+//! uses (the route, the trip's first stop and start, the stops it takes
+//! away), the alerts that explain it, and its latest note.
+//!
+//! [`disruptions`] is the list. [`gaps`] is what no alert explains, with
+//! what an alert about each starts from. [`today`] is the day by route:
+//! each route with a disruption or a late trip, and how many routes have
+//! neither.
+
+#![forbid(unsafe_code)]
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+use transit_alerts::{AlertEffect, AlertSource, AlertStatus, ServiceAlerts};
+use transit_live::{LiveDay, LiveStatus};
+use transit_network::Network;
+use transit_notes::{NoteRow, NoteTarget, Notes};
+use transit_sync::{EditRecord, EditStatus};
+
+/// The documents a day's disruptions are read from.
+pub struct Inputs<'a> {
+    pub network: &'a Network,
+    pub edits: &'a [EditRecord],
+    /// The live document, when the host has one.
+    pub live: Option<&'a LiveDay>,
+    pub stops: &'a transit_stops::Stops,
+    pub alerts: &'a ServiceAlerts,
+    pub notes: &'a Notes,
+    pub date: NaiveDate,
+    /// The host's clock, Unix seconds: what an alert explains now.
+    pub now: u64,
+}
+
+/// The document a disruption comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum Origin {
+    /// The edit document: entered here, or by an adjacent system through
+    /// the receive path.
+    Edits,
+    /// The live feed (GTFS-rt trip updates).
+    Feed,
+    /// The stops document.
+    Stops,
+}
+
+/// A stop by its id, with its name where the network has it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct NamedStop {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
+}
+
+/// One disruption on the day.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct Disruption {
+    /// What it is, as an alert's `explains` names it.
+    pub source: AlertSource,
+    pub from: Origin,
+    /// What it does to service: a diversion is a detour; a trip cancel
+    /// and a suspended stop are no service.
+    pub effect: AlertEffect,
+    /// The route of a diversion or a cancelled trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route: Option<String>,
+    /// A cancelled trip, by the model's trip id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trip: Option<String>,
+    /// The cancelled instance's start, in seconds after the service-day
+    /// anchor. Absent when a cancel takes every instance of the trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_secs: Option<u32>,
+    /// The cancelled trip's first stop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub first_stop: Option<NamedStop>,
+    /// The cancelled trip's headsign.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headsign: Option<String>,
+    /// The start of the next trip of the route from the same first stop,
+    /// in the same direction, that runs on the day and is not cancelled
+    /// in either document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_start_secs: Option<u32>,
+    /// The stops it takes away: a diversion's skipped stops, or the
+    /// suspended stop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<NamedStop>>")]
+    pub stops: Vec<NamedStop>,
+    /// Its first and last dates in force, "YYYY-MM-DD", where it has
+    /// them. A suspension's end is the first date the stop is back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub end_date: Option<String>,
+    /// The alerts that explain it at `now`, by id: each names it and is
+    /// not withdrawn or ended. A draft explains, because someone is
+    /// writing it.
+    pub explained_by: Vec<String>,
+    /// The newest note about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub latest_note: Option<NoteRow>,
+    /// Every stop the disruption touches: its stops, and each stop of a
+    /// cancelled trip. What a stop filter matches.
+    #[serde(skip)]
+    #[ts(skip)]
+    #[schemars(skip)]
+    touches: BTreeSet<String>,
+}
+
+/// A disruption that no alert explains, with what an alert about it
+/// starts from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct AlertGap {
+    pub source: AlertSource,
+    pub effect: AlertEffect,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trip: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_secs: Option<u32>,
+    /// The stops it takes away, by id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub stops: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub end_date: Option<String>,
+}
+
+/// One route on the day.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct RouteDay {
+    pub route: String,
+    /// The route's short public name.
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub long_name: Option<String>,
+    /// Its disruptions, in the order of [`disruptions`]. A suspended stop
+    /// is listed on every route that serves it.
+    pub disruptions: Vec<Disruption>,
+    /// How many of its trips the live document classes late or very late
+    /// (the live document's on-time window). A cancelled trip is not
+    /// late.
+    pub late_trips: u32,
+    /// The worst delay among those trips, in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub worst_delay_secs: Option<i32>,
+}
+
+/// The day by route.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct Today {
+    /// Each route with a disruption or a late trip, by the route's sort
+    /// order, then its name (numbers by value), then its id.
+    pub routes: Vec<RouteDay>,
+    /// How many of the network's routes are not listed.
+    pub unaffected_routes: u32,
+}
+
+/// What [`today`] answers about: one route, or the disruptions that
+/// touch one stop. With a stop, a route is listed for its disruptions
+/// there only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct Filter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub stop: Option<String>,
+}
+
+fn named(network: &Network, id: &str) -> NamedStop {
+    NamedStop { id: id.to_string(), name: network.stops.get(id).map(|s| s.name.clone()) }
+}
+
+fn ymd(d: NaiveDate) -> String {
+    d.format("%Y-%m-%d").to_string()
+}
+
+/// The note target that names the same thing as `source`.
+fn note_target(source: &AlertSource) -> NoteTarget {
+    match source {
+        AlertSource::Edit { id } => NoteTarget::Edit { id: id.clone() },
+        AlertSource::Stop { stop } => NoteTarget::Stop { stop: stop.clone() },
+        AlertSource::Trip { trip, date, start_secs } => NoteTarget::Trip { trip: trip.clone(), date: date.clone(), start_secs: *start_secs },
+    }
+}
+
+/// A trip's route, direction, stops, and headsign, from the network.
+struct TripFacts {
+    route: String,
+    direction: Option<String>,
+    stops: Vec<String>,
+    headsign: Option<String>,
+}
+
+fn trip_facts(network: &Network, trip: &str) -> Option<TripFacts> {
+    let (_, pt, t) = network.trip(trip)?;
+    let pattern = network.patterns.get(&pt.pattern)?;
+    Some(TripFacts {
+        route: pattern.route.to_string(),
+        direction: pattern.direction.as_ref().map(|d| d.to_string()),
+        stops: pattern.stops.iter().map(|s| s.stop.to_string()).collect(),
+        headsign: t.headsign.clone(),
+    })
+}
+
+/// Every disruption on the day: the edit document's, in its order; then
+/// the live feed's cancels, by start and trip; then the suspended stops,
+/// by id.
+pub fn disruptions(i: &Inputs) -> Vec<Disruption> {
+    let date = ymd(i.date);
+    let explained: BTreeMap<&AlertSource, Vec<String>> = {
+        let mut m: BTreeMap<&AlertSource, Vec<String>> = BTreeMap::new();
+        for (id, a) in &i.alerts.alerts {
+            if a.status == AlertStatus::Retired || a.ended_by(i.now) {
+                continue;
+            }
+            for s in &a.explains {
+                m.entry(s).or_default().push(id.clone());
+            }
+        }
+        m
+    };
+    let feed_cancels: Vec<&transit_live::LiveTrip> = {
+        let mut v: Vec<_> = i
+            .live
+            .map(|l| l.trips.iter().filter(|t| t.canceled && t.date.as_deref().is_none_or(|d| d == date)).collect())
+            .unwrap_or_default();
+        v.sort_by(|a, b| (a.start_secs, &a.trip).cmp(&(b.start_secs, &b.trip)));
+        v
+    };
+    let edit_cancels: Vec<&transit_sync::TripCancel> = i
+        .edits
+        .iter()
+        .filter(|r| matches!(r.status, EditStatus::Submitted | EditStatus::Accepted))
+        .filter_map(|r| r.cancel.as_ref().filter(|c| c.covers(i.date)))
+        .collect();
+    let cancelled = |trip: &str, start: u32| {
+        edit_cancels.iter().any(|c| c.cancels(trip, start)) || feed_cancels.iter().any(|t| t.trip == trip && t.start_secs == start)
+    };
+    // The day's trips, read only when a cancel asks for its next trip.
+    let mut day: Option<Vec<transit_network::MaterializedTrip>> = None;
+    let mut next_after = |facts: &TripFacts, start: u32| -> Option<u32> {
+        let trips = day.get_or_insert_with(|| transit_network::materialize(i.network, i.date).unwrap_or_default());
+        trips
+            .iter()
+            .filter(|t| t.route == facts.route && t.start_secs > start)
+            .filter(|t| t.stop_times.first().map(|s| s.stop.as_str()) == facts.stops.first().map(String::as_str))
+            .filter(|t| i.network.patterns.get(t.pattern.as_str()).map(|p| p.direction.as_ref().map(|d| d.to_string())) == Some(facts.direction.clone()))
+            .filter(|t| !cancelled(&t.trip, t.start_secs))
+            .map(|t| t.start_secs)
+            .min()
+    };
+    let finish = |mut d: Disruption| {
+        d.explained_by = explained.get(&d.source).cloned().unwrap_or_default();
+        d.latest_note = i.notes.on(&note_target(&d.source)).into_iter().max_by(|a, b| (a.note.written.at, &a.id).cmp(&(b.note.written.at, &b.id)));
+        d
+    };
+    let blank = |source: AlertSource, from: Origin, effect: AlertEffect| Disruption {
+        source,
+        from,
+        effect,
+        route: None,
+        trip: None,
+        start_secs: None,
+        first_stop: None,
+        headsign: None,
+        next_start_secs: None,
+        stops: Vec::new(),
+        start_date: None,
+        end_date: None,
+        explained_by: Vec::new(),
+        latest_note: None,
+        touches: BTreeSet::new(),
+    };
+
+    let mut out = Vec::new();
+    for r in i.edits.iter().filter(|r| matches!(r.status, EditStatus::Submitted | EditStatus::Accepted)) {
+        let source = AlertSource::Edit { id: r.id.clone() };
+        if let Some(dv) = r.diversion.as_ref().filter(|d| d.covers(i.date)) {
+            let mut d = blank(source, Origin::Edits, AlertEffect::Detour);
+            d.route = Some(dv.route_id.clone());
+            d.stops = dv.skipped_stops.iter().map(|s| named(i.network, s)).collect();
+            d.touches = dv.skipped_stops.iter().cloned().collect();
+            d.start_date = Some(ymd(dv.start_date));
+            d.end_date = Some(ymd(dv.end_date));
+            out.push(finish(d));
+        } else if let Some(c) = r.cancel.as_ref().filter(|c| c.covers(i.date)) {
+            let mut d = blank(source, Origin::Edits, AlertEffect::NoService);
+            let facts = trip_facts(i.network, &c.trip_id);
+            d.trip = Some(c.trip_id.clone());
+            d.start_secs = c.start_secs;
+            d.start_date = Some(ymd(c.date));
+            d.end_date = Some(ymd(c.date));
+            if let Some(f) = facts {
+                d.route = Some(f.route.clone());
+                d.first_stop = f.stops.first().map(|s| named(i.network, s));
+                d.headsign = f.headsign.clone();
+                d.next_start_secs = c.start_secs.and_then(|s| next_after(&f, s));
+                d.touches = f.stops.iter().cloned().collect();
+            }
+            out.push(finish(d));
+        }
+    }
+    for t in &feed_cancels {
+        let source = AlertSource::Trip { trip: t.trip.clone(), date: date.clone(), start_secs: t.start_secs };
+        let mut d = blank(source, Origin::Feed, AlertEffect::NoService);
+        let facts = trip_facts(i.network, &t.trip);
+        d.trip = Some(t.trip.clone());
+        d.start_secs = Some(t.start_secs);
+        d.start_date = Some(date.clone());
+        d.end_date = Some(date.clone());
+        d.route = t.route.clone().or_else(|| facts.as_ref().map(|f| f.route.clone()));
+        if let Some(f) = facts {
+            d.first_stop = f.stops.first().map(|s| named(i.network, s));
+            d.headsign = f.headsign.clone();
+            d.next_start_secs = next_after(&f, t.start_secs);
+            d.touches = f.stops.iter().cloned().collect();
+        }
+        out.push(finish(d));
+    }
+    let mut suspended: Vec<transit_stops::StopOn> =
+        i.stops.on_date(i.date).into_iter().filter(|s| s.status == transit_stops::Status::Suspended).collect();
+    suspended.sort_by(|a, b| a.stop_id.cmp(&b.stop_id));
+    for s in suspended {
+        let mut d = blank(AlertSource::Stop { stop: s.stop_id.clone() }, Origin::Stops, AlertEffect::NoService);
+        d.stops = vec![named(i.network, &s.stop_id)];
+        d.touches = [s.stop_id.clone()].into_iter().collect();
+        d.start_date = s.since;
+        d.end_date = s.until;
+        out.push(finish(d));
+    }
+    out
+}
+
+/// What no alert explains, with what an alert about each starts from,
+/// in the order of [`disruptions`].
+pub fn gaps(i: &Inputs) -> Vec<AlertGap> {
+    disruptions(i)
+        .into_iter()
+        .filter(|d| d.explained_by.is_empty())
+        .map(|d| AlertGap {
+            source: d.source,
+            effect: d.effect,
+            // A cancel's gap names its trip; a diversion's, its route.
+            route: if d.effect == AlertEffect::Detour { d.route } else { None },
+            trip: d.trip,
+            start_secs: d.start_secs,
+            stops: d.stops.into_iter().map(|s| s.id).collect(),
+            start_date: d.start_date,
+            end_date: d.end_date,
+        })
+        .collect()
+}
+
+/// A route name's sort key: a number by its value, before any text.
+fn name_key(name: &str) -> (u8, u64, String) {
+    match name.trim().parse::<u64>() {
+        Ok(n) => (0, n, String::new()),
+        Err(_) => (1, 0, name.to_string()),
+    }
+}
+
+/// The day by route: each route with a disruption or a late trip (with
+/// a filter, as [`Filter`] says), and how many routes are not listed.
+pub fn today(i: &Inputs, filter: &Filter) -> Today {
+    let date = ymd(i.date);
+    let mut by_route: BTreeMap<String, Vec<Disruption>> = BTreeMap::new();
+    for d in disruptions(i) {
+        if filter.stop.as_ref().is_some_and(|s| !d.touches.contains(s)) {
+            continue;
+        }
+        let routes: Vec<String> = match (&d.route, d.from) {
+            (Some(r), _) => vec![r.clone()],
+            // A suspended stop belongs to every route that serves it.
+            (None, Origin::Stops) => {
+                let stop = &d.stops[0].id;
+                let served: BTreeSet<String> =
+                    i.network.patterns.values().filter(|p| p.stops.iter().any(|s| s.stop.as_str() == stop)).map(|p| p.route.to_string()).collect();
+                served.into_iter().collect()
+            }
+            (None, _) => Vec::new(),
+        };
+        for r in routes {
+            by_route.entry(r).or_default().push(d.clone());
+        }
+    }
+    let mut late: BTreeMap<String, (u32, Option<i32>)> = BTreeMap::new();
+    if filter.stop.is_none() {
+        for t in i.live.map(|l| l.trips.as_slice()).unwrap_or_default() {
+            let on_day = t.date.as_deref().is_none_or(|d| d == date);
+            if !on_day || t.canceled || !matches!(t.status, LiveStatus::Late | LiveStatus::VeryLate) {
+                continue;
+            }
+            let Some(route) = t.route.clone().or_else(|| trip_facts(i.network, &t.trip).map(|f| f.route)) else { continue };
+            let e = late.entry(route).or_insert((0, None));
+            e.0 += 1;
+            e.1 = e.1.max(t.worst_delay_secs);
+        }
+    }
+    let listed: BTreeSet<String> = by_route.keys().chain(late.keys()).filter(|r| filter.route.as_ref().is_none_or(|f| f == *r)).cloned().collect();
+    let mut routes: Vec<RouteDay> = listed
+        .into_iter()
+        .map(|id| {
+            let route = i.network.routes.get(id.as_str());
+            let (late_trips, worst) = late.get(&id).copied().unwrap_or((0, None));
+            RouteDay {
+                name: route.map(|r| r.name.clone()).unwrap_or_else(|| id.clone()),
+                long_name: route.and_then(|r| r.long_name.clone()),
+                disruptions: by_route.remove(&id).unwrap_or_default(),
+                late_trips,
+                worst_delay_secs: worst,
+                route: id,
+            }
+        })
+        .collect();
+    routes.sort_by(|a, b| {
+        let order = |r: &RouteDay| i.network.routes.get(r.route.as_str()).and_then(|x| x.sort_order).unwrap_or(u32::MAX);
+        (order(a), name_key(&a.name), &a.route).cmp(&(order(b), name_key(&b.name), &b.route))
+    });
+    let unaffected_routes = (i.network.routes.len() as u32).saturating_sub(routes.len() as u32);
+    Today { routes, unaffected_routes }
+}

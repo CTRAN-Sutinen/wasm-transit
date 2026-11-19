@@ -1,13 +1,12 @@
 //! The service alerts document and the alert templates document: what
 //! a write must pass, what a person is told about a record that passes
-//! (D-152), ending an alert, the agency's list, the gap list, and the
-//! template fill (D-206..D-210).
+//! (D-152), ending an alert, the agency's list, and the template fill
+//! (D-206..D-210). The gap list is transit-disruptions' (D-218).
 //!
 //! Over the e2e fixture network: routes 10, 20, 40 (route 40 runs
 //! directions 0 and 1), stops A ("Main & 1st"), B, C, and the station
 //! STN with bays SA and SB; trip t10 at 08:00.
 
-use chrono::NaiveDate;
 use proptest::prelude::*;
 use transit_alerts::*;
 use transit_live::{AlertEffect, AlertPeriod};
@@ -237,94 +236,6 @@ fn the_list_puts_every_alert_in_one_group() {
 }
 
 // ---------------------------------------------------------------------
-// The gap list: what is in force that no alert explains.
-// ---------------------------------------------------------------------
-
-fn day() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 11, 19).unwrap()
-}
-
-fn edits() -> Vec<transit_sync::EditRecord> {
-    let diversion: transit_sync::Diversion = serde_json::from_value(serde_json::json!({
-        "id": "d1", "route_id": "10", "first_kept_stop": "A", "last_kept_stop": "C",
-        "skipped_stops": ["B"], "start_date": "2026-11-18", "end_date": "2026-11-20"
-    }))
-    .unwrap();
-    let cancel: transit_sync::TripCancel =
-        serde_json::from_value(serde_json::json!({ "id": "c1", "trip_id": "t10", "date": "2026-11-19" })).unwrap();
-    let record = |id: &str, status: transit_sync::EditStatus, d: Option<transit_sync::Diversion>, c: Option<transit_sync::TripCancel>| {
-        transit_sync::EditRecord { id: id.into(), diversion: d, cancel: c, status, rev: 1, updated_at: 0, extra: Default::default() }
-    };
-    use transit_sync::EditStatus::*;
-    vec![
-        record("r-div", Accepted, Some(diversion.clone()), None),
-        record("r-cancel", Submitted, None, Some(cancel)),
-        record("r-draft", Draft, Some(diversion.clone()), None),
-        record("r-retired", Retired, Some(diversion), None),
-    ]
-}
-
-fn stops() -> transit_stops::Stops {
-    serde_json::from_value(serde_json::json!({
-        "stops": {
-            "B": [
-                { "id": "e0", "event": "in_service", "lat": 45.51, "lon": -73.51 },
-                { "id": "e1", "on": "2026-11-01", "event": "suspended", "until": "2026-12-01" }
-            ],
-            "C": [
-                { "id": "e0", "event": "in_service", "lat": 45.52, "lon": -73.52 },
-                { "id": "e1", "on": "2026-11-01", "event": "suspended", "until": "2026-11-10" }
-            ]
-        }
-    }))
-    .unwrap()
-}
-
-fn gap_sources(alerts: &ServiceAlerts) -> Vec<AlertSource> {
-    gaps(alerts, &edits(), &stops(), day(), 10_000).into_iter().map(|g| g.source).collect()
-}
-
-#[test]
-fn the_gap_list_names_what_no_alert_explains() {
-    let all = vec![AlertSource::Edit { id: "r-div".into() }, AlertSource::Edit { id: "r-cancel".into() }, AlertSource::Stop { stop: "B".into() }];
-    // No alert: every submitted or accepted edit in force, and every
-    // suspended stop. A draft edit is not yet anyone's news, and C's
-    // suspension has ended.
-    assert_eq!(gap_sources(&ServiceAlerts::default()), all);
-    // An alert that explains one takes it off the list.
-    let explaining = |sources: Vec<AlertSource>, status: AlertStatus, communication: Vec<AlertPeriod>| ServiceAlert {
-        explains: sources,
-        status,
-        ..alert(vec![route("10")], communication)
-    };
-    let d = doc(vec![("a1", explaining(vec![AlertSource::Edit { id: "r-div".into() }, AlertSource::Stop { stop: "B".into() }], AlertStatus::Published, vec![]))]);
-    assert_eq!(gap_sources(&d), vec![AlertSource::Edit { id: "r-cancel".into() }]);
-    // A draft explains too: someone is writing it.
-    let d = doc(vec![("a1", explaining(vec![AlertSource::Edit { id: "r-cancel".into() }], AlertStatus::Draft, vec![]))]);
-    assert!(!gap_sources(&d).contains(&AlertSource::Edit { id: "r-cancel".into() }));
-    // A withdrawn alert, or one that has ended, explains nothing now.
-    let d = doc(vec![
-        ("gone", explaining(vec![AlertSource::Edit { id: "r-div".into() }], AlertStatus::Retired, vec![])),
-        ("over", explaining(vec![AlertSource::Stop { stop: "B".into() }], AlertStatus::Published, vec![period(Some(0), Some(5_000))])),
-    ]);
-    assert_eq!(gap_sources(&d), all);
-}
-
-#[test]
-fn a_gap_carries_what_an_alert_about_it_starts_from() {
-    let g = gaps(&ServiceAlerts::default(), &edits(), &stops(), day(), 10_000);
-    let div = &g[0];
-    assert_eq!((div.route.as_deref(), div.stops.clone()), (Some("10"), vec!["B".to_string()]));
-    assert_eq!((div.start_date.as_deref(), div.end_date.as_deref()), (Some("2026-11-18"), Some("2026-11-20")));
-    assert_eq!(div.effect, AlertEffect::Detour);
-    let cancel = &g[1];
-    assert_eq!((cancel.trip.as_deref(), cancel.effect), (Some("t10"), AlertEffect::NoService));
-    let stop_b = &g[2];
-    assert_eq!((stop_b.stops.clone(), stop_b.start_date.as_deref(), stop_b.end_date.as_deref()), (vec!["B".to_string()], Some("2026-11-01"), Some("2026-12-01")));
-    assert_eq!(stop_b.effect, AlertEffect::NoService);
-}
-
-// ---------------------------------------------------------------------
 // Templates: the agency's standard language, with blanks.
 // ---------------------------------------------------------------------
 
@@ -390,4 +301,56 @@ proptest! {
             prop_assert_eq!(left, named, "blank {} in {:?}", blank, out);
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Version 2: an alert explains a trip instance (D-216), and version 1
+// comes forward unchanged.
+// ---------------------------------------------------------------------
+
+fn explaining(source: AlertSource) -> ServiceAlert {
+    ServiceAlert { explains: vec![source], ..alert(vec![route("10")], vec![]) }
+}
+
+#[test]
+fn an_alert_explains_a_trip_instance_the_live_feed_cancels() {
+    let trip = AlertSource::Trip { trip: "t10".into(), date: "2026-10-23".into(), start_secs: 28800 };
+    assert_eq!(problems(doc(vec![("a1", explaining(trip))])), vec![]);
+}
+
+#[test]
+fn an_explained_trip_instance_names_a_trip_and_a_date() {
+    let blank = AlertSource::Trip { trip: " ".into(), date: "2026-10-23".into(), start_secs: 0 };
+    assert_eq!(problems(doc(vec![("a1", explaining(blank))])), vec![AlertProblem::InstanceWithoutTrip]);
+    let bad = AlertSource::Trip { trip: "t10".into(), date: "10/23/2026".into(), start_secs: 0 };
+    assert_eq!(problems(doc(vec![("a1", explaining(bad))])), vec![AlertProblem::BadDate { date: "10/23/2026".into() }]);
+}
+
+#[test]
+fn a_version_1_document_comes_forward_unchanged_but_its_version() {
+    let v1 = serde_json::json!({
+        "kind": "service_alerts", "schema_version": 1,
+        "alerts": { "a1": { "status": "published", "header": [{ "text": "Route 10 detour" }], "informed": [{ "route": "10" }],
+                            "explains": [{ "kind": "edit", "id": "e1" }] } }
+    });
+    assert_eq!(version::schema_version_of(&v1), Ok(1));
+    let (v2, notes) = version::migrate_to(v1.clone(), version::ALERTS_VERSION).unwrap();
+    assert!(notes.is_empty(), "nothing is lost");
+    let mut want = v1.clone();
+    want["schema_version"] = 2.into();
+    assert_eq!(v2, want);
+    let read: ServiceAlerts = serde_json::from_value(v2).unwrap();
+    assert_eq!(read.alerts["a1"].explains, vec![AlertSource::Edit { id: "e1".into() }]);
+    assert!(version::migrate_to(want, 2).is_err(), "a document already at the version has nothing to migrate");
+}
+
+#[test]
+fn a_stored_version_1_record_comes_forward_unchanged() {
+    let record = serde_json::json!({ "status": "draft", "header": [{ "text": "x" }], "informed": [{}] });
+    assert_eq!(version::record_forward("service_alert", record.clone(), 1), Ok(record.clone()));
+    let own = serde_json::json!({ "kind": "service_alerts", "schema_version": 1, "alerts": {} });
+    let mut want = own.clone();
+    want["schema_version"] = 2.into();
+    assert_eq!(version::record_forward("service_alerts", own, 1), Ok(want));
+    assert!(version::record_forward("service_alert", record, 3).is_err(), "no step from a version newer than this build");
 }

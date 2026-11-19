@@ -55,6 +55,8 @@ Each trip carries the located vehicle (`vehicle_id`, label, position). The op fi
 
 When no vehicle of the block is visible, the trip carries the delayed-but-dark flag (`has_position` is false).
 
+Each trip also carries the names a rider uses, where the network has them: `route_name`, its `start_secs` (absent for a frequency trip), its `first_stop` and `headsign`, and `near_stop`, the stop of the trip the vehicle runs that is nearest the vehicle's position.
+
 `vp_hash` names the VehiclePositions snapshot. Agencies serve it as a separate feed (C-TRAN does). Omit it for combined feeds.
 
 ## live

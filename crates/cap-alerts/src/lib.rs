@@ -12,8 +12,7 @@
 //! - `list` answers the agency's list at a moment.
 //! - `flags` answers what a person is told about alerts that pass: an
 //!   id the network does not have, or a missing translation.
-//! - `gaps` answers what is in force that no alert explains: an edit
-//!   record or a suspended stop.
+//! - What no alert explains is cap-disruptions' `gaps` (D-218).
 //! - `validate_templates`, `put_template`, and `fill` are the agency's
 //!   standard language with blanks (D-210).
 //!
@@ -23,12 +22,12 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{ALERT_TEMPLATES, EDITS, NETWORK, SERVICE_ALERTS, STOPS};
+use cap_abi::kernel::{ALERT_TEMPLATES, NETWORK, SERVICE_ALERTS};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use transit_alerts::{
-    AlertFlag, AlertGap, AlertList, AlertRefusal, AlertTemplate, AlertTemplates, FillInput, Filled, ServiceAlert, ServiceAlerts,
+    AlertFlag, AlertList, AlertRefusal, AlertTemplate, AlertTemplates, FillInput, Filled, ServiceAlert, ServiceAlerts,
     TemplateRefusal,
 };
 
@@ -78,24 +77,6 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         languages: Option<Vec<String>>,
-    },
-    /// What is in force on `date` ("YYYY-MM-DD") that no alert explains
-    /// at `now`: the edit document's submitted and accepted records, and
-    /// the stops document's suspended stops. Each document absent is an
-    /// empty one.
-    Gaps {
-        #[serde(default)]
-        #[ts(optional)]
-        alerts_hash: Option<String>,
-        #[serde(default)]
-        #[ts(optional)]
-        edits_hash: Option<String>,
-        #[serde(default)]
-        #[ts(optional)]
-        stops_hash: Option<String>,
-        date: String,
-        #[ts(type = "number")]
-        now: u64,
     },
     /// What a template write must pass: every refusal, or the canonical
     /// document and its hash.
@@ -165,7 +146,6 @@ pub enum Response {
         list: AlertList,
     },
     Flags { flags: Vec<AlertFlag> },
-    Gaps { gaps: Vec<AlertGap> },
     ValidateTemplates {
         refusals: Vec<TemplateRefusal>,
         document: Option<String>,
@@ -241,19 +221,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = NETWORK.require(&network_hash)?;
             Ok(Response::Flags { flags: alerts.flags(&network, languages.as_deref().unwrap_or_default()) })
         }
-        Request::Gaps { alerts_hash, edits_hash, stops_hash, date, now } => {
-            let day = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))?;
-            let alerts = held_alerts(alerts_hash.as_deref())?;
-            let edits = match edits_hash {
-                Some(h) => EDITS.require(&h)?.records.clone(),
-                None => Vec::new(),
-            };
-            let stops = match stops_hash {
-                Some(h) => STOPS.require(&h)?,
-                None => std::sync::Arc::new(cap_abi::kernel::Stops::empty()),
-            };
-            Ok(Response::Gaps { gaps: transit_alerts::gaps(&alerts, &edits, &stops, day, now) })
-        }
         Request::ValidateTemplates { templates } => Ok(match templates.0.checked() {
             Ok(templates) => {
                 let document = cap_abi::canonical_bytes(&templates)?;
@@ -282,27 +249,36 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Fill { filled: transit_alerts::fill(t, &network, &input) })
         }
         Request::LogRecords { alerts_hash, templates_hash } => {
-            let version = transit_alerts::SCHEMA_VERSION;
             let mut next = Vec::new();
             if let Some(h) = alerts_hash {
                 let doc = serde_json::to_value(&*SERVICE_ALERTS.require(&h)?).map_err(|e| e.to_string())?;
-                next.extend(transit_log::document_records(&doc, "alerts", "service_alert", "service_alerts", version)?);
+                next.extend(transit_log::document_records(&doc, "alerts", "service_alert", "service_alerts", transit_alerts::ALERTS_VERSION)?);
             }
             if let Some(h) = templates_hash {
                 let doc = serde_json::to_value(&*ALERT_TEMPLATES.require(&h)?).map_err(|e| e.to_string())?;
-                next.extend(transit_log::document_records(&doc, "templates", "alert_template", "alert_templates", version)?);
+                next.extend(transit_log::document_records(&doc, "templates", "alert_template", "alert_templates", transit_alerts::TEMPLATES_VERSION)?);
             }
             Ok(Response::LogRecords { next })
         }
         Request::LogDocument { kind, records, document } => {
-            let template = serde_json::json!({"kind": kind, "schema_version": transit_alerts::SCHEMA_VERSION});
             let (document_hash, document) = match kind.as_str() {
                 "service_alerts" => {
+                    // The log keeps each record in the version it was
+                    // written in: bring each one forward (D-216).
+                    let version = transit_alerts::ALERTS_VERSION;
+                    let forward = |kind: &str, held: &transit_log::Held| -> Result<transit_log::Held, String> {
+                        let value = transit_alerts::version::record_forward(kind, held.value.clone(), held.version)?;
+                        Ok(transit_log::Held { version, value })
+                    };
+                    let records = records.iter().map(|(id, held)| Ok((id.clone(), forward("service_alert", held)?))).collect::<Result<_, String>>()?;
+                    let document = document.as_ref().map(|held| forward("service_alerts", held)).transpose()?;
+                    let template = serde_json::json!({"kind": kind, "schema_version": version});
                     let alerts: ServiceAlerts = transit_log::assemble(template, document.as_ref(), "alerts", &records, false)?;
                     let bytes = cap_abi::canonical_bytes(&alerts)?;
                     (SERVICE_ALERTS.register(alerts)?.0, bytes)
                 }
                 "alert_templates" => {
+                    let template = serde_json::json!({"kind": kind, "schema_version": transit_alerts::TEMPLATES_VERSION});
                     let templates: AlertTemplates = transit_log::assemble(template, document.as_ref(), "templates", &records, false)?;
                     let bytes = cap_abi::canonical_bytes(&templates)?;
                     (ALERT_TEMPLATES.register(templates)?.0, bytes)
@@ -331,5 +307,5 @@ cap_abi::capability! {
     id: "alerts",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [SERVICE_ALERTS, ALERT_TEMPLATES, NETWORK, EDITS, STOPS],
+    documents: [SERVICE_ALERTS, ALERT_TEMPLATES, NETWORK],
 }

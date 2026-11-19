@@ -9,7 +9,9 @@ An alert has these parts:
 - its header, description, and link, each a list of texts with their languages;
 - when to show it (`communication`) and when service is affected (`impact`), in Unix seconds. The host converts the agency's local times. No communication period means for as long as it is published.
 - what it is about (`informed`): each entity names a route, a route type, a direction of a route, a stop, or a trip instance, in the network's ids. Every present field must match. An entity with every field absent is the whole agency.
-- the disruptions it tells riders about (`explains`): an edit record by id, or a stop's suspension by the stop's id.
+- the disruptions it tells riders about (`explains`): an edit record by id, a stop's suspension by the stop's id, or a trip instance that the live feed cancels (`trip`: the trip, its service date, and its start; version 2).
+
+The service alerts document is version 2. cap-migrate brings a version 1 document forward, and every version 1 alert is a version 2 alert. The alerts log keeps each record in the version it was written in, and `log_document` brings each one forward.
 
 Nothing is deleted. A withdrawn alert is `retired`, and an alert that ends gets its end (`end`).
 
@@ -69,17 +71,6 @@ What a person is told about the alerts that are not withdrawn. Nothing here refu
 
 - an informed route, direction, stop, or trip that the network does not have (`unknown_route`, `unknown_direction`, `unknown_stop`, `unknown_trip`);
 - a text with no translation for a language of `languages`, the deployment's languages (`missing_translation`, naming the field and the language).
-
-## gaps
-
-What is in force on `date` that no alert explains at `now`:
-
-- each submitted or accepted record of the edit document in force on the date. A draft edit is not yet anyone's news.
-- each stop that the stops document has suspended on the date.
-
-An alert explains a disruption when its `explains` names it, and it is not withdrawn or ended at `now`. A draft explains, because someone is writing it.
-
-Each gap carries what an alert about it starts from: its effect (a diversion is a detour, and a trip cancel or a suspended stop is no service), its route or trip, its stops, and its first and last dates. A suspension's end is the first date the stop is back. Edit records come first, in the document's order, then stops in id order. Each document left out is an empty one.
 
 ## validate_templates
 

@@ -260,34 +260,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot; ride-now's
   "Memory over time" table in `just perf`.
 
-- **QAF-122 OP GAP** — the late list and the live feed's cancels
-  carry ids only: a trip id, a route id, a start in seconds, and stop
-  ids. A dispatch row or a status card names a trip as a rider does
-  ("2:10 PM from Fisher's Landing TC") and a bus by where it is. Both
-  need the network's stop names and the trip's first stop, so a page
-  would join them.
-  Pin: rt `late_trips` and `live` (`trips[].canceled`) on C-TRAN,
-  2026-11-19 at 13:31 and `perf-rt-10m/020` (2026-11-04).
-- **QAF-123 OP GAP** — alerts `gaps` reads the edit document and the
-  stops document only. A trip that the live feed cancels is never a
-  gap, and an alert's `explains` names an `edit` or a `stop`, so no
-  alert can explain a feed cancel (D-213). On C-TRAN the feed is where
-  cancels come from: 8 cancelled instances in one 2026-11-04 snapshot.
-  Pin: alerts `gaps` takes no `live_hash`; the `explains` kinds in the
-  service alerts schema.
-- **QAF-124 OP GAP** — no op answers a route's or a stop's
-  disruptions today as one list: cancels from both sources, detours,
-  closed stops, lateness, whether an alert explains each, and the
-  latest note. The Status view's cards and the Dispatch view's lists
-  are that list. Each is a join over the live document, the edit
-  document, the stops document, the alerts, and the notes.
-  Pin: the ops in `docs/units/ui-disruptions.md`, questions 2, 3, 6.
-- **QAF-125 OP GAP** — the alert preview does not chain. rt
-  `encode_alerts` answers the feed as `feed_b64`. To run `live` over
-  it, the host decodes the text and loads the bytes as an rt
-  snapshot. `encode_alerts` could register the snapshot it encodes and
-  answer its `rt_hash`.
-  Pin: rt `encode_alerts` on the C-TRAN alerts document, then `live`.
 - **QAF-126 DATA** — C-TRAN's alerts stay open. At 13:31 on
   2026-11-19, 14 of the 15 alerts in force have no end. They have been
   open from 9 to 323 days. Two of them name the same closure (Main &

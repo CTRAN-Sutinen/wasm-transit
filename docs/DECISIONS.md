@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-218**.
+- IDs are never reused; the next new decision is **D-220**.
 
 ## Summary
 
@@ -268,9 +268,11 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-212 | Is a trip's coverage this repo's answer? | decided; built | nothing |
 | D-213 | Where does the disruptions UI read today's cancels? | decided; not built | nothing |
 | D-214 | Can dispatch keep internal notes here? | decided; built on the bus and the server | nothing |
-| D-215 | Where does the disruptions summary for a day live? | decided; not built | nothing |
-| D-216 | How does an alert explain a trip the live feed cancels? | decided; not built | nothing |
+| D-215 | Where does the disruptions summary for a day live? | replaced by D-218 | nothing |
+| D-216 | How does an alert explain a trip the live feed cancels? | decided; built | nothing |
 | D-217 | How is the notes document shaped? | encoded | nothing |
+| D-218 | Which capability answers what is disrupted on a day? | decided; built | nothing |
+| D-219 | How is a day's disruptions answer shaped? | encoded | nothing |
 
 ## The trip model
 
@@ -2267,7 +2269,8 @@ Context: the existing app's feed (`gtfs-rt.c-tran.com/Alerts`,
 2026-11-19) holds 16 alerts. Each names its stops paired with each
 chosen route, or a route alone. 12 of the 16 have no end time.
 Pinned by: transit-alerts `alerts_law_test` (no review step; the
-list; the gap list, with suspended stops); the page:
+list); transit-disruptions `disruptions_law_test` (the gap list, with
+suspended stops; D-218); the page:
 `docs/units/ui-disruptions.md`.
 Blocks: nothing. The rule that makes a long-open alert visible is set
 by trying it on real data.
@@ -2434,7 +2437,7 @@ time, and the server stamps them".
 Blocks: nothing. A change rewrites those laws.
 
 ### D-215 — Where does the disruptions summary for a day live?
-State: Decided; not built.
+State: Replaced by D-218 (2026-11-19).
 Answer: 2026-11-19 — "sounds good" to the proposal: a new op, alerts
 `today`, answers a day's disruptions by route and by stop. It reads
 the live document, the edit document, the stops document, the alerts,
@@ -2450,8 +2453,62 @@ the alerts.
 Pinned by: none yet (`docs/units/ui-disruptions.md`).
 Blocks: nothing.
 
+### D-218 — Which capability answers what is disrupted on a day?
+State: Decided; built.
+Answer: 2026-11-19 — "follow the laws, make the new cap". A new
+library, `transit-disruptions`, and a new capability,
+`cap-disruptions`, answer what is disrupted on a day and whether an
+alert explains it. Its ops are `today` (the day's disruptions by route
+and by stop, with the names a rider uses) and `gaps`, which moves out
+of cap-alerts in the same change. It replaces D-215's home. The rest of
+D-215 stands: rt `late_trips` gains the names as optional fields, and
+rt `encode_alerts` registers the snapshot it encodes.
+Context: `crates/AGENTS.md`, "The split": an op that takes a document
+none of the module's other ops take is the second document. `today`
+reads the live document and the notes, which no cap-alerts op reads.
+`gaps` answers inside the same question, so it moves too (criterion 6:
+no two answers to one question).
+2026-11-19 — rt `encode_alerts` already registers the snapshot it
+encodes and answers its `rt_hash` (cap-rt OPS.md). QAF-125 misread the
+session's answer and is deleted.
+Pinned by: transit-disruptions `disruptions_law_test`; cap-disruptions
+`dispatch_test`; cap-rt `dispatch_test`
+(`late_trips_rank_and_flag_the_dark_ones`: the names).
+Why: `docs/architecture/crates.md`, Why, "What is disrupted is one
+question over every source".
+Blocks: nothing.
+
+### D-219 — How is a day's disruptions answer shaped?
+State: Encoded provisionally.
+Context: building D-218 and the late list's names (QAF-122) left these
+choices open. Each is encoded.
+Options (each encoded, with the other answer):
+- **The next trip** after a cancelled instance is the next trip of the
+  route from the same first stop, in the same direction, that runs on
+  the day and is not cancelled in either document. The other answer
+  was the next trip of the same pattern only, which misses a variant
+  that leaves from the same stop.
+- **Routes are ordered** by the route's sort order, then its name with
+  numbers by value ("4" before "25"), then its id. The other answer was
+  the name as text ("25" before "4").
+- **A late trip** is one the live document classes late or very late,
+  under the window the live document records. A cancelled trip is not
+  late. The other answer was a threshold of the op's own.
+- **A stop filter** matches a closure of the stop, a detour that skips
+  it, and a cancelled trip whose pattern serves it. With a stop, no
+  route is listed for lateness alone. The other answer was the routes
+  that serve the stop, with all their disruptions.
+- **A suspended stop** is listed on every route whose pattern serves
+  it. The other answer was a list of stops beside the routes.
+- **The late list's `near_stop`** is the stop of the bus's own trip
+  nearest its position. The other answer was the nearest stop of the
+  whole network, which can name a stop the bus never serves.
+Pinned by: transit-disruptions `disruptions_law_test`; cap-rt
+`dispatch_test` (`late_trips_rank_and_flag_the_dark_ones`).
+Blocks: nothing. A change rewrites those laws.
+
 ### D-216 — How does an alert explain a trip the live feed cancels?
-State: Decided; not built.
+State: Decided; built.
 Answer: 2026-11-19 — "A is fine": `explains` gains a third kind,
 `trip`, which names a trip instance (trip, service date, start). The
 service alerts document goes to version 2, with a migration step from
@@ -2462,7 +2519,15 @@ same version, which gives one idea two fields forever; and no link,
 where an alert that applies to the trip instance counts as explaining
 it, which is a matching rule and not a recorded fact. The alerts
 document is new, so the version change costs least now.
-Pinned by: none yet (`docs/units/ui-disruptions.md`).
+Pinned by: transit-alerts `alerts_law_test`
+(`an_alert_explains_a_trip_instance_the_live_feed_cancels`,
+`a_version_1_document_comes_forward_unchanged_but_its_version`,
+`a_stored_version_1_record_comes_forward_unchanged`); cap-alerts
+`dispatch_test` (`records_stored_at_version_1_assemble_as_version_2`);
+cap-migrate `dispatch_test`; server `TestAlertsWritesAreValidatedAndLogged`
+(a v1 write lands as v2); the `service_alerts` v2 schema lock.
+Why: `docs/architecture/crates.md`, Why, "A service alert is its own
+record, in the network's ids".
 Blocks: nothing.
 
 ## Geography

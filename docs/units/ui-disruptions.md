@@ -59,17 +59,17 @@ The session: `caps-run --session dis` on `testdata/ctran-gtfs.zip`
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | rt `live`, `late_trips` | dogfooded: 25 late of 63 at 13:31, ranked; a bus on its block's next trip is found there. The rows carry ids only (QAF-122) |
-| 2 | none | no op: a route's or stop's disruptions today as one answer (QAF-124) |
-| 3 | divert `list`; rt `live`; stops document | each source has its op; the list across them is QAF-124 |
+| 1 | rt `live`, `late_trips` | dogfooded: 25 late of 63 at 13:31, ranked; a bus on its block's next trip is found there. Each row carries the route's name, the trip's start, first stop, and headsign, and the nearest stop (D-219) |
+| 2 | disruptions `today` (`route`, `stop`) | op exists (D-218): a route's or a stop's disruptions as one answer, with the names a rider uses, the alerts, and the latest note. Not yet dogfooded on C-TRAN |
+| 3 | disruptions `today` | op exists (D-218): every source, each as its document gives it, by route |
 | 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; streets `import` / `snap` / `route` traced route 72's detour along NE 137th Ave on the county roads (2026-11-06). Not designed yet: the layout has no detour screen |
 | 5 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | op exists (a diverted trip's line splices the traced detour into its alignment) |
-| 6 | rt `live` (`canceled: true`), divert `list` (`cancels`) | dogfooded: the 2026-11-04 snapshot holds 8 cancelled instances, each with its date and start. The rows carry ids only (QAF-122); the list across both sources is QAF-124. divert `cancel` and `retire` stay for an agency with no CAD (D-213). Partial cancel comes later (D-45) |
+| 6 | rt `live` (`canceled: true`), divert `list` (`cancels`) | dogfooded: the 2026-11-04 snapshot holds 8 cancelled instances, each with its date and start. The list across both sources, with names, is disruptions `today`. divert `cancel` and `retire` stay for an agency with no CAD (D-213). Partial cancel comes later (D-45) |
 | 7 | notes `on`, `between`; `POST /notes` | ops exist (D-214, D-217): a target's notes, a day's notes, and a note written through the server with its writer stamped. Not yet dogfooded on C-TRAN |
 | 8 | sync `sync_edits`; the notes log | sync op exists; dogfooded on C-TRAN through a restarted store server (2026-11-05); no page writes one. The manifest pins `notes_hash`, so a page sees a new note when it reads the manifest again |
 | 9 | rt `read_alerts`, alerts `list` | dogfooded: C-TRAN's 16 alerts read with nothing skipped; 15 in force, 1 ended. 14 of the 15 have no end, open 9 to 323 days (QAF-126) |
-| 10 | alerts `gaps` | op exists for edits and suspended stops. The live feed's cancels are never a gap, and an alert cannot explain one (QAF-123) |
-| 11 | alerts `fill`, `validate`, `put`, `end`, `flags`; rt `encode_alerts`, `live`; board `stop_board` | ops exist; the server keeps the alerts (`POST /service-alerts`). The preview cannot chain without host glue (QAF-125) |
+| 10 | disruptions `gaps` | op exists (D-218): edits, the feed's cancels, and suspended stops. An alert explains a feed cancel by its trip instance (D-216) |
+| 11 | alerts `fill`, `validate`, `put`, `end`, `flags`; rt `encode_alerts`, `live`; board `stop_board` | ops exist; the server keeps the alerts (`POST /service-alerts`). `encode_alerts` registers the feed it writes, so `live` reads it by `rt_hash` |
 
 ## Scope beyond the ops
 

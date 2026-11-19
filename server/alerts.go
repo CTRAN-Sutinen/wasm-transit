@@ -12,6 +12,7 @@ package main
 // (`withAlerts`).
 //
 //	POST /service-alerts   body: {"from": "<the head the writer read, or empty>", "alerts": {...}}
+//	                       (an older version comes forward through cap-migrate)
 //	                       200 {alerts_hash}   422 {refusals}   409 {current, seq}
 //	POST /alert-templates  body: {"from": "...", "templates": {...}}
 //	                       200 {templates_hash}   422 {refusals}   409 {current, seq}
@@ -188,6 +189,14 @@ func (s *server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(req[spec.field]) == 0 {
 		http.Error(w, fmt.Sprintf(`body: {"from": "<hash or empty>", %q: {...}}`, spec.field), http.StatusBadRequest)
 		return
+	}
+	// An older service alerts document comes forward through cap-migrate
+	// at receive (v1 → v2, D-216); a current one is unchanged.
+	if spec.field == "alerts" {
+		if req[spec.field], _, err = s.forward("service_alerts", req[spec.field]); err != nil {
+			http.Error(w, "the service alerts document: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	ctx := r.Context()
 	writer := writerOf(r, "anonymous")

@@ -552,6 +552,14 @@ The notes document (D-214): the agency's internal notes about its day of service
 
 `write` places one note: a new id is a new note, and a held id is an edit of its text. `checked` is what a write must pass: a blank id, text, or writer, a target that names no id, a date that is not "YYYY-MM-DD", or an edit earlier than the note. `on` and `between` are a target's notes and a span's notes.
 
+## transit-disruptions
+
+What is disrupted on a day, and whether an alert explains it (D-213, D-218). A disruption comes from the edit document (a submitted or accepted diversion or trip cancel in force), the live document (a trip instance the feed cancels), or the stops document (a suspended stop). Each is listed as its document gives it, with its origin. A trip that both the edit document and the feed cancel is listed twice, and no rule picks one. cap-disruptions is the seam.
+
+- `disruptions` gives the list. Each carries the names a rider uses (the route; a cancelled trip's start, first stop, and headsign; the stops it takes away), the next trip from the same first stop, the alerts that explain it, and its latest note.
+- `gaps` gives what no alert explains, with what an alert about each starts from.
+- `today` gives the day by route: each route with a disruption or a late trip, its late trips from the live document's statuses, and how many routes have neither. A suspended stop is listed on every route that serves it. A filter answers one route or one stop.
+
 ## transit-alerts
 
 The service alerts document and the alert templates document (D-206..D-210). An alert is what the agency tells riders. Dispatch and the communications staff write alerts, and every team reads the one list. cap-alerts is the seam, and transit-rt writes the feed.
@@ -562,7 +570,7 @@ The service alerts document and the alert templates document (D-206..D-210). An 
 - its header, description, and link, each a list of texts with their languages;
 - its communication periods and impact periods, in Unix seconds. The host converts the agency's local times (D-205).
 - its informed entities, in the network's ids: a route, a route type, a direction of a route, a stop, or a trip instance. Every present field must match. An entity with every field absent is the whole agency.
-- the disruptions it explains: an edit record, or a stop's suspension.
+- the disruptions it explains: an edit record, a stop's suspension, or a trip instance that the live feed cancels (version 2, D-216). The chain from version 1 lives here (`version`): every v1 document is a v2 document. `version::record_forward` brings a stored log record forward.
 
 **A template** is a record by id: its name in the menu, the cause, effect, and severity it sets, and its texts with blanks (`{stop}`, `{route}`, `{start date}`, `{end date}`). A template no longer offered is `retired`.
 
@@ -571,7 +579,6 @@ The service alerts document and the alert templates document (D-206..D-210). An 
 - `flags` tells a person about an alert that passes: an id the network does not have, or a missing translation for a language the deployment names.
 - `put` places one record by id. `end` ends an alert at a moment, and changes nothing before it.
 - `list` gives the agency's list at a moment: in force, upcoming, ended, and drafts. An alert in force with no end says how long it has been open.
-- `gaps` gives what is in force that no alert explains: a submitted or accepted edit record, or a suspended stop.
 - `fill` writes a template's blanks: names from the network, and dates and lists in English. A blank it cannot fill stays, and is named.
 
 Each document is canonical as it stands (records by id). The crate keeps what it does not know.
@@ -692,7 +699,6 @@ The service alerts capability: what is the agency telling riders? transit-alerts
 - `put` places one alert by id, checked. With no document, the first alert begins one. `end` ends one alert at a moment.
 - `list` gives the agency's list at a moment.
 - `flags` gives what a person is told about the alerts that pass.
-- `gaps` gives what is in force that no alert explains, over the edit document and the stops document.
 - `validate_templates`, `put_template`, and `fill` are the templates: what a write must pass, one template placed, and one template written out over the network.
 
 cap-rt's `encode_alerts` writes the document as an Alerts feed, and `read_alerts` reads one into it.
@@ -705,6 +711,12 @@ The notes capability: what has the agency noted about this? transit-notes is the
 - `on` gives one target's notes, oldest first.
 - `between` gives the notes written in a time span, newest first.
 - `log_records` and `log_document` turn the document into the notes log's records and back.
+
+## cap-disruptions
+
+The disruptions capability: what is disrupted on a day, and does an alert explain it? transit-disruptions is the library. It reads the network, the edit document, the live document, the stops, the service alerts, and the notes, each by hash, and writes nothing.
+- `today` gives the day by route, filtered to one route or one stop when asked.
+- `gaps` gives what no alert explains.
 
 ## cap-log
 
@@ -752,8 +764,9 @@ The migration capability: what is this older document in the version this build 
   - a network (v1, every untagged shape, to v2);
   - an edit document (v1, the bare array, to v2);
   - a watchlist (v1, its notes and colors, to v2; a copy that names
-    `"version": "v2"` from before the tags is already v2).
-- The chains live in the owning libraries (transit-network, transit-sync, transit-dispatch). They are kept forever (D-66). Every record id is kept and every loss is a note.
+    `"version": "v2"` from before the tags is already v2);
+  - a service alerts document (v1 to v2, unchanged but its version).
+- The chains live in the owning libraries (transit-network, transit-sync, transit-dispatch, transit-alerts). They are kept forever (D-66). Every record id is kept and every loss is a note.
 - `migrate` answers the new document's canonical bytes and hash.
 - `version` answers whether a document needs migration.
 
@@ -876,11 +889,20 @@ Each entry covers one choice that other code depends on. The heading names the c
 - **Holds:** an alert names what it is about in the network's ids. GTFS-rt is its serialization: transit-rt writes it as an Alerts feed and reads a feed into it. Each direction gives back the other.
 - **Holds:** an alert keeps every translation of its texts. The live document carries one (D-20).
 - **Holds:** there is no review step. A person with the write role publishes at once, and the log records who wrote what.
-- **Holds:** an alert explains a disruption by naming it. Nothing writes an alert from a detour, a cancel, or a closed stop. The gap list shows what no alert explains.
+- **Holds:** an alert explains a disruption by naming it: an edit record, a stop's suspension, or a trip instance that the live feed cancels, in one list (`explains`). Nothing writes an alert from a detour, a cancel, or a closed stop. The gap list shows what no alert explains.
+- **Because (the trip instance):** on C-TRAN the live feed is where cancels come from (D-213). A separate field for feed cancels would give one idea two fields forever, and matching an alert's informed entities to a cancel is a rule, not a recorded fact. The document was new, so its version changed when it cost least (D-216).
 - **Holds:** a template's blanks are filled by an op, so a stop's name and a date read the same in every alert.
 - **Because:** dispatch knows what is happening on the road now, and the communications staff write the agency's standard language. Both write in one place, and every team reads the one list. The record replaces a custom app whose feed riders' apps read.
 - **Rejected:** a third payload in the edit document; an alert written from a detour automatically; a required review.
-- **Decided:** D-206, D-207, D-208, D-210.
+- **Decided:** D-206, D-207, D-208, D-210, D-216.
+
+### What is disrupted is one question over every source (transit-disruptions, cap-disruptions)
+- **Holds:** the edit document, the live feed, and the stops document each give their own disruptions, and each is listed as given, with its origin. A trip that two sources cancel is listed twice. No rule picks a winner.
+- **Holds:** the gap list and the day by route are one capability's facets. The alerts capability answers what the agency tells riders, and no longer what is unexplained.
+- **Holds:** each disruption carries the names a rider uses, so a page shows "2:10 PM from Fisher's Landing TC" without a join.
+- **Because:** the live feed is where C-TRAN's cancels come from (D-213), and customer service answers a rider's question about a route or a stop from one list. An op on cap-alerts that read the live document and the notes would be the second document of the split rule (`crates/AGENTS.md`).
+- **Rejected:** `today` on cap-alerts (D-215); a page that joins the five documents.
+- **Decided:** D-213, D-218.
 
 ### A note carries its writer and time, and the server stamps them (transit-notes, cap-notes `write`, `POST /notes`)
 - **Holds:** a note is a record of its own, in a document of its own. It is not a payload of the edit document, and it changes no service. No GTFS-rt feed and no rider page reads it.

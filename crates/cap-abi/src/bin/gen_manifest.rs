@@ -126,7 +126,7 @@ const MODULES: &[ModuleSpec] = &[
         // answer its own questions, so they are spoken, not consumed.
         // encode_alerts writes the service alerts document as an Alerts
         // feed: GTFS-rt is its serialization.
-        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1]), ("service_alerts", &[transit_alerts::SCHEMA_VERSION])],
+        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1]), ("service_alerts", &[transit_alerts::ALERTS_VERSION])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-rt/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -339,20 +339,18 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "alerts",
         file: "module_alerts.wasm",
-        ops: &["validate", "put", "end", "list", "flags", "gaps", "validate_templates", "put_template", "fill", "log_records", "log_document"],
-        documents: &["service_alerts", "alert_templates", "network", "edits", "stops"],
+        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "fill", "log_records", "log_document"],
+        documents: &["service_alerts", "alert_templates", "network"],
         // The service alerts and alert templates documents are the
         // host's (D-206, D-210): validate answers their canonical bytes
         // and hash, which the kernel's loads answer too; put, end, and
         // put_template answer the next one. flags and fill read the
-        // network's names; gaps reads the edits and the stops.
+        // network's names.
         consumes: &[],
         speaks: &[
-            ("service_alerts", &[transit_alerts::SCHEMA_VERSION]),
-            ("alert_templates", &[transit_alerts::SCHEMA_VERSION]),
+            ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+            ("alert_templates", &[transit_alerts::TEMPLATES_VERSION]),
             ("network", &[transit_network::SCHEMA_VERSION]),
-            ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
-            ("stops", &[transit_stops::SCHEMA_VERSION]),
         ],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-alerts/OPS.md.
@@ -373,6 +371,27 @@ const MODULES: &[ModuleSpec] = &[
         docs: include_str!("../../../cap-notes/OPS.md"),
     },
     ModuleSpec {
+        id: "disruptions",
+        file: "module_disruptions.wasm",
+        ops: &["today", "gaps"],
+        documents: &["network", "edits", "live", "stops", "service_alerts", "notes"],
+        // What is disrupted on a day, and whether an alert explains it
+        // (D-218): it reads every document a disruption, its alert, or
+        // its note lives in, and writes none.
+        consumes: &[],
+        speaks: &[
+            ("network", &[transit_network::SCHEMA_VERSION]),
+            ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+            ("live", &[2]),
+            ("stops", &[transit_stops::SCHEMA_VERSION]),
+            ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+            ("notes", &[transit_notes::SCHEMA_VERSION]),
+        ],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-disruptions/OPS.md.
+        docs: include_str!("../../../cap-disruptions/OPS.md"),
+    },
+    ModuleSpec {
         id: "migrate",
         file: "module_migrate.wasm",
         ops: &["migrate", "version"],
@@ -382,11 +401,13 @@ const MODULES: &[ModuleSpec] = &[
             ("network", &[1, transit_network::SCHEMA_VERSION]),
             ("operator_edits", &[1, transit_sync::SCHEMA_VERSION]),
             ("watchlist", &[1, 2]),
+            ("service_alerts", &[1, transit_alerts::ALERTS_VERSION]),
         ],
         migrates: &[
             ("network", &[(1, 2)]),
             ("operator_edits", &[(1, 2)]),
             ("watchlist", &[(1, 2)]),
+            ("service_alerts", &[(1, 2)]),
         ],
         // Its purpose and per-op agent context: crates/cap-migrate/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -863,6 +884,12 @@ fn fixture_watchlist() -> transit_dispatch::watchlist::Watchlist {
     transit_dispatch::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
+/// Bring a service alerts document of an older version forward
+/// (transit-alerts' chain).
+fn migrate_alerts(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION).map(|(doc, _)| doc)
+}
+
 /// Bring an edit document of an older version forward (transit-sync's chain).
 fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_sync::version::migrate_to(doc, transit_sync::SCHEMA_VERSION).map(|(doc, _)| doc)
@@ -968,7 +995,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
         ),
         kind::<transit_stops::Stops>("stops", None, "transit-stops", Some(value(&fixture_stops())), None),
         kind::<transit_requests::StopRequests>("stop_requests", None, "transit-requests", Some(value(&fixture_requests())), None),
-        kind::<transit_alerts::ServiceAlerts>("service_alerts", None, "transit-alerts", Some(value(&fixture_alerts())), None),
+        kind::<transit_alerts::ServiceAlerts>("service_alerts", None, "transit-alerts", Some(value(&fixture_alerts())), Some(migrate_alerts)),
         kind::<transit_alerts::AlertTemplates>("alert_templates", None, "transit-alerts", Some(value(&fixture_templates())), None),
         kind::<transit_notes::Notes>("notes", None, "transit-notes", Some(value(&fixture_notes())), None),
         kind::<transit_live::LiveDay>("live", None, "transit-live", live_example().map(|(live, _)| value(&live)), None),
@@ -1463,11 +1490,12 @@ fn fixture_stops() -> transit_stops::Stops {
 const ALERTS_NOW: u64 = 1_792_756_800;
 
 /// Two alerts over the fixture network: route 10's detour at stop C,
-/// in English and Spanish, explaining the fixture's diversion; and
-/// route 40's reduced service in one direction, for a day.
+/// in English and Spanish, explaining the fixture's diversion; route
+/// 40's reduced service in one direction, for a day; and trip t10's
+/// 08:00 instance, which the live feed cancels (D-216).
 fn fixture_alerts() -> transit_alerts::ServiceAlerts {
     serde_json::from_value(serde_json::json!({
-        "kind": "service_alerts", "schema_version": 1,
+        "kind": "service_alerts", "schema_version": 2,
         "alerts": {
             "detour-10": {
                 "status": "published", "cause": "construction", "effect": "detour", "severity": "warning",
@@ -1482,6 +1510,13 @@ fn fixture_alerts() -> transit_alerts::ServiceAlerts {
                 "header": [{"text": "Fewer Station Shuttle trips today"}],
                 "communication": [{"start": ALERTS_NOW - 7200, "end": ALERTS_NOW + 50_000}],
                 "informed": [{"route": "40", "direction": "1"}]
+            },
+            "t10-cancelled": {
+                "status": "published", "cause": "other", "effect": "no_service",
+                "header": [{"text": "The 8:00 trip on route 10 is cancelled"}],
+                "communication": [{"start": ALERTS_NOW - 1800, "end": ALERTS_NOW + 3600}],
+                "informed": [{"trip": "t10", "date": "2026-10-23", "start_secs": 28800}],
+                "explains": [{"kind": "trip", "trip": "t10", "date": "2026-10-23", "start_secs": 28800}]
             }
         }
     }))
@@ -2368,6 +2403,39 @@ fn example_for(
                 json!({ "ok": { "op": "load_notes", "notes_hash": cap_abi::canonical_hash(&notes).ok()?, "notes": notes.notes.len() } }),
             )
         }
+        ("disruptions", "today") | ("disruptions", "gaps") => {
+            // 2026-10-23 on the fixture network: the edit document's
+            // detour, the live feed over the fixture snapshot, the
+            // alerts (one explains trip t10's 08:00 instance), and the
+            // notes (one on that instance).
+            let ctx = net?;
+            let edits = transit_sync::EditDocument::new(dispatch_fixture_edits());
+            let (live, live_hash) = live_example()?;
+            let stops = fixture_stops().checked().ok()?;
+            let alerts = fixture_alerts().checked().ok()?;
+            let notes = fixture_notes().checked().ok()?;
+            let inputs = transit_disruptions::Inputs {
+                network: &ctx.network,
+                edits: &edits.records,
+                live: Some(&live),
+                stops: &stops,
+                alerts: &alerts,
+                notes: &notes,
+                date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23)?,
+                now: ALERTS_NOW,
+            };
+            let request = json!({ "op": op, "network_hash": ctx.network_hash, "edits_hash": cap_abi::canonical_hash(&edits).ok()?,
+                "live_hash": live_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?,
+                "notes_hash": cap_abi::canonical_hash(&notes).ok()?, "date": "2026-10-23", "now": ALERTS_NOW });
+            let answer = if op == "today" {
+                let mut answer = serde_json::to_value(transit_disruptions::today(&inputs, &Default::default())).ok()?;
+                answer["op"] = json!("today");
+                answer
+            } else {
+                json!({ "op": "gaps", "gaps": transit_disruptions::gaps(&inputs) })
+            };
+            (request, json!({ "ok": answer }))
+        }
         ("notes", "validate") => {
             let notes = fixture_notes().checked().ok()?;
             let document = cap_abi::canonical_bytes(&notes).ok()?;
@@ -2469,19 +2537,6 @@ fn example_for(
                 json!({ "ok": { "op": "flags", "flags": alerts.flags(ctx.derived_network(), &languages) } }),
             )
         }
-        ("alerts", "gaps") => {
-            // During stop 6124's suspension: no alert explains it.
-            let alerts = fixture_alerts().checked().ok()?;
-            let edits = transit_sync::EditDocument::new(dispatch_fixture_edits());
-            let stops = fixture_stops().checked().ok()?;
-            let date = chrono::NaiveDate::from_ymd_opt(2027, 3, 10)?;
-            let gaps = transit_alerts::gaps(&alerts, &edits.records, &stops, date, ALERTS_NOW);
-            (
-                json!({ "op": "gaps", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "edits_hash": cap_abi::canonical_hash(&edits).ok()?,
-                        "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "date": "2027-03-10", "now": ALERTS_NOW }),
-                json!({ "ok": { "op": "gaps", "gaps": gaps } }),
-            )
-        }
         ("alerts", "validate_templates") => {
             let templates = fixture_templates().checked().ok()?;
             let document = cap_abi::canonical_bytes(&templates).ok()?;
@@ -2524,9 +2579,8 @@ fn example_for(
         ("alerts", "log_records") => {
             let alerts = fixture_alerts().checked().ok()?;
             let templates = fixture_templates().checked().ok()?;
-            let version = transit_alerts::SCHEMA_VERSION;
-            let mut next = transit_log::document_records(&serde_json::to_value(&alerts).ok()?, "alerts", "service_alert", "service_alerts", version).ok()?;
-            next.extend(transit_log::document_records(&serde_json::to_value(&templates).ok()?, "templates", "alert_template", "alert_templates", version).ok()?);
+            let mut next = transit_log::document_records(&serde_json::to_value(&alerts).ok()?, "alerts", "service_alert", "service_alerts", transit_alerts::ALERTS_VERSION).ok()?;
+            next.extend(transit_log::document_records(&serde_json::to_value(&templates).ok()?, "templates", "alert_template", "alert_templates", transit_alerts::TEMPLATES_VERSION).ok()?);
             (
                 json!({ "op": "log_records", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "templates_hash": cap_abi::canonical_hash(&templates).ok()? }),
                 json!({ "ok": { "op": "log_records", "next": next } }),
@@ -2538,7 +2592,7 @@ fn example_for(
             let records: std::collections::BTreeMap<String, serde_json::Value> = alerts
                 .alerts
                 .iter()
-                .map(|(id, a)| (id.clone(), json!({ "version": transit_alerts::SCHEMA_VERSION, "value": a })))
+                .map(|(id, a)| (id.clone(), json!({ "version": transit_alerts::ALERTS_VERSION, "value": a })))
                 .collect();
             (
                 json!({ "op": "log_document", "kind": "service_alerts", "records": records }),

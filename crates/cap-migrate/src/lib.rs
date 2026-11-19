@@ -18,6 +18,8 @@
 //!   tagged document.
 //! * `watchlist` (transit-dispatch): v1 notes and colors → v2 labels,
 //!   the colors dropped and reported.
+//! * `service_alerts` (transit-alerts): v1 → v2, where `explains` gains
+//!   a trip instance (D-216). Every v1 document is a v2 document.
 //!
 //! Migration never destroys: the answer is a NEW document (its own
 //! hash); the caller keeps the old bytes. A document at or past the
@@ -96,6 +98,7 @@ pub const KINDS: &[(&str, u32)] = &[
     (transit_network::KIND, transit_network::SCHEMA_VERSION),
     (transit_sync::KIND, transit_sync::SCHEMA_VERSION),
     (transit_dispatch::watchlist::KIND, transit_dispatch::watchlist::SCHEMA_VERSION),
+    (transit_alerts::version::KIND, transit_alerts::ALERTS_VERSION),
 ];
 
 fn current(kind: &str) -> Result<u32, String> {
@@ -110,6 +113,7 @@ fn version_of(kind: &str, doc: &serde_json::Value) -> Result<u32, String> {
         transit_network::KIND => transit_network::schema_version_of(doc),
         transit_sync::KIND => transit_sync::version::schema_version_of(doc),
         transit_dispatch::watchlist::KIND => transit_dispatch::watchlist::schema_version_of(doc),
+        transit_alerts::version::KIND => transit_alerts::version::schema_version_of(doc),
         _ => current(kind),
     }
 }
@@ -131,6 +135,11 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
             let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
             Ok((doc, notes.collect()))
         }
+        transit_alerts::version::KIND => {
+            let (doc, notes) = transit_alerts::version::migrate_to(doc, to)?;
+            let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
+            Ok((doc, notes.collect()))
+        }
         _ => Err(current(kind).err().unwrap_or_default()),
     }
 }
@@ -149,6 +158,7 @@ fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), St
         transit_network::KIND => typed::<transit_network::Network>(doc),
         transit_sync::KIND => typed::<transit_sync::EditDocument>(doc),
         transit_dispatch::watchlist::KIND => typed::<transit_dispatch::watchlist::Watchlist>(doc),
+        transit_alerts::version::KIND => typed::<transit_alerts::ServiceAlerts>(doc),
         _ => loose(doc),
     }
 }

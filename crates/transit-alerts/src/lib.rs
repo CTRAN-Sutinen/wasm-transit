@@ -20,9 +20,9 @@
 //! person is told about a record that passes: an id the network does
 //! not have, or a missing translation.
 //!
-//! [`gaps`] answers what is in force that no alert explains: a
-//! diversion or trip cancel, or a suspended stop. [`fill`] writes a
-//! template's standard language with its blanks filled in.
+//! [`fill`] writes a template's standard language with its blanks
+//! filled in. What is in force that no alert explains is
+//! transit-disruptions' gap list (D-218).
 
 #![forbid(unsafe_code)]
 
@@ -35,8 +35,9 @@ use ts_rs::TS;
 
 pub use transit_live::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 
-/// The version this build reads and writes, for both documents.
-pub const SCHEMA_VERSION: u32 = 1;
+pub mod version;
+
+pub use version::{ALERTS_VERSION, TEMPLATES_VERSION};
 
 transit_version::kind_tag!(
     /// The service alerts document's kind tag: always `"service_alerts"`.
@@ -50,7 +51,7 @@ transit_version::kind_tag!(
 
 impl transit_version::Versioned for ServiceAlerts {
     const KIND: &'static str = "service_alerts";
-    const READS: u32 = SCHEMA_VERSION;
+    const READS: u32 = ALERTS_VERSION;
     fn schema_version(&self) -> u32 {
         self.schema_version.0
     }
@@ -58,7 +59,7 @@ impl transit_version::Versioned for ServiceAlerts {
 
 impl transit_version::Versioned for AlertTemplates {
     const KIND: &'static str = "alert_templates";
-    const READS: u32 = SCHEMA_VERSION;
+    const READS: u32 = TEMPLATES_VERSION;
     fn schema_version(&self) -> u32 {
         self.schema_version.0
     }
@@ -73,14 +74,14 @@ impl transit_version::Versioned for AlertTemplates {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceAlerts {
-    /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1.
+    /// The kind tag and version (D-115). A copy without the version is
+    /// version 1, which cap-migrate brings forward ([`version`]).
     #[serde(default)]
     #[ts(type = "\"service_alerts\"")]
     pub kind: ServiceAlertsKind,
     #[serde(default)]
     #[ts(type = "number")]
-    pub schema_version: transit_version::Version<1>,
+    pub schema_version: transit_version::Version<2>,
     pub alerts: BTreeMap<String, ServiceAlert>,
     /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
@@ -209,6 +210,10 @@ pub enum AlertSource {
     /// A stop's suspension in the stops document, by the stop's lasting
     /// id.
     Stop { stop: String },
+    /// A trip instance that the live feed cancels (D-216): the model's
+    /// trip id, its service date ("YYYY-MM-DD"), and its start in seconds
+    /// after the service-day anchor. Version 2.
+    Trip { trip: String, date: String, start_secs: u32 },
 }
 
 fn in_periods(periods: &[AlertPeriod], t: u64) -> bool {
@@ -512,116 +517,19 @@ fn check(a: &ServiceAlert) -> Vec<AlertProblem> {
             out.push(AlertProblem::BadDate { date: d.clone() });
         }
     }
+    for source in &a.explains {
+        if let AlertSource::Trip { trip, date, .. } = source {
+            if trip.trim().is_empty() {
+                out.push(AlertProblem::InstanceWithoutTrip);
+            }
+            if parse_date(date).is_none() {
+                out.push(AlertProblem::BadDate { date: date.clone() });
+            }
+        }
+    }
     repeated_languages("header", &a.header, &mut out);
     repeated_languages("description", &a.description, &mut out);
     repeated_languages("url", &a.url, &mut out);
-    out
-}
-
-// ---------------------------------------------------------------------
-// The gap list
-// ---------------------------------------------------------------------
-
-/// A disruption in force that no alert explains, with what an alert
-/// about it starts from.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-pub struct AlertGap {
-    pub source: AlertSource,
-    /// What it does to service: a diversion is a detour; a trip cancel
-    /// and a suspended stop are no service.
-    pub effect: AlertEffect,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub route: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub trip: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub start_secs: Option<u32>,
-    /// The stops it takes away: a diversion's skipped stops, or the
-    /// suspended stop.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
-    pub stops: Vec<String>,
-    /// Its first and last dates in force, "YYYY-MM-DD", where it has
-    /// them. A suspension's end is the first date the stop is back.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub start_date: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub end_date: Option<String>,
-}
-
-/// What is in force on `date` that no alert explains at `now` (Unix
-/// seconds): each submitted or accepted record of the edit document in
-/// force (a draft is not yet anyone's news), in the document's order,
-/// then each stop suspended on `date`, in id order. An alert explains a
-/// source when it names it and is not withdrawn or ended at `now`; a
-/// draft explains, because someone is writing it.
-pub fn gaps(
-    alerts: &ServiceAlerts,
-    edits: &[transit_sync::EditRecord],
-    stops: &transit_stops::Stops,
-    date: NaiveDate,
-    now: u64,
-) -> Vec<AlertGap> {
-    use transit_sync::EditStatus;
-    let explained: std::collections::BTreeSet<&AlertSource> = alerts
-        .alerts
-        .values()
-        .filter(|a| a.status != AlertStatus::Retired && !a.ended_by(now))
-        .flat_map(|a| &a.explains)
-        .collect();
-    let day = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
-    let mut out = Vec::new();
-    for r in edits.iter().filter(|r| matches!(r.status, EditStatus::Submitted | EditStatus::Accepted)) {
-        let source = AlertSource::Edit { id: r.id.clone() };
-        if explained.contains(&source) {
-            continue;
-        }
-        if let Some(d) = r.diversion.as_ref().filter(|d| d.covers(date)) {
-            out.push(AlertGap {
-                source,
-                effect: AlertEffect::Detour,
-                route: Some(d.route_id.clone()),
-                trip: None,
-                start_secs: None,
-                stops: d.skipped_stops.clone(),
-                start_date: Some(day(d.start_date)),
-                end_date: Some(day(d.end_date)),
-            });
-        } else if let Some(c) = r.cancel.as_ref().filter(|c| c.covers(date)) {
-            out.push(AlertGap {
-                source,
-                effect: AlertEffect::NoService,
-                route: None,
-                trip: Some(c.trip_id.clone()),
-                start_secs: c.start_secs,
-                stops: Vec::new(),
-                start_date: Some(day(c.date)),
-                end_date: Some(day(c.date)),
-            });
-        }
-    }
-    for s in stops.on_date(date).into_iter().filter(|s| s.status == transit_stops::Status::Suspended) {
-        let source = AlertSource::Stop { stop: s.stop_id.clone() };
-        if explained.contains(&source) {
-            continue;
-        }
-        out.push(AlertGap {
-            source,
-            effect: AlertEffect::NoService,
-            route: None,
-            trip: None,
-            start_secs: None,
-            stops: vec![s.stop_id],
-            start_date: s.since,
-            end_date: s.until,
-        });
-    }
     out
 }
 

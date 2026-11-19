@@ -86,6 +86,38 @@ pub struct LateTrip {
     pub position_trip_id: Option<String>,
     pub lat: Option<f64>,
     pub lon: Option<f64>,
+    /// The route's short public name, from the network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route_name: Option<String>,
+    /// The trip's start, in seconds after the service-day anchor. Absent
+    /// for a frequency trip, whose instances share the trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_secs: Option<u32>,
+    /// The trip's first stop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub first_stop: Option<StopName>,
+    /// What the trip's sign says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headsign: Option<String>,
+    /// The stop of the trip the vehicle runs that is nearest its
+    /// position. Absent for a dark trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub near_stop: Option<StopName>,
+}
+
+/// A stop by its id, with its name where the network has it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct StopName {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
 }
 
 fn predicted(scheduled: Option<u32>, delay: Option<i32>) -> Option<u32> {
@@ -227,6 +259,24 @@ pub fn late_trips(
         let (_, pt, _) = network.trip(trip_id)?;
         network.patterns.get(&pt.pattern).map(|p| p.route.clone())
     };
+    let stop_name = |id: &str| StopName { id: id.to_string(), name: network.stops.get(id).map(|s| s.name.clone()) };
+    let stops_of = |trip_id: &str| -> Vec<String> {
+        network
+            .trip(trip_id)
+            .and_then(|(_, pt, _)| network.patterns.get(&pt.pattern))
+            .map(|p| p.stops.iter().map(|s| s.stop.to_string()).collect())
+            .unwrap_or_default()
+    };
+    // The stop of `trip_id` nearest (lat, lon): an equirectangular
+    // distance, which orders stops within a city exactly enough.
+    let nearest = |trip_id: &str, lat: f64, lon: f64| -> Option<StopName> {
+        let scale = lat.to_radians().cos();
+        stops_of(trip_id)
+            .into_iter()
+            .filter_map(|id| network.stops.get(id.as_str()).map(|s| (((s.lat - lat).powi(2) + ((s.lon - lon) * scale).powi(2)), id)))
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+            .map(|(_, id)| stop_name(&id))
+    };
 
     let mut late: Vec<LateTrip> = Vec::new();
     for update in &delays.trips {
@@ -244,9 +294,19 @@ pub fn late_trips(
         }
         let block_id = block_of(network, trip_id);
         let vehicle = position_of(trip_id, block_id.as_deref());
+        let trip = network.trip(trip_id).map(|(_, _, t)| t);
+        let route_id = update.route_id.clone().or_else(|| route_of(trip_id));
         late.push(LateTrip {
+            route_name: route_id.as_deref().and_then(|r| network.routes.get(r)).map(|r| r.name.clone()),
+            start_secs: trip.and_then(|t| match t.departs {
+                transit_network::Departs::At { start_secs } => Some(start_secs),
+                _ => None,
+            }),
+            first_stop: stops_of(trip_id).first().map(|s| stop_name(s)),
+            headsign: trip.and_then(|t| t.headsign.clone()),
+            near_stop: vehicle.and_then(|v| nearest(v.trip_id.as_deref().unwrap_or(trip_id), v.lat, v.lon)),
             trip_id: update.trip_id.clone(),
-            route_id: update.route_id.clone().or_else(|| route_of(trip_id)),
+            route_id,
             block_id,
             worst_delay_secs: worst,
             vehicle_id: vehicle.and_then(|v| v.vehicle_id.clone()),

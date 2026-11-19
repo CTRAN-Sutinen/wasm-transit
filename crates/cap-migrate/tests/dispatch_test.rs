@@ -1,6 +1,7 @@
 //! cap-migrate's seam laws (docs/FORMATS.md, "Versions"):
 //!
-//! * a v1 network, edit document, and watchlist each come forward to
+//! * a v1 network, edit document, watchlist, and service alerts
+//!   document each come forward to
 //!   the version this build reads, and the answer's hash is the one
 //!   the kernel registers the migrated bytes under (one identity on
 //!   every host);
@@ -54,6 +55,19 @@ fn a_bare_edit_array_comes_forward_as_the_tagged_document() {
     let answer = ok(json!({"op": "migrate", "kind": "edit_records", "document": records}));
     assert_eq!(answer["document"]["records"], records, "every record, unchanged");
     let doc: transit_sync::EditDocument = serde_json::from_str(answer["canonical"].as_str().unwrap()).unwrap();
+    assert_eq!(answer["document_hash"].as_str().unwrap(), cap_abi::canonical_hash(&doc).unwrap());
+}
+
+#[test]
+fn a_v1_service_alerts_document_comes_forward_under_the_kernels_identity() {
+    let v1 = json!({"kind": "service_alerts", "schema_version": 1, "alerts": {"a1": {
+        "status": "published", "header": [{"text": "Route 10 detour"}], "informed": [{"route": "10"}],
+        "explains": [{"kind": "edit", "id": "e1"}]}}});
+    let answer = ok(json!({"op": "migrate", "kind": "service_alerts", "document": v1}));
+    assert_eq!((answer["from"].as_u64(), answer["to"].as_u64()), (Some(1), Some(2)));
+    assert_eq!(answer["notes"], json!([]), "every v1 alert is a v2 alert");
+    assert_eq!(answer["document"]["alerts"], v1["alerts"], "every alert, unchanged");
+    let doc: transit_alerts::ServiceAlerts = serde_json::from_str(answer["canonical"].as_str().unwrap()).unwrap();
     assert_eq!(answer["document_hash"].as_str().unwrap(), cap_abi::canonical_hash(&doc).unwrap());
 }
 

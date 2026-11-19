@@ -48,6 +48,8 @@ transit-notes = { path = "../transit-notes" }
 # …and the router's examples compute REAL itineraries over the same
 # composition (materialize, patch, build, query) the module runs.
 transit-router = { path = "../transit-router", optional = true }
+# …and the disruptions' examples compute the day (D-218).
+transit-disruptions = { path = "../transit-disruptions", optional = true }
 # …and the street capability's examples compute REAL snap/route
 # answers over the e2e street fixture through the same library.
 transit-streets = { path = "../transit-streets" }
@@ -90,6 +92,7 @@ cap-plans = { path = "../cap-plans" }
 cap-requests = { path = "../cap-requests" }
 cap-alerts = { path = "../cap-alerts" }
 cap-notes = { path = "../cap-notes" }
+cap-disruptions = { path = "../cap-disruptions" }
 cap-router = { path = "../cap-router" }
 cap-rt = { path = "../cap-rt" }
 cap-runcut = { path = "../cap-runcut" }
@@ -103,7 +106,7 @@ cap-sync = { path = "../cap-sync" }
 # are optional, outside every module's closure (arch-gates, the kernel's
 # closure; docs/architecture/release-artifacts.md).
 [features]
-gen-manifest = ["dep:transit-router", "dep:transit-plans", "dep:transit-authz", "dep:transit-log"]
+gen-manifest = ["dep:transit-disruptions", "dep:transit-router", "dep:transit-plans", "dep:transit-authz", "dep:transit-log"]
 
 [[bin]]
 name = "gen-manifest"

@@ -205,6 +205,14 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"), "the internal id rides along with the label");
     assert!(trips[0].has_position, "the fixture's vehicle names t10");
     assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "located on its own trip");
+    // The names a rider uses (QAF-122): the route's name, the trip's
+    // start, first stop, and headsign, and the stop of the bus's own
+    // trip nearest its position.
+    assert_eq!(trips[0].route_name.as_deref(), Some("10"));
+    assert_eq!(trips[0].start_secs, Some(28800));
+    assert_eq!(trips[0].first_stop.as_ref().map(|s| (s.id.as_str(), s.name.as_deref())), Some(("A", Some("Main & 1st"))));
+    assert_eq!(trips[0].headsign.as_deref(), Some("Downtown"));
+    assert!(trips[0].near_stop.as_ref().is_some_and(|s| ["A", "B"].contains(&s.id.as_str())), "a stop of t10's own pattern");
 
     // The DARK case: a synthetic payload whose trip update carries a
     // delay but no vehicle names it — the dispatcher's "delayed but
@@ -467,7 +475,7 @@ fn live_carries_the_alerts_in_force() {
 fn encode_alerts_writes_a_feed_that_live_reads_back() {
     let (network_hash, boundary_hash) = load_fixture();
     let alerts = serde_json::json!({ "op": "load_service_alerts", "alerts": {
-        "kind": "service_alerts", "schema_version": 1,
+        "kind": "service_alerts", "schema_version": 2,
         "alerts": {
             "a1": { "status": "published", "effect": "detour",
                     "header": [{ "text": "Route 40 detour" }, { "lang": "es", "text": "Desvío de la ruta 40" }],
@@ -504,7 +512,7 @@ fn encode_alerts_writes_a_feed_that_live_reads_back() {
 #[test]
 fn read_alerts_reads_a_feed_into_the_document() {
     let (network_hash, _) = load_fixture();
-    let doc = serde_json::json!({ "kind": "service_alerts", "schema_version": 1, "alerts": {
+    let doc = serde_json::json!({ "kind": "service_alerts", "schema_version": 2, "alerts": {
         "a1": { "status": "published", "header": [{ "text": "Route 10 detour" }], "informed": [{ "route": "10" }] }
     }});
     let loaded: serde_json::Value = serde_json::from_str(&dispatch_json(&serde_json::json!({ "op": "load_service_alerts", "alerts": doc }).to_string())).unwrap();

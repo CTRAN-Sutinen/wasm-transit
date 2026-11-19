@@ -25,6 +25,7 @@ fn lanes(id: &str) -> (fn(&str) -> String, fn(u32, &[u8]) -> String) {
     match id {
         "alerts" => (cap_alerts::invoke, cap_alerts::invoke_bytes),
         "notes" => (cap_notes::invoke, cap_notes::invoke_bytes),
+        "disruptions" => (cap_disruptions::invoke, cap_disruptions::invoke_bytes),
         "analysis" => (cap_analysis::invoke, cap_analysis::invoke_bytes),
         "author" => (cap_author::invoke, cap_author::invoke_bytes),
         "authz" => (cap_authz::invoke, cap_authz::invoke_bytes),

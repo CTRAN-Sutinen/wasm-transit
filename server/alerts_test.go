@@ -80,12 +80,28 @@ func TestAlertsWritesAreValidatedAndLogged(t *testing.T) {
 			t.Fatalf("the %s blob: %d kind=%q", kind, code, hdr.Get("X-Document-Kind"))
 		}
 	}
+	// A writer one version behind posts v1; it lands as v2 (D-216).
+	v1 := alert("Route 10 detour, still")
+	v1["kind"], v1["schema_version"] = "service_alerts", 1
+	code, out = post("/service-alerts", "alerts", alertsHash, v1)
+	if code != 200 {
+		t.Fatalf("a v1 document comes forward at receive: %d %v", code, out)
+	}
+	_, _, v2 := httpGet(t, base+"/blobs/"+out["alerts_hash"].(string))
+	var stored struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	json.Unmarshal([]byte(v2), &stored)
+	if stored.SchemaVersion != 2 {
+		t.Fatalf("the stored document is v2: %s", v2)
+	}
+
 	code, _, entries := httpGet(t, base+"/logs/alerts")
 	var log struct {
 		Entries []json.RawMessage `json:"entries"`
 	}
 	json.Unmarshal([]byte(entries), &log)
-	if code != 200 || len(log.Entries) != 2 {
-		t.Fatalf("both writes are entries of the alerts log: %d %s", code, entries)
+	if code != 200 || len(log.Entries) != 3 {
+		t.Fatalf("every write is an entry of the alerts log: %d %s", code, entries)
 	}
 }

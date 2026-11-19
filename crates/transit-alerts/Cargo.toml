@@ -1,6 +1,6 @@
 [package]
 name = "transit-alerts"
-description = "The service alerts document and the alert templates document (D-206..D-210): the agency's alerts in model ids, what a write must pass, what a person is told about one that passes, ending an alert, the agency's list, the gap list (what is in force that no alert explains), and the template fill. Pure and stateless."
+description = "The service alerts document and the alert templates document (D-206..D-210): the agency's alerts in model ids, what a write must pass, what a person is told about one that passes, ending an alert, the agency's list, and the template fill. Pure and stateless."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,8 +9,6 @@ license.workspace = true
 transit-version = { path = "../transit-version" }
 transit-live = { path = "../transit-live" }
 transit-network = { path = "../transit-network" }
-transit-sync = { path = "../transit-sync" }
-transit-stops = { path = "../transit-stops" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ts-rs = { workspace = true }

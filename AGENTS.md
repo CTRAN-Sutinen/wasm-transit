@@ -401,9 +401,13 @@ transit-alerts   the service alerts document and the alert templates document (D
                  severity, texts in each language, periods, informed entities, and
                  the disruptions each explains). It answers what a write must pass,
                  what a person is told about one that passes, ending an alert, the
-                 agency's list, the gap list (what is in force that no alert
-                 explains), and a template's blanks filled. Pure. transit-rt writes
+                 agency's list, and a template's blanks filled. Pure. transit-rt writes
                  it as a GTFS-rt Alerts feed and reads one into it.
+transit-disruptions what is disrupted on a day, and whether an alert explains it
+                 (D-218): the edit document's diversions and cancels, the live feed's
+                 cancels, and the suspended stops, each as its document gives it,
+                 with the names a rider uses, its alerts, and its latest note; the
+                 gap list; and the day by route. Pure.
 transit-notes    the notes document (D-214): the agency's internal notes, each about a
                  trip instance, an edit record, a service alert, or a stop, with who
                  wrote it and when, and who last edited it and when. It answers what
@@ -427,7 +431,7 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  kept in the owning crate's locks/; and the kind table, how
                  each kind the store keeps is written, checked, and read,
                  web/pkg/kinds.json; D-202), gen-assemblies, and arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-alerts cap-notes cap-log
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-alerts cap-notes cap-disruptions cap-log
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)
 assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability

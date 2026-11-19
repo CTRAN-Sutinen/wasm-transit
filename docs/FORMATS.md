@@ -757,7 +757,7 @@ Every persisted kind, by what a version change does to it:
 | `work_rules` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
 | `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
-| `service_alerts` | transit-alerts | authored | `kind`, `schema_version` |
+| `service_alerts` | transit-alerts | authored | `kind`, `schema_version` (v2: `explains` names a trip instance; v1 comes forward unchanged) |
 | `alert_templates` | transit-alerts | authored | `kind`, `schema_version` |
 | `notes` | transit-notes | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | no tag (never persisted yet) |

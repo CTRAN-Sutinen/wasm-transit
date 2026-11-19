@@ -29,7 +29,7 @@ pub use overview::{
     AlertView, InformedView,
     decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
 };
-pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, TripProgress};
+pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, StopName, TripProgress};
 pub use live::live_day;
 pub use encode::{encode_alerts, read_alerts, DroppedAlert, EncodedAlerts, ReadAlerts, SkippedEntity};
 

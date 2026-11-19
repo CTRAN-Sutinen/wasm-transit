@@ -1,0 +1,18 @@
+[package]
+name = "cap-disruptions"
+description = "The disruptions capability (transit-disruptions; D-213, D-218): what is disrupted on a day, and does an alert explain it? today answers the day by route, each disruption with the names a rider uses, the alerts that explain it, and its latest note; gaps answers what no alert explains. It reads the network, the edit document, the live document, the stops, the service alerts, and the notes. The module writes nothing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+chrono = { workspace = true }
+transit-disruptions = { path = "../transit-disruptions" }
+transit-alerts = { path = "../transit-alerts" }
+transit-live = { path = "../transit-live" }
+transit-notes = { path = "../transit-notes" }
+transit-sync = { path = "../transit-sync" }
+cap-abi = { path = "../cap-abi" }

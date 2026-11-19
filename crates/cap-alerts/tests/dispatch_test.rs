@@ -3,9 +3,9 @@
 //! (transit-alerts). Here the module's contract is pinned: validate and
 //! the kernel's load agree on one identity, a refused document is
 //! refused at both with its reasons named, put begins and changes the
-//! document, end closes an alert, the list, the notices, the gap list,
-//! and the template fill answer over registered documents, and garbage
-//! is an honest error, never a panic.
+//! document, end closes an alert, the list, the notices, and the
+//! template fill answer over registered documents, the documents round
+//! trip through the log, and garbage is an honest error, never a panic.
 
 use serde_json::{json, Value};
 
@@ -25,7 +25,7 @@ fn err(request: Value) -> String {
 
 fn sample() -> Value {
     json!({
-        "kind": "service_alerts", "schema_version": 1,
+        "kind": "service_alerts", "schema_version": 2,
         "alerts": {
             "a1": { "status": "published", "effect": "detour", "header": [{ "text": "Route 10 detour" }],
                     "informed": [{ "route": "10" }], "explains": [{ "kind": "edit", "id": "r1" }] },
@@ -84,27 +84,6 @@ fn the_list_and_the_notices_answer_over_a_registered_document() {
 }
 
 #[test]
-fn the_gap_list_reads_the_edits_and_the_stops() {
-    let alerts_hash = ok(json!({ "op": "load_service_alerts", "alerts": sample() }))["alerts_hash"].clone();
-    let edits = json!({ "kind": "edit_records", "schema_version": 2, "records": [
-        { "id": "r1", "status": "accepted", "rev": 1, "updated_at": 0,
-          "cancel": { "id": "c1", "trip_id": "t10", "date": "2026-11-19" } },
-        { "id": "r2", "status": "accepted", "rev": 1, "updated_at": 0,
-          "cancel": { "id": "c2", "trip_id": "t30", "date": "2026-11-19" } }
-    ]});
-    let edits_hash = ok(json!({ "op": "load_edits", "edits": edits }))["edits_hash"].clone();
-    let stops = json!({ "kind": "stops", "schema_version": 1, "stops": {
-        "B": [{ "event": "in_service", "lat": 45.51, "lon": -73.51 }, { "on": "2026-11-01", "event": "suspended" }]
-    }});
-    let stops_hash = ok(json!({ "op": "load_stops", "stops": stops }))["stops_hash"].clone();
-    let gaps = ok(json!({ "op": "gaps", "alerts_hash": alerts_hash, "edits_hash": edits_hash, "stops_hash": stops_hash,
-        "date": "2026-11-19", "now": 2000 }));
-    let sources: Vec<Value> = gaps["gaps"].as_array().unwrap().iter().map(|g| g["source"].clone()).collect();
-    assert_eq!(sources, vec![json!({ "kind": "edit", "id": "r2" }), json!({ "kind": "stop", "stop": "B" })]);
-    assert!(err(json!({ "op": "gaps", "date": "11/19", "now": 0 })).contains("11/19"));
-}
-
-#[test]
 fn a_template_is_checked_and_filled() {
     let templates = json!({ "kind": "alert_templates", "schema_version": 1, "templates": {
         "closure": { "name": "Stop closure", "effect": "no_service", "header": [{ "text": "The stop at {stop} is closed starting {start date}" }] }
@@ -144,4 +123,22 @@ fn the_documents_round_trip_through_the_log_records() {
     let back = ok(json!({ "op": "log_document", "kind": "service_alerts", "records": records, "document": document }));
     assert_eq!(back["document_hash"], alerts_hash);
     assert!(err(json!({ "op": "log_document", "kind": "stops", "records": {} })).contains("stops"));
+}
+
+/// The alerts log keeps each record in the version it was written in. A
+/// log written at v1 assembles as the v2 document (D-216): every v1
+/// alert is a v2 alert.
+#[test]
+fn records_stored_at_version_1_assemble_as_version_2() {
+    let mut v1 = sample();
+    v1["schema_version"] = json!(1);
+    let records: Value = Value::Object(
+        v1["alerts"].as_object().unwrap().iter().map(|(id, a)| (id.clone(), json!({ "version": 1, "value": a }))).collect(),
+    );
+    let document = json!({ "version": 1, "value": { "kind": "service_alerts", "schema_version": 1, "alerts": {} } });
+    let back = ok(json!({ "op": "log_document", "kind": "service_alerts", "records": records, "document": document }));
+    let want = ok(json!({ "op": "load_service_alerts", "alerts": sample() }))["alerts_hash"].clone();
+    assert_eq!(back["document_hash"], want);
+    let newer = json!({ "a1": { "version": 3, "value": sample()["alerts"]["a1"] } });
+    assert!(err(json!({ "op": "log_document", "kind": "service_alerts", "records": newer })).contains("v3"));
 }
