@@ -235,7 +235,8 @@ only staff can reach.
    {"kind": "policy", "schema_version": 1, "rules": [
      {"name": "dispatch-edits", "roles": ["dispatcher"], "actions": ["write"], "pointers": ["edits"]},
      {"name": "planning",       "roles": ["planner"],    "actions": ["write"], "pointers": ["plans", "stops", "stop_requests"]},
-     {"name": "releases",       "roles": ["admin"],      "actions": ["write"], "pointers": ["build"]}
+     {"name": "releases",       "roles": ["admin"],      "actions": ["write"], "pointers": ["build"]},
+     {"name": "audit",          "roles": ["auditor"],    "actions": ["audit"], "pointers": ["edits"]}
    ]}
    ```
 
@@ -244,6 +245,9 @@ only staff can reach.
    `stop_requests` is the requests for work at stops, and `build` is
    the app version
    ([section 9](#9-update-or-roll-back-the-app)). Everyone can read.
+   The `audit` action on `edits` lets a role read the history of
+   detours and cancellations, with who made each change, and undo a
+   change ([section 11](#11-look-after-the-bucket)).
 3. Add the options:
 
    ```
@@ -453,7 +457,7 @@ the first list must match exactly, because `/stops` is data and
   `/plans`, `/plans/retire`, `/stops`, `/stop-requests`,
   `/stop-requests/work-order`, `/attachments`, `/builds`,
   `/permissions`, `/healthz`, `/readyz`, `/basemap.pmtiles`;
-- everything under: `/blobs/`, `/pointers/`, `/attachments/`,
+- everything under: `/blobs/`, `/pointers/`, `/logs/`, `/attachments/`,
   `/geocode/`, `/basemap-assets/`.
 
 With nginx, where `transit-server` is the server's upstream:
@@ -462,7 +466,7 @@ With nginx, where `transit-server` is the server's upstream:
 location ~ ^/(manifest|edits|feed|network|network/document|network/boundary|streets|walks|plans|plans/retire|stops|stop-requests|stop-requests/work-order|attachments|builds|permissions|healthz|readyz|basemap\.pmtiles)$ {
     proxy_pass http://transit-server;
 }
-location ~ ^/(blobs|pointers|attachments|geocode|basemap-assets)/ {
+location ~ ^/(blobs|pointers|logs|attachments|geocode|basemap-assets)/ {
     proxy_pass http://transit-server;
 }
 location / {
@@ -475,7 +479,7 @@ assets (`ASSETS`) and the server's address in `SERVER`:
 
 ```js
 const exact = new Set(["/manifest", "/edits", "/feed", "/network", "/network/document", "/network/boundary", "/streets", "/walks", "/plans", "/plans/retire", "/stops", "/stop-requests", "/stop-requests/work-order", "/attachments", "/builds", "/permissions", "/healthz", "/readyz", "/basemap.pmtiles"]);
-const under = ["/blobs/", "/pointers/", "/attachments/", "/geocode/", "/basemap-assets/"];
+const under = ["/blobs/", "/pointers/", "/logs/", "/attachments/", "/geocode/", "/basemap-assets/"];
 export default {
   fetch(request, env) {
     const url = new URL(request.url);
@@ -537,33 +541,53 @@ image.
   It only removes files more than 7 days old, so it is safe to run
   while the servers are running. Weekly is enough.
 
+- **Undo a wrong detour or cancellation.** Every change to detours and
+  cancellations is kept, in order, with who made it. To see the latest
+  changes (it needs the `audit` rule when sign-in is on):
+
+  ```
+  curl -H "Authorization: Bearer <token>" https://<your address>/logs/disruptions?since=0
+  ```
+
+  Each entry has a `seq` number, the `writer`, and the detours and
+  cancellations it changed. To undo entry 42:
+
+  ```
+  curl -X POST -H "Authorization: Bearer <token>" -d '{"seq": 42}' https://<your address>/logs/disruptions/revert
+  ```
+
+  The undo is a new entry. Entry 42 stays in the history. If someone
+  changed the same detour after entry 42, the server refuses (409) and
+  names it, so that a person decides what it should be.
+
 - **Undo a bad update's data** (the emergency procedure). Use this only
   when an update wrote data that the earlier version cannot use, and
   rolling the app back ([section 9](#9-update-or-roll-back-the-app))
   is not enough. First roll the app back. Then, for each kind of data
-  the update changed (for example `edits`), list its history:
+  the update changed (for example `plans`), list its history:
 
   ```
-  curl https://<your address>/pointers/edits/log
+  curl https://<your address>/pointers/plans/log
   ```
 
   Choose the last entry from before the update. Its `to` is the
   version to go back to. Then run:
 
   ```
-  just store revert -writer <your name> 's3://agency-transit/prod?region=us-west-2' edits sha256:…
+  just store revert -writer <your name> 's3://agency-transit/prod?region=us-west-2' plans sha256:…
   ```
 
   The tool moves the data back and lists every change made since then,
   with who made it. Those changes stay in the bucket. A person enters
-  them again by hand in the app.
+  them again by hand in the app. Detours and cancellations are not
+  undone this way: undo their entries one by one, as above.
 
 - **Backups.** Choose where copies go and how often with your
   provider's own tools: bucket versioning and replication to a second
   site, a regular copy to a second bucket that the server's credentials
   cannot change, or both. Every file in the bucket is written once and
-  never changed, so a copy is simple. Copy the `pointers/` folder
-  first, then `blobs/`. To restore, point the server at the copy and
+  never changed, so a copy is simple. Copy the `logs/` and `pointers/`
+  folders first, then `blobs/`. To restore, point the server at the copy and
   run `just store verify` on it. Restore a backup only into the same
   version of the app or a newer one. An older version refuses data
   that a newer one wrote.
@@ -583,6 +607,8 @@ image.
 | Saving a detour fails with 503 | The same: the bucket is not answering. The app keeps the change and tries again. |
 | The server will not start, with `store:` in the error | The store address or the credentials are wrong. |
 | The server will not start, with `feed:` in the error | The `-feed` address does not answer, or the file is not valid GTFS. (If the address does not answer but the bucket holds an earlier import, the server starts with that instead.) |
+| The log says `ALARM disruptions log: a gap` | A file in the bucket's `logs/disruptions/entries/` folder is missing, so detours and cancellations cannot be saved. Restore it from a backup if you can. If not, record why it is missing: `curl -X POST -H "Authorization: Bearer <token>" -d '{"seq": <the missing number>, "cause": "<why>"}' https://<your address>/logs/disruptions/close-gap`. Saving works again at once. |
+| The log says `ALARM disruptions log: entry … is quarantined` | One saved change cannot be read, so the server skips it and keeps going. Look at it in `/logs/disruptions` (it is listed under `quarantined`), and enter the change again by hand if it is needed. |
 | A new schedule does not appear | Wait two minutes, then check that the file at the `-feed` address really changed. |
 
 How the server works inside is in

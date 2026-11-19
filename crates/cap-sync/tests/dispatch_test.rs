@@ -17,7 +17,12 @@
 //!    hash, so a host stores exact bytes and never mints identity;
 //! 6. `read_edits` migrates a received document at receive (defaults
 //!    fill what age removed, malformed records are counted, never
-//!    wedging it), and `compact_edits` is the D-57 tombstone commit.
+//!    wedging it), and `compact_edits` is the D-57 tombstone commit;
+//! 7. the disruptions log (D-190): the fold of the entries is the merged
+//!    document, a write that changes nothing answers no entry, a bad
+//!    entry is quarantined and named, a revert writes back the states
+//!    before and is refused after a later change, and a gap closes
+//!    only with a cause.
 
 use cap_sync::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use transit_sync::{Diversion, EditRecord, EditStatus};
@@ -231,4 +236,156 @@ fn sync_edits_flags_the_clients_unknown_fields_and_keeps_them() {
     let records = ok["records"].as_array().unwrap();
     assert_eq!(records[0]["diversion"]["flagger_needed"], true);
     assert_eq!(records[1]["from_cad"], "CAD-7");
+}
+
+// ---------------------------------------------------------------------
+// The disruptions log (D-190): the entry, the fold, the revert, the gap
+// ---------------------------------------------------------------------
+
+use transit_sync::log::{Header, Intent, Stored};
+
+fn header(seq: u64, at_ms: u64) -> Header {
+    Header {
+        seq,
+        writer: "dispatcher@example".into(),
+        at_ms,
+        module: "cap-sync@sha256:test".into(),
+        intent: Intent { op: "POST /edits".into(), ..Default::default() },
+    }
+}
+
+/// One write through the seam as the server runs it: merge, then the
+/// entry from the head and the next document.
+fn write(head: &[EditRecord], client: Vec<EditRecord>, seq: u64, now_ms: u64) -> (Vec<EditRecord>, Option<String>) {
+    let next = synced(client, head.to_vec(), now_ms);
+    let (h, n) = (transit_sync::EditDocument::new(head.to_vec()), transit_sync::EditDocument::new(next.clone()));
+    match dispatch(Request::EntryDisruptions { head: h, next: n, header: header(seq, now_ms) }).unwrap() {
+        Response::EntryDisruptions { entry, .. } => (next, entry),
+        _ => panic!("entry_disruptions"),
+    }
+}
+
+fn fold(checkpoint: Option<serde_json::Value>, entries: Vec<Stored>) -> (u64, String, String, String, usize) {
+    match dispatch(Request::FoldDisruptions { checkpoint, entries }).unwrap() {
+        Response::FoldDisruptions { seq, document, document_hash, checkpoint, quarantined } => (seq, document, document_hash, checkpoint, quarantined.len()),
+        _ => panic!("fold_disruptions"),
+    }
+}
+
+/// Three writes, and the log they leave.
+fn three_writes() -> (Vec<EditRecord>, Vec<Stored>) {
+    let mut head = Vec::new();
+    let mut log = Vec::new();
+    let writes = vec![
+        vec![record("e1", EditStatus::Draft, 1, 10)],
+        vec![record("e2", EditStatus::Draft, 1, 20)],
+        vec![{
+            let mut r = record("e1", EditStatus::Retired, 3, 250);
+            r.status = EditStatus::Retired;
+            r
+        }],
+    ];
+    for (i, client) in writes.into_iter().enumerate() {
+        let (next, entry) = write(&head, client, log.len() as u64 + 1, 100 * (i as u64 + 1));
+        if let Some(text) = entry {
+            log.push(Stored { seq: log.len() as u64 + 1, text });
+        }
+        head = next;
+    }
+    (head, log)
+}
+
+#[test]
+fn the_fold_of_the_entries_is_the_merged_document() {
+    let (head, log) = three_writes();
+    assert_eq!(log.len(), 3);
+    let (seq, document, hash, _, quarantined) = fold(None, log.clone());
+    let whole = transit_sync::EditDocument::new(head);
+    assert_eq!((seq, quarantined), (3, 0));
+    assert_eq!(document, cap_abi::canonical_bytes(&whole).unwrap());
+    assert_eq!(hash, cap_abi::canonical_hash(&whole).unwrap());
+
+    // A fold from the checkpoint at entry 2 reaches the same document.
+    let (_, _, _, at2, _) = fold(None, log[..2].to_vec());
+    let (seq, _, again, checkpoint, _) = fold(Some(serde_json::from_str(&at2).unwrap()), log[2..].to_vec());
+    assert_eq!((seq, again), (3, hash));
+    assert!(checkpoint.contains("\"kind\":\"disruptions_checkpoint\"") && checkpoint.contains("\"seq\":3"), "{checkpoint}");
+}
+
+#[test]
+fn a_write_that_changes_nothing_answers_no_entry() {
+    let (head, _) = three_writes();
+    let (_, entry) = write(&head, head.clone(), 4, 1_000);
+    assert_eq!(entry, None, "a resend is idempotent: no entry");
+}
+
+#[test]
+fn an_entry_holds_each_changed_record_with_its_hash_before() {
+    let before = vec![record("e1", EditStatus::Submitted, 2, 10)];
+    let (_, entry) = write(&before, vec![record("e1", EditStatus::Accepted, 3, 50)], 7, 100);
+    let entry: serde_json::Value = serde_json::from_str(&entry.unwrap()).unwrap();
+    assert_eq!(entry["kind"], "disruptions_entry");
+    assert_eq!(entry["log"], "disruptions");
+    assert_eq!(entry["seq"], 7);
+    assert_eq!(entry["writer"], "dispatcher@example");
+    assert_eq!(entry["module"], "cap-sync@sha256:test");
+    assert_eq!(entry["intent"]["op"], "POST /edits");
+    let change = &entry["changes"][0];
+    assert_eq!(change["id"], "e1");
+    assert_eq!(change["before"], cap_abi::canonical_hash(&before[0]).unwrap());
+    assert_eq!(change["after"]["status"], "accepted");
+}
+
+#[test]
+fn a_bad_entry_is_quarantined_and_named() {
+    let (_, mut log) = three_writes();
+    log[1].text = "{\"kind\":\"disruptions_entry\"".into();
+    match dispatch(Request::FoldDisruptions { checkpoint: None, entries: log }).unwrap() {
+        Response::FoldDisruptions { seq, quarantined, .. } => {
+            assert_eq!(seq, 3);
+            // Entry 2 does not read, and entry 3 then still applies: it
+            // changes e1, which entry 1 wrote.
+            assert_eq!(quarantined.iter().map(|q| q.seq).collect::<Vec<_>>(), vec![2]);
+        }
+        _ => panic!("fold_disruptions"),
+    }
+}
+
+#[test]
+fn a_revert_writes_back_the_states_before_and_is_refused_after_a_later_change() {
+    let (head, log) = three_writes();
+    // Revert entry 3 (e1 retired): e1 is in force again.
+    let answer = dispatch(Request::RevertDisruptions { checkpoint: None, entries: log.clone(), target: 3, header: header(4, 5_000) }).unwrap();
+    let Response::RevertDisruptions { entry, changes } = answer else { panic!("revert_disruptions") };
+    assert_eq!(changes, 1);
+    let mut after = log.clone();
+    after.push(Stored { seq: 4, text: entry.clone() });
+    let (_, document, _, _, quarantined) = fold(None, after.clone());
+    assert_eq!(quarantined, 0);
+    let doc: serde_json::Value = serde_json::from_str(&document).unwrap();
+    assert_eq!(doc["records"][0]["id"], "e1");
+    assert_eq!(doc["records"][0]["status"], "submitted", "the state before entry 3");
+    assert_eq!(doc["records"][0]["updated_at"], 5_000, "stamped to win the merge");
+    let entry: serde_json::Value = serde_json::from_str(&entry).unwrap();
+    assert_eq!(entry["reverts"], 3);
+
+    // A page that still holds the retired copy does not undo it.
+    let reverted: Vec<EditRecord> = serde_json::from_value(doc["records"].clone()).unwrap();
+    assert_eq!(synced(head, reverted.clone(), 6_000), reverted);
+
+    // Entry 3 again: entry 4 changed e1 since, so a person decides.
+    let refused = dispatch(Request::RevertDisruptions { checkpoint: None, entries: after, target: 3, header: header(5, 7_000) }).unwrap_err();
+    assert!(refused.contains("record e1") && refused.contains("a person decides"), "{refused}");
+}
+
+#[test]
+fn a_gap_closes_with_an_entry_that_names_its_cause() {
+    let refused = dispatch(Request::CloseDisruptionsGap { header: header(9, 1) }).unwrap_err();
+    assert!(refused.contains("cause"), "{refused}");
+    let mut h = header(9, 1);
+    h.intent = Intent { op: "close_disruptions_gap".into(), note: Some("entry 9 was deleted by hand".into()), ..Default::default() };
+    let Response::CloseDisruptionsGap { entry } = dispatch(Request::CloseDisruptionsGap { header: h }).unwrap() else { panic!("close_disruptions_gap") };
+    let entry: serde_json::Value = serde_json::from_str(&entry).unwrap();
+    assert_eq!(entry["changes"], serde_json::json!([]));
+    assert_eq!(entry["intent"]["note"], "entry 9 was deleted by hand");
 }

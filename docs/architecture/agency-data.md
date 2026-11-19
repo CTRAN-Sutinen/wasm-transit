@@ -55,7 +55,7 @@ surface"). Where it holds today:
 
 | Write | Shape | Invariants | Concurrency | Attribution |
 |---|---|---|---|---|
-| `POST /edits`, and an `edit_records` pointer commit | migrated at receive (cap-migrate) | cap-sync's receive (D-56) and the LWW merge | merged per record | the log's `writer` |
+| `POST /edits`, and a commit to the `edits` pointer | migrated at receive (cap-migrate) | cap-sync's receive (D-56) and the LWW merge | merged per record; one entry of the disruptions log | the entry's `writer` |
 | `POST /plans`, `/plans/retire` | read and canonicalized by cap-network | cap-network's validation, cap-plans' chain (`422`) | the server commits by CAS | the log's `writer` |
 | `POST /stops` | read by cap-stops | cap-stops' `validate` (`422`); a survey's surveyor named for the writer (D-163) | `from` / `409` | the log's `writer` |
 | `POST /stop-requests` | read by cap-requests | cap-requests' `validate` (`422`) | `from` / `409` | the log's `writer` |

@@ -3,7 +3,9 @@ package main
 // The generic store surface (store mode, -store <url>): pointers and
 // blobs over the content-addressed store (docs/FORMATS.md,
 // docs/architecture/storage.md). /edits is the edit_records
-// specialization of POST /pointers/edits (edits.go).
+// specialization of POST /pointers/edits (edits.go). The edits pointer's
+// head and its POST are the disruptions log's (disruptions.go); its log
+// is the pointer's history before the disruptions log, read only.
 //
 //	GET  /pointers/{name}              -> {name, hash, seq, envelope} (404 when absent)
 //	GET  /pointers/{name}/log?since=H  -> {entries, since_found, current}
@@ -19,10 +21,10 @@ package main
 // boundary, the streets, the walk table — publishedBlob) with or
 // without the store.
 //
-// POST bodies: for kind edit_records, {"from", "client": <document>}
-// — the server brings an older document forward (cap-migrate) and runs
-// cap-sync's read_edits on both sides and sync_edits (receive-clamped, D-56), and stores the canonical
-// converged bytes. The published plan set and the picks' networks
+// POST bodies: for the edits pointer, {"from", "client": <document>}
+// — the server brings an older document forward (cap-migrate), runs
+// cap-sync's read_edits on both sides and sync_edits (receive-clamped,
+// D-56), and writes the change as one entry of the disruptions log. The published plan set and the picks' networks
 // (kinds plans and network_document, pointers plans and plan.<id>) are
 // refused here: they publish through POST /plans (plans.go). Other
 // kinds take {"from", "kind"? (on create),
@@ -163,44 +165,6 @@ func (s *server) mergeEdits(clientRaw, serverRaw json.RawMessage, nowMs int64) (
 	return resp.Document, resp.DocumentHash, resp.UnknownFields, nil
 }
 
-// commitEdits CAS-commits a merged edit document onto the edits
-// pointer, retrying against a moved pointer. Returns the response body
-// (the canonical document), its hash, and the fields the client's
-// records carry that this build does not know.
-func (s *server) commitEdits(clientRaw json.RawMessage, writer string) (string, string, []string, error) {
-	nowMs := time.Now().UnixMilli()
-	for attempt := 0; attempt < 5; attempt++ {
-		head, found, err := s.store.Head("edits")
-		if err != nil {
-			return "", "", nil, err
-		}
-		serverRaw := json.RawMessage(emptyEdits)
-		from := ""
-		if found {
-			from = head.Hash
-			body, _, err := s.store.GetBlob(head.Hash)
-			if err != nil {
-				return "", "", nil, err
-			}
-			serverRaw = body
-		}
-		document, hash, unknown, err := s.mergeEdits(clientRaw, serverRaw, nowMs)
-		if err != nil {
-			return "", "", nil, err
-		}
-		_, _, err = s.store.CAS("edits", from, []byte(document), s.syncEnvelope(), hash, writer, nowMs)
-		if err != nil {
-			var ce *store.ConflictError
-			if asConflict(err, &ce) && attempt < 4 {
-				continue // re-read, re-merge, retry
-			}
-			return "", "", nil, err
-		}
-		return document, hash, unknown, nil
-	}
-	return "", "", nil, fmt.Errorf("edits pointer moved on every attempt")
-}
-
 func asConflict(err error, target **store.ConflictError) bool {
 	for ; err != nil; err = errors.Unwrap(err) {
 		if ce, ok := err.(*store.ConflictError); ok {
@@ -246,6 +210,20 @@ func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
+	if name == "edits" {
+		// The edit document's head is the disruptions log's fold: its
+		// hash, the log's seq, and the document's envelope.
+		_, head, err := s.disruptionsNow()
+		if err != nil {
+			fail(w, err, http.StatusInternalServerError)
+			return
+		}
+		head.Name = name
+		labelStale(w, head)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(head)
+		return
+	}
 	head, found, err := s.store.Head(name)
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
@@ -310,6 +288,31 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	writer := writerOf(r, "anonymous")
 	nowMs := time.Now().UnixMilli()
 
+	// The edit document is written as one entry of the disruptions log
+	// (disruptions.go): one attempt on the client's last-seen hash, and
+	// the caller retries on 409 (POST /edits retries itself).
+	if name == "edits" || req.Kind == "edit_records" {
+		if name != "edits" {
+			http.Error(w, "the edit document is the edits pointer, written as the disruptions log", http.StatusBadRequest)
+			return
+		}
+		if len(req.Client) == 0 {
+			http.Error(w, "edit_records takes a client document", http.StatusBadRequest)
+			return
+		}
+		from := req.From
+		_, hash, seq, unknown, err := s.commitDisruptions(req.Client, writer, &from)
+		if err != nil {
+			editsWriteFailed(w, err)
+			return
+		}
+		flagUnknown(w, "edits", writer, unknown)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", `"`+hash+`"`)
+		json.NewEncoder(w).Encode(map[string]any{"name": name, "hash": hash, "seq": seq})
+		return
+	}
+
 	head, found, err := s.store.Head(name)
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
@@ -346,47 +349,6 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	// and the pointer moves only to a build its log holds (POST /builds).
 	if kind == store.BuildKind || kind == store.BuildFileKind || name == buildPointer {
 		http.Error(w, "builds land from -dist and move through POST /builds", http.StatusBadRequest)
-		return
-	}
-
-	if kind == "edit_records" {
-		if len(req.Client) == 0 {
-			http.Error(w, "edit_records takes a client document", http.StatusBadRequest)
-			return
-		}
-		// One CAS attempt on the client's last-seen hash; the caller
-		// retries on 409 (POST /edits retries internally).
-		serverRaw := json.RawMessage(emptyEdits)
-		from := req.From
-		if found {
-			b, _, err := s.store.GetBlob(head.Hash)
-			if err != nil {
-				fail(w, err, http.StatusInternalServerError)
-				return
-			}
-			serverRaw = b
-		}
-		document, hash, unknown, err := s.mergeEdits(req.Client, serverRaw, nowMs)
-		if err != nil {
-			fail(w, err, http.StatusBadRequest)
-			return
-		}
-		h, seq, err := s.store.CAS(name, from, []byte(document), s.syncEnvelope(), hash, writer, nowMs)
-		if err != nil {
-			var ce *store.ConflictError
-			if asConflict(err, &ce) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]any{"current": ce.Current, "seq": ce.Seq})
-				return
-			}
-			fail(w, err, http.StatusInternalServerError)
-			return
-		}
-		flagUnknown(w, "edits", writer, unknown)
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"`+h+`"`)
-		json.NewEncoder(w).Encode(map[string]any{"name": name, "hash": h, "seq": seq})
 		return
 	}
 

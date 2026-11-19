@@ -51,7 +51,7 @@ work; a group is only a way to find them.
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
-| [storage-model.md](storage-model.md) | append-only logs as the record for what people edit, starting with the edits log; a working store for drafts; freezing apart from adopting; the kind table; exports for a GIS and the lake |
+| [storage-model.md](storage-model.md) | append-only logs as the record for what people edit, starting with the disruptions log; a working store for drafts; freezing apart from adopting; the kind table; exports for a GIS and the lake |
 
 ### Stops and streets
 

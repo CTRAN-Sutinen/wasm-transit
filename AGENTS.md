@@ -367,7 +367,8 @@ transit-version  a document's kind tag and version (D-115): the tag every persis
                  (`Versioned::AHEAD`, D-186); and a record's fields this build does
                  not know, kept and named (`Extra`, D-167)
 transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), merge, and
-                 the record envelope. Pure.
+                 the record envelope; and the disruptions log, its record in a store
+                 (an entry per write, the fold, checkpoints, the revert; D-190). Pure.
 transit-plans    the service-plan chain (resolve, periods, validity; pure and derived),
                  and the published plan set (publish, the pick in force)
 transit-stops    the stops document, beside the plans. Each stop is a list of dated
@@ -404,7 +405,9 @@ cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-cal
                  and never depend on each other (docs/architecture/bus.md)
 assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability
                  alone) and module-ui-<id> (a generated UI's capabilities, linked)
-server/          the Go and wazero host. It runs cap-sync, cap-network, cap-plans, and
+server/          the Go and wazero host. It runs cap-sync (the edit document, kept as
+                 the disruptions log: logs/disruptions/ in the bucket), cap-network,
+                 cap-plans, and
                  cap-streets (the network, picks, streets, and walk table it publishes;
                  in store mode, every build it serves, kept and rolled back by pointer;
                  D-80). It also runs cap-migrate (an older document, at receive),

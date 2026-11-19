@@ -45,11 +45,10 @@ func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 	if !isCurrentEdits(body) {
 		t.Fatalf("the answer is the current version: %s", body)
 	}
-	head, _, _ := s.store.Head("edits")
-	if head.Envelope.SchemaVersion != editsVersion {
-		t.Fatalf("the head's envelope says v%d, want v%d", head.Envelope.SchemaVersion, editsVersion)
+	data, head, err := s.disruptionsNow()
+	if err != nil || head.Envelope.SchemaVersion != editsVersion {
+		t.Fatalf("the head's envelope says v%d, want v%d (%v)", head.Envelope.SchemaVersion, editsVersion, err)
 	}
-	data, _, _ := s.store.GetBlob(head.Hash)
 	if !isCurrentEdits(string(data)) || !strings.Contains(string(data), `"id":"e1"`) {
 		t.Fatalf("the head is the migrated document, its record kept: %s", data)
 	}
@@ -72,10 +71,13 @@ func TestANewerEditDocumentIsRefusedNamingBoth(t *testing.T) {
 	}
 }
 
-func TestAnOlderStoreHeadCommitsForwardAtStartup(t *testing.T) {
+// A store an older build wrote, with the edit document as the edits
+// pointer in an older version: at startup the disruptions log gets its
+// first entry from that head (brought forward through cap-migrate),
+// written by migrate:edits and naming the head's hash. The pointer and
+// its blob stay as they were.
+func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 	bucket := store.NewMemory()
-	// A store an older build wrote: the edits head is a bare array
-	// under an envelope that says v1.
 	old := []byte(editRecords("e1", "accepted", 3, 1000))
 	st := store.New(bucket)
 	oldHash, _, err := st.CAS("edits", "", old, store.Envelope{Kind: "edit_records", SchemaVersion: 1, ProducedBy: "cap-sync@sha256:old"}, "", "anonymous", time.Now().UnixMilli())
@@ -84,36 +86,51 @@ func TestAnOlderStoreHeadCommitsForwardAtStartup(t *testing.T) {
 	}
 	st.Close()
 
-	s := newStoreServer(t, bucket)
-	s.commitForward()
-
+	s := newStoreServer(t, bucket) // seeds the log
+	entries, err := s.store.Entries(disruptionsLog, 0, 0)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("one entry: %d %v", len(entries), err)
+	}
+	var e struct {
+		Kind   string `json:"kind"`
+		Log    string `json:"log"`
+		Seq    int64  `json:"seq"`
+		Writer string `json:"writer"`
+		Intent struct {
+			Op       string `json:"op"`
+			ArgsHash string `json:"args_hash"`
+		} `json:"intent"`
+		Changes []struct {
+			ID    string          `json:"id"`
+			After json.RawMessage `json:"after"`
+		} `json:"changes"`
+	}
+	if err := json.Unmarshal([]byte(entries[0].Text), &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.Kind != "disruptions_entry" || e.Log != "disruptions" || e.Seq != 1 || e.Writer != "migrate:edits" || e.Intent.Op != "migrate" || e.Intent.ArgsHash != oldHash {
+		t.Fatalf("entry 1: %+v", e)
+	}
+	if len(e.Changes) != 1 || e.Changes[0].ID != "e1" {
+		t.Fatalf("entry 1 copies the head's records: %+v", e.Changes)
+	}
 	head, _, _ := s.store.Head("edits")
-	if head.Hash == oldHash || head.Envelope.SchemaVersion != editsVersion {
-		t.Fatalf("the head moved to the current version: %+v", head)
-	}
-	data, _, _ := s.store.GetBlob(head.Hash)
-	var doc struct {
-		Kind          string            `json:"kind"`
-		SchemaVersion int               `json:"schema_version"`
-		Records       []json.RawMessage `json:"records"`
-	}
-	if err := json.Unmarshal(data, &doc); err != nil || doc.Kind != "edit_records" || doc.SchemaVersion != editsVersion || len(doc.Records) != 1 {
-		t.Fatalf("the migrated head: %v %s", err, data)
-	}
-	entries, _, _ := s.store.Log("edits", "")
-	last := entries[len(entries)-1]
-	m, _ := s.migrator()
-	if last.From != oldHash || last.Writer != "migrate:"+m.Hash() {
-		t.Fatalf("an ordinary logged CAS from the old head, by the migration module: %+v", last)
+	if head.Hash != oldHash || head.Seq != 1 {
+		t.Fatalf("the edits pointer stays read only: %+v", head)
 	}
 	if kept, _, err := s.store.GetBlob(oldHash); err != nil || string(kept) != string(old) {
 		t.Fatalf("the older blob stays readable under its hash: %v", err)
 	}
+	ts := httptest.NewServer(storeMux(s))
+	defer ts.Close()
+	if code, _, body := httpGet(t, ts.URL+"/edits"); code != 200 || !strings.Contains(body, `"schema_version":2`) || !strings.Contains(body, `"id":"e1"`) {
+		t.Fatalf("GET /edits serves the fold in the current version: %d %s", code, body)
+	}
 
-	// Already current: a second start commits nothing.
-	s.commitForward()
-	if after, _, _ := s.store.Log("edits", ""); len(after) != len(entries) {
-		t.Fatalf("a current head is not committed again: %d entries, want %d", len(after), len(entries))
+	// A second start writes nothing.
+	newStoreServer(t, bucket)
+	if again, _ := s.store.Entries(disruptionsLog, 0, 0); len(again) != 1 {
+		t.Fatalf("a seeded log is not seeded again: %d entries", len(again))
 	}
 }
 

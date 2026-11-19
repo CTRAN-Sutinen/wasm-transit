@@ -51,6 +51,8 @@ Every key below is relative to that prefix:
 |---|---|---|
 | `blobs/<hex>` | one immutable blob, its envelope as metadata | serving processes (create only) |
 | `pointers/<name>/<seq>.json` | one commit record | serving processes (create only) |
+| `logs/<log>/entries/<seq>.json` | one entry of an append-only log | serving processes (create only) |
+| `logs/<log>/checkpoints/<seq>.json` | a log's fold up to an entry | serving processes (create only) |
 | `inputs/<key>` | an input servers boot from (`-feed bucket:<key>`, D-118) | the operator |
 | `gc/<hex>` | a blob a `store gc` pass is collecting, until it settles | `store gc` |
 
@@ -137,7 +139,8 @@ Each commit is one record object,
   `_` and `-`, starts with a letter or digit, and has at most 128
   bytes. The store refuses any other name.
 - The server keeps these pointers:
-  - `edits`.
+  - `edits`, read only. It is the edit document's history before the
+    disruptions log ("The logs", below). No server writes it.
   - `policy`.
   - `manifest`.
   - `plans` (the published plan set).
@@ -205,7 +208,88 @@ non-zero on the first break. A break is one of these:
 - a gap;
 - a record that does not chain;
 - a named blob that is missing, does not hash to its name, or carries
-  no envelope.
+  no envelope;
+- under `logs/`: a key that is no entry or checkpoint, a gap in a log's
+  entries, or an entry or checkpoint whose `kind`, `log`, or `seq`
+  differs from its key, or a checkpoint past the log's last entry.
+
+`store verify` runs no module, so it does not fold a log. A server
+checks its newest checkpoint against the fold from the checkpoint before
+it when it boots ("The logs").
+
+## The logs
+
+A log is the record of one consistency domain (D-190). Each entry is one
+transaction. The current document is the fold of the entries, which the
+module that owns the log's kinds computes. A mistake is fixed by a new
+entry, so the truth before the mistake stays in the record.
+
+The store has one log today, `disruptions`: the edit document (detours
+and trip cancels). cap-sync owns its entries and checkpoints.
+
+An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
+a `disruptions_entry` document:
+
+```json
+{"at_ms":1770000060000,"changes":[{"after":{"diversion":{…},"id":"e1","rev":2,"status":"accepted","updated_at":1770000060000},"before":"sha256:bb76…","id":"e1","kind":"edit_record"}],"intent":{"op":"POST /edits"},"kind":"disruptions_entry","log":"disruptions","module":"cap-sync@sha256:…","schema_version":1,"seq":2,"writer":"dispatcher-7"}
+```
+
+- `seq` is the entry's place, from 1. It is the same as its key.
+- `writer` is the verified sign-in subject, or the tool: `gc` for the
+  tombstone compaction, `migrate:edits` for the first entry of a store
+  that had the `edits` pointer, `migrate:-edits` for one seeded from the
+  dev store's file.
+- `module` is the module build that answered the entry.
+- `intent` is what asked for the write: `op` (the endpoint or the op),
+  `args_hash` (the hash of the request's body, or of the pointer head a
+  migration copied), and `note` (the cause that a gap's entry names).
+- `changes` holds each record that the entry changed, in id order:
+  `kind` (`edit_record`), `id`, `before` (the canonical hash of the
+  record before the entry; absent for a new record), and `after` (the
+  record's new state, whole; absent when the entry drops the record from
+  the fold, as the compaction does).
+- `reverts` is the `seq` of the entry this one reverts.
+
+A checkpoint is `logs/<log>/checkpoints/<seq>.json`, a
+`disruptions_checkpoint` document: `{"kind", "schema_version", "log",
+"seq", "document"}`, where `document` is the edit document after entry
+`seq`. Checkpoints are create only. Two folds of the same entries give
+the same bytes, so a checkpoint that exists with other bytes is an
+error.
+
+The rules:
+
+1. Every write passes the receive path into one entry. A write that
+   changes nothing writes no entry. So a resend is idempotent.
+2. A write creates entry `head + 1` only if that key is absent: the same
+   conditional create as a pointer record. A lost race reads the log
+   again, runs the receive path again, and retries.
+3. A fold never stops on one entry. An entry that is not JSON, names
+   another `seq` than its key, or whose `before` hashes do not match the
+   fold is quarantined. The server logs an alarm and names it in `GET
+   /logs/disruptions`. The fold goes on.
+4. A missing entry below the head is a gap. A gap stops writes to the
+   log, and the server serves the fold up to the entry before it. An
+   entry with no changes, whose `intent.note` names the cause, closes
+   the gap (`POST /logs/disruptions/close-gap`).
+5. A revert is a new entry. It writes back each record's state before
+   entry N, with the next `rev` and the server's clock, so it wins the
+   merge over a copy that a page still holds. A record that entry N
+   created is retired. The revert is refused when a later entry changed
+   one of those records, because a person decides.
+6. After a create, the engine reads the entry back and compares the
+   bytes. A store that ignored the create's condition is caught at once.
+
+A server folds from its newest checkpoint and stores the next one after
+256 more entries. At boot it checks the newest checkpoint against the
+fold of the entries from the checkpoint before it (or from the empty
+document). A checkpoint that differs raises an alarm, and the boot
+starts from the one before it.
+
+A store that has the `edits` pointer and no log gets entry 1 at startup:
+the pointer's head, brought forward through cap-migrate, with writer
+`migrate:edits` and `intent.args_hash` naming the head's hash. The
+pointer stays as it is.
 
 ## The HTTP surface (store mode, `-store <url>`)
 
@@ -222,11 +306,14 @@ non-zero on the first break. A break is one of these:
   (`current`, the head's hash).
 - `POST /pointers/{name}` takes the body `{"from": "<hash>", …}`. It
   answers `200` with the new head, or `409` with
-  `{"current": "<hash>"}`. For `edit_records` the body is
+  `{"current": "<hash>"}`. For `edits` the body is
   `{"from", "client": <document>}`. The server runs cap-sync's
-  `sync_edits` (receive-clamped, D-56) and stores the canonical
-  converged bytes. Other kinds take `{"from", "document": <value>}`
-  verbatim.
+  `sync_edits` (receive-clamped, D-56) and writes the change as one
+  entry of the disruptions log. `from` is compared with the fold's
+  hash, and `seq` in the answer is the log's. `GET /pointers/edits`
+  answers the fold the same way. `GET /pointers/edits/log` answers the
+  pointer's own records, from before the log. Other kinds take
+  `{"from", "document": <value>}` verbatim.
 - `GET /blobs/{hash}` answers the raw bytes. The ETag is the full
   `sha256:…` hash (304 on match). `X-Document-Kind` and
   `X-Schema-Version` carry the envelope. With
@@ -302,9 +389,23 @@ non-zero on the first break. A break is one of these:
   land only from the server's `-dist` and move only here.
   `POST /pointers/build` (and any `build` or `build_file` kind) answers
   `400`.
-- `/edits` is the `edit_records` specialization. `GET` reads the head
-  blob. `POST` runs the merge with a CAS retry loop. So the legacy
-  whole-document protocol is unchanged.
+- `/edits` is the edit document over the disruptions log. `GET` serves
+  the fold, with its hash as the ETag. `POST` runs the merge and writes
+  one entry, retrying a lost race. So a page's whole-document protocol
+  is unchanged. A gap answers `503`.
+- `GET /logs/disruptions?since=<seq>&limit=<n>` answers `{"log", "head",
+  "gaps", "checkpoint", "document", "entries", "quarantined"}`. Each
+  item of `entries` is `{"seq", "entry"}`, or `{"seq", "unreadable"}`
+  with the bytes of an entry that is not JSON. `document` is the fold's
+  hash. `quarantined` lists `{"seq", "reason"}`.
+- `POST /logs/disruptions/revert` takes `{"seq": N}`. It answers `200
+  {log, seq, reverts, changes}`, `404` past the head, or `409` with the
+  record that a later entry changed.
+- `POST /logs/disruptions/close-gap` takes `{"seq": N, "cause"}`. It
+  answers `200 {log, seq}`, or `409` when entry N is no gap.
+- When sign-in is on, every `/logs/` call needs the `audit` rule on the
+  `edits` pointer. An entry carries its writer inside its bytes, so the
+  server cannot redact it.
 - **While the bucket does not answer** (D-119), a server serves the
   heads and blobs that it holds. Blobs are immutable, so a cached blob
   is always correct. The server labels every read whose head the bucket
@@ -369,8 +470,9 @@ order for each of its files.
   both.
 - `status: "retired"` is the only tombstone. The record stays in the
   document and is no longer in force. Deletions propagate through sync.
-  Compaction (D-57) drops retired records older than the horizon as an
-  ordinary logged commit.
+  Compaction (D-57) drops retired records older than the horizon from
+  the fold, as one entry of the disruptions log (writer `gc`). The
+  entries before it keep every record.
 - Nothing compressed is ever the durable format. Compression is
   transport only.
 
@@ -395,6 +497,8 @@ Every persisted kind, by what a version change does to it:
 | Kind | Owner | Class | Inside it today |
 |---|---|---|---|
 | `edit_records` | transit-sync | authored | `kind`, `schema_version` |
+| `disruptions_entry` (one entry of the disruptions log) | transit-sync | authored | `kind`, `schema_version` |
+| `disruptions_checkpoint` (the disruptions log's fold up to an entry) | transit-sync | derived | `kind`, `schema_version` |
 | `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
 | `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |
@@ -465,7 +569,8 @@ and the old bytes stay. It runs where a document arrives:
 - The server's startup. Only the documents in use come forward, each
   as an ordinary logged CAS with the writer `migrate:<module hash>`.
   The older blobs stay under their hashes.
-  - An older `edits` head is committed forward.
+  - A store's `edits` pointer comes forward once, into the disruptions
+    log's first entry ("The logs"). The pointer itself is not written.
   - The networks of the picks in use come forward. cap-plans `in_use`
     names these picks: the pick in force, and every pick still to
     come. Each migrated network is published again under its own date,
@@ -616,7 +721,8 @@ that it does not know, and keeps it when the page rewrites its URL.
 
 ## Worked examples
 
-An `edit_records` blob is the canonical edit document: its kind and
+The edit document (the fold of the disruptions log, and an
+`edit_records` blob of the `edits` pointer) is canonical: its kind and
 version, then its records:
 
 ```json
@@ -631,9 +737,9 @@ day:
 {"id":"e2","cancel":{"id":"cancel-t10","trip_id":"t10","start_secs":null,"date":"2026-10-23"},"status":"draft","rev":1,"updated_at":2000}
 ```
 
-The envelope is
+A blob of the `edits` pointer has the envelope
 `{"kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>"}`.
-After a second commit, the log record is
+After a second commit, its pointer record is
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself

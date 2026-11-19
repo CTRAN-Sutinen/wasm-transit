@@ -392,6 +392,12 @@ The sync document: `EditRecord`, `FeedManifest`, `EditReport`, and the edit docu
 - `set_retired`: the tombstone and restore.
 - `read_document`: a received document in the version this build reads, with its records under the current schema. It drops and counts the unparseable records and any record without exactly one payload.
 
+**The disruptions log** (`log`, D-190) is the record of the edit document in a store.
+- An `Entry` (kind `disruptions_entry`) is one write: its place (`seq`), the writer, the time, the module build, the intent, and each changed record's hash before and its new state. A `Checkpoint` (kind `disruptions_checkpoint`) is the fold up to an entry.
+- `changes` answers the entry's changes from one document to the next. `apply` applies them all or none, checking each `before`. `fold` folds entries after a checkpoint and quarantines an entry that does not read or apply.
+- `revert` answers the changes that write back the states before an entry, stamped with the next rev and the host's clock so they win the merge. A record the entry created is retired. It refuses a record that a later entry changed.
+- The record hash is the caller's (cap-sync passes the canonical hash), so the crate stays pure.
+
 ## transit-plans
 
 The service-plan chain, and the published plan set. cap-plans is the seam. This crate is cross-document logic, the counterpart of transit-sync's cross-record merge.
@@ -564,6 +570,7 @@ The sync capability: the converged state of an edit document, with its lifecycle
 - `sync_edits` does the LWW merge and the submit transition. The receive path clamps client clocks to the host's (D-56). The answer carries the canonical document bytes and their hash. This is the op behind POST /edits.
 - `read_edits` is the receive. It reads the current version only. An older version is cap-migrate's. It does a typed parse, defaults fill what age removed, and it drops and counts malformed records.
 - `compact_edits` is the D-57 tombstone-retention commit.
+- `entry_disruptions`, `fold_disruptions`, `revert_disruptions`, and `close_disruptions_gap` are the disruptions log: the entry for one write (none when nothing changed), the fold and its checkpoint, the entry that reverts an entry, and the empty entry that closes a gap. The server stores the entries ([storage.md](storage.md)).
 
 Validation is not here. What a record amounts to on a network is cap-divert's reports: one question, one answer.
 

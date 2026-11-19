@@ -135,3 +135,42 @@ func (readOnly) Create(context.Context, string, []byte, map[string]string) error
 	return errors.New("read only")
 }
 func (readOnly) Delete(context.Context, string) error { return errors.New("read only") }
+
+// A healthy log: three entries and a checkpoint at 2. Each break names
+// its object.
+func TestVerifyChecksEachLog(t *testing.T) {
+	eachBackend(t, func(t *testing.T, b Backend) {
+		ctx := context.Background()
+		s := New(b)
+		for seq := int64(1); seq <= 3; seq++ {
+			if err := s.AppendEntry("disruptions", seq, entry(seq, "w")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.PutCheckpoint("disruptions", 2, []byte(`{"kind":"disruptions_checkpoint","log":"disruptions","seq":2}`)); err != nil {
+			t.Fatal(err)
+		}
+		r, err := Verify(ctx, b)
+		if err != nil || r.Logs != 1 || r.Entries != 3 || r.Checkpoints != 1 {
+			t.Fatalf("a healthy log: %+v %v", r, err)
+		}
+
+		var ve *VerifyError
+		b.Create(ctx, checkpointKey("disruptions", 7), []byte(`{"kind":"disruptions_checkpoint","log":"disruptions","seq":7}`), nil)
+		if _, err := Verify(ctx, b); !errors.As(err, &ve) || !strings.Contains(ve.Reason, "past the log's last entry") {
+			t.Fatalf("a checkpoint past the head: %v", err)
+		}
+		b.Delete(ctx, checkpointKey("disruptions", 7))
+
+		b.Create(ctx, entryKey("disruptions", 4), []byte(`{"kind":"disruptions_entry","log":"disruptions","seq":5}`), nil)
+		if _, err := Verify(ctx, b); !errors.As(err, &ve) || ve.Key != entryKey("disruptions", 4) || !strings.Contains(ve.Reason, "seq 5") {
+			t.Fatalf("an entry that names another seq: %v", err)
+		}
+		b.Delete(ctx, entryKey("disruptions", 4))
+
+		b.Delete(ctx, entryKey("disruptions", 2))
+		if _, err := Verify(ctx, b); !errors.As(err, &ve) || !strings.Contains(ve.Reason, "a gap") {
+			t.Fatalf("a gap: %v", err)
+		}
+	})
+}

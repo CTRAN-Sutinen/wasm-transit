@@ -100,13 +100,13 @@ func TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites(t *testing
 	if _, hdr, _ := httpGet(t, base+"/edits"); hdr.Get("X-Store-Stale") != "" {
 		t.Fatalf("back up, reads are unlabelled: %v", hdr)
 	}
-	log, _, _ := s.store.Log("edits", "")
-	for _, e := range log {
-		if e.AtMs == 0 {
-			t.Fatalf("a record without its time: %+v", e)
+	entries, _ := s.store.Entries(disruptionsLog, 0, 0)
+	for _, e := range entries {
+		if !strings.Contains(e.Text, `"at_ms":`) || strings.Contains(e.Text, `"at_ms":0,`) {
+			t.Fatalf("an entry without its time: %s", e.Text)
 		}
 	}
-	if len(log) != 3 { // seed, e1, e2 — the refused write left nothing
-		t.Fatalf("the refused write was never committed: %d records", len(log))
+	if len(entries) != 2 { // e1, e2 — the refused write left nothing
+		t.Fatalf("the refused write was never committed: %d entries", len(entries))
 	}
 }

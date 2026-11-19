@@ -20,6 +20,7 @@
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
+pub mod log;
 pub mod version;
 pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
 

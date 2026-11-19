@@ -93,9 +93,16 @@ running C-TRAN's feed through caps-run.
 their own computer. It runs nowhere until it is published; once
 published it never changes in place.
 
+**Disruptions log.** How the server stores the **edit document**: a
+list of entries, one for each save that changed something. Each entry
+says which detours and cancellations changed, who changed them, and
+when. Undoing a change adds a new entry. See
+[storage.md](../architecture/storage.md).
+
 **Edit document.** The shared list of detours and trip cancellations
 that staff have entered. Each entry is a **record**. Only a
-deployment with a server has one.
+deployment with a server has one. The server keeps it as the
+**disruptions log**.
 
 **Engine.** The one part of the browser code that sends requests to
 modules. Every other part of an app asks the engine. See
@@ -193,7 +200,7 @@ display polls every 20 seconds, for example. A page that is not
 visible does not poll.
 
 **Pointer.** A name in the server's store that points to the current
-version of a document, such as the manifest or the edit document.
+version of a document, such as the manifest or the published plans.
 Moving a pointer is how the store publishes a change. Every move is
 logged.
 

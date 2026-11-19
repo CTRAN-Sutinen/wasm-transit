@@ -2733,35 +2733,21 @@ Options:
 Blocks: nothing.
 
 ### D-121 — Does the store keep the edit document whole per commit, or record by record?
-State: Decided by D-190; not built.
+State: Decided by D-190.
 Answer: 2026-11-18 — record by record. Each commit is an entry in the
-edits log that holds only the records it changed (D-190).
-Context: a commit to `edits` stores the whole document as one blob
-(`docs/FORMATS.md`), so the bucket grows by the document's size on
-every commit — quadratically while the document grows (D-120).
-Measured 2026-11-06 (1.5 KB a record, ~3 commits per edit), over ten
-years at 10 edits a day: 2.9 TB keeping every record, 190 GB with
-D-120's expiry, ~10 GB stored record by record. At 30 edits a day:
-26.5 TB, 1.7 TB, ~86 GB. Whole snapshots make "what was in force at
-14:02" one GET; record by record makes it a GET of the commit's list
-and the records it names.
-Options:
-- Whole document per commit (today): simplest reader; storage grows
-  with document size times commits.
-- Each record its own content-addressed blob, the document a list of
-  record hashes (git's tree): a commit writes the changed records and
-  the list; the module stays the hash authority for both; a new
-  `docs/FORMATS.md` layout and a `store verify` rule.
-With D-122, detours and cancels are the only row-shaped data this
-repo holds, so the answer also settles whether it needs a row store at
-all: record by record in the bucket keeps it to one durable service.
-D-190 answers it with neither option as written: an append-only log,
-where each entry holds the changed records' new states.
-Blocks: nothing (`docs/units/storage-model.md`, "The edits log",
-carries the work).
+log of the edit document (the disruptions log) that holds only the
+records it changed (D-190).
+Pinned by: `transit_sync::log` laws (`fold_equals_whole_document_commits`,
+`a_resend_gives_no_changes`); `server/store_mode_test.go`
+(`TestStoreEditsSurviveRestart`, `TestStoreDeltaSyncAndRevalidation`).
+The bytes at C-TRAN's rate are measured by the dogfood in
+`docs/units/storage-model.md`.
+Why: `docs/architecture/storage.md`, Why, "What people edit is an
+append-only log".
+Blocks: nothing.
 
 ### D-190 — How does the agency's record store the data people edit?
-State: Decided; not built.
+State: Decided; the disruptions log is encoded (open: `docs/units/storage-model.md`, item 1).
 Answer: 2026-11-18 — a mixed model, chosen by lifecycle stage, with
 an append-only log as the record for what people edit. The user: "i
 think realistically a mixed data model makes the most sense. i don't
@@ -2771,7 +2757,9 @@ characteristics ... that we want to prioritize. should we need to be
 able to delete data (Personal data) or have higher throughput needs,
 we can adapt at that point." On one log for each consistency domain:
 "looks good". On the order: "starting small is my preference".
-Encoded as:
+2026-11-18, on the first log's name (proposed: `disruptions`, the word
+the disruptions UI already uses, in place of `edits`): "disruptions
+sounds good, go ahead". Encoded as:
 - The lifecycle stage decides the store. Drafts, attachments, and
   caches are in a working store that allows deletes. What the agency
   froze or adopted, and the logs, are in the record, which is create
@@ -2779,57 +2767,92 @@ Encoded as:
 - The kind decides the shape inside a log: one whole document as one
   record (the work rules, the policy), or many small records (stops,
   requests, detours).
-- One log for each consistency domain: `edits`, `stops` (with stop
-  requests and work order status), `plans`, and `policy` (restricted).
-  An entry is one transaction. It holds each changed record's hash
-  before and its new state, the writer, the intent, and the module
-  build. The current state is a fold. A mistake is fixed by a new
-  entry.
+- One log for each consistency domain: `disruptions` (detours and trip
+  cancels), `stops` (with stop requests and work order status),
+  `plans`, and `policy` (restricted). An entry is one transaction. It
+  holds each changed record's hash before and its new state, the
+  writer, the intent, and the module build. The current state is a
+  fold. A mistake is fixed by a new entry.
 - No database now. Two needs reopen it: data that must be deletable,
   or throughput that a log cannot carry (CAS retries, the fold's time
   at boot, and memory show it first). A database added then is fed
   from the logs.
-- The work starts with the edits log alone.
-Context: the user's criteria, 2026-11-18: low write volume; cheap to
-run and to store; simple to back up and recover; open formats;
-offline capable. Operational simplicity means a system that breaks
-rarely, whose failures are bounded and easy to fix, that is easy to
-change and roll back, easy to integrate with, and above all easy to
-monitor and troubleshoot. It does not mean few parts. Today every kind
-is one document per commit, so a collection's storage grows with its
-size times its commits (D-121), and two writers of different records
-conflict.
+- The work starts with the disruptions log alone.
+Pinned by: `crates/transit-sync/src/log.rs` (the laws of the log);
+`crates/cap-sync/tests/dispatch_test.rs` (law 7);
+`server/store/log_test.go` and `verify_test.go`;
+`server/store_mode_test.go` (`TestStoreRevertIsANewEntry`,
+`TestStoreQuarantineAndGap`, `TestStoreBootsFromACheckpoint`);
+`server/version_test.go` (`TestAnOlderEditsPointerSeedsTheDisruptionsLog`).
+Why: `docs/architecture/storage.md`, Why, "What people edit is an
+append-only log".
+Blocks: nothing.
+
+### D-192 — Are the edit document's existing names renamed to "disruptions"?
+State: Unanswered.
+Context: the log is named `disruptions` (D-190). The older surfaces
+keep the old names: the `edit_records` kind and `EditRecord`, `/edits`
+and the `edits` pointer, cap-sync's `*_edits` ops, the `edits` pointer
+that the policy names, and the `transit-sync` crate. So one concept has
+two names. A rename touches locked schemas (a new kind tag, so a
+migration step), the pages, the policy files agencies hold, the HTTP
+contract (expand, then contract, D-81), and the docs.
 Options:
-- (A) Whole document per commit, as today: simple to read, and wrong
-  for collections that grow.
-- (B) Append-only logs with checkpoints, in object storage (chosen).
-  A mistake adds a wrong entry beside the truth, so recovery is
-  another entry and loses nobody's later writes. There is no schema
-  migration that destroys data. Every write can be read and replayed
-  (`caps-run replay`), and a log is one timeline. The bucket gives
-  durability, atomic whole-object writes, conditional create, and
-  strong consistency. The engine adds only order and folding. Costs:
-  the fold and the checkpoints are this repo's code; an ad-hoc
-  question needs an export; entries keep their versions forever, so
-  the migration chain must stay complete; and data in the record
-  cannot be forgotten.
-- (C) SQLite with Litestream: transactions, SQL, and GeoPackage for a
-  GIS. One writer process, a disk on the server, and a replica whose
-  failure is silent.
-- (D) Postgres: the most familiar tooling, writes from many processes.
-  An overwrite or a destructive migration destroys the truth before
-  it, and point-in-time restore loses later writes. Integration is
-  hard or easy because of the data model, not the engine.
-- (E) A hash tree of records for each collection (the storage model's
-  earlier plan): a snapshot for every commit, and the most code of
-  this repo's own.
-- An existing log format as the record (Delta Lake): rejected. Its
-  failure modes are harder to read than the commit protocol this repo
-  already proves, and its writer is not in Go. An export to the lake
-  may write it.
-Pinned by: none yet (`docs/units/storage-model.md`, Done when).
-Why: moves to `docs/architecture/storage.md`, Why, when the edits log
-is built.
+- Rename them all, in its own change, through the version and contract
+  rules (recommended: one name for each concept).
+- Rename the code names only (types, crate, ops), and keep the wire
+  names (`edit_records`, `/edits`, the policy's `edits`).
+- Keep the old names, and document `disruptions` as the log's name only.
+Blocks: nothing.
+
+### D-193 — What does a revert write back?
+State: Encoded provisionally.
+Context: the edit document merges last writer wins per record. A
+revert that wrote a record's old state with its old `rev` and
+`updated_at` would lose the merge to any page that still holds the
+newer copy, so the next sync would undo the revert.
+Options:
+- (encoded) Each record goes back to its state before the entry, with
+  the next `rev` and the server's clock, so it wins the merge. A record
+  the entry created is retired (retirement is the tombstone; there are
+  no hard deletes).
+- The old state with its old stamps: exact, and undone by the next sync
+  of a stale page.
+Pinned by: `transit_sync::log::tests::a_revert_writes_back_the_states_before`;
+`server/store_mode_test.go` (`TestStoreRevertIsANewEntry`).
+Blocks: nothing.
+
+### D-194 — Who may read a log's entries?
+State: Encoded provisionally.
+Context: an entry names its writer inside its bytes. The pointer log
+redacts the writer for a caller without the audit rule (D-164), but the
+server cannot redact an entry without changing the bytes the module
+answered.
+Options:
+- (encoded) Every `/logs/` call, a read too, needs the `audit` rule on
+  the log's pointer (`edits`). `/edits` stays public.
+- A reader with read on `edits` gets the entries with the writer removed
+  (the server rewrites module bytes).
+- The entries are public.
+Pinned by: `server/authz_test.go` (`TestAuthzLogWriterRedaction`).
+Blocks: nothing.
+
+### D-195 — How does the server keep and check a log's checkpoints?
+State: Encoded provisionally.
+Context: a checkpoint lets a server boot without folding every entry.
+`store verify` runs no module, so it cannot fold.
+Options:
+- (encoded) A server stores a checkpoint every 256 entries past the
+  newest. At boot it checks the newest checkpoint against the fold from
+  the one before it (or from the empty document), and starts from an
+  older one when it differs, with an alarm. While the log has a gap,
+  the server serves the fold up to the entry before the gap.
+  `store verify` checks the logs' structure only (open in
+  `docs/units/storage-model.md`).
+- Checkpoints on a schedule (daily), or none until a measured boot
+  needs them.
+Pinned by: `server/store_mode_test.go` (`TestStoreBootsFromACheckpoint`,
+`TestStoreQuarantineAndGap`).
 Blocks: nothing.
 
 ### D-122 — Is the dispatcher's day in scope?

@@ -223,9 +223,39 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 		t.Fatalf("the chain in date order: %v", chain)
 	}
 
-	edits := r.head(t, "edits")
-	editData, editEnv := r.blob(t, edits.To)
-	validateBytes(t, schemaFor(t, idx, editEnv.Kind, editEnv.SchemaVersion), "the edit document", editData)
+	// The edit document is the disruptions log: each entry says its kind
+	// and version inside it, and validates against that schema.
+	entries, err := bucket.List(context.Background(), "logs/disruptions/entries/", "")
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("the disruptions log: %d entries, %v", len(entries), err)
+	}
+	for _, o := range entries {
+		raw, _, err := bucket.Get(context.Background(), o.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var tag struct {
+			Kind          string `json:"kind"`
+			SchemaVersion uint32 `json:"schema_version"`
+		}
+		if err := json.Unmarshal(raw, &tag); err != nil || tag.Kind != "disruptions_entry" {
+			t.Fatalf("%s: %s %v", o.Key, raw, err)
+		}
+		validateBytes(t, schemaForKind(t, idx, tag.Kind, tag.SchemaVersion), o.Key, raw)
+	}
+}
+
+// schemaForKind is the published schema of a document by the kind and
+// version it says inside it.
+func schemaForKind(t *testing.T, idx documentIndex, kind string, version uint32) *jsonschema.Schema {
+	t.Helper()
+	for _, d := range idx.Documents {
+		if d.Kind == kind && d.SchemaVersion == version {
+			return compileSchema(t, d.Schema)
+		}
+	}
+	t.Fatalf("the registry has no schema for kind %q v%d", kind, version)
+	return nil
 }
 
 // servedSchemasDir is the /schemas/ every page build carries, written
@@ -352,18 +382,12 @@ func TestAStoredBlobLinksItsSchema(t *testing.T) {
 	dist := t.TempDir()
 	writeDist(t, dist, releaseA)
 	withSchemas(t, dist)
-	_, base := newBuildServer(t, store.NewMemory(), dist)
-	if code, _, body := httpPost(t, base+"/edits", editDoc("e1", "draft", 1, 100)); code != 200 {
-		t.Fatalf("edits: %d %s", code, body)
+	s, base := newBuildServer(t, store.NewMemory(), dist)
+	// A stored blob: the edit document in its stored kind.
+	hash, err := s.store.PutBlob([]byte(editDoc("e1", "submitted", 2, 100)), s.syncEnvelope(), "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, _, body := httpGet(t, base+"/pointers/edits/log")
-	var log struct {
-		Entries []store.LogEntry `json:"entries"`
-	}
-	if err := json.Unmarshal([]byte(body), &log); err != nil || len(log.Entries) == 0 {
-		t.Fatalf("the edits log: %s (%v)", body, err)
-	}
-	hash := log.Entries[len(log.Entries)-1].To
 	get := func(path string) []byte {
 		code, _, body := httpGet(t, base+"/"+path)
 		if code != 200 {

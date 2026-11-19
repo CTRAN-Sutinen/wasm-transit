@@ -7,8 +7,8 @@ The current state is a fold of the entries. A mistake is fixed by a
 new entry, so the truth before the mistake stays in the record. Where
 data lives follows its lifecycle stage: drafts in a working store,
 what the agency froze or adopted in the record, and event data in the
-agency's lake. The work starts with the edits log alone. Each later
-step starts only after the step before it runs on real data.
+agency's lake. Each step starts only after the step before it runs on
+real data.
 
 ## The design
 
@@ -16,7 +16,7 @@ step starts only after the step before it runs on real data.
 
 | Log | Kinds | Why together |
 |---|---|---|
-| `edits` | Detours (diversions), trip cancels | Dispatch's day: its own writers, rhythm, and retention |
+| `disruptions` | Detours (diversions), trip cancels | Dispatch's day: its own writers, rhythm, and retention |
 | `stops` | Stops, stop requests, work order status | Closing a request and adding the stop's event is one transaction |
 | `plans` | Frozen versions, the plan set, work rules | Freezing and adopting. It names the other logs by `(log, seq)` and never changes them in the same commit. |
 | `policy` | The policy | Restricted to read |
@@ -25,70 +25,28 @@ A new kind joins a log only if it must change atomically with that
 log's kinds. Otherwise it gets a log of its own. Logs name each other
 by `(log, seq)`. The logs are immutable, so those names never break.
 
-**An entry.** `logs/<log>/entries/<seq>.json`, with `seq` zero-padded
-to 20 digits. A commit is a create-if-absent on `seq+1`, as the pointer
-log is today. An entry holds:
-
-- the log's name and the entry's `seq`;
-- the writer (the verified sign-in subject, as today), and the time;
-- the module and its build that answered the entry;
-- the intent: the op or endpoint, and its arguments or a hash of them;
-- for each record it changed: the kind, the id, the hash before, and
-  the new state, inline;
-- the entry it reverts or supersedes, if any.
-
-The entry is a document kind of its own. Its type is in Rust, its
-schema is locked, and the module that owns the log's kinds answers
-the entry. The host adds the sequence, the writer, and the time, and
-commits it.
-
-**The current state.** A checkpoint is the fold of a log up to a
-`seq`: the log's document as it is today (for edits, the
-`edit_records` document), with a header that names the log and the
-`seq`. Checkpoints are written at
-`logs/<log>/checkpoints/<seq>.json`. A server boots from the newest
-checkpoint and folds the entries after it. Any past state is the same
-fold, stopped at an earlier `seq`.
-
-**The rules.**
-
-1. Every write passes the receive path into one entry. A write that
-   changes nothing writes no entry.
-2. A lost race re-reads the head, runs the receive path again, and
-   retries.
-3. A fold never crashes on one entry. It quarantines an entry it
-   cannot apply, raises an alarm, and continues.
-4. A gap in the sequence stops writes to that log. A no-op entry that
-   names the cause closes the gap.
-5. A revert is a new entry that writes back the states before entry
-   N. If a later entry changed one of those records, the revert is
-   refused and names the record, because a person decides it.
-6. After a create, the engine reads the entry back and compares the
-   bytes. A store that ignored the condition is caught at once.
+The entry, the checkpoint, the commit, and the six rules are the
+disruptions log's (`docs/FORMATS.md`, "The logs";
+`docs/architecture/storage.md`). Each later log has an entry kind and a
+checkpoint kind of its own, answered by the module that owns its kinds,
+with the same header and rules.
 
 ## Scope, in order
 
-1. **The edits log.** The first step, and the only one that starts
-   now.
-   - The entry kind: its Rust type, schema, and lock. cap-sync answers
-     the entry from the head and an incoming document: the records the
-     LWW merge changed, with their hashes before. The merge itself
-     does not change.
-   - The server writes `POST /edits` and the `edit_records` pointer
-     commit as entries. `GET /edits` serves the fold. A page's
-     protocol does not change: it still sends a whole document, and the
-     merge is still idempotent, so a resend writes no entry.
-   - `GET /logs/edits?since=<seq>` answers the entries after a `seq`.
-     `POST /logs/edits/revert` reverts one entry, for a caller with
-     the `audit` grant. The HTTP contract expands and nothing is
-     removed (D-81).
-   - The first entry on an existing store copies the current `edits`
-     head, with writer `migrate:edits`, and names that head's hash.
-     The old `edits` pointer stays, read-only.
-   - Checkpoints, the boot from the newest checkpoint, quarantine, and
-     the gap rule.
-   - `store verify` checks each log: no gaps, each entry readable, and
-     each checkpoint equal to a fold from the checkpoint before it.
+1. **The disruptions log on real stores and real data.**
+   - Run its store laws (`server/store/log_test.go`, `verify_test.go`)
+     with `just store-contract` against SeaweedFS, Azurite, and
+     fake-gcs-server.
+   - Make `store verify` fold every checkpoint and compare it with the
+     stored one. Today it checks each log's structure with no module,
+     and a server checks only the newest checkpoint at boot. The store
+     tool needs the wasm host, which is in package `main`
+     (`server/wasm.go`), in a package it can import.
+   - Run the disruptions page's e2e over a store-mode server.
+   - Dogfood it on the C-TRAN store: a server restarted on the log
+     serves the same edit document, and a month of edits at the
+     agency's rate is measured in stored bytes, replacing D-121's
+     estimates in `docs/units/store-durability.md`.
    - D-120 (whether the live state drops records whose dates have
      passed) applies to the fold only. The entries keep every record
      either way.
@@ -147,32 +105,19 @@ fold, stopped at an earlier `seq`.
 
 ## Done when
 
-For the edits log (scope 1):
+For the disruptions log (scope 1):
 
-- Laws in transit-sync and cap-sync: the fold of the entries equals the
-  document that whole-document commits give for the same writes; a
-  merge that changes nothing answers no entry; a revert writes back
-  the states before, and is refused when a later entry changed the
-  same record.
-- Store laws, run by `just test` and by `just store-contract` against
-  SeaweedFS, Azurite, and fake-gcs-server: entries chain from 1 with no
-  gap under racing writers; a lost race retries and lands; a checkpoint
-  equals the fold; a gap stops writes; an unreadable entry is
-  quarantined and the fold continues; the read-back catches an
-  overwritten entry.
-- A Go round trip: `POST /edits`, then `GET /edits`, `GET
-  /logs/edits?since=`, and a revert, with the existing edits tests
-  passing unchanged.
-- An existing store gets its first entry from the `edits` head, and
-  `store verify` passes on it.
-- `just e2e`: the disruptions page issues and reads detours unchanged.
+- `just store-contract` runs the log's store laws
+  (`server/store/log_test.go`, `verify_test.go`) against SeaweedFS,
+  Azurite, and fake-gcs-server, and they pass.
+- `store verify` folds every checkpoint and compares it with the stored
+  one.
+- `just e2e`: the disruptions page issues and reads detours over a
+  store-mode server, unchanged.
 - A dogfood session on the C-TRAN store: a server restarted on the log
   serves the same edit document. The stored bytes for a month of edits
   at the agency's rate are measured, and replace D-121's estimates in
   `docs/units/store-durability.md`.
-- `docs/FORMATS.md`, `docs/architecture/storage.md`,
-  `docs/architecture/server.md`, and `DEPLOYMENTS-SERVER.md` (bucket
-  versioning, and the revert step) describe the edits log.
 
 Each later step gets its own Done when as it starts. The file is
 deleted when the last step lands.

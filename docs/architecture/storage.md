@@ -1,8 +1,8 @@
 # Storage — the agency's record
 
 The agency's record is one bucket in object storage. The bucket holds
-immutable, content-addressed objects and the pointer logs that name
-them. Every other copy of a document is a working copy or a copy of
+immutable, content-addressed objects, the pointer logs that name them,
+and the append-only logs of what people edit. Every other copy of a document is a working copy or a copy of
 the record. Examples are a page's IndexedDB, the bus worker's
 registries, a server's head and blob caches, an export, and a backup.
 Who owns that data and the contract a write meets are in
@@ -41,6 +41,16 @@ against one store's address (an operator's own bucket).
   that key is absent. That create is the CAS on the `from` hash. Last,
   it re-reads its blob. Every record names its writer and time, so the
   log is the audit trail.
+- **Logs** are the record of what people edit, one log for each
+  consistency domain (D-190). Each entry is one transaction,
+  `logs/<log>/entries/<seq>.json`, and holds each record it changed:
+  the hash before and the new state. The current document is the fold
+  of the entries, which the owning module computes. A checkpoint,
+  `logs/<log>/checkpoints/<seq>.json`, is the fold up to an entry. A
+  commit is the same conditional create as a pointer record. The engine
+  then reads the entry back and compares the bytes. The store has one
+  log, `disruptions` (detours and trip cancels). Its rules are in
+  `docs/FORMATS.md`, "The logs".
 - **Many processes, one bucket.** Several server processes may share
   one bucket. Each caches heads. Each reads at most 2 s behind another
   process's commit. The model (`store.tla`, `just spec`) checks processes
@@ -54,7 +64,8 @@ against one store's address (an operator's own bucket).
   bucket, then verifies it.
 
 The `manifest` pointer is the root. Publishing is one CAS on it. The
-`edits` pointer is the multi-writer LWW document. The `plans` pointer
+disruptions log is the multi-writer LWW edit document. The `edits`
+pointer is its history from before the log, read only. The `plans` pointer
 is the published plan set. Each pick's network is its own `plan.<id>`
 pointer (D-74). Every pointer the server keeps is listed in
 `docs/FORMATS.md`, "The pointer log".
@@ -62,21 +73,25 @@ pointer (D-74). Every pointer the server keeps is listed in
 ## What the record holds, by shape
 
 The agency's data is not one shape. Each shape needs its own layout.
-Every kind is stored today as a **document**: one blob per version,
-and the pointer names the whole.
+A kind is stored as a **document** (one blob per version, and a
+pointer names the whole) or as a **log** (one entry per transaction,
+and the document is the fold).
 
 | Shape | Kinds | Writes | Growth | Layout today |
 |---|---|---|---|---|
 | Artifacts: large, published whole | network, streets, walk table, the GTFS feed and street layer read at boot, builds | rare: a publish, an import, a release | per revision | document |
 | Config: small, whole | policy, the published plan set, manifest | rare | none | document |
-| Collections: records by id, many writers | edits, stops, stop requests | frequent, one record at a time | without bound | document |
+| Collections: records by id, many writers | the edit document (detours, trip cancels) | frequent, one record at a time | without bound | log (`disruptions`) |
+| Collections: records by id, many writers | stops, stop requests | frequent, one record at a time | without bound | document |
 | Attachments: binary | photos and site drawings (D-162) | per record | steady | not stored yet |
 | Event tables: many rows, append only | none yet (heartbeats keep only the latest; TIDES, AVL and APC are not held) | n/a | n/a | n/a |
 
 A document suits artifacts and config. It does not suit a collection.
 Each commit stores the whole collection again. So the bucket grows with
 the collection's size times its commits (D-121's measurements). Two
-writers who change different records conflict.
+writers who change different records conflict. A log stores only what
+each write changed. The stops and the stop requests are still
+documents.
 
 ## Every object explains itself
 
@@ -103,7 +118,9 @@ by kind:
 
 - **Edits** (`POST /edits`, `POST /pointers/edits`) merge record by
   record, with cap-sync's LWW merge per record id. Two writers who
-  change different records never conflict.
+  change different records never conflict. Each write that changes a
+  record is one entry of the disruptions log. A mistake is fixed by a
+  revert, which is a new entry (`POST /logs/disruptions/revert`).
 - **Stops and stop requests** (`POST /stops`, `POST /stop-requests`)
   replace the whole document under `from`. A write that names a head
   that has moved is refused with `409`. That happens even when the two
@@ -116,8 +133,9 @@ by kind:
 
 Permissions are set per pointer and action by the policy (D-58..D-61).
 A role may write a pointer or not. There is no finer grain. No kind is
-restricted on read, except the policy itself. The policy's blob is
-never served.
+restricted on read, except the policy itself and the logs' entries.
+The policy's blob is never served. The entries name their writers, so
+they need the `audit` rule.
 
 ## Reads
 
@@ -130,6 +148,10 @@ never served.
   (D-119; [server.md](server.md)).
 - A pointer's log (`/pointers/<name>/log?since=`) is the change feed.
   It lists the commits after a hash the reader holds.
+- A log's entries (`/logs/disruptions?since=<seq>`) are the change
+  feed of what people edit. Each entry says what changed, who changed
+  it, and which module answered it. The fold that `/edits` serves can be
+  stale like a head.
 - Reads are of whole documents. The derived documents a reader asks for
   by name (`/network/document`, `/network/boundary`, `/streets`,
   `/walks`, `/feed`) are computed by the server's modules from the
@@ -138,12 +160,12 @@ never served.
 
 ## Where it is going
 
-The storage model's direction is decided (D-190, D-191) and not yet
-built. The plan is
+The storage model's direction is decided (D-190, D-191). The
+disruptions log is the first log. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
-- append-only logs, one for each consistency domain, as the record for
-  what people edit, starting with the edits log.
+- the logs for the other consistency domains: the stops (with the stop
+  requests), the plans, and the policy.
 - a working store for drafts, attachments, and caches, apart from the
   record.
 - freezing a version into the record, apart from adopting it.
@@ -188,7 +210,8 @@ reading **Because**.
   transactions a database offers are not what is scarce. History,
   availability of reads, and independence from one vendor are.
 - **Costs:** each shape needs a layout designed for it, not one taken from
-  a database. Collections do not have one yet (`docs/units/storage-model.md`).
+  a database. The edit document has one (the disruptions log). The stops
+  and the stop requests do not yet (`docs/units/storage-model.md`).
   Queries over the record are projections someone builds, not SQL against
   the record. A workload that needs transactions across records under
   contention needs an engine in front of the bucket.
@@ -196,3 +219,38 @@ reading **Because**.
   durable service to run, back up, and migrate. Its at-rest format is the
   vendor's.
 - **Decided:** D-113, D-115, D-152.
+
+### What people edit is an append-only log (`server/store/log.go`, `server/disruptions.go`, `transit_sync::log`)
+- **Holds:** each write that changes a record is one entry, with each
+  changed record's hash before and its new state, the writer, the intent,
+  and the module build. The current document is the module's fold of the
+  entries. A mistake is fixed by a new entry (a revert), never by an
+  overwrite. Logs name each other by `(log, seq)`, and a kind joins a log
+  only if it must change atomically with that log's kinds. The fold
+  quarantines an entry it cannot apply and goes on. A gap stops writes
+  until an entry names its cause.
+- **Because:** the agency asked for a store that breaks rarely, whose
+  failures are bounded and easy to find and fix, that is cheap to run and
+  back up, open in format, and works offline. A wrong entry sits beside
+  the truth, so recovery is one more entry and loses nobody's later
+  writes. No schema migration destroys data. Every write can be read and
+  replayed, and a log is one timeline. The bucket already gives
+  durability, whole-object writes, conditional create, and strong
+  consistency. The engine adds only order and folding. The storage of a
+  collection grows with what changed, not with its size times its
+  commits (D-121).
+- **Costs:** the fold and the checkpoints are this repo's code. An ad-hoc
+  question needs an export. Entries keep their versions forever, so the
+  migration chain must stay complete. Data in the record cannot be
+  forgotten.
+- **Rejected:** the whole document per commit (it grows with the
+  collection's size times its commits); SQLite with Litestream (one
+  writer process, a disk on the server, and a replica whose failure is
+  silent); Postgres (an overwrite or a destructive migration destroys
+  the truth before it, and a point-in-time restore loses later writes);
+  a hash tree of records per collection (the most code of this repo's
+  own); Delta Lake as the record (its failures are harder to read, and
+  its writer is not in Go). Two needs reopen a database: data that must
+  be deletable, or throughput that a log cannot carry. A database added
+  then is fed from the logs.
+- **Decided:** D-190, D-121.

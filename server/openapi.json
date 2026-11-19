@@ -822,6 +822,352 @@
         }
       }
     },
+    "/logs/disruptions": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getDisruptionsLog",
+        "summary": "Get the disruptions log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the edit document (D-190), as the bucket holds it: a disruptions_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the edits pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisruptionsLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the edits pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/disruptions/revert": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "revertDisruptionsEntry",
+        "summary": "Revert one entry of the disruptions log, as a new entry.",
+        "description": "Store mode only. cap-sync answers the entry that writes back each record's state before entry `seq`, stamped to win the merge; a record the entry created is retired. When sign-in is on, it needs the audit rule on the edits pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The entry to revert."
+                  }
+                },
+                "required": [
+                  "seq"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the edits pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, or the log has no entry `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "cap-sync refuses the revert: a later entry changed one of its records, and the answer names it. A person decides.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/disruptions/close-gap": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "closeDisruptionsGap",
+        "summary": "Close a gap in the disruptions log with an entry that names the cause.",
+        "description": "Store mode only. A missing entry below the head stops writes to the log. This writes an entry with no changes at the missing seq, with the cause as its note. When sign-in is on, it needs the audit rule on the edits pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The missing entry."
+                  },
+                  "cause": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why the entry is missing."
+                  }
+                },
+                "required": [
+                  "seq",
+                  "cause"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry that closes the gap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N, \"cause\": \"…\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the edits pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The log has no gap at `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plans": {
       "x-mux": "/plans",
       "post": {
@@ -3415,6 +3761,109 @@
           "feed_hash",
           "wasm_hash",
           "generated_at"
+        ]
+      },
+      "DisruptionsLog": {
+        "type": "object",
+        "description": "The disruptions log's entries after a seq, and its state.",
+        "properties": {
+          "log": {
+            "type": "string",
+            "const": "disruptions"
+          },
+          "head": {
+            "type": "integer",
+            "description": "The highest entry."
+          },
+          "gaps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            },
+            "description": "The missing entries below the head. Writes stop while there is one."
+          },
+          "checkpoint": {
+            "type": "integer",
+            "description": "The newest checkpoint's seq (0: none)."
+          },
+          "document": {
+            "type": "string",
+            "description": "The hash of the fold this server serves at GET /edits."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "entry": {
+                  "type": "object",
+                  "description": "The entry, a disruptions_entry document."
+                },
+                "unreadable": {
+                  "type": "string",
+                  "description": "The entry's bytes, when they are not JSON."
+                }
+              },
+              "required": [
+                "seq"
+              ]
+            }
+          },
+          "quarantined": {
+            "type": "array",
+            "description": "The entries the fold did not apply, in seq order, each with the reason.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "seq",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "log",
+          "head",
+          "checkpoint",
+          "document",
+          "entries",
+          "quarantined"
+        ]
+      },
+      "LogWrite": {
+        "type": "object",
+        "description": "An entry written to a log.",
+        "properties": {
+          "log": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "reverts": {
+            "type": "integer"
+          },
+          "changes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "log",
+          "seq"
         ]
       }
     },

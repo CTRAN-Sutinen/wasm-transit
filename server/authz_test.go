@@ -153,6 +153,7 @@ func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
+	mux.HandleFunc("/logs/", s.protectLog(s.handleLogs))
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	base := httptest.NewServer(mux).URL
 	return s, base
@@ -253,11 +254,14 @@ func TestAuthzWriterIsTheVerifiedSubject(t *testing.T) {
 	if code, _ := bearerPost(t, base+"/edits", tok, editDoc("e1", "draft", 1, 100)); code != 200 {
 		t.Fatalf("post: %d", code)
 	}
-	entries, found, err := s.store.Log("edits", "")
-	if err != nil || !found {
-		t.Fatalf("log: %v %v", found, err)
+	entries, err := s.store.Entries(disruptionsLog, 0, 0)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("log: %d %v", len(entries), err)
 	}
-	last := entries[len(entries)-1]
+	var last struct {
+		Writer string `json:"writer"`
+	}
+	json.Unmarshal([]byte(entries[len(entries)-1].Text), &last)
 	if last.Writer != "dispatcher-7" {
 		t.Fatalf("log writer = %q, want the verified sub", last.Writer)
 	}
@@ -401,8 +405,11 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 		t.Fatalf("policy blob as admin: want 404, got %d", resp2.StatusCode)
 	}
 
-	// A normal blob (the edits document) still serves fine, publicly.
-	editsHash := mustHead(t, s, "edits")
+	// A normal blob (an edit document) still serves fine, publicly.
+	editsHash, err := s.store.PutBlob([]byte(editDoc("e1", "draft", 1, 100)), s.syncEnvelope(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	resp3, err := http.Get(base + "/blobs/" + editsHash)
 	if err != nil {
 		t.Fatal(err)
@@ -416,7 +423,9 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 
 // The pointer log carries writer identities, so it is authenticated:
 // no token → 401; a read rule without an audit rule → 200 with writers
-// redacted; an audit rule → full writers.
+// redacted; an audit rule → full writers. The disruptions log's entries
+// carry their writers inside their bytes, so /logs/disruptions needs
+// the audit rule: a reader without it gets 403.
 func TestAuthzLogWriterRedaction(t *testing.T) {
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})
@@ -444,9 +453,24 @@ func TestAuthzLogWriterRedaction(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 
-	// One write as the dispatcher, so the log has a writer to leak.
+	// One write as the dispatcher, so the logs have a writer to leak:
+	// the disruptions log through POST /edits, and the edits pointer's
+	// history as an older build wrote it.
 	if code, _ := bearerPost(t, base+"/edits", mk("dispatcher-7", []string{"dispatcher"}), editDoc("e1", "draft", 1, 100)); code != 200 {
 		t.Fatalf("post: %d", code)
+	}
+	if _, _, err := s.store.CAS("edits", "", []byte(editDoc("e1", "draft", 1, 100)), s.syncEnvelope(), "", "dispatcher-7", 1); err != nil {
+		t.Fatal(err)
+	}
+	entriesURL := base + "/logs/disruptions"
+	if code, _ := bearerGet(entriesURL, ""); code != 401 {
+		t.Fatalf("entries anonymous: want 401, got %d", code)
+	}
+	if code, _ := bearerGet(entriesURL, mk("dispatcher-7", []string{"dispatcher"})); code != 403 {
+		t.Fatalf("entries for a reader without audit: want 403, got %d", code)
+	}
+	if code, body := bearerGet(entriesURL, mk("aud-1", []string{"auditor"})); code != 200 || !strings.Contains(body, "dispatcher-7") {
+		t.Fatalf("auditor must see the entries' writers, got %d %s", code, body)
 	}
 	logURL := base + "/pointers/edits/log"
 

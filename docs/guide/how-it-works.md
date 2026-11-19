@@ -230,9 +230,12 @@ for each record, the latest change wins, and "latest" is judged by
 the server's clock. A retired record stays in the document, marked
 retired, so the history is complete.
 
-The server keeps each version of the edit document in its store, and
-logs every save. When sign-in is turned on, the log names the person
-or system that made each save. The rider apps fetch the
+The server keeps the edit document as a **disruptions log**: each save
+that changes something adds one entry, with the detours and
+cancellations it changed. The current document is what all the
+entries add up to. When sign-in is turned on, each entry names the
+person or system that made it. A wrong change is undone by a new
+entry, so nothing in the history is lost. The rider apps fetch the
 current edit document when they poll, and the board applies its
 detours and cancellations to the day.
 

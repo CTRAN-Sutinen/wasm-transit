@@ -9,6 +9,7 @@ package main
 // sync over the log, and the D-56 clock clamp through the receive path.
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -37,6 +38,7 @@ func storeMux(s *server) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/edits", s.handleEdits)
 	mux.HandleFunc("/pointers/", s.handlePointers)
+	mux.HandleFunc("/logs/", s.handleLogs)
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	return mux
@@ -113,23 +115,61 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 		t.Fatal("etag must move on a new commit")
 	}
 
-	// The pointer log is the audit: two commits, chained.
-	code, _, logBody := httpGet(t, base2+"/pointers/edits/log")
-	if code != 200 {
-		t.Fatalf("log: %d %s", code, logBody)
+	// The disruptions log is the audit: two entries, the second naming
+	// the record's hash before it, each by the module that answered it.
+	log := logEntries(t, base2, 0)
+	if log.Head != 2 || len(log.Entries) != 2 || log.Entries[0].Seq != 1 || log.Entries[1].Seq != 2 {
+		t.Fatalf("the log: %+v", log)
 	}
-	var logResp struct {
-		Entries []store.LogEntry `json:"entries"`
+	second := log.Entries[1].Entry
+	if second.Kind != "disruptions_entry" || !strings.HasPrefix(second.Module, "cap-sync@sha256:") || second.Intent.Op != "POST /edits" ||
+		len(second.Changes) != 1 || second.Changes[0].ID != "e1" || !strings.HasPrefix(second.Changes[0].Before, "sha256:") {
+		t.Fatalf("entry 2: %+v", second)
 	}
-	if err := json.Unmarshal([]byte(logBody), &logResp); err != nil {
-		t.Fatalf("log json: %v", err)
+}
+
+// loggedEntry is the part of a disruptions log entry the tests read.
+type loggedEntry struct {
+	Kind    string `json:"kind"`
+	Seq     int64  `json:"seq"`
+	Writer  string `json:"writer"`
+	Module  string `json:"module"`
+	Reverts int64  `json:"reverts"`
+	Intent  struct {
+		Op   string `json:"op"`
+		Note string `json:"note"`
+	} `json:"intent"`
+	Changes []struct {
+		ID     string          `json:"id"`
+		Before string          `json:"before"`
+		After  json.RawMessage `json:"after"`
+	} `json:"changes"`
+}
+
+type logAnswer struct {
+	Head        int64   `json:"head"`
+	Gaps        []int64 `json:"gaps"`
+	Checkpoint  int64   `json:"checkpoint"`
+	Document    string  `json:"document"`
+	Quarantined []struct {
+		Seq    int64  `json:"seq"`
+		Reason string `json:"reason"`
+	} `json:"quarantined"`
+	Entries []struct {
+		Seq        int64       `json:"seq"`
+		Entry      loggedEntry `json:"entry"`
+		Unreadable string      `json:"unreadable"`
+	} `json:"entries"`
+}
+
+func logEntries(t *testing.T, base string, since int64) logAnswer {
+	t.Helper()
+	code, _, body := httpGet(t, base+"/logs/disruptions?since="+strconv.FormatInt(since, 10))
+	var a logAnswer
+	if code != 200 || json.Unmarshal([]byte(body), &a) != nil {
+		t.Fatalf("GET /logs/disruptions?since=%d: %d %s", since, code, body)
 	}
-	if len(logResp.Entries) != 3 || logResp.Entries[0].From != "" || logResp.Entries[1].From != logResp.Entries[0].To {
-		t.Fatalf("log not append-only+chained: %+v", logResp.Entries)
-	}
-	if logResp.Entries[0].Kind != "edit_records" || !strings.HasPrefix(logResp.Entries[0].ProducedBy, "cap-sync@sha256:") {
-		t.Fatalf("envelope in the log: %+v", logResp.Entries[0])
-	}
+	return a
 }
 
 // CAS conflict over HTTP: a POST /pointers/edits with a stale from
@@ -187,11 +227,10 @@ func TestStoreCASConflictAndRedelivery(t *testing.T) {
 	}
 }
 
-// Delta sync over the log: a client holding `since` gets only the later
-// entries; an unknown since answers whole=true (fall back to the whole
-// current document). Blobs serve with the hash as ETag and the envelope
-// in headers.
-func TestStoreDeltaSyncAndBlobs(t *testing.T) {
+// Delta sync over the disruptions log: a reader holding entry N gets
+// only the later entries. GET /edits serves the fold with its hash as
+// the ETag, and revalidates for 304.
+func TestStoreDeltaSyncAndRevalidation(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
 
@@ -199,46 +238,27 @@ func TestStoreDeltaSyncAndBlobs(t *testing.T) {
 	httpPost(t, base+"/edits", editDoc("e2", "draft", 1, 100))
 	httpPost(t, base+"/edits", editDoc("e3", "draft", 1, 100))
 
-	_, _, logBody := httpGet(t, base+"/pointers/edits/log")
-	var full struct {
-		Entries []store.LogEntry `json:"entries"`
-		Current string           `json:"current"`
+	full := logEntries(t, base, 0)
+	if full.Head != 3 || len(full.Entries) != 3 {
+		t.Fatalf("entries: %+v", full)
 	}
-	json.Unmarshal([]byte(logBody), &full)
-	if len(full.Entries) != 4 {
-		t.Fatalf("entries: %d", len(full.Entries))
-	}
-
-	_, _, deltaBody := httpGet(t, base+"/pointers/edits/log?since="+full.Entries[0].To)
-	var delta struct {
-		Entries    []store.LogEntry `json:"entries"`
-		SinceFound bool             `json:"since_found"`
-	}
-	json.Unmarshal([]byte(deltaBody), &delta)
-	if !delta.SinceFound || len(delta.Entries) != 3 || delta.Entries[0].To != full.Entries[1].To {
+	delta := logEntries(t, base, 1)
+	if len(delta.Entries) != 2 || delta.Entries[0].Seq != 2 || delta.Entries[0].Entry.Changes[0].ID != "e2" {
 		t.Fatalf("delta: %+v", delta)
 	}
-
-	_, _, wholeBody := httpGet(t, base+"/pointers/edits/log?since=sha256:"+strings.Repeat("00", 32))
-	var whole struct {
-		Whole bool `json:"whole"`
+	if none := logEntries(t, base, 3); len(none.Entries) != 0 {
+		t.Fatalf("nothing after the head: %+v", none)
 	}
-	json.Unmarshal([]byte(wholeBody), &whole)
-	if !whole.Whole {
-		t.Fatalf("unknown since must answer whole=true: %s", wholeBody)
+	if code, _, _ := httpGet(t, base+"/logs/disruptions?since=x"); code != 400 {
+		t.Fatalf("a since that is no seq: %d", code)
 	}
 
-	// The head blob serves raw with ETag + envelope headers, and 304s.
-	hash := full.Current
-	code, hdr, blob := httpGet(t, base+"/blobs/"+hash)
-	if code != 200 || hdr.Get("ETag") != `"`+hash+`"` || hdr.Get("X-Document-Kind") != "edit_records" {
-		t.Fatalf("blob: %d %v %s", code, hdr, blob)
+	code, hdr, body := httpGet(t, base+"/edits")
+	if code != 200 || hdr.Get("ETag") != `"`+full.Document+`"` || !strings.Contains(body, `"id":"e3"`) {
+		t.Fatalf("the fold: %d %v %s", code, hdr, body)
 	}
-	if !strings.Contains(blob, `"id":"e3"`) {
-		t.Fatalf("blob body: %s", blob)
-	}
-	req, _ := http.NewRequest("GET", base+"/blobs/"+hash, nil)
-	req.Header.Set("If-None-Match", `"`+hash+`"`)
+	req, _ := http.NewRequest("GET", base+"/edits", nil)
+	req.Header.Set("If-None-Match", hdr.Get("ETag"))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -246,6 +266,110 @@ func TestStoreDeltaSyncAndBlobs(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotModified {
 		t.Fatalf("etag revalidation: %d", resp.StatusCode)
+	}
+}
+
+// A revert over HTTP: entry 2 retired e1; its revert puts e1 back in
+// force as a new entry, a page that resends the retired copy does not
+// undo it, and a second revert of entry 2 is refused (409) naming the
+// record, because entry 3 changed it since.
+func TestStoreRevertIsANewEntry(t *testing.T) {
+	s := newStoreServer(t, store.NewMemory())
+	base := httptest.NewServer(storeMux(s)).URL
+
+	httpPost(t, base+"/edits", editDoc("e1", "accepted", 1, 100))
+	retired := editDoc("e1", "retired", 2, time.Now().UnixMilli())
+	if code, _, body := httpPost(t, base+"/edits", retired); code != 200 || !strings.Contains(body, `"retired"`) {
+		t.Fatalf("retire: %d %s", code, body)
+	}
+	code, _, body := httpPost(t, base+"/logs/disruptions/revert", `{"seq":2}`)
+	if code != 200 || !strings.Contains(body, `"seq":3`) || !strings.Contains(body, `"reverts":2`) {
+		t.Fatalf("revert: %d %s", code, body)
+	}
+	_, _, doc := httpGet(t, base+"/edits")
+	if !strings.Contains(doc, `"status":"accepted"`) {
+		t.Fatalf("e1 is in force again: %s", doc)
+	}
+	if third := logEntries(t, base, 2).Entries[0].Entry; third.Reverts != 2 || third.Intent.Op != "POST /logs/disruptions/revert" {
+		t.Fatalf("entry 3: %+v", third)
+	}
+	if _, _, again := httpPost(t, base+"/edits", retired); !strings.Contains(again, `"status":"accepted"`) {
+		t.Fatalf("a page's stale retired copy undid the revert: %s", again)
+	}
+	if code, _, body := httpPost(t, base+"/logs/disruptions/revert", `{"seq":2}`); code != http.StatusConflict || !strings.Contains(body, "record e1") {
+		t.Fatalf("a second revert: %d %s", code, body)
+	}
+	if code, _, _ := httpPost(t, base+"/logs/disruptions/revert", `{"seq":9}`); code != http.StatusNotFound {
+		t.Fatalf("a revert past the head: %d", code)
+	}
+}
+
+// An entry that does not read is quarantined: the fold skips it, names
+// it, and goes on. A gap stops writes (503) until an entry that names
+// the cause closes it.
+func TestStoreQuarantineAndGap(t *testing.T) {
+	bucket := store.NewMemory()
+	s := newStoreServer(t, bucket)
+	base := httptest.NewServer(storeMux(s)).URL
+	httpPost(t, base+"/edits", editDoc("e1", "accepted", 1, 100))
+	// Someone writes a bad entry 2 by hand; e2 then lands at 3.
+	if err := s.store.AppendEntry(disruptionsLog, 2, []byte(`{"kind":"disruptions_entry"`)); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, body := httpPost(t, base+"/edits", editDoc("e2", "accepted", 1, 100)); code != 200 || !strings.Contains(body, `"e1"`) || !strings.Contains(body, `"e2"`) {
+		t.Fatalf("the fold goes on past a quarantined entry: %d %s", code, body)
+	}
+	if a := logEntries(t, base, 0); len(a.Quarantined) != 1 || a.Quarantined[0].Seq != 2 || a.Entries[1].Unreadable == "" || a.Head != 3 {
+		t.Fatalf("entry 2 is named: %+v", a)
+	}
+
+	// Someone deletes the bad entry 2 by hand: a fresh process sees the gap.
+	bucket.Delete(context.Background(), "logs/disruptions/entries/00000000000000000002.json")
+	s2 := newStoreServer(t, bucket)
+	base2 := httptest.NewServer(storeMux(s2)).URL
+	if code, hdr, body := httpPost(t, base2+"/edits", editDoc("e4", "accepted", 1, 100)); code != http.StatusServiceUnavailable || hdr.Get("Retry-After") == "" || !strings.Contains(body, "gap") {
+		t.Fatalf("a write over a gap: %d %s", code, body)
+	}
+	if code, _, _ := httpPost(t, base2+"/logs/disruptions/close-gap", `{"seq":2}`); code != 400 {
+		t.Fatalf("a close without a cause: %d", code)
+	}
+	if code, _, body := httpPost(t, base2+"/logs/disruptions/close-gap", `{"seq":4,"cause":"x"}`); code != http.StatusConflict {
+		t.Fatalf("a close where there is no gap: %d %s", code, body)
+	}
+	if code, _, body := httpPost(t, base2+"/logs/disruptions/close-gap", `{"seq":2,"cause":"deleted by hand in the console"}`); code != 200 {
+		t.Fatalf("close the gap: %d %s", code, body)
+	}
+	if code, _, body := httpPost(t, base2+"/edits", editDoc("e4", "accepted", 1, 100)); code != 200 || !strings.Contains(body, `"e2"`) || !strings.Contains(body, `"e4"`) {
+		t.Fatalf("writes go on: %d %s", code, body)
+	}
+	if closer := logEntries(t, base2, 1).Entries[0].Entry; closer.Intent.Note != "deleted by hand in the console" || len(closer.Changes) != 0 {
+		t.Fatalf("entry 3 names the cause: %+v", closer)
+	}
+}
+
+// A server stores a checkpoint every checkpointEvery entries, and a
+// fresh process boots from it and serves the same document.
+func TestStoreBootsFromACheckpoint(t *testing.T) {
+	bucket := store.NewMemory()
+	s := newStoreServer(t, bucket)
+	base := httptest.NewServer(storeMux(s)).URL
+	for i := 0; i < checkpointEvery+3; i++ {
+		id := "e" + strconv.Itoa(i)
+		if code, _, body := httpPost(t, base+"/edits", editDoc(id, "accepted", 1, 100)); code != 200 {
+			t.Fatalf("post %d: %d %s", i, code, body)
+		}
+	}
+	_, _, before := httpGet(t, base+"/edits")
+	if cps, _ := s.store.Checkpoints(disruptionsLog); len(cps) != 1 || cps[0] != checkpointEvery {
+		t.Fatalf("checkpoints: %v", cps)
+	}
+	s2 := newStoreServer(t, bucket)
+	base2 := httptest.NewServer(storeMux(s2)).URL
+	if _, _, after := httpGet(t, base2+"/edits"); after != before {
+		t.Fatal("a process booted from the checkpoint serves another document")
+	}
+	if s2.disruptions.stored != checkpointEvery {
+		t.Fatalf("the boot started from checkpoint %d", s2.disruptions.stored)
 	}
 }
 

@@ -514,6 +514,40 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 	}
 }
 
+// protectLog wraps the logs' endpoints (/logs/<log>, its revert and
+// close-gap). Every call, a read too, needs the "audit" grant on the
+// log's pointer (edits, for the disruptions log): an entry names its
+// writer inside its bytes, so the server cannot redact it, and a
+// revert or a closed gap is an auditor's act. With auth disabled
+// everything passes through, as for every endpoint.
+func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.authz == nil {
+			next(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+		id, err := s.authz.verifyJWT(r.Context(), strings.TrimPrefix(auth, "Bearer "))
+		if err != nil {
+			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+		if allow, reason := s.authorize(r, id, "audit", "edits"); !allow {
+			log.Printf("authz deny: sub=%s audit %s: %s", id.Sub, r.URL.Path, reason)
+			http.Error(w, "forbidden: "+reason, http.StatusForbidden)
+			return
+		}
+		ctx := context.WithValue(r.Context(), identityKey, id)
+		ctx = context.WithValue(ctx, writerKey, id.Sub)
+		ctx = context.WithValue(ctx, auditKey, true)
+		next(w, r.WithContext(ctx))
+	}
+}
+
 // pointerNameOf extracts the pointer name from /pointers/{name}[/log].
 func pointerNameOf(r *http.Request) string {
 	rest := strings.TrimPrefix(r.URL.Path, "/pointers/")

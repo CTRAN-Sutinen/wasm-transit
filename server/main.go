@@ -98,7 +98,6 @@ func main() {
 		s.stopsWasm = *f.stopsWasm
 		s.requestsWasm = *f.requestsWasm
 		s.seedStore(*f.editsPath)
-		s.commitForward()
 		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
 		s.maybeCompactEdits()
@@ -257,6 +256,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/walks", s.handleWalks)
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
+	mux.HandleFunc("/logs/", s.protectLog(s.handleLogs))
 	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
 	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
@@ -301,9 +301,10 @@ type server struct {
 	// The edit document. Opaque JSON: the artifact owns the schema
 	// and every domain decision about it (merge, submit, validation)
 	// — this host only stores and ferries it.
-	editsMu   sync.Mutex
-	edits     json.RawMessage // the edit document (current version)
-	editsPath string          // the dev store's file; empty = in memory only
+	editsMu     sync.Mutex
+	disruptions disruptionsFold // store mode: this process's fold of the disruptions log (disruptions.go)
+	edits       json.RawMessage // the edit document (current version)
+	editsPath   string          // the dev store's file; empty = in memory only
 
 	// The durable sync store (store mode, -store): blobs + CAS'd
 	// pointers. nil = the dev store (no -store): edits in memory or the
@@ -777,29 +778,9 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// seedStore creates the edits pointer when the store is fresh: from the
-// dev store's -edits file (migrated at receive through the module — canonical
-// bytes and hash come from the module, never minted here), else empty.
+// seedStore prepares a fresh or older store at startup: the disruptions
+// log's first entry from the old edits pointer's head, else from the
+// dev store's -edits file (disruptions.go, seedDisruptions).
 func (s *server) seedStore(editsPath string) {
-	nowMs := time.Now().UnixMilli()
-	if _, found, err := s.store.Head("edits"); err == nil && !found {
-		raw := []byte(emptyEdits)
-		if editsPath != "" {
-			if body, err := os.ReadFile(editsPath); err == nil && len(body) > 0 {
-				raw = body
-			}
-		}
-		_, document, hash, dropped, err := s.readEdits(raw)
-		if err != nil {
-			log.Printf("seed edits: read_edits: %v", err)
-			return
-		}
-		if _, _, err := s.store.CAS("edits", "", []byte(document), s.syncEnvelope(), hash, "migrate:-edits", nowMs); err != nil {
-			log.Printf("seed edits: %v", err)
-			return
-		}
-		if dropped > 0 {
-			log.Printf("seed edits: migrated, %d malformed record(s) dropped", dropped)
-		}
-	}
+	s.seedDisruptions(editsPath)
 }

@@ -10,6 +10,8 @@
 //	                                       exact bytes; its envelope is the
 //	                                       object's metadata
 //	pointers/<name>/<seq, 20 digits>.json  one commit record (LogEntry)
+//	logs/<log>/entries/<seq>.json          one entry of an append-only log
+//	logs/<log>/checkpoints/<seq>.json      the log's fold up to seq (log.go)
 //
 // The pointer is its highest record — there is no pointer object. A
 // commit is two creates: the blob, then record N+1, which lands only
@@ -133,6 +135,7 @@ type Store struct {
 	cache   *blobCache
 	mu      sync.Mutex
 	ptrs    map[string]*pointer
+	logs    map[string]*logState // the append-only logs (log.go)
 	now     func() time.Time
 	// afterList runs between a GC pass's listing and its deletes (tests:
 	// the commit that lands there).

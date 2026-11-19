@@ -31,10 +31,10 @@ Measured 2026-11-06 on the C-TRAN feed and street layer
 
 Everything but the edit document is small: twenty pick revisions and a
 few street imports are well under 1 GB a year. The edit document is
-the one that grows. It is stored whole per commit, so it reaches
-terabytes over a decade at a busy agency's edit rate. The edits log
-(D-121, D-190; [storage-model.md](storage-model.md)) stores only the
-changed records, and its dogfood measures the bytes again.
+the one that grows. Stored whole per commit, as the `edits` pointer
+did, it reaches terabytes over a decade at a busy agency's edit rate. The disruptions
+log (D-121, D-190; [storage-model.md](storage-model.md)) stores only
+the changed records, and its dogfood measures the bytes again.
 
 ## Contract runs
 

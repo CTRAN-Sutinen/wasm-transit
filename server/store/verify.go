@@ -16,6 +16,10 @@ type VerifyReport struct {
 	Blobs    int `json:"blobs"`   // named blobs, each read and hashed
 	Orphans  int `json:"orphans"` // blobs no record names (`store gc`'s, past the grace)
 	Trash    int `json:"trash"`   // gc/ objects a crashed GC pass left (the next pass settles them)
+	// The append-only logs (log.go): each log's entries and checkpoints.
+	Logs        int `json:"logs"`
+	Entries     int `json:"entries"`
+	Checkpoints int `json:"checkpoints"`
 }
 
 // VerifyError is the first break verify found, naming its object.
@@ -35,10 +39,17 @@ func broken(key, format string, args ...any) error {
 // run from seq 1 with no gap and chain (`from` is the prior `to`), and
 // every blob a record names (and every file of a build one names —
 // build.go) exists, hashes to its name, and carries its envelope. It
-// answers the first break as a *VerifyError. The copy, the backup, and
-// the restore run it.
+// answers the first break as a *VerifyError. Each log under logs/ runs
+// from entry 1 with no gap, each entry says its log's kind, its log,
+// and the seq in its key, and each checkpoint does the same, at a seq
+// whose entry exists (verifyLogs). Whether a checkpoint equals the fold
+// is the module's question: a server checks its newest checkpoint at
+// boot. The copy, the backup, and the restore run it.
 func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 	var r VerifyReport
+	if err := verifyLogs(ctx, b, &r); err != nil {
+		return r, err
+	}
 	objs, err := b.List(ctx, "pointers/", "")
 	if err != nil {
 		return r, err
@@ -158,4 +169,84 @@ func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 	}
 	r.Trash = len(trash)
 	return r, nil
+}
+
+// logHeader is the part of an entry or a checkpoint that verify reads:
+// what it says it is, and where.
+type logHeader struct {
+	Kind string `json:"kind"`
+	Log  string `json:"log"`
+	Seq  int64  `json:"seq"`
+}
+
+// verifyLogs checks every log under logs/: the keys, the entries from 1
+// with no gap, and each object's header against its key.
+func verifyLogs(ctx context.Context, b Backend, r *VerifyReport) error {
+	objs, err := b.List(ctx, "logs/", "")
+	if err != nil {
+		return err
+	}
+	type log struct{ entries, checkpoints []int64 }
+	logs := map[string]*log{}
+	var names []string
+	for _, o := range objs {
+		rest := strings.TrimPrefix(o.Key, "logs/")
+		name, _, _ := strings.Cut(rest, "/")
+		if !ValidPointerName(name) {
+			return broken(o.Key, "not a log key (logs/<log>/entries|checkpoints/<20-digit seq>.json)")
+		}
+		l, ok := logs[name]
+		if !ok {
+			l = &log{}
+			logs[name] = l
+			names = append(names, name)
+		}
+		if seq, ok := keySeq(entriesPrefix(name), o.Key); ok {
+			l.entries = append(l.entries, seq)
+		} else if seq, ok := keySeq(checkpointsPrefix(name), o.Key); ok {
+			l.checkpoints = append(l.checkpoints, seq)
+		} else {
+			return broken(o.Key, "not a log key (logs/<log>/entries|checkpoints/<20-digit seq>.json)")
+		}
+	}
+	sort.Strings(names)
+	read := func(key, name string, seq int64, kind string) error {
+		raw, _, err := b.Get(ctx, key)
+		if err != nil {
+			return err
+		}
+		var h logHeader
+		if err := json.Unmarshal(raw, &h); err != nil {
+			return broken(key, "not JSON: %v", err)
+		}
+		if h.Kind != kind || h.Log != name || h.Seq != seq {
+			return broken(key, "says kind %q, log %q, seq %d; its key says %s, %s, %d", h.Kind, h.Log, h.Seq, kind, name, seq)
+		}
+		return nil
+	}
+	for _, name := range names {
+		l := logs[name]
+		r.Logs++
+		for i, seq := range l.entries { // listed ascending
+			key := entryKey(name, seq)
+			if seq != int64(i+1) {
+				return broken(key, "a gap: log %s has no entry %d", name, i+1)
+			}
+			if err := read(key, name, seq, name+"_entry"); err != nil {
+				return err
+			}
+			r.Entries++
+		}
+		for _, seq := range l.checkpoints {
+			key := checkpointKey(name, seq)
+			if seq > int64(len(l.entries)) {
+				return broken(key, "a checkpoint past the log's last entry %d", len(l.entries))
+			}
+			if err := read(key, name, seq, name+"_checkpoint"); err != nil {
+				return err
+			}
+			r.Checkpoints++
+		}
+	}
+	return nil
 }
