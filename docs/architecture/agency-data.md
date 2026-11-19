@@ -62,8 +62,8 @@ surface"). Where it holds today:
 | any other kind's pointer commit (the plan set, picks, stops, and stop requests are refused there) | stored verbatim | **not checked** | `from` / `409` | the log's `writer` |
 
 The last row is the gap. A pointer commit for any kind other than the
-edits stores the document as given (`docs/units/storage-model.md`, item
-1, the kind table).
+edits stores the document as given (`docs/units/storage-model.md`,
+"The kind table, and governed writes").
 
 **The gate refuses only what makes the data wrong.** That means a broken
 shape or a broken invariant. A legitimate change with consequences is

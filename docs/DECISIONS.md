@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-190**.
+- IDs are never reused; the next new decision is **D-192**.
 
 ## Summary
 
@@ -174,7 +174,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-118 | Where does a server read its inputs at boot? | decided | nothing |
 | D-119 | What does the server serve when the store is unreachable? | decided | nothing |
 | D-120 | Does compaction drop a record whose dates have passed? | unanswered | nothing |
-| D-121 | Does the store keep the edit document whole per commit, or record by record? | unanswered | collections in `storage-model` |
+| D-121 | Does the store keep the edit document whole per commit, or record by record? | decided by D-190; not built | nothing |
 | D-122 | Is the dispatcher's day in scope? | decided | nothing |
 | D-123 | Do trip, block, and run ids survive from one pick to the next? | unanswered | nothing |
 | D-124 | Does this repo publish its cancels and detours as GTFS-rt? | decided; deferred | nothing |
@@ -243,6 +243,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
 | D-189 | Do the staff pages work offline, and queue their writes? | decided; not built | nothing |
+| D-190 | How does the agency's record store the data people edit? | decided; not built | nothing |
+| D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; not built | nothing |
 
 ## The trip model
 
@@ -1276,7 +1278,7 @@ Blocks: the real adapter, which waits on the system's OpenAPI spec.
 
 ### D-166 — What is the smallest part of the stops document two writers can change at once?
 State: Decided. The event ids are built; the merge by event id waits on
-the stops stored record by record (`docs/units/storage-model.md`, item 2).
+the stops log (`docs/units/storage-model.md`, "The stops log").
 Answer: 2026-11-17 — the record is the stop, and every event carries a
 stable id, unique within its stop. The writer mints the id (so a
 device with no signal can); the import mints it from the event's
@@ -1302,7 +1304,7 @@ Why: `docs/architecture/crates.md`, transit-stops.
 Context: `POST /stops` replaces the whole document under `from`, so
 two surveyors saving different stops conflict, and the page asks the
 second to make the change again (`web/src/uis/stops/host.svelte.ts`).
-Stored record by record (`docs/units/storage-model.md`, item 2), a
+Stored record by record (`docs/units/storage-model.md`, "The stops log"), a
 write that changes other stops rebases with no conflict; two writers
 changing one stop still meet. A stop's events carry no id
 (`transit_stops::Event`), so the module cannot tell two added events
@@ -1316,7 +1318,8 @@ Options:
   longer matches the document's one record per stop.
 - The record is the stop, no event ids: any two writes to one stop
   conflict.
-Blocks: the stops merge in `docs/units/storage-model.md` (item 2). The
+Blocks: the stops merge in `docs/units/storage-model.md` ("The stops
+log"). The
 stop event ids are built.
 
 ### D-167 — Do authored documents keep the fields they do not know?
@@ -1363,7 +1366,7 @@ Options:
   refused and reloads.
 - As today: keep for stops and stop requests, drop for the rest.
 Blocks: the kind table's strictness in `docs/units/storage-model.md`
-(item 1). The shapes are built.
+("The kind table, and governed writes"). The shapes are built.
 
 ### D-168 — Where does personal data live, and how is it removed when the law requires?
 State: Decided.
@@ -2730,7 +2733,9 @@ Options:
 Blocks: nothing.
 
 ### D-121 — Does the store keep the edit document whole per commit, or record by record?
-State: Unanswered.
+State: Decided by D-190; not built.
+Answer: 2026-11-18 — record by record. Each commit is an entry in the
+edits log that holds only the records it changed (D-190).
 Context: a commit to `edits` stores the whole document as one blob
 (`docs/FORMATS.md`), so the bucket grows by the document's size on
 every commit — quadratically while the document grows (D-120).
@@ -2750,9 +2755,82 @@ Options:
 With D-122, detours and cancels are the only row-shaped data this
 repo holds, so the answer also settles whether it needs a row store at
 all: record by record in the bucket keeps it to one durable service.
-The storage model proposes the second for every collection — edits,
-stops, stop requests (`docs/units/storage-model.md`, item 2).
-Blocks: collections in `docs/units/storage-model.md`.
+D-190 answers it with neither option as written: an append-only log,
+where each entry holds the changed records' new states.
+Blocks: nothing (`docs/units/storage-model.md`, "The edits log",
+carries the work).
+
+### D-190 — How does the agency's record store the data people edit?
+State: Decided; not built.
+Answer: 2026-11-18 — a mixed model, chosen by lifecycle stage, with
+an append-only log as the record for what people edit. The user: "i
+think realistically a mixed data model makes the most sense. i don't
+think it makes sense to bring in postgres at this juncture but it
+isn't ruled out forever, it is just that an immutable log has the
+characteristics ... that we want to prioritize. should we need to be
+able to delete data (Personal data) or have higher throughput needs,
+we can adapt at that point." On one log for each consistency domain:
+"looks good". On the order: "starting small is my preference".
+Encoded as:
+- The lifecycle stage decides the store. Drafts, attachments, and
+  caches are in a working store that allows deletes. What the agency
+  froze or adopted, and the logs, are in the record, which is create
+  only. Event data (AVL, APC, TIDES) goes to the agency's lake.
+- The kind decides the shape inside a log: one whole document as one
+  record (the work rules, the policy), or many small records (stops,
+  requests, detours).
+- One log for each consistency domain: `edits`, `stops` (with stop
+  requests and work order status), `plans`, and `policy` (restricted).
+  An entry is one transaction. It holds each changed record's hash
+  before and its new state, the writer, the intent, and the module
+  build. The current state is a fold. A mistake is fixed by a new
+  entry.
+- No database now. Two needs reopen it: data that must be deletable,
+  or throughput that a log cannot carry (CAS retries, the fold's time
+  at boot, and memory show it first). A database added then is fed
+  from the logs.
+- The work starts with the edits log alone.
+Context: the user's criteria, 2026-11-18: low write volume; cheap to
+run and to store; simple to back up and recover; open formats;
+offline capable. Operational simplicity means a system that breaks
+rarely, whose failures are bounded and easy to fix, that is easy to
+change and roll back, easy to integrate with, and above all easy to
+monitor and troubleshoot. It does not mean few parts. Today every kind
+is one document per commit, so a collection's storage grows with its
+size times its commits (D-121), and two writers of different records
+conflict.
+Options:
+- (A) Whole document per commit, as today: simple to read, and wrong
+  for collections that grow.
+- (B) Append-only logs with checkpoints, in object storage (chosen).
+  A mistake adds a wrong entry beside the truth, so recovery is
+  another entry and loses nobody's later writes. There is no schema
+  migration that destroys data. Every write can be read and replayed
+  (`caps-run replay`), and a log is one timeline. The bucket gives
+  durability, atomic whole-object writes, conditional create, and
+  strong consistency. The engine adds only order and folding. Costs:
+  the fold and the checkpoints are this repo's code; an ad-hoc
+  question needs an export; entries keep their versions forever, so
+  the migration chain must stay complete; and data in the record
+  cannot be forgotten.
+- (C) SQLite with Litestream: transactions, SQL, and GeoPackage for a
+  GIS. One writer process, a disk on the server, and a replica whose
+  failure is silent.
+- (D) Postgres: the most familiar tooling, writes from many processes.
+  An overwrite or a destructive migration destroys the truth before
+  it, and point-in-time restore loses later writes. Integration is
+  hard or easy because of the data model, not the engine.
+- (E) A hash tree of records for each collection (the storage model's
+  earlier plan): a snapshot for every commit, and the most code of
+  this repo's own.
+- An existing log format as the record (Delta Lake): rejected. Its
+  failure modes are harder to read than the commit protocol this repo
+  already proves, and its writer is not in Go. An export to the lake
+  may write it.
+Pinned by: none yet (`docs/units/storage-model.md`, Done when).
+Why: moves to `docs/architecture/storage.md`, Why, when the edits log
+is built.
+Blocks: nothing.
 
 ### D-122 — Is the dispatcher's day in scope?
 State: Decided.
@@ -3681,6 +3759,33 @@ State: Decided.
 Answer: 2026-11-06 — "documents should also be open formats that can be simply understood without requiring the app." Encoded as: every persisted document is plain JSON (gzip allowed) or an external open format (a GTFS zip, a GTFS-rt protobuf, GeoJSON), never a private encoding; a document on its own says what it is — its kind and its version inside it (extending D-62); and every kind's schema and a worked example, per version, are published as plain files beside the documentation (`registry/schemas/`, `docs/FORMATS.md`), so a person or another tool reads a document with no module, no wasm, and no running deployment.
 Why: `docs/architecture/bus.md`, Why, "Every document says what it is".
 Blocks: nothing; `document-versioning` scope 2 and 6 carry it.
+
+### D-191 — Is a service-change draft part of the agency's record, and what does publishing mean?
+State: Decided; not built.
+Answer: 2026-11-18 — a draft is a workspace, and publishing is two
+acts. The user: "drafts, yes to a workspace, for public records, they
+would be considered 'transient' when they are truly drafts. the
+wrinkle is that they often go through public comments, so 'published'
+may not mean the same thing as in effect." On the two acts below:
+"looks good". Encoded as:
+- A draft is a transitory record in the working store. It may be
+  deleted once it is frozen or abandoned.
+- Freezing writes a version to the record by hash, with an entry that
+  says what it is (a proposal for public comment, a board packet).
+  The software gives the freeze. The agency decides when to use it.
+- Adopting puts a frozen version in force from a date, through the
+  plan set. Only a frozen version can be adopted. So every network
+  that was ever in force is in the record, with the proposals that
+  led to it.
+Context: today a draft lives only on the planner's device (the plan
+set, `plan_set`), and publishing a pick both records it and puts it in
+force from its `effective_from`. A proposal shown for comment, and
+not yet adopted, has no place in the record.
+Pinned by: none yet (`docs/units/storage-model.md`, "The plans log,
+and freezing").
+Why: moves to `docs/architecture/storage.md`, Why, when freezing is
+built.
+Blocks: nothing.
 
 ## Documentation
 

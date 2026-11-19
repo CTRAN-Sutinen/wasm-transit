@@ -138,15 +138,19 @@ never served.
 
 ## Where it is going
 
-The storage model as a deliberate design is in
+The storage model's direction is decided (D-190, D-191) and not yet
+built. The plan is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
-- collections stored record by record.
-- one receive path driven by each kind's declared layout and rules.
+- append-only logs, one for each consistency domain, as the record for
+  what people edit, starting with the edits log.
+- a working store for drafts, attachments, and caches, apart from the
+  record.
+- freezing a version into the record, apart from adopting it.
+- one receive path driven by each kind's entry in the kind table.
 - a bucket that carries its own schemas.
-- projections over the change feed.
+- exports for a GIS and the agency's lake.
 - permissions and restricted reads per change.
-- the rule that any future row store is a projection or a write-through front.
 
 The store on each provider's real account and its backups are in
 [docs/units/store-durability.md](../units/store-durability.md).

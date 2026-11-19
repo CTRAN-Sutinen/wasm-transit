@@ -51,7 +51,7 @@ work; a group is only a way to find them.
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
-| [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |
+| [storage-model.md](storage-model.md) | append-only logs as the record for what people edit, starting with the edits log; a working store for drafts; freezing apart from adopting; the kind table; exports for a GIS and the lake |
 
 ### Stops and streets
 
@@ -126,15 +126,10 @@ before starting it.
   and sent later. Open: when the deployment's document moved on while
   edits waited (replay each edit, checked, and list the ones that no
   longer fit, recommended; or choose one of the two documents).
-- **Event tables** — high-volume append data (TIDES, AVL, APC,
-  heartbeat history) as Parquet with an open table format (Apache
-  Iceberg) on the same bucket, committed through a pointer.
-  When a workload asks.
-- **A transactional engine in front of one collection** — only where
-  rules across records under sustained contention outrun the CAS and
-  its retry (the bid is the likely first). It writes through to the
-  collection before it acknowledges, and passes storage-model's
-  rebuild drill.
+- **A database beside the logs** — only when one of D-190's two needs
+  arrives: data that must be deletable, or throughput that a log
+  cannot carry (the bid is the likely first). It is fed from the logs,
+  and the logs stay the record.
 - **Checkpoints** in long pointer logs, and an incremental `store
   verify` and `gc`, once a real account's listings measure the need
   ([store-durability.md](store-durability.md), item 1).

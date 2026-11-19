@@ -1,111 +1,178 @@
-# The storage model — a layout per shape, one record
+# The storage model: a log per consistency domain, a store per lifecycle stage
 
-The agency's data is heterogeneous: large artifacts published whole,
-small config, collections of records many people change, binary
-attachments, and — later — event tables of millions of rows
-(`docs/architecture/storage.md`, "What the record holds, by shape").
-Today every kind is stored as one document per version, which suits
-the first two and not the rest. This unit makes the storage model a
-deliberate design: each shape gets a layout of its own, every layout
-stays readable at rest with no running software, and any engine added
-later (a row store, a read cache, a table format) fits under rules
-that keep the bucket the one record.
+The agency's record moves from whole documents per commit to
+append-only logs, one kind of data at a time (D-190). Each log holds
+the kinds that must change together. Each entry is one transaction.
+The current state is a fold of the entries. A mistake is fixed by a
+new entry, so the truth before the mistake stays in the record. Where
+data lives follows its lifecycle stage: drafts in a working store,
+what the agency froze or adopted in the record, and event data in the
+agency's lake. The work starts with the edits log alone. Each later
+step starts only after the step before it runs on real data.
 
-## The rules the design keeps
+## The design
 
-1. **The bucket is the record.** No other store is the record for any
-   kind. Every other store is either a projection, rebuildable from
-   the bucket, or a write-through front whose commits reach the
-   bucket before a write is acknowledged.
-2. **Every object explains itself.** Open format, kind and version
-   inside it, its schema in the bucket beside it: a stranger with read
-   access and `jq` reads the agency's data.
-3. **One write path.** Every change, in any layout and behind any
-   engine, passes one receive path: shape, invariants, concurrency,
-   permission, attribution.
-4. **Views are disposable.** A cache, index, projection or replica
-   names the versions it was built from, and is rebuilt from the
-   bucket at any time.
-5. **History is append-only.** Deletion is a tombstone. No document
-   tracks personal data. A kind that ever does designs its removal
-   with it (D-168).
+**The logs.** One log per consistency domain:
+
+| Log | Kinds | Why together |
+|---|---|---|
+| `edits` | Detours (diversions), trip cancels | Dispatch's day: its own writers, rhythm, and retention |
+| `stops` | Stops, stop requests, work order status | Closing a request and adding the stop's event is one transaction |
+| `plans` | Frozen versions, the plan set, work rules | Freezing and adopting. It names the other logs by `(log, seq)` and never changes them in the same commit. |
+| `policy` | The policy | Restricted to read |
+
+A new kind joins a log only if it must change atomically with that
+log's kinds. Otherwise it gets a log of its own. Logs name each other
+by `(log, seq)`. The logs are immutable, so those names never break.
+
+**An entry.** `logs/<log>/entries/<seq>.json`, with `seq` zero-padded
+to 20 digits. A commit is a create-if-absent on `seq+1`, as the pointer
+log is today. An entry holds:
+
+- the log's name and the entry's `seq`;
+- the writer (the verified sign-in subject, as today), and the time;
+- the module and its build that answered the entry;
+- the intent: the op or endpoint, and its arguments or a hash of them;
+- for each record it changed: the kind, the id, the hash before, and
+  the new state, inline;
+- the entry it reverts or supersedes, if any.
+
+The entry is a document kind of its own. Its type is in Rust, its
+schema is locked, and the module that owns the log's kinds answers
+the entry. The host adds the sequence, the writer, and the time, and
+commits it.
+
+**The current state.** A checkpoint is the fold of a log up to a
+`seq`: the log's document as it is today (for edits, the
+`edit_records` document), with a header that names the log and the
+`seq`. Checkpoints are written at
+`logs/<log>/checkpoints/<seq>.json`. A server boots from the newest
+checkpoint and folds the entries after it. Any past state is the same
+fold, stopped at an earlier `seq`.
+
+**The rules.**
+
+1. Every write passes the receive path into one entry. A write that
+   changes nothing writes no entry.
+2. A lost race re-reads the head, runs the receive path again, and
+   retries.
+3. A fold never crashes on one entry. It quarantines an entry it
+   cannot apply, raises an alarm, and continues.
+4. A gap in the sequence stops writes to that log. A no-op entry that
+   names the cause closes the gap.
+5. A revert is a new entry that writes back the states before entry
+   N. If a later entry changed one of those records, the revert is
+   refused and names the record, because a person decides it.
+6. After a create, the engine reads the entry back and compares the
+   bytes. A store that ignored the condition is caught at once.
 
 ## Scope, in order
 
-1. **The kind table, and governed writes.** One table per build,
-   generated beside the registry's documents: each kind's layout
-   (document, collection, table), its module and validation op, its
-   merge rule, its read class (open or restricted), and its change
-   classes. The server's receive path reads it: every pointer commit
-   runs its kind's validation and cap-migrate, and a kind with no entry
-   is refused — today a pointer commit for any kind but the edits,
-   picks, stops and stop requests is stored as given
-   (`docs/architecture/agency-data.md`, "Writes are governed").
-2. **Collections, record by record** (Blocked: D-121). A collection's
-   pointer names a root, `{"kind":"collection","of":"<kind>",
-   "schema_version":N,"records":{"<id>":"sha256:…"}}`, which splits
-   into shards keyed by the first byte of the hashed id past a few
-   thousand records; each record is a blob of its own, carrying its
-   kind and version. A commit creates the changed records and a new
-   root, then CASes the pointer as today. When the head moved:
-   different records changed → the server rebases, no `409`; the same
-   record changed → the kind's module merges (base, ours, theirs:
-   LWW for edits, events by id for stops); only an unmergeable record
-   is a `409`, naming that record, so the page shows both versions
-   instead of discarding the person's change. The document form
-   (`{"kind":"stops","stops":{…}}`) stays the interchange format and
-   the modules' input, assembled from the tree. Edits, stops and stop
-   requests move to it; `store verify` checks every root names only
-   records that exist and hash to their names.
-3. **The bucket describes itself.** At setup the store creates (create
-   only) a `layout` object naming its layout version and hash scheme,
-   the build's locked schemas under `schemas/` by content hash, and a
-   plain-language README of the layout. Each kind's schema marks every
-   field that holds a content hash (`"format": "content-hash"`);
-   `store gc` and `store verify` follow references by that mark,
-   generically — collection roots, builds, and a record's attachments
-   (D-162; [stop-site-and-requests.md](stop-site-and-requests.md),
-   item 2) — and an outside reader learns the links from the same
-   schemas.
-4. **Projections over the change feed.** A projection is a pure
-   function of pointer heads run by a module; its output names its
-   inputs and producer
-   (`{"kind":"view","of":{"stops":"sha256:…"},"by":"cap-stops@sha256:…"}`,
-   and `X-View-Of` when served), so any reader checks it against the
-   heads. A projector follows `/pointers/<name>/log?since=` and a
-   root diff (the record ids whose hashes differ) and recomputes only
-   what changed; a page holding root R fetches only the records
-   changed since R, so a device's sync is bounded by changes, not by
-   history. Where projections run — the server, a read tier, a CDN —
-   is the deployment's; the contract is this repo's. The first: the
-   stops for a GIS (GeoJSON for a date, JSON-FG over a range), the stops on a date, and the pages'
-   incremental sync of edits, stops and requests.
-5. **Permissions per change, restricted reads.** The receive path knows which records a write
-   changed; the kind's module sorts each change into its change
-   classes (stops: a survey, a planned event, an in-service event…),
-   and cap-authz maps roles to classes — stewardship per field and
-   role, without splitting documents along the org chart. A kind
-   whose read class is restricted is never served by hash and is read
-   only through authz.
-6. **The rebuild drill.** A gate drops every projection, rebuilds each
-   from the bucket, and compares by hash. A store that cannot pass it
-   has become a record.
+1. **The edits log.** The first step, and the only one that starts
+   now.
+   - The entry kind: its Rust type, schema, and lock. cap-sync answers
+     the entry from the head and an incoming document: the records the
+     LWW merge changed, with their hashes before. The merge itself
+     does not change.
+   - The server writes `POST /edits` and the `edit_records` pointer
+     commit as entries. `GET /edits` serves the fold. A page's
+     protocol does not change: it still sends a whole document, and the
+     merge is still idempotent, so a resend writes no entry.
+   - `GET /logs/edits?since=<seq>` answers the entries after a `seq`.
+     `POST /logs/edits/revert` reverts one entry, for a caller with
+     the `audit` grant. The HTTP contract expands and nothing is
+     removed (D-81).
+   - The first entry on an existing store copies the current `edits`
+     head, with writer `migrate:edits`, and names that head's hash.
+     The old `edits` pointer stays, read-only.
+   - Checkpoints, the boot from the newest checkpoint, quarantine, and
+     the gap rule.
+   - `store verify` checks each log: no gaps, each entry readable, and
+     each checkpoint equal to a fold from the checkpoint before it.
+   - D-120 (whether the live state drops records whose dates have
+     passed) applies to the fold only. The entries keep every record
+     either way.
+2. **The stops log** (stops, stop requests, work order status).
+   - Writes go in as ops, each with an idempotency key from the
+     device, so a resent outbox write lands once (D-189).
+   - The stops module merges by event id (D-166). Two writers who
+     change different stops both land with no `409`. One event changed
+     by both writers is a conflict that names the event.
+   - Completing a request and adding the stop's event is one entry.
+3. **The plans log, and freezing** (D-191).
+   - A freeze writes a network version to the record by hash, with an
+     entry that says what it is (for example, a proposal for public
+     comment). A frozen version can be in the record and not in force.
+   - Adopting puts a frozen version in force from a date, through an
+     entry that changes the plan set. Only a frozen version can be
+     adopted. An adoption names the `(stops, seq)` it read.
+   - The plan set and the work rules move into this log.
+4. **The working store, and drafts.**
+   - A second store holds what may be deleted: drafts, attachments,
+     and caches. The server keeps create, read, and list rights to the
+     record, and gc keeps delete rights to the working store only.
+   - A draft is a root that lists one blob for each route and the
+     shared parts, committed by CAS on the draft's pointer. One planner
+     owns a draft. Another planner forks it. A draft has no automatic
+     rebase until two people need to edit one draft at once.
+   - A draft is a transitory record. gc deletes it once it is frozen
+     or abandoned, on the working store's schedule.
+5. **The policy log.** The policy moves into a restricted log that the
+   server never serves openly.
+6. **The kind table, and governed writes.** One table for each build,
+   generated beside the registry's documents. It gives each kind's
+   log, module, validation op, merge rule, and read class. The receive
+   path reads it. A kind with no entry is refused. Today a pointer
+   commit for any kind except the edits, the picks, the stops, and the
+   stop requests is stored as given
+   (`docs/architecture/agency-data.md`, "Writes are governed"). This
+   step is independent of the logs and can start at any time.
+7. **The store describes itself.** At setup the store creates, create
+   only, a `layout` object that names its layout version and hash
+   scheme, the build's locked schemas under `schemas/` by content
+   hash, and a plain-language README of the layout. Each schema marks
+   every field that holds a content hash (`"format": "content-hash"`).
+   `store gc` and `store verify` follow references by that mark, and
+   an outside reader learns the links from the same schemas.
+8. **Exports for other systems.** Each export is a view: it names the
+   `(log, seq)` it was built from, and is built again from the logs at
+   any time. The first ones are the stops for a GIS (GeoJSON, and
+   GeoPackage), and the logs and checkpoints for the agency's lake
+   (Parquet). Event data (AVL, APC, TIDES) goes to the lake from the
+   systems that produce it. This repo does not store it.
+9. **Permissions per change.** The receive path knows which records a
+   write changed. The kind's module sorts each change into change
+   classes (for stops: a survey, a planned event, an in-service event).
+   cap-authz maps roles to classes.
 
 ## Done when
 
-- The kind table drives the receive path: a Go test commits a kind
-  with no entry and is refused, and commits each kind with a broken
-  invariant and gets its module's `422`.
-- Edits, stops and stop requests are stored as collections: store laws
-  for the root, the rebase, and the module's merge (two writers
-  changing different stops both land; two changing one event get a
-  `409` naming it), and `store verify` checks roots.
-- A store created by the engine holds `layout`, the schemas and the
-  README, and `server/reader_test.go` reads a collection with nothing
-  but the bucket.
-- `store gc` keeps every blob a schema-marked field names, proven by
-  a store law per reference kind.
-- The stops GeoJSON projection and the pages' incremental sync run on
-  the C-TRAN store, dogfooded with two people saving stops at once.
-- The rebuild drill runs in `just test`.
-- D-121 is decided and encoded.
+For the edits log (scope 1):
+
+- Laws in transit-sync and cap-sync: the fold of the entries equals the
+  document that whole-document commits give for the same writes; a
+  merge that changes nothing answers no entry; a revert writes back
+  the states before, and is refused when a later entry changed the
+  same record.
+- Store laws, run by `just test` and by `just store-contract` against
+  SeaweedFS, Azurite, and fake-gcs-server: entries chain from 1 with no
+  gap under racing writers; a lost race retries and lands; a checkpoint
+  equals the fold; a gap stops writes; an unreadable entry is
+  quarantined and the fold continues; the read-back catches an
+  overwritten entry.
+- A Go round trip: `POST /edits`, then `GET /edits`, `GET
+  /logs/edits?since=`, and a revert, with the existing edits tests
+  passing unchanged.
+- An existing store gets its first entry from the `edits` head, and
+  `store verify` passes on it.
+- `just e2e`: the disruptions page issues and reads detours unchanged.
+- A dogfood session on the C-TRAN store: a server restarted on the log
+  serves the same edit document. The stored bytes for a month of edits
+  at the agency's rate are measured, and replace D-121's estimates in
+  `docs/units/store-durability.md`.
+- `docs/FORMATS.md`, `docs/architecture/storage.md`,
+  `docs/architecture/server.md`, and `DEPLOYMENTS-SERVER.md` (bucket
+  versioning, and the revert step) describe the edits log.
+
+Each later step gets its own Done when as it starts. The file is
+deleted when the last step lands.
