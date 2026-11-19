@@ -185,6 +185,9 @@ pub fn kinds() -> Vec<KindEntry> {
         entry("alert_templates", "alert_templates", Route, "POST /alert-templates", &[], Log, Open)
             .checked("alerts", "validate_templates")
             .logged("alerts", &[("alert_template", "templates")]),
+        entry("notes", "notes", Route, "POST /notes", &[], Log, Open)
+            .checked("notes", "validate")
+            .logged("notes", &[("note", "notes")]),
         entry("plans", "plans", Route, "POST /plans, POST /plans/adopt, POST /plans/retire", &["plans"], Log, Open)
             .checked("plans", "adopt")
             .logged("plans", &[("pick", "plans")]),

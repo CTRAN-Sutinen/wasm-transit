@@ -36,7 +36,7 @@ func TestTheKindTableGovernsThePointerWrite(t *testing.T) {
 	sound := `{"schema_version":1,"rules":[{"name":"admin","roles":["admin"],"pointers":["*"],"actions":["*"]}]}`
 
 	for _, c := range []struct{ name, kind, doc, want string }{
-		{"notes", "notes", `{}`, "keeps no kind"},
+		{"scratch", "scratch", `{}`, "keeps no kind"},
 		{"stops-copy", "stops", `{}`, "POST /stops"},
 		{"manifest-2", "manifest", `{}`, "the server's publishing"},
 		{"rules", "policy", sound, "heads only the pointers policy"},

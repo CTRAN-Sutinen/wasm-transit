@@ -80,6 +80,7 @@ rt-proxy = true
 # stops-wasm = "../web/pkg/cap_stops.wasm"
 # requests-wasm = "../web/pkg/cap_requests.wasm"
 # alerts-wasm = "../web/pkg/cap_alerts.wasm"
+# notes-wasm = "../web/pkg/cap_notes.wasm"
 # log-wasm = "../web/pkg/cap_log.wasm"
 # kinds = "../web/pkg/kinds.json"
 # migrate-wasm = "../web/pkg/cap_migrate.wasm"

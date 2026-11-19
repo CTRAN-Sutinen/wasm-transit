@@ -404,6 +404,11 @@ transit-alerts   the service alerts document and the alert templates document (D
                  agency's list, the gap list (what is in force that no alert
                  explains), and a template's blanks filled. Pure. transit-rt writes
                  it as a GTFS-rt Alerts feed and reads one into it.
+transit-notes    the notes document (D-214): the agency's internal notes, each about a
+                 trip instance, an edit record, a service alert, or a stop, with who
+                 wrote it and when, and who last edited it and when. It answers what
+                 a write must pass, a note written or edited, a target's notes, and
+                 the notes of a time span. Pure. Notes never go to riders.
 transit-runs     the runs layer beside the network: the work-rule document (recovery,
                  interlining for each route pair, run rules, pay; every rule optional),
                  the recovery a wait requires and its slack, and the suggested blocking.
@@ -422,7 +427,7 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  kept in the owning crate's locks/; and the kind table, how
                  each kind the store keeps is written, checked, and read,
                  web/pkg/kinds.json; D-202), gen-assemblies, and arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-alerts cap-log
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-alerts cap-notes cap-log
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)
 assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability
@@ -434,11 +439,14 @@ server/          the Go and wazero host. It runs cap-sync (the edit document and
                  a boot imports nothing it already holds (D-199), and every build
                  it serves, kept and rolled back by pointer; D-80). It also runs cap-migrate (an older
                  document, at receive), cap-log (the disruptions log, the stops log, the
-                 plans log, and the alerts log: logs/<log>/ in the bucket), cap-stops
+                 plans log, the alerts log, and the notes log: logs/<log>/ in the
+                 bucket), cap-stops
                  (the stops document's writes and records, and what a published pick
                  reads of it), cap-requests (the stop requests document's writes and
                  records), cap-alerts (the service alerts and alert templates
-                 documents' writes and records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
+                 documents' writes and records), cap-notes (each note's write,
+                 stamped with the verified writer and the server's clock, and its
+                 records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
                  which changes by expand, then contract (D-81). It has two proxies:
                  /geocode to a Pelias geocoder, and /rt, a dev feed relay that is off
                  unless -rt-proxy is set. It is scaffolding and never makes a domain
@@ -602,9 +610,10 @@ reads, a real-data dogfood of that workflow (D-196).
   - cap-requests, for the stop requests document's writes;
   - cap-alerts, for the service alerts and alert templates documents'
     writes;
+  - cap-notes, for each note's write;
   - cap-log, for the logs that record the edit document, the stops,
     the stop requests, the published plan set, the frozen versions, the
-    service alerts, and the alert templates.
+    service alerts, the alert templates, and the notes.
 - **The bus is the architecture.**
   - No capability grows a private document format. Shared data crosses
     capabilities only as kernel documents named by content hash.

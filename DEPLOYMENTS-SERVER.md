@@ -596,7 +596,8 @@ image.
   takes it out of the current stops or requests. The history still
   holds it. Service alerts and their templates work the same way too,
   at `/logs/alerts` and `/logs/alerts/revert`. The `audit` action on
-  `service_alerts` lets a role read and undo them.
+  `service_alerts` lets a role read and undo them. Notes work the same
+  way at `/logs/notes`, under the `notes` pointer's rules.
 
 - **Undo a bad update's data** (the emergency procedure). Use this only
   when an update wrote data that the earlier version cannot use, and

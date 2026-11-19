@@ -55,6 +55,7 @@ pub use transit_runs::WorkRules;
 pub use transit_requests::StopRequests;
 pub use transit_stops::Stops;
 pub use transit_alerts::{AlertTemplates, ServiceAlerts};
+pub use transit_notes::Notes;
 
 // ---------------------------------------------------------------------
 // the kernel ops
@@ -91,6 +92,9 @@ pub const OP_LOAD_SERVICE_ALERTS: u32 = 272;
 
 /// The alert templates document's load.
 pub const OP_LOAD_ALERT_TEMPLATES: u32 = 273;
+
+/// The notes document's load.
+pub const OP_LOAD_NOTES: u32 = 274;
 
 /// [`OP_ABOUT`]'s answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -166,6 +170,8 @@ pub enum Loaded {
     LoadServiceAlerts { alerts_hash: String, alerts: u32 },
     /// How many templates the document holds.
     LoadAlertTemplates { templates_hash: String, templates: u32 },
+    /// How many notes the document holds.
+    LoadNotes { notes_hash: String, notes: u32 },
 }
 
 /// The JSON lane's envelope: the op, the capability it names, and the
@@ -201,6 +207,8 @@ pub struct Envelope<'a> {
     alerts: Option<&'a RawValue>,
     #[serde(borrow, default)]
     templates: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    notes: Option<&'a RawValue>,
     #[serde(borrow, default)]
     bytes: Option<&'a RawValue>,
 }
@@ -586,6 +594,26 @@ pub static ALERT_TEMPLATES: Kind<AlertTemplates> = Kind {
     },
     json: |e| e.field(e.templates, "templates").map(Cow::Borrowed),
     answer: |templates_hash, templates| Loaded::LoadAlertTemplates { templates_hash, templates: templates.templates.len() as u32 },
+};
+
+/// Notes documents (transit-notes: the agency's internal notes, D-214),
+/// refused unless a write could store them, each refusal named.
+pub static NOTES: Kind<Notes> = Kind {
+    id: "notes",
+    name: "notes document",
+    load_op: "load_notes",
+    op: OP_LOAD_NOTES,
+    identity: Identity::Canonical(crate::canonical_hash),
+    registry: Registry::documents("notes document", "load_notes", Retain::Host),
+    parse: |bytes| {
+        let notes: Notes = crate::parse_versioned(bytes).map_err(|e| format!("notes document: {e}"))?;
+        notes.checked().map_err(|refusals| {
+            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+            format!("notes document: {}", reasons.join("; "))
+        })
+    },
+    json: |e| e.field(e.notes, "notes").map(Cow::Borrowed),
+    answer: |notes_hash, notes| Loaded::LoadNotes { notes_hash, notes: notes.notes.len() as u32 },
 };
 
 /// Weighted layers (GeoJSON points and polygons — people, jobs,

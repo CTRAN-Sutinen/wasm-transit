@@ -147,6 +147,7 @@ const KIND_LOADS = {
   stop_requests: "load_stop_requests",
   service_alerts: "load_service_alerts",
   alert_templates: "load_alert_templates",
+  notes: "load_notes",
 };
 
 /// A --load prefix as a bulk op code: a number, or a kind's load.
@@ -630,8 +631,11 @@ async function runSession() {
         const document = kind && heldDocument(kind, missing[2]);
         if (!document || loadCodes[missing[3]] === undefined) break;
         const loaded = JSON.parse(module.invokeBytes(loadCodes[missing[3]], Buffer.from(JSON.stringify(document))));
-        const hash = loaded.ok?.[`${kind}_hash`];
-        if (hash !== missing[2]) {
+        // A load names its hash field for the kind's short name
+        // (`alerts_hash` for service_alerts, `requests_hash` for
+        // stop_requests), so match any hash field of the answer.
+        const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing[2]);
+        if (!named) {
           throw new Error(`registering ${kind} ${missing[2]}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
         }
         (result.registered ??= []).push(`${kind} ${missing[2]}`);

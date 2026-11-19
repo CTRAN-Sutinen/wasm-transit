@@ -61,7 +61,7 @@ shared state.
 - A bulk op over the document's bytes: 256 network, 259 edits, 260 live,
   261 boundary, 262 walks, 263 streets, 264 watchlist, 265 layer,
   266 feed, 267 rt, 269 work_rules, 270 stops, 271 stop_requests,
-  272 service_alerts, and 273 alert_templates.
+  272 service_alerts, 273 alert_templates, and 274 notes.
 - The same op in JSON, for example
   `{"op": "load_network", "network": …}`. The kernel removes it from the
   request before any capability decodes the request. The document stays
@@ -501,7 +501,7 @@ module that answers it.
 - Each kind's load: 256 network, 259 edits, 260 live, 261 boundary,
   262 walks, 263 streets, 264 watchlist, 265 layer, 266 feed, 267 rt,
   269 work_rules, 270 stops, 271 stop_requests, 272 service_alerts,
-  and 273 alert_templates. A module answers
+  273 alert_templates, and 274 notes. A module answers
   the load of each kind its capabilities read. The browser host
   registers every document this way: the engine has a loader for each
   kind, and it encodes a document once however many instances register

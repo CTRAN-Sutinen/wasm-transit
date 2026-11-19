@@ -1,0 +1,15 @@
+[package]
+name = "cap-notes"
+description = "The notes capability (transit-notes; D-214): the agency's internal notes about a trip instance, an edit record, a service alert, or a stop. validate answers what a write must pass, each refusal named, or the canonical document and its hash; write answers the next document with one note written or edited, stamped with its writer and time; on answers a target's notes; between answers the notes of a time span. The kernel's load_notes registers a document the host holds. The module writes nothing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+transit-log = { path = "../transit-log" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+transit-notes = { path = "../transit-notes" }
+cap-abi = { path = "../cap-abi" }

@@ -282,6 +282,8 @@ owns each kind turns its document into records and back:
 - `alerts`: the service alerts document and the alert templates
   document (D-206, D-210). cap-alerts answers both documents' records
   (`service_alert`, `alert_template`).
+- `notes`: the notes document (D-214). cap-notes answers its records
+  (`note`).
 
 An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
 a `log_entry` document. It names each record's kind and version,
@@ -479,6 +481,12 @@ entry 1 from their heads, with writer `migrate:stops` and
   The server writes the module's canonical document as one entry of the
   alerts log. The manifest pins the heads as `service_alerts_hash` and
   `alert_templates_hash`.
+- `POST /notes` takes one note, `{"id": "...", "target": {...}, "text":
+  "..."}`, not a whole document. cap-notes writes it over the head with
+  the verified writer and the server's clock. It answers `200
+  {notes_hash, id}` or `422 {refusals}`. The server writes the next
+  document as one entry of the notes log, and the same text written
+  again is no entry. The manifest pins the head as `notes_hash`.
 - `POST /attachments` takes the file as the body, with its media type
   as `Content-Type`. The file is a photo (JPEG, PNG, WebP, HEIC) or a
   PDF, at most 25 MB. It answers `200 {hash, type, bytes}`, `413`,
@@ -751,6 +759,7 @@ Every persisted kind, by what a version change does to it:
 | `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
 | `service_alerts` | transit-alerts | authored | `kind`, `schema_version` |
 | `alert_templates` | transit-alerts | authored | `kind`, `schema_version` |
+| `notes` | transit-notes | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | no tag (never persisted yet) |
 | `recent_places` (a rider's recent places, on one device) | transit-dispatch | authored | `kind`, `schema_version` |
 | `live_feeds` (a rider's own live-feed URLs, on one device) | transit-dispatch | authored | `kind`, `schema_version` |

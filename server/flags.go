@@ -28,6 +28,7 @@ type settings struct {
 	workOrdersSpec *string
 	requestsWasm   *string
 	alertsWasm     *string
+	notesWasm      *string
 	logWasm        *string
 	kindsPath      *string
 	stopsWasm      *string
@@ -77,7 +78,8 @@ func serverFlags(fs *flag.FlagSet) *settings {
 		workOrdersSpec: fs.String("work-orders", "", "the work order system's adapter (D-165): unset, none — a request's work order is entered by hand; stub: (or stub:<name>) a stand-in that opens STUB-<request>, for tests and demos"),
 		requestsWasm:   fs.String("requests-wasm", dataPath("pkg/cap_requests.wasm", "../web/pkg/cap_requests.wasm"), "the stop requests capability module (cap-requests) in store mode: it validates every POST /stop-requests (D-159)"),
 		alertsWasm:     fs.String("alerts-wasm", dataPath("pkg/cap_alerts.wasm", "../web/pkg/cap_alerts.wasm"), "the service alerts capability module (cap-alerts) in store mode: it validates every POST /service-alerts and POST /alert-templates (D-206)"),
-		logWasm:        fs.String("log-wasm", dataPath("pkg/cap_log.wasm", defaultLogWasm), "the log capability module (cap-log) in store mode: it keeps the disruptions log, the stops log, and the plans log (D-197)"),
+		notesWasm:      fs.String("notes-wasm", dataPath("pkg/cap_notes.wasm", "../web/pkg/cap_notes.wasm"), "the notes capability module (cap-notes) in store mode: it writes every POST /notes with the verified writer and the server's clock (D-214)"),
+		logWasm:        fs.String("log-wasm", dataPath("pkg/cap_log.wasm", defaultLogWasm), "the log capability module (cap-log) in store mode: it keeps the disruptions log, the stops log, the plans log, the alerts log, and the notes log (D-197)"),
 		kindsPath:      fs.String("kinds", dataPath("pkg/kinds.json", defaultKindsPath), "the kind table (`just caps`; D-202): how each kind the store keeps is written, checked, and read. Store mode refuses a write of a kind it does not name"),
 		stopsWasm:      fs.String("stops-wasm", dataPath("pkg/cap_stops.wasm", "../web/pkg/cap_stops.wasm"), "the stops capability module (cap-stops) in store mode: it validates every POST /stops and refreshes each pick's stops from the stops document"),
 		authzWasm:      fs.String("authz-wasm", dataPath("pkg/cap_authz.wasm", "../web/pkg/cap_authz.wasm"), "the authorization capability module (cap-authz) hosted when OIDC is configured"),

@@ -171,6 +171,7 @@ dependencies = [
  "cap-log",
  "cap-migrate",
  "cap-network",
+ "cap-notes",
  "cap-plans",
  "cap-requests",
  "cap-router",
@@ -197,6 +198,7 @@ dependencies = [
  "transit-live",
  "transit-log",
  "transit-network",
+ "transit-notes",
  "transit-plans",
  "transit-requests",
  "transit-router",
@@ -375,6 +377,19 @@ dependencies = [
  "sha2",
  "transit-codec",
  "transit-network",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-notes"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "transit-log",
+ "transit-notes",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1104,6 +1119,14 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "cap-network",
+]
+
+[[package]]
+name = "module-notes"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-notes",
 ]
 
 [[package]]
@@ -2048,6 +2071,19 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "transit-stops",
+ "transit-version",
+ "ts-rs",
+]
+
+[[package]]
+name = "transit-notes"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
  "transit-version",
  "ts-rs",
 ]

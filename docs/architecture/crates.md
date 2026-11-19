@@ -541,6 +541,17 @@ The document is canonical as it stands (requests by id). The crate keeps what it
 
 A stop's event names the request that it carries out (transit-stops `request`). Nothing checks this across the two documents. Both are kept in the stops log, so completing a request and adding its stop's event can be one entry (D-197).
 
+## transit-notes
+
+The notes document (D-214): the agency's internal notes about its day of service, in place of email. Anyone reads the notes. They never go to riders. cap-notes is the seam.
+
+**A note** is a record by id. It has:
+- its target: a trip instance (trip, service date, start), an edit record, a service alert, or a stop. A trip that the live feed cancels is a trip instance. The target never changes.
+- its text.
+- `written`: who wrote it and when. `edited`: who changed the text last and when.
+
+`write` places one note: a new id is a new note, and a held id is an edit of its text. `checked` is what a write must pass: a blank id, text, or writer, a target that names no id, a date that is not "YYYY-MM-DD", or an edit earlier than the note. `on` and `between` are a target's notes and a span's notes.
+
 ## transit-alerts
 
 The service alerts document and the alert templates document (D-206..D-210). An alert is what the agency tells riders. Dispatch and the communications staff write alerts, and every team reads the one list. cap-alerts is the seam, and transit-rt writes the feed.
@@ -685,6 +696,15 @@ The service alerts capability: what is the agency telling riders? transit-alerts
 - `validate_templates`, `put_template`, and `fill` are the templates: what a write must pass, one template placed, and one template written out over the network.
 
 cap-rt's `encode_alerts` writes the document as an Alerts feed, and `read_alerts` reads one into it.
+
+## cap-notes
+
+The notes capability: what has the agency noted about this? transit-notes is the library.
+- `validate` gives what a write must pass, or the canonical document and its hash. This is the document that `load_notes` answers.
+- `write` writes one note, new or edited, stamped with the writer and the time that the host gives. With no document, the first note begins one.
+- `on` gives one target's notes, oldest first.
+- `between` gives the notes written in a time span, newest first.
+- `log_records` and `log_document` turn the document into the notes log's records and back.
 
 ## cap-log
 
@@ -861,6 +881,15 @@ Each entry covers one choice that other code depends on. The heading names the c
 - **Because:** dispatch knows what is happening on the road now, and the communications staff write the agency's standard language. Both write in one place, and every team reads the one list. The record replaces a custom app whose feed riders' apps read.
 - **Rejected:** a third payload in the edit document; an alert written from a detour automatically; a required review.
 - **Decided:** D-206, D-207, D-208, D-210.
+
+### A note carries its writer and time, and the server stamps them (transit-notes, cap-notes `write`, `POST /notes`)
+- **Holds:** a note is a record of its own, in a document of its own. It is not a payload of the edit document, and it changes no service. No GTFS-rt feed and no rider page reads it.
+- **Holds:** a note carries who wrote it and when (`written`), and who edited it last and when (`edited`). A reader needs no access to the log.
+- **Holds:** a write is one note. The server runs `write` over the head with the writer it verified and its own clock. A page never names who wrote a note.
+- **Holds:** nothing is deleted, and a note's target never changes. An edit replaces the text, and the log keeps the earlier state.
+- **Because:** the notes replace dispatch's email, and customer service reads them without signing in. The log names each entry's writer, but reading it needs the audit rule. One note to a write also means that two people who note at once never conflict over the whole document.
+- **Rejected:** the whole document posted under `from`, as the alerts are; a writer named by the page; the writer and time read from the log.
+- **Decided:** D-214 (the shape: D-217).
 
 ### Stop search is fuzzy on the stops' own names (directory `stops`)
 - **Holds:** typos and abbreviations match the names the feed gives. There are no authored aliases.

@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-122**. The
+IDs are never reused; the next new finding is **QAF-127**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
 theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
@@ -259,6 +259,43 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   document.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot; ride-now's
   "Memory over time" table in `just perf`.
+
+- **QAF-122 OP GAP** — the late list and the live feed's cancels
+  carry ids only: a trip id, a route id, a start in seconds, and stop
+  ids. A dispatch row or a status card names a trip as a rider does
+  ("2:10 PM from Fisher's Landing TC") and a bus by where it is. Both
+  need the network's stop names and the trip's first stop, so a page
+  would join them.
+  Pin: rt `late_trips` and `live` (`trips[].canceled`) on C-TRAN,
+  2026-11-19 at 13:31 and `perf-rt-10m/020` (2026-11-04).
+- **QAF-123 OP GAP** — alerts `gaps` reads the edit document and the
+  stops document only. A trip that the live feed cancels is never a
+  gap, and an alert's `explains` names an `edit` or a `stop`, so no
+  alert can explain a feed cancel (D-213). On C-TRAN the feed is where
+  cancels come from: 8 cancelled instances in one 2026-11-04 snapshot.
+  Pin: alerts `gaps` takes no `live_hash`; the `explains` kinds in the
+  service alerts schema.
+- **QAF-124 OP GAP** — no op answers a route's or a stop's
+  disruptions today as one list: cancels from both sources, detours,
+  closed stops, lateness, whether an alert explains each, and the
+  latest note. The Status view's cards and the Dispatch view's lists
+  are that list. Each is a join over the live document, the edit
+  document, the stops document, the alerts, and the notes.
+  Pin: the ops in `docs/units/ui-disruptions.md`, questions 2, 3, 6.
+- **QAF-125 OP GAP** — the alert preview does not chain. rt
+  `encode_alerts` answers the feed as `feed_b64`. To run `live` over
+  it, the host decodes the text and loads the bytes as an rt
+  snapshot. `encode_alerts` could register the snapshot it encodes and
+  answer its `rt_hash`.
+  Pin: rt `encode_alerts` on the C-TRAN alerts document, then `live`.
+- **QAF-126 DATA** — C-TRAN's alerts stay open. At 13:31 on
+  2026-11-19, 14 of the 15 alerts in force have no end. They have been
+  open from 9 to 323 days. Two of them name the same closure (Main &
+  33rd, 49 and 58 days). This is the data the long-open rule is set
+  on (D-207). The 2026-11-04 trip updates also skip stops on 21
+  trips. C-TRAN's CAD does not publish detours (D-213).
+  Pin: rt `read_alerts`, then alerts `list` (`open_secs`); rt `live`
+  on `perf-rt-10m/020`.
 
 ## Beyond blocks (runs, work rules)
 

@@ -1,0 +1,174 @@
+{
+  "$defs": {
+    "Note": {
+      "additionalProperties": true,
+      "description": "One note.",
+      "properties": {
+        "edited": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Who changed the text last, and when. Absent until an edit."
+        },
+        "target": {
+          "$ref": "#/$defs/NoteTarget",
+          "description": "What the note is about. It never changes."
+        },
+        "text": {
+          "description": "The note's text. It is not blank.",
+          "type": "string"
+        },
+        "written": {
+          "$ref": "#/$defs/Stamp",
+          "description": "Who wrote the note first, and when."
+        }
+      },
+      "required": [
+        "target",
+        "text",
+        "written"
+      ],
+      "type": "object"
+    },
+    "NoteTarget": {
+      "description": "What a note is about.",
+      "oneOf": [
+        {
+          "description": "A trip instance: the model's trip id, its service date\n(\"YYYY-MM-DD\"), and its start in seconds after the service-day\nanchor. A service date names its pick, so the instance is\nunambiguous.",
+          "properties": {
+            "date": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "trip",
+              "type": "string"
+            },
+            "start_secs": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "trip": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "trip",
+            "date",
+            "start_secs"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A record of the edit document (a diversion or a trip cancel), by\nits record id.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "edit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A service alert, by its id.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "alert",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A stop, by its lasting id.",
+          "properties": {
+            "kind": {
+              "const": "stop",
+              "type": "string"
+            },
+            "stop": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "stop"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "NotesKind": {
+      "const": "notes"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "Stamp": {
+      "description": "A writer and a time.",
+      "properties": {
+        "at": {
+          "description": "The host's clock, Unix seconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The verified sign-in subject, or the tool, that wrote.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "at"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Every note, by its id.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/NotesKind",
+      "default": "notes",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "notes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Note"
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    }
+  },
+  "required": [
+    "notes"
+  ],
+  "title": "Notes",
+  "type": "object"
+}

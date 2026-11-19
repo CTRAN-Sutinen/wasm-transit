@@ -199,6 +199,8 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		f = s.stopsLog()
 	case "/logs/alerts", "/logs/alerts/revert", "/logs/alerts/close-gap":
 		f = s.alertsLog()
+	case "/logs/notes", "/logs/notes/revert", "/logs/notes/close-gap":
+		f = s.notesLog()
 	case "/logs/plans", "/logs/plans/close-gap":
 		f = s.plansLog()
 	case "/logs/plans/revert":
@@ -207,7 +209,7 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the plans log has no revert: republish a pick to correct it, or retire it (POST /plans, /plans/retire)", http.StatusMethodNotAllowed)
 		return
 	default:
-		http.Error(w, "no such log (the logs: disruptions, stops, plans, alerts)", http.StatusNotFound)
+		http.Error(w, "no such log (the logs: disruptions, stops, plans, alerts, notes)", http.StatusNotFound)
 		return
 	}
 	switch r.URL.Path {

@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-215**.
+- IDs are never reused; the next new decision is **D-218**.
 
 ## Summary
 
@@ -267,7 +267,10 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-211 | How is the service alerts document shaped? | encoded | nothing |
 | D-212 | Is a trip's coverage this repo's answer? | decided; built | nothing |
 | D-213 | Where does the disruptions UI read today's cancels? | decided; not built | nothing |
-| D-214 | Can dispatch keep internal notes here? | decided; not built | nothing |
+| D-214 | Can dispatch keep internal notes here? | decided; built on the bus and the server | nothing |
+| D-215 | Where does the disruptions summary for a day live? | decided; not built | nothing |
+| D-216 | How does an alert explain a trip the live feed cancels? | decided; not built | nothing |
+| D-217 | How is the notes document shaped? | encoded | nothing |
 
 ## The trip model
 
@@ -2368,11 +2371,15 @@ winner. On rider boards the live feed's cancel stays dropped (D-73).
 divert `cancel` stays. It serves an agency with no CAD, and a CAD that
 writes its cancels through the receive path
 (`docs/architecture/adjacent-systems.md`, rule 4).
+2026-11-19 — detours from the feed: C-TRAN's CAD "doesn't publish
+detours though so it is wasted work to worry about right now." No
+work reads the feed's skipped stops as detours.
 Pinned by: none yet (`docs/units/ui-disruptions.md`).
 Blocks: nothing.
 
 ### D-214 — Can dispatch keep internal notes here?
-State: Decided; not built.
+State: Decided; built on the bus and the server (transit-notes,
+cap-notes, `POST /notes`). The UI is `docs/units/ui-disruptions.md`.
 Answer: 2026-11-19 — yes. Dispatchers "add internal notes". Today they
 use email, and "ideally this would obsolete that". "Internal" means
 "not publish in a gtfs alert". Anyone with the write role can write a
@@ -2392,8 +2399,69 @@ Context: encoded as follows when it is built.
 - To replace email, the workspace lists today's notes across all
   targets, newest first. Notes are flat, with no replies. Sending
   notes out by email or chat is not part of this decision.
-- Which crate and capability own the notes kind is open. The lean is a
-  small new capability, not cap-divert.
+- 2026-11-19 — the home: "agree" to a new library, `transit-notes`,
+  and a new capability, `cap-notes`, built as the alerts are (their
+  own log, and writes through the server's receive path).
+Pinned by: none yet (`docs/units/ui-disruptions.md`).
+Blocks: nothing.
+
+### D-217 — How is the notes document shaped?
+State: Encoded provisionally.
+Context: building D-214 left these choices open. Each is encoded.
+Options (each encoded, with the other answer):
+- **A note carries its writer and time** (`written`, and `edited` after
+  an edit). The other answer was the alerts' way: the log names who
+  wrote each state. Reading the log needs the audit rule, and customer
+  service reads the notes without signing in.
+- **A write is one note, and the server stamps it.** `POST /notes`
+  takes `{id, target, text}`, and the server runs cap-notes `write`
+  over the head with its verified writer and its clock. The other
+  answer was the whole document under `from`, as the alerts are, where
+  a page would name the writer.
+- **A trip instance is (trip, service date, start), with no
+  `network_hash`.** A service date names its pick (D-75, D-76), and an
+  alert's `explains` names a trip instance the same way (D-216). D-214's
+  first context named the `network_hash`.
+- **Only the text changes.** A held note's target is refused if it
+  differs. The same text written again is no change and no log entry.
+- **The notes do not read the network.** A note on an id the network
+  does not hold is a note, as written. The other answer was a flag, as
+  the alerts' `flags`.
+Pinned by: transit-notes `notes_law_test`; cap-notes `dispatch_test`;
+server `TestNotesWritesAreStampedAndLogged`.
+Why: `docs/architecture/crates.md`, Why, "A note carries its writer and
+time, and the server stamps them".
+Blocks: nothing. A change rewrites those laws.
+
+### D-215 — Where does the disruptions summary for a day live?
+State: Decided; not built.
+Answer: 2026-11-19 — "sounds good" to the proposal: a new op, alerts
+`today`, answers a day's disruptions by route and by stop. It reads
+the live document, the edit document, the stops document, the alerts,
+and the notes, and each row carries the names a rider uses. rt
+`late_trips` gains the same names as optional fields, and rt
+`encode_alerts` registers the snapshot it encodes and answers its
+`rt_hash`.
+Context: the C-TRAN session (2026-11-19) found the Status cards and
+the Dispatch lists to be a join over five documents (QAF-124), rows
+that carry ids only (QAF-122), and an alert preview that needs host
+glue (QAF-125). alerts `gaps` already joins the edits, the stops, and
+the alerts.
+Pinned by: none yet (`docs/units/ui-disruptions.md`).
+Blocks: nothing.
+
+### D-216 — How does an alert explain a trip the live feed cancels?
+State: Decided; not built.
+Answer: 2026-11-19 — "A is fine": `explains` gains a third kind,
+`trip`, which names a trip instance (trip, service date, start). The
+service alerts document goes to version 2, with a migration step from
+version 1 in cap-migrate.
+Context: `explains` names an `edit` or a `stop` (QAF-123). The
+rejected answers: a separate optional field (`explains_trips`) in the
+same version, which gives one idea two fields forever; and no link,
+where an alert that applies to the trip instance counts as explaining
+it, which is a matching rule and not a recorded fact. The alerts
+document is new, so the version change costs least now.
 Pinned by: none yet (`docs/units/ui-disruptions.md`).
 Blocks: nothing.
 

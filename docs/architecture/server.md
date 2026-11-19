@@ -31,10 +31,15 @@ into web/pkg/:
   (`POST /service-alerts`) and an alert templates write
   (`POST /alert-templates`). The server serves no feed of the alerts
   (D-124).
+- cap-notes (-notes-wasm) runs in store mode and is held the same way.
+  A note write (`POST /notes`) is one note, not a whole document. The
+  server runs cap-notes `write` over the head with the verified writer
+  and its own clock, so a page never names who wrote a note (D-214).
 - cap-log (-log-wasm) runs in store mode. It keeps the disruptions log,
-  the stops log, the plans log, and the alerts log: each write's entry,
-  the fold, and a revert. The server holds it for its whole lifetime.
-  cap-sync, cap-stops, cap-requests, and cap-alerts turn their documents
+  the stops log, the plans log, the alerts log, and the notes log: each
+  write's entry, the fold, and a revert. The server holds it for its
+  whole lifetime. cap-sync, cap-stops, cap-requests, cap-alerts, and
+  cap-notes turn their documents
   into the log's records and back (`log_records`, `log_document`).
 - cap-network (the -network-wasm flag, cap_network.wasm) imports the
   configured GTFS zip (the kernel's `load_feed` + `import`). It also

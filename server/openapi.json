@@ -2549,6 +2549,131 @@
         }
       }
     },
+    "/notes": {
+      "x-mux": "/notes",
+      "post": {
+        "operationId": "writeNote",
+        "summary": "Write one note, new or edited.",
+        "description": "Store mode only. The body is one note, not a whole document. cap-notes writes it over the notes document in force (write), stamped with the verified writer and the server's clock, so a page never names who wrote a note. The server records the next document as one entry of the notes log. The same text written again changes nothing. When sign-in is on, it needs write on the notes pointer. No GTFS-rt feed carries a note (D-214).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The note's id. A new id is a new note; a held id edits that note's text."
+                  },
+                  "target": {
+                    "type": "object",
+                    "description": "What the note is about: {kind: trip, trip, date, start_secs}, {kind: edit, id}, {kind: alert, id}, or {kind: stop, stop}. A held note's target never changes."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "The note's text. It is not blank."
+                  }
+                },
+                "required": [
+                  "id",
+                  "target",
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The notes document in force, and the note's id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotesHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {id, target, text}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-notes refuses the write: a blank text, a target that names no id, or another target for a held note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stop-requests/work-order": {
       "x-mux": "/stop-requests/work-order",
       "post": {
@@ -5134,6 +5259,10 @@
             "type": "string",
             "description": "The alert templates document (the alerts log's fold), store mode (D-210)."
           },
+          "notes_hash": {
+            "type": "string",
+            "description": "The notes document (the notes log's fold), store mode (D-214)."
+          },
           "build_hash": {
             "type": "string"
           },
@@ -5482,6 +5611,23 @@
         },
         "required": [
           "alerts_hash"
+        ]
+      },
+      "NotesHash": {
+        "type": "object",
+        "properties": {
+          "notes_hash": {
+            "type": "string",
+            "description": "The notes document in force."
+          },
+          "id": {
+            "type": "string",
+            "description": "The note's id."
+          }
+        },
+        "required": [
+          "notes_hash",
+          "id"
         ]
       },
       "TemplatesHash": {

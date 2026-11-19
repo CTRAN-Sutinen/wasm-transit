@@ -70,7 +70,7 @@ The `manifest` pointer is the root. Publishing is one CAS on it. The
 disruptions log is the multi-writer LWW edit document, and the stops
 log holds the stops document and the stop requests document. The
 alerts log holds the service alerts document and the alert templates
-document. The
+document. The notes log holds the notes document. The
 `edits`, `stops`, and `stop_requests` pointers are their history from
 before the logs, read only. The plans log holds the published plan set
 and the frozen versions, and the `plans` pointer is the set's history
@@ -178,6 +178,10 @@ by kind:
 - **Service alerts and templates** (`POST /service-alerts`,
   `POST /alert-templates`) take the whole document under `from`, and a
   moved head is a `409`. Each write is one entry of the alerts log.
+- **Notes** (`POST /notes`) take one note, not a document, and run over
+  the head with no `from`. Two people who note at once never conflict.
+  Each write is one entry of the notes log, and the same text written
+  again is none.
 - **Picks and the plan set** (`POST /plans/freeze`, `/plans/adopt`,
   `/plans`, `/plans/retire`) are each one entry of the plans log.
   cap-plans answers the next frozen versions and plan set over the head,

@@ -98,6 +98,7 @@ func main() {
 		s.stopsWasm = *f.stopsWasm
 		s.requestsWasm = *f.requestsWasm
 		s.alertsWasm = *f.alertsWasm
+		s.notesWasm = *f.notesWasm
 		s.logWasm = *f.logWasm
 		s.kindsPath = *f.kindsPath
 		s.checkWasm = map[string]string{"authz": *f.authzWasm}
@@ -108,7 +109,7 @@ func main() {
 		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
 		s.maybeCompactEdits()
-		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm, "alerts": *f.alertsWasm, "log": *f.logWasm}
+		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm, "alerts": *f.alertsWasm, "notes": *f.notesWasm, "log": *f.logWasm}
 		if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
 			s.serverModules["authz"] = *f.authzWasm
 		}
@@ -272,6 +273,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/stop-requests", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleStopRequests))
 	mux.HandleFunc("/service-alerts", s.protectWrite(func(*http.Request) string { return alertsPointer }, s.handleAlerts))
 	mux.HandleFunc("/alert-templates", s.protectWrite(func(*http.Request) string { return templatesPointer }, s.handleAlerts))
+	mux.HandleFunc("/notes", s.protectWrite(func(*http.Request) string { return notesPointer }, s.handleNotes))
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
 	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
 	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleWorkOrder))
@@ -376,6 +378,15 @@ type server struct {
 	alertsFold    *logFold
 	alertsDoc     logDoc
 	templatesDoc  logDoc
+	// The notes capability (cap-notes) behind POST /notes (notes.go),
+	// held like cap-alerts; the notes log's fold and the document it
+	// holds, guarded by the fold's lock.
+	notesWasm    string
+	notesMu      sync.Mutex
+	notesHeld    *WasmHost
+	notesLogOnce sync.Once
+	notesFold    *logFold
+	notesDoc     logDoc
 	// The kind table (kinds.go, -kinds), read once; and the modules
 	// that check a pointer write, by capability id (default
 	// ../web/pkg/cap_<id>.wasm).
@@ -619,6 +630,8 @@ type Manifest struct {
 	// log's fold), store mode (D-206, D-210).
 	ServiceAlertsHash  string `json:"service_alerts_hash,omitempty"`
 	AlertTemplatesHash string `json:"alert_templates_hash,omitempty"`
+	// The notes document (the notes log's fold), store mode (D-214).
+	NotesHash string `json:"notes_hash,omitempty"`
 	BuildHash        string  `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt      int64   `json:"generated_at"`
 	Publisher        *string `json:"publisher,omitempty"`
@@ -728,6 +741,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if hash, _, found, err := s.alertsLogHead(func() logDoc { return s.templatesDoc }); err == nil && found {
 			manifest.AlertTemplatesHash = hash
 		}
+		if hash, _, found, err := s.notesHead(); err == nil && found {
+			manifest.NotesHash = hash
+		}
 		if head, found, err := s.store.Head(buildPointer); err == nil && found {
 			manifest.BuildHash = head.Hash
 		}
@@ -740,7 +756,7 @@ func (s *server) buildManifest() (Manifest, error) {
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, m.ServiceAlertsHash, m.AlertTemplatesHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, m.ServiceAlertsHash, m.AlertTemplatesHash, m.NotesHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL, fmt.Sprint(m.Auth),
 	}, "|")))
 	return hex.EncodeToString(sum[:])
