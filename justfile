@@ -30,7 +30,8 @@ default:
 # cap_requests, cap_log — the server's default -wasm, -network-wasm,
 # -streets-wasm, -authz-wasm, -plans-wasm, -migrate-wasm, -stops-wasm,
 # -requests-wasm and -log-wasm flags; rebuilt with the modules, never
-# by hand). The
+# by hand), with the kind table web/pkg/kinds.json (-kinds) and the
+# schemas it names in web/pkg/schemas/ (D-202). The
 # registry also publishes every document kind's JSON Schema and a
 # worked example (registry/documents.json, docs/FORMATS.md).
 caps:
@@ -993,7 +994,7 @@ store +args:
 
 # The server as one container image, built with ko (no Dockerfile):
 # the Go binary on a distroless base, with the server's modules
-# (web/pkg/), the pages (web/dist), each UI's own bundle
+# (web/pkg/, with the kind table), the pages (web/dist), each UI's own bundle
 # (web/dist-ui/<id>, for -ui-dist), and the geocoder policy in
 # server/kodata/, which ko copies into the image at $KO_DATA_PATH.
 # The flags' defaults find them there, and the listen address is
@@ -1010,6 +1011,10 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     for cap in sync network streets authz plans migrate stops requests log; do
         cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
     done
+    # The kind table and the schemas it names (-kinds; D-202): the
+    # receive path reads the table, and the store keeps the schemas.
+    cp web/pkg/kinds.json server/kodata/pkg/
+    cp -r web/pkg/schemas server/kodata/pkg/schemas
     cp -r web/dist server/kodata/dist
     # Each UI's own bundle, for -ui-dist <id>=/var/run/ko/dist-ui/<id>
     # (each UI at its own URL, D-171).

@@ -220,7 +220,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-164 | Does the store log hide who wrote each change from callers without audit? | unanswered | nothing |
 | D-165 | How does a request reach the work order system before its API is wired? | decided | nothing |
 | D-166 | What is the smallest part of the stops document two writers can change at once? | decided; partly built | the stops merge in `storage-model` |
-| D-167 | Do authored documents keep the fields they do not know? | decided | the kind table's strictness in `storage-model` |
+| D-167 | Do authored documents keep the fields they do not know? | decided | nothing |
 | D-168 | Where does personal data live, and how is it removed when the law requires? | decided | nothing |
 | D-169 | Is a document's canonical form serde's field order, or RFC 8785? | decided | nothing |
 | D-170 | Are the migration steps from before the first deployment kept? | decided | nothing |
@@ -255,6 +255,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-199 | Does the record store the documents the server derives from its inputs? | decided; built | nothing |
 | D-200 | How does a stored derived document name the inputs it was made from? | encoded | nothing |
 | D-201 | How does the server serve freezing and adopting? | encoded | nothing |
+| D-202 | Where does the kind table live, and what does it govern? | encoded | nothing |
+| D-203 | How does the store describe itself? | encoded | nothing |
 
 ## The trip model
 
@@ -1375,8 +1377,8 @@ Options:
   bump through the two releases of D-79, and an older writer is
   refused and reloads.
 - As today: keep for stops and stop requests, drop for the rest.
-Blocks: the kind table's strictness in `docs/units/storage-model.md`
-("The kind table, and governed writes"). The shapes are built.
+Blocks: nothing. The kind table keeps the rule: a pointer kind's
+module keeps a field it does not know and names it (D-202).
 
 ### D-168 — Where does personal data live, and how is it removed when the law requires?
 State: Decided.
@@ -2952,6 +2954,62 @@ Pinned by: `server/derived_test.go` (`TestABootOverStoredDerivationsRunsNoModule
 Why: `docs/architecture/storage.md`, Why, "The derived documents are
 stored when they are made".
 Blocks: nothing.
+
+### D-203 — How does the store describe itself?
+State: Encoded provisionally.
+Context: `docs/units/storage-model.md` asked for a store that carries a
+layout object, its schemas by content hash, and a README, with each
+field that holds a content hash marked, so that gc and verify follow
+the links. The keys, the time of writing, and which hashes count were
+left open.
+Options (each encoded):
+- Each serving process writes, create only, at every boot: `layout`,
+  `README`, `kinds/<hex>.json` (the build's kind table), and
+  `schemas/<tag>.v<N>/<hex>.json`. One version can have several schemas,
+  because an added optional field keeps the version (D-167) and the
+  store never writes over.
+- `"format": "content-hash"` marks a field that names a blob in this
+  store: a pick's and a frozen version's network, the walk table's
+  inputs, a build's files and modules, a derivation's inputs and
+  documents. A log record's `before` (a record's hash) and a photo's
+  hash (the attachments' bucket) are not marked.
+- verify and gc follow the marks from every named blob and from every
+  log entry's records (through the kind table's `records`). A
+  referenced blob that is missing is a verify break naming what refers
+  to it, and stops a gc pass. The build reading stays as the fallback
+  for a store with no description.
+- The other option was one schema object for each kind and version,
+  which an additive change could not update.
+Pinned by: `server/store/describe_test.go`; `server/kinds_test.go`
+(`TestEveryBlobTheServerWritesIsAKindTheTableNames`);
+`server/schema_test.go` (`TestTheLayoutMatchesItsSchema`).
+Blocks: nothing. A change rewrites `server/store/describe.go`.
+
+### D-202 — Where does the kind table live, and what does it govern?
+State: Encoded provisionally.
+Context: `docs/units/storage-model.md` asked for one kind table for each
+build, beside the registry's documents, that the receive path reads,
+refusing a kind with no entry. Where the server reads it, and which
+writes it governs, were left open.
+Options (each encoded):
+- gen-manifest writes it beside the server's modules
+  (`web/pkg/kinds.json`, `-kinds`, in the server image), so it changes
+  with the modules that enforce it and never with a rollback of the
+  pages. The other option was the page build's `/schemas/`.
+- It governs the generic pointer write and the read class of `/blobs`.
+  A kind with no entry, or with its own route, is refused naming the
+  route. A pointer kind heads only its pointers and is checked by its
+  module's `validate`, which takes the document under the kind's tag.
+  The routes that exist (`/edits`, `/plans`, `/stops`, the logs) keep
+  their own checks, which the table names.
+- The policy is the one pointer kind. cap-authz `validate` refuses an
+  unknown action, a blank rule name, and a name used twice, and accepts
+  with a warning a policy that grants no role a write on the policy.
+- A kind with a published store kind and no entry stops gen-manifest.
+Pinned by: `crates/transit-authz/tests/validate_test.rs`;
+`crates/cap-authz/tests/dispatch_test.rs`; `server/kinds_test.go`.
+Blocks: nothing. A change rewrites `server/kinds.go` and
+`crates/cap-abi/src/bin/common/kind_table.rs`.
 
 ### D-201 — How does the server serve freezing and adopting?
 State: Encoded provisionally.

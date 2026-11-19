@@ -29,11 +29,12 @@ holds:
 A reader maps a blob's envelope (`kind`, `schema_version`) to its
 schema there. This file pins the *storage envelope* and the invariants
 that the schema cannot say.
-The Go host owns two kinds that no Rust type generates. The `build`
-document has a hand-written schema, locked in `server/schemas/` beside
-a frozen example. `server/schema_test.go` checks it against the Go
-type and against a build the server commits, and the index lists it
-with the owner `server`. The manifest's schema is the HTTP contract's
+The Go host owns kinds that no Rust type generates. The `build`
+document, the `derivation` record, and the `store_layout` object have
+hand-written schemas, each locked in `server/schemas/` beside a frozen
+example. `server/schema_test.go` checks each against its Go type and
+against one the server writes, and the index lists them with the owner
+`server`. The manifest's schema is the HTTP contract's
 (`server/openapi.json`). Its shape is below.
 
 The store lives in object storage: S3 and S3-compatible, Azure Blob, or
@@ -54,6 +55,9 @@ Every key below is relative to that prefix:
 | `logs/<log>/entries/<seq>.json` | one entry of an append-only log | serving processes (create only) |
 | `logs/<log>/checkpoints/<seq>.json` | a log's fold up to an entry | serving processes (create only) |
 | `inputs/<key>` | an input servers boot from (`-feed bucket:<key>`, D-118) | the operator |
+| `layout`, `README` | the layout's version and hash scheme, and the layout in plain words | serving processes (create only, once) |
+| `schemas/<tag>.v<N>/<hex>.json` | a locked schema, by its sha256 | serving processes (create only) |
+| `kinds/<hex>.json` | a build's kind table, by its sha256 | serving processes (create only) |
 | `gc/<hex>` | a blob a `store gc` pass is collecting, until it settles | `store gc` |
 
 No object is ever overwritten, appended to, or renamed. The engine
@@ -120,7 +124,8 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
   `cap-streets@sha256:…`. On
   `plans`, it is `cap-plans@sha256:…`. On `stops`, it is
   `cap-stops@sha256:…`. On `stop_requests`, it is
-  `cap-requests@sha256:…`.
+  `cap-requests@sha256:…`. On `policy`, it is `cap-authz@sha256:…`, the
+  module that checked the write.
 - `schema_version` is the payload's version. It is the same number that
   the document carries inside it (see "Versions" below). A writer bumps
   it deliberately. Migrations happen at receive, never at read.
@@ -197,14 +202,18 @@ A process caches each head. It reads at most 2 s behind another
 process's commit. A crash between the creates orphans the blob.
 
 `store gc <url>` (offline, D-117) collects orphans. An orphan is a blob
-that no record names and that is older than the grace (7 days). A
-build's record names its files too (see "Builds"). A pass runs these
-steps:
+that nothing names and that is older than the grace (7 days). A record
+names its `to` and `from`. A build's record names its files too (see
+"Builds"). A field that a stored schema marks `content-hash`, in a
+named blob or in a log entry's record, names its blob, and so on to the
+end ("The store describes itself"). A referenced blob that is missing
+stops the pass, because gc never guesses what it would have named. A
+pass runs these steps:
 
 1. List the records, then the blobs.
 2. Move each orphan to `gc/<hex>` (a copy, then the delete).
-3. Settle: list the records again, restore every trashed blob that a
-   record now names, and empty `gc/`.
+3. Settle: list the records again, restore every trashed blob that is
+   now named, and empty `gc/`.
 
 The settle step closes a race that a commit's own check cannot close. A
 commit can reuse an aged orphan after the pass listed the records. That
@@ -225,6 +234,11 @@ non-zero on the first break. A break is one of these:
   differs from its key, or a checkpoint past the log's last entry;
 - a checkpoint whose bytes differ from the fold of the entries after
   the checkpoint before it (or from the first entry);
+- an object under `schemas/` or `kinds/` whose bytes do not hash to the
+  name in its key;
+- a blob that a field marked `content-hash` names, in a named blob or
+  in a log entry's record, and that is missing. The break names what
+  refers to it;
 - a head manifest that names a document no record names. The fields
   read are `feed_hash`, `network_hash`, `boundary_hash`, `streets_hash`,
   `walks_hash`, `policy_hash`, and `build_hash`. The plan set, the
@@ -384,7 +398,8 @@ entry 1 from their heads, with writer `migrate:stops` and
   unknown `since` answers `"entries": null`, `"since_found": false`,
   and `"whole": true`, and the client takes the whole current document
   (`current`, the head's hash).
-- `POST /pointers/{name}` takes the body `{"from": "<hash>", …}`. It
+- `POST /pointers/{name}` takes the body `{"from": "<hash>", …}`. The
+  kind table governs it ("The kind table", above). It
   answers `200` with the new head, or `409` with
   `{"current": "<hash>"}`. For `edits` the body is
   `{"from", "client": <document>}`. The server runs cap-sync's
@@ -392,10 +407,12 @@ entry 1 from their heads, with writer `migrate:stops` and
   entry of the disruptions log. `from` is compared with the fold's
   hash, and `seq` in the answer is the log's. `GET /pointers/edits`
   answers the fold the same way. `GET /pointers/edits/log` answers the
-  pointer's own records, from before the log. The derived documents'
-  pointers and kinds (see "Derivations") answer `400`: only the
-  server's derivations write them. Other kinds take
-  `{"from", "document": <value>}` verbatim.
+  pointer's own records, from before the log. A kind with its own route
+  (the derived documents, the picks, the stops, the builds, and the
+  rest) answers `400`, naming the route. A pointer kind (the policy)
+  takes `{"from", "document": <value>}`, which its module checks: `422`
+  with its answer when it refuses, else `200 {name, hash, seq,
+  warnings?}`.
 - `GET /blobs/{hash}` answers the raw bytes. The ETag is the full
   `sha256:…` hash (304 on match). `X-Document-Kind` and
   `X-Schema-Version` carry the envelope. With
@@ -528,6 +545,67 @@ entry 1 from their heads, with writer `migrate:stops` and
   The pages show the age. The server never acknowledges a write. It
   answers `503` with `Retry-After`, and the client holds its document
   and resends. A read that the server holds nothing for answers `503`.
+
+## The kind table
+
+Each build has one kind table (D-202). gen-manifest writes it beside the
+server's modules as `web/pkg/kinds.json` (the server's `-kinds`), with
+each schema it names as `web/pkg/schemas/<hex>.json`. It is a
+`kind_table` document. Each entry is one kind the store keeps, by its
+store kind (the envelope's `kind`, or a log's document kind):
+
+```json
+{"store_kind":"policy","tag":"policy","versions":[{"version":1,"schema":"sha256:…"}],"write":"pointer","route":"POST /pointers/policy","pointers":["policy"],"module":"authz","validate":"validate","merge":"replace","read":"restricted"}
+```
+
+- `tag` names the kind's schema. It is empty for a kind with no schema
+  of ours (a GTFS zip, a file of a build, the manifest).
+- `write` is `pointer` (the generic `POST /pointers/<name>`), `route`
+  (its own endpoint, which `route` names), or `server` (only the
+  server writes it).
+- `pointers` are the pointers it heads. `*` ends a prefix.
+- `log` and `records` name the log that holds it, and each record kind
+  with the document field that holds its collection.
+- `module` and `validate` name the capability and op that check a
+  write. The op takes the document under the kind's tag, and answers
+  the canonical bytes, or what refuses it.
+- `merge` is `replace` (CAS on the head read), `lww` (each record id,
+  D-56), `log` (ops over a log's head), or `none`.
+- `read` is `open`, `restricted` (never served by hash), or `audit`.
+
+A generic pointer write is governed by its kind's entry. A kind with no
+entry is refused. A kind with its own route, or that only the server
+writes, is refused, and the answer names the route. A pointer kind
+heads only its pointers. Its module checks it: what makes it wrong is a
+`422` with the module's answer, and a consequence is accepted and named
+(`warnings`). The store holds the module's canonical bytes, with the
+module in the envelope. gen-manifest stops when a kind with a published
+store kind has no entry.
+
+## The store describes itself
+
+A reader with only the bucket finds how to read it (D-203). Each serving
+process creates these objects, create only, at boot:
+
+- `layout`, a `store_layout` document: the layout's version and the
+  hash scheme, `{"kind":"store_layout","schema_version":1,"hash":"sha256","readme":"README"}`.
+- `README`: the layout in plain words.
+- `kinds/<hex>.json`: the build's kind table, by its sha256.
+- `schemas/<tag>.v<N>/<hex>.json`: each schema the table names, by its
+  sha256. An added optional field keeps its version (D-167), so one
+  version can have more than one schema.
+
+An object that exists is never written again. A schema marks each field
+that names a blob in this store with `"format": "content-hash"`: a
+pick's and a frozen version's `network_hash`, the walk table's
+`streets_hash` and `network_hash`, a build's files and modules, and a
+derivation's inputs and documents. A record's `before` in a log entry
+is not marked, because it is the hash of a record, not of a blob. A
+photo's hash is not marked, because the photo is in the attachments'
+own bucket. `store verify` and `store gc` follow the marks from every
+named blob, and from every log entry's records, through the kind
+table's `records` to the schema of the document's collection. A store
+with no description is read as before.
 
 ## Builds
 
@@ -668,6 +746,8 @@ Every persisted kind, by what a version change does to it:
 | `manifest` | the Go server | host-owned | its own shape (below); its schema is the HTTP contract's |
 | `build`, `build_file` | the Go server | host-owned | `kind`, `schema_version` in a build (a hand-written schema, "Builds", below); a build file is its exact bytes |
 | `derivation` (what a module made from which inputs) | the Go server | host-owned | `kind`, `schema_version` (a hand-written schema, "Derivations", above) |
+| `store_layout` (the store's layout object) | the Go server | host-owned | `kind`, `schema_version` (a hand-written schema, "The store describes itself", above) |
+| `kind_table` (a build's kind table) | cap-abi (gen-manifest) | derived | `kind`, `schema_version` ("The kind table", above) |
 
 - A person writes *authored* kinds, and the system cannot re-derive
   them. Their chains are kept forever (D-66). Every record of an

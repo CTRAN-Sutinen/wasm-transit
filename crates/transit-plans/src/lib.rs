@@ -211,6 +211,7 @@ pub struct PublishedPlan {
     /// "YYYY-MM-DD": a published pick is always dated.
     pub effective_from: String,
     /// "sha256:<hex>" of the pick's canonical network document.
+    #[schemars(extend("format" = "content-hash"))]
     pub network_hash: String,
     #[serde(default)]
     pub status: PickStatus,
@@ -393,6 +394,7 @@ impl transit_version::Versioned for FrozenVersions {
 #[ts(export, export_to = "cap_plans/")]
 pub struct FrozenVersion {
     /// "sha256:<hex>" of the version's canonical network document.
+    #[schemars(extend("format" = "content-hash"))]
     pub network_hash: String,
     pub plan_id: String,
     pub name: String,

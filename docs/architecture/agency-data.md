@@ -60,11 +60,14 @@ surface"). Where it holds today:
 | `POST /stops` | read by cap-stops | cap-stops' `validate` (`422`); a survey's surveyor named for the writer (D-163) | `from` / `409`; one entry of the stops log | the entry's `writer` |
 | `POST /stop-requests` | read by cap-requests | cap-requests' `validate` (`422`) | `from` / `409`; one entry of the stops log | the entry's `writer` |
 | `POST /logs/stops` | each op run by its module over the head | the op's own checks and `validate` (`422`); the surveyor named for the writer | ops over the head: different stops never conflict; an event changed since is a `409` naming it; the idempotency key lands once | the entry's `writer` |
-| any other kind's pointer commit (the plan set, picks, stops, stop requests, builds, and the derived documents are refused there) | stored verbatim | **not checked** | `from` / `409` | the log's `writer` |
+| `POST /pointers/<name>`, the policy | read by cap-authz | cap-authz's `validate` (`422`); a policy nobody can change again is accepted and named (`warnings`) | `from` / `409` | the log's `writer` |
+| `POST /pointers/<name>`, any other kind | refused (`400`): a kind the kind table does not name, or one with its own route, named in the answer | | | |
 
-The last row is the gap. A pointer commit for any kind other than the
-edits stores the document as given (`docs/units/storage-model.md`,
-"The kind table, and governed writes").
+The kind table (D-202; `docs/FORMATS.md`, "The kind table") governs the
+generic pointer write. Each kind the store keeps has one entry: how it
+is written, the module and op that check it, its merge rule, and its
+read class. A kind with no entry is refused, so no write reaches the
+bucket unchecked.
 
 **The gate refuses only what makes the data wrong.** That means a broken
 shape or a broken invariant. A legitimate change with consequences is

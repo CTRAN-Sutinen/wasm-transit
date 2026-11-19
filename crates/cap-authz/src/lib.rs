@@ -41,6 +41,15 @@ pub enum Request {
         #[ts(as = "transit_authz::Policy")]
         policy: cap_abi::Current<transit_authz::Policy>,
     },
+    /// What a policy write must pass (the receive path of
+    /// `POST /pointers/policy`): every issue that makes the policy
+    /// wrong, or, when there is none, the canonical document and its
+    /// hash. The consequences a person should see ride along in
+    /// `warnings` and never refuse (a policy nobody can change again).
+    Validate {
+        #[ts(as = "transit_authz::Policy")]
+        policy: cap_abi::Base<transit_authz::Policy>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -49,6 +58,17 @@ pub enum Request {
 pub enum Response {
     Authorize { decision: transit_authz::Decision },
     Effective { effective: transit_authz::EffectivePolicy },
+    Validate {
+        issues: Vec<transit_authz::PolicyIssue>,
+        warnings: Vec<transit_authz::PolicyWarning>,
+        document: Option<String>,
+        document_hash: Option<String>,
+        /// The fields the policy carries that this build does not know
+        /// (D-167): kept in it, and flagged for a person, never refused.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(optional, as = "Option<Vec<String>>")]
+        unknown_fields: Vec<String>,
+    },
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -69,6 +89,23 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Effective { identity, policy } => Ok(Response::Effective {
             effective: transit_authz::effective(&policy, &identity),
         }),
+        Request::Validate { policy } => {
+            let checked = transit_authz::validate(&policy.0);
+            let (document, document_hash) = if checked.issues.is_empty() {
+                let document = cap_abi::canonical_bytes(&policy.0)?;
+                let hash = cap_abi::content_hash(document.as_bytes());
+                (Some(document), Some(hash))
+            } else {
+                (None, None)
+            };
+            Ok(Response::Validate {
+                issues: checked.issues,
+                warnings: checked.warnings,
+                document,
+                document_hash,
+                unknown_fields: cap_abi::request_unknown_fields(),
+            })
+        }
     }
 }
 

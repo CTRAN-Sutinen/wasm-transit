@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Store layout",
+  "description": "The store's layout object (D-203): the layout's version and the hash scheme, written once at the bucket's root as `layout`, beside a plain-language `README`. The Go host owns this kind: the schema is written by hand, and server/schema_test.go checks it against the Go type and against the layout a store writes (docs/FORMATS.md, \"The store describes itself\").",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "store_layout"
+    },
+    "schema_version": {
+      "description": "The layout's version: the keys and what each holds.",
+      "const": 1
+    },
+    "hash": {
+      "description": "The scheme every content hash in the store uses, written <scheme>:<hex>.",
+      "const": "sha256"
+    },
+    "readme": {
+      "description": "The key of the layout in plain language.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "hash",
+    "readme"
+  ],
+  "additionalProperties": false
+}

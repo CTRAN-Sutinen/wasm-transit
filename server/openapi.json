@@ -602,7 +602,7 @@
       "post": {
         "operationId": "postPointer",
         "summary": "Commit a document to a pointer (compare and swap).",
-        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. For other host-owned kinds it stores `document` verbatim. The server refuses the kinds and pointers that have their own route: plans, network_document, plan.*, stops, stop_requests, build, and build_file; and the derived documents and their derivation records (the pointers network, boundary, streets, walks, and derived.*, and the kinds boundary, streets, walks, and derivation), which only the server's imports write. X-Produced-By sets the envelope's producer for a verbatim kind (default server). X-Writer names the writer when sign-in is off. When sign-in is on, it needs write on the pointer. For edit_records, a field the client's records carry that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field.",
+        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. Every other write is governed by the kind table (-kinds, D-202): a kind it does not name is refused, a kind with its own route is refused naming the route (plans, network_document, plan.*, stops, stop_requests, build, the derived documents, and the rest), and a kind written by pointer (the policy) heads only its pointers and is checked by its module's validate op. The server stores the module's canonical bytes, produced by it. document_hash, when present, is asserted against the bytes sent. When sign-in is on, it needs write on the pointer. For edit_records, a field the client's records carry that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field.",
         "parameters": [
           {
             "name": "name",
@@ -688,6 +688,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The kind's module refuses the document: its answer, with what makes it wrong (`issues`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The module's validate answer.",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -4391,6 +4418,13 @@
           },
           "seq": {
             "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "What the kind's module accepts and names for a person (a policy nobody can change again). Absent when there is none."
           }
         },
         "required": [

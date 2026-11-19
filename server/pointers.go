@@ -327,57 +327,47 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		return
 	}
 
-	// The published set and the picks' networks are written only by
-	// POST /plans (plans.go): their identity is a module's, and a raw
-	// write would skip cap-network's validation and cap-plans' chain.
-	if kind == "plans" || kind == "frozen_versions" || kind == "network_document" || name == "plans" || strings.HasPrefix(name, "plan.") {
-		http.Error(w, "picks publish through POST /plans", http.StatusBadRequest)
+	// The kind table governs the write (kinds.go): a kind with its own
+	// route or with no entry is refused, and a pointer kind is checked
+	// by its module, which answers the bytes stored.
+	entry, refusal, err := s.pointerRefusal(name, kind)
+	if err != nil {
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	// The stops document is written only by POST /stops (stops.go): a
-	// raw write would skip cap-stops' validation and the picks' refresh.
-	if kind == "stops" || name == stopsPointer {
-		http.Error(w, "the stops document is written through POST /stops", http.StatusBadRequest)
+	if refusal != "" {
+		http.Error(w, refusal, http.StatusBadRequest)
 		return
 	}
-	// The stop requests document is written only by POST /stop-requests
-	// (requests.go): a raw write would skip cap-requests' validation.
-	if kind == "stop_requests" || name == requestsPointer {
-		http.Error(w, "the stop requests document is written through POST /stop-requests", http.StatusBadRequest)
-		return
-	}
-	// The derived documents and their derivation records are the
-	// server's own imports of its inputs (derived.go): a raw write would
-	// name a document no module made from them.
-	if kind == DerivationKind || kind == "boundary" || kind == "streets" || kind == "walks" || isDerivedPointer(name) {
-		http.Error(w, "the derived documents are written by the server's imports of its inputs", http.StatusBadRequest)
-		return
-	}
-	// A build names files the store must hold: builds land from -dist,
-	// and the pointer moves only to a build its log holds (POST /builds).
-	if kind == store.BuildKind || kind == store.BuildFileKind || name == buildPointer {
-		http.Error(w, "builds land from -dist and move through POST /builds", http.StatusBadRequest)
-		return
-	}
-
-	// Host-owned document kinds (manifest, policy): raw bytes verbatim,
-	// hashed by the host with the shared formula (no module claims
-	// their identity), document_hash asserted when present.
 	if req.Document == "" {
 		http.Error(w, "document is required", http.StatusBadRequest)
 		return
 	}
-	data := []byte(req.Document)
-	producedBy := r.Header.Get("X-Produced-By")
-	if producedBy == "" {
-		producedBy = "server"
+	if req.DocumentHash != "" && req.DocumentHash != store.HashOf([]byte(req.Document)) {
+		http.Error(w, fmt.Sprintf("hash mismatch: document_hash is %s, and the bytes are %s", req.DocumentHash, store.HashOf([]byte(req.Document))), http.StatusBadRequest)
+		return
 	}
-	env := store.Envelope{Kind: kind, SchemaVersion: 1, ProducedBy: producedBy}
+	if !json.Valid([]byte(req.Document)) {
+		http.Error(w, "document is not JSON", http.StatusBadRequest)
+		return
+	}
+	checked, err := s.checkKind(r.Context(), entry, json.RawMessage(req.Document))
+	if err != nil {
+		http.Error(w, "the document is refused: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if checked.document == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.Write(checked.answer)
+		return
+	}
+	env := store.Envelope{Kind: kind, SchemaVersion: entry.current(), ProducedBy: checked.module}
 	from := ""
 	if found {
 		from = head.Hash
 	}
-	h, seq, err := s.store.CAS(name, from, data, env, req.DocumentHash, writer, nowMs)
+	h, seq, err := s.store.CAS(name, from, []byte(*checked.document), env, checked.documentHash, writer, nowMs)
 	if err != nil {
 		var ce *store.ConflictError
 		if asConflict(err, &ce) {
@@ -389,9 +379,18 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
+	flagUnknown(w, name, writer, checked.unknownFields)
+	var warned struct {
+		Warnings json.RawMessage `json:"warnings"`
+	}
+	json.Unmarshal(checked.answer, &warned)
+	answer := map[string]any{"name": name, "hash": h, "seq": seq}
+	if len(warned.Warnings) > 2 {
+		answer["warnings"] = warned.Warnings
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("ETag", `"`+h+`"`)
-	json.NewEncoder(w).Encode(map[string]any{"name": name, "hash": h, "seq": seq})
+	json.NewEncoder(w).Encode(answer)
 }
 
 func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
@@ -463,7 +462,7 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	// rules, pointers) — a client gets the manifest's policy_hash
 	// (opaque, for rotation detection), never the document. The log
 	// endpoint is the audited path to policy CHANGES, gated by auth.
-	if env.Kind == "policy" {
+	if s.restricted(env.Kind) {
 		http.NotFound(w, r)
 		return
 	}

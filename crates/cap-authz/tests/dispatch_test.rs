@@ -132,3 +132,23 @@ fn a_policy_in_another_version_is_refused_naming_both() {
     let answer = cap_authz::dispatch_json(&request.to_string());
     assert!(answer.contains("policy v2") && answer.contains("reads v1"), "{answer}");
 }
+
+#[test]
+fn a_policy_write_is_checked_through_the_seam() {
+    let answer = |doc: &str| -> serde_json::Value {
+        let out: serde_json::Value =
+            serde_json::from_str(&cap_authz::dispatch_json(&format!(r#"{{"op":"validate","policy":{doc}}}"#))).unwrap();
+        out["ok"].clone()
+    };
+    let sound = answer(r#"{"schema_version":1,"rules":[{"name":"admin","roles":["admin"],"pointers":["*"],"actions":["*"]}],"note":"kept"}"#);
+    assert!(sound["issues"].as_array().unwrap().is_empty(), "{sound}");
+    assert!(sound["document"].as_str().unwrap().contains(r#""note":"kept""#), "a field this build does not know is kept: {sound}");
+    assert_eq!(sound["unknown_fields"], serde_json::json!(["note"]));
+    let wrong = answer(r#"{"schema_version":1,"rules":[{"name":"ops","roles":["d"],"pointers":["edits"],"actions":["wirte"]}]}"#);
+    assert_eq!(wrong["issues"][0]["kind"], "unknown_action");
+    assert!(wrong["document"].is_null());
+    assert_eq!(wrong["warnings"][0]["kind"], "no_policy_writer");
+    let newer: serde_json::Value =
+        serde_json::from_str(&cap_authz::dispatch_json(r#"{"op":"validate","policy":{"schema_version":9,"rules":[]}}"#)).unwrap();
+    assert!(newer.get("error").is_some(), "a newer policy is refused, naming both versions: {newer}");
+}

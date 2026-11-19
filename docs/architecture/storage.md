@@ -137,7 +137,16 @@ schema with no module. Each kind's JSON Schema and a worked example are
 published in the registry (`registry/documents.json`;
 [registry.md](registry.md)). `server/reader_test.go` reads a store with
 nothing but object get and list, the schemas, and `docs/FORMATS.md`.
-The schemas are not yet stored in the bucket itself.
+
+The bucket carries its own description (D-203). Each serving process
+creates, create only: `layout` (the layout's version and hash scheme),
+a plain-language `README`, each build's kind table under `kinds/`, and
+every schema it names under `schemas/<tag>.v<N>/`, each by its hash. A
+schema marks each field that names a blob in the store
+(`"format": "content-hash"`). `store verify` and `store gc` follow those
+marks from every named blob and every log record, so a pick whose
+network is missing is a break, and gc keeps what a log names
+(`docs/FORMATS.md`, "The store describes itself").
 
 The newest authored kinds keep fields they do not know. The stops and
 stop requests types carry an `extra` map. A field that a newer writer
@@ -170,14 +179,17 @@ by kind:
   and refuses what breaks the chain. `POST /plans` freezes and adopts in
   one entry. The plans log has no generic revert: a pick is corrected
   by republishing it, or retired before it takes effect.
-- **Any other pointer commit** stores the document as given, unchecked.
-  This is the gap in agency-data.md's table.
+- **A generic pointer commit** (`POST /pointers/<name>`) is governed by
+  the kind table (D-202): a kind with no entry, or with its own route,
+  is refused, and a pointer kind (the policy) is checked by its module
+  (cap-authz `validate`), which answers the bytes stored.
 
 Permissions are set per pointer and action by the policy (D-58..D-61).
 A role may write a pointer or not. There is no finer grain. No kind is
 restricted on read, except the policy itself and the logs' entries.
-The policy's blob is never served. The entries name their writers, so
-they need the `audit` rule.
+The policy's blob is never served: its read class in the kind table is
+`restricted`. The entries name their writers, so they need the `audit`
+rule.
 
 ## Reads
 
@@ -205,14 +217,13 @@ they need the `audit` rule.
 
 The storage model's direction is decided (D-190, D-191). The
 disruptions log, the stops log, the plans log with freezing and
-adopting, and the stored derived documents are built. The rest is
+adopting, the stored derived documents, the kind table, and the
+store's description of itself are built. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
 - the work rules in the plans log, and the policy's log.
 - a working store for drafts, attachments, and caches, apart from the
   record.
-- one receive path driven by each kind's entry in the kind table.
-- a bucket that carries its own schemas.
 - permissions and restricted reads per change.
 
 The store on each provider's real account and its backups are in
@@ -371,3 +382,41 @@ reading **Because**.
 - **Rejected:** freezing as a status on a pick (a proposal that is never
   adopted would have no place); a generic revert of the plans log.
 - **Decided:** D-191. **Provisional:** D-201 (how the server serves it).
+
+### Every kind has one entry, beside the server's modules (`crates/cap-abi/src/bin/common/kind_table.rs`, `server/kinds.go`)
+- **Holds:** gen-manifest writes one kind table for each build,
+  `web/pkg/kinds.json`, beside the server's modules, and stops when a
+  stored kind has no entry. The receive path refuses a pointer write of
+  a kind with no entry or with its own route, and checks a pointer kind
+  through its module. `/blobs` takes the never-served rule from the
+  table's read class.
+- **Because:** a write that skips its module makes the data wrong for
+  every reader, and the rule for each kind was spread over the handler
+  as special cases. The table ships with the modules that enforce it, so
+  a rollback of the pages never changes what the receive path takes.
+- **Costs:** a new kind is one entry more, and the table must name its
+  route. The policy is the one kind on the generic path today.
+- **Rejected:** the table in the page build (a rollback of the pages
+  would change the governance); a table the Go host keeps by hand (a
+  second copy beside the schemas).
+- **Provisional:** D-202.
+
+### The store describes itself (`server/store/describe.go`)
+- **Holds:** each serving process creates the layout, the README, the
+  kind table, and the schemas, create only, at boot. A schema marks each
+  field that names a blob. `store verify` and `store gc` follow the
+  marks, from blobs and from log records. A store with no description
+  is read as before, and the build reading stays as its fallback.
+- **Because:** the bucket is the agency's record, and it must be
+  readable with no app (D-115). A reader learns each document's schema,
+  and the links between documents, from the bucket alone. gc keeps a
+  blob that only a log names, and verify finds a reference to a missing
+  blob.
+- **Costs:** gc reads each blob whose kind can name a blob, and every
+  log entry, on each pass. A network is never read: its schema marks
+  nothing.
+- **Rejected:** marking every hash (a log record's `before` names a
+  record, and a photo lives in the attachments' bucket); one schema
+  object for each kind and version (an added optional field changes the
+  schema in the same version, and the store never writes over).
+- **Provisional:** D-203.

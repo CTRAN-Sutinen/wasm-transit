@@ -8,6 +8,7 @@ package main
 // too. `just caps` publishes both into the registry, marked host-owned.
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -196,4 +197,32 @@ func TestCommittedDerivationsMatchTheirSchema(t *testing.T) {
 		}
 		validateBytes(t, sch, pointer, data)
 	}
+}
+
+const layoutSchemaPath = "schemas/store_layout.v1.schema.json"
+
+func TestTheLayoutSchemaNamesExactlyTheGoTypesFields(t *testing.T) {
+	doc, _ := readHostSchema(t, layoutSchemaPath)
+	goNames, goRequired := jsonFields(reflect.TypeOf(store.Layout{}))
+	names, required := schemaFields(t, doc)
+	if !reflect.DeepEqual(goNames, names) || !reflect.DeepEqual(goRequired, required) {
+		t.Errorf("Layout: the Go type has %v (%v), the schema %v (%v)", goNames, goRequired, names, required)
+	}
+}
+
+// The frozen example, and the layout a store writes, match the schema.
+func TestTheLayoutMatchesItsSchema(t *testing.T) {
+	_, sch := readHostSchema(t, layoutSchemaPath)
+	raw, err := os.ReadFile("schemas/store_layout.v1.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateBytes(t, sch, "the frozen layout example", raw)
+	bucket := store.NewMemory()
+	newStoreServer(t, bucket)
+	written, _, err := bucket.Get(context.Background(), store.LayoutKey)
+	if err != nil {
+		t.Fatalf("a store-mode boot writes the layout: %v", err)
+	}
+	validateBytes(t, sch, "the layout a store writes", written)
 }

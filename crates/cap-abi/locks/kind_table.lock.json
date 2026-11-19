@@ -1,0 +1,9 @@
+{
+  "tag": "kind_table",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:582799154f055b6f7e1ab3454112f8e6c9473517f26b9965be2afb6d29a36d24",
+      "schema_hash": "sha256:ec54d0f3c1ad977862888492f6a7c2b683e8371d44113c2b3a79af6b1287596f"
+    }
+  }
+}

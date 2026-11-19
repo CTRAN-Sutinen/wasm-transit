@@ -423,3 +423,60 @@ mod prop {
         }
     }
 }
+
+/// What makes a policy wrong: a write of it is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PolicyIssue {
+    /// An action other than "read", "write", "audit", or "*": it would
+    /// grant nothing, silently.
+    UnknownAction { rule: String, action: String },
+    /// A rule with a blank name, by its place: a decision names the rule
+    /// that allowed it.
+    UnnamedRule { index: usize },
+    /// Two rules share a name.
+    DuplicateRuleName { name: String },
+}
+
+/// A consequence of a policy that is accepted, and named for a person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PolicyWarning {
+    /// No rule grants any role a write on the policy: nobody can change
+    /// it again but by a new seed.
+    NoPolicyWriter,
+}
+
+/// A policy's check: what refuses it, and what is accepted and named.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct PolicyCheck {
+    pub issues: Vec<PolicyIssue>,
+    pub warnings: Vec<PolicyWarning>,
+}
+
+/// Check a policy for a write: every issue that makes it wrong, and
+/// every consequence a person should see. Issues are in rule order and
+/// sets of them never depend on it.
+pub fn validate(policy: &Policy) -> PolicyCheck {
+    let mut issues = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut duplicated = std::collections::BTreeSet::new();
+    for (index, rule) in policy.rules.iter().enumerate() {
+        if rule.name.trim().is_empty() {
+            issues.push(PolicyIssue::UnnamedRule { index });
+        } else if !seen.insert(rule.name.as_str()) && duplicated.insert(rule.name.as_str()) {
+            issues.push(PolicyIssue::DuplicateRuleName { name: rule.name.clone() });
+        }
+        for action in &rule.actions {
+            if !matches!(action.as_str(), "read" | "write" | "audit" | "*") {
+                issues.push(PolicyIssue::UnknownAction { rule: rule.name.clone(), action: action.clone() });
+            }
+        }
+    }
+    let writer = policy.rules.iter().any(|r| !r.roles.is_empty() && r.matches(Action::Write, "policy"));
+    let warnings = if writer { vec![] } else { vec![PolicyWarning::NoPolicyWriter] };
+    PolicyCheck { issues, warnings }
+}

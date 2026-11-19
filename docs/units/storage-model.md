@@ -32,7 +32,9 @@ cap-log too, and each of its kinds' capabilities answers its records
 versions, and the server freezes and adopts through it (D-191;
 `docs/architecture/storage.md`). The documents the server derives from
 its inputs are stored in the record when they are made (D-199;
-`docs/FORMATS.md`, "Derivations").
+`docs/FORMATS.md`, "Derivations"). The kind table governs every
+write, and the store describes itself (D-202, D-203; `docs/FORMATS.md`,
+"The kind table", "The store describes itself").
 
 ## Scope, in order
 
@@ -52,22 +54,7 @@ its inputs are stored in the record when they are made (D-199;
      or abandoned, on the working store's schedule.
 3. **The policy log.** The policy moves into a restricted log that the
    server never serves openly.
-4. **The kind table, and governed writes.** One table for each build,
-   generated beside the registry's documents. It gives each kind's
-   log, module, validation op, merge rule, and read class. The receive
-   path reads it. A kind with no entry is refused. Today a pointer
-   commit for any kind except the edits, the picks, the stops, the stop
-   requests, the builds, and the derived documents is stored as given
-   (`docs/architecture/agency-data.md`, "Writes are governed"). This
-   step is independent of the logs and can start at any time.
-5. **The store describes itself.** At setup the store creates, create
-   only, a `layout` object that names its layout version and hash
-   scheme, the build's locked schemas under `schemas/` by content
-   hash, and a plain-language README of the layout. Each schema marks
-   every field that holds a content hash (`"format": "content-hash"`).
-   `store gc` and `store verify` follow references by that mark, and
-   an outside reader learns the links from the same schemas.
-6. **Permissions per change.** The receive path knows which records a
+4. **Permissions per change.** The receive path knows which records a
    write changed. The kind's module sorts each change into change
    classes (for stops: a survey, a planned event, an in-service event).
    cap-authz maps roles to classes.

@@ -12,15 +12,17 @@
 //	pointers/<name>/<seq, 20 digits>.json  one commit record (LogEntry)
 //	logs/<log>/entries/<seq>.json          one entry of an append-only log
 //	logs/<log>/checkpoints/<seq>.json      the log's fold up to seq (log.go)
+//	layout, README, kinds/, schemas/       the store's description (describe.go)
 //
 // The pointer is its highest record — there is no pointer object. A
 // commit is two creates: the blob, then record N+1, which lands only
 // when no record N+1 exists — the conditional create is the CAS, so any
 // number of processes may share one bucket — and then a re-read of its
 // blob, re-created if missing. A crash between the creates orphans the
-// blob; the offline collector (gc.go, `store gc`) deletes blobs no
-// record names, past the grace period — a build's record names its
-// files too (build.go, the one kind whose blob names blobs). Serving processes never delete
+// blob; the offline collector (gc.go, `store gc`) deletes blobs nothing
+// names, past the grace period — a build's record names its files too
+// (build.go), and a field a stored schema marks content-hash names its
+// blob (describe.go). Serving processes never delete
 // (D-117). Nothing is ever overwritten, appended, renamed, or locked.
 // The store never mints document identity for bus documents: callers
 // pass the module-produced hash and the store asserts sha256(bytes) ==

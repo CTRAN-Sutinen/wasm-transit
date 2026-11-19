@@ -14,7 +14,8 @@ into web/pkg/:
   /edits. In store mode it also turns the edit document into the
   disruptions log's records and back, and answers what a revert writes
   back. The server holds it for its whole lifetime.
-- cap-authz (-authz-wasm) runs when authentication is on.
+- cap-authz (-authz-wasm) runs when authentication is on. In store
+  mode a fresh instance also checks each policy write (`validate`).
 - cap-plans (-plans-wasm) runs in store mode. It is the op behind
   POST /plans, /plans/freeze, /plans/adopt, and /plans/retire, and it
   turns the published plan set and the frozen versions into the plans
@@ -25,8 +26,9 @@ into web/pkg/:
   the stops document for a published pick.
 - cap-requests (-requests-wasm) runs in store mode and is held the same
   way. It does the validation behind a stop requests write.
-- cap-log (-log-wasm) runs in store mode. It keeps the disruptions log
-  and the stops log: each write's entry, the fold, and a revert. The
+- cap-log (-log-wasm) runs in store mode. It keeps the disruptions log,
+  the stops log, and the plans log: each write's entry, the fold, and a
+  revert. The
   server holds it for its whole lifetime. cap-sync, cap-stops, and
   cap-requests turn their documents into the log's records and back
   (`log_records`, `log_document`).
@@ -40,6 +42,13 @@ into web/pkg/:
   the street layer and the published network (the kernel's
   `load_network` + `walks`). It runs in a fresh instance that the server
   closes the same way.
+
+Beside the modules, `just caps` writes the kind table
+(`web/pkg/kinds.json`, `-kinds`; D-202) and the schemas it names
+(`web/pkg/schemas/`). Store mode reads the table at startup and stops
+without it. At each boot in store mode the server writes the store's
+description, create only: the layout, the README, the table, and the
+schemas (D-203; `docs/FORMATS.md`, "The store describes itself").
 
 The server compiles each module's bytes once per process (decoding,
 validating, machine code: 1–3 s for cap-network). It compiles different
@@ -390,13 +399,15 @@ Its HTTP surface:
     the disruptions log.
   - `POST /pointers/{name}` (`{from, …}`): 200 and the new head, or 409
     and the current head on conflict. For `edits` the write is one entry
-    of the disruptions log, and `from` is the fold's hash. The derived
-    documents' pointers answer 400: only the server's derivations write
-    them.
+    of the disruptions log, and `from` is the fold's hash. Every other
+    write is governed by the kind table (`-kinds`, `web/pkg/kinds.json`;
+    D-202): a kind it does not name, or one with its own route, answers
+    400 naming the route. The policy is checked by cap-authz `validate`
+    (422 with its answer), and the server stores its canonical bytes.
   - `GET /blobs/{hash}`: raw bytes, ETag the hash, envelope in headers.
     The server gzips it as `application/gzip` for
-    `Accept: application/gzip` or at `/blobs/{hash}.gz`. Blobs of kind `policy`
-    are never served: 404.
+    `Accept: application/gzip` or at `/blobs/{hash}.gz`. A blob whose
+    kind's read class is `restricted` (the policy) is never served: 404.
   - `GET /manifest` serves the `manifest` pointer's blob. The server
     commits it again when the published feed, streets, module, or
     services change.

@@ -31,6 +31,8 @@ use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, Migra
 mod common;
 #[path = "common/schema_lock.rs"]
 mod schema_lock;
+#[path = "common/kind_table.rs"]
+mod kind_table;
 use cap_abi::validate::validate_assembly;
 use sha2::{Digest as _, Sha256};
 
@@ -250,7 +252,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "authz",
         file: "module_authz.wasm",
-        ops: &["authorize", "effective"],
+        ops: &["authorize", "effective", "validate"],
         documents: &[],
         consumes: &[],
         speaks: &[("policy", &[1])],
@@ -726,7 +728,8 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let json = serde_json::to_string_pretty(&pointer).expect("pointer serializes");
     fs::write(registry.join("registry.json"), json + "\n").expect("write pointer");
 
-    publish_documents(&registry, documents, locks, &evidence);
+    let index = publish_documents(&registry, documents, locks, &evidence);
+    publish_kind_table(root, &registry, &index);
 
     println!(
         "registry: {} capabilities published (blobs + records + pointer)",
@@ -908,6 +911,20 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
         kind::<transit_streets::Streets>("streets", Some("streets"), "transit-streets", streets_example_context().map(|c| value(&c.streets)), None),
         kind::<transit_streets::walking::WalkTable>("walks", Some("walks"), "transit-streets", walks_example, None),
         kind::<transit_runs::WorkRules>("work_rules", None, "transit-runs", Some(value(&fixture_work_rules())), None),
+        kind::<kind_table::KindTable>(
+            "kind_table",
+            Some("kind_table"),
+            "cap-abi",
+            // The governance alone: the versions are the published
+            // schemas', and would move the example with every schema.
+            Some(value(&kind_table::KindTable {
+                kind: kind_table::KindTableKind,
+                schema_version: kind_table::SCHEMA_VERSION,
+                kinds: kind_table::kinds(),
+                extra: Default::default(),
+            })),
+            None,
+        ),
         kind::<transit_stops::Stops>("stops", None, "transit-stops", Some(value(&fixture_stops())), None),
         kind::<transit_requests::StopRequests>("stop_requests", None, "transit-requests", Some(value(&fixture_requests())), None),
         kind::<transit_live::LiveDay>("live", None, "transit-live", live_example().map(|(live, _)| value(&live)), None),
@@ -961,7 +978,7 @@ fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
 
 /// The Go host's document kinds with a hand-written schema, by tag and
 /// version (server/schemas/).
-const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1)];
+const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1), ("store_layout", 1)];
 
 /// Publish the documents: for each locked version of each kind, its
 /// schema `schemas/<tag>.v<N>.schema.json` and its example
@@ -973,7 +990,7 @@ const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1)];
 /// schema. Each schema's `$id` names no host. `go test ./server/...`
 /// validates every example against its schema with no Rust
 /// (docs/FORMATS.md).
-fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) {
+fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) -> Vec<serde_json::Value> {
     let schemas = registry.join("schemas");
     let examples = registry.join("examples");
     fs::create_dir_all(&schemas).expect("create registry schemas");
@@ -1038,6 +1055,46 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
     fs::write(registry.join("documents.json"), json + "\n").expect("write documents index");
     publish_web_schemas(registry, &index);
     println!("registry: {} document versions published (schemas + worked examples)", index.len());
+    index
+}
+
+/// The kind table (`kind_table.rs`): each kind's governance, with the
+/// versions the published schemas give it, written beside the server's
+/// modules as `web/pkg/kinds.json`, and each schema it names as
+/// `web/pkg/schemas/<hex>.json` (the server keeps them in the store,
+/// D-202). Every kind the published schemas name has an entry, or the
+/// run stops.
+fn publish_kind_table(root: &Path, registry: &Path, index: &[serde_json::Value]) {
+    let mut kinds = kind_table::kinds();
+    let pkg = root.join("web/pkg");
+    let schemas = pkg.join("schemas");
+    let _ = fs::remove_dir_all(&schemas);
+    fs::create_dir_all(&schemas).expect("create web/pkg/schemas");
+    let mut ungoverned = Vec::new();
+    for e in index {
+        let tag = e["tag"].as_str().expect("a tag");
+        let stored = e["store_kind"].as_str().is_some();
+        let Some(entry) = kinds.iter_mut().find(|k| k.tag == tag) else {
+            if stored {
+                ungoverned.push(tag.to_string());
+            }
+            continue;
+        };
+        let hash = e["schema_hash"].as_str().expect("a schema hash").to_string();
+        let text = fs::read(registry.join(e["schema"].as_str().expect("a schema path"))).expect("the published schema");
+        fs::write(schemas.join(format!("{}.json", hash.trim_start_matches("sha256:"))), text).expect("write the schema");
+        entry.versions.push(kind_table::VersionEntry { version: e["schema_version"].as_u64().expect("a version") as u32, schema: hash });
+    }
+    assert!(ungoverned.is_empty(), "the kind table (crates/cap-abi/src/bin/common/kind_table.rs) has no entry for the stored kinds {ungoverned:?}");
+    let table = kind_table::KindTable {
+        kind: kind_table::KindTableKind,
+        schema_version: kind_table::SCHEMA_VERSION,
+        kinds,
+        extra: Default::default(),
+    };
+    let json = cap_abi::canonical_bytes(&table).expect("the kind table serializes");
+    fs::write(pkg.join("kinds.json"), json).expect("write web/pkg/kinds.json");
+    println!("kind table: {} kinds, {} schemas (web/pkg/kinds.json)", table.kinds.len(), fs::read_dir(&schemas).map(|d| d.count()).unwrap_or(0));
 }
 
 /// The digest of the source the modules are built from — every file
@@ -2746,6 +2803,30 @@ fn example_for(
             (
                 json!({ "op": "effective", "identity": identity, "policy": policy }),
                 json!({ "ok": { "op": "effective", "effective": effective } }),
+            )
+        }
+        ("authz", "validate") => {
+            let policy = transit_authz::Policy::current(vec![
+                transit_authz::Rule {
+                    name: "ops-write-edits".into(),
+                    roles: vec!["dispatcher".into()],
+                    pointers: vec!["edits".into()],
+                    actions: vec!["read".into(), "write".into()],
+                    extra: Default::default(),
+                },
+                transit_authz::Rule {
+                    name: "admin-all".into(),
+                    roles: vec!["admin".into()],
+                    pointers: vec!["*".into()],
+                    actions: vec!["*".into()],
+                    extra: Default::default(),
+                },
+            ]);
+            let document = cap_abi::canonical_bytes(&policy).ok()?;
+            (
+                json!({ "op": "validate", "policy": policy }),
+                json!({ "ok": { "op": "validate", "issues": [], "warnings": [],
+                    "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
             )
         }
         // The plan-chain capability's examples compute REAL answers

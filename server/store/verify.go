@@ -24,6 +24,12 @@ type VerifyReport struct {
 	// Folded is how many checkpoints verify compared with the fold of
 	// the entries before them (VerifyFolding).
 	Folded int `json:"folded"`
+	// The store's description (describe.go): the schemas and kind
+	// tables it keeps, each read and hashed, and the blobs a marked
+	// field names.
+	Schemas    int `json:"schemas"`
+	Tables     int `json:"tables"`
+	Referenced int `json:"referenced"`
 }
 
 // A LogFolder is the module that owns a log's kinds: the fold of the
@@ -47,7 +53,9 @@ func broken(key, format string, args ...any) error {
 // wasm): every key under pointers/ is a record, each pointer's records
 // run from seq 1 with no gap and chain (`from` is the prior `to`), and
 // every blob a record names (and every file of a build one names —
-// build.go) exists, hashes to its name, and carries its envelope. It
+// build.go — and every blob a marked field names in a named blob or a
+// log record — describe.go) exists, hashes to its name, and carries its
+// envelope; each object of the store's description is its hash. It
 // answers the first break as a *VerifyError. Each log under logs/ runs
 // from entry 1 with no gap, each entry says its log's kind, its log,
 // and the seq in its key, and each checkpoint does the same, at a seq
@@ -141,17 +149,42 @@ func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport
 			}
 		}
 	}
+	// The store's description (describe.go): each schema and kind table
+	// is its hash, and every blob a marked field names is checked like a
+	// named one: from the log entries' records here, from each blob below.
+	if err := verifyDescription(ctx, b, &r); err != nil {
+		return r, err
+	}
+	d, err := readDescribed(ctx, b)
+	if err != nil {
+		return r, err
+	}
+	referencedBy := map[string]string{} // a blob's hex → what names it by a marked field
+	fromLogs, err := d.logRefs(ctx, b)
+	if err != nil {
+		return r, err
+	}
+	for h, by := range fromLogs {
+		if !named[h] {
+			named[h] = true
+			referencedBy[h] = by
+		}
+	}
 	hexes := make([]string, 0, len(named))
 	for h := range named {
 		hexes = append(hexes, h)
 	}
 	sort.Strings(hexes)
-	for _, h := range hexes {
+	for i := 0; i < len(hexes); i++ {
+		h := hexes[i]
 		key := blobKey(h)
 		data, meta, err := b.Get(ctx, key)
 		if errors.Is(err, ErrNotFound) {
 			if by, ok := buildFile[h]; ok {
 				return r, broken(key, "build %s names it, and the blob is missing", by)
+			}
+			if by, ok := referencedBy[h]; ok {
+				return r, broken(key, "%s names it in a content-hash field, and the blob is missing", by)
 			}
 			return r, broken(key, "a record names it, and the blob is missing")
 		} else if err != nil {
@@ -165,7 +198,15 @@ func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport
 			return r, broken(key, "no envelope (kind, schema_version) in its metadata")
 		}
 		r.Blobs++
+		for _, ref := range d.refs(env.Kind, env.SchemaVersion, data) {
+			if !named[ref] {
+				named[ref] = true
+				referencedBy[ref] = key
+				hexes = append(hexes, ref)
+			}
+		}
 	}
+	r.Referenced = len(referencedBy)
 	if seqs := byName["manifest"]; len(seqs) > 0 {
 		if err := verifyManifest(ctx, b, recordKey("manifest", seqs[len(seqs)-1]), named); err != nil {
 			return r, err
@@ -342,6 +383,37 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder)
 			}
 			r.Folded++
 			prev, prevSeq = stored, seq
+		}
+	}
+	return nil
+}
+
+// verifyDescription checks the store's description: every object under
+// schemas/ and kinds/ hashes to the name in its key.
+func verifyDescription(ctx context.Context, b Backend, r *VerifyReport) error {
+	for _, prefix := range []string{"schemas/", "kinds/"} {
+		objs, err := b.List(ctx, prefix, "")
+		if err != nil {
+			return err
+		}
+		for _, o := range objs {
+			base := o.Key[strings.LastIndex(o.Key, "/")+1:]
+			hex, ok := strings.CutSuffix(base, ".json")
+			if _, err := ParseHash("sha256:" + hex); !ok || err != nil {
+				return broken(o.Key, "not a description key (%s<…>/<sha256 hex>.json)", prefix)
+			}
+			data, _, err := b.Get(ctx, o.Key)
+			if err != nil {
+				return err
+			}
+			if got := hashOf(data); got != "sha256:"+hex {
+				return broken(o.Key, "the bytes hash to %s", got)
+			}
+			if prefix == "schemas/" {
+				r.Schemas++
+			} else {
+				r.Tables++
+			}
 		}
 	}
 	return nil

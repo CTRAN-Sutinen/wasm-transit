@@ -191,6 +191,10 @@ schema lock"). It then copies the locks out:
 - `registry/schemas/<tag>.v<N>.schema.json`
 - `registry/examples/<tag>.v<N>.json`
 - the index `registry/documents.json`
+- the kind table beside the server's modules, `web/pkg/kinds.json`,
+  with each schema it names as `web/pkg/schemas/<hex>.json` (D-202;
+  `docs/FORMATS.md`, "The kind table"). The run stops when a kind with
+  a store kind has no entry.
 
 The index holds, per kind and version: the `tag` the document carries,
 its bus `kind`, its `store_kind` (the store envelope's kind, when the

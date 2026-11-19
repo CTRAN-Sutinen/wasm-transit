@@ -11,11 +11,12 @@ import (
 // Builds (D-80; docs/FORMATS.md, "Builds"): every file a release built
 // — the pages, their scripts, the capability manifest, the modules, the
 // service worker — is a blob of kind BuildFileKind, and a BuildKind
-// document lists them. A build is the ONE kind whose blob names other
-// blobs: GC (gc.go) and Verify (verify.go) read a build record's
+// document lists them. GC (gc.go) and Verify (verify.go) read a build record's
 // document and treat every file it names as named by that record, so
 // every build the log ever held stays whole and a rollback is a
-// pointer move to bytes that still exist.
+// pointer move to bytes that still exist. A store that describes itself
+// (describe.go) marks the same fields in the build's schema; this
+// reading keeps a store with no description whole.
 
 // BuildKind is the build document's kind; BuildFileKind each file's.
 const (

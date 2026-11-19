@@ -44,6 +44,8 @@
       "type": "integer"
     },
     "network_hash": {
+      "description": "The network whose stops it walks between.",
+      "format": "content-hash",
       "type": "string"
     },
     "schema_version": {
@@ -55,6 +57,8 @@
       "type": "number"
     },
     "streets_hash": {
+      "description": "The streets document the table walks (a blob in the store).",
+      "format": "content-hash",
       "type": "string"
     },
     "walks": {

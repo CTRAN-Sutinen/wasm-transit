@@ -535,6 +535,10 @@ image.
   ```
 
   It reads everything and stops with an error at the first problem.
+  The bucket explains itself: its `README` file says, in plain words,
+  what each folder holds. The server writes it, with the `layout` file
+  and the `schemas/` and `kinds/` folders, the first time it starts on
+  the bucket.
   A bucket that an older release last served can stop with "the head
   manifest's network_hash … no record names it": that release did not
   keep the imported schedule in the bucket. Start the new release once.
@@ -618,7 +622,8 @@ image.
   site, a regular copy to a second bucket that the server's credentials
   cannot change, or both. Every file in the bucket is written once and
   never changed, so a copy is simple. Copy the `logs/` and `pointers/`
-  folders first, then `blobs/`. To restore, point the server at the copy and
+  folders first, then `blobs/`, then `schemas/`, `kinds/`, `layout`,
+  and `README`. To restore, point the server at the copy and
   run `just store verify` on it. Restore a backup only into the same
   version of the app or a newer one. An older version refuses data
   that a newer one wrote.

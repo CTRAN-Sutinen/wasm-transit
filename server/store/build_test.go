@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// A build (D-80, docs/FORMATS.md "Builds") is the one kind whose blob
-// names other blobs: every file the release built is a blob, and the
-// build document lists them. Every build the `build` pointer ever
+// A build (D-80, docs/FORMATS.md "Builds") names other blobs: every
+// file the release built is a blob, and the build document lists them. Every build the `build` pointer ever
 // logged stays whole — its document and every file it names — so a
 // rollback is a pointer move to bytes that still exist.
 

@@ -16,6 +16,7 @@
         },
         "network_hash": {
           "description": "\"sha256:<hex>\" of the version's canonical network document.",
+          "format": "content-hash",
           "type": "string"
         },
         "plan_id": {

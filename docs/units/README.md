@@ -52,7 +52,7 @@ work; a group is only a way to find them.
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
-| [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; the kind table; permissions per change |
+| [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
 
 ### Stops and streets
 

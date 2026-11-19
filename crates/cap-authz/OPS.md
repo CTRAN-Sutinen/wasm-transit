@@ -36,3 +36,14 @@ The policy as it applies to this identity: `{identity, policy}` gives `{roles, c
 Matching rules are merged per pointer and sorted. Wildcards stay symbolic.
 
 This is the client's view (`GET /permissions`). It contains nothing about other users or roles.
+
+## validate
+
+What a policy write must pass. The sync server asks this before it commits `POST /pointers/policy`.
+
+- `issues` makes the policy wrong, and refuses the write: an action other than `read`, `write`, `audit`, or `*` (`unknown_action`); a rule with a blank name (`unnamed_rule`, by its place); two rules with one name (`duplicate_rule_name`).
+- `warnings` are consequences a person should see, and never refuse: a policy that grants no role a write on the policy (`no_policy_writer`), which nobody could change again but by a new seed.
+- With no issue, the answer is the canonical document and its `document_hash`. The server stores exactly these bytes.
+
+A field the policy carries that this build does not know is kept, and named in `unknown_fields` (D-167). A policy in a newer version is refused, naming both versions.
+

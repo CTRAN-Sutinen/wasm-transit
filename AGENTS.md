@@ -180,7 +180,9 @@ just build                 # the frontend (it type-checks first: the TS layer is
 just caps                  # assemblies/ (generated, gitignored), then the modules: each
                            # capability alone, and each UI's linked assembly and manifest
                            # (and cap_sync, cap_network, cap_streets, cap_authz, cap_plans,
-                           # cap_migrate, cap_stops, and cap_requests .wasm for the server)
+                           # cap_migrate, cap_stops, cap_requests, and cap_log .wasm for
+                           # the server, with the kind table web/pkg/kinds.json and its
+                           # schemas)
 just caps-fast             # the same, under the wasm-fast profile (no whole-program LTO,
                            # incremental). A library change rebuilds in ~10 s, not ~10 min.
                            # This is the loop's build. The local registry's evidence says
@@ -407,8 +409,9 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  kernel ops (loads, evict, held, about), the canonical form (RFC 8785,
                  `jcs`; D-169), the manifest, the validator, gen-manifest (with
                  the schema lock: each kind's frozen schema and example,
-                 kept in the owning crate's locks/), gen-assemblies, and
-                 arch-gates
+                 kept in the owning crate's locks/; and the kind table, how
+                 each kind the store keeps is written, checked, and read,
+                 web/pkg/kinds.json; D-202), gen-assemblies, and arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-log
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)

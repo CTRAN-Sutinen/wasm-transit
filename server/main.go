@@ -98,6 +98,11 @@ func main() {
 		s.stopsWasm = *f.stopsWasm
 		s.requestsWasm = *f.requestsWasm
 		s.logWasm = *f.logWasm
+		s.kindsPath = *f.kindsPath
+		s.checkWasm = map[string]string{"authz": *f.authzWasm}
+		if _, err := s.kindTable(); err != nil {
+			log.Fatalf("store mode: %v", err)
+		}
 		s.seedStore(*f.editsPath)
 		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
@@ -357,6 +362,14 @@ type server struct {
 	stopsFold    *logFold
 	stopsDoc     logDoc
 	requestsDoc  logDoc
+	// The kind table (kinds.go, -kinds), read once; and the modules
+	// that check a pointer write, by capability id (default
+	// ../web/pkg/cap_<id>.wasm).
+	kindsPath string
+	kindsOnce sync.Once
+	kinds     *kindTable
+	kindsErr  error
+	checkWasm map[string]string
 	// The plans log's fold, and the documents it holds (planslog.go);
 	// the documents are guarded by the fold's lock.
 	plansLogOnce sync.Once
@@ -809,7 +822,47 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 // heads (stopslog.go, seedStopsLog); and the plans log's first entry
 // from the old plans pointer's head (planslog.go, seedPlansLog).
 func (s *server) seedStore(editsPath string) {
+	s.describeStore()
 	s.seedDisruptions(editsPath)
 	s.seedStopsLog()
 	s.seedPlansLog()
+}
+
+// describeStore writes the store's description, create only
+// (store/describe.go): the layout, the README, this build's kind table,
+// and every schema it names, from beside the table (-kinds,
+// <dir>/schemas/<hex>.json). A failure is logged: the store stays
+// readable as before, and the next boot tries again.
+func (s *server) describeStore() {
+	path := s.kindsPath
+	if path == "" {
+		path = defaultKindsPath
+	}
+	table, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("describe the store: %v", err)
+		return
+	}
+	dir := filepath.Join(filepath.Dir(path), "schemas")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Printf("describe the store: %v", err)
+		return
+	}
+	schemas := map[string][]byte{}
+	for _, e := range entries {
+		hex, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			log.Printf("describe the store: %v", err)
+			return
+		}
+		schemas["sha256:"+hex] = data
+	}
+	if err := s.store.Describe(table, schemas); err != nil {
+		log.Printf("describe the store: %v", err)
+	}
 }

@@ -1,0 +1,216 @@
+{
+  "$defs": {
+    "KindEntry": {
+      "description": "One kind the store keeps.",
+      "properties": {
+        "log": {
+          "description": "The log that holds its records.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "merge": {
+          "$ref": "#/$defs/Merge"
+        },
+        "module": {
+          "description": "The capability that checks a write.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pointers": {
+          "description": "The pointers it heads (`*` ends a prefix).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "read": {
+          "$ref": "#/$defs/Read"
+        },
+        "records": {
+          "description": "The log's record kinds of its collection.",
+          "items": {
+            "$ref": "#/$defs/RecordEntry"
+          },
+          "type": "array"
+        },
+        "route": {
+          "description": "Where it is written, in words a person reads in a refusal.",
+          "type": "string"
+        },
+        "store_kind": {
+          "description": "The envelope's kind, or a log's document kind.",
+          "type": "string"
+        },
+        "tag": {
+          "description": "The tag the document carries inside it, which names its schema.\nEmpty for a kind with no schema of ours (a GTFS zip, a file of a\nbuild).",
+          "type": "string"
+        },
+        "validate": {
+          "description": "Its op that checks a write.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "versions": {
+          "description": "The versions with a schema in this build.",
+          "items": {
+            "$ref": "#/$defs/VersionEntry"
+          },
+          "type": "array"
+        },
+        "write": {
+          "$ref": "#/$defs/Write"
+        }
+      },
+      "required": [
+        "store_kind",
+        "tag",
+        "versions",
+        "write",
+        "route",
+        "pointers",
+        "merge",
+        "read"
+      ],
+      "type": "object"
+    },
+    "KindTableKind": {
+      "const": "kind_table"
+    },
+    "Merge": {
+      "description": "How two writes of a kind meet.",
+      "oneOf": [
+        {
+          "const": "replace",
+          "description": "The whole document, by CAS on the head the writer read.",
+          "type": "string"
+        },
+        {
+          "const": "lww",
+          "description": "Last writer wins for each record id (the edit document; D-56).",
+          "type": "string"
+        },
+        {
+          "const": "log",
+          "description": "Ops over the log's head; different records never conflict.",
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "No writer but the server.",
+          "type": "string"
+        }
+      ]
+    },
+    "Read": {
+      "description": "Who reads a kind.",
+      "oneOf": [
+        {
+          "const": "open",
+          "description": "Anyone, by hash (`/blobs/<hash>`; D-152).",
+          "type": "string"
+        },
+        {
+          "const": "restricted",
+          "description": "Never served by hash. A client reads only its own projection.",
+          "type": "string"
+        },
+        {
+          "const": "audit",
+          "description": "A caller with the audit rule (a log's entries name their writers).",
+          "type": "string"
+        }
+      ]
+    },
+    "RecordEntry": {
+      "description": "One record kind of a log, and where it lives in its document.",
+      "properties": {
+        "collection": {
+          "description": "The document field that holds the collection: an array of records\nwith an `id`, or an object by id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "The record's kind in a log entry's changes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "collection"
+      ],
+      "type": "object"
+    },
+    "VersionEntry": {
+      "description": "One version of a kind, and its schema.",
+      "properties": {
+        "schema": {
+          "description": "The schema's content hash (the store keeps it as\n`schemas/<tag>.v<N>/<hex>.json`).",
+          "type": "string"
+        },
+        "version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "schema"
+      ],
+      "type": "object"
+    },
+    "Write": {
+      "description": "How a kind is written.",
+      "oneOf": [
+        {
+          "const": "pointer",
+          "description": "`POST /pointers/<name>`, one of `pointers`, checked by `module`'s\n`validate` op, and stored as the module answers it.",
+          "type": "string"
+        },
+        {
+          "const": "route",
+          "description": "Its own route (`route`), which runs its module.",
+          "type": "string"
+        },
+        {
+          "const": "server",
+          "description": "The server alone: an import, a release, or the manifest.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The kind table of one build.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/KindTableKind",
+      "default": "kind_table",
+      "description": "The kind tag (D-115): `\"kind_table\"`."
+    },
+    "kinds": {
+      "description": "Each kind the store keeps, by its store kind.",
+      "items": {
+        "$ref": "#/$defs/KindEntry"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kinds"
+  ],
+  "title": "KindTable",
+  "type": "object"
+}
