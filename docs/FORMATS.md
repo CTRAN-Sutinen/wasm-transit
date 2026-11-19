@@ -144,9 +144,9 @@ Each commit is one record object,
   - `policy`.
   - `manifest`.
   - `plans` (the published plan set).
-  - `stops` (the stops document, written through `POST /stops`).
-  - `stop_requests` (the stop requests document, written through
-    `POST /stop-requests`).
+  - `stops` and `stop_requests`, read only. They are the stops
+    document's and the stop requests document's history before the
+    stops log ("The logs", below). No server writes them.
   - `plan.<id>` for each published pick (its network document). Every
     revision stays in the log.
   - `build` (each release committed from `-dist`, and each move;
@@ -215,11 +215,20 @@ non-zero on the first break. A break is one of these:
 - a checkpoint whose bytes differ from the fold of the entries after
   the checkpoint before it (or from the first entry).
 
-The fold is the module's, so `store verify` runs the module that owns
+The fold is the module's, so `store verify` runs the module that keeps
 each log: cap-sync for the disruptions log (`-sync`, default
-`../web/pkg/cap_sync.wasm`). A store with no checkpoints needs no
-module. The rest of verify is plain Go. A server also checks its newest
-checkpoint when it boots ("The logs").
+`../web/pkg/cap_sync.wasm`), and cap-log for every other log (`-log`,
+default `../web/pkg/cap_log.wasm`). An entry or a checkpoint may be its
+log's own kind (`disruptions_entry`) or cap-log's (`log_entry`). A
+store with no checkpoints needs no module. The rest of verify is plain
+Go. A server also checks its newest checkpoint when it boots ("The
+logs").
+
+`store dump <url> <dir>` writes every object to a folder that is absent
+or empty: each at `<dir>/<key>`, its exact bytes, and an object's
+metadata (a blob's envelope), when it has any, beside it at
+`<dir>/<key>.meta.json`. It reads the store and writes nothing to it. A
+folder is never a store: nothing reads a dump back.
 
 ## The logs
 
@@ -228,11 +237,19 @@ transaction. The current document is the fold of the entries, which the
 module that owns the log's kinds computes. A mistake is fixed by a new
 entry, so the truth before the mistake stays in the record.
 
-The store has one log today, `disruptions`: the edit document (detours
-and trip cancels). cap-sync owns its entries and checkpoints.
+The store has two logs:
 
-An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
-a `disruptions_entry` document:
+- `disruptions`: the edit document (detours and trip cancels). cap-sync
+  owns its entries (`disruptions_entry`) and checkpoints
+  (`disruptions_checkpoint`).
+- `stops`: the stops document and the stop requests document, in one
+  log because completing a request and adding the stop's event is one
+  transaction (D-197). cap-log keeps it (`log_entry`, `log_checkpoint`),
+  and never reads a record.
+
+Both follow the same rules, below. An entry is
+`logs/<log>/entries/<seq, zero-padded to 20 digits>.json`. A
+`disruptions_entry` document:
 
 ```json
 {"at_ms":1770000060000,"changes":[{"after":{"diversion":{…},"id":"e1","rev":2,"status":"accepted","updated_at":1770000060000},"before":"sha256:bb76…","id":"e1","kind":"edit_record"}],"intent":{"op":"POST /edits"},"kind":"disruptions_entry","log":"disruptions","module":"cap-sync@sha256:…","schema_version":1,"seq":2,"writer":"dispatcher-7"}
@@ -284,6 +301,39 @@ The rules:
 6. After a create, the engine reads the entry back and compares the
    bytes. A store that ignored the create's condition is caught at once.
 
+A `log_entry` document names each record's kind and version, because
+one entry may change the records of two capabilities:
+
+```json
+{"at_ms":1770000060000,"changes":[{"after":[{"event":"in_service","id":"e5f3…","lat":45.69,"lon":-122.65,"name":"NE 99th St & Hwy 99"},{"event":"changed","id":"e-repair","note":"pad replaced","on":"2027-02-20"}],"before":"sha256:4c1d…","id":"6124","kind":"stop","version":1},{"after":{"completed_on":"2027-02-20","job":"repair_improve","status":"completed","stop":"6124"},"before":"sha256:9a07…","id":"R-2027-001","kind":"stop_request","version":1}],"intent":{"key":"tablet-4/17","op":"POST /logs/stops"},"kind":"log_entry","log":"stops","module":"cap-log@sha256:…","schema_version":1,"seq":2,"writer":"planner-3"}
+```
+
+- A change is `{kind, version, id, before, after}`. `version` is the
+  version of the record's document kind. A record in that version is
+  valid as the only record of a document of that version, so its
+  published schema is the document's.
+- In the stops log, a `stop` record is one stop, by its lasting id, with
+  its events whole and in their order. An event's place among events on
+  the same day is the order of writing, so an event is not a record of
+  its own. A `stop_request` record is one request, by its id.
+- Each document also has its own record: kind `stops` (or
+  `stop_requests`), id `document`, the document with its collection
+  empty. It is a valid document of its kind and version. So a field
+  outside the collection that a build does not know is kept (D-167).
+- `intent.key` is the writer's idempotency key. A write sent again with
+  a key the fold holds lands once: it writes nothing, and the answer
+  names the entry that holds the key.
+- `before` is the hash of the record as the entry that wrote it stored
+  it, never of a migrated copy. A record in an older version comes
+  forward through its kind's migration chain as a one-record document.
+- A `log_checkpoint` holds every record by kind and id, each with its
+  version, and every idempotency key with its entry.
+
+In the stops log a revert takes a record that the reverted entry
+created out of the document (D-198). The log keeps every state of it.
+The disruptions log retires it instead, because its LWW merge would
+bring a dropped record back (D-193).
+
 A server folds from its newest checkpoint and stores the next one after
 256 more entries. At boot it checks the newest checkpoint against the
 fold of the entries from the checkpoint before it (or from the empty
@@ -292,8 +342,10 @@ starts from the one before it.
 
 A store that has the `edits` pointer and no log gets entry 1 at startup:
 the pointer's head, brought forward through cap-migrate, with writer
-`migrate:edits` and `intent.args_hash` naming the head's hash. The
-pointer stays as it is.
+`migrate:edits` and `intent.args_hash` naming the head's hash. A store
+that has the `stops` or `stop_requests` pointer and no stops log gets
+entry 1 from their heads, with writer `migrate:stops` and
+`intent.note` naming each head's hash. The pointers stay as they are.
 
 ## The HTTP surface (store mode, `-store <url>`)
 
@@ -346,16 +398,17 @@ pointer stays as it is.
   - `422 {refusals}` (cap-stops `validate`).
   - `409 {current, seq}`.
 
-  The server commits the module's canonical document to `stops`. No
-  pick changes (D-157). `POST /pointers/stops` answers `400`.
+  The server writes the module's canonical document as one entry of the
+  stops log. No pick changes (D-157). `POST /pointers/stops` answers
+  `400`.
 - `POST /stop-requests` takes the body `{"from": "<hash or empty>",
   "requests": <document>}`. It answers one of these:
   - `200 {requests_hash}`.
   - `422 {refusals}` (cap-requests `validate`).
   - `409 {current, seq}`.
 
-  The server commits the module's canonical document to
-  `stop_requests`. `POST /pointers/stop_requests` answers `400`.
+  The server writes the module's canonical document as one entry of the
+  stops log. `POST /pointers/stop_requests` answers `400`.
 - `POST /attachments` takes the file as the body, with its media type
   as `Content-Type`. The file is a photo (JPEG, PNG, WebP, HEIC) or a
   PDF, at most 25 MB. It answers `200 {hash, type, bytes}`, `413`,
@@ -368,11 +421,11 @@ pointer stays as it is.
 - `POST /stop-requests/work-order` takes the body
   `{"request", "action": "open" | "refresh"}`. It answers one of these:
   - `200 {requests_hash, work_order}`. The `work_order` is the work
-    order system's answer on the request. The log's writer is
+    order system's answer on the request, recorded over the requests at
+    the head as one entry of the stops log. The entry's writer is
     `work-orders:<system>`.
   - `501 {configured: false}` with no adapter (`-work-orders`).
   - `404`.
-  - `409 {current, seq}`.
   - `422 {refusals}`.
 - `GET /feed?date=YYYY-MM-DD` answers the GTFS zip in force on the date.
   The default date is the server's today. The type is
@@ -407,9 +460,26 @@ pointer stays as it is.
   record that a later entry changed.
 - `POST /logs/disruptions/close-gap` takes `{"seq": N, "cause"}`. It
   answers `200 {log, seq}`, or `409` when entry N is no gap.
-- When sign-in is on, every `/logs/` call needs the `audit` rule on the
-  `edits` pointer. An entry carries its writer inside its bytes, so the
-  server cannot redact it.
+- `POST /logs/stops` takes `{"key", "ops": [{"cap": "stops" |
+  "requests", "op", "args"}]}`. Each op runs over the documents at the
+  head, in order (stops: `add_event`, `correct_event`; requests: `put`,
+  `record_work_order`), checked as `POST /stops` and `POST
+  /stop-requests` check a write, and what they changed is one entry. It
+  answers `200 {seq, stops_hash, stop_requests_hash, landed?}`, `400
+  {op, error}`, `409 {op, conflict}` (a `correct_event` whose `saw`
+  names an event changed since), or `422 {op?, refusals}`.
+- `GET /logs/stops?since=<seq>&limit=<n>` answers `{"log", "head",
+  "gaps", "checkpoint", "entries", "quarantined"}`, as the disruptions
+  log's does. `POST /logs/stops/revert` and `POST
+  /logs/stops/close-gap` take and answer what the disruptions log's do.
+- `GET /blobs/{hash}` answers the stops document and the stop requests
+  document the stops log holds, under the hashes the manifest pins
+  (`stops_hash`, `stop_requests_hash`).
+- When sign-in is on, every `/logs/` read, revert, and closed gap needs
+  the `audit` rule on the log's pointer (`edits` for the disruptions
+  log, `stops` for the stops log). An entry carries its writer inside
+  its bytes, so the server cannot redact it. `POST /logs/stops` needs
+  the write rule on each document an op touches.
 - **While the bucket does not answer** (D-119), a server serves the
   heads and blobs that it holds. Blobs are immutable, so a cached blob
   is always correct. The server labels every read whose head the bucket
@@ -503,6 +573,8 @@ Every persisted kind, by what a version change does to it:
 | `edit_records` | transit-sync | authored | `kind`, `schema_version` |
 | `disruptions_entry` (one entry of the disruptions log) | transit-sync | authored | `kind`, `schema_version` |
 | `disruptions_checkpoint` (the disruptions log's fold up to an entry) | transit-sync | derived | `kind`, `schema_version` |
+| `log_entry` (one entry of a log that cap-log keeps: the stops log) | transit-log | authored | `kind`, `schema_version`; each change names its record's kind and version |
+| `log_checkpoint` (a log's fold up to an entry) | transit-log | derived | `kind`, `schema_version`; each record its version |
 | `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
 | `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |

@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+transit-log = { path = "../transit-log" }
 transit-version = { path = "../transit-version" }
 serde = { workspace = true }
 serde_json = { workspace = true }

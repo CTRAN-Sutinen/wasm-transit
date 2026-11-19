@@ -236,7 +236,7 @@ only staff can reach.
      {"name": "dispatch-edits", "roles": ["dispatcher"], "actions": ["write"], "pointers": ["edits"]},
      {"name": "planning",       "roles": ["planner"],    "actions": ["write"], "pointers": ["plans", "stops", "stop_requests"]},
      {"name": "releases",       "roles": ["admin"],      "actions": ["write"], "pointers": ["build"]},
-     {"name": "audit",          "roles": ["auditor"],    "actions": ["audit"], "pointers": ["edits"]}
+     {"name": "audit",          "roles": ["auditor"],    "actions": ["audit"], "pointers": ["edits", "stops"]}
    ]}
    ```
 
@@ -247,7 +247,8 @@ only staff can reach.
    ([section 9](#9-update-or-roll-back-the-app)). Everyone can read.
    The `audit` action on `edits` lets a role read the history of
    detours and cancellations, with who made each change, and undo a
-   change ([section 11](#11-look-after-the-bucket)).
+   change. The `audit` action on `stops` does the same for stops and
+   stop requests ([section 11](#11-look-after-the-bucket)).
 3. Add the options:
 
    ```
@@ -530,6 +531,17 @@ image.
   ```
 
   It reads everything and stops with an error at the first problem.
+
+- **See what the bucket holds** (read-only, safe at any time). This
+  writes every file of the bucket to a folder on your computer, so you
+  can open them with any editor:
+
+  ```
+  just store dump 's3://agency-transit/prod?region=us-west-2' /tmp/bucket-copy
+  ```
+
+  The folder must be empty or not exist. `logs/` holds the history of
+  changes, one file for each change.
   It needs the modules that `just caps` builds: it uses one of them to
   check the saved summaries of detours and cancellations.
 
@@ -561,6 +573,11 @@ image.
   The undo is a new entry. Entry 42 stays in the history. If someone
   changed the same detour after entry 42, the server refuses (409) and
   names it, so that a person decides what it should be.
+
+  Stops and stop requests work the same way, at `/logs/stops` and
+  `/logs/stops/revert`. Undoing an entry that added a stop or a request
+  takes it out of the current stops or requests. The history still
+  holds it.
 
 - **Undo a bad update's data** (the emergency procedure). Use this only
   when an update wrote data that the earlier version cannot use, and
@@ -609,8 +626,8 @@ image.
 | Saving a detour fails with 503 | The same: the bucket is not answering. The app keeps the change and tries again. |
 | The server will not start, with `store:` in the error | The store address or the credentials are wrong. |
 | The server will not start, with `feed:` in the error | The `-feed` address does not answer, or the file is not valid GTFS. (If the address does not answer but the bucket holds an earlier import, the server starts with that instead.) |
-| The log says `ALARM disruptions log: a gap` | A file in the bucket's `logs/disruptions/entries/` folder is missing, so detours and cancellations cannot be saved. Restore it from a backup if you can. If not, record why it is missing: `curl -X POST -H "Authorization: Bearer <token>" -d '{"seq": <the missing number>, "cause": "<why>"}' https://<your address>/logs/disruptions/close-gap`. Saving works again at once. |
-| The log says `ALARM disruptions log: entry … is quarantined` | One saved change cannot be read, so the server skips it and keeps going. Look at it in `/logs/disruptions` (it is listed under `quarantined`), and enter the change again by hand if it is needed. |
+| The log says `ALARM disruptions log: a gap` (or `ALARM stops log: a gap`) | A file in the bucket's `logs/disruptions/entries/` (or `logs/stops/entries/`) folder is missing, so detours and cancellations (or stops and requests) cannot be saved. Restore it from a backup if you can. If not, record why it is missing: `curl -X POST -H "Authorization: Bearer <token>" -d '{"seq": <the missing number>, "cause": "<why>"}' https://<your address>/logs/disruptions/close-gap` (or `/logs/stops/close-gap`). Saving works again at once. |
+| The log says `ALARM disruptions log: entry … is quarantined` (or `stops log`) | One saved change cannot be read, so the server skips it and keeps going. Look at it in `/logs/disruptions` (or `/logs/stops`), where it is listed under `quarantined`, and enter the change again by hand if it is needed. |
 | A new schedule does not appear | Wait two minutes, then check that the file at the `-feed` address really changed. |
 
 How the server works inside is in

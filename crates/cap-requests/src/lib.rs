@@ -72,6 +72,21 @@ pub enum Request {
     /// The lists a request's answers come from: its jobs, statuses, the
     /// sides of a street, the directions of travel, and the markings.
     Vocabulary {},
+    /// The stop requests document as the stops log's records (D-197):
+    /// one record of kind `stop_request` for each request.
+    LogRecords { requests_hash: String },
+    /// The stop requests document assembled from the stops log's
+    /// `stop_request` records, registered and answered as its canonical
+    /// bytes and hash. A record in another version is refused, naming
+    /// both.
+    LogDocument {
+        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        records: std::collections::BTreeMap<String, transit_log::Held>,
+        /// The document's own record (absent: the empty document's).
+        #[serde(default)]
+        #[ts(optional, type = "{ version: number, value: unknown }")]
+        document: Option<transit_log::Held>,
+    },
 }
 
 /// One request and its id.
@@ -102,6 +117,20 @@ pub enum Response {
     Put { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
     RecordWorkOrder { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
     Vocabulary { jobs: Vec<String>, statuses: Vec<String>, sides: Vec<String>, directions: Vec<String>, markings: Vec<String> },
+    LogRecords {
+        /// The records of each kind, as the log capability's `compose`
+        /// takes them: the collection's records, and the document's own
+        /// record (`document`), which keeps the fields outside the
+        /// collection.
+        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        next: Vec<transit_log::KindRecords>,
+    },
+    LogDocument {
+        requests_hash: String,
+        /// The document's canonical bytes, which a host serves under
+        /// `requests_hash`.
+        document: String,
+    },
 }
 
 fn strings(list: &[&str]) -> Vec<String> {
@@ -170,6 +199,18 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             directions: strings(&transit_requests::DIRECTIONS),
             markings: strings(&transit_requests::MARKINGS),
         }),
+        Request::LogRecords { requests_hash } => {
+            let held = STOP_REQUESTS.require(&requests_hash)?;
+            let doc = serde_json::to_value(&*held).map_err(|e| e.to_string())?;
+            Ok(Response::LogRecords { next: transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)? })
+        }
+        Request::LogDocument { records, document } => {
+            let template = serde_json::json!({"kind": "stop_requests", "schema_version": transit_requests::SCHEMA_VERSION});
+            let requests: StopRequests = transit_log::assemble(template, document.as_ref(), "requests", &records, false)?;
+            let document = cap_abi::canonical_bytes(&requests)?;
+            let (requests_hash, _) = STOP_REQUESTS.register(requests)?;
+            Ok(Response::LogDocument { requests_hash, document })
+        }
     }
 }
 

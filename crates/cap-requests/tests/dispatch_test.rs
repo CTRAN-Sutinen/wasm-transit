@@ -121,3 +121,21 @@ fn validate_flags_an_unknown_field_and_keeps_it() {
     let document: Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
     assert_eq!(document["requests"][&first]["permit_fee"], 125);
 }
+
+/// The stops log (D-197): the document's records are its requests, and
+/// the document assembled from them is the same document.
+#[test]
+fn the_document_and_its_log_records_round_trip() {
+    let v = ok(json!({ "op": "validate", "requests": sample() }));
+    let hash = ok(json!({ "op": "load_stop_requests", "requests": sample() }))["requests_hash"].clone();
+    let next = ok(json!({ "op": "log_records", "requests_hash": hash }))["next"].clone();
+    let records = &next[0];
+    assert_eq!(records["kind"], "stop_request");
+    assert_eq!(records["records"].as_object().unwrap().len(), 2);
+    assert_eq!(next[1]["kind"], "stop_requests");
+    let held: serde_json::Map<String, Value> =
+        records["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": 1, "value": v}))).collect();
+    let back = ok(json!({ "op": "log_document", "records": held, "document": {"version": 1, "value": next[1]["records"]["document"]} }));
+    assert_eq!(back["requests_hash"], v["document_hash"]);
+    assert_eq!(back["document"], v["document"]);
+}

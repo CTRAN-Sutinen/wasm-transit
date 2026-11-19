@@ -362,3 +362,48 @@ fn validate_flags_an_unknown_field_and_keeps_it() {
     // every field known: no flag at all
     assert!(ok(json!({"op": "validate", "stops": sample()})).get("unknown_fields").is_none());
 }
+
+/// The stops log (D-197): the document's records are its stops, each
+/// whole, and the document assembled from them is the same document,
+/// under the same hash. A record in another version is refused.
+#[test]
+fn the_document_and_its_log_records_round_trip() {
+    let valid = ok(json!({"op": "validate", "stops": sample()}));
+    let hash = valid["document_hash"].clone();
+    let stops: Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
+    ok(json!({"op": "load_stops", "stops": stops}));
+    let next = ok(json!({"op": "log_records", "stops_hash": hash}))["next"].clone();
+    let records = &next[0];
+    assert_eq!((records["kind"].as_str(), records["version"].as_u64()), (Some("stop"), Some(1)));
+    assert_eq!(records["records"]["6124"], stops["stops"]["6124"], "one record per stop, its events whole");
+    assert_eq!(next[1]["kind"], "stops");
+    assert_eq!(next[1]["records"]["document"], json!({"kind": "stops", "schema_version": 1, "stops": {}}), "the document's own record: the document with no stops");
+    let held: serde_json::Map<String, Value> =
+        records["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": 1, "value": v}))).collect();
+    let document = json!({"version": 1, "value": next[1]["records"]["document"]});
+    let back = ok(json!({"op": "log_document", "records": held, "document": document}));
+    assert_eq!(back["stops_hash"], hash, "the same document, the same identity");
+    assert_eq!(back["document"], valid["document"]);
+    let mut newer = held.clone();
+    newer["7001"]["version"] = json!(2);
+    assert!(err(json!({"op": "log_document", "records": newer})).contains("record 7001"));
+}
+
+/// A correction names the event as the writer read it (D-166): changed
+/// since, the answer is a conflict naming it, and nothing is corrected.
+#[test]
+fn a_correction_of_an_event_changed_since_is_a_conflict() {
+    let valid = ok(json!({"op": "validate", "stops": sample()}));
+    let stops: Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
+    let event = stops["stops"]["7001"][1].clone();
+    let id = event["id"].as_str().unwrap().to_string();
+    let hash = ok(json!({"op": "load_stops", "stops": stops}))["stops_hash"].clone();
+    let saw = cap_abi::canonical_hash(&event).unwrap();
+    let fix = json!({"on": "2027-05-04", "event": "permitted"});
+    let fixed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "7001", "event_id": id, "event": fix, "saw": saw}));
+    assert!(fixed.get("conflict").is_none() && fixed["stops"].is_object(), "{fixed}");
+    // Another writer's read: the event as it was before the fix.
+    let stale = ok(json!({"op": "correct_event", "stops_hash": fixed["stops_hash"], "stop_id": "7001", "event_id": id, "event": fix, "saw": saw}));
+    assert_eq!(stale["conflict"], json!(id));
+    assert!(stale["stops"].is_null());
+}

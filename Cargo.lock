@@ -167,6 +167,7 @@ dependencies = [
  "cap-directory",
  "cap-divert",
  "cap-gtfs",
+ "cap-log",
  "cap-migrate",
  "cap-network",
  "cap-plans",
@@ -192,6 +193,7 @@ dependencies = [
  "transit-codec",
  "transit-dispatch",
  "transit-live",
+ "transit-log",
  "transit-network",
  "transit-plans",
  "transit-requests",
@@ -323,6 +325,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-log"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "transit-log",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-migrate"
 version = "0.1.0"
 dependencies = [
@@ -369,6 +382,7 @@ dependencies = [
  "cap-abi",
  "serde",
  "serde_json",
+ "transit-log",
  "transit-requests",
  "transit-version",
  "ts-rs",
@@ -435,6 +449,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "transit-log",
  "transit-network",
  "transit-stops",
  "transit-version",
@@ -1038,6 +1053,14 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "cap-gtfs",
+]
+
+[[package]]
+name = "module-log"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-log",
 ]
 
 [[package]]
@@ -1956,6 +1979,17 @@ dependencies = [
  "serde_json",
  "transit-version",
  "ts-rs",
+]
+
+[[package]]
+name = "transit-log"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "transit-version",
 ]
 
 [[package]]

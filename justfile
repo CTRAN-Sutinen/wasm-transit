@@ -27,8 +27,9 @@ default:
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
 # cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops,
-# cap_requests — the server's default -wasm, -network-wasm, -streets-wasm,
-# -authz-wasm, -plans-wasm, -migrate-wasm, -stops-wasm and -requests-wasm flags; rebuilt with the modules, never
+# cap_requests, cap_log — the server's default -wasm, -network-wasm,
+# -streets-wasm, -authz-wasm, -plans-wasm, -migrate-wasm, -stops-wasm,
+# -requests-wasm and -log-wasm flags; rebuilt with the modules, never
 # by hand). The
 # registry also publishes every document kind's JSON Schema and a
 # worked example (registry/documents.json, docs/FORMATS.md).
@@ -44,7 +45,7 @@ caps:
     just _modules target "$profile"
     CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
-    for cap in sync network streets authz plans migrate stops requests; do
+    for cap in sync network streets authz plans migrate stops requests log; do
         cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
 
@@ -978,9 +979,14 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
 #                                    break; cap-sync (M) folds each log checkpoint
 #   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's
 #                                    own delete-capable credentials
+#   just store dump <url> <dir>      write every object to a folder (each at
+#                                    <dir>/<key>, a blob's envelope beside it), to
+#                                    read a store with no object storage tools;
+#                                    read only. <dir> is relative to server/: give
+#                                    an absolute path
 #   just store copy <dir> <url>      carry an older build's directory store into
 #                                    a bucket, then verify it
-# The store's offline tools: verify | gc | copy (a URL is passed as given).
+# The store's offline tools: verify | gc | dump | copy | revert (a URL is passed as given).
 [positional-arguments]
 store +args:
     cd server && go run ./cmd/store "$@"
@@ -1001,7 +1007,7 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     set -e
     rm -rf server/kodata
     mkdir -p server/kodata/pkg server/kodata/dist-ui
-    for cap in sync network streets authz plans migrate stops requests; do
+    for cap in sync network streets authz plans migrate stops requests log; do
         cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
     done
     cp -r web/dist server/kodata/dist

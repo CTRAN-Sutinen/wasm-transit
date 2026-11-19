@@ -514,12 +514,37 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 	}
 }
 
+// logPointer is the pointer whose rules govern a log's endpoints:
+// edits for the disruptions log, stops for the stops log.
+func logPointer(path string) string {
+	name, _, _ := strings.Cut(strings.TrimPrefix(path, "/logs/"), "/")
+	if name == "disruptions" {
+		return "edits"
+	}
+	return name
+}
+
+// mayWrite asks the policy whether the verified caller may write the
+// pointer. With auth disabled every write passes.
+func (s *server) mayWrite(r *http.Request, pointer string) (bool, string) {
+	if s.authz == nil {
+		return true, ""
+	}
+	id, _ := r.Context().Value(identityKey).(*identity)
+	if id == nil {
+		return false, "no verified identity"
+	}
+	return s.authorize(r, id, "write", pointer)
+}
+
 // protectLog wraps the logs' endpoints (/logs/<log>, its revert and
 // close-gap). Every call, a read too, needs the "audit" grant on the
-// log's pointer (edits, for the disruptions log): an entry names its
-// writer inside its bytes, so the server cannot redact it, and a
-// revert or a closed gap is an auditor's act. With auth disabled
-// everything passes through, as for every endpoint.
+// log's pointer (edits for the disruptions log, stops for the stops
+// log): an entry names its writer inside its bytes, so the server
+// cannot redact it, and a revert or a closed gap is an auditor's act.
+// POST /logs/stops is a write: it needs a valid token here, and the
+// write rule of each document an op touches (stopslog.go). With auth
+// disabled everything passes through, as for every endpoint.
 func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.authz == nil {
@@ -536,13 +561,17 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
 		}
-		if allow, reason := s.authorize(r, id, "audit", "edits"); !allow {
+		ctx := context.WithValue(r.Context(), identityKey, id)
+		ctx = context.WithValue(ctx, writerKey, id.Sub)
+		if r.Method == http.MethodPost && r.URL.Path == "/logs/stops" {
+			next(w, r.WithContext(ctx))
+			return
+		}
+		if allow, reason := s.authorize(r, id, "audit", logPointer(r.URL.Path)); !allow {
 			log.Printf("authz deny: sub=%s audit %s: %s", id.Sub, r.URL.Path, reason)
 			http.Error(w, "forbidden: "+reason, http.StatusForbidden)
 			return
 		}
-		ctx := context.WithValue(r.Context(), identityKey, id)
-		ctx = context.WithValue(ctx, writerKey, id.Sub)
 		ctx = context.WithValue(ctx, auditKey, true)
 		next(w, r.WithContext(ctx))
 	}

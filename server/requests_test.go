@@ -129,10 +129,7 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 		t.Fatalf("open: %d %v", code, out)
 	}
 	stored := func(hash string) map[string]any {
-		blob, _, err := s.store.GetBlob(hash)
-		if err != nil {
-			t.Fatal(err)
-		}
+		blob := logBlob(t, s, hash)
 		var doc struct {
 			Requests map[string]map[string]any `json:"requests"`
 		}
@@ -144,8 +141,7 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	if r["status"] != "ordered" || wo["id"] != "STUB-R-1" || wo["system"] != "stub" || wo["read_on"] != "2026-09-02" {
 		t.Fatalf("the work order on the request: %v", r)
 	}
-	entries, _, _ := s.store.Log(requestsPointer, "")
-	if w := entries[len(entries)-1].Writer; w != "work-orders:stub" {
+	if w := lastLogWriter(t, s, stopsLogName); w != "work-orders:stub" {
 		t.Fatalf("the writer is the system: %q", w)
 	}
 	s.fixedToday = "2026-09-09"

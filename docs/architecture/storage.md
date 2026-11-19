@@ -48,9 +48,10 @@ against one store's address (an operator's own bucket).
   of the entries, which the owning module computes. A checkpoint,
   `logs/<log>/checkpoints/<seq>.json`, is the fold up to an entry. A
   commit is the same conditional create as a pointer record. The engine
-  then reads the entry back and compares the bytes. The store has one
-  log, `disruptions` (detours and trip cancels). Its rules are in
-  `docs/FORMATS.md`, "The logs".
+  then reads the entry back and compares the bytes. The store has two
+  logs: `disruptions` (detours and trip cancels, kept by cap-sync) and
+  `stops` (the stops and the stop requests, kept by cap-log, which never
+  reads a record). Their rules are in `docs/FORMATS.md`, "The logs".
 - **Many processes, one bucket.** Several server processes may share
   one bucket. Each caches heads. Each reads at most 2 s behind another
   process's commit. The model (`store.tla`, `just spec`) checks processes
@@ -60,12 +61,15 @@ against one store's address (an operator's own bucket).
   (D-117). The offline tools are in `server/cmd/store` (`just store …`).
   `gc` collects orphans with its own delete-capable credentials.
   `verify` reads a whole store and exits non-zero on the first break.
-  `copy` carries a directory store that an older build wrote into a
-  bucket, then verifies it.
+  `dump` writes every object to a folder, at its key, to read a store
+  with no object storage tools. `copy` carries a directory store that
+  an older build wrote into a bucket, then verifies it.
 
 The `manifest` pointer is the root. Publishing is one CAS on it. The
-disruptions log is the multi-writer LWW edit document. The `edits`
-pointer is its history from before the log, read only. The `plans` pointer
+disruptions log is the multi-writer LWW edit document, and the stops
+log holds the stops document and the stop requests document. The
+`edits`, `stops`, and `stop_requests` pointers are their history from
+before the logs, read only. The `plans` pointer
 is the published plan set. Each pick's network is its own `plan.<id>`
 pointer (D-74). Every pointer the server keeps is listed in
 `docs/FORMATS.md`, "The pointer log".
@@ -82,7 +86,7 @@ and the document is the fold).
 | Artifacts: large, published whole | network, streets, walk table, the GTFS feed and street layer read at boot, builds | rare: a publish, an import, a release | per revision | document |
 | Config: small, whole | policy, the published plan set, manifest | rare | none | document |
 | Collections: records by id, many writers | the edit document (detours, trip cancels) | frequent, one record at a time | without bound | log (`disruptions`) |
-| Collections: records by id, many writers | stops, stop requests | frequent, one record at a time | without bound | document |
+| Collections: records by id, many writers | stops, stop requests | frequent, one record at a time | without bound | log (`stops`) |
 | Attachments: binary | photos and site drawings (D-162) | per record | steady | not stored yet |
 | Event tables: many rows, append only | none yet (heartbeats keep only the latest; TIDES, AVL and APC are not held) | n/a | n/a | n/a |
 
@@ -90,8 +94,7 @@ A document suits artifacts and config. It does not suit a collection.
 Each commit stores the whole collection again. So the bucket grows with
 the collection's size times its commits (D-121's measurements). Two
 writers who change different records conflict. A log stores only what
-each write changed. The stops and the stop requests are still
-documents.
+each write changed.
 
 ## Every object explains itself
 
@@ -121,11 +124,15 @@ by kind:
   change different records never conflict. Each write that changes a
   record is one entry of the disruptions log. A mistake is fixed by a
   revert, which is a new entry (`POST /logs/disruptions/revert`).
-- **Stops and stop requests** (`POST /stops`, `POST /stop-requests`)
-  replace the whole document under `from`. A write that names a head
-  that has moved is refused with `409`. That happens even when the two
-  writers changed different stops. The page then reads the document
-  again and asks the person to make the change again.
+- **Stops and stop requests** are one log. `POST /logs/stops` sends ops,
+  each run over the documents at the head, with the device's
+  idempotency key. Two writers who change different stops both land. A
+  correction of an event that another writer changed since is a `409`
+  that names the event. Completing a request and adding the stop's event
+  is one entry. `POST /stops` and `POST /stop-requests` still take the
+  whole document under `from`, and a moved head is a `409`; each such
+  write is one entry too. The work order system's answer and the feed's
+  differences run over the head and need no `from`.
 - **Picks and the plan set** (`POST /plans`, `/plans/retire`) commit the
   module's canonical documents by CAS.
 - **Any other pointer commit** stores the document as given, unchecked.
@@ -148,10 +155,11 @@ they need the `audit` rule.
   (D-119; [server.md](server.md)).
 - A pointer's log (`/pointers/<name>/log?since=`) is the change feed.
   It lists the commits after a hash the reader holds.
-- A log's entries (`/logs/disruptions?since=<seq>`) are the change
-  feed of what people edit. Each entry says what changed, who changed
-  it, and which module answered it. The fold that `/edits` serves can be
-  stale like a head.
+- A log's entries (`/logs/disruptions?since=<seq>`,
+  `/logs/stops?since=<seq>`) are the change feed of what people edit. Each entry says what changed, who changed
+  it, and which module answered it. The fold that `/edits` serves, and
+  the stops and requests documents that `/blobs` serves under the
+  manifest's hashes, can be stale like a head.
 - Reads are of whole documents. The derived documents a reader asks for
   by name (`/network/document`, `/network/boundary`, `/streets`,
   `/walks`, `/feed`) are computed by the server's modules from the
@@ -161,11 +169,11 @@ they need the `audit` rule.
 ## Where it is going
 
 The storage model's direction is decided (D-190, D-191). The
-disruptions log is the first log. The rest is
+disruptions log and the stops log are built. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
-- the logs for the other consistency domains: the stops (with the stop
-  requests), the plans, and the policy.
+- the disruptions log moved onto cap-log (D-197).
+- the logs for the other consistency domains: the plans and the policy.
 - a working store for drafts, attachments, and caches, apart from the
   record.
 - freezing a version into the record, apart from adopting it.
@@ -254,3 +262,28 @@ reading **Because**.
   be deletable, or throughput that a log cannot carry. A database added
   then is fed from the logs.
 - **Decided:** D-190, D-121.
+
+### One log engine for every kind, and a revert takes out what it created (`crates/transit-log`, `crates/cap-log`, `server/caplog.go`)
+- **Holds:** cap-log never reads a record. A change is `{kind, version,
+  id, before, after}`. Each kind's capability turns its document into
+  records (its collection, and the document's own record) and back. One
+  entry may hold the records of two capabilities. `before` hashes the
+  record as stored. In a log that cap-log keeps, a revert takes a record
+  the reverted entry created out of the document.
+- **Because:** completing a request and adding the stop's event is one
+  transaction, and capabilities never call each other. A log module that
+  reads no record lets the server compose one entry from the changes of
+  two modules without deciding anything. A stop is one record, because
+  an event's place among events on the same day is the order of writing.
+  Hashing the stored bytes keeps the chain checkable when two builds of
+  different versions write in turn. The log keeps every state, so the
+  tombstone of the documents' design is no longer needed where no merge
+  would bring a dropped record back.
+- **Costs:** a revert is refused when any later entry changed the same
+  stop, not only the same event. A compound write runs one module per
+  kind and one more to compose. The disruptions log has its own engine
+  until it moves onto cap-log.
+- **Rejected:** requests merged into cap-stops (one module, two needs:
+  law 3); a cap-stops op that depends on transit-requests (couples two
+  crates); an event as a record (its order is not in its content).
+- **Decided:** D-197, D-198.

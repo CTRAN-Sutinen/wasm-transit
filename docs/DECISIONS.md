@@ -250,6 +250,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-194 | Who may read a log's entries? | encoded | nothing |
 | D-195 | How does the server keep and check a log's checkpoints? | encoded | nothing |
 | D-196 | When is work dogfooded? | decided | nothing |
+| D-197 | How is a log built for kinds that two capabilities own? | decided; the stops log built | nothing |
+| D-198 | What does a revert do to a record the reverted entry created? | decided | nothing |
 
 ## The trip model
 
@@ -2861,6 +2863,53 @@ Options:
 Pinned by: `server/store_mode_test.go` (`TestStoreBootsFromACheckpoint`,
 `TestStoreQuarantineAndGap`); `server/store/verify_test.go`
 (`TestVerifyFoldsEachCheckpoint`); `server/cmd/store/main_test.go`.
+Blocks: nothing.
+
+### D-197 — How is a log built for kinds that two capabilities own?
+State: Decided; the stops log is built. The disruptions log moves onto
+cap-log next (`docs/units/storage-model.md`).
+Answer: 2026-11-18. A kind-agnostic log capability (cap-log, on the
+pure transit-log crate), built first for the stops log; the disruptions
+log moves onto it once the stops log proves it. The user, on the
+design: "i think that makes sense, but i want you to think a bit
+deeper on it first", then "go ahead and build the stops log with
+cap-log, fold distruptions in once it is proven out on stops." Encoded
+as:
+- cap-log keeps the entry, the fold, the checkpoints, the gap and
+  quarantine rules, the revert, and the idempotency keys. A change is
+  `{kind, version, id, before, after}`, and cap-log never reads a
+  record.
+- Each kind's capability answers its document's records and a document
+  assembled from records (`log_records`, `log_document`). A record of
+  the stops document is one stop with its events, because an event's
+  place among same-day events is the order of writing.
+- A compound write (a request completed and the stop's event added) is
+  one entry: the server runs each op in its own module and cap-log
+  writes one entry from the changes.
+- A change's `before` is the hash of the record as stored by the entry
+  that wrote it, never of a migrated copy. A record in an older version
+  comes forward through its kind's migration chain as a one-record
+  document. A change names its kind's version.
+Pinned by: `crates/transit-log` (the laws of a log);
+`crates/cap-log/tests/dispatch_test.rs`; cap-stops and cap-requests
+`the_document_and_its_log_records_round_trip`, and cap-stops
+`a_correction_of_an_event_changed_since_is_a_conflict`;
+`server/stopslog_test.go`; `server/cmd/store/main_test.go`
+(`TestVerifyFoldsAStopsLogThroughCapLog`).
+Why: `docs/architecture/storage.md`, Why, "One log engine for every
+kind, and a revert takes out what it created".
+Blocks: nothing.
+
+### D-198 — What does a revert do to a record the reverted entry created?
+State: Decided.
+Answer: 2026-11-18. The record leaves the folded document, and the log
+keeps every state of it. The user: "as for tombstones, that was the
+old design." The edit document still retires (D-193), because its LWW
+merge would bring a dropped record back.
+Pinned by: `transit_log::tests::a_revert_writes_back_and_takes_out_what_the_entry_created`;
+`server/stopslog_test.go` (`TestARestartServesTheSameStopsAndARevertPutsThemBack`).
+Why: `docs/architecture/storage.md`, Why, "One log engine for every
+kind, and a revert takes out what it created".
 Blocks: nothing.
 
 ### D-122 — Is the dispatcher's day in scope?

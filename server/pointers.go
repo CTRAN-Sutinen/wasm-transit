@@ -421,6 +421,17 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		data, env, err = s.store.GetBlob(hash)
 	}
 	if err == store.ErrNotFound {
+		// The stops log's documents, served under the hashes the manifest
+		// pins (stopslog.go).
+		if kind, doc, ok := s.stopsLogDoc(hash); ok {
+			w.Header().Set("X-Document-Kind", kind)
+			w.Header().Set("X-Schema-Version", "1")
+			if link := s.storedSchemaLink(kind, 1); link != "" {
+				w.Header().Set("Link", link)
+			}
+			send(doc, func() []byte { return s.gzippedBlob(hash, doc) })
+			return
+		}
 		if doc, ok := s.publishedBlob(hash); ok {
 			if link := s.publishedSchemaLink(doc.tag); link != "" {
 				w.Header().Set("Link", link)

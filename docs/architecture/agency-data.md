@@ -57,8 +57,9 @@ surface"). Where it holds today:
 |---|---|---|---|---|
 | `POST /edits`, and a commit to the `edits` pointer | migrated at receive (cap-migrate) | cap-sync's receive (D-56) and the LWW merge | merged per record; one entry of the disruptions log | the entry's `writer` |
 | `POST /plans`, `/plans/retire` | read and canonicalized by cap-network | cap-network's validation, cap-plans' chain (`422`) | the server commits by CAS | the log's `writer` |
-| `POST /stops` | read by cap-stops | cap-stops' `validate` (`422`); a survey's surveyor named for the writer (D-163) | `from` / `409` | the log's `writer` |
-| `POST /stop-requests` | read by cap-requests | cap-requests' `validate` (`422`) | `from` / `409` | the log's `writer` |
+| `POST /stops` | read by cap-stops | cap-stops' `validate` (`422`); a survey's surveyor named for the writer (D-163) | `from` / `409`; one entry of the stops log | the entry's `writer` |
+| `POST /stop-requests` | read by cap-requests | cap-requests' `validate` (`422`) | `from` / `409`; one entry of the stops log | the entry's `writer` |
+| `POST /logs/stops` | each op run by its module over the head | the op's own checks and `validate` (`422`); the surveyor named for the writer | ops over the head: different stops never conflict; an event changed since is a `409` naming it; the idempotency key lands once | the entry's `writer` |
 | any other kind's pointer commit (the plan set, picks, stops, and stop requests are refused there) | stored verbatim | **not checked** | `from` / `409` | the log's `writer` |
 
 The last row is the gap. A pointer commit for any kind other than the

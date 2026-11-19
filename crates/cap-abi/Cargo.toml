@@ -55,6 +55,9 @@ transit-plans = { path = "../transit-plans", optional = true }
 # fail-closed decision through the same library the module dispatches
 # through.
 transit-authz = { path = "../transit-authz", optional = true }
+# …and the log capability's examples compute REAL entries and folds
+# through the same library the module dispatches through.
+transit-log = { path = "../transit-log", optional = true }
 # …and the registry publishes every document kind's JSON Schema,
 # generated from those libraries' serde types (never hand-written).
 schemars = { workspace = true }
@@ -76,6 +79,7 @@ cap-calendar = { path = "../cap-calendar" }
 cap-directory = { path = "../cap-directory" }
 cap-divert = { path = "../cap-divert" }
 cap-gtfs = { path = "../cap-gtfs" }
+cap-log = { path = "../cap-log" }
 cap-migrate = { path = "../cap-migrate" }
 cap-network = { path = "../cap-network" }
 cap-plans = { path = "../cap-plans" }
@@ -93,7 +97,7 @@ cap-sync = { path = "../cap-sync" }
 # are optional, outside every module's closure (arch-gates, the kernel's
 # closure; docs/architecture/release-artifacts.md).
 [features]
-gen-manifest = ["dep:transit-router", "dep:transit-plans", "dep:transit-authz"]
+gen-manifest = ["dep:transit-router", "dep:transit-plans", "dep:transit-authz", "dep:transit-log"]
 
 [[bin]]
 name = "gen-manifest"

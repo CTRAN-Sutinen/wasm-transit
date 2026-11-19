@@ -268,8 +268,9 @@ just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ri
 just export-feed-url UI OUT URL [streets.geojson ["Publisher"]]   # the same, but the pages
                            # fetch and import the agency's GTFS URL themselves and check
                            # it daily. There is no redeploy for each feed (D-132).
-just store verify|gc|copy|revert … # the store's offline tools (server/cmd/store):
-                           # verify a bucket, collect orphans (D-117), carry an older
+just store verify|gc|dump|copy|revert … # the store's offline tools (server/cmd/store):
+                           # verify a bucket, collect orphans (D-117), write a bucket
+                           # to a folder to read it (dump; read only), carry an older
                            # build's directory store into a bucket, or move a pointer
                            # back to an older head and list the commits it dropped
                            # (the emergency procedure; docs/FORMATS.md, "Rolling a
@@ -383,6 +384,12 @@ transit-requests the stop requests document: the planning team's requests for wo
                  tracks the work order that the agency's work order system opens for it.
                  It answers what a write must pass, a request placed by id, and the work
                  across every stop. Pure (D-159).
+transit-log      the append-only log of the agency's record, kind-agnostic (D-190,
+                 D-197): an entry of changed records (each record's hash as stored
+                 before, and its new state), the fold, checkpoints, the revert (a
+                 record the entry created leaves the fold, D-198), the gap and
+                 quarantine rules, and the idempotency keys. A document becomes
+                 records and back by its collection. Pure.
 transit-runs     the runs layer beside the network: the work-rule document (recovery,
                  interlining for each route pair, run rules, pay; every rule optional),
                  the recovery a wait requires and its slack, and the suggested blocking.
@@ -400,20 +407,20 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  the schema lock: each kind's frozen schema and example,
                  kept in the owning crate's locks/), gen-assemblies, and
                  arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-log
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)
 assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability
                  alone) and module-ui-<id> (a generated UI's capabilities, linked)
 server/          the Go and wazero host. It runs cap-sync (the edit document, kept as
                  the disruptions log: logs/disruptions/ in the bucket), cap-network,
-                 cap-plans, and
-                 cap-streets (the network, picks, streets, and walk table it publishes;
-                 in store mode, every build it serves, kept and rolled back by pointer;
-                 D-80). It also runs cap-migrate (an older document, at receive),
-                 cap-stops (the stops document's writes, and what a published pick reads
-                 of it), cap-requests (the stop requests document's writes), and
-                 cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
+                 cap-plans, and cap-streets (the network, picks, streets, and walk
+                 table it publishes; in store mode, every build it serves, kept and
+                 rolled back by pointer; D-80). It also runs cap-migrate (an older
+                 document, at receive), cap-log (the stops log: logs/stops/), cap-stops
+                 (the stops document's writes and records, and what a published pick
+                 reads of it), cap-requests (the stop requests document's writes and
+                 records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
                  which changes by expand, then contract (D-81). It has two proxies:
                  /geocode to a Pelias geocoder, and /rt, a dev feed relay that is off
                  unless -rt-proxy is set. It is scaffolding and never makes a domain
@@ -468,8 +475,13 @@ The detail for each crate is in `docs/architecture/crates.md`.
     consequences, and flags it for a person.
   - Import and export are interfaces defined by their formats, never by
     their callers (`docs/architecture/agency-data.md`).
-- **Retirement is the tombstone.** "Delete" means `status: "retired"`,
-  with the rev increased. There are no hard deletes.
+- **The history is the log.** Nothing is deleted from the bucket. Where a
+  kind is kept in a log, the log keeps every state of every record, and a
+  record leaves the current document only through an entry: the revert of
+  the entry that created it (D-198). Where a kind is still a document, or
+  where a merge would bring a dropped record back (the edit document's
+  LWW, D-193), "delete" means `status: "retired"`, with the rev
+  increased.
 - **Schedules change by replacing the artifact, not by changing it.**
   - The planner publishes a new zip. The server imports it once
     (cap-network) and publishes the network.
@@ -569,7 +581,8 @@ reads, a real-data dogfood of that workflow (D-196).
   - cap-streets, for the streets and walk table it publishes;
   - cap-migrate, for an older document at receive;
   - cap-stops, for the stops document's writes;
-  - cap-requests, for the stop requests document's writes.
+  - cap-requests, for the stop requests document's writes;
+  - cap-log, for the stops log that records them.
 - **The bus is the architecture.**
   - No capability grows a private document format. Shared data crosses
     capabilities only as kernel documents named by content hash.

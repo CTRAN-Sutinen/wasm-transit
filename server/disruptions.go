@@ -315,9 +315,11 @@ func (s *server) seedDisruptions(editsPath string) {
 	log.Printf("seed the disruptions log: entry 1 from %s (%s), %d malformed record(s) dropped", writer, argsHash, dropped)
 }
 
-// handleLogs serves /logs/disruptions and its revert and close-gap writes.
-// Every call needs the audit grant when sign-in is on (protectLog):
-// the entries name their writers.
+// handleLogs serves each log's entries and its revert and close-gap
+// writes: /logs/disruptions here, /logs/stops over cap-log (caplog.go),
+// with POST /logs/stops the stops log's writes (stopslog.go). Every
+// read, revert, and closed gap needs the audit grant when sign-in is on
+// (protectLog): the entries name their writers.
 func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
@@ -342,8 +344,27 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleLogCloseGap(w, r)
+	case "/logs/stops":
+		switch r.Method {
+		case http.MethodGet:
+			s.handleLogEntriesOf(w, r, s.stopsLog())
+		case http.MethodPost:
+			s.handleStopsOps(w, r)
+		default:
+			http.Error(w, "use GET or POST", http.StatusMethodNotAllowed)
+		}
+	case "/logs/stops/revert", "/logs/stops/close-gap":
+		if r.Method != http.MethodPost {
+			http.Error(w, "use POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path == "/logs/stops/revert" {
+			s.handleLogRevertOf(w, r, s.stopsLog())
+		} else {
+			s.handleLogCloseGapOf(w, r, s.stopsLog())
+		}
 	default:
-		http.Error(w, "no such log (the logs: disruptions)", http.StatusNotFound)
+		http.Error(w, "no such log (the logs: disruptions, stops)", http.StatusNotFound)
 	}
 }
 

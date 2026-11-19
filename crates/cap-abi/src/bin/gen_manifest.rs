@@ -237,6 +237,21 @@ const MODULES: &[ModuleSpec] = &[
         docs: include_str!("../../../cap-sync/OPS.md"),
     },
     ModuleSpec {
+        id: "log",
+        file: "module_log.wasm",
+        ops: &["compose", "fold", "revert", "close_gap"],
+        documents: &[],
+        // The log is the host's to store (D-190, D-197): compose answers
+        // each write's entry, fold the records and a checkpoint. It never
+        // reads a record: each kind's capability turns its document into
+        // records and back (log_records, log_document).
+        consumes: &[],
+        speaks: &[("log_entry", &[transit_log::ENTRY_VERSION]), ("log_checkpoint", &[transit_log::CHECKPOINT_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-log/OPS.md.
+        docs: include_str!("../../../cap-log/OPS.md"),
+    },
+    ModuleSpec {
         id: "authz",
         file: "module_authz.wasm",
         ops: &["authorize", "effective"],
@@ -293,7 +308,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "read_records", "records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "read_records", "records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "log_document"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -310,7 +325,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "requests",
         file: "module_requests.wasm",
-        ops: &["validate", "requests_for", "list", "put", "record_work_order", "vocabulary"],
+        ops: &["validate", "requests_for", "list", "put", "record_work_order", "vocabulary", "log_records", "log_document"],
         documents: &["stop_requests"],
         // The stop requests document is the host's (D-159): validate
         // answers its canonical bytes and hash, which the kernel's
@@ -844,6 +859,8 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             Some(value(&transit_sync::log::Checkpoint::new(2, fixture_disruptions_log().0))),
             None,
         ),
+        kind::<transit_log::Entry>("log_entry", None, "transit-log", Some(value(&fixture_stops_log().1[1])), None),
+        kind::<transit_log::Checkpoint>("log_checkpoint", None, "transit-log", Some(value(&fixture_stops_log().0)), None),
         kind::<transit_network::PlanSet>(
             "plan_set",
             None,
@@ -2586,6 +2603,84 @@ fn example_for(
                 json!({ "ok": { "op": "compact_edits", "records": records, "document": document, "document_hash": document_hash, "dropped": dropped } }),
             )
         }
+        ("log", "compose") => {
+            let (fold, _) = fixture_stops_log();
+            let (stops, _) = fixture_log_records();
+            let mut next = stops[0].clone();
+            if let Some(events) = next.records.values_mut().next().and_then(|v| v.as_array_mut()) {
+                events.push(json!({"id": "e-shelter", "on": "2027-03-01", "event": "changed", "amenities": {"shelter": true}}));
+            }
+            let header = fixture_log_header(3, 1_770_000_120_000, "POST /logs/stops", Some("tablet-4/18"));
+            let answer = match transit_log::compose(&fold, header.clone(), std::slice::from_ref(&next), &log_record_hash) {
+                transit_log::Composed::Entry(e) => json!({ "op": "compose", "entry": cap_abi::canonical_bytes(&e).ok()?, "changes": e.changes.len() }),
+                _ => return None,
+            };
+            (json!({ "op": "compose", "checkpoint": fold, "header": header, "next": [next] }), json!({ "ok": answer }))
+        }
+        ("log", "fold") => {
+            let (fold, entries) = fixture_stops_log();
+            let stored: Vec<transit_log::Stored> = entries.iter().map(|e| transit_log::Stored { seq: e.seq, text: cap_abi::canonical_bytes(e).unwrap() }).collect();
+            (
+                json!({ "op": "fold", "log": "stops", "entries": stored }),
+                json!({ "ok": { "op": "fold", "seq": fold.seq, "checkpoint": cap_abi::canonical_bytes(&fold).ok()?, "records": fold.records, "quarantined": [] } }),
+            )
+        }
+        ("log", "revert") => {
+            let (fold, entries) = fixture_stops_log();
+            let stored: Vec<transit_log::Stored> = entries.iter().map(|e| transit_log::Stored { seq: e.seq, text: cap_abi::canonical_bytes(e).unwrap() }).collect();
+            let before = transit_log::fold(transit_log::Checkpoint::empty("stops"), &stored[..1], &log_record_hash).ok()?.fold;
+            let mut header = fixture_log_header(3, 1_770_000_120_000, "POST /logs/stops/revert", None);
+            header.writer = "auditor-2".into();
+            let changes = transit_log::revert(&before, &fold, &entries[1], &log_record_hash).ok()?;
+            let n = changes.len();
+            (
+                json!({ "op": "revert", "log": "stops", "entries": stored, "target": 2, "header": header }),
+                json!({ "ok": { "op": "revert", "entry": cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(2))).ok()?, "changes": n } }),
+            )
+        }
+        ("log", "close_gap") => {
+            let mut header = fixture_log_header(3, 1_770_000_120_000, "POST /logs/stops/close-gap", None);
+            header.writer = "auditor-2".into();
+            header.intent.note = Some("entry 3 was deleted from the bucket by hand".into());
+            let entry = cap_abi::canonical_bytes(&transit_log::Entry::new(header.clone(), Vec::new(), None)).ok()?;
+            (json!({ "op": "close_gap", "header": header }), json!({ "ok": { "op": "close_gap", "entry": entry } }))
+        }
+        ("stops", "log_records") => {
+            let stops = fixture_stops().checked().ok()?;
+            let (next, _) = fixture_log_records();
+            (
+                json!({ "op": "log_records", "stops_hash": cap_abi::canonical_hash(&stops).ok()? }),
+                json!({ "ok": { "op": "log_records", "next": next } }),
+            )
+        }
+        ("stops", "log_document") => {
+            let stops = fixture_stops().checked().ok()?;
+            let (mut next, _) = fixture_log_records();
+            let own = next.pop()?.records.remove(transit_log::DOCUMENT_ID)?;
+            let held: std::collections::BTreeMap<String, transit_log::Held> = next.pop()?.records.into_iter().map(|(k, v)| (k, transit_log::Held { version: 1, value: v })).collect();
+            (
+                json!({ "op": "log_document", "records": held, "document": transit_log::Held { version: 1, value: own } }),
+                json!({ "ok": { "op": "log_document", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "document": cap_abi::canonical_bytes(&stops).ok()? } }),
+            )
+        }
+        ("requests", "log_records") => {
+            let requests = fixture_requests().checked().ok()?;
+            let (_, next) = fixture_log_records();
+            (
+                json!({ "op": "log_records", "requests_hash": cap_abi::canonical_hash(&requests).ok()? }),
+                json!({ "ok": { "op": "log_records", "next": next } }),
+            )
+        }
+        ("requests", "log_document") => {
+            let requests = fixture_requests().checked().ok()?;
+            let (_, mut next) = fixture_log_records();
+            let own = next.pop()?.records.remove(transit_log::DOCUMENT_ID)?;
+            let held: std::collections::BTreeMap<String, transit_log::Held> = next.pop()?.records.into_iter().map(|(k, v)| (k, transit_log::Held { version: 1, value: v })).collect();
+            (
+                json!({ "op": "log_document", "records": held, "document": transit_log::Held { version: 1, value: own } }),
+                json!({ "ok": { "op": "log_document", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "document": cap_abi::canonical_bytes(&requests).ok()? } }),
+            )
+        }
         ("sync", "entry_disruptions") => {
             let (_, log) = fixture_disruptions_log();
             let head: Vec<transit_sync::EditRecord> = log[0].changes.iter().filter_map(|c| c.after.clone()).collect();
@@ -2896,6 +2991,61 @@ fn divert_example_draft(network: &transit_network::Network) -> Option<transit_di
     draft.first_kept_stop = Some(stops.first()?.stop_id.clone());
     draft.last_kept_stop = Some(stops.last()?.stop_id.clone());
     Some(draft)
+}
+
+/// A record's identity in a log, as cap-log computes it.
+fn log_record_hash(value: &serde_json::Value) -> String {
+    cap_abi::canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
+}
+
+/// A fixture log entry's header.
+fn fixture_log_header(seq: u64, at_ms: u64, op: &str, key: Option<&str>) -> transit_log::Header {
+    transit_log::Header {
+        log: "stops".into(),
+        seq,
+        writer: "planner-3".into(),
+        at_ms,
+        module: "cap-log@sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+        intent: transit_log::Intent { op: op.into(), key: key.map(String::from), ..Default::default() },
+    }
+}
+
+/// The fixture stops document's and requests document's records, each
+/// the collection's records then the document's own record.
+fn fixture_log_records() -> (Vec<transit_log::KindRecords>, Vec<transit_log::KindRecords>) {
+    let stops = serde_json::to_value(fixture_stops().checked().expect("the fixture stops are valid")).unwrap();
+    let requests = serde_json::to_value(fixture_requests().checked().expect("the fixture requests are valid")).unwrap();
+    (
+        transit_log::document_records(&stops, "stops", "stop", "stops", transit_stops::SCHEMA_VERSION).unwrap(),
+        transit_log::document_records(&requests, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION).unwrap(),
+    )
+}
+
+/// The fixture stops log: the stops and requests seeded (entry 1), then
+/// a request completed and its stop's event added in one entry (entry
+/// 2). Answers the fold after them and the two entries.
+fn fixture_stops_log() -> (transit_log::Checkpoint, Vec<transit_log::Entry>) {
+    let (stops, requests) = fixture_log_records();
+    let mut fold = transit_log::Checkpoint::empty("stops");
+    let mut entries = Vec::new();
+    let mut write = |fold: &mut transit_log::Checkpoint, header, next: &[transit_log::KindRecords]| {
+        if let transit_log::Composed::Entry(e) = transit_log::compose(fold, header, next, &log_record_hash) {
+            transit_log::apply(fold, &e, &log_record_hash).expect("the fixture entry applies");
+            entries.push(e);
+        }
+    };
+    write(&mut fold, fixture_log_header(1, 1_770_000_000_000, "migrate", None), &[stops.clone(), requests.clone()].concat());
+    let (mut stops2, mut requests2) = (stops[0].clone(), requests[0].clone());
+    let id = stops2.records.keys().next().expect("a fixture stop").clone();
+    if let Some(events) = stops2.records.get_mut(&id).and_then(|v| v.as_array_mut()) {
+        events.push(serde_json::json!({"id": "e-repair", "on": "2027-02-20", "event": "changed", "note": "pad replaced"}));
+    }
+    if let Some(r) = requests2.records.values_mut().next() {
+        r["status"] = serde_json::json!("completed");
+        r["completed_on"] = serde_json::json!("2027-02-20");
+    }
+    write(&mut fold, fixture_log_header(2, 1_770_000_060_000, "POST /logs/stops", Some("tablet-4/17")), &[stops2, requests2]);
+    (fold, entries)
 }
 
 /// A record's identity in a disruptions log entry, as cap-sync computes it.

@@ -23,6 +23,10 @@ into web/pkg/:
   the stops document for a published pick.
 - cap-requests (-requests-wasm) runs in store mode and is held the same
   way. It does the validation behind a stop requests write.
+- cap-log (-log-wasm) runs in store mode. It keeps the stops log: each
+  write's entry, the fold, and a revert. The server holds it for its
+  whole lifetime. cap-stops and cap-requests turn their documents into
+  the log's records and back (`log_records`, `log_document`).
 - cap-network (the -network-wasm flag, cap_network.wasm) imports the
   configured GTFS zip (the kernel's `load_feed` + `import`). It also
   canonicalizes and validates each published pick. It runs in a fresh
@@ -428,9 +432,9 @@ Its HTTP surface:
     `X-Writer` label, else `anonymous`.
   - It then validates the document (422 with `refusals`) and answers
     its canonical bytes.
-  - The server commits the bytes to the `stops` pointer by CAS (409
-    with `current` when another writer moved it). The manifest pins the
-    document as `stops_hash`.
+  - The server writes the change as one entry of the stops log (409
+    with `current` when `from` is not the document at the head). The
+    manifest pins the document as `stops_hash`, and `/blobs` serves it.
   - A stops write changes no pick. A stop's life is its own, and a pick
     only reads the document (D-157).
   - The server refuses a raw pointer commit of the stops (400).
@@ -440,8 +444,8 @@ Its HTTP surface:
     at boot or when its bytes change) in a stops document that the
     store holds (D-150: the feed applies, and the planner sees what it
     did). cap-stops `import_events` runs on the feed's first service
-    date, and each event names the feed's hash. The same CAS commits
-    them, and the writer is `import:feed`. The server records nothing
+    date, and each event names the feed's hash. One entry of the stops
+    log records them, and the writer is `import:feed`. The server records nothing
     when the feed differs in nothing (`recordFeed`, stops.go).
 - `POST /attachments` and `GET /attachments/<hash>` (`-attachments`, a
   bucket of its own: any store URL). These carry the photos and
@@ -463,23 +467,49 @@ Its HTTP surface:
   system's adapter (D-165, `docs/architecture/adjacent-systems.md`)
   opens a work order for the request, or reads its status. cap-requests
   `record_work_order` writes the answer on the request (dated the
-  server's today). The same CAS commits it, and the writer is
-  `work-orders:<system>`.
+  server's today) over the requests at the head when the write runs, as
+  one entry of the stops log. The writer is `work-orders:<system>`.
   - 200 `{requests_hash, work_order}`.
   - 501 `{configured: false}` with no adapter.
-  - 409 when the requests moved meanwhile.
   - The manifest's `services.work_orders` offers the route only when an
     adapter is configured.
 - `POST /stop-requests` (store mode): write the stop requests document
   (D-159): `{"from": "<the head read, or empty>", "requests": {...}}`.
   - A fresh cap-requests validates it (422 with `refusals`) and answers
     its canonical bytes.
-  - The server commits the bytes to the `stop_requests` pointer by CAS
-    (409 with `current` when another writer moved it). The manifest pins
-    the document as `stop_requests_hash`.
+  - The server writes the change as one entry of the stops log (409
+    with `current` when `from` is not the document at the head). The
+    manifest pins the document as `stop_requests_hash`, and `/blobs`
+    serves it.
   - The server refuses a raw pointer commit of the requests (400).
   - The first request begins the document (a page makes it with
     cap-requests `put`).
+- `/logs/stops` (store mode): the stops log (`stopslog.go`, over the
+  cap-log engine in `caplog.go`; docs/FORMATS.md, "The logs"). It holds
+  the stops document and the stop requests document, because completing
+  a request and adding the stop's event is one transaction (D-197).
+  - `POST /logs/stops` `{"key", "ops": [{"cap", "op", "args"}]}` runs
+    each op over the documents at the head, in order (stops:
+    `add_event`, `correct_event`; requests: `put`, `record_work_order`),
+    names the surveyor and validates as `POST /stops` does, and writes
+    what changed as one entry. Two writers who change different stops
+    both land. A `correct_event` with `saw` (the event's hash as read)
+    of an event changed since answers 409 with `conflict`, the event's
+    id. A refusal (422) or a failed op (400) names its `op`. A key that
+    landed answers 200 with `landed`, and writes nothing. Each op needs
+    the write rule on its document's pointer (`stops`,
+    `stop_requests`).
+  - `GET /logs/stops?since=`, `POST /logs/stops/revert`, and `POST
+    /logs/stops/close-gap` work as the disruptions log's do, and need the
+    `audit` rule on `stops`. A revert takes out of the document a record
+    the reverted entry created (D-198).
+  - Every write to the stops or the requests is one entry, whatever
+    route sent it. The server folds the log at most once per 2 s and
+    assembles each document from its records. It stores a checkpoint
+    every 256 entries. A store with the old `stops` and `stop_requests`
+    pointers and no log gets entry 1 from their heads at startup (writer
+    `migrate:stops`, the note naming each head). The pointers stay, read
+    only.
 - `GET /feed?date=`: the GTFS zip in force on the date (default the
   server's today).
   - It is cap-network `export` of the published pick in force (cap-plans

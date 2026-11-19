@@ -42,7 +42,7 @@ func TestVerifyFoldsTheDisruptionsLogThroughCapSync(t *testing.T) {
 		}
 		head = next
 	}
-	fold := folder(ctx, syncWasm)
+	fold := folder(ctx, syncWasm, "../../../web/pkg/cap_log.wasm")
 	entries, _ := s.Entries("disruptions", 0, 2)
 	cp, err := fold("disruptions", nil, entries)
 	if err != nil {
@@ -73,4 +73,52 @@ func (r rawJSON) MarshalJSON() ([]byte, error) { return []byte(r), nil }
 
 func record(id string) string {
 	return `{"id":"` + id + `","diversion":{"id":"d-` + id + `","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":[],"detour":null,"added_secs":60,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}`
+}
+
+// A log that cap-log keeps (the stops log) verifies too: its entries
+// are log_entry documents, and its checkpoint folds through cap-log.
+func TestVerifyFoldsAStopsLogThroughCapLog(t *testing.T) {
+	ctx := context.Background()
+	logWasm := "../../../web/pkg/cap_log.wasm"
+	host, err := wasmhost.New(ctx, logWasm)
+	if err != nil {
+		t.Fatalf("cap-log (run `just caps`): %v", err)
+	}
+	b := store.NewMemory()
+	s := store.New(b)
+	var checkpoint any
+	for seq, events := range []string{`[1]`, `[1,2]`, `[1,2,3]`} {
+		header := map[string]any{"log": "stops", "seq": seq + 1, "writer": "w", "at_ms": 1, "module": "cap-log@" + host.Hash(), "intent": map[string]any{"op": "test"}}
+		req := map[string]any{"op": "compose", "header": header,
+			"next": []any{map[string]any{"kind": "stop", "version": 1, "records": map[string]any{"A": rawJSON(events)}}}}
+		if checkpoint != nil {
+			req["checkpoint"] = checkpoint
+		}
+		var composed struct {
+			Entry string `json:"entry"`
+		}
+		if err := host.Invoke(ctx, req, &composed); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AppendEntry("stops", int64(seq+1), []byte(composed.Entry)); err != nil {
+			t.Fatal(err)
+		}
+		entries, _ := s.Entries("stops", 0, 0)
+		var folded struct {
+			Checkpoint string `json:"checkpoint"`
+		}
+		if err := host.Invoke(ctx, map[string]any{"op": "fold", "log": "stops", "entries": entries}, &folded); err != nil {
+			t.Fatal(err)
+		}
+		checkpoint = rawJSON(folded.Checkpoint)
+		if seq == 1 {
+			if err := s.PutCheckpoint("stops", 2, []byte(folded.Checkpoint)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	r, err := store.VerifyFolding(ctx, b, folder(ctx, syncWasm, logWasm))
+	if err != nil || r.Entries != 3 || r.Folded != 1 {
+		t.Fatalf("a cap-log log verifies: %+v %v", r, err)
+	}
 }

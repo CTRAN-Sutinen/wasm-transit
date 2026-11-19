@@ -31,6 +31,7 @@ fn lanes(id: &str) -> (fn(&str) -> String, fn(u32, &[u8]) -> String) {
         "directory" => (cap_directory::invoke, cap_directory::invoke_bytes),
         "divert" => (cap_divert::invoke, cap_divert::invoke_bytes),
         "gtfs" => (cap_gtfs::invoke, cap_gtfs::invoke_bytes),
+        "log" => (cap_log::invoke, cap_log::invoke_bytes),
         "migrate" => (cap_migrate::invoke, cap_migrate::invoke_bytes),
         "network" => (cap_network::invoke, cap_network::invoke_bytes),
         "plans" => (cap_plans::invoke, cap_plans::invoke_bytes),

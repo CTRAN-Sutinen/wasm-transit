@@ -398,6 +398,14 @@ The sync document: `EditRecord`, `FeedManifest`, `EditReport`, and the edit docu
 - `revert` answers the changes that write back the states before an entry, stamped with the next rev and the host's clock so they win the merge. A record the entry created is retired. It refuses a record that a later entry changed.
 - The record hash is the caller's (cap-sync passes the canonical hash), so the crate stays pure.
 
+## transit-log
+
+The append-only log of the agency's record, kind-agnostic (D-190, D-197). cap-log is the seam.
+- An `Entry` (kind `log_entry`) is one write: its place (`log`, `seq`), the writer, the time, the module, the intent (with the writer's idempotency `key`), and each change `{kind, version, id, before, after}`. A `Checkpoint` (kind `log_checkpoint`) is the fold up to an entry: every record by kind and id with its version, and every key with its entry.
+- `compose` answers the entry for one write from the fold and each touched kind's records. `apply` applies an entry all or none. `fold` folds stored entries and quarantines what does not read or apply. `revert` answers the changes that write back the states before an entry.
+- `document_records`, `split`, `join`, and `assemble` turn a document into records (its collection, and its own record, so fields outside the collection are kept) and back, refusing a record in another version.
+- The record hash is the caller's (cap-log passes the canonical hash), so the crate is pure.
+
 ## transit-plans
 
 The service-plan chain, and the published plan set. cap-plans is the seam. This crate is cross-document logic, the counterpart of transit-sync's cross-record merge.
@@ -517,7 +525,7 @@ The stop requests document (D-159). It holds the planning team's requests for wo
 
 The document is canonical as it stands (requests by id). The crate keeps what it does not know.
 
-A stop's event names the request that it carries out (transit-stops `request`). Nothing checks this across the two documents.
+A stop's event names the request that it carries out (transit-stops `request`). Nothing checks this across the two documents. Both are kept in the stops log, so completing a request and adding its stop's event can be one entry (D-197).
 
 ## transit-streets
 
@@ -596,7 +604,7 @@ The stops capability: what is a stop on a date? transit-stops and transit-networ
 - `validate` gives what a write must pass: every refusal, or the canonical document and its hash, each event with its id. This is the document that the kernel's `load_stops` answers. It names the fields the document carries that this build does not know (`unknown_fields`, D-167).
 - `seed` makes a stops document from a network's stops.
 - `add_event` places one edit by date.
-- `correct_event` corrects an event that was wrong, named by its id (D-166), or takes it out.
+- `correct_event` corrects an event that was wrong, named by its id (D-166), or takes it out. With `saw`, the event's hash as the writer read it, an event changed since is a `conflict` that names it, and nothing is corrected.
 - Each of the three is checked as a write is.
 - `attribute_surveys` names the write's new surveys for the writer. It runs before `validate`.
 
@@ -610,6 +618,10 @@ The stops capability: what is a stop on a date? transit-stops and transit-networ
 - `on` defaults to the feed's first service date. A named `feed` is named on each event recorded.
 - `feed_events` gives what a feed recorded.
 
+**The stops log** (D-197).
+- `log_records` gives the document as the log's records: one `stop` record for each stop, its events whole, and the document's own record (kind `stops`, id `document`).
+- `log_document` assembles the document from those records, registers it, and gives its hash and canonical bytes.
+
 ## cap-requests
 
 The stop requests capability: what work has been asked for at a stop, and where is it? transit-requests is the library.
@@ -619,6 +631,17 @@ The stop requests capability: what work has been asked for at a stop, and where 
 - `put` places one request by id, checked. With no document, the first request begins one.
 - `record_work_order` records what the work order system answered, on its request.
 - `vocabulary` gives the lists that a request's answers come from.
+- `log_records` and `log_document` turn the document into the stops log's records (a `stop_request` record for each request, and the document's own record) and back (D-197).
+
+## cap-log
+
+The log capability: what does this write add to the log, and what does the log hold? transit-log is the library. It is stateless, and it never reads a record.
+- `compose` gives one write's entry: each record that differs from the fold, with its hash as stored before. It gives no entry when nothing changed, and the entry that holds the key when the write's idempotency key landed before.
+- `fold` folds the entries after a checkpoint into the records by kind and id, and gives the checkpoint. It quarantines an entry it cannot read or apply.
+- `revert` gives the entry that writes back the states before an entry. A record the entry created leaves the fold (D-198). A record a later entry changed refuses it.
+- `close_gap` gives the empty entry that closes a gap, with its cause.
+
+The server keeps the stops log through it ([server.md](server.md)).
 
 ## cap-author
 

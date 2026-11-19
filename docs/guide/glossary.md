@@ -251,6 +251,12 @@ reinstall, a move or removal, a repair, or a temporary stop. It is the
 planning team's record of the work, and it keeps the number of the
 **Work order** that the work order system opens for it.
 
+**Stops log.** How the server stores the stops and the requests for
+work at stops: one list of entries, like the **disruptions log**.
+Finishing a request and recording the change at its stop can be one
+entry. Two people who change different stops never get in each
+other's way.
+
 **Store.** The server's durable storage for documents, kept in cloud
 object storage. It only ever adds files. See
 [FORMATS.md](../FORMATS.md).

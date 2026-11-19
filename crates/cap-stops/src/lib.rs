@@ -111,6 +111,26 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         event: Option<Event>,
+        /// The canonical hash of the event as the writer read it. When
+        /// the document holds the event changed since, the answer is a
+        /// conflict that names it, and nothing is corrected (D-166).
+        #[serde(default)]
+        #[ts(optional)]
+        saw: Option<String>,
+    },
+    /// The stops document as the stops log's records (D-197): one record
+    /// of kind `stop` for each stop, its events whole.
+    LogRecords { stops_hash: String },
+    /// The stops document assembled from the stops log's `stop` records,
+    /// registered and answered as its canonical bytes and hash. A record
+    /// in another version is refused, naming both.
+    LogDocument {
+        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        records: std::collections::BTreeMap<String, transit_log::Held>,
+        /// The document's own record (absent: the empty document's).
+        #[serde(default)]
+        #[ts(optional, type = "{ version: number, value: unknown }")]
+        document: Option<transit_log::Held>,
     },
     /// The pick with each stop's record as the stops document has it on
     /// `on`, its first date (D-157: a pick only reads the stops) —
@@ -209,7 +229,30 @@ pub enum Response {
     },
     Seed { stops_hash: String, stops: Stops },
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
-    CorrectEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
+    CorrectEvent {
+        refusals: Vec<Refusal>,
+        stops_hash: Option<String>,
+        stops: Option<Stops>,
+        /// The event the writer read has changed since: its id. Nothing
+        /// was corrected.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        conflict: Option<String>,
+    },
+    LogRecords {
+        /// The records of each kind, as the log capability's `compose`
+        /// takes them: the collection's records, and the document's own
+        /// record (`document`), which keeps the fields outside the
+        /// collection.
+        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        next: Vec<transit_log::KindRecords>,
+    },
+    LogDocument {
+        stops_hash: String,
+        /// The document's canonical bytes, which a host serves under
+        /// `stops_hash`.
+        document: String,
+    },
     /// The pick as its canonical bytes exactly (RFC 8785, D-169): a
     /// host stores and serves it under `network_hash` as it stands.
     ReadRecords {
@@ -322,18 +365,41 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 Err(refusals) => Response::AddEvent { refusals, stops_hash: None, stops: None },
             })
         }
-        Request::CorrectEvent { stops_hash, stop_id, event_id, event } => {
-            let next = STOPS
-                .require_writable(&stops_hash)?
+        Request::CorrectEvent { stops_hash, stop_id, event_id, event, saw } => {
+            let held = STOPS.require_writable(&stops_hash)?;
+            if let Some(saw) = saw {
+                let now = held
+                    .stops
+                    .get(&stop_id)
+                    .and_then(|events| events.iter().find(|e| e.id == event_id))
+                    .map(cap_abi::canonical_hash)
+                    .transpose()?;
+                if now.as_deref() != Some(saw.as_str()) {
+                    return Ok(Response::CorrectEvent { refusals: vec![], stops_hash: None, stops: None, conflict: Some(event_id) });
+                }
+            }
+            let next = held
                 .correct_event_by_id(&stop_id, &event_id, event)
                 .ok_or_else(|| format!("no event {event_id:?} of stop {stop_id:?} in the stops document"))?;
             Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = STOPS.register(next)?;
-                    Response::CorrectEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()) }
+                    Response::CorrectEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()), conflict: None }
                 }
-                Err(refusals) => Response::CorrectEvent { refusals, stops_hash: None, stops: None },
+                Err(refusals) => Response::CorrectEvent { refusals, stops_hash: None, stops: None, conflict: None },
             })
+        }
+        Request::LogRecords { stops_hash } => {
+            let held = STOPS.require(&stops_hash)?;
+            let doc = serde_json::to_value(&*held).map_err(|e| e.to_string())?;
+            Ok(Response::LogRecords { next: transit_log::document_records(&doc, "stops", "stop", "stops", transit_stops::SCHEMA_VERSION)? })
+        }
+        Request::LogDocument { records, document } => {
+            let template = serde_json::json!({"kind": "stops", "schema_version": transit_stops::SCHEMA_VERSION});
+            let stops: Stops = transit_log::assemble(template, document.as_ref(), "stops", &records, false)?;
+            let document = cap_abi::canonical_bytes(&stops)?;
+            let (stops_hash, _) = STOPS.register(stops)?;
+            Ok(Response::LogDocument { stops_hash, document })
         }
         Request::ReadRecords { network_hash, stops_hash, on } => {
             let on = parse_date(&on)?;

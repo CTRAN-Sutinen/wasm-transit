@@ -260,12 +260,8 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 		t.Fatalf("a survey: %d %v", code, out)
 	}
 	stored := func(hash string) []any {
-		blob, _, err := s.store.GetBlob(hash)
-		if err != nil {
-			t.Fatal(err)
-		}
 		var doc map[string]any
-		json.Unmarshal(blob, &doc)
+		json.Unmarshal(logBlob(t, s, hash), &doc)
 		return doc["stops"].(map[string]any)["A"].([]any)
 	}
 	hash := out["stops_hash"].(string)
@@ -274,8 +270,7 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 	}
 	// another writer adds a survey: theirs is theirs, the held one stays
 	var held map[string]any
-	blob, _, _ := s.store.GetBlob(hash)
-	json.Unmarshal(blob, &held)
+	json.Unmarshal(logBlob(t, s, hash), &held)
 	code, out = post(hash, survey(held, "2026-09-15", ""), "Sam Lee")
 	if code != 200 {
 		t.Fatalf("a second survey: %d %v", code, out)
@@ -376,8 +371,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if last["event"] != "changed" || last["from_feed"] != feed.hash || last["name"] == nil {
 		t.Fatalf("A's difference recorded, naming the feed: %v", last)
 	}
-	entries, _, _ := s.store.Log(stopsPointer, "")
-	if w := entries[len(entries)-1].Writer; w != "import:feed" {
+	if w := lastLogWriter(t, s, stopsLogName); w != "import:feed" {
 		t.Fatalf("the writer is the import: %q", w)
 	}
 	// again: nothing differs, nothing is written
@@ -387,4 +381,33 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if again, _, _, _ := s.stopsHead(); again != head {
 		t.Fatalf("a feed that differs in nothing writes nothing: %s → %s", head, again)
 	}
+}
+
+// logBlob is a document the stops log's fold holds under this hash: the
+// current stops or stop requests document.
+func logBlob(t *testing.T, s *server, hash string) []byte {
+	t.Helper()
+	_, doc, ok := s.stopsLogDoc(hash)
+	if !ok {
+		t.Fatalf("the stops log holds no document %s now", hash)
+	}
+	return doc
+}
+
+// lastLogWriter is the writer of a log's newest entry.
+func lastLogWriter(t *testing.T, s *server, name string) string {
+	t.Helper()
+	head, err := s.store.LogHeadOf(name)
+	if err != nil || head.Seq == 0 {
+		t.Fatalf("the %s log: %+v %v", name, head, err)
+	}
+	entries, err := s.store.Entries(name, head.Seq-1, head.Seq)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entry %d: %v", head.Seq, err)
+	}
+	var e struct {
+		Writer string `json:"writer"`
+	}
+	json.Unmarshal([]byte(entries[0].Text), &e)
+	return e.Writer
 }

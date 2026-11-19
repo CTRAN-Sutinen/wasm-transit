@@ -4,9 +4,9 @@ package main
 // requests for work at a stop, each tracking the work order the
 // agency's work order system opens for it. The host decides nothing: a
 // write goes through the receive path — cap-requests validate answers
-// every refusal (422) or the canonical bytes and hash the host stores
-// under the stop_requests pointer; a write naming a version that is no
-// longer the head is refused (409), and the writer re-reads.
+// every refusal (422) or the canonical document, which the stops log
+// records as one entry (stopslog.go); a write naming a version that is
+// no longer the head is refused (409), and the writer re-reads.
 //
 // One cap-requests instance serves every use, emptied after each
 // (`withRequests`).
@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"rustwasm/server/store"
 )
@@ -34,10 +33,6 @@ const (
 	requestsPointer    = "stop_requests"
 	opLoadStopRequests = 271
 )
-
-func (s *server) requestsEnvelope(producedBy string) store.Envelope {
-	return store.Envelope{Kind: "stop_requests", SchemaVersion: 1, ProducedBy: producedBy}
-}
 
 // withRequests runs `use` on the server's one cap-requests instance —
 // made on first use — and then empties it (the kernel's evict), so no
@@ -85,36 +80,49 @@ func (s *server) handleStopRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	var checked struct {
-		Refusals      json.RawMessage `json:"refusals"`
-		Document      *string         `json:"document"`
-		DocumentHash  *string         `json:"document_hash"`
-		UnknownFields []string        `json:"unknown_fields"`
-	}
-	var producedBy string
-	err = s.withRequests(ctx, func(host *WasmHost) error {
-		producedBy = "cap-requests@" + host.Hash()
-		return host.Invoke(ctx, map[string]any{"op": "validate", "requests": req.Requests}, &checked)
+	writer := writerOf(r, "anonymous")
+	var unknown []string
+	f := s.stopsLog()
+	_, _, refusal, err := s.writeLog(f, logWrite{writer: writer, op: "POST /stop-requests", argsHash: store.HashOf(body)}, func() ([]json.RawMessage, *logRefusal, error) {
+		if moved := fromMoved(req.From, s.requestsDoc, f.seq); moved != nil {
+			return nil, moved, nil
+		}
+		var records []json.RawMessage
+		var refusal *logRefusal
+		err := s.withRequests(ctx, func(host *WasmHost) error {
+			var checked struct {
+				Refusals      json.RawMessage `json:"refusals"`
+				Document      *string         `json:"document"`
+				UnknownFields []string        `json:"unknown_fields"`
+			}
+			if err := host.Invoke(ctx, map[string]any{"op": "validate", "requests": req.Requests}, &checked); err != nil {
+				return err
+			}
+			if checked.Document == nil {
+				refusal = &logRefusal{http.StatusUnprocessableEntity, map[string]any{"refusals": checked.Refusals}}
+				return nil
+			}
+			unknown = checked.UnknownFields
+			var err error
+			records, err = s.requestRecords(ctx, host, []byte(*checked.Document))
+			return err
+		})
+		if err != nil || refusal != nil {
+			return nil, refusal, err
+		}
+		return records, nil, nil
 	})
 	if err != nil {
-		fail(w, err, http.StatusBadRequest)
+		logWriteFailed(w, err, http.StatusBadRequest)
 		return
 	}
-	if checked.Document == nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"refusals": checked.Refusals})
+	if refusal != nil {
+		writeJSON(w, refusal.status, refusal.body)
 		return
 	}
-	writer := writerOf(r, "anonymous")
-	hash, _, err := s.store.CAS(requestsPointer, req.From, []byte(*checked.Document), s.requestsEnvelope(producedBy), *checked.DocumentHash, writer, time.Now().UnixMilli())
-	if err != nil {
-		var ce *store.ConflictError
-		if asConflict(err, &ce) {
-			writeJSON(w, http.StatusConflict, map[string]any{"current": ce.Current, "seq": ce.Seq})
-			return
-		}
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
-	flagUnknown(w, "stop requests", writer, checked.UnknownFields)
+	flagUnknown(w, "stop requests", writer, unknown)
+	f.mu.Lock()
+	hash := s.requestsDoc.hash
+	f.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"requests_hash": hash})
 }

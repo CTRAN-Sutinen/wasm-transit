@@ -27,6 +27,7 @@ type settings struct {
 	attachmentsURL *string
 	workOrdersSpec *string
 	requestsWasm   *string
+	logWasm        *string
 	stopsWasm      *string
 	uiDist         *string
 	authzWasm      *string
@@ -73,6 +74,7 @@ func serverFlags(fs *flag.FlagSet) *settings {
 		attachmentsURL: fs.String("attachments", "", "the attachments' own bucket (D-162): any store URL (s3://, gs://, azblob://, mem://); photos and drawings on surveys and requests, read only by the signed-in; unset, none are taken"),
 		workOrdersSpec: fs.String("work-orders", "", "the work order system's adapter (D-165): unset, none — a request's work order is entered by hand; stub: (or stub:<name>) a stand-in that opens STUB-<request>, for tests and demos"),
 		requestsWasm:   fs.String("requests-wasm", dataPath("pkg/cap_requests.wasm", "../web/pkg/cap_requests.wasm"), "the stop requests capability module (cap-requests) in store mode: it validates every POST /stop-requests (D-159)"),
+		logWasm:        fs.String("log-wasm", dataPath("pkg/cap_log.wasm", defaultLogWasm), "the log capability module (cap-log) in store mode: it keeps the stops log, the record of the stops and the stop requests (D-197)"),
 		stopsWasm:      fs.String("stops-wasm", dataPath("pkg/cap_stops.wasm", "../web/pkg/cap_stops.wasm"), "the stops capability module (cap-stops) in store mode: it validates every POST /stops and refreshes each pick's stops from the stops document"),
 		authzWasm:      fs.String("authz-wasm", dataPath("pkg/cap_authz.wasm", "../web/pkg/cap_authz.wasm"), "the authorization capability module (cap-authz) hosted when OIDC is configured"),
 		oidcIssuer:     fs.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on"),

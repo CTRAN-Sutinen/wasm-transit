@@ -5,8 +5,8 @@ package main
 // request (D-159) tracks the work order it opens; the adapter opens one
 // for a request and reads its status back, and what it answers is
 // written onto the request through cap-requests (`record_work_order`,
-// checked as any write) under the stop_requests pointer, the writer
-// `work-orders:<system>`.
+// checked as any write) as one entry of the stops log (stopslog.go),
+// the writer `work-orders:<system>`.
 //
 // -work-orders names the adapter: unset, none is configured — the
 // manifest offers nothing and a request's work order is entered by
@@ -28,7 +28,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"rustwasm/server/store"
 )
@@ -111,18 +110,13 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	head, found, err := s.store.Head(requestsPointer)
+	_, doc, found, err := s.requestsHead()
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
 		http.Error(w, "no stop requests yet", http.StatusNotFound)
-		return
-	}
-	doc, _, err := s.store.GetBlob(head.Hash)
-	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	var parsed struct {
@@ -158,49 +152,58 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		answer.System = s.workOrders.Name()
 	}
 	answer.ReadOn = s.today()
-	var recorded struct {
-		Refusals     json.RawMessage `json:"refusals"`
-		RequestsHash *string         `json:"requests_hash"`
-		Requests     json.RawMessage `json:"requests"`
-	}
-	var checked struct {
-		Document     *string `json:"document"`
-		DocumentHash *string `json:"document_hash"`
-	}
-	var producedBy string
-	err = s.withRequests(ctx, func(host *WasmHost) error {
-		producedBy = "cap-requests@" + host.Hash()
-		var loaded struct {
-			RequestsHash string `json:"requests_hash"`
-		}
-		if err := host.InvokeBytes(ctx, opLoadStopRequests, doc, &loaded); err != nil {
+	// The answer is recorded over the requests at the head when the write
+	// runs, so a request written meanwhile is kept.
+	writer := "work-orders:" + s.workOrders.Name()
+	f := s.stopsLog()
+	_, _, refusal, err := s.writeLog(f, logWrite{writer: writer, op: "POST /stop-requests/work-order", argsHash: store.HashOf(body)}, func() ([]json.RawMessage, *logRefusal, error) {
+		var records []json.RawMessage
+		var refusal *logRefusal
+		err := s.withRequests(ctx, func(host *WasmHost) error {
+			var loaded struct {
+				RequestsHash string `json:"requests_hash"`
+			}
+			if err := host.InvokeBytes(ctx, opLoadStopRequests, s.requestsDoc.doc, &loaded); err != nil {
+				return err
+			}
+			var recorded struct {
+				Refusals json.RawMessage `json:"refusals"`
+				Requests json.RawMessage `json:"requests"`
+			}
+			if err := host.Invoke(ctx, map[string]any{"op": "record_work_order", "requests_hash": loaded.RequestsHash, "id": req.Request, "work_order": answer}, &recorded); err != nil {
+				return err
+			}
+			var checked struct {
+				Document *string `json:"document"`
+			}
+			if len(recorded.Requests) > 4 {
+				if err := host.Invoke(ctx, map[string]any{"op": "validate", "requests": recorded.Requests}, &checked); err != nil {
+					return err
+				}
+			}
+			if checked.Document == nil {
+				refusal = &logRefusal{http.StatusUnprocessableEntity, map[string]any{"refusals": recorded.Refusals}}
+				return nil
+			}
+			var err error
+			records, err = s.requestRecords(ctx, host, []byte(*checked.Document))
 			return err
+		})
+		if err != nil || refusal != nil {
+			return nil, refusal, err
 		}
-		if err := host.Invoke(ctx, map[string]any{"op": "record_work_order", "requests_hash": loaded.RequestsHash, "id": req.Request, "work_order": answer}, &recorded); err != nil {
-			return err
-		}
-		if recorded.RequestsHash == nil {
-			return nil
-		}
-		return host.Invoke(ctx, map[string]any{"op": "validate", "requests": recorded.Requests}, &checked)
+		return records, nil, nil
 	})
 	if err != nil {
-		fail(w, err, http.StatusBadRequest)
+		logWriteFailed(w, err, http.StatusBadRequest)
 		return
 	}
-	if checked.Document == nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"refusals": recorded.Refusals})
+	if refusal != nil {
+		writeJSON(w, refusal.status, refusal.body)
 		return
 	}
-	hash, _, err := s.store.CAS(requestsPointer, head.Hash, []byte(*checked.Document), s.requestsEnvelope(producedBy), *checked.DocumentHash, "work-orders:"+s.workOrders.Name(), time.Now().UnixMilli())
-	if err != nil {
-		var ce *store.ConflictError
-		if asConflict(err, &ce) {
-			writeJSON(w, http.StatusConflict, map[string]any{"current": ce.Current, "seq": ce.Seq})
-			return
-		}
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
+	f.mu.Lock()
+	hash := s.requestsDoc.hash
+	f.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"requests_hash": hash, "work_order": answer})
 }

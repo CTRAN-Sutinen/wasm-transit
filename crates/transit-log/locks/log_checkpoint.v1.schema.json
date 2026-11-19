@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "CheckpointKind": {
+      "const": "log_checkpoint"
+    },
+    "Held": {
+      "description": "A record in the fold, as the entry that wrote it stored it.",
+      "properties": {
+        "value": true,
+        "version": {
+          "description": "The version of its document kind.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The fold of a log up to `seq`: every record, and every idempotency\nkey with the entry that holds it.",
+  "properties": {
+    "keys": {
+      "additionalProperties": {
+        "format": "uint64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "description": "Each idempotency key, and the entry that holds it.",
+      "type": "object"
+    },
+    "kind": {
+      "$ref": "#/$defs/CheckpointKind"
+    },
+    "log": {
+      "type": "string"
+    },
+    "records": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/Held"
+        },
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "seq": {
+      "description": "The last entry the fold read.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "log",
+    "seq",
+    "records",
+    "keys"
+  ],
+  "title": "Checkpoint",
+  "type": "object"
+}

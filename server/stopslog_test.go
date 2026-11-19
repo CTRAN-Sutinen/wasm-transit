@@ -1,0 +1,315 @@
+package main
+
+// The stops log over HTTP (D-190, D-197, D-198; stopslog.go): the
+// laws a writer relies on.
+//
+//  1. Two writers who change different stops both land (no 409); one
+//     who corrects an event another writer changed since gets a 409
+//     naming the event.
+//  2. Completing a request and adding its stop's event is one entry
+//     with both kinds.
+//  3. A write sent again with its key lands once.
+//  4. A refused op names itself; nothing is written.
+//  5. A store with the old stops and stop_requests pointers gets the
+//     log's first entry from their heads; the pointers stay.
+//  6. A restarted server serves the same documents; GET /logs/stops
+//     answers the entries; a revert puts the stops back, and takes out
+//     what the entry created.
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"rustwasm/server/store"
+)
+
+// newStopsLogServer is a store-mode server with both of the stops log's
+// modules, over a bucket, and its routes.
+func newStopsLogServer(t *testing.T, b store.Backend) (*server, string) {
+	t.Helper()
+	s := newStoreServer(t, b)
+	s.stopsWasm, s.requestsWasm = stopsWasm, requestsWasm
+	t.Cleanup(func() {
+		for _, h := range []*WasmHost{s.stopsHeld, s.requestsHeld} {
+			if h != nil {
+				h.Close(context.Background())
+			}
+		}
+	})
+	s.seedStopsLog()
+	mux := storeMux(s)
+	mux.HandleFunc("/stops", s.handleStops)
+	mux.HandleFunc("/stop-requests", s.handleStopRequests)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return s, srv.URL
+}
+
+// opsPost is POST /logs/stops.
+func opsPost(t *testing.T, base, key string, ops ...map[string]any) (int, map[string]any) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"key": key, "ops": ops})
+	code, _, resp := httpPost(t, base+"/logs/stops", string(body))
+	var out map[string]any
+	json.Unmarshal([]byte(resp), &out)
+	if out == nil {
+		out = map[string]any{"raw": resp}
+	}
+	return code, out
+}
+
+func addEvent(stop string, event map[string]any) map[string]any {
+	return map[string]any{"cap": "stops", "op": "add_event", "args": map[string]any{"stop_id": stop, "event": event}}
+}
+
+// stopsDocNow is the stops document the server holds.
+func stopsDocNow(t *testing.T, s *server) (string, map[string][]map[string]any) {
+	t.Helper()
+	hash, doc, found, err := s.stopsHead()
+	if err != nil || !found {
+		t.Fatalf("the stops document: %v %v", found, err)
+	}
+	var out struct {
+		Stops map[string][]map[string]any `json:"stops"`
+	}
+	json.Unmarshal(doc, &out)
+	return hash, out.Stops
+}
+
+func TestTwoWritersOfDifferentStopsBothLandAndOneEventConflicts(t *testing.T) {
+	s, base := newStopsLogServer(t, store.NewMemory())
+	if code, out := postStops(t, base, "", seededStops(t)); code != 200 {
+		t.Fatalf("the stops: %d %v", code, out)
+	}
+	// Both writers read the same head, then write different stops: no 409.
+	if code, out := opsPost(t, base, "tablet-1/1", addEvent("A", map[string]any{"on": "2026-09-01", "event": "changed", "note": "bench fixed"})); code != 200 {
+		t.Fatalf("writer 1: %d %v", code, out)
+	}
+	if code, out := opsPost(t, base, "tablet-2/1", addEvent("B", map[string]any{"on": "2026-09-02", "event": "changed", "note": "sign moved"})); code != 200 {
+		t.Fatalf("writer 2, another stop: %d %v", code, out)
+	}
+	_, stops := stopsDocNow(t, s)
+	if stops["A"][len(stops["A"])-1]["note"] != "bench fixed" || stops["B"][len(stops["B"])-1]["note"] != "sign moved" {
+		t.Fatalf("both landed: %v %v", stops["A"], stops["B"])
+	}
+
+	// Two writers correct one event: the second read it before the first.
+	event := stops["A"][len(stops["A"])-1]
+	saw, err := canonicalHashOf(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correct := func(note string) map[string]any {
+		return map[string]any{"cap": "stops", "op": "correct_event", "args": map[string]any{"stop_id": "A", "event_id": event["id"], "saw": saw,
+			"event": map[string]any{"on": "2026-09-01", "event": "changed", "note": note}}}
+	}
+	if code, out := opsPost(t, base, "tablet-1/2", correct("bench replaced")); code != 200 {
+		t.Fatalf("the first correction: %d %v", code, out)
+	}
+	code, out := opsPost(t, base, "tablet-2/2", correct("bench painted"))
+	if code != http.StatusConflict || out["conflict"] != event["id"] || out["op"] != float64(0) {
+		t.Fatalf("the second correction names the event: %d %v", code, out)
+	}
+}
+
+func TestARequestCompletedAndItsEventAddedAreOneEntry(t *testing.T) {
+	s, base := newStopsLogServer(t, store.NewMemory())
+	postStops(t, base, "", seededStops(t))
+	ordered := map[string]any{"stop": "B", "job": "repair_improve", "status": "ordered", "requested_on": "2026-08-01",
+		"work_order": map[string]any{"id": "WO-1", "status": "open"}}
+	if code, out := opsPost(t, base, "desk/1", map[string]any{"cap": "requests", "op": "put", "args": map[string]any{"id": "R-1", "request": ordered}}); code != 200 {
+		t.Fatalf("the request: %d %v", code, out)
+	}
+	done := map[string]any{}
+	for k, v := range ordered {
+		done[k] = v
+	}
+	done["status"], done["completed_on"] = "completed", "2026-09-10"
+	code, out := opsPost(t, base, "crew/7",
+		map[string]any{"cap": "requests", "op": "put", "args": map[string]any{"id": "R-1", "request": done}},
+		addEvent("B", map[string]any{"on": "2026-09-10", "event": "changed", "note": "pad replaced", "request": "R-1"}))
+	if code != 200 {
+		t.Fatalf("completed with its event: %d %v", code, out)
+	}
+	seq := int64(out["seq"].(float64))
+	entries, _ := s.store.Entries(stopsLogName, seq-1, seq)
+	var entry struct {
+		Writer  string               `json:"writer"`
+		Intent  struct{ Key string } `json:"intent"`
+		Changes []struct {
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+		} `json:"changes"`
+	}
+	json.Unmarshal([]byte(entries[0].Text), &entry)
+	kinds := map[string]bool{}
+	for _, c := range entry.Changes {
+		kinds[c.Kind+" "+c.ID] = true
+	}
+	if !kinds["stop B"] || !kinds["stop_request R-1"] || len(entry.Changes) != 2 || entry.Intent.Key != "crew/7" {
+		t.Fatalf("one entry, both kinds: %+v", entry)
+	}
+	if out["stop_requests_hash"] == "" || out["stops_hash"] == "" {
+		t.Fatalf("the answer names both documents: %v", out)
+	}
+}
+
+func TestAKeyLandsOnceAndARefusalNamesItsOp(t *testing.T) {
+	s, base := newStopsLogServer(t, store.NewMemory())
+	postStops(t, base, "", seededStops(t))
+	op := addEvent("C", map[string]any{"on": "2026-09-03", "event": "changed", "note": "shelter glass"})
+	_, first := opsPost(t, base, "phone-9/41", op)
+	code, again := opsPost(t, base, "phone-9/41", op)
+	if code != 200 || again["landed"] != true || again["seq"] != first["seq"] {
+		t.Fatalf("the outbox's resend lands once: %d %v (first %v)", code, again, first)
+	}
+	head, _ := s.store.LogHeadOf(stopsLogName)
+	if float64(head.Seq) != first["seq"] {
+		t.Fatalf("no second entry: head %d, first %v", head.Seq, first["seq"])
+	}
+
+	before := head
+	code, out := opsPost(t, base, "phone-9/42", op, map[string]any{"cap": "stops", "op": "correct_event",
+		"args": map[string]any{"stop_id": "C", "event_id": "e-none", "event": map[string]any{"event": "changed"}}})
+	if code != http.StatusBadRequest || out["op"] != float64(1) || !strings.Contains(out["error"].(string), "e-none") {
+		t.Fatalf("the second op is named: %d %v", code, out)
+	}
+	// A resend whose op would no longer pass over the head it changed
+	// (a suspension of a stop it suspended) still lands once.
+	suspend := addEvent("B", map[string]any{"on": "2026-09-04", "event": "suspended", "until": "2026-09-30", "note": "paving"})
+	_, sent := opsPost(t, base, "phone-9/43", suspend)
+	if code, resent := opsPost(t, base, "phone-9/43", suspend); code != 200 || resent["landed"] != true || resent["seq"] != sent["seq"] {
+		t.Fatalf("a resend lands once before its op runs again: %d %v (sent %v)", code, resent, sent)
+	}
+	before, _ = s.store.LogHeadOf(stopsLogName)
+	if code, out := opsPost(t, base, "x", map[string]any{"cap": "stops", "op": "seed"}); code != 400 {
+		t.Fatalf("an op the log does not run: %d %v", code, out)
+	}
+	if head, _ := s.store.LogHeadOf(stopsLogName); head.Seq != before.Seq {
+		t.Fatalf("a refused write writes nothing: %d → %d", before.Seq, head.Seq)
+	}
+}
+
+func TestTheOldPointersSeedTheStopsLog(t *testing.T) {
+	bucket := store.NewMemory()
+	seed, _ := json.Marshal(seededStops(t))
+	host, err := NewWasmHost(context.Background(), stopsWasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checked struct {
+		Document     string `json:"document"`
+		DocumentHash string `json:"document_hash"`
+	}
+	if err := host.Invoke(context.Background(), map[string]any{"op": "validate", "stops": json.RawMessage(seed)}, &checked); err != nil {
+		t.Fatal(err)
+	}
+	host.Close(context.Background())
+	old := store.New(bucket)
+	stopsHash, _, err := old.CAS(stopsPointer, "", []byte(checked.Document), store.Envelope{Kind: "stops", SchemaVersion: 1, ProducedBy: "cap-stops@old"}, "", "planner", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s, _ := newStopsLogServer(t, bucket)
+	hash, _, found, err := s.stopsHead()
+	if err != nil || !found || hash != stopsHash {
+		t.Fatalf("the log serves the pointer's document under its hash: %s vs %s (%v)", hash, stopsHash, err)
+	}
+	if w := lastLogWriter(t, s, stopsLogName); w != "migrate:stops" {
+		t.Fatalf("entry 1's writer: %q", w)
+	}
+	entries, _ := s.store.Entries(stopsLogName, 0, 1)
+	if !strings.Contains(entries[0].Text, "stops "+stopsHash) {
+		t.Fatalf("entry 1 names the head it copied: %s", entries[0].Text)
+	}
+	if ptr, _, _ := s.store.Head(stopsPointer); ptr.Seq != 1 {
+		t.Fatalf("the pointer stays as it was: %+v", ptr)
+	}
+	newStopsLogServer(t, bucket)
+	if head, _ := s.store.LogHeadOf(stopsLogName); head.Seq != 1 {
+		t.Fatalf("a seeded log is not seeded again: %d", head.Seq)
+	}
+}
+
+func TestARestartServesTheSameStopsAndARevertPutsThemBack(t *testing.T) {
+	bucket := store.NewMemory()
+	s, base := newStopsLogServer(t, bucket)
+	postStops(t, base, "", seededStops(t))
+	before, _ := stopsDocNow(t, s)
+	_, out := opsPost(t, base, "k1", addEvent("A", map[string]any{"on": "2026-09-05", "event": "changed", "note": "wrong stop"}),
+		addEvent("NEW", map[string]any{"on": "2026-10-01", "event": "planned", "lat": 45.5, "lon": -73.5, "name": "New stop"}))
+	seq := int64(out["seq"].(float64))
+	after, stops := stopsDocNow(t, s)
+	if after == before || stops["NEW"] == nil {
+		t.Fatalf("the write landed: %v", out)
+	}
+
+	s2, base2 := newStopsLogServer(t, bucket)
+	if again, _ := stopsDocNow(t, s2); again != after {
+		t.Fatalf("a restarted server serves %s, not %s", again, after)
+	}
+	_, _, body := httpGet(t, base2+"/logs/stops?since=0")
+	var log struct {
+		Head    int64 `json:"head"`
+		Entries []struct {
+			Seq   int64           `json:"seq"`
+			Entry json.RawMessage `json:"entry"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(body), &log); err != nil || log.Head != seq || len(log.Entries) != int(seq) {
+		t.Fatalf("GET /logs/stops: %s", body)
+	}
+
+	code, _, resp := httpPost(t, base2+"/logs/stops/revert", `{"seq":`+itoa(seq)+`}`)
+	if code != 200 {
+		t.Fatalf("the revert: %d %s", code, resp)
+	}
+	back, stops := stopsDocNow(t, s2)
+	if back != before || stops["NEW"] != nil {
+		t.Fatalf("A back, and the stop the entry created out of the document (D-198): %s vs %s", back, before)
+	}
+	if code, _, resp := httpPost(t, base2+"/logs/stops/revert", `{"seq":`+itoa(seq)+`}`); code != http.StatusConflict {
+		t.Fatalf("a second revert of the same entry: %d %s", code, resp)
+	}
+}
+
+// canonicalHashOf is a value's canonical hash, for a value of strings
+// only: Go encodes a map with its keys sorted and no space, which is the
+// value's canonical form (RFC 8785).
+func canonicalHashOf(v any) (string, error) {
+	raw, err := json.Marshal(v)
+	return sha(raw), err
+}
+
+func itoa(n int64) string {
+	b, _ := json.Marshal(n)
+	return string(b)
+}
+
+// A gap in the stops log stops its writes (503), and an entry that names
+// the cause lets them go on.
+func TestAGapInTheStopsLogStopsWritesUntilItsCauseIsNamed(t *testing.T) {
+	bucket := store.NewMemory()
+	_, base := newStopsLogServer(t, bucket)
+	postStops(t, base, "", seededStops(t))
+	opsPost(t, base, "k1", addEvent("A", map[string]any{"on": "2026-09-05", "event": "changed", "note": "one"}))
+	opsPost(t, base, "k2", addEvent("B", map[string]any{"on": "2026-09-06", "event": "changed", "note": "two"}))
+	bucket.Delete(context.Background(), "logs/stops/entries/00000000000000000002.json")
+
+	_, base2 := newStopsLogServer(t, bucket)
+	code, _ := opsPost(t, base2, "k3", addEvent("C", map[string]any{"on": "2026-09-07", "event": "changed", "note": "three"}))
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("a write over a gap: %d", code)
+	}
+	if code, _, resp := httpPost(t, base2+"/logs/stops/close-gap", `{"seq":2,"cause":"deleted by hand"}`); code != 200 {
+		t.Fatalf("close the gap: %d %s", code, resp)
+	}
+	if code, out := opsPost(t, base2, "k3", addEvent("C", map[string]any{"on": "2026-09-07", "event": "changed", "note": "three"})); code != 200 {
+		t.Fatalf("writes go on: %d %v", code, out)
+	}
+}

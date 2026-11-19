@@ -127,6 +127,8 @@ Then it checks the result as a write is checked. It answers one of two things:
 
 A stop or an event id that the document does not hold is an error.
 
+With `saw`, the canonical hash of the event as the writer read it, the correction runs only over that event. When the document holds the event changed since, the answer is `conflict` with the event's id, and nothing is corrected (D-166). So two writers who change different events both land, and two who change one event are told which.
+
 ## read_records
 
 What does a pick read of the stops? `read_records` answers the registered network with each stop's record, as the stops document has it on `on`, the pick's first date.
@@ -227,3 +229,11 @@ Every event that the held document holds keeps its surveyor. Nothing else change
 ## feed_events
 
 What does the planner see of an import? `feed_events` answers the events that the document holds and that the feed `feed` recorded. `feed` is the feed's id, the hash that `import_events` named. Each event comes with its stop. The rows are in stop order, and each stop's events are in their order. A feed that recorded nothing answers none.
+
+## log_records
+
+What does the stops log hold of this document? `log_records` answers the stops document `stops_hash` as records of kind `stop`, one for each stop, by its lasting id, with its events whole and in their order (D-197). The answer is `next`: those records, and the document's own record, of kind `stops` and id `document`: the document with its collection empty (a valid document with no records), so a field outside the collection that this build does not know is kept (D-167). Each names the document's version. The log capability composes an entry from it.
+
+## log_document
+
+What is the stops document that the stops log holds? `log_document` assembles the document from the log's `stop` records and its own record `document` (each `{version, value}`, by stop id), registers it, and answers its `stops_hash` and its canonical `document`, which a host serves under that hash. A record in another version is refused, naming both versions: an older record comes forward through the migration capability as a one-record document.

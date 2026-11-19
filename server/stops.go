@@ -4,9 +4,9 @@ package main
 // dated events, its own lifecycle managed apart from the picks, which
 // only read it. The host decides nothing: a write goes through the
 // receive path — cap-stops validate answers every refusal (422) or the
-// canonical bytes and hash the host stores under the stops pointer; a
-// write naming a version that is no longer the head is refused (409),
-// and the writer re-reads. A stops write changes no pick. A pick being
+// canonical document, which the stops log records as one entry
+// (stopslog.go); a write naming a version that is no longer the head is
+// refused (409), and the writer re-reads. A stops write changes no pick. A pick being
 // published reads it (`readPick`): each stop's record on the pick's
 // first date (cap-stops read_records), and the warnings of the stops
 // it visits that are not in service over its period (visit_warnings).
@@ -29,7 +29,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"time"
 
 	"rustwasm/server/store"
 )
@@ -39,10 +38,6 @@ const (
 	opLoadStops  = 270
 	opEvict      = 257
 )
-
-func (s *server) stopsEnvelope(producedBy string) store.Envelope {
-	return store.Envelope{Kind: "stops", SchemaVersion: 1, ProducedBy: producedBy}
-}
 
 // withStops runs `use` on the server's one cap-stops instance — made on
 // first use, the module compiled once — and then empties it (the
@@ -68,17 +63,6 @@ func (s *server) withStops(ctx context.Context, use func(*WasmHost) error) error
 		err = fmt.Errorf("emptying the stops module: %w", evictErr)
 	}
 	return err
-}
-
-// stopsHead is the stops document in force: its hash and bytes, or
-// found false when there is none.
-func (s *server) stopsHead() (hash string, doc []byte, found bool, err error) {
-	head, found, err := s.store.Head(stopsPointer)
-	if err != nil || !found {
-		return "", nil, found, err
-	}
-	doc, _, err = s.store.GetBlob(head.Hash)
-	return head.Hash, doc, true, err
 }
 
 // publishedEntry is one pick in the published set, as the host passes
@@ -217,71 +201,54 @@ func (s *server) handleStops(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	var checked struct {
-		Refusals      json.RawMessage `json:"refusals"`
-		Document      *string         `json:"document"`
-		DocumentHash  *string         `json:"document_hash"`
-		UnknownFields []string        `json:"unknown_fields"`
-	}
-	// The surveyor is the signed-in writer (D-158): every survey the held
-	// document does not hold names them, whatever name the client sent
-	// (cap-stops attribute_surveys); then the write is checked.
-	_, held, haveHeld, err := s.stopsHead()
-	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
-	var producedBy string
-	err = s.withStops(ctx, func(host *WasmHost) error {
-		producedBy = "cap-stops@" + host.Hash()
-		attribute := map[string]any{"op": "attribute_surveys", "stops": req.Stops, "by": nameOf(r, "anonymous")}
-		if haveHeld {
-			var loaded struct {
-				StopsHash string `json:"stops_hash"`
-			}
-			if err := host.InvokeBytes(ctx, opLoadStops, held, &loaded); err != nil {
-				return fmt.Errorf("the stops document held: %w", err)
-			}
-			attribute["stops_hash"] = loaded.StopsHash
+	writer := writerOf(r, "anonymous")
+	by := nameOf(r, "anonymous")
+	var unknown []string
+	f := s.stopsLog()
+	_, _, refusal, err := s.writeLog(f, logWrite{writer: writer, op: "POST /stops", argsHash: store.HashOf(body)}, func() ([]json.RawMessage, *logRefusal, error) {
+		if moved := fromMoved(req.From, s.stopsDoc, f.seq); moved != nil {
+			return nil, moved, nil
 		}
-		var attributed struct {
-			Stops json.RawMessage `json:"stops"`
-		}
-		if err := host.Invoke(ctx, attribute, &attributed); err != nil {
+		var records []json.RawMessage
+		var refusal *logRefusal
+		err := s.withStops(ctx, func(host *WasmHost) error {
+			// The surveyor is the signed-in writer (D-158): every survey
+			// the held document does not hold names them, whatever name
+			// the client sent; then the write is checked.
+			checked, flagged, ref, err := s.checkStops(ctx, host, req.Stops, s.stopsDoc.doc, by)
+			if err != nil || ref != nil {
+				refusal = ref
+				return err
+			}
+			unknown = flagged
+			records, err = s.stopRecords(ctx, host, checked)
 			return err
+		})
+		if err != nil || refusal != nil {
+			return nil, refusal, err
 		}
-		return host.Invoke(ctx, map[string]any{"op": "validate", "stops": attributed.Stops}, &checked)
+		return records, nil, nil
 	})
 	if err != nil {
-		fail(w, err, http.StatusBadRequest)
+		logWriteFailed(w, err, http.StatusBadRequest)
 		return
 	}
-	if checked.Document == nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"refusals": checked.Refusals})
+	if refusal != nil {
+		writeJSON(w, refusal.status, refusal.body)
 		return
 	}
-
-	writer := writerOf(r, "anonymous")
-	nowMs := time.Now().UnixMilli()
-	hash, _, err := s.store.CAS(stopsPointer, req.From, []byte(*checked.Document), s.stopsEnvelope(producedBy), *checked.DocumentHash, writer, nowMs)
-	if err != nil {
-		var ce *store.ConflictError
-		if asConflict(err, &ce) {
-			writeJSON(w, http.StatusConflict, map[string]any{"current": ce.Current, "seq": ce.Seq})
-			return
-		}
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
-	flagUnknown(w, "stops", writer, checked.UnknownFields)
+	flagUnknown(w, "stops", writer, unknown)
+	f.mu.Lock()
+	hash := s.stopsDoc.hash
+	f.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"stops_hash": hash})
 }
 
 // recordFeed records the agency's feed in the stops document (D-150):
 // each difference between the feed's stops and the document on the
 // feed's first service date an event dated that day, naming the feed
-// (cap-stops import_events with the feed's hash), committed through the
-// same CAS as any write, the writer `import:feed`. The planner is shown
+// (cap-stops import_events with the feed's hash), written as one entry
+// of the stops log like any write, the writer `import:feed`. The planner is shown
 // what it did (the stops page's notice, cap-stops feed_events). Nothing
 // without a store, the stops module, or a stops document; nothing when
 // the feed differs in nothing.
@@ -289,53 +256,65 @@ func (s *server) recordFeed(ctx context.Context, feed *loadedFeed) error {
 	if s.store == nil || s.stopsWasm == "" {
 		return nil
 	}
-	head, held, found, err := s.stopsHead()
-	if err != nil || !found {
+	if _, _, found, err := s.stopsHead(); err != nil || !found {
 		return err
-	}
-	var checked struct {
-		Document     *string         `json:"document"`
-		DocumentHash *string         `json:"document_hash"`
-		Refusals     json.RawMessage `json:"refusals"`
 	}
 	var added int
-	var producedBy string
-	err = s.withStops(ctx, func(host *WasmHost) error {
-		producedBy = "cap-stops@" + host.Hash()
-		var loadedNet struct {
-			NetworkHash string `json:"network_hash"`
-		}
-		if err := host.InvokeBytes(ctx, opLoadNetwork, feed.document, &loadedNet); err != nil {
-			return fmt.Errorf("the feed's network: %w", err)
-		}
-		var loadedStops struct {
-			StopsHash string `json:"stops_hash"`
-		}
-		if err := host.InvokeBytes(ctx, opLoadStops, held, &loadedStops); err != nil {
-			return fmt.Errorf("the stops document: %w", err)
-		}
-		var imported struct {
-			Stops json.RawMessage   `json:"stops"`
-			Added []json.RawMessage `json:"added"`
-		}
-		if err := host.Invoke(ctx, map[string]any{"op": "import_events", "stops_hash": loadedStops.StopsHash, "network_hash": loadedNet.NetworkHash, "feed": feed.hash}, &imported); err != nil {
+	_, _, refusal, err := s.writeLog(s.stopsLog(), logWrite{writer: "import:feed", op: "import_events", argsHash: feed.hash}, func() ([]json.RawMessage, *logRefusal, error) {
+		var records []json.RawMessage
+		var refusal *logRefusal
+		err := s.withStops(ctx, func(host *WasmHost) error {
+			var loadedNet struct {
+				NetworkHash string `json:"network_hash"`
+			}
+			if err := host.InvokeBytes(ctx, opLoadNetwork, feed.document, &loadedNet); err != nil {
+				return fmt.Errorf("the feed's network: %w", err)
+			}
+			var loadedStops struct {
+				StopsHash string `json:"stops_hash"`
+			}
+			if err := host.InvokeBytes(ctx, opLoadStops, s.stopsDoc.doc, &loadedStops); err != nil {
+				return fmt.Errorf("the stops document: %w", err)
+			}
+			var imported struct {
+				Stops json.RawMessage   `json:"stops"`
+				Added []json.RawMessage `json:"added"`
+			}
+			if err := host.Invoke(ctx, map[string]any{"op": "import_events", "stops_hash": loadedStops.StopsHash, "network_hash": loadedNet.NetworkHash, "feed": feed.hash}, &imported); err != nil {
+				return err
+			}
+			added = len(imported.Added)
+			if added == 0 {
+				return nil
+			}
+			var checked struct {
+				Refusals json.RawMessage `json:"refusals"`
+				Document *string         `json:"document"`
+			}
+			if err := host.Invoke(ctx, map[string]any{"op": "validate", "stops": imported.Stops}, &checked); err != nil {
+				return err
+			}
+			if checked.Document == nil {
+				refusal = &logRefusal{http.StatusUnprocessableEntity, checked.Refusals}
+				return nil
+			}
+			var err error
+			records, err = s.stopRecords(ctx, host, []byte(*checked.Document))
 			return err
+		})
+		if err != nil || refusal != nil || added == 0 {
+			return nil, refusal, err
 		}
-		added = len(imported.Added)
-		if added == 0 {
-			return nil
-		}
-		return host.Invoke(ctx, map[string]any{"op": "validate", "stops": imported.Stops}, &checked)
+		return records, nil, nil
 	})
-	if err != nil || added == 0 {
+	if err != nil {
 		return err
 	}
-	if checked.Document == nil {
-		return fmt.Errorf("the recorded document is refused: %s", checked.Refusals)
+	if refusal != nil {
+		return fmt.Errorf("the recorded document is refused: %v", refusal.body)
 	}
-	if _, _, err := s.store.CAS(stopsPointer, head, []byte(*checked.Document), s.stopsEnvelope(producedBy), *checked.DocumentHash, "import:feed", time.Now().UnixMilli()); err != nil {
-		return err
+	if added > 0 {
+		log.Printf("stops: the feed %s recorded %d change(s)", feed.hash, added)
 	}
-	log.Printf("stops: the feed %s recorded %d change(s)", feed.hash, added)
 	return nil
 }

@@ -226,6 +226,9 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder)
 		}
 	}
 	sort.Strings(names)
+	// A log's entries are its own kind (the disruptions log's
+	// disruptions_entry) or cap-log's (log_entry, D-197); so are its
+	// checkpoints.
 	read := func(key, name string, seq int64, kind string) error {
 		raw, _, err := b.Get(ctx, key)
 		if err != nil {
@@ -235,7 +238,8 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder)
 		if err := json.Unmarshal(raw, &h); err != nil {
 			return broken(key, "not JSON: %v", err)
 		}
-		if h.Kind != kind || h.Log != name || h.Seq != seq {
+		generic := strings.Replace(kind, name+"_", "log_", 1)
+		if (h.Kind != kind && h.Kind != generic) || h.Log != name || h.Seq != seq {
 			return broken(key, "says kind %q, log %q, seq %d; its key says %s, %s, %d", h.Kind, h.Log, h.Seq, kind, name, seq)
 		}
 		return nil

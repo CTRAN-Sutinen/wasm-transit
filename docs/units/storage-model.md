@@ -25,21 +25,20 @@ A new kind joins a log only if it must change atomically with that
 log's kinds. Otherwise it gets a log of its own. Logs name each other
 by `(log, seq)`. The logs are immutable, so those names never break.
 
-The entry, the checkpoint, the commit, and the six rules are the
-disruptions log's (`docs/FORMATS.md`, "The logs";
-`docs/architecture/storage.md`). Each later log has an entry kind and a
-checkpoint kind of its own, answered by the module that owns its kinds,
-with the same header and rules.
+The entry, the checkpoint, the commit, and the six rules are built for
+the disruptions log and the stops log (`docs/FORMATS.md`, "The logs";
+`docs/architecture/storage.md`). Each later log is kept by cap-log, and
+each of its kinds' capabilities answers its records (D-197).
 
 ## Scope, in order
 
-1. **The stops log** (stops, stop requests, work order status).
-   - Writes go in as ops, each with an idempotency key from the
-     device, so a resent outbox write lands once (D-189).
-   - The stops module merges by event id (D-166). Two writers who
-     change different stops both land with no `409`. One event changed
-     by both writers is a conflict that names the event.
-   - Completing a request and adding the stop's event is one entry.
+1. **The disruptions log onto cap-log** (D-197). The disruptions log
+   keeps its own engine in cap-sync (`disruptions_entry`,
+   `disruptions_checkpoint`) beside cap-log's. It moves onto cap-log:
+   the edit document's records through cap-sync `log_records` and
+   `log_document`, and a kind's revert answer for the edits (they
+   retire and stamp to win the merge, D-193). Its stored entries come
+   forward, or stay readable, through the migration chain.
 2. **The plans log, and freezing** (D-191).
    - A freeze writes a network version to the record by hash, with an
      entry that says what it is (for example, a proposal for public

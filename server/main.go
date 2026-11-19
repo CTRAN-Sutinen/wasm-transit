@@ -97,11 +97,12 @@ func main() {
 		s.networkWasm = *f.networkWasm
 		s.stopsWasm = *f.stopsWasm
 		s.requestsWasm = *f.requestsWasm
+		s.logWasm = *f.logWasm
 		s.seedStore(*f.editsPath)
 		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
 		s.maybeCompactEdits()
-		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm}
+		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm, "log": *f.logWasm}
 		if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
 			s.serverModules["authz"] = *f.authzWasm
 		}
@@ -338,6 +339,18 @@ type server struct {
 	requestsWasm string
 	requestsMu   sync.Mutex
 	requestsHeld *WasmHost
+	// The log capability (cap-log) behind the stops log (caplog.go,
+	// stopslog.go), loaded on first use and held for the lifetime.
+	logWasm string
+	logOnce sync.Once
+	logHost *WasmHost
+	logErr  error
+	// The stops log's fold, and the documents it holds (stopslog.go);
+	// the documents are guarded by the fold's lock.
+	stopsLogOnce sync.Once
+	stopsFold    *logFold
+	stopsDoc     logDoc
+	requestsDoc  logDoc
 	// The attachments' own bucket (attachments.go, -attachments); nil:
 	// none are taken.
 	attachments store.Backend
@@ -561,7 +574,7 @@ type Manifest struct {
 	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
 	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
-	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops pointer head), store mode
+	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops log's fold), store mode
 	// The stop requests document (the stop_requests pointer head), store mode (D-159).
 	StopRequestsHash string  `json:"stop_requests_hash,omitempty"`
 	BuildHash        string  `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
@@ -661,11 +674,11 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("plans"); err == nil && found {
 			manifest.PlansHash = head.Hash
 		}
-		if head, found, err := s.store.Head(stopsPointer); err == nil && found {
-			manifest.StopsHash = head.Hash
+		if hash, _, found, err := s.stopsHead(); err == nil && found {
+			manifest.StopsHash = hash
 		}
-		if head, found, err := s.store.Head(requestsPointer); err == nil && found {
-			manifest.StopRequestsHash = head.Hash
+		if hash, _, found, err := s.requestsHead(); err == nil && found {
+			manifest.StopRequestsHash = hash
 		}
 		if head, found, err := s.store.Head(buildPointer); err == nil && found {
 			manifest.BuildHash = head.Hash
@@ -780,7 +793,10 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 
 // seedStore prepares a fresh or older store at startup: the disruptions
 // log's first entry from the old edits pointer's head, else from the
-// dev store's -edits file (disruptions.go, seedDisruptions).
+// dev store's -edits file (disruptions.go, seedDisruptions); and the
+// stops log's first entry from the old stops and stop_requests pointers'
+// heads (stopslog.go, seedStopsLog).
 func (s *server) seedStore(editsPath string) {
 	s.seedDisruptions(editsPath)
+	s.seedStopsLog()
 }
