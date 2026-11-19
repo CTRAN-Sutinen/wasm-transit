@@ -432,11 +432,12 @@ server/          the Go and wazero host. It runs cap-sync (the edit document and
                  table it publishes; in store mode, each stored when it is made, so
                  a boot imports nothing it already holds (D-199), and every build
                  it serves, kept and rolled back by pointer; D-80). It also runs cap-migrate (an older
-                 document, at receive), cap-log (the disruptions log, the stops log, and
-                 the plans log: logs/<log>/ in the bucket), cap-stops
+                 document, at receive), cap-log (the disruptions log, the stops log, the
+                 plans log, and the alerts log: logs/<log>/ in the bucket), cap-stops
                  (the stops document's writes and records, and what a published pick
                  reads of it), cap-requests (the stop requests document's writes and
-                 records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
+                 records), cap-alerts (the service alerts and alert templates
+                 documents' writes and records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
                  which changes by expand, then contract (D-81). It has two proxies:
                  /geocode to a Pelias geocoder, and /rt, a dev feed relay that is off
                  unless -rt-proxy is set. It is scaffolding and never makes a domain
@@ -598,8 +599,11 @@ reads, a real-data dogfood of that workflow (D-196).
   - cap-migrate, for an older document at receive;
   - cap-stops, for the stops document's writes;
   - cap-requests, for the stop requests document's writes;
+  - cap-alerts, for the service alerts and alert templates documents'
+    writes;
   - cap-log, for the logs that record the edit document, the stops,
-    the stop requests, the published plan set, and the frozen versions.
+    the stop requests, the published plan set, the frozen versions, the
+    service alerts, and the alert templates.
 - **The bus is the architecture.**
   - No capability grows a private document format. Shared data crosses
     capabilities only as kernel documents named by content hash.

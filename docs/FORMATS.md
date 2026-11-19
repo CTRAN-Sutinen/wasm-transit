@@ -265,7 +265,7 @@ transaction. The current document is the fold of the entries, which the
 module that owns the log's kinds computes. A mistake is fixed by a new
 entry, so the truth before the mistake stays in the record.
 
-The store has three logs. cap-log keeps them all (`log_entry`,
+The store has four logs. cap-log keeps them all (`log_entry`,
 `log_checkpoint`; D-197), and never reads a record. The capability that
 owns each kind turns its document into records and back:
 
@@ -279,6 +279,9 @@ owns each kind turns its document into records and back:
   transaction. cap-plans answers both documents' records. The plans log
   has no `revert`: a pick is corrected by republishing it, or retired
   before it takes effect (D-75).
+- `alerts`: the service alerts document and the alert templates
+  document (D-206, D-210). cap-alerts answers both documents' records
+  (`service_alert`, `alert_template`).
 
 An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
 a `log_entry` document. It names each record's kind and version,
@@ -465,6 +468,17 @@ entry 1 from their heads, with writer `migrate:stops` and
 
   The server writes the module's canonical document as one entry of the
   stops log. `POST /pointers/stop_requests` answers `400`.
+- `POST /service-alerts` takes the body `{"from": "<hash or empty>",
+  "alerts": <document>}`, and `POST /alert-templates` the body
+  `{"from": "<hash or empty>", "templates": <document>}`. Each answers
+  one of these:
+  - `200 {alerts_hash}` or `200 {templates_hash}`.
+  - `422 {refusals}` (cap-alerts `validate` or `validate_templates`).
+  - `409 {current, seq}`.
+
+  The server writes the module's canonical document as one entry of the
+  alerts log. The manifest pins the heads as `service_alerts_hash` and
+  `alert_templates_hash`.
 - `POST /attachments` takes the file as the body, with its media type
   as `Content-Type`. The file is a photo (JPEG, PNG, WebP, HEIC) or a
   PDF, at most 25 MB. It answers `200 {hash, type, bytes}`, `413`,

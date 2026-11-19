@@ -515,11 +515,15 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 }
 
 // logPointer is the pointer whose rules govern a log's endpoints:
-// edits for the disruptions log, stops for the stops log.
+// edits for the disruptions log, service_alerts for the alerts log, and
+// the log's own name for the others.
 func logPointer(path string) string {
 	name, _, _ := strings.Cut(strings.TrimPrefix(path, "/logs/"), "/")
 	if name == "disruptions" {
 		return "edits"
+	}
+	if name == alertsLogName {
+		return alertsPointer
 	}
 	return name
 }

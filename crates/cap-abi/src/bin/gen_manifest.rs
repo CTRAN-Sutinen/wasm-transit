@@ -339,7 +339,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "alerts",
         file: "module_alerts.wasm",
-        ops: &["validate", "put", "end", "list", "flags", "gaps", "validate_templates", "put_template", "fill"],
+        ops: &["validate", "put", "end", "list", "flags", "gaps", "validate_templates", "put_template", "fill", "log_records", "log_document"],
         documents: &["service_alerts", "alert_templates", "network", "edits", "stops"],
         // The service alerts and alert templates documents are the
         // host's (D-206, D-210): validate answers their canonical bytes
@@ -2418,6 +2418,30 @@ fn example_for(
                 json!({ "op": "fill", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "template": "stop-closure",
                         "network_hash": ctx.network_hash, "input": input }),
                 json!({ "ok": { "op": "fill", "filled": filled } }),
+            )
+        }
+        ("alerts", "log_records") => {
+            let alerts = fixture_alerts().checked().ok()?;
+            let templates = fixture_templates().checked().ok()?;
+            let version = transit_alerts::SCHEMA_VERSION;
+            let mut next = transit_log::document_records(&serde_json::to_value(&alerts).ok()?, "alerts", "service_alert", "service_alerts", version).ok()?;
+            next.extend(transit_log::document_records(&serde_json::to_value(&templates).ok()?, "templates", "alert_template", "alert_templates", version).ok()?);
+            (
+                json!({ "op": "log_records", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "templates_hash": cap_abi::canonical_hash(&templates).ok()? }),
+                json!({ "ok": { "op": "log_records", "next": next } }),
+            )
+        }
+        ("alerts", "log_document") => {
+            // The alerts document assembled from the log's records.
+            let alerts = fixture_alerts().checked().ok()?;
+            let records: std::collections::BTreeMap<String, serde_json::Value> = alerts
+                .alerts
+                .iter()
+                .map(|(id, a)| (id.clone(), json!({ "version": transit_alerts::SCHEMA_VERSION, "value": a })))
+                .collect();
+            (
+                json!({ "op": "log_document", "kind": "service_alerts", "records": records }),
+                json!({ "ok": { "op": "log_document", "document_hash": cap_abi::canonical_hash(&alerts).ok()?, "document": cap_abi::canonical_bytes(&alerts).ok()? } }),
             )
         }
         ("rt", "encode_alerts") => {

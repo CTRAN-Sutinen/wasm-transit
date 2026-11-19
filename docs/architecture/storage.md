@@ -69,6 +69,8 @@ against one store's address (an operator's own bucket).
 The `manifest` pointer is the root. Publishing is one CAS on it. The
 disruptions log is the multi-writer LWW edit document, and the stops
 log holds the stops document and the stop requests document. The
+alerts log holds the service alerts document and the alert templates
+document. The
 `edits`, `stops`, and `stop_requests` pointers are their history from
 before the logs, read only. The plans log holds the published plan set
 and the frozen versions, and the `plans` pointer is the set's history
@@ -173,6 +175,9 @@ by kind:
   whole document under `from`, and a moved head is a `409`; each such
   write is one entry too. The work order system's answer and the feed's
   differences run over the head and need no `from`.
+- **Service alerts and templates** (`POST /service-alerts`,
+  `POST /alert-templates`) take the whole document under `from`, and a
+  moved head is a `409`. Each write is one entry of the alerts log.
 - **Picks and the plan set** (`POST /plans/freeze`, `/plans/adopt`,
   `/plans`, `/plans/retire`) are each one entry of the plans log.
   cap-plans answers the next frozen versions and plan set over the head,

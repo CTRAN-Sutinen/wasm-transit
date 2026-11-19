@@ -434,6 +434,9 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			kind, doc, ok = s.plansLogDoc(hash)
 		}
+		if !ok {
+			kind, doc, ok = s.alertsLogDoc(hash)
+		}
 		if ok {
 			w.Header().Set("X-Document-Kind", kind)
 			w.Header().Set("X-Schema-Version", "1")

@@ -115,6 +115,31 @@ pub enum Request {
     /// Template `template` written out: the stops' and routes' names
     /// from the network, and the dates from `input`.
     Fill { templates_hash: String, template: String, network_hash: String, input: FillInput },
+    /// The documents as the alerts log's records (D-197): a
+    /// `service_alert` record for each alert, an `alert_template` record
+    /// for each template, and each document's own record. Each document
+    /// left out gives no records.
+    LogRecords {
+        #[serde(default)]
+        #[ts(optional)]
+        alerts_hash: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        templates_hash: Option<String>,
+    },
+    /// One document (`kind`: `service_alerts` or `alert_templates`)
+    /// assembled from the alerts log's records of its kind, registered
+    /// and answered as its canonical bytes and hash. A record in another
+    /// version is refused, naming both.
+    LogDocument {
+        kind: String,
+        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        records: std::collections::BTreeMap<String, transit_log::Held>,
+        /// The document's own record (absent: the empty document's).
+        #[serde(default)]
+        #[ts(optional, type = "{ version: number, value: unknown }")]
+        document: Option<transit_log::Held>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -151,6 +176,20 @@ pub enum Response {
     },
     PutTemplate { refusals: Vec<TemplateRefusal>, templates_hash: Option<String>, templates: Option<AlertTemplates> },
     Fill { filled: Filled },
+    LogRecords {
+        /// The records of each kind, as the log capability's `compose`
+        /// takes them.
+        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        next: Vec<transit_log::KindRecords>,
+    },
+    LogDocument {
+        /// The document's hash (`alerts_hash` or `templates_hash` by its
+        /// kind).
+        document_hash: String,
+        /// The document's canonical bytes, which a host serves under
+        /// `document_hash`.
+        document: String,
+    },
 }
 
 /// The next alerts document, checked and registered, or its refusals.
@@ -241,6 +280,36 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let t = templates.templates.get(&template).ok_or_else(|| format!("no template {template:?} in the document"))?;
             let network = NETWORK.require(&network_hash)?;
             Ok(Response::Fill { filled: transit_alerts::fill(t, &network, &input) })
+        }
+        Request::LogRecords { alerts_hash, templates_hash } => {
+            let version = transit_alerts::SCHEMA_VERSION;
+            let mut next = Vec::new();
+            if let Some(h) = alerts_hash {
+                let doc = serde_json::to_value(&*SERVICE_ALERTS.require(&h)?).map_err(|e| e.to_string())?;
+                next.extend(transit_log::document_records(&doc, "alerts", "service_alert", "service_alerts", version)?);
+            }
+            if let Some(h) = templates_hash {
+                let doc = serde_json::to_value(&*ALERT_TEMPLATES.require(&h)?).map_err(|e| e.to_string())?;
+                next.extend(transit_log::document_records(&doc, "templates", "alert_template", "alert_templates", version)?);
+            }
+            Ok(Response::LogRecords { next })
+        }
+        Request::LogDocument { kind, records, document } => {
+            let template = serde_json::json!({"kind": kind, "schema_version": transit_alerts::SCHEMA_VERSION});
+            let (document_hash, document) = match kind.as_str() {
+                "service_alerts" => {
+                    let alerts: ServiceAlerts = transit_log::assemble(template, document.as_ref(), "alerts", &records, false)?;
+                    let bytes = cap_abi::canonical_bytes(&alerts)?;
+                    (SERVICE_ALERTS.register(alerts)?.0, bytes)
+                }
+                "alert_templates" => {
+                    let templates: AlertTemplates = transit_log::assemble(template, document.as_ref(), "templates", &records, false)?;
+                    let bytes = cap_abi::canonical_bytes(&templates)?;
+                    (ALERT_TEMPLATES.register(templates)?.0, bytes)
+                }
+                other => return Err(format!("log_document: {other:?} is not service_alerts or alert_templates")),
+            };
+            Ok(Response::LogDocument { document_hash, document })
         }
     }
 }

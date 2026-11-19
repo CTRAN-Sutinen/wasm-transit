@@ -239,6 +239,7 @@ only staff can reach.
    {"kind": "policy", "schema_version": 1, "rules": [
      {"name": "dispatch-edits", "roles": ["dispatcher"], "actions": ["write"], "pointers": ["edits"]},
      {"name": "planning",       "roles": ["planner"],    "actions": ["write"], "pointers": ["plans", "stops", "stop_requests"]},
+     {"name": "alerts",         "roles": ["dispatcher", "communications"], "actions": ["write"], "pointers": ["service_alerts", "alert_templates"]},
      {"name": "releases",       "roles": ["admin"],      "actions": ["write"], "pointers": ["build"]},
      {"name": "audit",          "roles": ["auditor"],    "actions": ["audit"], "pointers": ["edits", "stops"]}
    ]}
@@ -246,7 +247,9 @@ only staff can reach.
 
    `edits` is detours and cancellations, `plans` is published schedule
    changes, `stops` is the stops record (and its surveys),
-   `stop_requests` is the requests for work at stops, and `build` is
+   `stop_requests` is the requests for work at stops,
+   `service_alerts` is the service alerts that riders are told,
+   `alert_templates` is the standard wording for alerts, and `build` is
    the app version
    ([section 9](#9-update-or-roll-back-the-app)). Everyone can read.
    The `audit` action on `edits` lets a role read the history of
@@ -460,7 +463,8 @@ the first list must match exactly, because `/stops` is data and
 - exactly: `/manifest`, `/edits`, `/feed`, `/network`,
   `/network/document`, `/network/boundary`, `/streets`, `/walks`,
   `/plans`, `/plans/retire`, `/stops`, `/stop-requests`,
-  `/stop-requests/work-order`, `/attachments`, `/builds`,
+  `/stop-requests/work-order`, `/service-alerts`, `/alert-templates`,
+  `/attachments`, `/builds`,
   `/permissions`, `/healthz`, `/readyz`, `/basemap.pmtiles`;
 - everything under: `/blobs/`, `/pointers/`, `/logs/`, `/attachments/`,
   `/geocode/`, `/basemap-assets/`.
@@ -468,7 +472,7 @@ the first list must match exactly, because `/stops` is data and
 With nginx, where `transit-server` is the server's upstream:
 
 ```
-location ~ ^/(manifest|edits|feed|network|network/document|network/boundary|streets|walks|plans|plans/retire|stops|stop-requests|stop-requests/work-order|attachments|builds|permissions|healthz|readyz|basemap\.pmtiles)$ {
+location ~ ^/(manifest|edits|feed|network|network/document|network/boundary|streets|walks|plans|plans/retire|stops|stop-requests|stop-requests/work-order|service-alerts|alert-templates|attachments|builds|permissions|healthz|readyz|basemap\.pmtiles)$ {
     proxy_pass http://transit-server;
 }
 location ~ ^/(blobs|pointers|logs|attachments|geocode|basemap-assets)/ {
@@ -483,7 +487,7 @@ With a Cloudflare Worker that has the app's files as its static
 assets (`ASSETS`) and the server's address in `SERVER`:
 
 ```js
-const exact = new Set(["/manifest", "/edits", "/feed", "/network", "/network/document", "/network/boundary", "/streets", "/walks", "/plans", "/plans/retire", "/stops", "/stop-requests", "/stop-requests/work-order", "/attachments", "/builds", "/permissions", "/healthz", "/readyz", "/basemap.pmtiles"]);
+const exact = new Set(["/manifest", "/edits", "/feed", "/network", "/network/document", "/network/boundary", "/streets", "/walks", "/plans", "/plans/retire", "/stops", "/stop-requests", "/stop-requests/work-order", "/service-alerts", "/alert-templates", "/attachments", "/builds", "/permissions", "/healthz", "/readyz", "/basemap.pmtiles"]);
 const under = ["/blobs/", "/pointers/", "/logs/", "/attachments/", "/geocode/", "/basemap-assets/"];
 export default {
   fetch(request, env) {
@@ -590,7 +594,9 @@ image.
   Stops and stop requests work the same way, at `/logs/stops` and
   `/logs/stops/revert`. Undoing an entry that added a stop or a request
   takes it out of the current stops or requests. The history still
-  holds it.
+  holds it. Service alerts and their templates work the same way too,
+  at `/logs/alerts` and `/logs/alerts/revert`. The `audit` action on
+  `service_alerts` lets a role read and undo them.
 
 - **Undo a bad update's data** (the emergency procedure). Use this only
   when an update wrote data that the earlier version cannot use, and

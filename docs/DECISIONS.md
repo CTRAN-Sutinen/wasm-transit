@@ -2326,7 +2326,9 @@ Options (each encoded, with the other answer):
   named. The other answer was an op of cap-alerts.
 - **The fill writes dates and lists only in English.** In another
   language such a blank stays, named, for a person. The other answer
-  was a date format for each language.
+  was a date format for each language. 2026-11-19, the user: this
+  overreaches ("even english doesn't have a consistent and default
+  locale"); it stays for now, and the details are addressed later.
 Pinned by: transit-alerts `alerts_law_test`; transit-rt
 `encode_law_test`; cap-alerts `dispatch_test`; cap-rt `dispatch_test`
 (`encode_alerts_writes_a_feed_that_live_reads_back`).

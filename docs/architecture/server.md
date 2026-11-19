@@ -26,12 +26,16 @@ into web/pkg/:
   the stops document for a published pick.
 - cap-requests (-requests-wasm) runs in store mode and is held the same
   way. It does the validation behind a stop requests write.
+- cap-alerts (-alerts-wasm) runs in store mode and is held the same
+  way. It does the validation behind a service alerts write
+  (`POST /service-alerts`) and an alert templates write
+  (`POST /alert-templates`). The server serves no feed of the alerts
+  (D-124).
 - cap-log (-log-wasm) runs in store mode. It keeps the disruptions log,
-  the stops log, and the plans log: each write's entry, the fold, and a
-  revert. The
-  server holds it for its whole lifetime. cap-sync, cap-stops, and
-  cap-requests turn their documents into the log's records and back
-  (`log_records`, `log_document`).
+  the stops log, the plans log, and the alerts log: each write's entry,
+  the fold, and a revert. The server holds it for its whole lifetime.
+  cap-sync, cap-stops, cap-requests, and cap-alerts turn their documents
+  into the log's records and back (`log_records`, `log_document`).
 - cap-network (the -network-wasm flag, cap_network.wasm) imports the
   configured GTFS zip (the kernel's `load_feed` + `import`). It also
   canonicalizes and validates each published pick. It runs in a fresh

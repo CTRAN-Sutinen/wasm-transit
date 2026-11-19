@@ -105,3 +105,11 @@ One template written out for a set of stops, routes, and dates:
 - `{start date}` and `{end date}` are written from "YYYY-MM-DD" as "Monday, August 17".
 
 The fill writes dates and lists of two or more only in English (a text with no language, or `en`). A blank that it cannot fill stays as written, and `unfilled` names it with its field and language, for a person to fill by hand. A blank cannot be filled when nothing is given for it, an id is not in the network, or a date is not YYYY-MM-DD. The answer also carries the template's cause, effect, and severity.
+
+## log_records
+
+The documents as the alerts log's records: a `service_alert` record for each alert, an `alert_template` record for each template, and each document's own record, which keeps the fields outside its collection. Each document left out gives no records. The log capability's `compose` takes the answer.
+
+## log_document
+
+One document assembled from the alerts log's records of its kind (`kind`: `service_alerts` or `alert_templates`), registered and answered as its canonical bytes and hash (`document_hash`). A record in another version is refused, naming both versions.

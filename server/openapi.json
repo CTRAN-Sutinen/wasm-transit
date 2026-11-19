@@ -2289,6 +2289,266 @@
         }
       }
     },
+    "/service-alerts": {
+      "x-mux": "/service-alerts",
+      "post": {
+        "operationId": "writeServiceAlerts",
+        "summary": "Write the service alerts document.",
+        "description": "Store mode only. cap-alerts validates the document (validate). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the service_alerts pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The head the writer read. Empty on create."
+                  },
+                  "alerts": {
+                    "type": "object",
+                    "x-document": "service_alerts",
+                    "description": "The service alerts document."
+                  }
+                },
+                "required": [
+                  "alerts"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {from, alerts}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The service alerts document is no longer at `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-alerts refuses the document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alert-templates": {
+      "x-mux": "/alert-templates",
+      "post": {
+        "operationId": "writeAlertTemplates",
+        "summary": "Write the alert templates document.",
+        "description": "Store mode only. cap-alerts validates the document (validate_templates). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the alert_templates pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The head the writer read. Empty on create."
+                  },
+                  "templates": {
+                    "type": "object",
+                    "x-document": "alert_templates",
+                    "description": "The alert templates document."
+                  }
+                },
+                "required": [
+                  "templates"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatesHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {from, templates}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The alert templates document is no longer at `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-alerts refuses the document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stop-requests/work-order": {
       "x-mux": "/stop-requests/work-order",
       "post": {
@@ -4866,6 +5126,14 @@
           "stop_requests_hash": {
             "type": "string"
           },
+          "service_alerts_hash": {
+            "type": "string",
+            "description": "The service alerts document (the alerts log's fold), store mode (D-206)."
+          },
+          "alert_templates_hash": {
+            "type": "string",
+            "description": "The alert templates document (the alerts log's fold), store mode (D-210)."
+          },
           "build_hash": {
             "type": "string"
           },
@@ -5203,6 +5471,28 @@
           "checkpoint",
           "entries",
           "quarantined"
+        ]
+      },
+      "AlertsHash": {
+        "type": "object",
+        "properties": {
+          "alerts_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alerts_hash"
+        ]
+      },
+      "TemplatesHash": {
+        "type": "object",
+        "properties": {
+          "templates_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "templates_hash"
         ]
       }
     },

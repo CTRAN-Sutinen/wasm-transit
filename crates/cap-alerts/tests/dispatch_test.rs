@@ -126,3 +126,22 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(run(json!({ "op": "no_such_op" }))["error"].is_string());
     assert!(err(json!({ "op": "list", "alerts_hash": "sha256:none", "now": 0 })).contains("load_service_alerts"));
 }
+
+/// The documents become the alerts log's records and back (D-197): the
+/// same document, under the same hash.
+#[test]
+fn the_documents_round_trip_through_the_log_records() {
+    let alerts_hash = ok(json!({ "op": "load_service_alerts", "alerts": sample() }))["alerts_hash"].clone();
+    let next = ok(json!({ "op": "log_records", "alerts_hash": alerts_hash }))["next"].clone();
+    let kinds: Vec<&str> = next.as_array().unwrap().iter().map(|k| k["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["service_alert", "service_alerts"]);
+    let held = |kind: &Value| -> Value {
+        let version = kind["version"].clone();
+        Value::Object(kind["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({ "version": version, "value": v }))).collect())
+    };
+    let records = held(&next[0]);
+    let document = held(&next[1])["document"].clone();
+    let back = ok(json!({ "op": "log_document", "kind": "service_alerts", "records": records, "document": document }));
+    assert_eq!(back["document_hash"], alerts_hash);
+    assert!(err(json!({ "op": "log_document", "kind": "stops", "records": {} })).contains("stops"));
+}

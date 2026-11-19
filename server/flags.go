@@ -27,6 +27,7 @@ type settings struct {
 	attachmentsURL *string
 	workOrdersSpec *string
 	requestsWasm   *string
+	alertsWasm     *string
 	logWasm        *string
 	kindsPath      *string
 	stopsWasm      *string
@@ -75,6 +76,7 @@ func serverFlags(fs *flag.FlagSet) *settings {
 		attachmentsURL: fs.String("attachments", "", "the attachments' own bucket (D-162): any store URL (s3://, gs://, azblob://, mem://); photos and drawings on surveys and requests, read only by the signed-in; unset, none are taken"),
 		workOrdersSpec: fs.String("work-orders", "", "the work order system's adapter (D-165): unset, none — a request's work order is entered by hand; stub: (or stub:<name>) a stand-in that opens STUB-<request>, for tests and demos"),
 		requestsWasm:   fs.String("requests-wasm", dataPath("pkg/cap_requests.wasm", "../web/pkg/cap_requests.wasm"), "the stop requests capability module (cap-requests) in store mode: it validates every POST /stop-requests (D-159)"),
+		alertsWasm:     fs.String("alerts-wasm", dataPath("pkg/cap_alerts.wasm", "../web/pkg/cap_alerts.wasm"), "the service alerts capability module (cap-alerts) in store mode: it validates every POST /service-alerts and POST /alert-templates (D-206)"),
 		logWasm:        fs.String("log-wasm", dataPath("pkg/cap_log.wasm", defaultLogWasm), "the log capability module (cap-log) in store mode: it keeps the disruptions log, the stops log, and the plans log (D-197)"),
 		kindsPath:      fs.String("kinds", dataPath("pkg/kinds.json", defaultKindsPath), "the kind table (`just caps`; D-202): how each kind the store keeps is written, checked, and read. Store mode refuses a write of a kind it does not name"),
 		stopsWasm:      fs.String("stops-wasm", dataPath("pkg/cap_stops.wasm", "../web/pkg/cap_stops.wasm"), "the stops capability module (cap-stops) in store mode: it validates every POST /stops and refreshes each pick's stops from the stops document"),

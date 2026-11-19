@@ -218,6 +218,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-alerts",
+ "transit-log",
  "transit-version",
  "ts-rs",
 ]

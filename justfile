@@ -27,10 +27,11 @@ default:
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
 # cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops,
-# cap_requests, cap_log — the server's default -wasm, -network-wasm,
-# -streets-wasm, -authz-wasm, -plans-wasm, -migrate-wasm, -stops-wasm,
-# -requests-wasm and -log-wasm flags; rebuilt with the modules, never
-# by hand), with the kind table web/pkg/kinds.json (-kinds) and the
+# cap_requests, cap_alerts, cap_log — the server's default -wasm,
+# -network-wasm, -streets-wasm, -authz-wasm, -plans-wasm, -migrate-wasm,
+# -stops-wasm, -requests-wasm, -alerts-wasm and -log-wasm flags; rebuilt
+# with the modules, never by hand), with the kind table
+# web/pkg/kinds.json (-kinds) and the
 # schemas it names in web/pkg/schemas/ (D-202). The
 # registry also publishes every document kind's JSON Schema and a
 # worked example (registry/documents.json, docs/FORMATS.md).
@@ -46,7 +47,7 @@ caps:
     just _modules target "$profile"
     CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
-    for cap in sync network streets authz plans migrate stops requests log; do
+    for cap in sync network streets authz plans migrate stops requests alerts log; do
         cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
 

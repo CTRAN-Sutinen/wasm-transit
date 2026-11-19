@@ -53,7 +53,7 @@ and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
 | 7 | sync `sync_edits` | op exists; dogfooded on C-TRAN through a restarted store server (2026-11-05); no page writes one |
 | 8 | alerts `list` | op exists; the long-open rule is set by trying it on C-TRAN's alerts (D-207) |
 | 9 | alerts `gaps` | op exists (edits and suspended stops) |
-| 10 | alerts `fill`, `validate`, `put`, `end`, `flags`; rt `encode_alerts`, `live`; board `stop_board` | op exists; the server keeps no alert yet ([service-alerts.md](service-alerts.md)) |
+| 10 | alerts `fill`, `validate`, `put`, `end`, `flags`; rt `encode_alerts`, `live`; board `stop_board` | op exists; the server keeps the alerts (`POST /service-alerts`) |
 
 ## Scope beyond the ops
 
