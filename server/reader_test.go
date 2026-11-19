@@ -245,6 +245,52 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	}
 }
 
+// The derived documents (D-199) read back with no module: each
+// derivation names its inputs and its documents, and each blob
+// validates against the schema its envelope names.
+func TestStoredDerivationsReadWithoutTheModules(t *testing.T) {
+	bucket := store.NewMemory()
+	s := derivedServer(t, bucket, writeLayer(t))
+	m, err := s.buildManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.store.Close()
+
+	idx := loadDocumentIndex(t)
+	r := storeReader{bucket}
+	want := map[string]string{"network": m.NetworkHash, "boundary": m.BoundaryHash, "streets": m.StreetsHash, "walks": m.WalksHash}
+	inputs := map[string][]string{
+		"derived.network": {m.FeedHash},
+		"derived.streets": {r.head(t, "source.streets").To},
+		"derived.walks":   {m.StreetsHash, m.NetworkHash},
+	}
+	for pointer, in := range inputs {
+		data, env := r.blob(t, r.head(t, pointer).To)
+		validateBytes(t, schemaFor(t, idx, env.Kind, env.SchemaVersion), pointer, data)
+		var d struct {
+			Inputs    []string `json:"inputs"`
+			Documents []struct {
+				Tag  string `json:"tag"`
+				Hash string `json:"hash"`
+			} `json:"documents"`
+		}
+		if err := json.Unmarshal(data, &d); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(d.Inputs, ",") != strings.Join(in, ",") {
+			t.Fatalf("%s names the inputs %v, want %v", pointer, d.Inputs, in)
+		}
+		for _, doc := range d.Documents {
+			if doc.Hash != want[doc.Tag] || r.head(t, doc.Tag).To != doc.Hash {
+				t.Fatalf("%s: its %s %s is the manifest's and the pointer's", pointer, doc.Tag, doc.Hash)
+			}
+			body, denv := r.blob(t, doc.Hash)
+			validateBytes(t, schemaFor(t, idx, denv.Kind, denv.SchemaVersion), pointer+"'s "+doc.Tag, body)
+		}
+	}
+}
+
 // schemaForKind is the published schema of a document by the kind and
 // version it says inside it.
 func schemaForKind(t *testing.T, idx documentIndex, kind string, version uint32) *jsonschema.Schema {

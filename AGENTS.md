@@ -415,8 +415,9 @@ assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capab
 server/          the Go and wazero host. It runs cap-sync (the edit document and its
                  records in the disruptions log), cap-network,
                  cap-plans, and cap-streets (the network, picks, streets, and walk
-                 table it publishes; in store mode, every build it serves, kept and
-                 rolled back by pointer; D-80). It also runs cap-migrate (an older
+                 table it publishes; in store mode, each stored when it is made, so
+                 a boot imports nothing it already holds (D-199), and every build
+                 it serves, kept and rolled back by pointer; D-80). It also runs cap-migrate (an older
                  document, at receive), cap-log (the disruptions log and the stops log:
                  logs/disruptions/ and logs/stops/ in the bucket), cap-stops
                  (the stops document's writes and records, and what a published pick

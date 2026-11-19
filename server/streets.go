@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"rustwasm/server/store"
 )
 
 // cap-streets' own bulk op: import a street layer (a streets
@@ -79,7 +81,9 @@ type loadedStreets struct {
 
 // streetsSource reads the street layer from its source (D-118) and
 // imports it when its bytes change; the walk table is derived again
-// when the published network changes.
+// when the published network changes. In store mode each is stored
+// (derived.go): a boot whose layer and network the store already
+// derived from reads the stored documents and runs no module.
 type streetsSource struct {
 	src         *source
 	streetsWasm string // the cap-streets module that imports it
@@ -88,6 +92,8 @@ type streetsSource struct {
 	layerHash   string
 	networkHash string
 	loaded      *loadedStreets
+	// derivations counts the imports and walk tables this process made.
+	derivations int
 }
 
 // fileStreets is a street layer read from a local file (dev, tests).
@@ -116,62 +122,124 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 
 	ctx := context.Background()
 	started := time.Now()
-	host, err := NewWasmHost(ctx, f.streetsWasm)
-	if err != nil {
-		return nil, fmt.Errorf("streets module: %w", err)
+	st := f.src.st
+	// The module runs only when something is derived; its working memory
+	// goes with the instance.
+	var host *WasmHost
+	defer func() {
+		if host != nil {
+			host.Close(ctx)
+		}
+	}()
+	open := func() (*WasmHost, error) {
+		if host == nil {
+			h, err := NewWasmHost(ctx, f.streetsWasm)
+			if err != nil {
+				return nil, fmt.Errorf("streets module: %w", err)
+			}
+			host = h
+		}
+		return host, nil
 	}
-	// The import's working memory goes with the instance.
-	defer host.Close(ctx)
+	streetsInHost := false
 
 	var streets servedDoc
 	if f.loaded != nil && layerHash == f.layerHash {
-		// The same layer: register the document already imported.
-		streets = f.loaded.streets
-		if err := host.InvokeBytes(ctx, opLoadStreets, streets.body, nil); err != nil {
-			return nil, fmt.Errorf("load_streets: %w", err)
-		}
+		streets = f.loaded.streets // the same layer: the document already read
+	} else if _, docs, ok := storedOf(st, derivedStreetsPointer, []string{layerHash}, "streets"); ok {
+		streets = newServedDoc(store.HashOf(docs["streets"]), docs["streets"])
 	} else {
+		h, err := open()
+		if err != nil {
+			return nil, err
+		}
+		var raw json.RawMessage
+		if err := h.InvokeBytes(ctx, opImportStreets, body, &raw); err != nil {
+			return nil, fmt.Errorf("import: %w", err)
+		}
 		var imported struct {
 			StreetsHash string          `json:"streets_hash"`
 			Streets     json.RawMessage `json:"streets"`
 		}
-		if err := host.InvokeBytes(ctx, opImportStreets, body, &imported); err != nil {
+		if err := json.Unmarshal(raw, &imported); err != nil {
 			return nil, fmt.Errorf("import: %w", err)
 		}
 		streets = newServedDoc(imported.StreetsHash, imported.Streets)
+		streetsInHost = true
+		f.derivations++
+		if st != nil {
+			if answer, err := answerWithout(raw, "streets"); err != nil {
+				log.Printf("%s: the import is not stored: %v", derivedStreetsPointer, err)
+			} else {
+				commitDerivation(st, derivedStreetsPointer, []string{layerHash}, "cap-streets@"+h.Hash(), answer,
+					derivedDoc{tag: "streets", storeKind: "streets", version: 1, body: streets.body, hash: streets.hash})
+			}
+		}
 	}
 
 	loaded := &loadedStreets{streets: streets}
 	if feed != nil {
-		var answer struct {
-			Network json.RawMessage `json:"network"`
+		inputs := []string{streets.hash, feed.networkHash}
+		if _, docs, ok := storedOf(st, derivedWalksPointer, inputs, "walks"); ok {
+			loaded.walks = newServedDoc(store.HashOf(docs["walks"]), docs["walks"])
+		} else {
+			h, err := open()
+			if err != nil {
+				return nil, err
+			}
+			if !streetsInHost {
+				if err := h.InvokeBytes(ctx, opLoadStreets, streets.body, nil); err != nil {
+					return nil, fmt.Errorf("load_streets: %w", err)
+				}
+			}
+			if err := h.InvokeBytes(ctx, opLoadNetwork, feed.document, nil); err != nil {
+				return nil, fmt.Errorf("load_network: %w", err)
+			}
+			raw, err := h.InvokeRaw(ctx, map[string]any{
+				"op": "walks", "streets_hash": streets.hash, "network_hash": feed.networkHash,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("walks: %w", err)
+			}
+			var walked struct {
+				WalksHash string          `json:"walks_hash"`
+				Walks     json.RawMessage `json:"walks"`
+			}
+			if err := json.Unmarshal(raw, &walked); err != nil {
+				return nil, fmt.Errorf("walks: %w", err)
+			}
+			loaded.walks = newServedDoc(walked.WalksHash, walked.Walks)
+			f.derivations++
+			if st != nil {
+				if answer, err := answerWithout(raw, "walks"); err != nil {
+					log.Printf("%s: the walk table is not stored: %v", derivedWalksPointer, err)
+				} else {
+					commitDerivation(st, derivedWalksPointer, inputs, "cap-streets@"+h.Hash(), answer,
+						derivedDoc{tag: "walks", storeKind: "walks", version: 1, body: loaded.walks.body, hash: loaded.walks.hash})
+				}
+			}
 		}
-		if err := json.Unmarshal(feed.network, &answer); err != nil {
-			return nil, fmt.Errorf("the published network: %w", err)
-		}
-		if err := host.InvokeBytes(ctx, opLoadNetwork, answer.Network, nil); err != nil {
-			return nil, fmt.Errorf("load_network: %w", err)
-		}
-		var walked struct {
-			WalksHash string          `json:"walks_hash"`
-			Walks     json.RawMessage `json:"walks"`
-		}
-		err := host.Invoke(ctx, map[string]any{
-			"op": "walks", "streets_hash": streets.hash, "network_hash": feed.networkHash,
-		}, &walked)
-		if err != nil {
-			return nil, fmt.Errorf("walks: %w", err)
-		}
-		loaded.walks = newServedDoc(walked.WalksHash, walked.Walks)
 	}
 
 	f.loaded = loaded
 	f.layerHash = layerHash
 	f.networkHash = networkHash
-	log.Printf("streets from %s in %s: %s (%d KB, %d KB gzipped); walk table %s (%d KB gzipped)",
-		f.src.raw, time.Since(started).Round(time.Millisecond), streets.hash, len(streets.body)/1024, len(streets.gz)/1024,
+	how := "derived"
+	if host == nil {
+		how = "read from the store"
+	}
+	log.Printf("streets %s for %s in %s: %s (%d KB, %d KB gzipped); walk table %s (%d KB gzipped)",
+		how, f.src.raw, time.Since(started).Round(time.Millisecond), streets.hash, len(streets.body)/1024, len(streets.gz)/1024,
 		loaded.walks.hash, len(loaded.walks.gz)/1024)
 	return loaded, nil
+}
+
+// storedOf is storedDerivation, and false with no store.
+func storedOf(st *store.Store, pointer string, inputs []string, tags ...string) (json.RawMessage, map[string][]byte, bool) {
+	if st == nil {
+		return nil, nil, false
+	}
+	return storedDerivation(st, pointer, inputs, tags...)
 }
 
 // publishedStreets loads the streets over the published network (if

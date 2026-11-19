@@ -19,14 +19,15 @@ package main
 //
 // /blobs also answers the published documents (the network, its
 // boundary, the streets, the walk table — publishedBlob) with or
-// without the store.
+// without the store. In store mode they are blobs too (derived.go).
 //
 // POST bodies: for the edits pointer, {"from", "client": <document>}
 // — the server brings an older document forward (cap-migrate), runs
 // cap-sync's read_edits on both sides and sync_edits (receive-clamped,
 // D-56), and writes the change as one entry of the disruptions log. The published plan set and the picks' networks
 // (kinds plans and network_document, pointers plans and plan.<id>) are
-// refused here: they publish through POST /plans (plans.go). Other
+// refused here: they publish through POST /plans (plans.go). So are the
+// derived documents and their derivation records (derived.go). Other
 // kinds take {"from", "kind"? (on create),
 // "document": "<raw text>", "document_hash"?} verbatim; document_hash,
 // when present, is asserted against sha256 of the bytes.
@@ -343,6 +344,13 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	// (requests.go): a raw write would skip cap-requests' validation.
 	if kind == "stop_requests" || name == requestsPointer {
 		http.Error(w, "the stop requests document is written through POST /stop-requests", http.StatusBadRequest)
+		return
+	}
+	// The derived documents and their derivation records are the
+	// server's own imports of its inputs (derived.go): a raw write would
+	// name a document no module made from them.
+	if kind == DerivationKind || kind == "boundary" || kind == "streets" || kind == "walks" || isDerivedPointer(name) {
+		http.Error(w, "the derived documents are written by the server's imports of its inputs", http.StatusBadRequest)
 		return
 	}
 	// A build names files the store must hold: builds land from -dist,

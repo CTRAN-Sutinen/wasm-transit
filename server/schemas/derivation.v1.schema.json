@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Derivation",
+  "description": "A derivation (D-199): what a module made from which inputs. The server stores each document it derives from its inputs (the network and boundary that cap-network imports from the GTFS zip, the streets that cap-streets imports from the street layer, and the walk table over the streets and the network) as the head of the pointer of its tag. The derivation names the inputs, the module, the documents, and the rest of the module's answer. A boot whose inputs a derivation names reads the stored documents and runs no module. The Go host owns this kind: the schema is written by hand, and server/schema_test.go checks it against the Go type and against a derivation the server commits (docs/FORMATS.md, \"Derivations\").",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "derivation"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "inputs": {
+      "description": "The hashes of the documents the module read, in the order it read them: the GTFS zip, the street layer, or the streets and the network.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "module": {
+      "description": "The module that made the documents: its role and its hash.",
+      "type": "string",
+      "pattern": "^cap-[a-z]+@sha256:[0-9a-f]{64}$"
+    },
+    "documents": {
+      "description": "The documents the module made. Each is the head of the pointer of its tag.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DerivedDocument"
+      }
+    },
+    "answer": {
+      "description": "The rest of the module's answer, as the module answered it: for an import of a GTFS zip, its notes, its zone, and its first service date.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "inputs",
+    "module",
+    "documents",
+    "answer"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "DerivedDocument": {
+      "description": "One document a derivation made.",
+      "type": "object",
+      "properties": {
+        "tag": {
+          "description": "The document's tag, and the pointer it heads.",
+          "enum": ["network", "boundary", "streets", "walks"]
+        },
+        "hash": {
+          "description": "The document's blob.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "tag",
+        "hash"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

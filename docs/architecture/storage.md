@@ -74,6 +74,24 @@ is the published plan set. Each pick's network is its own `plan.<id>`
 pointer (D-74). Every pointer the server keeps is listed in
 `docs/FORMATS.md`, "The pointer log".
 
+**The derived documents are in the record** (D-199). The server reads
+two inputs, the GTFS zip and the street layer, and commits each read
+to `source.feed` and `source.streets`. A module makes documents from
+them: cap-network imports the network and its boundary, and cap-streets
+imports the streets and makes the walk table over the streets and the
+network. Each document is stored when it is made, as the head of the
+pointer of its tag (`network`, `boundary`, `streets`, `walks`), with the
+module in its envelope. A `derivation` record on `derived.network`,
+`derived.streets`, or `derived.walks` names the input hashes, the
+module, the documents, and the rest of the module's answer (an import's
+notes, zone, and first service date). It is committed last. A boot
+reads the derivation records. When a record names the hashes of the
+inputs just read, and each document is stored in the version this build
+writes, the server serves the stored documents and runs no module. An
+input whose bytes changed is derived once. So every document the
+manifest names is a blob in the bucket, and `store verify` checks the
+head manifest for it (`docs/FORMATS.md`, "Derivations").
+
 ## What the record holds, by shape
 
 The agency's data is not one shape. Each shape needs its own layout.
@@ -162,26 +180,23 @@ they need the `audit` rule.
   manifest's hashes, can be stale like a head.
 - Reads are of whole documents. The derived documents a reader asks for
   by name (`/network/document`, `/network/boundary`, `/streets`,
-  `/walks`, `/feed`) are computed by the server's modules from the
-  record. The server serves them beside the record. No projection tier
-  exists apart from the server.
+  `/walks`) are blobs in the record, and `/blobs/<hash>` serves them by
+  the manifest's hashes. `/feed` is computed by the server's modules
+  from the record. No projection tier exists apart from the server.
 
 ## Where it is going
 
 The storage model's direction is decided (D-190, D-191). The
-disruptions log and the stops log are built. The rest is
+disruptions log, the stops log, and the stored derived documents are
+built. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
-- the documents the server derives from its inputs (the imported
-  network and boundary, the streets, the walk table) stored in the
-  record, so every hash the manifest names is a blob (D-199).
 - the logs for the other consistency domains: the plans and the policy.
 - a working store for drafts, attachments, and caches, apart from the
   record.
 - freezing a version into the record, apart from adopting it.
 - one receive path driven by each kind's entry in the kind table.
 - a bucket that carries its own schemas.
-- exports for a GIS and the agency's lake.
 - permissions and restricted reads per change.
 
 The store on each provider's real account and its backups are in
@@ -294,3 +309,27 @@ reading **Because**.
   engine of its own for each log (two engines to keep, and the same
   rules written twice).
 - **Decided:** D-197, D-198.
+
+### The derived documents are stored when they are made (`server/derived.go`)
+- **Holds:** the network, the boundary, the streets, and the walk table
+  are blobs in the record, each the head of its tag's pointer, with the
+  module that made it in its envelope. A `derivation` record names the
+  inputs and is committed last. A boot whose inputs a derivation names
+  reads the stored documents and runs no module. Only the server's
+  derivations write these pointers (`POST /pointers` refuses them).
+- **Because:** the manifest names these documents, and an auditor needs
+  to read the network a pick forked from. Made again at each boot, they
+  depend on the importer's build: a release that changes the importer
+  makes a different network from the same zip, so the record would name
+  a document it can no longer produce. An import is rare, and costs
+  C-TRAN about 5 GB at its peak; the stored documents cost a few MB for
+  each import.
+- **Costs:** a release that writes another version of a document
+  derives it again at its first boot, and commits it. The derivation
+  record is one more host-owned kind with a hand-written schema.
+- **Rejected:** deriving at every boot (the record depends on the
+  importer's build); naming the inputs in the pointer record (the
+  commit record would change format, and the import's notes would have
+  no home); one root that names its documents, as a build does (gc and
+  verify would follow one more kind of reference).
+- **Decided:** D-199. **Provisional:** D-200 (the derivation record).

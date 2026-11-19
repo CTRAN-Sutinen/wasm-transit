@@ -107,8 +107,8 @@ type loadedFeed struct {
 	// The answer's two documents, split off as they are, each also
 	// gzipped: the bare network (its bytes hash to networkHash — they
 	// are its canonical serialization) and the boundary (named by the
-	// sha256 of its bytes, boundaryHash). Both are blobs too
-	// (publishedBlob).
+	// sha256 of its bytes, boundaryHash). Both are served as blobs
+	// (publishedBlob), and in store mode they are stored (derived.go).
 	document     json.RawMessage
 	documentGzip []byte
 	boundary     json.RawMessage
@@ -121,30 +121,32 @@ type loadedFeed struct {
 
 // importFeed runs load_feed + import in a fresh cap-network instance
 // and closes it: the import's working memory (several times the
-// network's size) goes with the instance.
-func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.RawMessage, string, error) {
+// network's size) goes with the instance. It answers the import's
+// answer, its network hash, and the module that made it
+// ("cap-network@sha256:<hex>").
+func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.RawMessage, string, string, error) {
 	host, err := NewWasmHost(ctx, wasmPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("network module: %w", err)
+		return nil, "", "", fmt.Errorf("network module: %w", err)
 	}
 	defer host.Close(ctx)
 	var loaded struct {
 		FeedHash string `json:"feed_hash"`
 	}
 	if err := host.InvokeBytes(ctx, opLoadFeed, zipBytes, &loaded); err != nil {
-		return nil, "", fmt.Errorf("load_feed: %w", err)
+		return nil, "", "", fmt.Errorf("load_feed: %w", err)
 	}
 	answer, err := host.InvokeRaw(ctx, map[string]any{"op": "import", "feed_hash": loaded.FeedHash})
 	if err != nil {
-		return nil, "", fmt.Errorf("import: %w", err)
+		return nil, "", "", fmt.Errorf("import: %w", err)
 	}
 	var pin struct {
 		NetworkHash string `json:"network_hash"`
 	}
 	if err := json.Unmarshal(answer, &pin); err != nil || pin.NetworkHash == "" {
-		return nil, "", fmt.Errorf("import answered no network_hash")
+		return nil, "", "", fmt.Errorf("import answered no network_hash")
 	}
-	return answer, pin.NetworkHash, nil
+	return answer, pin.NetworkHash, "cap-network@" + host.Hash(), nil
 }
 
 // feedInfoVersion pulls feed_version out of feed_info.txt in the
@@ -181,13 +183,18 @@ func feedInfoVersion(zipBytes []byte) string {
 // feedSource reads the GTFS zip from its source (D-118: a URL, the
 // bucket, or a dev file) and imports it, re-importing only when the
 // source's bytes change — a republished feed is picked up without a
-// restart (the "planner publishes, everyone re-pins" flow).
+// restart (the "planner publishes, everyone re-pins" flow). In store
+// mode the import is stored (derived.go): a boot whose zip the store
+// already imported reads the stored network and imports nothing.
 type feedSource struct {
 	src         *source
 	networkWasm string // the cap-network module that imports it
-	// onImport runs after each new import (a feed whose bytes changed):
-	// the server records the feed's stop differences (stops.go).
+	// onImport runs after each new published state (a feed whose bytes
+	// changed, imported or read from the store): the server records the
+	// feed's stop differences (stops.go), once for each zip.
 	onImport func(*loadedFeed)
+	// imports counts the imports this process ran.
+	imports int
 
 	mu   sync.Mutex
 	feed *loadedFeed
@@ -204,8 +211,8 @@ func (f *feedSource) Zip() ([]byte, error) {
 	return body, err
 }
 
-// Load returns the current published state, re-importing when the
-// source's bytes changed.
+// Load returns the current published state. When the source's bytes
+// changed, it imports them, or reads the store's import of them.
 func (f *feedSource) Load() (*loadedFeed, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -218,7 +225,7 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 		return f.feed, nil
 	}
 	started := time.Now()
-	network, networkHash, err := importFeed(context.Background(), f.networkWasm, body)
+	network, networkHash, stored, err := f.derive(body, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -243,12 +250,55 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 		boundaryHash: store.HashOf(parts.Boundary),
 		timezone:     parts.Timezone,
 	}
-	log.Printf("network imported from %s in %s: %s (%d KB, %d KB gzipped)",
-		f.src.raw, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
+	how := "imported"
+	if stored {
+		how = "read from the store"
+	}
+	log.Printf("network %s for %s in %s: %s (%d KB, %d KB gzipped)",
+		how, f.src.raw, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
 	if f.onImport != nil {
 		f.onImport(f.feed)
 	}
 	return f.feed, nil
+}
+
+// derive answers the import's answer for the zip: the store's, when it
+// holds this zip's import (stored), else a new import, which store mode
+// then stores.
+func (f *feedSource) derive(body []byte, hash string) (json.RawMessage, string, bool, error) {
+	st := f.src.st
+	if st != nil {
+		if answer, docs, ok := storedDerivation(st, derivedNetworkPointer, []string{hash}, "network", "boundary"); ok {
+			network, err := answerWith(answer, map[string][]byte{"network": docs["network"], "boundary": docs["boundary"]})
+			if err == nil {
+				return network, store.HashOf(docs["network"]), true, nil
+			}
+			log.Printf("%s: %v: importing again", derivedNetworkPointer, err)
+		}
+	}
+	network, networkHash, module, err := importFeed(context.Background(), f.networkWasm, body)
+	if err != nil {
+		return nil, "", false, err
+	}
+	f.imports++
+	if st != nil {
+		var parts struct {
+			Network  json.RawMessage `json:"network"`
+			Boundary json.RawMessage `json:"boundary"`
+		}
+		answer, err := answerWithout(network, "network", "boundary")
+		if err == nil {
+			err = json.Unmarshal(network, &parts)
+		}
+		if err != nil || len(parts.Network) == 0 || len(parts.Boundary) == 0 {
+			log.Printf("%s: the import is not stored: %v", derivedNetworkPointer, err)
+		} else {
+			commitDerivation(st, derivedNetworkPointer, []string{hash}, module, answer,
+				derivedDoc{tag: "network", storeKind: "network_document", version: networkVersion, body: parts.Network, hash: networkHash},
+				derivedDoc{tag: "boundary", storeKind: "boundary", version: 1, body: parts.Boundary, hash: store.HashOf(parts.Boundary)})
+		}
+	}
+	return network, networkHash, false, nil
 }
 
 func gzipped(b []byte) []byte {

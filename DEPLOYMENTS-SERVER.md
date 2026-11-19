@@ -143,8 +143,12 @@ The server listens on port 8080. Put TLS (HTTPS) in front of it at
 the load balancer.
 
 **Memory.** With C-TRAN's feed and its county roads street layer
-(99 MB), the server needs about 5 GB while it imports them at startup,
-and about 0.7 GB after that. Give the container at least 6 GB, and set
+(99 MB), the server needs about 5 GB while it imports them, and about
+0.7 GB after that. It imports a file only when the file changes. It
+keeps what it made in the bucket, so a restart with the same files
+reads the bucket and imports nothing. Give the container at least 6 GB,
+because a new GTFS file or street map is imported while the server
+runs. Set
 `GOMEMLIMIT` to about 1 GB less than the container's limit (for
 example `-e GOMEMLIMIT=5GiB`). Without it, the server keeps memory it
 no longer uses for several minutes, and appears to need about 3 GB at
@@ -531,6 +535,11 @@ image.
   ```
 
   It reads everything and stops with an error at the first problem.
+  A bucket that an older release last served can stop with "the head
+  manifest's network_hash … no record names it": that release did not
+  keep the imported schedule in the bucket. Start the new release once.
+  It keeps the schedule and the street map in the bucket, and the check
+  then passes.
 
 - **See what the bucket holds** (read-only, safe at any time). This
   writes every file of the bucket to a folder on your computer, so you

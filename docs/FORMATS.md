@@ -109,11 +109,15 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
   - `policy`
   - `stops`
   - `stop_requests`
+  - the derived documents' `boundary`, `streets`, and `walks`, and
+    their `derivation` records (see "Derivations")
   - the boot sources' `gtfs_feed` (a GTFS zip) and `street_layer`
     (GeoJSON). These are external open formats, stored as read (D-115,
     D-118).
 
-  `produced_by` on a `network_document` is `cap-network@sha256:…`. On
+  `produced_by` on a `network_document` and a `boundary` is
+  `cap-network@sha256:…`. On `streets` and `walks`, it is
+  `cap-streets@sha256:…`. On
   `plans`, it is `cap-plans@sha256:…`. On `stops`, it is
   `cap-stops@sha256:…`. On `stop_requests`, it is
   `cap-requests@sha256:…`.
@@ -158,9 +162,14 @@ Each commit is one record object,
     `writer` is `import:<source>` (D-118). A `stops` commit of the
     agency's feed's differences has the writer `import:feed` (D-150).
 
-  A server whose source does not answer at boot imports that pointer's
+  A server whose source does not answer at boot reads that pointer's
   head instead. So a replacement that has only the bucket and the same
   configuration serves the same manifest.
+  - `network`, `boundary`, `streets`, and `walks`: the documents the
+    server derives from its inputs, and `derived.network`,
+    `derived.streets`, and `derived.walks`: the derivation records that
+    name them (see "Derivations"). Only the server's derivations write
+    them.
 - `from` is the hash that the writer last saw. A commit lands only when
   the head's `to` equals it. An empty `from` means that the pointer must
   not exist yet. A failed CAS changes nothing.
@@ -213,7 +222,12 @@ non-zero on the first break. A break is one of these:
   entries, or an entry or checkpoint whose `kind`, `log`, or `seq`
   differs from its key, or a checkpoint past the log's last entry;
 - a checkpoint whose bytes differ from the fold of the entries after
-  the checkpoint before it (or from the first entry).
+  the checkpoint before it (or from the first entry);
+- a head manifest that names a document no record names. The fields
+  read are `feed_hash`, `network_hash`, `boundary_hash`, `streets_hash`,
+  `walks_hash`, `plans_hash`, `policy_hash`, and `build_hash`. The
+  stops and the stop requests are folds their log keeps, and the
+  modules' hashes name modules.
 
 The fold is the module's, so `store verify` runs cap-log, which keeps
 every log (`-log`, default `../web/pkg/cap_log.wasm`). Every entry is a
@@ -363,7 +377,9 @@ entry 1 from their heads, with writer `migrate:stops` and
   entry of the disruptions log. `from` is compared with the fold's
   hash, and `seq` in the answer is the log's. `GET /pointers/edits`
   answers the fold the same way. `GET /pointers/edits/log` answers the
-  pointer's own records, from before the log. Other kinds take
+  pointer's own records, from before the log. The derived documents'
+  pointers and kinds (see "Derivations") answer `400`: only the
+  server's derivations write them. Other kinds take
   `{"from", "document": <value>}` verbatim.
 - `GET /blobs/{hash}` answers the raw bytes. The ETag is the full
   `sha256:…` hash (304 on match). `X-Document-Kind` and
@@ -519,6 +535,42 @@ So a logged build is always whole. The model-checked protocol
 (`server/store/store.tla`) is the one-blob commit. A build runs that
 order for each of its files.
 
+## Derivations
+
+The server derives documents from its two inputs and stores them when
+it makes them (D-199):
+
+| Input (pointer) | Module | Documents (pointers) | Derivation record |
+|---|---|---|---|
+| the GTFS zip (`source.feed`) | cap-network `import` | `network`, `boundary` | `derived.network` |
+| the street layer (`source.streets`) | cap-streets `import` | `streets` | `derived.streets` |
+| the streets and the network | cap-streets `walks` | `walks` | `derived.walks` |
+
+Each document is a blob in its canonical bytes, the head of its tag's
+pointer. Its envelope names its kind and version, and the module that
+made it. A `derivation` record names what the module made from which
+inputs (envelope `{"kind":"derivation","schema_version":1,"produced_by":"server"}`):
+
+```json
+{"kind":"derivation","schema_version":1,"inputs":["sha256:…"],"module":"cap-network@sha256:…","documents":[{"tag":"network","hash":"sha256:…"},{"tag":"boundary","hash":"sha256:…"}],"answer":{"boundary_hash":"sha256:…","first_service_date":"2026-11-02","network_hash":"sha256:…","notes":[],"timezone":"America/Los_Angeles"}}
+```
+
+- `inputs` are the hashes the module read, in its order: the zip, the
+  layer, or the streets and then the network.
+- `answer` is the rest of the module's answer, as the module answered
+  it. `GET /network` serves it with the two documents put back.
+- A derivation commits its documents first and its record last. A
+  crash before the record leaves the documents' pointers ahead, and the
+  next boot derives again and commits the same bytes.
+- A boot reads the record. When `inputs` are the hashes of the inputs
+  just read, and each document's envelope has the version this build
+  writes, the server serves the stored documents and runs no module.
+  Otherwise it derives again, and commits.
+
+The Go host owns the kind. Its schema and a frozen example are in
+`server/schemas/derivation.v1.*`, and `server/schema_test.go` holds
+them to the Go type and to a record the server commits.
+
 ## Invariants the schema cannot say
 
 - Dates cross every boundary as `"YYYY-MM-DD"` strings. Times are u32
@@ -586,6 +638,7 @@ Every persisted kind, by what a version change does to it:
 | `live` | transit-live | ephemeral | `kind`, `schema_version` (v2: a trip instance names its service `date`) |
 | `manifest` | the Go server | host-owned | its own shape (below); its schema is the HTTP contract's |
 | `build`, `build_file` | the Go server | host-owned | `kind`, `schema_version` in a build (a hand-written schema, "Builds", below); a build file is its exact bytes |
+| `derivation` (what a module made from which inputs) | the Go server | host-owned | `kind`, `schema_version` (a hand-written schema, "Derivations", above) |
 
 - A person writes *authored* kinds, and the system cannot re-derive
   them. Their chains are kept forever (D-66). Every record of an
@@ -601,8 +654,8 @@ Every persisted kind, by what a version change does to it:
   it.
 - *Ephemeral* kinds never outlive a session. They are tagged for the
   same refusal.
-- The *host-owned* manifest and builds are versioned in their own
-  envelope.
+- The *host-owned* manifest, builds, and derivations are versioned in
+  their own envelope.
 
 A gate (cap-abi `tests/formats_inventory_test.rs`) holds this table
 and the locks to the same kinds. A kind in the table with no locked

@@ -839,7 +839,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
         .and_then(|ex| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
         kind::<transit_network::Network>("network", Some("network_document"), "transit-network", net.map(|n| n.derived.clone()), Some(migrate_network)),
-        kind::<transit_codec::Boundary>("boundary", None, "transit-codec", net.map(|n| n.boundary.clone()), None),
+        kind::<transit_codec::Boundary>("boundary", Some("boundary"), "transit-codec", net.map(|n| n.boundary.clone()), None),
         kind::<transit_sync::EditDocument>(
             "operator_edits",
             Some("edit_records"),
@@ -895,8 +895,8 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             }]))),
             None,
         ),
-        kind::<transit_streets::Streets>("streets", None, "transit-streets", streets_example_context().map(|c| value(&c.streets)), None),
-        kind::<transit_streets::walking::WalkTable>("walks", None, "transit-streets", walks_example, None),
+        kind::<transit_streets::Streets>("streets", Some("streets"), "transit-streets", streets_example_context().map(|c| value(&c.streets)), None),
+        kind::<transit_streets::walking::WalkTable>("walks", Some("walks"), "transit-streets", walks_example, None),
         kind::<transit_runs::WorkRules>("work_rules", None, "transit-runs", Some(value(&fixture_work_rules())), None),
         kind::<transit_stops::Stops>("stops", None, "transit-stops", Some(value(&fixture_stops())), None),
         kind::<transit_requests::StopRequests>("stop_requests", None, "transit-requests", Some(value(&fixture_requests())), None),
@@ -951,7 +951,7 @@ fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
 
 /// The Go host's document kinds with a hand-written schema, by tag and
 /// version (server/schemas/).
-const HOST_OWNED: &[(&str, u32)] = &[("build", 1)];
+const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1)];
 
 /// Publish the documents: for each locked version of each kind, its
 /// schema `schemas/<tag>.v<N>.schema.json` and its example

@@ -58,7 +58,10 @@ Reentrancy and the Go-host serialization are in `docs/CONVENTIONS.md`.
 
 **The deployment publishes the network, not the feed.** Browsers never
 parse GTFS that a server has. The import runs once per published zip,
-on the server. It uses the same module bytes that the browser runs, so
+on the server. In store mode its documents are stored in the record,
+so a later boot reads them and imports nothing
+([storage.md](storage.md), "The record").
+It uses the same module bytes that the browser runs, so
 the `network_hash` is the same. Every client registers the answer. On
 the real C-TRAN feed this makes a large difference:
 
@@ -385,7 +388,9 @@ Its HTTP surface:
     the disruptions log.
   - `POST /pointers/{name}` (`{from, …}`): 200 and the new head, or 409
     and the current head on conflict. For `edits` the write is one entry
-    of the disruptions log, and `from` is the fold's hash.
+    of the disruptions log, and `from` is the fold's hash. The derived
+    documents' pointers answer 400: only the server's derivations write
+    them.
   - `GET /blobs/{hash}`: raw bytes, ETag the hash, envelope in headers.
     The server gzips it as `application/gzip` for
     `Accept: application/gzip` or at `/blobs/{hash}.gz`. Blobs of kind `policy`
@@ -549,7 +554,7 @@ reading **Because**.
 - **Exception:** a serverless deployment may have each page import the agency's GTFS URL (D-132; [static-deployment.md](static-deployment.md)).
 
 ### Single-capability modules, fresh per import (`NewWasmHost`, `importFeed`, `streetsSource.Load`)
-- **Holds:** the server links no assemblies. cap-network and cap-streets get a fresh instance per import, closed after. authz keeps its own instance.
+- **Holds:** the server links no assemblies. cap-network and cap-streets get a fresh instance per import, closed after. A boot whose documents the store holds starts neither. authz keeps its own instance.
 - **Because:** wasm memory never shrinks, so closing the instance is the memory hygiene. The long-lived modules hold no network, so linking saves nothing. A trap in another module must not take the fail-closed authz check with it.
 - **Rejected:** one assembly for the long-lived modules. One assembly for everything (it loses the fresh instance). Revisit if the server hosts a long-lived network reader.
 - **Decided:** D-78.

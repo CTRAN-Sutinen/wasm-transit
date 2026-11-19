@@ -20,11 +20,19 @@ import (
 	"rustwasm/server/store"
 )
 
-const buildSchemaPath = "schemas/build.v1.schema.json"
+const (
+	buildSchemaPath      = "schemas/build.v1.schema.json"
+	derivationSchemaPath = "schemas/derivation.v1.schema.json"
+)
 
 func readBuildSchema(t *testing.T) (map[string]any, *jsonschema.Schema) {
+	return readHostSchema(t, buildSchemaPath)
+}
+
+// readHostSchema reads a host-owned kind's schema, as JSON and compiled.
+func readHostSchema(t *testing.T, path string) (map[string]any, *jsonschema.Schema) {
 	t.Helper()
-	raw, err := os.ReadFile(buildSchemaPath)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,14 +40,14 @@ func readBuildSchema(t *testing.T) (map[string]any, *jsonschema.Schema) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	f, _ := os.Open(buildSchemaPath)
+	f, _ := os.Open(path)
 	defer f.Close()
 	inst, err := jsonschema.UnmarshalJSON(f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := jsonschema.NewCompiler()
-	url := "file:///" + buildSchemaPath
+	url := "file:///" + path
 	if err := c.AddResource(url, inst); err != nil {
 		t.Fatal(err)
 	}
@@ -139,4 +147,53 @@ func TestACommittedBuildMatchesItsSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateBytes(t, sch, "a UI's bundle with no server modules", bundle)
+}
+
+func TestTheDerivationSchemaNamesExactlyTheGoTypesFields(t *testing.T) {
+	doc, _ := readHostSchema(t, derivationSchemaPath)
+	defs := doc["$defs"].(map[string]any)
+	for _, c := range []struct {
+		goType reflect.Type
+		schema map[string]any
+	}{
+		{reflect.TypeOf(Derivation{}), doc},
+		{reflect.TypeOf(DerivedDocument{}), defs["DerivedDocument"].(map[string]any)},
+	} {
+		goNames, goRequired := jsonFields(c.goType)
+		names, required := schemaFields(t, c.schema)
+		if !reflect.DeepEqual(goNames, names) || !reflect.DeepEqual(goRequired, required) {
+			t.Errorf("%s: the Go type has fields %v (always written: %v), and the schema has %v (required: %v). Change the schema with the type, and bump schema_version for anything but an added optional field.",
+				c.goType.Name(), goNames, goRequired, names, required)
+		}
+	}
+}
+
+func TestTheDerivationExampleMatchesItsSchema(t *testing.T) {
+	_, sch := readHostSchema(t, derivationSchemaPath)
+	raw, err := os.ReadFile("schemas/derivation.v1.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateBytes(t, sch, "the frozen derivation example", raw)
+}
+
+// What the server emits: the derivations a store-mode boot commits for
+// its feed, its street layer, and the walk table over them.
+func TestCommittedDerivationsMatchTheirSchema(t *testing.T) {
+	_, sch := readHostSchema(t, derivationSchemaPath)
+	s := derivedServer(t, store.NewMemory(), writeLayer(t))
+	if _, err := s.buildManifest(); err != nil {
+		t.Fatal(err)
+	}
+	for _, pointer := range []string{derivedNetworkPointer, derivedStreetsPointer, derivedWalksPointer} {
+		head, found, err := s.store.Head(pointer)
+		if err != nil || !found {
+			t.Fatalf("%s: not committed (%v)", pointer, err)
+		}
+		data, _, err := s.store.GetBlob(head.Hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		validateBytes(t, sch, pointer, data)
+	}
 }

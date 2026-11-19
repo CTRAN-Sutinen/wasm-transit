@@ -32,7 +32,8 @@ import (
 // publishedBlob answers a published document by its hash — the
 // network, its boundary, the streets, the walk table — as served
 // (servedDoc: its bytes, and gzipped). False when no published document
-// has that hash.
+// has that hash. In store mode the store holds them too (derived.go),
+// and /blobs answers the store's blob first.
 func (s *server) publishedBlob(hash string) (servedDoc, bool) {
 	docs, err := s.publishedDocs()
 	if err != nil {

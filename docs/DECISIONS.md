@@ -252,7 +252,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-196 | When is work dogfooded? | decided | nothing |
 | D-197 | How is a log built for kinds that two capabilities own? | decided; built | nothing |
 | D-198 | What does a revert do to a record the reverted entry created? | decided | nothing |
-| D-199 | Does the record store the documents the server derives from its inputs? | decided; not built | nothing |
+| D-199 | Does the record store the documents the server derives from its inputs? | decided; built | nothing |
+| D-200 | How does a stored derived document name the inputs it was made from? | encoded | nothing |
 
 ## The trip model
 
@@ -2911,7 +2912,7 @@ kind, and a revert takes out what it created".
 Blocks: nothing.
 
 ### D-199 — Does the record store the documents the server derives from its inputs?
-State: Decided.
+State: Decided; built.
 Answer: 2026-11-18 — yes. The user agreed ("i agree") to: the network
 and boundary that cap-network imports from the feed, and the streets
 and walk table that cap-streets imports from the street layer, are
@@ -2939,7 +2940,41 @@ Options:
   depends on the importer's build.
 - Store each derived document when it is made: a few MB per import,
   and imports are rare.
-Blocks: nothing. The work is `docs/units/storage-model.md`.
+Pinned by: `server/derived_test.go` (`TestABootOverStoredDerivationsRunsNoModule`,
+`TestEveryDocumentTheManifestNamesIsStoredWithItsModule`,
+`TestAChangedInputIsDerivedOnce`,
+`TestADocumentStoredInAnotherVersionIsDerivedAgain`,
+`TestOnlyTheServersDerivationsWriteTheDerivedPointers`);
+`server/reader_test.go` (`TestStoredDerivationsReadWithoutTheModules`);
+`server/store/verify_test.go` (`TestVerifyChecksTheHeadManifestsDocuments`).
+Why: `docs/architecture/storage.md`, Why, "The derived documents are
+stored when they are made".
+Blocks: nothing.
+
+### D-200 — How does a stored derived document name the inputs it was made from?
+State: Encoded provisionally.
+Context: D-199 stores the network, the boundary, the streets, and the
+walk table, each named by a pointer. A boot must know whether the
+stored documents were made from the inputs it just read. The import of
+a GTFS zip also answers notes, a zone, and a first service date, which
+`GET /network` serves and which are not in either document.
+Options:
+- **A `derivation` record (encoded).** Each document is the head of
+  the pointer of its tag (`network`, `boundary`, `streets`, `walks`),
+  with its module in the envelope. A host-owned `derivation` document
+  on `derived.network`, `derived.streets`, or `derived.walks` names the
+  input hashes, the module, the documents, and the rest of the module's
+  answer. It is committed last. The store engine, gc, and verify do not
+  change.
+- An `inputs` field on the pointer's commit record. The record format
+  changes, and the import's notes have no home.
+- One root document that names its documents, as a build does. gc and
+  verify would follow one more kind of reference until the store's
+  schemas mark every content hash (`docs/units/storage-model.md`).
+Pinned by: `server/derived_test.go`; `server/schema_test.go`
+(`TestTheDerivationSchemaNamesExactlyTheGoTypesFields`,
+`TestCommittedDerivationsMatchTheirSchema`); `server/schemas/derivation.v1.schema.json`.
+Blocks: nothing. A change rewrites `server/derived.go` and its schema.
 
 ### D-198 — What does a revert do to a record the reverted entry created?
 State: Decided.

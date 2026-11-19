@@ -166,6 +166,11 @@ func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport
 		}
 		r.Blobs++
 	}
+	if seqs := byName["manifest"]; len(seqs) > 0 {
+		if err := verifyManifest(ctx, b, recordKey("manifest", seqs[len(seqs)-1]), named); err != nil {
+			return r, err
+		}
+	}
 	blobs, err := b.List(ctx, "blobs/", "")
 	if err != nil {
 		return r, err
@@ -185,6 +190,53 @@ func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport
 	}
 	r.Trash = len(trash)
 	return r, nil
+}
+
+// manifestDocuments are the manifest's fields that name a document the
+// store keeps under a pointer (D-199): the feed and the street layer
+// (source.*), the derived documents (network, boundary, streets, walks),
+// the plan set, the policy, and the build. The stops and the stop
+// requests are folds their logs keep, and the modules' hashes name
+// modules, so verify does not look for them as blobs.
+var manifestDocuments = []string{
+	"feed_hash", "network_hash", "boundary_hash", "streets_hash", "walks_hash",
+	"plans_hash", "policy_hash", "build_hash",
+}
+
+// verifyManifest checks that the head manifest (its record at key) names
+// only documents that a record names, so each is a blob verify read.
+func verifyManifest(ctx context.Context, b Backend, key string, named map[string]bool) error {
+	raw, _, err := b.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	var e LogEntry
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return broken(key, "the record is not JSON: %v", err)
+	}
+	h, _ := ParseHash(e.To)
+	doc, _, err := b.Get(ctx, blobKey(h))
+	if err != nil {
+		return broken(key, "the head manifest does not read: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(doc, &m); err != nil {
+		return broken(blobKey(h), "the head manifest is not JSON: %v", err)
+	}
+	for _, field := range manifestDocuments {
+		hash, _ := m[field].(string)
+		if hash == "" {
+			continue
+		}
+		x, err := ParseHash(hash)
+		if err != nil {
+			return broken(blobKey(h), "the head manifest's %s: %v", field, err)
+		}
+		if !named[x] {
+			return broken(blobKey(h), "the head manifest's %s is %s, and no record names it", field, hash)
+		}
+	}
+	return nil
 }
 
 // logHeader is the part of an entry or a checkpoint that verify reads:

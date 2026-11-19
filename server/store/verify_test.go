@@ -219,3 +219,29 @@ func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 		}
 	})
 }
+
+// The head manifest names only documents a record names (D-199): a
+// network the server served and never stored is a break. An older
+// manifest is history, and verify does not read it.
+func TestVerifyChecksTheHeadManifestsDocuments(t *testing.T) {
+	eachBackend(t, func(t *testing.T, b Backend) {
+		s := New(b)
+		network, _, err := s.CAS("network", "", []byte(`{"kind":"network"}`), env("network_document"), "", "server", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		missing := "sha256:" + strings.Repeat("0", 64)
+		m1, _, _ := s.CAS("manifest", "", []byte(`{"network_hash":"`+missing+`"}`), env("manifest"), "", "server", 2)
+		s.CAS("manifest", m1, []byte(`{"network_hash":"`+network+`","stops_hash":"`+missing+`"}`), env("manifest"), "", "server", 3)
+		if _, err := Verify(context.Background(), b); err != nil {
+			t.Fatalf("a head manifest that names a stored network verifies: %v", err)
+		}
+		head, _, _ := s.Head("manifest")
+		s.CAS("manifest", head.Hash, []byte(`{"network_hash":"`+missing+`"}`), env("manifest"), "", "server", 4)
+		_, err = Verify(context.Background(), b)
+		var ve *VerifyError
+		if !errors.As(err, &ve) || !strings.Contains(ve.Reason, "network_hash") {
+			t.Fatalf("a head manifest that names an unstored network is a break: %v", err)
+		}
+	})
+}

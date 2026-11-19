@@ -77,7 +77,7 @@ func fixtureNetwork(t *testing.T, id, name, effectiveFrom string) map[string]any
 			fixtureErr = err
 			return
 		}
-		answer, _, err := importFeed(context.Background(), networkWasm, zipBytes)
+		answer, _, _, err := importFeed(context.Background(), networkWasm, zipBytes)
 		if err != nil {
 			fixtureErr = err
 			return
