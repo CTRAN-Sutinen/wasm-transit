@@ -252,6 +252,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-196 | When is work dogfooded? | decided | nothing |
 | D-197 | How is a log built for kinds that two capabilities own? | decided; the stops log built | nothing |
 | D-198 | What does a revert do to a record the reverted entry created? | decided | nothing |
+| D-199 | Does the record store the documents the server derives from its inputs? | decided; not built | nothing |
 
 ## The trip model
 
@@ -2899,6 +2900,37 @@ Pinned by: `crates/transit-log` (the laws of a log);
 Why: `docs/architecture/storage.md`, Why, "One log engine for every
 kind, and a revert takes out what it created".
 Blocks: nothing.
+
+### D-199 — Does the record store the documents the server derives from its inputs?
+State: Decided.
+Answer: 2026-11-18 — yes. The user agreed ("i agree") to: the network
+and boundary that cap-network imports from the feed, and the streets
+and walk table that cap-streets imports from the street layer, are
+stored as blobs when they are made, each named by a pointer, with an
+envelope that names the module that produced it. On importing at
+every boot: "the gtfs import at start up was just a dev convenience,
+the idea that it should *always* do that is... nonsense." A boot reads
+the stored documents. An import runs once, when an input's bytes
+change (a new `source.feed` or `source.streets` head), as
+`docs/architecture/server.md` already states ("The import runs once
+per published zip").
+Context: the bucket keeps the GTFS zip (`source.feed`) and the street
+layer (`source.streets`). Every boot imports them again, and the
+server serves the result under the manifest's `network_hash`,
+`boundary_hash`, `streets_hash`, and `walks_hash`, with no blob
+behind those hashes. A sample bucket's dump showed the manifest naming
+hashes that are not in the store. Rebuilding them needs the same
+input and the same importer build. A release that changes the
+importer makes a different network from the same zip, so the record
+names a document it can no longer produce. A pick forks from the
+imported network, so an auditor needs to read it. Published picks are
+already stored (`plan.<id>`, D-74).
+Options:
+- Derive at every boot (the code today): no storage, but the record
+  depends on the importer's build.
+- Store each derived document when it is made: a few MB per import,
+  and imports are rare.
+Blocks: nothing. The work is `docs/units/storage-model.md`.
 
 ### D-198 — What does a revert do to a record the reverted entry created?
 State: Decided.

@@ -39,7 +39,16 @@ each of its kinds' capabilities answers its records (D-197).
    `log_document`, and a kind's revert answer for the edits (they
    retire and stamp to win the merge, D-193). Its stored entries come
    forward, or stay readable, through the migration chain.
-2. **The plans log, and freezing** (D-191).
+2. **The derived documents in the record** (D-199). The imported
+   network and boundary, and the streets and walk table, are stored as
+   blobs when they are made, each named by a pointer, with the
+   producing module in its envelope. The manifest's hashes then all
+   name blobs in the store, and `store verify` checks that. A boot
+   reads the stored documents and imports nothing. An import runs
+   once, when an input's bytes change. Today every boot imports the
+   feed and the street layer again (about 5 GB on C-TRAN's, then
+   0.7 GB at rest; `DEPLOYMENTS-SERVER.md`, "Memory").
+3. **The plans log, and freezing** (D-191).
    - A freeze writes a network version to the record by hash, with an
      entry that says what it is (for example, a proposal for public
      comment). A frozen version can be in the record and not in force.
@@ -47,7 +56,7 @@ each of its kinds' capabilities answers its records (D-197).
      entry that changes the plan set. Only a frozen version can be
      adopted. An adoption names the `(stops, seq)` it read.
    - The plan set and the work rules move into this log.
-3. **The working store, and drafts.**
+4. **The working store, and drafts.**
    - A second store holds what may be deleted: drafts, attachments,
      and caches. The server keeps create, read, and list rights to the
      record, and gc keeps delete rights to the working store only.
@@ -57,9 +66,9 @@ each of its kinds' capabilities answers its records (D-197).
      rebase until two people need to edit one draft at once.
    - A draft is a transitory record. gc deletes it once it is frozen
      or abandoned, on the working store's schedule.
-4. **The policy log.** The policy moves into a restricted log that the
+5. **The policy log.** The policy moves into a restricted log that the
    server never serves openly.
-5. **The kind table, and governed writes.** One table for each build,
+6. **The kind table, and governed writes.** One table for each build,
    generated beside the registry's documents. It gives each kind's
    log, module, validation op, merge rule, and read class. The receive
    path reads it. A kind with no entry is refused. Today a pointer
@@ -67,20 +76,20 @@ each of its kinds' capabilities answers its records (D-197).
    stop requests is stored as given
    (`docs/architecture/agency-data.md`, "Writes are governed"). This
    step is independent of the logs and can start at any time.
-6. **The store describes itself.** At setup the store creates, create
+7. **The store describes itself.** At setup the store creates, create
    only, a `layout` object that names its layout version and hash
    scheme, the build's locked schemas under `schemas/` by content
    hash, and a plain-language README of the layout. Each schema marks
    every field that holds a content hash (`"format": "content-hash"`).
    `store gc` and `store verify` follow references by that mark, and
    an outside reader learns the links from the same schemas.
-7. **Exports for other systems.** Each export is a view: it names the
+8. **Exports for other systems.** Each export is a view: it names the
    `(log, seq)` it was built from, and is built again from the logs at
    any time. The first ones are the stops for a GIS (GeoJSON, and
    GeoPackage), and the logs and checkpoints for the agency's lake
    (Parquet). Event data (AVL, APC, TIDES) goes to the lake from the
    systems that produce it. This repo does not store it.
-8. **Permissions per change.** The receive path knows which records a
+9. **Permissions per change.** The receive path knows which records a
    write changed. The kind's module sorts each change into change
    classes (for stops: a survey, a planned event, an in-service event).
    cap-authz maps roles to classes.

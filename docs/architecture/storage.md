@@ -173,6 +173,9 @@ disruptions log and the stops log are built. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
 - the disruptions log moved onto cap-log (D-197).
+- the documents the server derives from its inputs (the imported
+  network and boundary, the streets, the walk table) stored in the
+  record, so every hash the manifest names is a blob (D-199).
 - the logs for the other consistency domains: the plans and the policy.
 - a working store for drafts, attachments, and caches, apart from the
   record.
