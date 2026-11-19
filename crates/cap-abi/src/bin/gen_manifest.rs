@@ -223,14 +223,10 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "sync",
         file: "module_sync.wasm",
-        ops: &["sync_edits", "read_edits", "compact_edits", "entry_disruptions", "fold_disruptions", "revert_disruptions", "close_disruptions_gap"],
+        ops: &["sync_edits", "read_edits", "compact_edits", "log_records", "log_document", "log_revert"],
         documents: &[],
         consumes: &[],
-        speaks: &[
-            ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
-            ("disruptions_entry", &[transit_sync::log::ENTRY_VERSION]),
-            ("disruptions_checkpoint", &[transit_sync::log::CHECKPOINT_VERSION]),
-        ],
+        speaks: &[("operator_edits", &[transit_sync::SCHEMA_VERSION])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-sync/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -850,14 +846,6 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             "transit-sync",
             Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
             Some(migrate_edits),
-        ),
-        kind::<transit_sync::log::Entry>("disruptions_entry", None, "transit-sync", Some(value(&fixture_disruptions_log().1[1])), None),
-        kind::<transit_sync::log::Checkpoint>(
-            "disruptions_checkpoint",
-            None,
-            "transit-sync",
-            Some(value(&transit_sync::log::Checkpoint::new(2, fixture_disruptions_log().0))),
-            None,
         ),
         kind::<transit_log::Entry>("log_entry", None, "transit-log", Some(value(&fixture_stops_log().1[1])), None),
         kind::<transit_log::Checkpoint>("log_checkpoint", None, "transit-log", Some(value(&fixture_stops_log().0)), None),
@@ -2631,11 +2619,12 @@ fn example_for(
             let before = transit_log::fold(transit_log::Checkpoint::empty("stops"), &stored[..1], &log_record_hash).ok()?.fold;
             let mut header = fixture_log_header(3, 1_770_000_120_000, "POST /logs/stops/revert", None);
             header.writer = "auditor-2".into();
-            let changes = transit_log::revert(&before, &fold, &entries[1], &log_record_hash).ok()?;
+            let states = transit_log::revert_states(&before, &fold, &entries[1], &log_record_hash).ok()?;
+            let changes = transit_log::revert_with(&states, &[], &log_record_hash).ok()?;
             let n = changes.len();
             (
                 json!({ "op": "revert", "log": "stops", "entries": stored, "target": 2, "header": header }),
-                json!({ "ok": { "op": "revert", "entry": cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(2))).ok()?, "changes": n } }),
+                json!({ "ok": { "op": "revert", "entry": cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(2))).ok()?, "changes": n, "states": states } }),
             )
         }
         ("log", "close_gap") => {
@@ -2681,50 +2670,31 @@ fn example_for(
                 json!({ "ok": { "op": "log_document", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "document": cap_abi::canonical_bytes(&requests).ok()? } }),
             )
         }
-        ("sync", "entry_disruptions") => {
-            let (_, log) = fixture_disruptions_log();
-            let head: Vec<transit_sync::EditRecord> = log[0].changes.iter().filter_map(|c| c.after.clone()).collect();
-            let next: Vec<transit_sync::EditRecord> = log[1].changes.iter().filter_map(|c| c.after.clone()).collect();
-            let header = fixture_entry_header(2, log[1].at_ms, "POST /edits");
-            let changes = transit_sync::log::changes(&head, &next, &edit_record_hash);
-            let n = changes.len();
-            let entry = cap_abi::canonical_bytes(&transit_sync::log::Entry::new(header.clone(), changes, None)).unwrap();
+        ("sync", "log_records") => {
+            let doc = transit_sync::EditDocument::new(dispatch_fixture_edits());
+            let next = transit_log::document_records(&value(&doc), "records", "edit_record", transit_sync::KIND, transit_sync::SCHEMA_VERSION).ok()?;
+            (json!({ "op": "log_records", "document": doc }), json!({ "ok": { "op": "log_records", "next": next } }))
+        }
+        ("sync", "log_document") => {
+            let doc = transit_sync::EditDocument::new(dispatch_fixture_edits());
+            let records: std::collections::BTreeMap<String, transit_log::Held> =
+                doc.records.iter().map(|r| (r.id.clone(), transit_log::Held { version: transit_sync::SCHEMA_VERSION, value: value(r) })).collect();
             (
-                json!({ "op": "entry_disruptions", "head": transit_sync::EditDocument::new(head), "next": transit_sync::EditDocument::new(next), "header": header }),
-                json!({ "ok": { "op": "entry_disruptions", "entry": entry, "changes": n } }),
+                json!({ "op": "log_document", "records": records }),
+                json!({ "ok": { "op": "log_document", "document": cap_abi::canonical_bytes(&doc).ok()?, "document_hash": cap_abi::canonical_hash(&doc).ok()? } }),
             )
         }
-        ("sync", "fold_disruptions") => {
-            let (records, log) = fixture_disruptions_log();
-            let entries: Vec<_> = log.iter().map(fixture_stored).collect();
-            let doc = transit_sync::EditDocument::new(records.clone());
-            let checkpoint = cap_abi::canonical_bytes(&transit_sync::log::Checkpoint::new(2, records)).unwrap();
-            (
-                json!({ "op": "fold_disruptions", "entries": entries }),
-                json!({ "ok": { "op": "fold_disruptions", "seq": 2, "document": cap_abi::canonical_bytes(&doc).unwrap(),
-                    "document_hash": cap_abi::canonical_hash(&doc).unwrap(), "checkpoint": checkpoint, "quarantined": [] } }),
-            )
-        }
-        ("sync", "revert_disruptions") => {
-            let (records, log) = fixture_disruptions_log();
-            let entries: Vec<_> = log.iter().map(fixture_stored).collect();
-            let before: Vec<transit_sync::EditRecord> = log[0].changes.iter().filter_map(|c| c.after.clone()).collect();
-            let mut header = fixture_entry_header(3, 1_770_000_120_000, "POST /logs/disruptions/revert");
-            header.writer = "auditor-2".into();
-            let changes = transit_sync::log::revert(&before, &records, &log[1], header.at_ms, &edit_record_hash).ok()?;
-            let n = changes.len();
-            let entry = cap_abi::canonical_bytes(&transit_sync::log::Entry::new(header.clone(), changes, Some(2))).unwrap();
-            (
-                json!({ "op": "revert_disruptions", "entries": entries, "target": 2, "header": header }),
-                json!({ "ok": { "op": "revert_disruptions", "entry": entry, "changes": n } }),
-            )
-        }
-        ("sync", "close_disruptions_gap") => {
-            let mut header = fixture_entry_header(3, 1_770_000_120_000, "close_disruptions_gap");
-            header.writer = "auditor-2".into();
-            header.intent.note = Some("entry 3 was deleted from the bucket by hand".into());
-            let entry = cap_abi::canonical_bytes(&transit_sync::log::Entry::new(header.clone(), Vec::new(), None)).unwrap();
-            (json!({ "op": "close_disruptions_gap", "header": header }), json!({ "ok": { "op": "close_disruptions_gap", "entry": entry } }))
+        ("sync", "log_revert") => {
+            // The revert of the write that accepted the diversion: it goes
+            // back to submitted, stamped to win the merge.
+            let accepted = dispatch_fixture_edits().remove(0);
+            let submitted = transit_sync::EditRecord { status: transit_sync::EditStatus::Submitted, rev: 1, ..accepted.clone() };
+            let held = |r: &transit_sync::EditRecord| transit_log::Held { version: transit_sync::SCHEMA_VERSION, value: value(r) };
+            let states = vec![transit_log::RevertState { kind: "edit_record".into(), id: accepted.id.clone(), now: Some(held(&accepted)), prior: Some(held(&submitted)) }];
+            let now_ms = 1_770_000_120_000;
+            let back = transit_sync::revert_record(Some(&submitted), Some(&accepted), now_ms)?;
+            let written = vec![transit_log::Written { kind: "edit_record".into(), id: back.id.clone(), version: transit_sync::SCHEMA_VERSION, after: Some(value(&back)) }];
+            (json!({ "op": "log_revert", "states": states, "now_ms": now_ms }), json!({ "ok": { "op": "log_revert", "written": written } }))
         }
         // The authorization capability's example computes the REAL
         // fail-closed decision through the same library the module
@@ -3046,42 +3016,6 @@ fn fixture_stops_log() -> (transit_log::Checkpoint, Vec<transit_log::Entry>) {
     }
     write(&mut fold, fixture_log_header(2, 1_770_000_060_000, "POST /logs/stops", Some("tablet-4/17")), &[stops2, requests2]);
     (fold, entries)
-}
-
-/// A record's identity in a disruptions log entry, as cap-sync computes it.
-fn edit_record_hash(record: &transit_sync::EditRecord) -> String {
-    cap_abi::canonical_hash(record).unwrap_or_else(|e| format!("unhashable: {e}"))
-}
-
-/// The header of a fixture log entry.
-fn fixture_entry_header(seq: u64, at_ms: u64, op: &str) -> transit_sync::log::Header {
-    transit_sync::log::Header {
-        seq,
-        writer: "dispatcher-7".into(),
-        at_ms,
-        module: "cap-sync@sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
-        intent: transit_sync::log::Intent { op: op.into(), ..Default::default() },
-    }
-}
-
-/// The fixture disruptions log: two writes, a diversion proposed and then
-/// accepted. Answers the document after them and the two entries.
-fn fixture_disruptions_log() -> (Vec<transit_sync::EditRecord>, Vec<transit_sync::log::Entry>) {
-    use transit_sync::log::{changes, Entry};
-    let accepted = dispatch_fixture_edits();
-    let mut submitted = accepted.clone();
-    submitted[0].status = transit_sync::EditStatus::Submitted;
-    let mut final_ = accepted;
-    final_[0].rev = 2;
-    final_[0].updated_at = 1_770_000_060_000;
-    let e1 = Entry::new(fixture_entry_header(1, 1_770_000_000_000, "POST /edits"), changes(&[], &submitted, &edit_record_hash), None);
-    let e2 = Entry::new(fixture_entry_header(2, 1_770_000_060_000, "POST /edits"), changes(&submitted, &final_, &edit_record_hash), None);
-    (final_, vec![e1, e2])
-}
-
-/// A fixture entry as the host stores it.
-fn fixture_stored(entry: &transit_sync::log::Entry) -> transit_sync::log::Stored {
-    transit_sync::log::Stored { seq: entry.seq, text: cap_abi::canonical_bytes(entry).unwrap() }
 }
 
 fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {

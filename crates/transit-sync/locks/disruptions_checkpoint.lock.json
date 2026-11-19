@@ -1,9 +1,0 @@
-{
-  "tag": "disruptions_checkpoint",
-  "versions": {
-    "1": {
-      "example_hash": "sha256:116d5ffe04f4168a51ad74923754f2faaa8592b5960c1bc1eb02f28bd89f7bce",
-      "schema_hash": "sha256:3435ad599367a944b28bcd58a202cbe0c03027c247851321ac1fea5b40e8792a"
-    }
-  }
-}

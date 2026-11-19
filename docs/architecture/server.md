@@ -11,9 +11,9 @@ single-capability modules it needs. `just caps` rebuilds all of them
 into web/pkg/:
 
 - cap-sync (the -wasm flag, cap_sync.wasm) is the op behind POST
-  /edits. In store mode it also answers each entry of the disruptions
-  log, folds the log, and answers a revert. The server holds it for its
-  whole lifetime.
+  /edits. In store mode it also turns the edit document into the
+  disruptions log's records and back, and answers what a revert writes
+  back. The server holds it for its whole lifetime.
 - cap-authz (-authz-wasm) runs when authentication is on.
 - cap-plans (-plans-wasm) runs in store mode. It is the op behind
   POST /plans.
@@ -23,10 +23,11 @@ into web/pkg/:
   the stops document for a published pick.
 - cap-requests (-requests-wasm) runs in store mode and is held the same
   way. It does the validation behind a stop requests write.
-- cap-log (-log-wasm) runs in store mode. It keeps the stops log: each
-  write's entry, the fold, and a revert. The server holds it for its
-  whole lifetime. cap-stops and cap-requests turn their documents into
-  the log's records and back (`log_records`, `log_document`).
+- cap-log (-log-wasm) runs in store mode. It keeps the disruptions log
+  and the stops log: each write's entry, the fold, and a revert. The
+  server holds it for its whole lifetime. cap-sync, cap-stops, and
+  cap-requests turn their documents into the log's records and back
+  (`log_records`, `log_document`).
 - cap-network (the -network-wasm flag, cap_network.wasm) imports the
   configured GTFS zip (the kernel's `load_feed` + `import`). It also
   canonicalizes and validates each published pick. It runs in a fresh
@@ -344,14 +345,17 @@ Its HTTP surface:
 - `/edits`: the edit document. `POST` a client document and receive the
   LWW-merged result (cap-sync's `sync_edits`). The receive path clamps
   client timestamps to the server clock (D-56). `GET` reads the
-  server's document. With `-store`, the record is the disruptions log
-  (`disruptions.go`; docs/FORMATS.md, "The logs"):
-  - A `POST` merges with the fold, asks cap-sync's `entry_disruptions`
-    for the entry, and creates it at the next seq. A write that changes
+  server's document. With `-store`, the record is the disruptions log,
+  which cap-log keeps (`disruptions.go`, `caplog.go`; docs/FORMATS.md,
+  "The logs"):
+  - A `POST` merges with the fold, asks cap-sync's `log_records` for
+    the merged document's records, and asks cap-log's `compose` for the
+    entry, which it creates at the next seq. A write that changes
     nothing writes no entry. A lost race reads the log again and runs
     the receive path again. A gap in the log answers 503.
-  - `GET` serves the fold, which the server holds and brings to the
-    log's head (`fold_disruptions`) at most once per 2 s. Every 256
+  - `GET` serves the fold: cap-log's `fold` brings the records to the
+    log's head at most once per 2 s, and cap-sync's `log_document`
+    assembles the document. Every 256
     entries the server stores a checkpoint. A fresh process starts from
     the newest checkpoint that equals the fold from the one before it.
   - At startup, a store with the old `edits` pointer and no log gets
@@ -366,8 +370,9 @@ Its HTTP surface:
 - `/logs/disruptions` (store mode): the log itself. `GET ?since=<seq>`
   answers the entries after a seq, the head, the gaps, the newest
   checkpoint, and the quarantined entries. `POST /logs/disruptions/revert`
-  `{"seq"}` writes the entry that reverts one entry (cap-sync's
-  `revert_disruptions`). It answers 409, naming the record, when a later
+  `{"seq"}` writes the entry that reverts one entry: cap-log's `revert`,
+  with the records cap-sync's `log_revert` writes back, stamped to win
+  the merge (D-193). It answers 409, naming the record, when a later
   entry changed it. `POST /logs/disruptions/close-gap` `{"seq",
   "cause"}` writes the entry that closes a gap. With auth on, every
   `/logs/` call needs the `audit` rule on `edits`, because an entry

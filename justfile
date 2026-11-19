@@ -975,8 +975,8 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
     exec go run . "${args[@]}"
 
 # The sync store's offline tools (server/cmd/store; only verify runs a module):
-#   just store verify [-sync M] <url>  read the whole store, exit 1 on the first
-#                                    break; cap-sync (M) folds each log checkpoint
+#   just store verify [-log M] <url>   read the whole store, exit 1 on the first
+#                                    break; cap-log (M) folds each log checkpoint
 #   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's
 #                                    own delete-capable credentials
 #   just store dump <url> <dir>      write every object to a folder (each at

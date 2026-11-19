@@ -1,13 +1,10 @@
 // Command store runs the sync store's offline tools (docs/FORMATS.md;
-// server/store), with no server. Only verify runs modules: cap-sync and
-// cap-log, to fold the logs' checkpoints.
+// server/store), with no server. Only verify runs a module: cap-log, to
+// fold the logs' checkpoints.
 //
-//	store verify [-sync M] [-log M] <url>
-//	                              read the whole store; exit 1 on the first break.
+//	store verify [-log M] <url>   read the whole store; exit 1 on the first break.
 //	                              Each log's checkpoints are compared with the
-//	                              fold of their entries, by the module that keeps
-//	                              the log (cap-sync -sync for the disruptions log,
-//	                              cap-log -log for every other)
+//	                              fold of their entries, by cap-log (-log)
 //	store gc [-grace D] <url>     collect orphan blobs (D-117), with the
 //	                              collector's own delete-capable credentials
 //	store dump <url> <dir>        write every object to a folder, to read the
@@ -52,12 +49,11 @@ func main() {
 	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
-		sync := fs.String("sync", "../web/pkg/cap_sync.wasm", "the sync module (cap-sync), which folds the disruptions log's checkpoints")
-		logm := fs.String("log", "../web/pkg/cap_log.wasm", "the log module (cap-log), which folds every other log's checkpoints")
+		logm := fs.String("log", "../web/pkg/cap_log.wasm", "the log module (cap-log), which folds each log's checkpoints")
 		fs.Parse(args)
 		need(fs.Args(), 1)
 		report, err = withBackend(ctx, fs.Arg(0), func(b store.Backend) (any, error) {
-			return store.VerifyFolding(ctx, b, folder(ctx, *sync, *logm))
+			return store.VerifyFolding(ctx, b, folder(ctx, *logm))
 		})
 	case "gc":
 		fs := flag.NewFlagSet("gc", flag.ExitOnError)
@@ -94,25 +90,20 @@ func main() {
 	}
 }
 
-// folder answers each log's fold through the module that keeps it: the
-// disruptions log through cap-sync's fold_disruptions, every other log
-// through cap-log's fold (D-197). A module loads on the first checkpoint
-// it folds, so a store with none needs no module.
-func folder(ctx context.Context, syncPath, logPath string) store.LogFolder {
-	hosts := map[string]*wasmhost.Host{}
+// folder answers each log's fold through cap-log (D-197). The module
+// loads on the first checkpoint it folds, so a store with none needs no
+// module.
+func folder(ctx context.Context, logPath string) store.LogFolder {
+	var host *wasmhost.Host
 	return func(log string, checkpoint []byte, entries []store.StoredEntry) ([]byte, error) {
-		path, flag, req := logPath, "-log", map[string]any{"op": "fold", "log": log, "entries": entries}
-		if log == "disruptions" {
-			path, flag, req = syncPath, "-sync", map[string]any{"op": "fold_disruptions", "entries": entries}
-		}
-		host := hosts[path]
 		if host == nil {
-			h, err := wasmhost.New(ctx, path)
+			h, err := wasmhost.New(ctx, logPath)
 			if err != nil {
-				return nil, fmt.Errorf("the module that folds the %s log (%s %s): %w", log, flag, path, err)
+				return nil, fmt.Errorf("the module that folds the %s log (-log %s): %w", log, logPath, err)
 			}
-			hosts[path], host = h, h
+			host = h
 		}
+		req := map[string]any{"op": "fold", "log": log, "entries": entries}
 		if checkpoint != nil {
 			req["checkpoint"] = json.RawMessage(checkpoint)
 		}
@@ -141,6 +132,6 @@ func need(args []string, n int) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: store verify [-sync cap_sync.wasm] [-log cap_log.wasm] <url> | store gc [-grace 168h] <url> | store dump <url> <dir> | store copy <dir> <url> | store revert [-writer W] <url> <pointer> <hash>")
+	fmt.Fprintln(os.Stderr, "usage: store verify [-log cap_log.wasm] <url> | store gc [-grace 168h] <url> | store dump <url> <dir> | store copy <dir> <url> | store revert [-writer W] <url> <pointer> <hash>")
 	os.Exit(2)
 }

@@ -18,8 +18,10 @@
 //! - [`apply`] applies an entry, all or none, checking each `before`.
 //! - [`fold`] folds stored entries after a checkpoint, and quarantines
 //!   an entry it cannot read or apply.
-//! - [`revert`] answers the entry that writes back the states before an
-//!   entry. A record the entry created leaves the fold (D-198).
+//! - [`revert`] answers the changes that write back the states before an
+//!   entry. A record the entry created leaves the fold (D-198). A kind
+//!   whose merge would undo that writes back its own records instead
+//!   ([`revert_states`], [`revert_with`]).
 //!
 //! A change's `before` is the hash of the record as the entry that wrote
 //! it stored it, never of a migrated copy (D-197). The hash is the
@@ -388,12 +390,38 @@ pub fn fold(start: Checkpoint, entries: &[Stored], hash: Hash) -> Result<Folded,
     Ok(Folded { fold, quarantined })
 }
 
-/// The changes that revert `entry`: each record it changed goes back to
-/// its state in `before` (the fold just before the entry). A record the
-/// entry created leaves the fold (D-198). A record that a later entry
-/// changed (`head` does not hold what the entry wrote) refuses the
-/// revert, and the error names it, because a person decides.
-pub fn revert(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<Change>, String> {
+/// One record that a revert writes back: its state at the head (`now`,
+/// what the reverted entry wrote) and its state before the entry
+/// (`prior`). Absent is a record the fold does not hold.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RevertState {
+    pub kind: String,
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now: Option<Held>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior: Option<Held>,
+}
+
+/// A record that a kind's capability writes back in a revert in place
+/// of its state before. A kind whose merge would bring the state before
+/// back over the revert writes something else (the edit document's
+/// records are stamped to win the merge, and a record the entry created
+/// is retired, D-193). Absent `after` takes the record out of the fold.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Written {
+    pub kind: String,
+    pub id: String,
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<Value>,
+}
+
+/// The records a revert of `entry` writes back, with their state now and
+/// before the entry (`before`, the fold just before it). A record that a
+/// later entry changed (`head` does not hold what the entry wrote)
+/// refuses the revert, and the error names it, because a person decides.
+pub fn revert_states(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<RevertState>, String> {
     let mut out = Vec::new();
     for c in &entry.changes {
         let now = head.get(&c.kind, &c.id);
@@ -404,19 +432,54 @@ pub fn revert(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash)
         if prior.map(|h| hash(&h.value)) != c.before {
             return Err(format!("{} {}: the fold before entry {} does not match the entry", c.kind, c.id, entry.seq));
         }
-        if prior == now {
+        out.push(RevertState { kind: c.kind.clone(), id: c.id.clone(), now: now.cloned(), prior: prior.cloned() });
+    }
+    Ok(out)
+}
+
+/// The changes of a revert: each record goes back to its state before,
+/// or to what `written` names for it. A record the entry created leaves
+/// the fold (D-198), unless `written` names it. A record already in the
+/// state it goes to is no change. A written record that the revert does
+/// not write back is an error.
+pub fn revert_with(states: &[RevertState], written: &[Written], hash: Hash) -> Result<Vec<Change>, String> {
+    for w in written {
+        if !states.iter().any(|s| s.kind == w.kind && s.id == w.id) {
+            return Err(format!("{} {} is not a record the revert writes back", w.kind, w.id));
+        }
+    }
+    let mut out = Vec::new();
+    for s in states {
+        let to = match written.iter().find(|w| w.kind == s.kind && w.id == s.id) {
+            Some(w) => w.after.clone().map(|value| Held { version: w.version, value }),
+            None => s.prior.clone(),
+        };
+        let same = match (&to, &s.now) {
+            (Some(t), Some(n)) => t.version == n.version && hash(&t.value) == hash(&n.value),
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
             continue;
         }
         out.push(Change {
-            kind: c.kind.clone(),
-            version: prior.or(now).map_or(c.version, |h| h.version),
-            id: c.id.clone(),
-            before: now.map(|h| hash(&h.value)),
-            after: prior.map(|h| h.value.clone()),
+            kind: s.kind.clone(),
+            version: to.as_ref().or(s.now.as_ref()).map_or(0, |h| h.version),
+            id: s.id.clone(),
+            before: s.now.as_ref().map(|h| hash(&h.value)),
+            after: to.map(|h| h.value),
             extra: Default::default(),
         });
     }
     Ok(out)
+}
+
+/// The changes that revert `entry`: each record it changed goes back to
+/// its state in `before` (the fold just before the entry). A record the
+/// entry created leaves the fold (D-198). A record that a later entry
+/// changed refuses the revert ([`revert_states`]).
+pub fn revert(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<Change>, String> {
+    revert_with(&revert_states(before, head, entry, hash)?, &[], hash)
 }
 
 /// The records of a document's collection: the object (or the array of
@@ -516,9 +579,9 @@ mod tests {
     //! 4. a fold from a checkpoint equals the fold from the start;
     //! 5. an entry that does not read or apply is quarantined, and the
     //!    fold goes on;
-    //! 6. a revert writes back the states before; a record the entry
-    //!    created leaves the fold; a record a later entry changed refuses
-    //!    it;
+    //! 6. a revert writes back the states before, or what the kind
+    //!    writes in their place; a record the entry created leaves the
+    //!    fold; a record a later entry changed refuses it;
     //! 7. one entry may change records of two kinds;
     //! 8. `split` and `join` are inverse over a collection, and a
     //!    document's fields outside its collection (D-167) survive its
@@ -681,6 +744,25 @@ mod tests {
         // A later entry changed A: a second revert of entry 2 is refused.
         let refused = revert(&before, &after, &e, &hash).unwrap_err();
         assert!(refused.contains("stop A") && refused.contains("a person decides"), "{refused}");
+    }
+
+    /// Law 6, a kind's own write-back: the records a kind's capability
+    /// writes in place of the states before, and only those.
+    #[test]
+    fn a_kind_writes_back_its_own_records_in_a_revert() {
+        let mut fold = Checkpoint::empty("stops");
+        write(&mut fold, &[stops(&[("A", json!(1))])], None);
+        let before = fold.clone();
+        let e = write(&mut fold, &[stops(&[("A", json!(2)), ("B", json!(9))])], None).unwrap();
+        let states = revert_states(&before, &fold, &e, &hash).unwrap();
+        assert_eq!(states.len(), 2);
+        let retired = Written { kind: "stop".into(), id: "B".into(), version: 1, after: Some(json!("retired")) };
+        let back = revert_with(&states, std::slice::from_ref(&retired), &hash).unwrap();
+        let mut after = fold.clone();
+        apply(&mut after, &Entry::new(header(3, None), back, Some(2)), &hash).unwrap();
+        assert_eq!(records_of(&after, "stop"), BTreeMap::from([("A".into(), json!(1)), ("B".into(), json!("retired"))]));
+        let stranger = Written { kind: "stop".into(), id: "C".into(), version: 1, after: None };
+        assert!(revert_with(&states, &[stranger], &hash).unwrap_err().contains("stop C"));
     }
 
     #[test]

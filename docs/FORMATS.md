@@ -215,12 +215,10 @@ non-zero on the first break. A break is one of these:
 - a checkpoint whose bytes differ from the fold of the entries after
   the checkpoint before it (or from the first entry).
 
-The fold is the module's, so `store verify` runs the module that keeps
-each log: cap-sync for the disruptions log (`-sync`, default
-`../web/pkg/cap_sync.wasm`), and cap-log for every other log (`-log`,
-default `../web/pkg/cap_log.wasm`). An entry or a checkpoint may be its
-log's own kind (`disruptions_entry`) or cap-log's (`log_entry`). A
-store with no checkpoints needs no module. The rest of verify is plain
+The fold is the module's, so `store verify` runs cap-log, which keeps
+every log (`-log`, default `../web/pkg/cap_log.wasm`). Every entry is a
+`log_entry` document, and every checkpoint a `log_checkpoint` document.
+A store with no checkpoints needs no module. The rest of verify is plain
 Go. A server also checks its newest checkpoint when it boots ("The
 logs").
 
@@ -237,46 +235,65 @@ transaction. The current document is the fold of the entries, which the
 module that owns the log's kinds computes. A mistake is fixed by a new
 entry, so the truth before the mistake stays in the record.
 
-The store has two logs:
+The store has two logs. cap-log keeps both (`log_entry`,
+`log_checkpoint`; D-197), and never reads a record. The capability that
+owns each kind turns its document into records and back:
 
-- `disruptions`: the edit document (detours and trip cancels). cap-sync
-  owns its entries (`disruptions_entry`) and checkpoints
-  (`disruptions_checkpoint`).
+- `disruptions`: the edit document (detours and trip cancels), whose
+  records cap-sync answers.
 - `stops`: the stops document and the stop requests document, in one
   log because completing a request and adding the stop's event is one
-  transaction (D-197). cap-log keeps it (`log_entry`, `log_checkpoint`),
-  and never reads a record.
+  transaction. cap-stops and cap-requests answer their records.
 
-Both follow the same rules, below. An entry is
-`logs/<log>/entries/<seq, zero-padded to 20 digits>.json`. A
-`disruptions_entry` document:
+An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
+a `log_entry` document. It names each record's kind and version,
+because one entry may change the records of two capabilities:
 
 ```json
-{"at_ms":1770000060000,"changes":[{"after":{"diversion":{…},"id":"e1","rev":2,"status":"accepted","updated_at":1770000060000},"before":"sha256:bb76…","id":"e1","kind":"edit_record"}],"intent":{"op":"POST /edits"},"kind":"disruptions_entry","log":"disruptions","module":"cap-sync@sha256:…","schema_version":1,"seq":2,"writer":"dispatcher-7"}
+{"at_ms":1770000060000,"changes":[{"after":[{"event":"in_service","id":"e5f3…","lat":45.69,"lon":-122.65,"name":"NE 99th St & Hwy 99"},{"event":"changed","id":"e-repair","note":"pad replaced","on":"2027-02-20"}],"before":"sha256:4c1d…","id":"6124","kind":"stop","version":1},{"after":{"completed_on":"2027-02-20","job":"repair_improve","status":"completed","stop":"6124"},"before":"sha256:9a07…","id":"R-2027-001","kind":"stop_request","version":1}],"intent":{"key":"tablet-4/17","op":"POST /logs/stops"},"kind":"log_entry","log":"stops","module":"cap-log@sha256:…","schema_version":1,"seq":2,"writer":"planner-3"}
 ```
 
 - `seq` is the entry's place, from 1. It is the same as its key.
 - `writer` is the verified sign-in subject, or the tool: `gc` for the
-  tombstone compaction, `migrate:edits` for the first entry of a store
-  that had the `edits` pointer, `migrate:-edits` for one seeded from the
-  dev store's file.
-- `module` is the module build that answered the entry.
+  edit document's tombstone compaction, `migrate:edits` for the first
+  entry of a store that had the `edits` pointer, `migrate:-edits` for
+  one seeded from the dev store's file, and `migrate:stops` for the
+  first entry of a store that had the `stops` or `stop_requests`
+  pointer.
+- `module` is the cap-log build that answered the entry.
 - `intent` is what asked for the write: `op` (the endpoint or the op),
   `args_hash` (the hash of the request's body, or of the pointer head a
-  migration copied), and `note` (the cause that a gap's entry names).
-- `changes` holds each record that the entry changed, in id order:
-  `kind` (`edit_record`), `id`, `before` (the canonical hash of the
-  record before the entry; absent for a new record), and `after` (the
-  record's new state, whole; absent when the entry drops the record from
-  the fold, as the compaction does).
+  migration copied), `key` (the writer's idempotency key), and `note`
+  (the cause that a gap's entry names, or the heads a migration
+  copied).
+- `changes` holds each record that the entry changed, in kind and id
+  order: `{kind, version, id, before, after}`. `version` is the version
+  of the record's document kind. A record in that version is valid as
+  the only record of a document of that version, so its published
+  schema is the document's. `before` is the canonical hash of the
+  record as stored before the entry (absent for a new record). `after`
+  is the record's new state, whole (absent when the entry takes the
+  record out of the fold, as the compaction and a revert do).
 - `reverts` is the `seq` of the entry this one reverts.
 
-A checkpoint is `logs/<log>/checkpoints/<seq>.json`, a
-`disruptions_checkpoint` document: `{"kind", "schema_version", "log",
-"seq", "document"}`, where `document` is the edit document after entry
-`seq`. Checkpoints are create only. Two folds of the same entries give
-the same bytes, so a checkpoint that exists with other bytes is an
-error.
+The records of each log:
+
+- In the disruptions log, an `edit_record` record is one detour or trip
+  cancel, by its id, whole.
+- In the stops log, a `stop` record is one stop, by its lasting id, with
+  its events whole and in their order. An event's place among events on
+  the same day is the order of writing, so an event is not a record of
+  its own. A `stop_request` record is one request, by its id.
+- Each document also has its own record: kind `edit_records`, `stops`,
+  or `stop_requests`, id `document`, the document with its collection
+  empty. It is a valid document of its kind and version. So a field
+  outside the collection that a build does not know is kept (D-167).
+
+A checkpoint is `logs/<log>/checkpoints/<seq>.json`, a `log_checkpoint`
+document. It holds every record by kind and id, each with its version,
+and every idempotency key with its entry. Checkpoints are create only.
+Two folds of the same entries give the same bytes, so a checkpoint
+that exists with other bytes is an error.
 
 The rules:
 
@@ -288,51 +305,29 @@ The rules:
 3. A fold never stops on one entry. An entry that is not JSON, names
    another `seq` than its key, or whose `before` hashes do not match the
    fold is quarantined. The server logs an alarm and names it in `GET
-   /logs/disruptions`. The fold goes on.
+   /logs/<log>`. The fold goes on.
 4. A missing entry below the head is a gap. A gap stops writes to the
    log, and the server serves the fold up to the entry before it. An
    entry with no changes, whose `intent.note` names the cause, closes
-   the gap (`POST /logs/disruptions/close-gap`).
+   the gap (`POST /logs/<log>/close-gap`).
 5. A revert is a new entry. It writes back each record's state before
-   entry N, with the next `rev` and the server's clock, so it wins the
-   merge over a copy that a page still holds. A record that entry N
-   created is retired. The revert is refused when a later entry changed
-   one of those records, because a person decides.
+   entry N. A record that entry N created leaves the document, and the
+   log keeps every state of it (D-198). The revert is refused when a
+   later entry changed one of those records, because a person decides.
+   In the disruptions log, cap-sync writes each record back with the
+   next `rev` and the server's clock, so it wins the merge over a copy
+   that a page still holds. It retires a record that entry N created
+   instead, because the LWW merge would bring a dropped record back
+   (D-193).
 6. After a create, the engine reads the entry back and compares the
    bytes. A store that ignored the create's condition is caught at once.
 
-A `log_entry` document names each record's kind and version, because
-one entry may change the records of two capabilities:
-
-```json
-{"at_ms":1770000060000,"changes":[{"after":[{"event":"in_service","id":"e5f3…","lat":45.69,"lon":-122.65,"name":"NE 99th St & Hwy 99"},{"event":"changed","id":"e-repair","note":"pad replaced","on":"2027-02-20"}],"before":"sha256:4c1d…","id":"6124","kind":"stop","version":1},{"after":{"completed_on":"2027-02-20","job":"repair_improve","status":"completed","stop":"6124"},"before":"sha256:9a07…","id":"R-2027-001","kind":"stop_request","version":1}],"intent":{"key":"tablet-4/17","op":"POST /logs/stops"},"kind":"log_entry","log":"stops","module":"cap-log@sha256:…","schema_version":1,"seq":2,"writer":"planner-3"}
-```
-
-- A change is `{kind, version, id, before, after}`. `version` is the
-  version of the record's document kind. A record in that version is
-  valid as the only record of a document of that version, so its
-  published schema is the document's.
-- In the stops log, a `stop` record is one stop, by its lasting id, with
-  its events whole and in their order. An event's place among events on
-  the same day is the order of writing, so an event is not a record of
-  its own. A `stop_request` record is one request, by its id.
-- Each document also has its own record: kind `stops` (or
-  `stop_requests`), id `document`, the document with its collection
-  empty. It is a valid document of its kind and version. So a field
-  outside the collection that a build does not know is kept (D-167).
-- `intent.key` is the writer's idempotency key. A write sent again with
-  a key the fold holds lands once: it writes nothing, and the answer
-  names the entry that holds the key.
-- `before` is the hash of the record as the entry that wrote it stored
-  it, never of a migrated copy. A record in an older version comes
-  forward through its kind's migration chain as a one-record document.
-- A `log_checkpoint` holds every record by kind and id, each with its
-  version, and every idempotency key with its entry.
-
-In the stops log a revert takes a record that the reverted entry
-created out of the document (D-198). The log keeps every state of it.
-The disruptions log retires it instead, because its LWW merge would
-bring a dropped record back (D-193).
+An idempotency key in `intent.key` lands once: a write sent again with
+a key the fold holds writes nothing, and the answer names the entry
+that holds the key. A change's `before` is the hash of the record as
+the entry that wrote it stored it, never of a migrated copy. A record
+in an older version comes forward through its kind's migration chain
+as a one-record document.
 
 A server folds from its newest checkpoint and stores the next one after
 256 more entries. At boot it checks the newest checkpoint against the
@@ -571,9 +566,7 @@ Every persisted kind, by what a version change does to it:
 | Kind | Owner | Class | Inside it today |
 |---|---|---|---|
 | `edit_records` | transit-sync | authored | `kind`, `schema_version` |
-| `disruptions_entry` (one entry of the disruptions log) | transit-sync | authored | `kind`, `schema_version` |
-| `disruptions_checkpoint` (the disruptions log's fold up to an entry) | transit-sync | derived | `kind`, `schema_version` |
-| `log_entry` (one entry of a log that cap-log keeps: the stops log) | transit-log | authored | `kind`, `schema_version`; each change names its record's kind and version |
+| `log_entry` (one entry of a log: the disruptions log or the stops log) | transit-log | authored | `kind`, `schema_version`; each change names its record's kind and version |
 | `log_checkpoint` (a log's fold up to an entry) | transit-log | derived | `kind`, `schema_version`; each record its version |
 | `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |

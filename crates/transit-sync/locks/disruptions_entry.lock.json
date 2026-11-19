@@ -1,9 +1,0 @@
-{
-  "tag": "disruptions_entry",
-  "versions": {
-    "1": {
-      "example_hash": "sha256:1029ad2d028dbf413110140ef5e5c861845dd0948f27ce177d69dc86f07348a8",
-      "schema_hash": "sha256:40e041baa76027cf25e3eb2a239fdfa5f1464fab4818c7366fe6d50aa458c201"
-    }
-  }
-}

@@ -124,31 +124,27 @@ func (s *server) maybeCompactEdits() {
 	}
 	nowMs := time.Now().UnixMilli()
 	horizonMs := int64(s.retentionDays) * 24 * 3600 * 1000
-	f := &s.disruptions
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := s.refreshDisruptionsLocked(); err != nil || len(f.gaps) > 0 {
-		return
-	}
-	records, _, _, _, err := s.readEdits(f.document)
-	if err != nil {
-		return
-	}
-	var resp struct {
-		Document string `json:"document"`
-		Dropped  int    `json:"dropped"`
-	}
-	if err := s.syncOp(map[string]any{
-		"op": "compact_edits", "records": records, "now_ms": nowMs, "horizon_ms": horizonMs,
-	}, &resp); err != nil || resp.Dropped == 0 {
-		return
-	}
-	entry, err := s.entryDisruptions(f.document, []byte(resp.Document), s.entryHeader(f.seq+1, "gc", nowMs, "compact_edits", "", ""))
-	if err != nil || entry == "" {
-		return
-	}
-	if err := s.store.AppendEntry(disruptionsLog, f.seq+1, []byte(entry)); err == nil {
-		fmt.Printf("compacted %d tombstone(s) past the %d-day horizon\n", resp.Dropped, s.retentionDays)
+	dropped := 0
+	seq, _, _, err := s.writeLog(s.disruptionsFold(), logWrite{writer: "gc", op: "compact_edits"}, func() ([]json.RawMessage, *logRefusal, error) {
+		records, _, _, _, err := s.readEdits(s.disruptionsDoc.doc)
+		if err != nil {
+			return nil, nil, err
+		}
+		var resp struct {
+			Document string `json:"document"`
+			Dropped  int    `json:"dropped"`
+		}
+		if err := s.syncOp(map[string]any{
+			"op": "compact_edits", "records": records, "now_ms": nowMs, "horizon_ms": horizonMs,
+		}, &resp); err != nil || resp.Dropped == 0 {
+			return nil, nil, err
+		}
+		dropped = resp.Dropped
+		next, err := s.editRecords(resp.Document)
+		return next, nil, err
+	})
+	if err == nil && dropped > 0 {
+		fmt.Printf("compacted %d tombstone(s) past the %d-day horizon (disruptions entry %d)\n", dropped, s.retentionDays, seq)
 	}
 }
 

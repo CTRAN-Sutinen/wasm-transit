@@ -243,14 +243,14 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
 | D-189 | Do the staff pages work offline, and queue their writes? | decided; not built | nothing |
-| D-190 | How does the agency's record store the data people edit? | decided; the disruptions log built | nothing |
+| D-190 | How does the agency's record store the data people edit? | decided; the disruptions and stops logs built | nothing |
 | D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; not built | nothing |
 | D-192 | Are the edit document's existing names renamed to "disruptions"? | unanswered | nothing |
 | D-193 | What does a revert write back? | encoded | nothing |
 | D-194 | Who may read a log's entries? | encoded | nothing |
 | D-195 | How does the server keep and check a log's checkpoints? | encoded | nothing |
 | D-196 | When is work dogfooded? | decided | nothing |
-| D-197 | How is a log built for kinds that two capabilities own? | decided; the stops log built | nothing |
+| D-197 | How is a log built for kinds that two capabilities own? | decided; built | nothing |
 | D-198 | What does a revert do to a record the reverted entry created? | decided | nothing |
 | D-199 | Does the record store the documents the server derives from its inputs? | decided; not built | nothing |
 
@@ -2828,7 +2828,8 @@ Options:
   no hard deletes).
 - The old state with its old stamps: exact, and undone by the next sync
   of a stale page.
-Pinned by: `transit_sync::log::tests::a_revert_writes_back_the_states_before`;
+Pinned by: `transit_sync` `a_reverted_record_wins_the_merge`; cap-sync
+`a_revert_stamps_each_record_to_win_the_merge_and_retires_what_it_created`;
 `server/store_mode_test.go` (`TestStoreRevertIsANewEntry`).
 Blocks: nothing.
 
@@ -2857,8 +2858,7 @@ Options:
   the one before it (or from the empty document), and starts from an
   older one when it differs, with an alarm. While the log has a gap,
   the server serves the fold up to the entry before the gap.
-  `store verify` folds every checkpoint through the log's module
-  (cap-sync, `-sync`).
+  `store verify` folds every checkpoint through cap-log (`-log`).
 - Checkpoints on a schedule (daily), or none until a measured boot
   needs them.
 Pinned by: `server/store_mode_test.go` (`TestStoreBootsFromACheckpoint`,
@@ -2867,8 +2867,8 @@ Pinned by: `server/store_mode_test.go` (`TestStoreBootsFromACheckpoint`,
 Blocks: nothing.
 
 ### D-197 — How is a log built for kinds that two capabilities own?
-State: Decided; the stops log is built. The disruptions log moves onto
-cap-log next (`docs/units/storage-model.md`).
+State: Decided; built: cap-log keeps the stops log and the disruptions
+log.
 Answer: 2026-11-18. A kind-agnostic log capability (cap-log, on the
 pure transit-log crate), built first for the stops log; the disruptions
 log moves onto it once the stops log proves it. The user, on the
@@ -2891,12 +2891,21 @@ as:
   that wrote it, never of a migrated copy. A record in an older version
   comes forward through its kind's migration chain as a one-record
   document. A change names its kind's version.
-Pinned by: `crates/transit-log` (the laws of a log);
+- The disruptions log moved onto cap-log once the stops log ran. cap-sync
+  answers the edit document's records, and the records a revert writes
+  back (`log_revert`), because its LWW merge needs each stamped to win
+  and a created record retired (D-193). Its own entry and checkpoint
+  kinds (`disruptions_entry`, `disruptions_checkpoint`) were never in a
+  release, so they are retired with no migration.
+Pinned by: `crates/transit-log` (the laws of a log, and
+`a_kind_writes_back_its_own_records_in_a_revert`);
 `crates/cap-log/tests/dispatch_test.rs`; cap-stops and cap-requests
 `the_document_and_its_log_records_round_trip`, and cap-stops
 `a_correction_of_an_event_changed_since_is_a_conflict`;
-`server/stopslog_test.go`; `server/cmd/store/main_test.go`
-(`TestVerifyFoldsAStopsLogThroughCapLog`).
+`server/stopslog_test.go`; cap-sync
+`the_folded_records_assemble_the_merged_document`;
+`server/store_mode_test.go`; `web/e2e/disruptions-log.spec.mjs`;
+`server/cmd/store/main_test.go` (`TestVerifyFoldsEachLogThroughCapLog`).
 Why: `docs/architecture/storage.md`, Why, "One log engine for every
 kind, and a revert takes out what it created".
 Blocks: nothing.

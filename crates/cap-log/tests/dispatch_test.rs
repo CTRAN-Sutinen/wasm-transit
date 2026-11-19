@@ -9,7 +9,8 @@
 //!    landed answers its entry;
 //! 3. one entry changes two kinds;
 //! 4. a revert writes back, and a record the entry created leaves the
-//!    fold (D-198); a later change refuses it;
+//!    fold (D-198); a later change refuses it; a kind's written records
+//!    take the place of the states before, over the states it answers;
 //! 5. a bad entry is quarantined and named; a gap's entry needs a cause;
 //! 6. the entry's `seq` must follow the fold.
 
@@ -138,6 +139,27 @@ fn a_revert_writes_back_and_a_later_change_refuses_it() {
     assert_eq!(entry["reverts"], 2);
     let refused = err(json!({"op": "revert", "log": "stops", "entries": log.entries, "target": 2, "header": header(4, None)}));
     assert!(refused.contains("stop A") && refused.contains("a person decides"), "{refused}");
+}
+
+#[test]
+fn a_revert_writes_what_the_kind_gives_in_place_of_the_states_before() {
+    let mut log = Log::new();
+    log.write(json!([stops(json!({"A": [1]}))]), None);
+    log.write(json!([stops(json!({"A": [2], "N": [9]}))]), None);
+    let plain = ok(json!({"op": "revert", "log": "stops", "entries": log.entries, "target": 2, "header": header(3, None)}));
+    assert_eq!(
+        plain["states"],
+        json!([{"kind": "stop", "id": "A", "now": {"version": 1, "value": [2]}, "prior": {"version": 1, "value": [1]}},
+               {"kind": "stop", "id": "N", "now": {"version": 1, "value": [9]}}])
+    );
+    let written = json!([{"kind": "stop", "id": "N", "version": 1, "after": ["retired"]}]);
+    let back = ok(json!({"op": "revert", "log": "stops", "entries": log.entries, "target": 2, "header": header(3, None), "written": written}));
+    log.entries.push(json!({"seq": 3, "text": back["entry"]}));
+    assert_eq!(
+        log.fold()["records"]["stop"],
+        json!({"A": {"version": 1, "value": [1]}, "N": {"version": 1, "value": ["retired"]}}),
+        "A back to its state before, N as the kind wrote it"
+    );
 }
 
 #[test]

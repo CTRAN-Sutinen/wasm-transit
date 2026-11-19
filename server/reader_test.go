@@ -238,7 +238,7 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 			Kind          string `json:"kind"`
 			SchemaVersion uint32 `json:"schema_version"`
 		}
-		if err := json.Unmarshal(raw, &tag); err != nil || tag.Kind != "disruptions_entry" {
+		if err := json.Unmarshal(raw, &tag); err != nil || tag.Kind != "log_entry" {
 			t.Fatalf("%s: %s %v", o.Key, raw, err)
 		}
 		validateBytes(t, schemaForKind(t, idx, tag.Kind, tag.SchemaVersion), o.Key, raw)

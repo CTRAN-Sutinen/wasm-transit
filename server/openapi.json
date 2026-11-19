@@ -827,7 +827,7 @@
       "get": {
         "operationId": "getDisruptionsLog",
         "summary": "Get the disruptions log's entries after a seq.",
-        "description": "Store mode only. Each entry is one write to the edit document (D-190), as the bucket holds it: a disruptions_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the edits pointer, because each entry names its writer.",
+        "description": "Store mode only. Each entry is one write to the edit document (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the edits pointer, because each entry names its writer.",
         "parameters": [
           {
             "name": "since",
@@ -935,7 +935,7 @@
       "post": {
         "operationId": "revertDisruptionsEntry",
         "summary": "Revert one entry of the disruptions log, as a new entry.",
-        "description": "Store mode only. cap-sync answers the entry that writes back each record's state before entry `seq`, stamped to win the merge; a record the entry created is retired. When sign-in is on, it needs the audit rule on the edits pointer.",
+        "description": "Store mode only. cap-log answers the entry, with each record cap-sync writes back: its state before entry `seq`, stamped to win the merge; a record the entry created is retired (D-193). When sign-in is on, it needs the audit rule on the edits pointer.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4351,7 +4351,7 @@
                 },
                 "entry": {
                   "type": "object",
-                  "description": "The entry, a disruptions_entry document."
+                  "description": "The entry, a log_entry document."
                 },
                 "unreadable": {
                   "type": "string",
@@ -4450,7 +4450,7 @@
                 },
                 "entry": {
                   "type": "object",
-                  "description": "The entry, a disruptions_entry document."
+                  "description": "The entry, a log_entry document."
                 },
                 "unreadable": {
                   "type": "string",

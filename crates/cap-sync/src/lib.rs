@@ -9,12 +9,12 @@
 //! reads a received/stored document at the receive boundary (an
 //! older version is the migration capability's to bring forward);
 //! `compact_edits` is the D-57 tombstone-retention commit. The
-//! disruptions log (D-190) is the record of that document: `entry_disruptions` answers
-//! the entry for one write (each changed record's hash before and its
-//! new state), `fold_disruptions` folds the entries into the document and a
-//! checkpoint (quarantining an entry it cannot apply), `revert_disruptions`
-//! answers the entry that writes back the states before an entry, and
-//! `close_disruptions_gap` answers the empty entry that closes a gap. The host
+//! disruptions log (D-190, D-197) is the record of that document, kept
+//! by the log capability (cap-log): `log_records` answers the document
+//! as the log's records (one `edit_record` for each record, and the
+//! document's own record), `log_document` assembles the document from
+//! the fold's records, and `log_revert` answers the records a revert
+//! writes back, stamped to win the merge (D-193). The host
 //! owns both documents (wholesale-replaced, JS/store-owned) and the
 //! clock (`now_ms` is the only route; hosts own time), and clamps the
 //! incoming clock at receive (D-56). transit-sync is the domain
@@ -76,44 +76,33 @@ pub enum Request {
         #[ts(type = "number")]
         horizon_ms: u64,
     },
-    /// The disruptions log's entry for one write (D-190): the records that
-    /// differ between `head` (the edit document the write read) and
-    /// `next` (the document after it), each with its hash before and its
-    /// new state. The host gives the entry's place and provenance
-    /// (`header`). A write that changes nothing answers no entry.
-    EntryDisruptions {
-        head: transit_sync::EditDocument,
-        next: transit_sync::EditDocument,
-        header: transit_sync::log::Header,
-    },
-    /// The fold of the disruptions log: the entries after a checkpoint (or
-    /// from the empty document), in `seq` order. An entry that does not
-    /// read or apply is quarantined and named, and the fold continues.
-    /// The answer is the edit document and the checkpoint at the last
-    /// `seq`.
-    FoldDisruptions {
+    /// The edit document as the disruptions log's records (D-197): one
+    /// record of kind `edit_record` for each record, whole, and the
+    /// document's own record, as the log capability's `compose` takes
+    /// them.
+    LogRecords { document: transit_sync::EditDocument },
+    /// The edit document assembled from the disruptions log's
+    /// `edit_record` records, in id order, answered as its canonical
+    /// bytes and hash. A record in another version is refused, naming
+    /// both.
+    LogDocument {
+        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        records: std::collections::BTreeMap<String, transit_log::Held>,
+        /// The document's own record (absent: the empty document's).
         #[serde(default)]
-        #[ts(optional, type = "any")]
-        checkpoint: Option<serde_json::Value>,
-        entries: Vec<transit_sync::log::Stored>,
+        #[ts(optional, type = "{ version: number, value: unknown }")]
+        document: Option<transit_log::Held>,
     },
-    /// The entry that reverts entry `target`: each record it changed
-    /// goes back to its state before, stamped to win the merge, and a
-    /// record it created is retired. Refused, naming the record, when a
-    /// later entry changed one of them. `checkpoint` is at or before
-    /// `target - 1`, and `entries` runs from after it to the head.
-    RevertDisruptions {
-        #[serde(default)]
-        #[ts(optional, type = "any")]
-        checkpoint: Option<serde_json::Value>,
-        entries: Vec<transit_sync::log::Stored>,
+    /// The records a revert of the disruptions log writes back (D-193),
+    /// over the log capability's `states`: each edit record as it was
+    /// before the reverted write, or retired when that write created it,
+    /// stamped with the next rev and `now_ms` so it wins the merge.
+    LogRevert {
+        #[ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>")]
+        states: Vec<transit_log::RevertState>,
         #[ts(type = "number")]
-        target: u64,
-        header: transit_sync::log::Header,
+        now_ms: u64,
     },
-    /// The entry that closes a gap in the disruptions log (D-190, rule 4): no
-    /// changes, and the cause in `header.intent.note`.
-    CloseDisruptionsGap { header: transit_sync::log::Header },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -151,34 +140,24 @@ pub enum Response {
         document_hash: String,
         dropped: usize,
     },
-    EntryDisruptions {
-        /// The entry's canonical bytes, which the host stores at its
-        /// `seq`. Absent when the write changes nothing.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        entry: Option<String>,
-        /// How many records the entry changes.
-        changes: usize,
+    LogRecords {
+        /// The records of each kind: the edit records, and the
+        /// document's own record (`document`), which keeps the fields
+        /// outside the collection.
+        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        next: Vec<transit_log::KindRecords>,
     },
-    FoldDisruptions {
-        /// The last entry the fold read.
-        #[ts(type = "number")]
-        seq: u64,
-        /// The edit document, canonically serialized.
+    LogDocument {
+        /// The document's canonical bytes, which a host serves under
+        /// `document_hash`.
         document: String,
         document_hash: String,
-        /// The checkpoint at `seq`, canonically serialized.
-        checkpoint: String,
-        /// The entries the fold did not apply. The host raises an alarm
-        /// for each.
-        quarantined: Vec<transit_sync::log::Quarantined>,
     },
-    RevertDisruptions {
-        entry: String,
-        changes: usize,
-    },
-    CloseDisruptionsGap {
-        entry: String,
+    LogRevert {
+        /// The records to write back, as the log capability's `revert`
+        /// takes them (`written`).
+        #[ts(type = "Array<{ kind: string, id: string, version: number, after?: unknown }>")]
+        written: Vec<transit_log::Written>,
     },
 }
 
@@ -209,59 +188,38 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let (document, document_hash) = canonical(&records)?;
             Ok(Response::CompactEdits { records, document, document_hash, dropped })
         }
-        Request::EntryDisruptions { head, next, header } => {
-            let changes = transit_sync::log::changes(&head.records, &next.records, &record_hash);
-            let n = changes.len();
-            let entry = (n > 0).then(|| cap_abi::canonical_bytes(&transit_sync::log::Entry::new(header, changes, None))).transpose()?;
-            Ok(Response::EntryDisruptions { entry, changes: n })
+        Request::LogRecords { document } => {
+            let doc = serde_json::to_value(&document).map_err(|e| e.to_string())?;
+            Ok(Response::LogRecords { next: transit_log::document_records(&doc, "records", RECORD_KIND, transit_sync::KIND, transit_sync::SCHEMA_VERSION)? })
         }
-        Request::FoldDisruptions { checkpoint, entries } => {
-            let start = checkpoint.map(cap_abi::versioned::<transit_sync::log::Checkpoint>).transpose()?;
-            let folded = transit_sync::log::fold(start.as_ref(), &entries, &record_hash)?;
-            let (document, document_hash) = canonical(&folded.records)?;
-            let checkpoint = cap_abi::canonical_bytes(&transit_sync::log::Checkpoint::new(folded.seq, folded.records))?;
-            Ok(Response::FoldDisruptions { seq: folded.seq, document, document_hash, checkpoint, quarantined: folded.quarantined })
+        Request::LogDocument { records, document } => {
+            let template = serde_json::json!({"kind": transit_sync::KIND, "schema_version": transit_sync::SCHEMA_VERSION});
+            let doc: transit_sync::EditDocument = transit_log::assemble(template, document.as_ref(), "records", &records, true)?;
+            Ok(Response::LogDocument { document: cap_abi::canonical_bytes(&doc)?, document_hash: cap_abi::canonical_hash(&doc)? })
         }
-        Request::RevertDisruptions { checkpoint, entries, target, header } => {
-            use transit_sync::log;
-            let start = checkpoint.map(cap_abi::versioned::<log::Checkpoint>).transpose()?;
-            let from = start.as_ref().map_or(0, |c| c.seq);
-            if target <= from {
-                return Err(format!("entry {target} is not after the checkpoint at {from}"));
+        Request::LogRevert { states, now_ms } => {
+            let record = |held: &Option<transit_log::Held>, id: &str| -> Result<Option<transit_sync::EditRecord>, String> {
+                match held {
+                    None => Ok(None),
+                    Some(h) if h.version != transit_sync::SCHEMA_VERSION => {
+                        Err(format!("record {id}: {}", transit_version::refused(transit_sync::KIND, h.version, transit_sync::SCHEMA_VERSION)))
+                    }
+                    Some(h) => serde_json::from_value(h.value.clone()).map(Some).map_err(|e| format!("record {id}: {e}")),
+                }
+            };
+            let mut written = Vec::new();
+            for s in states.iter().filter(|s| s.kind == RECORD_KIND) {
+                let back = transit_sync::revert_record(record(&s.prior, &s.id)?.as_ref(), record(&s.now, &s.id)?.as_ref(), now_ms);
+                let after = back.map(|r| serde_json::to_value(r).map_err(|e| e.to_string())).transpose()?;
+                written.push(transit_log::Written { kind: RECORD_KIND.into(), id: s.id.clone(), version: transit_sync::SCHEMA_VERSION, after });
             }
-            let at = entries.iter().position(|e| e.seq == target).ok_or_else(|| format!("entry {target} is not in the entries given"))?;
-            let before = log::fold(start.as_ref(), &entries[..at], &record_hash)?;
-            if before.seq != target - 1 {
-                return Err(format!("the entries before {target} end at {}: the log has a gap", before.seq));
-            }
-            let head = log::fold(start.as_ref(), &entries, &record_hash)?;
-            if let Some(q) = head.quarantined.iter().find(|q| q.seq == target) {
-                return Err(format!("entry {target} is quarantined ({}): it changed nothing to revert", q.reason));
-            }
-            let entry = log::read_entry(&entries[at])?;
-            let changes = log::revert(&before.records, &head.records, &entry, header.at_ms, &record_hash)?;
-            if changes.is_empty() {
-                return Err(format!("entry {target} changed no record"));
-            }
-            let n = changes.len();
-            Ok(Response::RevertDisruptions { entry: cap_abi::canonical_bytes(&log::Entry::new(header, changes, Some(target)))?, changes: n })
-        }
-        Request::CloseDisruptionsGap { header } => {
-            if header.intent.note.as_deref().is_none_or(|n| n.trim().is_empty()) {
-                return Err("an entry that closes a gap names its cause (header.intent.note)".into());
-            }
-            Ok(Response::CloseDisruptionsGap { entry: cap_abi::canonical_bytes(&transit_sync::log::Entry::new(header, Vec::new(), None))? })
+            Ok(Response::LogRevert { written })
         }
     }
 }
 
-/// A record's identity in an entry: the content hash of its canonical
-/// bytes. A record that does not serialize (a non-finite coordinate,
-/// which the receive path drops first) gets a name that never equals a
-/// hash.
-fn record_hash(record: &transit_sync::EditRecord) -> String {
-    cap_abi::canonical_hash(record).unwrap_or_else(|e| format!("unhashable: {e}"))
-}
+/// The kind of an edit record in the disruptions log.
+pub const RECORD_KIND: &str = "edit_record";
 
 /// The edit document over `records` (current version, tagged): its
 /// canonical bytes and their hash.

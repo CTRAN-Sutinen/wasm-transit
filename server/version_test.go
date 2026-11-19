@@ -101,6 +101,7 @@ func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 			ArgsHash string `json:"args_hash"`
 		} `json:"intent"`
 		Changes []struct {
+			Kind  string          `json:"kind"`
 			ID    string          `json:"id"`
 			After json.RawMessage `json:"after"`
 		} `json:"changes"`
@@ -108,11 +109,11 @@ func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 	if err := json.Unmarshal([]byte(entries[0].Text), &e); err != nil {
 		t.Fatal(err)
 	}
-	if e.Kind != "disruptions_entry" || e.Log != "disruptions" || e.Seq != 1 || e.Writer != "migrate:edits" || e.Intent.Op != "migrate" || e.Intent.ArgsHash != oldHash {
+	if e.Kind != "log_entry" || e.Log != "disruptions" || e.Seq != 1 || e.Writer != "migrate:edits" || e.Intent.Op != "migrate" || e.Intent.ArgsHash != oldHash {
 		t.Fatalf("entry 1: %+v", e)
 	}
-	if len(e.Changes) != 1 || e.Changes[0].ID != "e1" {
-		t.Fatalf("entry 1 copies the head's records: %+v", e.Changes)
+	if len(e.Changes) != 2 || e.Changes[0].Kind != "edit_record" || e.Changes[0].ID != "e1" || e.Changes[1].Kind != "edit_records" {
+		t.Fatalf("entry 1 copies the head's records, and the document's own record: %+v", e.Changes)
 	}
 	head, _, _ := s.store.Head("edits")
 	if head.Hash != oldHash || head.Seq != 1 {

@@ -148,7 +148,7 @@ func TestVerifyChecksEachLog(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := s.PutCheckpoint("disruptions", 2, []byte(`{"kind":"disruptions_checkpoint","log":"disruptions","seq":2}`)); err != nil {
+		if err := s.PutCheckpoint("disruptions", 2, []byte(`{"kind":"log_checkpoint","log":"disruptions","seq":2}`)); err != nil {
 			t.Fatal(err)
 		}
 		r, err := Verify(ctx, b)
@@ -157,13 +157,13 @@ func TestVerifyChecksEachLog(t *testing.T) {
 		}
 
 		var ve *VerifyError
-		b.Create(ctx, checkpointKey("disruptions", 7), []byte(`{"kind":"disruptions_checkpoint","log":"disruptions","seq":7}`), nil)
+		b.Create(ctx, checkpointKey("disruptions", 7), []byte(`{"kind":"log_checkpoint","log":"disruptions","seq":7}`), nil)
 		if _, err := Verify(ctx, b); !errors.As(err, &ve) || !strings.Contains(ve.Reason, "past the log's last entry") {
 			t.Fatalf("a checkpoint past the head: %v", err)
 		}
 		b.Delete(ctx, checkpointKey("disruptions", 7))
 
-		b.Create(ctx, entryKey("disruptions", 4), []byte(`{"kind":"disruptions_entry","log":"disruptions","seq":5}`), nil)
+		b.Create(ctx, entryKey("disruptions", 4), []byte(`{"kind":"log_entry","log":"disruptions","seq":5}`), nil)
 		if _, err := Verify(ctx, b); !errors.As(err, &ve) || ve.Key != entryKey("disruptions", 4) || !strings.Contains(ve.Reason, "seq 5") {
 			t.Fatalf("an entry that names another seq: %v", err)
 		}
@@ -193,7 +193,7 @@ func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 		fold := func(log string, from []byte, entries []StoredEntry) ([]byte, error) {
 			last := entries[len(entries)-1].Seq
 			calls = append(calls, fmt.Sprintf("%s:%d..%d", from, entries[0].Seq, last))
-			return []byte(fmt.Sprintf(`{"kind":"disruptions_checkpoint","log":"disruptions","seq":%d}`, last)), nil
+			return []byte(fmt.Sprintf(`{"kind":"log_checkpoint","log":"disruptions","seq":%d}`, last)), nil
 		}
 		for _, seq := range []int64{2, 4} {
 			cp, _ := fold("disruptions", nil, []StoredEntry{{Seq: seq}})
@@ -206,7 +206,7 @@ func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 		if err != nil || r.Folded != 2 {
 			t.Fatalf("both checkpoints fold: %+v %v", r, err)
 		}
-		if calls[0] != ":1..2" || calls[1] != `{"kind":"disruptions_checkpoint","log":"disruptions","seq":2}:3..4` {
+		if calls[0] != ":1..2" || calls[1] != `{"kind":"log_checkpoint","log":"disruptions","seq":2}:3..4` {
 			t.Fatalf("each fold starts from the checkpoint before it: %q", calls)
 		}
 

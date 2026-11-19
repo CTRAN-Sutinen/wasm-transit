@@ -20,7 +20,6 @@
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
-pub mod log;
 pub mod version;
 pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
 
@@ -489,6 +488,21 @@ pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<Edi
     (kept, dropped)
 }
 
+/// The record a revert writes back (D-193): the record as it was before
+/// the reverted write (`prior`), or, when that write created it, the
+/// record now (`now`) retired. Either is stamped with the next rev and
+/// `now_ms`, so it wins the merge over a copy that a page still holds
+/// (LWW would bring the reverted copy back otherwise). Absent when the
+/// record was absent both before and now.
+pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_ms: u64) -> Option<EditRecord> {
+    let next_rev = now.map_or(0, |r| r.rev).max(prior.map_or(0, |r| r.rev)) + 1;
+    match (prior, now) {
+        (Some(p), _) => Some(EditRecord { rev: next_rev, updated_at: now_ms, ..p.clone() }),
+        (None, Some(n)) => Some(EditRecord { status: EditStatus::Retired, rev: next_rev, updated_at: now_ms, ..n.clone() }),
+        (None, None) => None,
+    }
+}
+
 /// Read a received edit document (a POST body, a stored head, a
 /// file) as the base of a merge, in the version this build reads. An
 /// older one is refused with the op that brings it forward (the
@@ -894,6 +908,25 @@ mod merge_tests {
                     })
                     .collect()
             })
+    }
+
+    proptest! {
+        /// A revert's record (D-193) wins the merge over the copy it
+        /// reverts, whichever side holds it: the state before the write
+        /// comes back, and a record the write created stays retired.
+        #[test]
+        fn a_reverted_record_wins_the_merge(prior in proptest::option::of(doc_strategy()), now in doc_strategy(), at in 0u64..10) {
+            let Some(now) = now.into_iter().next() else { return Ok(()) };
+            let prior = prior.and_then(|p| p.into_iter().next()).map(|p| EditRecord { id: now.id.clone(), ..p });
+            let now_ms = now.updated_at.max(prior.as_ref().map_or(0, |p| p.updated_at)) + at;
+            let back = revert_record(prior.as_ref(), Some(&now), now_ms).unwrap();
+            prop_assert_eq!(merge(std::slice::from_ref(&now), std::slice::from_ref(&back)), vec![back.clone()]);
+            prop_assert_eq!(merge(std::slice::from_ref(&back), std::slice::from_ref(&now)), vec![back.clone()]);
+            match &prior {
+                Some(p) => prop_assert_eq!((&back.diversion, &back.cancel, back.status), (&p.diversion, &p.cancel, p.status)),
+                None => prop_assert_eq!((&back.diversion, &back.cancel, back.status), (&now.diversion, &now.cancel, EditStatus::Retired)),
+            }
+        }
     }
 
     #[test]

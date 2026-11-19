@@ -302,10 +302,14 @@ type server struct {
 	// The edit document. Opaque JSON: the artifact owns the schema
 	// and every domain decision about it (merge, submit, validation)
 	// — this host only stores and ferries it.
-	editsMu     sync.Mutex
-	disruptions disruptionsFold // store mode: this process's fold of the disruptions log (disruptions.go)
-	edits       json.RawMessage // the edit document (current version)
-	editsPath   string          // the dev store's file; empty = in memory only
+	editsMu sync.Mutex
+	// Store mode: the disruptions log's fold, made on first use, and the
+	// edit document it holds (disruptions.go).
+	disruptionsOnce sync.Once
+	disruptions     *logFold
+	disruptionsDoc  logDoc
+	edits           json.RawMessage // the edit document (current version)
+	editsPath       string          // the dev store's file; empty = in memory only
 
 	// The durable sync store (store mode, -store): blobs + CAS'd
 	// pointers. nil = the dev store (no -store): edits in memory or the

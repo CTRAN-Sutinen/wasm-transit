@@ -18,11 +18,13 @@
 //! 6. `read_edits` migrates a received document at receive (defaults
 //!    fill what age removed, malformed records are counted, never
 //!    wedging it), and `compact_edits` is the D-57 tombstone commit;
-//! 7. the disruptions log (D-190): the fold of the entries is the merged
-//!    document, a write that changes nothing answers no entry, a bad
-//!    entry is quarantined and named, a revert writes back the states
-//!    before and is refused after a later change, and a gap closes
-//!    only with a cause.
+//! 7. the disruptions log's records (D-190, D-197): the document's
+//!    records, folded by the log and assembled again, are the merged
+//!    document, byte for byte; a write that changes nothing changes no
+//!    record; the document's own fields survive; a record in another
+//!    version is refused; a revert writes back each record stamped to
+//!    win the merge, and retires a record the reverted write created
+//!    (D-193).
 
 use cap_sync::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use transit_sync::{Diversion, EditRecord, EditStatus};
@@ -239,153 +241,147 @@ fn sync_edits_flags_the_clients_unknown_fields_and_keeps_them() {
 }
 
 // ---------------------------------------------------------------------
-// The disruptions log (D-190): the entry, the fold, the revert, the gap
+// The disruptions log's records (D-190, D-197). The log capability keeps
+// the log; here transit-log stands in for it, as cap-log calls it.
 // ---------------------------------------------------------------------
 
-use transit_sync::log::{Header, Intent, Stored};
+use std::collections::BTreeMap;
+use transit_log::{Checkpoint, Composed, Header, Held, Intent, KindRecords};
+
+fn hash(v: &serde_json::Value) -> String {
+    cap_abi::canonical_hash(v).unwrap()
+}
 
 fn header(seq: u64, at_ms: u64) -> Header {
     Header {
+        log: "disruptions".into(),
         seq,
         writer: "dispatcher@example".into(),
         at_ms,
-        module: "cap-sync@sha256:test".into(),
+        module: "cap-log@sha256:test".into(),
         intent: Intent { op: "POST /edits".into(), ..Default::default() },
     }
 }
 
-/// One write through the seam as the server runs it: merge, then the
-/// entry from the head and the next document.
-fn write(head: &[EditRecord], client: Vec<EditRecord>, seq: u64, now_ms: u64) -> (Vec<EditRecord>, Option<String>) {
-    let next = synced(client, head.to_vec(), now_ms);
-    let (h, n) = (transit_sync::EditDocument::new(head.to_vec()), transit_sync::EditDocument::new(next.clone()));
-    match dispatch(Request::EntryDisruptions { head: h, next: n, header: header(seq, now_ms) }).unwrap() {
-        Response::EntryDisruptions { entry, .. } => (next, entry),
-        _ => panic!("entry_disruptions"),
+fn log_records(document: transit_sync::EditDocument) -> Vec<KindRecords> {
+    match dispatch(Request::LogRecords { document }).unwrap() {
+        Response::LogRecords { next } => next,
+        _ => panic!("log_records"),
     }
 }
 
-fn fold(checkpoint: Option<serde_json::Value>, entries: Vec<Stored>) -> (u64, String, String, String, usize) {
-    match dispatch(Request::FoldDisruptions { checkpoint, entries }).unwrap() {
-        Response::FoldDisruptions { seq, document, document_hash, checkpoint, quarantined } => (seq, document, document_hash, checkpoint, quarantined.len()),
-        _ => panic!("fold_disruptions"),
+fn log_document(fold: &Checkpoint) -> (String, String) {
+    let records: BTreeMap<String, Held> = fold.records.get("edit_record").cloned().unwrap_or_default();
+    let document = fold.get("edit_records", transit_log::DOCUMENT_ID).cloned();
+    match dispatch(Request::LogDocument { records, document }).unwrap() {
+        Response::LogDocument { document, document_hash } => (document, document_hash),
+        _ => panic!("log_document"),
     }
 }
 
-/// Three writes, and the log they leave.
-fn three_writes() -> (Vec<EditRecord>, Vec<Stored>) {
+/// One write as the server runs it: merge, the records, and the entry
+/// applied to the fold. Answers the merged records and whether the
+/// write changed a record.
+fn write(fold: &mut Checkpoint, client: Vec<EditRecord>, now_ms: u64) -> (Vec<EditRecord>, Option<transit_log::Entry>) {
+    let (document, _) = log_document(fold);
+    let head: transit_sync::EditDocument = serde_json::from_str(&document).unwrap();
+    let next = synced(client, head.records, now_ms);
+    let records = log_records(transit_sync::EditDocument::new(next.clone()));
+    match transit_log::compose(fold, header(fold.seq + 1, now_ms), &records, &hash) {
+        Composed::Entry(e) => {
+            transit_log::apply(fold, &e, &hash).unwrap();
+            (next, Some(e))
+        }
+        _ => (next, None),
+    }
+}
+
+/// Three writes, and the fold and entries they leave.
+fn three_writes() -> (Vec<EditRecord>, Checkpoint, Vec<transit_log::Entry>) {
+    let mut fold = Checkpoint::empty("disruptions");
+    let mut entries = Vec::new();
     let mut head = Vec::new();
-    let mut log = Vec::new();
-    let writes = vec![
+    for (i, client) in [
         vec![record("e1", EditStatus::Draft, 1, 10)],
         vec![record("e2", EditStatus::Draft, 1, 20)],
-        vec![{
-            let mut r = record("e1", EditStatus::Retired, 3, 250);
-            r.status = EditStatus::Retired;
-            r
-        }],
-    ];
-    for (i, client) in writes.into_iter().enumerate() {
-        let (next, entry) = write(&head, client, log.len() as u64 + 1, 100 * (i as u64 + 1));
-        if let Some(text) = entry {
-            log.push(Stored { seq: log.len() as u64 + 1, text });
-        }
+        vec![record("e1", EditStatus::Retired, 3, 250)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (next, entry) = write(&mut fold, client, 100 * (i as u64 + 1));
+        entries.extend(entry);
         head = next;
     }
-    (head, log)
+    (head, fold, entries)
 }
 
 #[test]
-fn the_fold_of_the_entries_is_the_merged_document() {
-    let (head, log) = three_writes();
-    assert_eq!(log.len(), 3);
-    let (seq, document, hash, _, quarantined) = fold(None, log.clone());
+fn the_folded_records_assemble_the_merged_document() {
+    let (head, fold, entries) = three_writes();
+    assert_eq!(entries.len(), 3);
+    let (document, document_hash) = log_document(&fold);
     let whole = transit_sync::EditDocument::new(head);
-    assert_eq!((seq, quarantined), (3, 0));
-    assert_eq!(document, cap_abi::canonical_bytes(&whole).unwrap());
-    assert_eq!(hash, cap_abi::canonical_hash(&whole).unwrap());
-
-    // A fold from the checkpoint at entry 2 reaches the same document.
-    let (_, _, _, at2, _) = fold(None, log[..2].to_vec());
-    let (seq, _, again, checkpoint, _) = fold(Some(serde_json::from_str(&at2).unwrap()), log[2..].to_vec());
-    assert_eq!((seq, again), (3, hash));
-    assert!(checkpoint.contains("\"kind\":\"disruptions_checkpoint\"") && checkpoint.contains("\"seq\":3"), "{checkpoint}");
+    assert_eq!(document, cap_abi::canonical_bytes(&whole).unwrap(), "byte for byte");
+    assert_eq!(document_hash, cap_abi::canonical_hash(&whole).unwrap());
+    let kinds: Vec<&str> = entries[0].changes.iter().map(|c| c.kind.as_str()).collect();
+    assert_eq!(kinds, vec!["edit_record", "edit_records"], "the record, and the document's own record");
+    assert_eq!(entries[1].changes.len(), 1, "a later write changes only its record");
+    assert_eq!(entries[1].changes[0].before, None);
 }
 
 #[test]
-fn a_write_that_changes_nothing_answers_no_entry() {
-    let (head, _) = three_writes();
-    let (_, entry) = write(&head, head.clone(), 4, 1_000);
-    assert_eq!(entry, None, "a resend is idempotent: no entry");
+fn a_write_that_changes_nothing_changes_no_record() {
+    let (head, mut fold, _) = three_writes();
+    let (_, entry) = write(&mut fold, head, 1_000);
+    assert!(entry.is_none(), "a resend is idempotent: no entry");
 }
 
 #[test]
-fn an_entry_holds_each_changed_record_with_its_hash_before() {
-    let before = vec![record("e1", EditStatus::Submitted, 2, 10)];
-    let (_, entry) = write(&before, vec![record("e1", EditStatus::Accepted, 3, 50)], 7, 100);
-    let entry: serde_json::Value = serde_json::from_str(&entry.unwrap()).unwrap();
-    assert_eq!(entry["kind"], "disruptions_entry");
-    assert_eq!(entry["log"], "disruptions");
-    assert_eq!(entry["seq"], 7);
-    assert_eq!(entry["writer"], "dispatcher@example");
-    assert_eq!(entry["module"], "cap-sync@sha256:test");
-    assert_eq!(entry["intent"]["op"], "POST /edits");
-    let change = &entry["changes"][0];
-    assert_eq!(change["id"], "e1");
-    assert_eq!(change["before"], cap_abi::canonical_hash(&before[0]).unwrap());
-    assert_eq!(change["after"]["status"], "accepted");
+fn the_documents_own_fields_survive_its_records() {
+    let mut doc = transit_sync::EditDocument::new(vec![record("e1", EditStatus::Accepted, 2, 10)]);
+    doc.extra.0.insert("issued_by".into(), serde_json::json!("dispatch desk"));
+    let mut fold = Checkpoint::empty("disruptions");
+    let Composed::Entry(e) = transit_log::compose(&fold, header(1, 1), &log_records(doc.clone()), &hash) else { panic!("an entry") };
+    transit_log::apply(&mut fold, &e, &hash).unwrap();
+    assert_eq!(log_document(&fold).0, cap_abi::canonical_bytes(&doc).unwrap());
 }
 
 #[test]
-fn a_bad_entry_is_quarantined_and_named() {
-    let (_, mut log) = three_writes();
-    log[1].text = "{\"kind\":\"disruptions_entry\"".into();
-    match dispatch(Request::FoldDisruptions { checkpoint: None, entries: log }).unwrap() {
-        Response::FoldDisruptions { seq, quarantined, .. } => {
-            assert_eq!(seq, 3);
-            // Entry 2 does not read, and entry 3 then still applies: it
-            // changes e1, which entry 1 wrote.
-            assert_eq!(quarantined.iter().map(|q| q.seq).collect::<Vec<_>>(), vec![2]);
-        }
-        _ => panic!("fold_disruptions"),
-    }
+fn a_record_in_another_version_is_refused() {
+    let records = BTreeMap::from([("e1".to_string(), Held { version: 3, value: serde_json::to_value(record("e1", EditStatus::Draft, 1, 1)).unwrap() })]);
+    let refused = dispatch(Request::LogDocument { records, document: None }).unwrap_err();
+    assert!(refused.contains("e1") && refused.contains('3') && refused.contains('2'), "{refused}");
 }
 
 #[test]
-fn a_revert_writes_back_the_states_before_and_is_refused_after_a_later_change() {
-    let (head, log) = three_writes();
-    // Revert entry 3 (e1 retired): e1 is in force again.
-    let answer = dispatch(Request::RevertDisruptions { checkpoint: None, entries: log.clone(), target: 3, header: header(4, 5_000) }).unwrap();
-    let Response::RevertDisruptions { entry, changes } = answer else { panic!("revert_disruptions") };
-    assert_eq!(changes, 1);
-    let mut after = log.clone();
-    after.push(Stored { seq: 4, text: entry.clone() });
-    let (_, document, _, _, quarantined) = fold(None, after.clone());
-    assert_eq!(quarantined, 0);
-    let doc: serde_json::Value = serde_json::from_str(&document).unwrap();
-    assert_eq!(doc["records"][0]["id"], "e1");
-    assert_eq!(doc["records"][0]["status"], "submitted", "the state before entry 3");
-    assert_eq!(doc["records"][0]["updated_at"], 5_000, "stamped to win the merge");
-    let entry: serde_json::Value = serde_json::from_str(&entry).unwrap();
-    assert_eq!(entry["reverts"], 3);
+fn a_revert_stamps_each_record_to_win_the_merge_and_retires_what_it_created() {
+    let (head, mut fold, entries) = three_writes();
+    // Revert entry 3 (e1 retired) and entry 2 (e2 created), as the
+    // server does: cap-log's states, then log_revert's records.
+    let mut before = Checkpoint::empty("disruptions");
+    transit_log::apply(&mut before, &entries[0], &hash).unwrap();
+    let mid = {
+        let mut f = before.clone();
+        transit_log::apply(&mut f, &entries[1], &hash).unwrap();
+        f
+    };
+    let states = transit_log::revert_states(&mid, &fold, &entries[2], &hash).unwrap();
+    let Response::LogRevert { written } = dispatch(Request::LogRevert { states: states.clone(), now_ms: 5_000 }).unwrap() else { panic!("log_revert") };
+    assert_eq!(written.len(), 1, "the edit record, not the document's own record");
+    let changes = transit_log::revert_with(&states, &written, &hash).unwrap();
+    transit_log::apply(&mut fold, &transit_log::Entry::new(header(4, 5_000), changes, Some(3)), &hash).unwrap();
+    let (document, _) = log_document(&fold);
+    let doc: transit_sync::EditDocument = serde_json::from_str(&document).unwrap();
+    let e1 = doc.records.iter().find(|r| r.id == "e1").unwrap();
+    assert_eq!((e1.status, e1.updated_at, e1.rev), (EditStatus::Submitted, 5_000, 4), "the state before entry 3, stamped");
+    // A page that still holds the retired copy does not undo the revert.
+    assert_eq!(synced(head, doc.records.clone(), 6_000), doc.records);
 
-    // A page that still holds the retired copy does not undo it.
-    let reverted: Vec<EditRecord> = serde_json::from_value(doc["records"].clone()).unwrap();
-    assert_eq!(synced(head, reverted.clone(), 6_000), reverted);
-
-    // Entry 3 again: entry 4 changed e1 since, so a person decides.
-    let refused = dispatch(Request::RevertDisruptions { checkpoint: None, entries: after, target: 3, header: header(5, 7_000) }).unwrap_err();
-    assert!(refused.contains("record e1") && refused.contains("a person decides"), "{refused}");
-}
-
-#[test]
-fn a_gap_closes_with_an_entry_that_names_its_cause() {
-    let refused = dispatch(Request::CloseDisruptionsGap { header: header(9, 1) }).unwrap_err();
-    assert!(refused.contains("cause"), "{refused}");
-    let mut h = header(9, 1);
-    h.intent = Intent { op: "close_disruptions_gap".into(), note: Some("entry 9 was deleted by hand".into()), ..Default::default() };
-    let Response::CloseDisruptionsGap { entry } = dispatch(Request::CloseDisruptionsGap { header: h }).unwrap() else { panic!("close_disruptions_gap") };
-    let entry: serde_json::Value = serde_json::from_str(&entry).unwrap();
-    assert_eq!(entry["changes"], serde_json::json!([]));
-    assert_eq!(entry["intent"]["note"], "entry 9 was deleted by hand");
+    // Entry 2 created e2: its revert retires e2, and keeps it in the
+    // document, because the merge would bring a dropped record back.
+    let states = transit_log::revert_states(&before, &mid, &entries[1], &hash).unwrap();
+    let Response::LogRevert { written } = dispatch(Request::LogRevert { states, now_ms: 7_000 }).unwrap() else { panic!("log_revert") };
+    let e2: EditRecord = serde_json::from_value(written[0].after.clone().unwrap()).unwrap();
+    assert_eq!((e2.id.as_str(), e2.status, e2.updated_at), ("e2", EditStatus::Retired, 7_000));
 }

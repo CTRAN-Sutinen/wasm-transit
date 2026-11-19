@@ -122,7 +122,7 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 		t.Fatalf("the log: %+v", log)
 	}
 	second := log.Entries[1].Entry
-	if second.Kind != "disruptions_entry" || !strings.HasPrefix(second.Module, "cap-sync@sha256:") || second.Intent.Op != "POST /edits" ||
+	if second.Kind != "log_entry" || !strings.HasPrefix(second.Module, "cap-log@sha256:") || second.Intent.Op != "POST /edits" ||
 		len(second.Changes) != 1 || second.Changes[0].ID != "e1" || !strings.HasPrefix(second.Changes[0].Before, "sha256:") {
 		t.Fatalf("entry 2: %+v", second)
 	}
@@ -313,7 +313,7 @@ func TestStoreQuarantineAndGap(t *testing.T) {
 	base := httptest.NewServer(storeMux(s)).URL
 	httpPost(t, base+"/edits", editDoc("e1", "accepted", 1, 100))
 	// Someone writes a bad entry 2 by hand; e2 then lands at 3.
-	if err := s.store.AppendEntry(disruptionsLog, 2, []byte(`{"kind":"disruptions_entry"`)); err != nil {
+	if err := s.store.AppendEntry(disruptionsLog, 2, []byte(`{"kind":"log_entry"`)); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, body := httpPost(t, base+"/edits", editDoc("e2", "accepted", 1, 100)); code != 200 || !strings.Contains(body, `"e1"`) || !strings.Contains(body, `"e2"`) {

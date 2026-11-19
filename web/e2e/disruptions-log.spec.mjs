@@ -51,7 +51,7 @@ test("a detour written to the disruptions log reaches the stop display", async (
   expect(fold.records.map((r) => r.id)).toContain("e-disruptions-log");
   const log = await (await request.get(`${server}/logs/disruptions?since=0`)).json();
   const entry = log.entries.map((e) => e.entry).find((e) => e.changes.some((c) => c.id === "e-disruptions-log"));
-  expect(entry.kind).toBe("disruptions_entry");
+  expect(entry.kind).toBe("log_entry");
   expect(entry.intent.op).toBe("POST /edits");
   expect(log.document).toBe(posted.headers()["etag"].replaceAll('"', ""));
 

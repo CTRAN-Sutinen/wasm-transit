@@ -14,7 +14,10 @@
 //! - `fold` folds stored entries after a checkpoint into the records by
 //!   kind, and quarantines an entry it cannot read or apply.
 //! - `revert` answers the entry that writes back the states before an
-//!   entry. A record the entry created leaves the fold (D-198).
+//!   entry. A record the entry created leaves the fold (D-198). A kind
+//!   whose merge would undo that gives the records to write back
+//!   instead (`written`, from the kind's capability, over the `states`
+//!   the revert answers).
 //! - `close_gap` answers the entry with no changes that closes a gap.
 //!
 //! A record's hash is the canonical hash of the record as stored
@@ -60,6 +63,8 @@ pub enum Request {
     },
     /// The entry that reverts entry `target`. `checkpoint` is at or
     /// before `target - 1`, and `entries` runs from after it to the head.
+    /// `written` names records to write back in place of their states
+    /// before, as a kind's capability answers them over the `states`.
     Revert {
         log: String,
         #[serde(default)]
@@ -71,6 +76,9 @@ pub enum Request {
         target: u64,
         #[ts(type = "any")]
         header: serde_json::Value,
+        #[serde(default)]
+        #[ts(optional, type = "Array<{ kind: string, id: string, version: number, after?: unknown }>")]
+        written: Option<serde_json::Value>,
     },
     /// The entry with no changes that closes a gap, its cause in
     /// `header.intent.note`.
@@ -114,6 +122,10 @@ pub enum Response {
     Revert {
         entry: String,
         changes: usize,
+        /// Each record the revert writes back: its state now and before
+        /// the entry, what a kind's capability answers `written` from.
+        #[ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>")]
+        states: Vec<transit_log::RevertState>,
     },
     CloseGap {
         entry: String,
@@ -170,7 +182,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 quarantined: folded.quarantined,
             })
         }
-        Request::Revert { log, checkpoint, entries, target, header } => {
+        Request::Revert { log, checkpoint, entries, target, header, written } => {
             let entries: Vec<Stored> = parse("entries", entries)?;
             let header: Header = parse("header", header)?;
             let start = checkpoint_of(&log, checkpoint)?;
@@ -190,12 +202,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 return Err(format!("the entry's seq is {}, and the log's head is {}", header.seq, head.fold.seq));
             }
             let entry = transit_log::read_entry(&log, &entries[at])?;
-            let changes = transit_log::revert(&before.fold, &head.fold, &entry, &record_hash)?;
+            let written: Vec<transit_log::Written> = parse("written", written.unwrap_or(serde_json::Value::Array(Vec::new())))?;
+            let states = transit_log::revert_states(&before.fold, &head.fold, &entry, &record_hash)?;
+            let changes = transit_log::revert_with(&states, &written, &record_hash)?;
             if changes.is_empty() {
                 return Err(format!("entry {target} changed no record"));
             }
             let n = changes.len();
-            Ok(Response::Revert { entry: cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(target)))?, changes: n })
+            Ok(Response::Revert { entry: cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(target)))?, changes: n, states })
         }
         Request::CloseGap { header } => {
             let header: Header = parse("header", header)?;

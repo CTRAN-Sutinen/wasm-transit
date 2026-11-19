@@ -21,7 +21,7 @@ import (
 )
 
 func entry(seq int64, who string) []byte {
-	return []byte(fmt.Sprintf(`{"kind":"disruptions_entry","log":"disruptions","seq":%d,"writer":%q}`, seq, who))
+	return []byte(fmt.Sprintf(`{"kind":"log_entry","log":"disruptions","seq":%d,"writer":%q}`, seq, who))
 }
 
 // appendRetrying is a writer's loop: read the head, create the next
@@ -130,7 +130,7 @@ func TestACheckpointIsCreateOnlyAndStartsTheListing(t *testing.T) {
 		for i := 0; i < 4; i++ {
 			appendRetrying(t, s, "w")
 		}
-		fold := []byte(`{"kind":"disruptions_checkpoint","seq":3}`)
+		fold := []byte(`{"kind":"log_checkpoint","seq":3}`)
 		if err := s.PutCheckpoint("disruptions", 3, fold); err != nil {
 			t.Fatal(err)
 		}

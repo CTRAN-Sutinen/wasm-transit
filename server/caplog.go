@@ -8,7 +8,8 @@ package main
 // (`assemble`). This host only orders and keeps the entries, and treats
 // every entry, checkpoint, record, and document as opaque bytes.
 //
-// One logFold per log. The stops log (stopslog.go) is the first.
+// One logFold per log: the disruptions log (disruptions.go) and the
+// stops log (stopslog.go).
 
 import (
 	"context"
@@ -28,6 +29,14 @@ import (
 
 // defaultLogWasm is where `just caps` puts the log module.
 const defaultLogWasm = "../web/pkg/cap_log.wasm"
+
+// checkpointEvery is how many entries the server folds past a log's
+// newest checkpoint before it stores the next one. A boot reads the
+// newest checkpoint and folds at most this many entries after it.
+const checkpointEvery = 256
+
+// logEntriesLimit is the most entries one GET /logs/<log> answers.
+const logEntriesLimit = 1000
 
 // logModule is the hosted log capability (cap-log), loaded on first
 // use and held for the server's lifetime.
@@ -56,6 +65,13 @@ type logFold struct {
 	// assemble turns the fold's records (by kind, then by id) into the
 	// log's documents, through each kind's capability.
 	assemble func(records map[string]json.RawMessage) error
+	// revise, when set, answers the records a revert writes back in
+	// place of the states before (cap-log `written`), through the kind's
+	// capability: a kind whose merge would undo the revert (D-193).
+	revise func(states json.RawMessage, nowMs int64) (json.RawMessage, error)
+	// documents, when set, names the hashes of the documents the fold
+	// serves, for GET /logs/<log>. Called with mu held.
+	documents func() map[string]string
 
 	mu     sync.Mutex
 	loaded bool
@@ -378,25 +394,33 @@ func (s *server) handleLogEntriesOf(w http.ResponseWriter, r *http.Request, f *l
 		quarantined = append(quarantined, held{seq, why})
 	}
 	asOf := f.asOfMs
-	f.mu.Unlock()
-	sort.Slice(quarantined, func(i, j int) bool { return quarantined[i].Seq < quarantined[j].Seq })
-	labelStale(w, store.Head{Stale: stale, AsOfMs: asOf})
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache")
-	json.NewEncoder(w).Encode(map[string]any{
+	answer := map[string]any{
 		"log":         f.name,
 		"head":        lh.Seq,
 		"gaps":        lh.Gaps,
 		"checkpoint":  lh.Checkpoint,
 		"entries":     items,
 		"quarantined": quarantined,
-	})
+	}
+	if f.documents != nil {
+		for k, v := range f.documents() {
+			answer[k] = v
+		}
+	}
+	f.mu.Unlock()
+	sort.Slice(quarantined, func(i, j int) bool { return quarantined[i].Seq < quarantined[j].Seq })
+	labelStale(w, store.Head{Stale: stale, AsOfMs: asOf})
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	json.NewEncoder(w).Encode(answer)
 }
 
 // handleLogRevertOf writes the entry that reverts entry `seq` of a
 // cap-log log. cap-log refuses it, naming the record, when a later entry
 // changed one of the records: that answers 409, because a person
-// decides.
+// decides. A log whose kind writes back its own records (f.revise)
+// asks it over cap-log's states, then asks cap-log for the entry again
+// with them.
 func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *logFold) {
 	var req struct {
 		Seq int64 `json:"seq"`
@@ -449,19 +473,33 @@ func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *lo
 			fail(w, err, http.StatusInternalServerError)
 			return
 		}
-		header := map[string]any{"log": f.name, "seq": f.seq + 1, "writer": writer, "at_ms": time.Now().UnixMilli(), "module": "cap-log@" + m.Hash(),
+		nowMs := time.Now().UnixMilli()
+		header := map[string]any{"log": f.name, "seq": f.seq + 1, "writer": writer, "at_ms": nowMs, "module": "cap-log@" + m.Hash(),
 			"intent": map[string]any{"op": "POST /logs/" + f.name + "/revert"}}
 		op := map[string]any{"op": "revert", "log": f.name, "entries": entries, "target": req.Seq, "header": header}
 		if base != nil {
 			op["checkpoint"] = base
 		}
 		var ans struct {
-			Entry   string `json:"entry"`
-			Changes int    `json:"changes"`
+			Entry   string          `json:"entry"`
+			Changes int             `json:"changes"`
+			States  json.RawMessage `json:"states"`
 		}
 		if err := s.logOp(op, &ans); err != nil {
 			http.Error(w, "the revert is refused: "+err.Error(), http.StatusConflict)
 			return
+		}
+		if f.revise != nil {
+			written, err := f.revise(ans.States, nowMs)
+			if err != nil {
+				http.Error(w, "the revert is refused: "+err.Error(), http.StatusConflict)
+				return
+			}
+			op["written"] = written
+			if err := s.logOp(op, &ans); err != nil {
+				http.Error(w, "the revert is refused: "+err.Error(), http.StatusConflict)
+				return
+			}
 		}
 		err = s.store.AppendEntry(f.name, f.seq+1, []byte(ans.Entry))
 		var ce *store.EntryConflictError

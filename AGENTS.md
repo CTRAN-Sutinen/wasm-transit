@@ -368,8 +368,8 @@ transit-version  a document's kind tag and version (D-115): the tag every persis
                  (`Versioned::AHEAD`, D-186); and a record's fields this build does
                  not know, kept and named (`Extra`, D-167)
 transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), merge, and
-                 the record envelope; and the disruptions log, its record in a store
-                 (an entry per write, the fold, checkpoints, the revert; D-190). Pure.
+                 the record envelope; and the record a revert of the disruptions log
+                 writes back, stamped to win the merge (D-193). Pure.
 transit-plans    the service-plan chain (resolve, periods, validity; pure and derived),
                  and the published plan set (publish, the pick in force)
 transit-stops    the stops document, beside the plans. Each stop is a list of dated
@@ -412,12 +412,13 @@ cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-cal
                  and never depend on each other (docs/architecture/bus.md)
 assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability
                  alone) and module-ui-<id> (a generated UI's capabilities, linked)
-server/          the Go and wazero host. It runs cap-sync (the edit document, kept as
-                 the disruptions log: logs/disruptions/ in the bucket), cap-network,
+server/          the Go and wazero host. It runs cap-sync (the edit document and its
+                 records in the disruptions log), cap-network,
                  cap-plans, and cap-streets (the network, picks, streets, and walk
                  table it publishes; in store mode, every build it serves, kept and
                  rolled back by pointer; D-80). It also runs cap-migrate (an older
-                 document, at receive), cap-log (the stops log: logs/stops/), cap-stops
+                 document, at receive), cap-log (the disruptions log and the stops log:
+                 logs/disruptions/ and logs/stops/ in the bucket), cap-stops
                  (the stops document's writes and records, and what a published pick
                  reads of it), cap-requests (the stop requests document's writes and
                  records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
@@ -582,7 +583,8 @@ reads, a real-data dogfood of that workflow (D-196).
   - cap-migrate, for an older document at receive;
   - cap-stops, for the stops document's writes;
   - cap-requests, for the stop requests document's writes;
-  - cap-log, for the stops log that records them.
+  - cap-log, for the logs that record the edit document, the stops,
+    and the stop requests.
 - **The bus is the architecture.**
   - No capability grows a private document format. Shared data crosses
     capabilities only as kernel documents named by content hash.

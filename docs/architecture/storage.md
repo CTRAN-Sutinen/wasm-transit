@@ -49,9 +49,9 @@ against one store's address (an operator's own bucket).
   `logs/<log>/checkpoints/<seq>.json`, is the fold up to an entry. A
   commit is the same conditional create as a pointer record. The engine
   then reads the entry back and compares the bytes. The store has two
-  logs: `disruptions` (detours and trip cancels, kept by cap-sync) and
-  `stops` (the stops and the stop requests, kept by cap-log, which never
-  reads a record). Their rules are in `docs/FORMATS.md`, "The logs".
+  logs, both kept by cap-log, which never reads a record: `disruptions`
+  (detours and trip cancels) and `stops` (the stops and the stop
+  requests). Their rules are in `docs/FORMATS.md`, "The logs".
 - **Many processes, one bucket.** Several server processes may share
   one bucket. Each caches heads. Each reads at most 2 s behind another
   process's commit. The model (`store.tla`, `just spec`) checks processes
@@ -172,7 +172,6 @@ The storage model's direction is decided (D-190, D-191). The
 disruptions log and the stops log are built. The rest is
 [docs/units/storage-model.md](../units/storage-model.md). It covers:
 
-- the disruptions log moved onto cap-log (D-197).
 - the documents the server derives from its inputs (the imported
   network and boundary, the streets, the walk table) stored in the
   record, so every hash the manifest names is a blob (D-199).
@@ -221,8 +220,9 @@ reading **Because**.
   transactions a database offers are not what is scarce. History,
   availability of reads, and independence from one vendor are.
 - **Costs:** each shape needs a layout designed for it, not one taken from
-  a database. The edit document has one (the disruptions log). The stops
-  and the stop requests do not yet (`docs/units/storage-model.md`).
+  a database. The edit document, the stops, and the stop requests have
+  one (their logs). The plans and the policy do not yet
+  (`docs/units/storage-model.md`).
   Queries over the record are projections someone builds, not SQL against
   the record. A workload that needs transactions across records under
   contention needs an engine in front of the bucket.
@@ -231,7 +231,7 @@ reading **Because**.
   vendor's.
 - **Decided:** D-113, D-115, D-152.
 
-### What people edit is an append-only log (`server/store/log.go`, `server/disruptions.go`, `transit_sync::log`)
+### What people edit is an append-only log (`server/store/log.go`, `server/caplog.go`, `crates/transit-log`)
 - **Holds:** each write that changes a record is one entry, with each
   changed record's hash before and its new state, the writer, the intent,
   and the module build. The current document is the module's fold of the
@@ -271,8 +271,10 @@ reading **Because**.
   id, before, after}`. Each kind's capability turns its document into
   records (its collection, and the document's own record) and back. One
   entry may hold the records of two capabilities. `before` hashes the
-  record as stored. In a log that cap-log keeps, a revert takes a record
-  the reverted entry created out of the document.
+  record as stored. A revert takes a record the reverted entry created
+  out of the document. A kind whose merge would undo that (the edit
+  document's LWW) writes back its own records instead: stamped to win
+  the merge, and a created record retired (D-193).
 - **Because:** completing a request and adding the stop's event is one
   transaction, and capabilities never call each other. A log module that
   reads no record lets the server compose one entry from the changes of
@@ -284,9 +286,11 @@ reading **Because**.
   would bring a dropped record back.
 - **Costs:** a revert is refused when any later entry changed the same
   stop, not only the same event. A compound write runs one module per
-  kind and one more to compose. The disruptions log has its own engine
-  until it moves onto cap-log.
+  kind and one more to compose. A disruptions revert asks cap-log twice,
+  with cap-sync between.
 - **Rejected:** requests merged into cap-stops (one module, two needs:
   law 3); a cap-stops op that depends on transit-requests (couples two
-  crates); an event as a record (its order is not in its content).
+  crates); an event as a record (its order is not in its content); an
+  engine of its own for each log (two engines to keep, and the same
+  rules written twice).
 - **Decided:** D-197, D-198.

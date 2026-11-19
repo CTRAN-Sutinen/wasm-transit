@@ -28,6 +28,8 @@ Answer the entry that reverts entry `target`. Each record that entry changed goe
 
 The revert is refused, naming the record, when a later entry changed one of those records: a person decides what it becomes.
 
+The answer's `states` gives each record the revert writes back, with its state now and before the entry. A kind whose merge would bring the state before back over the revert asks its capability for the records to write instead, and sends them as `written`. The edit document's records are stamped to win the merge, and a record the entry created is retired (D-193).
+
 `checkpoint` is at or before `target - 1`. `entries` runs from after the checkpoint to the head, with no gap. `header.seq` is the head plus one.
 
 ## close_gap
