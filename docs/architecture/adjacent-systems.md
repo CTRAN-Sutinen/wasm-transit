@@ -11,9 +11,13 @@ presentation, or an oracle, an adjacent system both reads this repo's
 documents and writes into its records. The data is the agency's,
 whichever system holds it (`docs/architecture/agency-data.md`). Each
 fact has one home. The agency's documents in its store hold the
-network, picks, plans, policy, and the authored detours and cancels.
-The adjacent system's own rows hold a sick call, an extra-board fill, a
-swap, and a vehicle assignment. The seam:
+network, picks, plans, policy, the authored detours and cancels, and
+dispatch's internal notes (D-214). The adjacent system's own rows hold
+a sick call, an extra-board fill, a swap, and a vehicle assignment. So
+whether a trip is covered (a vehicle on its block, an operator on its
+run) is the adjacent system's answer, and no op here computes it
+(D-212). A cancel that CAD/AVL publishes in GTFS-rt is read as the
+feed gives it (D-213). The seam:
 
 **Out to an adjacent system**
 
@@ -87,6 +91,22 @@ Change it only with the user, and only after you read **Because**.
   keeps audits answerable.
 - **Rejected:** a row store in this repo for daily operations.
 - **Decided:** D-122.
+
+### Coverage is the adjacent systems' answer (the disruptions UI's questions, cap-divert's edits)
+- **Holds:** no op answers whether a trip is covered, which vehicle is
+  on a block today, or whether a late bus makes its next trip of the
+  day. The edit document carries effects that riders see (a detour, a
+  cancel, later a partial cancel). It carries no cover, hold, or swap.
+- **Because:** coverage needs today's vehicle and operator
+  assignments. CAD/AVL and the workforce system hold them. A rule here
+  that puts a vehicle on a block before it reports a position is a
+  second copy of that assignment, and it is wrong when the dispatcher
+  moves a bus. runcut `block_trips` answers against the planned block,
+  which is right for planning and not for today's assignments.
+- **Rejected:** coverage from the planned blocks and the live
+  positions, with an operator half from the runs layer (D-15); cover,
+  hold, and swap as edit kinds.
+- **Decided:** D-212 (it replaces D-15).
 
 ### The work order system is behind an adapter, and optional (`server/workorders.go`, `-work-orders`)
 - **Holds:** the server reaches the agency's work order system only

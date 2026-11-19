@@ -98,7 +98,7 @@ The op refuses in these cases, and the error names the reason:
 - an instance that the trip never runs;
 - a date on which its service does not run.
 
-Partial cancel, cover, hold, and swap are not edits yet.
+Partial cancel is not an edit yet. Cover, hold, and swap are the dispatcher's day, which CAD/AVL holds. They are not edits.
 
 ## retire
 

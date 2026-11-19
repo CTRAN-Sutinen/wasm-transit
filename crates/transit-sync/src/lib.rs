@@ -89,6 +89,9 @@ impl Diversion {
 /// it, so `start_secs` names one instance, and `None` cancels every
 /// instance it runs that day. Partial cancellation (from a stop on),
 /// cover, hold, and swap are not this payload's (D-45: later).
+// The doc comment above is in the locked schema (edit_records.v2), so
+// it stays as frozen. Cover, hold, and swap are not edits at all: they
+// belong to CAD/AVL (D-212). Only partial cancellation is still later.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TripCancel {

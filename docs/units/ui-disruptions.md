@@ -5,8 +5,12 @@ and for telling riders about it:
 - what is late and where that bus is;
 - which disruptions are in force;
 - drawing a detour along the streets;
-- which trips are covered and which are uncovered;
-- the agency's service alerts.
+- which trips are cancelled today;
+- the agency's service alerts;
+- dispatch's internal notes, in place of email.
+
+Vehicle assignments and trip coverage are not here. CAD/AVL holds
+them (D-122, D-212).
 
 Dispatch enters detours and the alerts that go with them. The
 communications staff write alerts from their templates. Customer
@@ -26,15 +30,17 @@ and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
 ## Questions, in the order asked
 
 1. What is late right now, and where is that bus?
-2. Will a late bus make its next trip?
-3. Which disruptions are in force today?
-4. Where does this detour go: which stops does it skip, and what
+2. Which disruptions are in force today?
+3. Where does this detour go: which stops does it skip, and what
    path does it take on the streets?
-5. What does the detour do to the trip's path, the boards, and the
+4. What does the detour do to the trip's path, the boards, and the
    trip plans?
-6. Which trips are covered and which are uncovered, and how do I
-   cancel or cover one? (D-15: covered means a vehicle on its block AND an operator holding its run; the operator half waits on the runs layer.)
-7. Have the others working today seen this change?
+5. Which trips are cancelled today, and why? The live feed's cancels
+   and the edit document's cancels are listed as each source gives
+   them (D-213).
+6. What has dispatch noted about this trip, detour, alert, or stop,
+   and what was noted today (D-214)?
+7. Have the others working today seen this change or this note?
 8. Which service alerts are in force, which are upcoming, and which
    have ended?
 9. Which detours, trip cancels, and stop closures have no alert?
@@ -45,12 +51,12 @@ and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
 | # | op(s) | state |
 |---|---|---|
 | 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` yet; a vehicle with no label shows its id (D-10) |
-| 2 | runcut `block_trips` (`live_hash`) | op exists: a trip's live delay at its last stop against its next layover |
-| 3 | divert `list` | op exists (diversions in `rows`, trip cancels in `cancels`) |
-| 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; streets `import` / `snap` / `route` traced route 72's detour along NE 137th Ave on the county roads (2026-11-06) |
-| 5 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | op exists (a diverted trip's line splices the traced detour into its alignment) |
-| 6 | divert `cancel`, `list`, `retire`; board `stop_board` / router `plan` with `edits_hash` | cancel (whole trip, one instance or all, one date) exists: boards list it cancelled (D-100), the router never rides it; cover, hold, swap, partial cancel come later (D-45). Covered / uncovered has no op: the vehicle half (a vehicle on the trip's block) needs a rule for what puts a vehicle on a block before it reports a position, the operator half waits on the runs layer (D-15) |
-| 7 | sync `sync_edits` | op exists; dogfooded on C-TRAN through a restarted store server (2026-11-05); no page writes one |
+| 2 | divert `list` | op exists (diversions in `rows`, trip cancels in `cancels`) |
+| 3 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; streets `import` / `snap` / `route` traced route 72's detour along NE 137th Ave on the county roads (2026-11-06) |
+| 4 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | op exists (a diverted trip's line splices the traced detour into its alignment) |
+| 5 | rt `live` (`canceled: true`), divert `list` (`cancels`) | op exists for both sources. divert `cancel` and `retire` stay for an agency with no CAD (D-213). Partial cancel comes later (D-45) |
+| 6 | none | no op: the notes kind, its log, its writes, and its lists do not exist (D-214) |
+| 7 | sync `sync_edits`; the notes log | sync op exists; dogfooded on C-TRAN through a restarted store server (2026-11-05); no page writes one. Notes wait on row 6 |
 | 8 | alerts `list` | op exists; the long-open rule is set by trying it on C-TRAN's alerts (D-207) |
 | 9 | alerts `gaps` | op exists (edits and suspended stops) |
 | 10 | alerts `fill`, `validate`, `put`, `end`, `flags`; rt `encode_alerts`, `read_alerts`, `live`; board `stop_board` | op exists; the server keeps the alerts (`POST /service-alerts`); `read_alerts` brings the existing app's alerts across |
@@ -62,8 +68,12 @@ and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
   host names its keep-set (`keep`) when its documents change.
 - **The edit document is shared state.** Retire is the tombstone,
   and every next document is cap-divert's answer.
-- **Reading needs no role.** Anyone can read the disruptions and the
-  alerts. Writing needs the write role, and an alert has no review
+- **Notes replace dispatch's email** (D-214). A note names a trip
+  instance, a detour or cancel record, an alert, or a stop. Anyone
+  can read notes, and they never reach riders. The workspace lists
+  today's notes, newest first. The UI says that notes are kept.
+- **Reading needs no role.** Anyone can read the disruptions, the
+  notes, and the alerts. Writing needs the write role, and an alert has no review
   step (D-207).
 - **The alerts list is the agency's one list** (D-207): in force,
   upcoming, and ended. Long-open alerts are visible in it; the rule
@@ -95,6 +105,6 @@ and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
 - The UI lands per step 8 with `e2e/ui-disruptions.spec.mjs`, and
   this file is deleted, or edited down to its blocked questions.
 - A dogfood session on C-TRAN walks every control. A dispatcher
-  draws a detour and writes its alert. A communications writer
-  writes an alert from a template. Customer service reads both
-  without signing in.
+  draws a detour, writes its alert, and notes a cancelled trip. A
+  communications writer writes an alert from a template. Customer
+  service reads all three without signing in.

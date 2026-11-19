@@ -81,7 +81,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [ui-disruptions.md](ui-disruptions.md) | running today's service through disruptions and telling riders: late buses, detours drawn and proposed, cancels, covered trips, the agency's service alerts and what has none |
+| [ui-disruptions.md](ui-disruptions.md) | running today's service through disruptions and telling riders: late buses, detours drawn and proposed, today's cancels, internal notes, the agency's service alerts and what has none |
 
 ### The documents
 

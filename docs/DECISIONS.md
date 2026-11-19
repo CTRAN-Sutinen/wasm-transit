@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-212**.
+- IDs are never reused; the next new decision is **D-215**.
 
 ## Summary
 
@@ -70,7 +70,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-11 | Does editing a shared alignment change every pattern on it? | decided | nothing |
 | D-12 | What headsign does a new trip get? | encoded | nothing |
 | D-14 | Does the proposal comparison collect public responses? | decided | nothing |
-| D-15 | What makes a trip "covered"? | decided | the operator half: the runs layer |
+| D-15 | What makes a trip "covered"? | replaced by D-212 | nothing |
 | D-16 | Where does the runs layer live? | encoded | nothing |
 | D-17 | What does "the last bus" mean with no deadline? | encoded | nothing |
 | D-18 | How do live delays meet a diverted trip? | encoded | nothing |
@@ -265,6 +265,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-209 | Are service alerts and disruptions one UI? | decided; not built | nothing |
 | D-210 | What does an alert template fill in? | decided; built | nothing |
 | D-211 | How is the service alerts document shaped? | encoded | nothing |
+| D-212 | Is a trip's coverage this repo's answer? | decided; built | nothing |
+| D-213 | Where does the disruptions UI read today's cancels? | decided; not built | nothing |
+| D-214 | Can dispatch keep internal notes here? | decided; not built | nothing |
 
 ## The trip model
 
@@ -2084,7 +2087,7 @@ Blocks: nothing.
 ## Live operations
 
 ### D-15 — What makes a trip "covered"?
-State: Decided.
+State: Replaced by D-212 (2026-11-19).
 Answer: 2026-11-05 — "you need both": a trip is covered only when a vehicle is on its block AND an operator holds its run. A trip missing either is uncovered, and the screen says which half is missing. Cancel (D-45) also marks a trip uncovered.
 Context: the disruptions UI asks which trips are covered and which
 are uncovered. The bus knows vehicles only through blocks and live
@@ -2096,11 +2099,14 @@ Options:
   kinds (QAF-36).
 - A trip is covered when an operator holds its run. This needs the
   runs layer (`docs/ROADMAP.md` 7) and workforce data.
-Blocks: the operator half waits on the runs layer and workforce data (`docs/ROADMAP.md` 7); the vehicle half is free to build.
+Blocks: nothing. D-212 takes coverage out of this repo.
 
 ### D-45 — Which dispatcher edits does the edit document carry beyond the diversion?
 State: Decided.
 Answer: 2026-11-05 — cancel (whole trip) first: a cancelled trip shows on boards as cancelled and the router never rides it. Partial cancel, cover, hold and swap come later.
+2026-11-19 — cover, hold, and swap leave the later set. They are the
+dispatcher's day, which CAD/AVL holds (D-122, D-212). Partial cancel
+stays, because riders see it.
 Why: `docs/architecture/crates.md`, Why, "A cancelled trip is not a row".
 Blocks: nothing.
 Pins: `crates/transit-sync` (the cancel payload's laws, the merge
@@ -2337,6 +2343,59 @@ Pinned by: transit-alerts `alerts_law_test`; transit-rt
 (`encode_alerts_writes_a_feed_that_live_reads_back`,
 `read_alerts_reads_a_feed_into_the_document`).
 Blocks: nothing. A change rewrites those laws.
+
+### D-212 — Is a trip's coverage this repo's answer?
+State: Decided; built (the disruptions unit no longer asks it).
+Answer: 2026-11-19 — no. The user agreed that vehicle assignments and
+block coverage "are more properly a part of a CAD/AVL system". It
+replaces D-15. The disruptions UI does not ask which trips are covered,
+and does not ask whether a late bus makes its next trip. Cover, hold,
+and swap leave D-45's later set.
+Why: `docs/architecture/adjacent-systems.md`, Why, "Coverage is the
+adjacent systems' answer".
+Pinned by: `docs/units/ui-disruptions.md` (its questions).
+Blocks: nothing.
+
+### D-213 — Where does the disruptions UI read today's cancels?
+State: Decided; not built.
+Answer: 2026-11-19 — from the live feed: "gtfs-rt has cancelled
+trips". CAD/AVL publishes them, so a dispatcher does not enter them
+again here.
+Context: rt `live` marks a trip instance the feed cancels
+(`canceled: true`). The edit document also carries cancels (D-45).
+The UI lists both, each as its source gives it, and no rule picks a
+winner. On rider boards the live feed's cancel stays dropped (D-73).
+divert `cancel` stays. It serves an agency with no CAD, and a CAD that
+writes its cancels through the receive path
+(`docs/architecture/adjacent-systems.md`, rule 4).
+Pinned by: none yet (`docs/units/ui-disruptions.md`).
+Blocks: nothing.
+
+### D-214 — Can dispatch keep internal notes here?
+State: Decided; not built.
+Answer: 2026-11-19 — yes. Dispatchers "add internal notes". Today they
+use email, and "ideally this would obsolete that". "Internal" means
+"not publish in a gtfs alert". Anyone with the write role can write a
+note: "i see no reason why anyone with the role shouldn't be able to
+write the note".
+Context: encoded as follows when it is built.
+- A note is the agency's own record. CAD/AVL does not hold it.
+- A note names its target: a trip instance (trip, service date,
+  start, with its `network_hash`), a detour or cancel record, an alert,
+  or a stop. A trip instance that the live feed cancels is a target.
+- A note never goes into a GTFS-rt feed or a rider UI. Anyone can read
+  a note, as anyone can read the disruptions and the alerts.
+- Notes are their own document kind, kept in their own log. They never
+  enter the edit document, the merge, the boards, or the router.
+- A note is never deleted. A correction is a new state of the note,
+  and the log keeps the earlier text. The UI says that notes are kept.
+- To replace email, the workspace lists today's notes across all
+  targets, newest first. Notes are flat, with no replies. Sending
+  notes out by email or chat is not part of this decision.
+- Which crate and capability own the notes kind is open. The lean is a
+  small new capability, not cap-divert.
+Pinned by: none yet (`docs/units/ui-disruptions.md`).
+Blocks: nothing.
 
 ## Geography
 

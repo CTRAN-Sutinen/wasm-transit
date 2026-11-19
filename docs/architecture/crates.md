@@ -871,7 +871,7 @@ Each entry covers one choice that other code depends on. The heading names the c
 ### A cancelled trip is not a row (`TripCancel`, `LiveDay::runs`, the board and the router)
 - **Holds:** the edit document carries whole-trip cancels beside diversions. A trip that a dispatcher cancels shows on boards as cancelled and is never ridden.
 - **Holds:** a trip that the live feed cancels or deletes, or a stop that it skips, is no row on any board, with no mark and no note. The router never boards or alights there.
-- **Because:** cancel is a dispatcher's first answer to a late trip, so it lands first. Partial cancel, cover, hold, and swap each need a meaning on every reader. A live cancellation shown at its scheduled time misled riders. The user chose to drop it silently.
+- **Because:** cancel is a dispatcher's first answer to a late trip, so it lands first. Partial cancel needs a meaning on every reader. Cover, hold, and swap are not edits: they are the dispatcher's day, which CAD/AVL holds (D-212). A live cancellation shown at its scheduled time misled riders. The user chose to drop it silently.
 - **Rejected:** the full dispatcher set at once; showing a live cancel marked, or noting it on the group.
 - **Decided:** D-45, D-73 (the shape: D-100..D-102).
 
