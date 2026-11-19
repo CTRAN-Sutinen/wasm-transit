@@ -113,7 +113,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "rt",
         file: "module_rt.wasm",
-        ops: &["decode", "trip_progress", "late_trips", "live", "encode_alerts"],
+        ops: &["decode", "trip_progress", "late_trips", "live", "encode_alerts", "read_alerts"],
         documents: &["network", "boundary", "rt", "live", "service_alerts"],
         consumes: &[("network", "network")],
         // The gtfs-rt payload: an ephemeral document (polled every
@@ -2442,6 +2442,18 @@ fn example_for(
             (
                 json!({ "op": "log_document", "kind": "service_alerts", "records": records }),
                 json!({ "ok": { "op": "log_document", "document_hash": cap_abi::canonical_hash(&alerts).ok()?, "document": cap_abi::canonical_bytes(&alerts).ok()? } }),
+            )
+        }
+        ("rt", "read_alerts") => {
+            // The fixture alerts' feed read back into the document.
+            let ctx = net?;
+            let alerts = fixture_alerts().checked().ok()?;
+            let bytes = transit_rt::encode_alerts(ctx.derived_network(), &alerts, ALERTS_NOW).bytes;
+            let read = transit_rt::read_alerts(ctx.derived_network(), &bytes).ok()?;
+            (
+                json!({ "op": "read_alerts", "network_hash": ctx.network_hash, "bytes": bytes }),
+                json!({ "ok": { "op": "read_alerts", "alerts_hash": cap_abi::canonical_hash(&read.alerts).ok()?, "alerts": read.alerts,
+                                "skipped": read.skipped, "dropped": read.dropped } }),
             )
         }
         ("rt", "encode_alerts") => {

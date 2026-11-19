@@ -268,6 +268,8 @@ agency's own service alerts. `encode_alerts` writes the service alerts
 document (cap-alerts' kind) as an Alerts feed, and registers it as an
 rt snapshot under the content hash of its bytes. So `live` reads the
 agency's alerts by that hash, as a rider's app reads the feed.
+`read_alerts` is the inverse: it reads an Alerts feed into the
+document, so another app's alerts come across.
 
 ### cap-board
 

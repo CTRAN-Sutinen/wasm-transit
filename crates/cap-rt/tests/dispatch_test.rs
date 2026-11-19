@@ -498,3 +498,40 @@ fn encode_alerts_writes_a_feed_that_live_reads_back() {
     assert_eq!(live.alerts[0].header, "Route 40 detour");
     assert_eq!(live.alerts[0].scopes[0].direction.as_deref(), Some("1"));
 }
+
+/// read_alerts is encode_alerts' inverse: a feed read back registers the
+/// document under the hash the kernel's load answers for it.
+#[test]
+fn read_alerts_reads_a_feed_into_the_document() {
+    let (network_hash, _) = load_fixture();
+    let doc = serde_json::json!({ "kind": "service_alerts", "schema_version": 1, "alerts": {
+        "a1": { "status": "published", "header": [{ "text": "Route 10 detour" }], "informed": [{ "route": "10" }] }
+    }});
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_json(&serde_json::json!({ "op": "load_service_alerts", "alerts": doc }).to_string())).unwrap();
+    let alerts_hash = loaded["ok"]["alerts_hash"].as_str().unwrap().to_string();
+    let Response::EncodeAlerts { feed_b64, .. } =
+        dispatch(Request::EncodeAlerts { network_hash: network_hash.clone(), alerts_hash: alerts_hash.clone(), timestamp: 0 }).unwrap()
+    else { panic!("encode_alerts") };
+    let bytes = base64_decode(&feed_b64);
+    let Response::ReadAlerts { alerts_hash: read_hash, skipped, dropped, .. } =
+        dispatch(Request::ReadAlerts { network_hash: network_hash.clone(), bytes }).unwrap()
+    else { panic!("read_alerts") };
+    assert_eq!(read_hash, alerts_hash);
+    assert!(skipped.is_empty() && dropped.is_empty());
+    assert!(dispatch(Request::ReadAlerts { network_hash, bytes: b"garbage".to_vec() }).is_err());
+}
+
+fn base64_decode(text: &str) -> Vec<u8> {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let (mut buf, mut bits) = (0u32, 0);
+    for c in text.bytes().filter(|c| *c != b'=') {
+        buf = (buf << 6) | A.iter().position(|a| *a == c).unwrap() as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    out
+}

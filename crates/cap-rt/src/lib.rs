@@ -129,6 +129,11 @@ pub enum Request {
         #[ts(type = "number")]
         timestamp: u64,
     },
+    /// A GTFS-rt Alerts feed (`bytes`) read into the service alerts
+    /// document over the network: the inverse of `encode_alerts`. The
+    /// document is registered under its canonical hash. Each entity
+    /// and each alert that cannot be read as written is named.
+    ReadAlerts { network_hash: String, bytes: Vec<u8> },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -144,6 +149,12 @@ pub enum Response {
     /// also the rt snapshot's hash, and each informed entity it could
     /// not write.
     EncodeAlerts { rt_hash: String, feed_b64: String, skipped: Vec<transit_rt::SkippedEntity> },
+    ReadAlerts {
+        alerts_hash: String,
+        alerts: cap_abi::kernel::ServiceAlerts,
+        skipped: Vec<transit_rt::SkippedEntity>,
+        dropped: Vec<transit_rt::DroppedAlert>,
+    },
 }
 
 /// The boundary a join pairs rt sequences by: the registered one, or
@@ -216,6 +227,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let encoded = transit_rt::encode_alerts(&network, &alerts, timestamp);
             let (rt_hash, _) = RT.register_bytes(&encoded.bytes)?;
             Ok(Response::EncodeAlerts { rt_hash, feed_b64: transit_codec::base64_encode(&encoded.bytes), skipped: encoded.skipped })
+        }
+        Request::ReadAlerts { network_hash, bytes } => {
+            let network = NETWORK.require(&network_hash)?;
+            let read = transit_rt::read_alerts(&network, &bytes).map_err(|e| e.to_string())?;
+            let (alerts_hash, alerts) = SERVICE_ALERTS.register(read.alerts)?;
+            Ok(Response::ReadAlerts { alerts_hash, alerts: (*alerts).clone(), skipped: read.skipped, dropped: read.dropped })
         }
     }
 }

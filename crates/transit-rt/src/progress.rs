@@ -97,7 +97,7 @@ fn predicted(scheduled: Option<u32>, delay: Option<i32>) -> Option<u32> {
 }
 
 /// "HH:MM:SS" → seconds.
-fn parse_time(text: &str) -> Option<u32> {
+pub(crate) fn parse_time(text: &str) -> Option<u32> {
     let mut parts = text.trim().split(':');
     let (h, m, s) = (parts.next()?, parts.next()?, parts.next()?);
     Some(h.parse::<u32>().ok()? * 3600 + m.parse::<u32>().ok()? * 60 + s.parse::<u32>().ok()?)

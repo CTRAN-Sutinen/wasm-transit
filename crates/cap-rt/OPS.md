@@ -13,7 +13,7 @@ It mints the live document. The live document is the snapshot resolved against t
 
 An rt trip id is a model trip id. The capability resolves it once, here.
 
-It also writes the agency's service alerts document as an Alerts feed (`encode_alerts`).
+It also writes the agency's service alerts document as an Alerts feed (`encode_alerts`), and reads an Alerts feed into the document (`read_alerts`).
 
 Assemble this capability for riders (live boards) and dispatchers (the operation view) alike.
 
@@ -118,3 +118,15 @@ The feed is a full dataset (`FULL_DATASET`) at `timestamp`, the host's clock in 
 - A direction with no GTFS code cannot be written as the author meant it. The entity is left out and named in `skipped`, and never widened to the whole route. An alert left with no entity is not written.
 
 The same document and timestamp give the same bytes. The answer is the bytes (`feed_b64`) under their content hash (`rt_hash`). The feed is also registered as an rt snapshot under that hash, so `live` with `alerts_hash` reads it at once, as a rider's app would.
+
+## read_alerts
+
+Read a GTFS-rt Alerts feed (`bytes`) into the service alerts document over the network. It is the inverse of `encode_alerts`, and the path that brings another app's alerts across.
+
+- Each alert is `published`, under its entity id.
+- Each text keeps every translation. An empty language is no language.
+- The communication periods are the feed's, else its deprecated active periods. The impact periods are the feed's.
+- An entity that names only the agency is the whole agency. A `direction_id` maps to the route's model direction by the code the export writes. A trip keeps its start date and start time as its instance's date and start.
+- What cannot be read as written is named, never guessed. An entity is skipped (`skipped`) when its direction has no route or no such direction, its trip has no id, or a date, time, or route type cannot be read. An alert is left out (`dropped`) when no entity is left or it has no header.
+
+The document is registered under its canonical hash (`alerts_hash`), the hash the kernel's `load_service_alerts` answers. Reading back an encoded document gives its published alerts not yet ended. Garbage bytes give an error outcome, never a trap.

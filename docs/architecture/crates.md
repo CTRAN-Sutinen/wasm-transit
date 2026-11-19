@@ -355,6 +355,12 @@ prost types from the official GTFS-rt proto, and the joins over the network.
 - Each text keeps every translation. A direction is the GTFS code that the export writes. A direction with no code is left out and named, never widened to the whole route.
 - Decoding the feed and resolving it gives back the authored alerts in force (tests/encode_law_test).
 
+**The alerts read** (`read_alerts`), the inverse of the encode.
+- Input: a GTFS-rt Alerts feed and the network.
+- Output: the service alerts document. Each alert is published, under its entity id, with every translation (an empty language is none), its periods (the deprecated active period standing in for the communication period), and its entities in the network's ids. A direction maps to the route's model direction by the export's code.
+- What cannot be read as written is named, never guessed: an entity (`skipped`) or a whole alert with no entity left or no header (`dropped`).
+- Reading back an encoded document gives its published alerts not yet ended (tests/encode_law_test). It is how another app's alerts come across: C-TRAN's own feed reads into the document and writes back as the same alerts in force.
+
 ## transit-live
 
 The live document: one rt moment in model vocabulary. It is pure data and has no GTFS layer (arch gate). cap-rt mints it and cap-board reads it. No host computes a delay.
@@ -678,7 +684,7 @@ The service alerts capability: what is the agency telling riders? transit-alerts
 - `gaps` gives what is in force that no alert explains, over the edit document and the stops document.
 - `validate_templates`, `put_template`, and `fill` are the templates: what a write must pass, one template placed, and one template written out over the network.
 
-cap-rt's `encode_alerts` writes the document as an Alerts feed.
+cap-rt's `encode_alerts` writes the document as an Alerts feed, and `read_alerts` reads one into it.
 
 ## cap-log
 
@@ -845,9 +851,9 @@ Each entry covers one choice that other code depends on. The heading names the c
 - **Rejected:** events on the stop (it mixes the work into the stop's facts); a built-in list of utilities (one agency's list, not the format's).
 - **Decided:** D-159.
 
-### A service alert is its own record, in the network's ids (transit-alerts, cap-alerts, rt `encode_alerts`)
+### A service alert is its own record, in the network's ids (transit-alerts, cap-alerts, rt `encode_alerts`, `read_alerts`)
 - **Holds:** an alert is a record of its own, in a document of its own, by id. It is not a payload of the edit document: the board and the router patch the day from edits, and an alert changes no service.
-- **Holds:** an alert names what it is about in the network's ids. GTFS-rt is its serialization, and transit-rt writes it as an Alerts feed. Decoding that feed gives back the authored alerts.
+- **Holds:** an alert names what it is about in the network's ids. GTFS-rt is its serialization: transit-rt writes it as an Alerts feed and reads a feed into it. Each direction gives back the other.
 - **Holds:** an alert keeps every translation of its texts. The live document carries one (D-20).
 - **Holds:** there is no review step. A person with the write role publishes at once, and the log records who wrote what.
 - **Holds:** an alert explains a disruption by naming it. Nothing writes an alert from a detour, a cancel, or a closed stop. The gap list shows what no alert explains.

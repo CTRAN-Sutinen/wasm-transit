@@ -1,4 +1,5 @@
-//! The service alerts document written as a GTFS-rt Alerts feed.
+//! The service alerts document written as a GTFS-rt Alerts feed, and an
+//! Alerts feed read into the document.
 //!
 //! GTFS-rt is the alerts' serialization, as GTFS is the network's. The
 //! feed is a full dataset of the published alerts not yet ended at the
@@ -177,4 +178,126 @@ fn severity(s: AlertSeverity) -> alert::SeverityLevel {
         AlertSeverity::Warning => P::Warning,
         AlertSeverity::Severe => P::Severe,
     }
+}
+
+// ---------------------------------------------------------------------
+// Reading an Alerts feed into the document
+// ---------------------------------------------------------------------
+
+/// A feed read into the service alerts document: the document, each
+/// informed entity it could not read as written, and each alert it left
+/// out.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadAlerts {
+    pub alerts: ServiceAlerts,
+    pub skipped: Vec<SkippedEntity>,
+    pub dropped: Vec<DroppedAlert>,
+}
+
+/// An alert left out of the document, and why: no entity left, or no
+/// header. A write would refuse it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DroppedAlert {
+    pub alert: String,
+    pub reason: String,
+}
+
+/// An Alerts feed read into the service alerts document over the
+/// network: the inverse of [`encode_alerts`]. Each alert is published,
+/// under its entity id, with every translation (an empty language is
+/// none), its communication periods (else the deprecated active
+/// periods), its impact periods, and its entities in the network's ids.
+/// An entity naming only the agency is the whole agency. A direction
+/// maps to the route's model direction by the export's code. What
+/// cannot be read as written is named, never guessed.
+pub fn read_alerts(network: &Network, bytes: &[u8]) -> crate::Result<ReadAlerts> {
+    let message = crate::decode(bytes)?;
+    let mut doc = ServiceAlerts::default();
+    let (mut skipped, mut dropped) = (Vec::new(), Vec::new());
+    for entity in &message.entity {
+        let Some(alert) = &entity.alert else { continue };
+        let id = entity.id.clone();
+        let view = crate::overview::alert_view(&id, alert);
+        let mut informed = Vec::new();
+        for (i, e) in alert.informed_entity.iter().enumerate() {
+            match read_selector(network, e) {
+                Ok(a) => informed.push(a),
+                Err(reason) => skipped.push(SkippedEntity { alert: id.clone(), entity: i as u32, reason }),
+            }
+        }
+        let header = texts(alert.header_text.as_ref());
+        if informed.is_empty() {
+            dropped.push(DroppedAlert { alert: id, reason: "no informed entity could be read".into() });
+            continue;
+        }
+        if !header.iter().any(|t| !t.text.trim().is_empty()) {
+            dropped.push(DroppedAlert { alert: id, reason: "no header text".into() });
+            continue;
+        }
+        doc.alerts.insert(
+            id,
+            transit_alerts::ServiceAlert {
+                status: AlertStatus::Published,
+                cause: view.cause,
+                effect: view.effect,
+                severity: view.severity,
+                header,
+                description: texts(alert.description_text.as_ref()),
+                url: texts(alert.url.as_ref()),
+                communication: view.communication,
+                impact: view.impact,
+                informed,
+                ..Default::default()
+            },
+        );
+    }
+    Ok(ReadAlerts { alerts: doc, skipped, dropped })
+}
+
+fn texts(text: Option<&TranslatedString>) -> Vec<AlertText> {
+    text.map(|t| {
+        t.translation
+            .iter()
+            .map(|x| AlertText { lang: x.language.clone().filter(|l| !l.is_empty()), text: x.text.clone() })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+fn read_selector(network: &Network, e: &EntitySelector) -> Result<AlertEntity, String> {
+    let route_type = match e.route_type {
+        None => None,
+        Some(t) => Some(u16::try_from(t).map_err(|_| format!("route_type {t} is not a GTFS route type"))?),
+    };
+    let direction = match (e.direction_id, &e.route_id) {
+        (None, _) => None,
+        (Some(_), None) => return Err("a direction_id with no route_id names nothing (the GTFS-rt spec)".into()),
+        (Some(code), Some(r)) => {
+            let route = network.routes.get(r).ok_or_else(|| format!("route {r:?} is not in the network, so direction_id {code} names nothing"))?;
+            Some(transit_codec::model_direction(route, code).ok_or_else(|| format!("route {r:?} has no direction with direction_id {code}"))?.clone())
+        }
+    };
+    let (trip, date, start_secs) = match &e.trip {
+        None => (None, None, None),
+        Some(t) => {
+            let trip = t.trip_id.clone().ok_or("a trip with no trip_id names nothing")?;
+            let date = match &t.start_date {
+                None => None,
+                Some(d) => Some(
+                    chrono::NaiveDate::parse_from_str(d, "%Y%m%d").map_err(|_| format!("start_date {d:?} is not YYYYMMDD"))?.format("%Y-%m-%d").to_string(),
+                ),
+            };
+            let start = match &t.start_time {
+                None => None,
+                Some(s) => Some(crate::progress::parse_time(s).ok_or_else(|| format!("start_time {s:?} is not HH:MM:SS"))?),
+            };
+            (Some(trip), date, start)
+        }
+    };
+    let entity = AlertEntity { route: e.route_id.clone(), route_type, direction, stop: e.stop_id.clone(), trip, date, start_secs, ..Default::default() };
+    if entity == AlertEntity::default() && e.agency_id.is_none() {
+        return Err("the entity names nothing".into());
+    }
+    Ok(entity)
 }

@@ -2222,7 +2222,8 @@ Options:
   seconds, and the host converts what a person enters.
 - The module converts: time zone rules go into the module, which
   makes it bigger.
-Pinned by: none yet (`docs/units/service-alerts.md`).
+Pinned by: transit-alerts stores Unix seconds (`ServiceAlert`); the
+host's conversion is the page's (`docs/units/ui-disruptions.md`).
 Blocks: nothing.
 
 ### D-206 — Who writes service alerts?
@@ -2234,7 +2235,7 @@ Context: the dispatcher's day is out of scope (D-122). An alert is a
 record in the agency's record, written through the receive path. A
 dispatcher who writes one is a person using this repo's page, not the
 dispatcher's day moved into the repo.
-Pinned by: none yet (`docs/units/service-alerts.md`).
+Pinned by: none yet (the page: `docs/units/ui-disruptions.md`).
 Blocks: nothing. How the two teams share the page is D-207.
 
 ### D-207 — How do dispatch and communications staff share the alerts workspace?
@@ -2256,7 +2257,9 @@ stops document with no alert): "a gap list would be great."
 Context: the existing app's feed (`gtfs-rt.c-tran.com/Alerts`,
 2026-11-19) holds 16 alerts. Each names its stops paired with each
 chosen route, or a route alone. 12 of the 16 have no end time.
-Pinned by: none yet (`docs/units/service-alerts.md`).
+Pinned by: transit-alerts `alerts_law_test` (no review step; the
+list; the gap list, with suspended stops); the page:
+`docs/units/ui-disruptions.md`.
 Blocks: nothing. The rule that makes a long-open alert visible is set
 by trying it on real data.
 
@@ -2301,7 +2304,7 @@ Blocks: nothing.
 
 ### D-211 — How is the service alerts document shaped?
 State: Encoded provisionally.
-Context: `docs/units/service-alerts.md` set the alerts document beside
+Context: the service alerts work set the alerts document beside
 the stops and stop requests documents. Building it left these choices
 open. Each is encoded.
 Options (each encoded, with the other answer):
@@ -2331,7 +2334,8 @@ Options (each encoded, with the other answer):
   locale"); it stays for now, and the details are addressed later.
 Pinned by: transit-alerts `alerts_law_test`; transit-rt
 `encode_law_test`; cap-alerts `dispatch_test`; cap-rt `dispatch_test`
-(`encode_alerts_writes_a_feed_that_live_reads_back`).
+(`encode_alerts_writes_a_feed_that_live_reads_back`,
+`read_alerts_reads_a_feed_into_the_document`).
 Blocks: nothing. A change rewrites those laws.
 
 ## Geography

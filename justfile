@@ -1009,7 +1009,7 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     set -e
     rm -rf server/kodata
     mkdir -p server/kodata/pkg server/kodata/dist-ui
-    for cap in sync network streets authz plans migrate stops requests log; do
+    for cap in sync network streets authz plans migrate stops requests alerts log; do
         cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
     done
     # The kind table and the schemas it names (-kinds; D-202): the

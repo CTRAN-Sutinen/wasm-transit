@@ -191,7 +191,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
     Ok(overview)
 }
 
-fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> AlertView {
+pub(crate) fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> AlertView {
     use crate::gtfs_rt::alert::{Cause, Effect, SeverityLevel};
     use transit_live::{AlertCause as C, AlertEffect as E, AlertPeriod, AlertSeverity as S};
     let periods = |ranges: &[crate::gtfs_rt::TimeRange]| {

@@ -361,7 +361,8 @@ transit-dispatch the operator's day library: the patched materialized day (diver
                  documents (the watchlist and its chain, the device records)
 transit-rt       GTFS-rt prost types and the joins over the network. An rt trip id is a
                  model trip id. A trip instance is (trip, service date, start). It
-                 also writes the service alerts document as an Alerts feed.
+                 also writes the service alerts document as an Alerts feed, and
+                 reads one into it.
 transit-live     the live document: rt in the model's vocabulary, each instance's service
                  date, the on-time window, and what does not run (a cancelled trip, a
                  skipped stop). Pure.
@@ -402,7 +403,7 @@ transit-alerts   the service alerts document and the alert templates document (D
                  what a person is told about one that passes, ending an alert, the
                  agency's list, the gap list (what is in force that no alert
                  explains), and a template's blanks filled. Pure. transit-rt writes
-                 it as a GTFS-rt Alerts feed.
+                 it as a GTFS-rt Alerts feed and reads one into it.
 transit-runs     the runs layer beside the network: the work-rule document (recovery,
                  interlining for each route pair, run rules, pay; every rule optional),
                  the recovery a wait requires and its slack, and the suggested blocking.

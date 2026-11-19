@@ -82,7 +82,6 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [ui-disruptions.md](ui-disruptions.md) | running today's service through disruptions and telling riders: late buses, detours drawn and proposed, cancels, covered trips, the agency's service alerts and what has none |
-| [service-alerts.md](service-alerts.md) | the existing alerts app's feed read into the service alerts document, and the encode checked against C-TRAN's own alerts feed |
 
 ### The documents
 

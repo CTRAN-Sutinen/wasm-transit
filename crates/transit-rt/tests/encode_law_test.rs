@@ -233,3 +233,97 @@ fn an_entity_that_cannot_be_written_is_named_not_widened() {
     let msg = transit_rt::gtfs_rt::FeedMessage::decode(encoded.bytes.as_slice()).unwrap();
     assert_eq!(msg.entity[0].alert.as_ref().unwrap().informed_entity.len(), 1);
 }
+
+// ---------------------------------------------------------------------
+// Reading an Alerts feed into the document: the inverse of the encode.
+// ---------------------------------------------------------------------
+
+proptest! {
+    /// Reading back an encoded document gives the published alerts not
+    /// yet ended, each as authored but for what the feed does not carry
+    /// (the disruptions it explains).
+    #[test]
+    fn reading_the_feed_back_gives_the_published_alerts(
+        alerts in prop::collection::btree_map("[a-d][0-9]", arb_alert(), 0..5),
+        now in 0u64..2100,
+    ) {
+        let (net, _) = network();
+        let doc = ServiceAlerts { alerts, ..Default::default() };
+        let read = transit_rt::read_alerts(&net, &encode_alerts(&net, &doc, now).bytes).unwrap();
+        prop_assert!(read.skipped.is_empty() && read.dropped.is_empty());
+        let want: std::collections::BTreeMap<String, ServiceAlert> = doc
+            .alerts
+            .iter()
+            .filter(|(_, a)| a.status == AlertStatus::Published && !a.ended_by(now))
+            .map(|(id, a)| (id.clone(), ServiceAlert { explains: vec![], ..a.clone() }))
+            .collect();
+        prop_assert_eq!(read.alerts.alerts, want);
+    }
+}
+
+/// A feed as another app writes it: an empty language is no language,
+/// the deprecated active period stands in for the communication period,
+/// the agency names the whole agency, a direction maps to the route's
+/// model direction, and a trip instance keeps its date and start. What
+/// cannot be read as written is named: an entity (a direction with no
+/// route), or a whole alert (no entity left, or no header).
+#[test]
+fn a_feed_another_app_wrote_reads_into_the_document() {
+    use transit_rt::gtfs_rt::{
+        alert, translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader, FeedMessage, TimeRange, TranslatedString,
+        TripDescriptor,
+    };
+    let (net, _) = network();
+    let text = |s: &str, lang: &str| TranslatedString { translation: vec![Translation { text: s.into(), language: Some(lang.into()) }] };
+    #[allow(deprecated)]
+    let entity = |id: &str, informed: Vec<EntitySelector>, header: Option<TranslatedString>| FeedEntity {
+        id: id.into(),
+        alert: Some(Alert {
+            active_period: vec![TimeRange { start: Some(100), end: None }],
+            informed_entity: informed,
+            effect: Some(alert::Effect::NoService as i32),
+            header_text: header,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let feed = FeedMessage {
+        header: FeedHeader { gtfs_realtime_version: "2.0".into(), ..Default::default() },
+        entity: vec![
+            entity(
+                "a1",
+                vec![
+                    EntitySelector { agency_id: Some("1".into()), ..Default::default() },
+                    EntitySelector { route_id: Some("40".into()), direction_id: Some(1), ..Default::default() },
+                    EntitySelector { direction_id: Some(0), ..Default::default() },
+                    EntitySelector {
+                        trip: Some(TripDescriptor { trip_id: Some("t10".into()), start_date: Some("20261119".into()), start_time: Some("08:00:00".into()), ..Default::default() }),
+                        ..Default::default()
+                    },
+                ],
+                Some(text("Closed", "")),
+            ),
+            entity("no-entity", vec![EntitySelector { direction_id: Some(0), ..Default::default() }], Some(text("x", "en"))),
+            entity("no-header", vec![EntitySelector { route_id: Some("10".into()), ..Default::default() }], None),
+        ],
+    };
+    let read = transit_rt::read_alerts(&net, &feed.encode_to_vec()).unwrap();
+    let a = &read.alerts.alerts["a1"];
+    assert_eq!(a.header, vec![AlertText { lang: None, text: "Closed".into() }]);
+    assert_eq!(a.communication, vec![AlertPeriod { start: Some(100), end: None }]);
+    assert_eq!(a.effect, AlertEffect::NoService);
+    assert_eq!(
+        a.informed,
+        vec![
+            AlertEntity::default(),
+            AlertEntity { route: Some("40".into()), direction: Some("1".into()), ..Default::default() },
+            AlertEntity { trip: Some("t10".into()), date: Some("2026-11-19".into()), start_secs: Some(28_800), ..Default::default() },
+        ]
+    );
+    assert_eq!(read.skipped.len(), 2);
+    assert_eq!((read.skipped[0].alert.as_str(), read.skipped[0].entity), ("a1", 2));
+    let dropped: Vec<&str> = read.dropped.iter().map(|d| d.alert.as_str()).collect();
+    assert_eq!(dropped, ["no-entity", "no-header"]);
+    assert!(read.alerts.clone().checked().is_ok());
+    assert!(transit_rt::read_alerts(&net, b"not a feed").is_err());
+}
