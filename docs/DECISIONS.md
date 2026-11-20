@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-222**.
+- IDs are never reused; the next new decision is **D-223**.
 
 ## Summary
 
@@ -273,6 +273,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-217 | How is the notes document shaped? | encoded | nothing |
 | D-218 | Which capability answers what is disrupted on a day? | decided; built | nothing |
 | D-219 | How is a day's disruptions answer shaped? | encoded | nothing |
+| D-222 | Which time does a write sent late carry? | decided; not built | nothing |
 
 ## The trip model
 
@@ -2265,6 +2266,11 @@ team to create templates that automatically fill in form fields with
 standard language."
 2026-11-19 — a gap list for stop closures (a stop suspended in the
 stops document with no alert): "a gap list would be great."
+2026-11-19 — on long-open alerts: "leave it alone, there are plenty of
+reasons why an alert may last a long time, as long as it is visible
+there is no reason to nag the user." The list shows how long each
+alert with no end has been told to riders (`open_secs`), and nothing
+more: no threshold, no flag, no prompt to end it.
 Context: the existing app's feed (`gtfs-rt.c-tran.com/Alerts`,
 2026-11-19) holds 16 alerts. Each names its stops paired with each
 chosen route, or a route alone. 12 of the 16 have no end time.
@@ -2272,8 +2278,7 @@ Pinned by: transit-alerts `alerts_law_test` (no review step; the
 list); transit-disruptions `disruptions_law_test` (the gap list, with
 suspended stops; D-218); the page:
 `docs/units/ui-disruptions.md`.
-Blocks: nothing. The rule that makes a long-open alert visible is set
-by trying it on real data.
+Blocks: nothing.
 
 ### D-208 — Which alert fields does authoring carry first?
 State: Decided; built.
@@ -4702,4 +4707,31 @@ Options:
 - Offline, with a write failing while the server is away.
 - Offline, with the outbox: writes queue and sync when the server
   answers.
+Blocks: nothing. The work is `docs/units/offline-apps.md`.
+
+### D-222 — Which time does a write sent late carry?
+State: Decided.
+Answer: 2026-11-19 — the server's stamp is the record, and the
+device's time is a claim beside it. The user: "server stamp plus
+device time as a claim, record it." Encoded as:
+- The server stamps each write when it lands. That stamp stays the
+  record's time, as it is today (a note's `at`, a log entry's
+  `at_ms`).
+- A write that waited in the outbox also carries the device's time
+  of the moment the person made it, named as a claim. The server
+  keeps it beside its stamp. It never replaces the stamp, and no
+  rule reads it as the record's time.
+- An op that acts at a time the person chose (an alert ended now)
+  keeps that time in its arguments, as it does today.
+Context: a write that waits through a short outage lands later than
+it was made. A note written at 8:05 that lands at 8:25 shows 8:25.
+The device's clock can be wrong, so it cannot be the record. The
+agency's audit needs both times.
+Options:
+- The server's stamp only: the time a person acted is lost.
+- The device's time as the record: a wrong device clock writes a
+  wrong record.
+- The server's stamp as the record, and the device's time as a claim
+  beside it (chosen).
+Pinned by: none yet (`docs/units/offline-apps.md`).
 Blocks: nothing. The work is `docs/units/offline-apps.md`.

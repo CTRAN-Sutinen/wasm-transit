@@ -55,9 +55,6 @@ a record of who has read a change or a note, and where. sync
 
 ## Other open items
 
-- Long-open alerts: the rule for when an alert counts as long open is
-  set by trying it on C-TRAN's alerts (D-207, QAF-126). C-TRAN's alerts
-  feed answered 403 on 2026-11-19.
 - Dispatch's late list shows a bus twice when its block's next trip is
   also late (QAF-127).
 - Dispatch's notes name their subject by id (QAF-128).

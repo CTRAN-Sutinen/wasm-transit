@@ -278,14 +278,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   disruption, which names it.
   Pin: notes `between` over a note on C-TRAN's feed cancel of trip
   754455, 2026-11-19 at 16:40.
-- **QAF-126 DATA** — C-TRAN's alerts stay open. At 13:31 on
-  2026-11-19, 14 of the 15 alerts in force have no end. They have been
-  open from 9 to 323 days. Two of them name the same closure (Main &
-  33rd, 49 and 58 days). This is the data the long-open rule is set
-  on (D-207). The 2026-11-04 trip updates also skip stops on 21
-  trips. C-TRAN's CAD does not publish detours (D-213).
-  Pin: rt `read_alerts`, then alerts `list` (`open_secs`); rt `live`
-  on `perf-rt-10m/020`.
 
 ## Beyond blocks (runs, work rules)
 
