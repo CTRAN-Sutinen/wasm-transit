@@ -656,6 +656,7 @@ Validation is not here. What a record amounts to on a network is cap-divert's re
 
 The plan-chain capability: which service plan governs a date? transit-plans is the library. The ops are pure and there are no registries.
 - `resolve`, `periods`, and `validate` work over the plan set's metadata.
+- `timeline` answers what a planning page lists (D-228): every plan on the device, then each published pick it does not hold; which are published (a published pick's id, or the deployment's feed); the pick in force; and the chain's periods and issues. A retired pick is no row.
 - `publish`, `retire`, `in_force`, and `in_use` work over the published plan set. `publish`, `retire`, and `in_use` take the host's date.
 - The host owns the plan set and pushes its metadata on each call.
 - `publish` answers the next set's canonical bytes and hash, which the server stores as given.

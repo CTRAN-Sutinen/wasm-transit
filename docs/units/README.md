@@ -52,7 +52,6 @@ work; a group is only a way to find them.
 |---|---|
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
 | [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
-| [integrity.md](integrity.md) | the references between records declared and checked: the writer's check replayed as of what it read, warnings when the world moves, and the transitions that pin |
 
 ### Stops and streets
 
@@ -87,10 +86,9 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [rules-in-ops.md](rules-in-ops.md) | every domain rule in an op, none in a host: what a pick reads of the stops as one op, the rules in the browser hosts, the work order call split in three, and the library edges turned the right way |
 | [server-assembly.md](server-assembly.md) | the server links one assembly, as a UI does, with authz and each import in instances of their own |
 | [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit, like its answers and writes: one poll, a time limit on every read, "none kept" told apart from "failed", and the failure table checked against them |
-| [kind-registration.md](kind-registration.md) | a document kind declared once: the kernel names no kind, one receive op for each kind and one server path for every log, one reader in the engine, and a gate on where a kind's name appears |
+| [kind-registration.md](kind-registration.md) | a document kind declared once: the kernel names no kind, one receive op for each kind and one server path for every log, one reader in the engine, and a gate on where a kind's name appears; the references between records declared and checked, as of what the writer read |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
 
 ### The documents

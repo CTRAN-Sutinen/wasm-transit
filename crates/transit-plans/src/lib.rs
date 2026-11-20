@@ -238,6 +238,85 @@ fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
     plans.iter().filter(|p| p.status == PickStatus::Published).map(PublishedPlan::info).collect()
 }
 
+/// A plan on the planner's device, as a host holds it (D-228): its
+/// own key, its frame's id, name, and pick date, and whether it is the
+/// deployment's feed (production serves it until a pick takes effect).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct DevicePlan {
+    pub key: String,
+    /// The plan frame's id; empty for a plan with no pick identity.
+    pub id: String,
+    pub name: String,
+    pub effective_from: Option<String>,
+    #[serde(default)]
+    pub served: bool,
+}
+
+/// One row of the timeline. `key` is the device's key for the plan, and
+/// absent for a published pick the device does not hold yet.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct TimelineRow {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub key: Option<String>,
+    pub id: String,
+    pub name: String,
+    pub effective_from: Option<String>,
+    /// In production, so read-only: a published pick, or the
+    /// deployment's feed.
+    pub published: bool,
+    /// The device holds the plan's document.
+    pub loaded: bool,
+}
+
+/// What a planning page shows of the chain: the rows, the pick in
+/// force, and the chain's periods and issues over every row with an id.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct Timeline {
+    pub rows: Vec<TimelineRow>,
+    pub in_force: Option<String>,
+    pub periods: Vec<PlanPeriod>,
+    pub issues: Vec<PlanIssue>,
+}
+
+/// The timeline over the plans on a device and the published set
+/// (D-228): every device plan, then each published pick the device does
+/// not hold. A device plan is published when its id is a published
+/// pick's, or when it is the deployment's feed. A retired pick is no
+/// row. The pick in force is the set's, on `today`.
+pub fn timeline(device: &[DevicePlan], set: Option<&PublishedPlans>, today: NaiveDate) -> Result<Timeline, String> {
+    let picks: Vec<&PublishedPlan> = set.map(|s| s.plans.iter().filter(|p| p.status == PickStatus::Published).collect()).unwrap_or_default();
+    let mut rows: Vec<TimelineRow> = device
+        .iter()
+        .map(|d| TimelineRow {
+            key: Some(d.key.clone()),
+            id: d.id.clone(),
+            name: d.name.clone(),
+            effective_from: d.effective_from.clone(),
+            published: (!d.id.is_empty() && picks.iter().any(|p| p.id == d.id)) || d.served,
+            loaded: true,
+        })
+        .collect();
+    for p in picks {
+        if !rows.iter().any(|r| r.id == p.id) {
+            rows.push(TimelineRow { key: None, id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()), published: true, loaded: false });
+        }
+    }
+    let infos: Vec<PlanInfo> = rows
+        .iter()
+        .filter(|r| !r.id.is_empty())
+        .map(|r| PlanInfo { id: r.id.clone(), name: r.name.clone(), effective_from: r.effective_from.clone() })
+        .collect();
+    let in_force = match set {
+        Some(s) => in_force(s, today)?.map(|p| p.id.clone()),
+        None => None,
+    };
+    Ok(Timeline { rows, in_force, periods: periods(&infos), issues: validate(&infos) })
+}
+
 /// The period a pick governs over a published set: from its own date
 /// until the date of the next pick that is not retired. The pick is
 /// placed by its id (any entry the set holds under that id is replaced),

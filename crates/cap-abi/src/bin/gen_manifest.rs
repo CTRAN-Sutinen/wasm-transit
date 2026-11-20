@@ -296,7 +296,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "plans",
         file: "module_plans.wasm",
-        ops: &["resolve", "validate", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "log_document"],
+        ops: &["resolve", "validate", "timeline", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "log_document"],
         documents: &[],
         consumes: &[],
         speaks: &[("plans", &[1]), ("frozen_versions", &[1])],
@@ -3563,6 +3563,26 @@ fn example_for(
             (
                 json!({ "op": "log_document", "kind": "plans", "records": held(&next[0]), "document": held(&next[1]).remove("document") }),
                 json!({ "ok": { "op": "log_document", "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
+            )
+        }
+        ("plans", "timeline") => {
+            // A device holding the fall pick and a draft; the winter
+            // pick is published and not on the device yet.
+            let set: transit_plans::PublishedPlans = serde_json::from_value(json!({
+                "kind": "plans", "schema_version": transit_plans::PUBLISHED_SCHEMA_VERSION,
+                "plans": [
+                    { "id": "fall", "name": "Fall 2026", "effective_from": "2026-10-19", "network_hash": "sha256:…", "status": "published" },
+                    { "id": "winter", "name": "Winter 2027", "effective_from": "2027-01-04", "network_hash": "sha256:…", "status": "published" },
+                ]
+            })).ok()?;
+            let device = vec![
+                transit_plans::DevicePlan { key: "plan-fall".into(), id: "fall".into(), name: "Fall 2026".into(), effective_from: Some("2026-10-19".into()), served: false },
+                transit_plans::DevicePlan { key: "plan-draft".into(), id: "spring".into(), name: "Spring 2027 draft".into(), effective_from: Some("2027-03-01".into()), served: false },
+            ];
+            let t = transit_plans::timeline(&device, Some(&set), chrono::NaiveDate::from_ymd_opt(2026, 11, 13)?).ok()?;
+            (
+                json!({ "op": "timeline", "plans": device, "published": set, "today": "2026-11-13" }),
+                json!({ "ok": { "op": "timeline", "rows": t.rows, "in_force": t.in_force, "periods": t.periods, "issues": t.issues } }),
             )
         }
         ("plans", "periods") => {

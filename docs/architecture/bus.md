@@ -558,6 +558,12 @@ Change it only with the user, and only after you read **Because**. The
 rules above are part of the design too. The entries below explain the
 rules whose reasons are not clear from the rules alone.
 
+### A capability is a documented namespace for one need (`capability!`, `OPS.md`; D-226)
+- **Holds:** a capability is a set of ops, each answering a whole question over documents and a person's choices. It ships with its `OPS.md`, schemas, worked examples, and evidence. Its crate is thin and may link any library. The libraries own the domain and the kinds.
+- **Because:** parity needs a whole question answered in shared code. A wall around each capability's libraries pushed questions that span kinds out to the hosts, where each host wrote its own answer. Law 3 and the extraction pattern already put the domain in libraries.
+- **Rejected:** a capability that a third party implements in place of ours. It is not designed for until a concrete need arises.
+- **Decided:** D-226.
+
 ### One linked module per page, one registry (`assembly!`, `cap_abi::registry::Registry`, `independence.mjs`)
 - **Holds:** a page's capabilities link into one module over one
   registry that the kernel owns. So each document is parsed and held

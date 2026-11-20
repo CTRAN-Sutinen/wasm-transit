@@ -4839,7 +4839,11 @@ whole question is answered in shared code. A wall around each
 capability's libraries pushed questions that span kinds out to the
 hosts. Law 3 and the extraction pattern already put the domain in
 libraries; this states that the capability is the contract over them.
-Pinned by: none yet (`docs/units/rules-in-ops.md`).
+Pinned by: the dispatch tests of the ops that span kinds, each over
+a capability whose crate links another kind's library
+(`crates/cap-stops/tests/dispatch_test.rs`, `crates/cap-disruptions/tests/dispatch_test.rs`,
+`crates/cap-requests/tests/dispatch_test.rs`); the arch gates (`crates/cap-abi/tests/arch_gates_test.rs`,
+capabilities depend on the kernel and libraries).
 Blocks: nothing.
 
 ### D-227 — Does the server link an assembly, as a UI does?
@@ -4876,8 +4880,15 @@ this pick put in place) written in both Go and TypeScript, about six
 other rules in single browser hosts, and about eight Go functions
 that sequence a write's steps between ops. Routing a value unchanged
 (a picked group's members, the walks the router takes) is not a rule.
-Pinned by: none yet (`docs/units/rules-in-ops.md`,
-`docs/units/kind-registration.md`).
+Pinned by: the web gate `status-test-in-host` (`just test`: no host
+tests a record's status); a law test in the owning library and a
+dispatch test for each rule that left a host (`pick_period_law_test.rs`,
+`plan_takes_stops_law_test.rs`, `timeline_law_test.rs`, `stamp_pick_law_test.rs`,
+`requests_law_test.rs`, `disruptions_law_test.rs`, `alerts_law_test.rs`);
+`caps-smoke.mjs` (`read_pick` in an assembly and alone); the `ui-ops`
+gate; the service-change, service-design, stops, and disruptions e2e
+specs. The write sequencing in Go is still open
+(`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-229 — Does the record's integrity encode the domain?
@@ -4901,7 +4912,7 @@ and kept in the owning modules. Two signs that the bet does not pay:
 staff work around refusals (a rule judges plausibility, not
 contradiction), and a kind's states or references ship without their
 rules.
-Pinned by: none yet (`docs/units/integrity.md`).
+Pinned by: none yet (`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-230 — When an adoption breaks a live reference, does it refuse or warn?
@@ -4912,7 +4923,7 @@ live detour, alert, or stop request that names a route or a stop on
 those dates can stop resolving. Adopting is a planning decision with
 known consequences, and the detour or the alert is done again either
 way. A refusal would let one stale alert block a service change.
-Pinned by: none yet (`docs/units/integrity.md`).
+Pinned by: none yet (`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-231 — Does compaction drop a retired record that a live reference names?
@@ -4923,11 +4934,11 @@ it.
 Context: compaction (D-57) is the one removal from a fold that no
 person asks for. If it dropped a record that a live reference names,
 compaction alone would break the reference.
-Pinned by: none yet (`docs/units/integrity.md`).
+Pinned by: none yet (`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-232 — How are references declared, and which stage may name which?
-State: Encoded provisionally. Nothing is built. `docs/units/integrity.md`
+State: Encoded provisionally. Nothing is built. `docs/units/kind-registration.md`
 plans it.
 Context:
 - Each reference field states its target in its kind's schema, with a
@@ -4979,7 +4990,7 @@ Pinned by: none yet.
 Blocks: nothing.
 
 ### D-233 — When does the receive path refuse a write whose reference is broken?
-State: Encoded provisionally. Nothing is built. `docs/units/integrity.md`
+State: Encoded provisionally. Nothing is built. `docs/units/kind-registration.md`
 plans it.
 Context:
 - A write carries the seq it read for each log it depends on. This is
@@ -5028,4 +5039,4 @@ Options:
 - The pick in force today only.
 - Each pick in force while the record was live.
 Blocks: the network references of undated records
-(`docs/units/integrity.md`, step 4).
+(`docs/units/kind-registration.md`, step 8).

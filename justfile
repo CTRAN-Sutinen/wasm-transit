@@ -763,6 +763,13 @@ _host-tests:
         "" \
         "$(grep -rlE 'WebAssembly\.|transit_invoke' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/bus\.worker\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "loads or calls a module outside the bus worker; ask through the engine (src/engine.ts)"
+    # W0e: a host applies no domain rule (D-228; docs/architecture/hosts.md):
+    # it never tests a record's lifecycle status. The ops answer which
+    # plan is published and which stop is retired.
+    ratchet status-test-in-host \
+        "" \
+        "$(grep -rlE 'status\)? *[!=]==? *"(retired|published)"|"(retired|published)" *[!=]==? *[A-Za-z_.]*status' web/src/uis/*/host.svelte.ts | sort | tr '\n' ' ')" \
+        "tests a lifecycle status; ask the op that owns the rule"
     # GENERATED UIs (docs/architecture/generated-uis.md): each
     # src/uis/<id>/ carries its descriptor, its page, and its e2e spec,
     # and owns its host layer: nothing reaches into another UI's

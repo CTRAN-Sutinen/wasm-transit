@@ -20,6 +20,14 @@ Chain validity: unique plan ids, every versioned plan effective-dated, and uniqu
 
 The op reports every violation, tagged by kind. Unversioned plans are standalone and are never flagged.
 
+## timeline
+
+What does a planning page list, and which pick is in force? `timeline` answers every plan on the device (`plans`, each with its key, its frame's id, name, and pick date, and `served` for the deployment's feed), then each published pick the device does not hold.
+
+A device plan is `published` (in production, so read-only) when its id is a published pick's, or when it is `served`. A retired pick is not a row and publishes nothing. A pick the device does not hold has no `key` and is not `loaded`. `published` is the published plan set, if the deployment has one.
+
+The answer also gives `in_force`, the published pick in force on `today` (null when no set, or before the first pick), and the `periods` and `issues` of the chain over every row that has an id. The host routes the rows and keeps its own keys.
+
 ## periods
 
 Every chain member's governing period, derived and sorted by pick date. A period is [effective_from, until the next pick).

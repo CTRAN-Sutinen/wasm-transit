@@ -216,3 +216,26 @@ fn the_documents_round_trip_through_the_log_records() {
     assert_eq!(back["document"].as_str().unwrap(), cap_abi::canonical_bytes(&serde_json::from_value::<cap_plans::FrozenVersions>(frozen["frozen"].clone()).unwrap()).unwrap());
     assert!(dispatch_json(r#"{"op":"log_document","kind":"other","records":{}}"#).contains("error"));
 }
+
+#[test]
+fn the_timeline_answers_rows_the_pick_in_force_and_the_chain() {
+    let published = serde_json::json!({"kind": "plans", "schema_version": 1, "plans": [
+        {"id": "fall", "name": "Fall", "effective_from": "2026-10-19", "network_hash": "sha256:00", "status": "published"},
+        {"id": "winter", "name": "Winter", "effective_from": "2027-01-04", "network_hash": "sha256:00", "status": "published"}]});
+    let ask = |request: serde_json::Value| -> serde_json::Value { serde_json::from_str(&dispatch_json(&request.to_string())).unwrap() };
+    let out = ask(serde_json::json!({"op": "timeline", "today": "2026-11-13", "published": published, "plans": [
+        {"key": "plan-fall", "id": "fall", "name": "Fall", "effective_from": "2026-10-19"},
+        {"key": "plan-draft", "id": "spring", "name": "Draft", "effective_from": "2027-03-01"}]}));
+    let out = &out["ok"];
+    assert_eq!(out["rows"].as_array().unwrap().len(), 3);
+    assert_eq!(out["rows"][0]["published"], true);
+    assert_eq!(out["rows"][1]["published"], false);
+    assert!(out["rows"][2].get("key").is_none() && out["rows"][2]["loaded"] == false);
+    assert_eq!(out["in_force"], "fall");
+    assert_eq!(out["periods"].as_array().unwrap().len(), 3);
+    // without a set, nothing is in force
+    let none = ask(serde_json::json!({"op": "timeline", "today": "2026-11-13", "plans": []}));
+    assert_eq!(none["ok"]["in_force"], serde_json::Value::Null);
+    let bad = ask(serde_json::json!({"op": "timeline", "today": "2026-13-01", "plans": []}));
+    assert!(bad.get("err").is_some() || bad.get("error").is_some(), "{bad}");
+}

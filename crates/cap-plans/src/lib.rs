@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use transit_plans::{
-    FrozenVersion, FrozenVersions, PickStatus, PlanInfo, PlanIssue, PlanPeriod, PublishedPlan, PublishedPlans,
+    DevicePlan, FrozenVersion, FrozenVersions, PickStatus, PlanInfo, PlanIssue, PlanPeriod, PublishedPlan, PublishedPlans, TimelineRow,
 };
 
 /// The plans log's record kinds (D-191): a published pick, and the
@@ -44,6 +44,19 @@ pub enum Request {
     /// Chain validity: unique plan ids, versioned plans
     /// effective-dated, effective dates unique.
     Validate { plans: Vec<PlanInfo> },
+    /// What a planning page lists (D-228): every plan on the device,
+    /// then each published pick it does not hold. A device plan is
+    /// published when its id is a published pick's, or when it is the
+    /// deployment's feed (`served`). The answer also gives the pick in
+    /// force on `today` and the chain's periods and issues over every
+    /// row with an id.
+    Timeline {
+        plans: Vec<DevicePlan>,
+        #[serde(default)]
+        #[ts(optional, as = "Option<PublishedPlans>")]
+        published: Option<Current<PublishedPlans>>,
+        today: String,
+    },
     /// Every chain member's governing period — [effective_from,
     /// until the next pick) — derived, sorted by pick date.
     Periods { plans: Vec<PlanInfo> },
@@ -148,6 +161,7 @@ pub enum Response {
     Resolve { plan: Option<String> },
     Validate { issues: Vec<PlanIssue> },
     Periods { periods: Vec<PlanPeriod> },
+    Timeline { rows: Vec<TimelineRow>, in_force: Option<String>, periods: Vec<PlanPeriod>, issues: Vec<PlanIssue> },
     Publish {
         issues: Vec<PlanIssue>,
         published: Option<PublishedPlans>,
@@ -243,6 +257,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Validate { plans } => {
             Ok(Response::Validate { issues: transit_plans::validate(&plans) })
+        }
+        Request::Timeline { plans, published, today } => {
+            if let Some(p) = &published {
+                spoken(&p.0)?;
+            }
+            let today = parse_date(&today)?;
+            let t = transit_plans::timeline(&plans, published.as_ref().map(|p| &p.0), today)?;
+            Ok(Response::Timeline { rows: t.rows, in_force: t.in_force, periods: t.periods, issues: t.issues })
         }
         Request::Periods { plans } => {
             Ok(Response::Periods { periods: transit_plans::periods(&plans) })
