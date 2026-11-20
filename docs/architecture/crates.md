@@ -409,7 +409,8 @@ The append-only log of the agency's record, kind-agnostic (D-190, D-197). cap-lo
 - An `Entry` (kind `log_entry`) is one write: its place (`log`, `seq`), the writer, the time, the module, the intent (with the writer's idempotency `key`, and the device's `claimed_at_ms` for a write that waited, D-222), and each change `{kind, version, id, before, after}`. A `Checkpoint` (kind `log_checkpoint`) is the fold up to an entry: every record by kind and id with its version, and every key with its entry.
 - `compose` answers the entry for one write from the fold and each touched kind's records. `overlap` names the first record a write changes that an entry its writer did not read changed too (D-189). `apply` applies an entry all or none. `fold` folds stored entries and quarantines what does not read or apply. `revert` answers the changes that write back the states before an entry. A kind whose merge would undo that writes back its own records: `revert_states` gives each record's state now and before, and `revert_with` writes what the kind gives in their place.
 - `document_records`, `split`, `join`, and `assemble` turn a document into records (its collection, and its own record, so fields outside the collection are kept) and back, refusing a record in another version.
-- The record hash is the caller's (cap-log passes the canonical hash), so the crate is pure.
+- `receive` is a write's last step, which cap-log's `compose` and every capability's receive op share (D-228): over a `Write` (the fold, the entry's header, and the entries the writer did not read), the records a write leaves become its entry, or `landed`, `overlap`, or nothing. `Received` is a receive op's whole answer: the entry, or why there is none (`failed`, `refused`, `moved`, `overlap`, `landed`), the documents written (`heads`), and the unknown fields. `Write::landed` answers a key that landed, before the ops run. `OpCall` is one op of a write's intent, as a page sends it.
+- The record hash is the caller's (cap-log and every receive op pass `cap_abi::record_hash`), so the crate is pure.
 
 ## transit-plans
 
@@ -717,6 +718,7 @@ The service alerts capability: what is the agency telling riders? transit-alerts
 - `list` gives the agency's list at a moment.
 - `flags` gives what a person is told about the alerts that pass.
 - `validate_templates`, `put_template`, `templates`, and `fill` are the templates: what a write must pass, one template placed, the menu, and one template written out over the network.
+- `receive` writes the alerts log whole (D-228): the write's ops (`put`, `end`, `put_template`, and the whole documents `validate` and `validate_templates`, each with the head it read) over the documents at the head, then the entry. An older service alerts document comes forward in the op.
 
 cap-rt's `encode_alerts` writes the document as an Alerts feed, and `read_alerts` reads one into it.
 
@@ -727,6 +729,7 @@ The notes capability: what has the agency noted about this? transit-notes is the
 - `write` writes one note, new or edited, stamped with the writer and the time that the host gives. With no document, the first note begins one.
 - `on` gives one target's notes, oldest first.
 - `between` gives the notes written in a time span, newest first.
+- `receive` writes the notes log whole (D-228): each `write` over the document at the head, stamped with the writer and the clock of the entry's header, then the entry.
 - `log_records` and `log_document` turn the document into the notes log's records and back.
 
 ## cap-disruptions
@@ -744,7 +747,7 @@ The log capability: what does this write add to the log, and what does the log h
 - `revert` gives the entry that writes back the states before an entry. A record the entry created leaves the fold (D-198). A record a later entry changed refuses it. Its answer gives each record's state now and before (`states`). A kind's capability may answer other records to write back (`written`), and the host sends them with the revert again.
 - `close_gap` gives the empty entry that closes a gap, with its cause.
 
-The server keeps the disruptions log, the stops log, and the plans log through it ([server.md](server.md)).
+The server keeps the disruptions log, the stops log, and the plans log through it, and folds and reverts every log with it. The alerts log and the notes log are written by their capabilities' receive ops ([server.md](server.md), "One path for a log").
 
 ## cap-author
 

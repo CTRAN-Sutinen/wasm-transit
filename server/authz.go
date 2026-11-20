@@ -515,15 +515,16 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 }
 
 // logPointer is the pointer whose rules govern a log's endpoints:
-// edits for the disruptions log, service_alerts for the alerts log, and
-// the log's own name for the others.
-func logPointer(path string) string {
+// edits for the disruptions log, the first kind's store kind for a log
+// a receive op writes (service_alerts for the alerts log), and the
+// log's own name for the others.
+func (s *server) logPointer(path string) string {
 	name, _, _ := strings.Cut(strings.TrimPrefix(path, "/logs/"), "/")
 	if name == "disruptions" {
 		return "edits"
 	}
-	if name == alertsLogName {
-		return alertsPointer
+	if l := s.keptLog(name); l != nil && len(l.kinds) > 0 {
+		return l.kinds[0].StoreKind
 	}
 	return name
 }
@@ -546,9 +547,10 @@ func (s *server) mayWrite(r *http.Request, pointer string) (bool, string) {
 // log's pointer (edits for the disruptions log, stops for the stops
 // log): an entry names its writer inside its bytes, so the server
 // cannot redact it, and a revert or a closed gap is an auditor's act.
-// POST /logs/<log> of a log a page writes by intent (stops, alerts,
-// notes) is a write: it needs a valid token here, and the write rule of
-// each document an op touches (logwrite.go). With auth
+// POST /logs/<log> of a log a page writes by intent (the stops log, and
+// each log a receive op writes) is a write: it needs a valid token here,
+// and the write rule of each document it writes (logwrite.go,
+// logkinds.go). With auth
 // disabled everything passes through, as for every endpoint.
 func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -568,11 +570,11 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 		}
 		ctx := context.WithValue(r.Context(), identityKey, id)
 		ctx = context.WithValue(ctx, writerKey, id.Sub)
-		if r.Method == http.MethodPost && isIntentWrite(r.URL.Path) {
+		if r.Method == http.MethodPost && s.isIntentWrite(r.URL.Path) {
 			next(w, r.WithContext(ctx))
 			return
 		}
-		if allow, reason := s.authorize(r, id, "audit", logPointer(r.URL.Path)); !allow {
+		if allow, reason := s.authorize(r, id, "audit", s.logPointer(r.URL.Path)); !allow {
 			log.Printf("authz deny: sub=%s audit %s: %s", id.Sub, r.URL.Path, reason)
 			http.Error(w, "forbidden: "+reason, http.StatusForbidden)
 			return
@@ -582,13 +584,11 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// isIntentWrite is whether a POST to this path is a log's intent write.
-func isIntentWrite(path string) bool {
-	switch path {
-	case "/logs/" + stopsLogName, "/logs/" + alertsLogName, "/logs/" + notesLogName:
-		return true
-	}
-	return false
+// isIntentWrite is whether a POST to this path is a log's intent write:
+// the stops log's, or a log a receive op writes.
+func (s *server) isIntentWrite(path string) bool {
+	name, ok := strings.CutPrefix(path, "/logs/")
+	return ok && (name == stopsLogName || s.keptLog(name) != nil)
 }
 
 // pointerNameOf extracts the pointer name from /pointers/{name}[/log].

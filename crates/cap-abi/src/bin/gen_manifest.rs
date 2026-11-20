@@ -339,7 +339,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "alerts",
         file: "module_alerts.wasm",
-        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "templates", "fill", "log_records", "log_document"],
+        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "templates", "fill", "receive", "log_records", "log_document"],
         documents: &["service_alerts", "alert_templates", "network"],
         // The service alerts and alert templates documents are the
         // host's (D-206, D-210): validate answers their canonical bytes
@@ -359,7 +359,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "notes",
         file: "module_notes.wasm",
-        ops: &["validate", "write", "on", "between", "log_records", "log_document"],
+        ops: &["validate", "write", "on", "between", "receive", "log_records", "log_document"],
         documents: &["notes"],
         // The notes document is the host's (D-214): validate answers its
         // canonical bytes and hash, which the kernel's load_notes answers
@@ -1569,6 +1569,27 @@ fn fixture_alerts() -> transit_alerts::ServiceAlerts {
     .expect("the fixture alerts parse")
 }
 
+/// The write a receive op's example runs: the first entry of an empty
+/// log, as the server gives it.
+fn receive_write(log: &str, writer: &str, at_ms: u64) -> transit_log::Write {
+    let header = transit_log::Header {
+        log: log.into(),
+        seq: 1,
+        writer: writer.into(),
+        at_ms,
+        module: format!("cap-{log}@sha256:…"),
+        intent: transit_log::Intent { op: format!("POST /logs/{log}"), key: Some("device-1/1".into()), ..Default::default() },
+    };
+    transit_log::Write { checkpoint: None, header, unread: vec![] }
+}
+
+/// A receive op's answer, as its module writes it.
+fn receive_answer(received: &transit_log::Received) -> Option<serde_json::Value> {
+    let mut answer = serde_json::to_value(received).ok()?;
+    answer["op"] = "receive".into();
+    Some(answer)
+}
+
 /// The span the notes examples ask about: 2026-10-23 in the fixture's
 /// zone (America/Montreal), as Unix seconds.
 const NOTES_DAY: (u64, u64) = (1_792_728_000, 1_792_814_400);
@@ -2610,6 +2631,21 @@ fn example_for(
                 json!({ "ok": { "op": "between", "notes": notes.between(NOTES_DAY.0, NOTES_DAY.1) } }),
             )
         }
+        ("notes", "receive") => {
+            // Dispatch notes the first note of the day in an empty log:
+            // the server stamps it with the verified writer and its clock.
+            let target = transit_notes::NoteTarget::Trip { trip: "t10".into(), date: "2026-10-23".into(), start_secs: 28800 };
+            let text = "No operator. Trip cancelled.";
+            let next = transit_notes::Notes::default().write("n1", target.clone(), text, "dispatch-1", 1_792_752_000).ok()?;
+            let records = transit_log::document_records(&serde_json::to_value(&next).ok()?, "notes", "note", "notes", transit_notes::SCHEMA_VERSION).ok()?;
+            let write = receive_write("notes", "dispatch-1", 1_792_752_000_000);
+            let mut received = transit_log::receive(&write, &records, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e)).ok()?;
+            received.heads.insert("notes".into(), cap_abi::canonical_hash(&next).ok()?);
+            (
+                json!({ "op": "receive", "write": write, "ops": [{ "cap": "notes", "op": "write", "args": { "id": "n1", "target": target, "text": text } }] }),
+                json!({ "ok": receive_answer(&received)? }),
+            )
+        }
         ("notes", "log_records") => {
             let notes = fixture_notes().checked().ok()?;
             let next = transit_log::document_records(&serde_json::to_value(&notes).ok()?, "notes", "note", "notes", transit_notes::SCHEMA_VERSION).ok()?;
@@ -2722,6 +2758,19 @@ fn example_for(
                 json!({ "op": "fill", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "template": "stop-closure",
                         "network_hash": ctx.network_hash, "input": input }),
                 json!({ "ok": { "op": "fill", "filled": filled } }),
+            )
+        }
+        ("alerts", "receive") => {
+            // The first alert, put in an empty alerts log.
+            let alert = fixture_alerts().alerts.values().next()?.clone();
+            let next = transit_alerts::ServiceAlerts::default().put("a1", alert.clone()).checked().ok()?;
+            let records = transit_log::document_records(&serde_json::to_value(&next).ok()?, "alerts", "service_alert", "service_alerts", transit_alerts::ALERTS_VERSION).ok()?;
+            let write = receive_write("alerts", "dispatch-1", ALERTS_NOW * 1000);
+            let mut received = transit_log::receive(&write, &records, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e)).ok()?;
+            received.heads.insert("service_alerts".into(), cap_abi::canonical_hash(&next).ok()?);
+            (
+                json!({ "op": "receive", "write": write, "ops": [{ "cap": "alerts", "op": "put", "args": { "id": "a1", "alert": alert } }] }),
+                json!({ "ok": receive_answer(&received)? }),
             )
         }
         ("alerts", "log_records") => {

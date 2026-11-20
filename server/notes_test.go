@@ -7,7 +7,6 @@ package main
 // and the writes are the notes log's entries.
 
 import (
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -15,18 +14,11 @@ import (
 	"rustwasm/server/store"
 )
 
-const notesWasm = "../web/pkg/cap_notes.wasm"
-
 func TestNotesWritesAreStampedAndLogged(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
-	s.notesWasm = notesWasm
-	t.Cleanup(func() {
-		if s.notesHeld != nil {
-			s.notesHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/notes", s.handleNotes)
+	mux.HandleFunc("/notes", s.handleKeptRoute)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL

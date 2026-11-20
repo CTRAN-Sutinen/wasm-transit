@@ -150,3 +150,80 @@ fn records_stored_at_version_1_assemble_as_version_2() {
     let newer = json!({ "a1": { "version": 3, "value": sample()["alerts"]["a1"] } });
     assert!(err(json!({ "op": "log_document", "kind": "service_alerts", "records": newer })).contains("v3"));
 }
+
+// ---------------------------------------------------------------------
+// receive: the alerts log's write, whole (D-228)
+// ---------------------------------------------------------------------
+
+fn header(seq: u64) -> Value {
+    json!({ "log": "alerts", "seq": seq, "writer": "j.tran", "at_ms": 7_000_000, "module": "cap-alerts@test", "intent": { "op": "POST /logs/alerts" } })
+}
+
+fn alerts_op(op: &str, args: Value) -> Value {
+    json!({ "cap": "alerts", "op": op, "args": args })
+}
+
+fn entry_of(got: &Value) -> Value {
+    serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("no entry: {got}"))).unwrap()
+}
+
+#[test]
+fn receive_puts_and_ends_an_alert_at_the_header_s_clock_in_one_entry() {
+    let ops = [alerts_op("put", json!({ "id": "a1", "alert": sample()["alerts"]["a1"] })), alerts_op("end", json!({ "id": "a1" }))];
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1) }, "ops": ops }));
+    let entry = entry_of(&got);
+    let alert = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "service_alert").expect("the alert changes");
+    assert_eq!(alert["after"]["communication"], json!([{ "start": null, "end": 7000 }]), "ended at the header's clock");
+    let named = ok(json!({ "op": "receive", "write": { "header": header(1) },
+        "ops": [ops[0].clone(), alerts_op("end", json!({ "id": "a1", "at": 5000 }))] }));
+    let alert = entry_of(&named)["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "service_alert").cloned().unwrap();
+    assert_eq!(alert["after"]["communication"], json!([{ "start": null, "end": 5000 }]), "ended when the person ended it");
+    assert!(got["heads"]["service_alerts"].is_string());
+    assert!(got["heads"].get("alert_templates").is_none(), "heads name only the documents the ops wrote: {got}");
+}
+
+#[test]
+fn receive_writes_a_whole_document_over_the_head_it_read_and_answers_moved_otherwise() {
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1) }, "ops": [alerts_op("validate", json!({ "alerts": sample() }))] }));
+    let head = got["heads"]["service_alerts"].as_str().unwrap().to_string();
+    assert_eq!(head, ok(json!({ "op": "validate", "alerts": sample() }))["document_hash"], "the canonical document's identity");
+    let moved = ok(json!({ "op": "receive", "heads": { "service_alerts": head }, "write": { "header": header(1) },
+        "ops": [alerts_op("validate", json!({ "alerts": sample(), "from": "sha256:0" }))] }));
+    assert_eq!(moved["moved"]["current"], head, "{moved}");
+    assert!(moved.get("entry").is_none());
+}
+
+#[test]
+fn receive_brings_an_older_document_forward_and_names_unknown_fields() {
+    let mut v1 = sample();
+    v1["schema_version"] = json!(1);
+    v1["alerts"]["a2"]["explains"] = json!([]);
+    for a in ["a1", "a2"] {
+        v1["alerts"][a]["unheard_of"] = json!(true);
+    }
+    v1["alerts"]["a1"]["explains"] = json!([{ "kind": "edit", "id": "r1" }]);
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1) }, "ops": [alerts_op("validate", json!({ "alerts": v1 }))] }));
+    let doc = entry_of(&got)["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "service_alerts").cloned().expect("the document's own record");
+    assert_eq!(doc["version"], 2, "written in the current version: {doc}");
+    assert_eq!(got["unknown_fields"], json!(["unheard_of"]), "{got}");
+}
+
+#[test]
+fn receive_reads_a_document_with_no_version_as_version_1() {
+    let mut bare = sample();
+    bare.as_object_mut().unwrap().remove("schema_version");
+    bare.as_object_mut().unwrap().remove("kind");
+    for a in ["a1", "a2"] {
+        bare["alerts"][a].as_object_mut().unwrap().remove("explains");
+    }
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1) }, "ops": [alerts_op("validate", json!({ "alerts": bare }))] }));
+    assert!(got["entry"].is_string(), "{got}");
+}
+
+#[test]
+fn receive_answers_a_refused_template_with_no_entry() {
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1) },
+        "ops": [alerts_op("put_template", json!({ "id": "t1", "template": { "name": "", "header": [] } }))] }));
+    assert_eq!(got["refused"]["op"], 0, "{got}");
+    assert!(got.get("entry").is_none());
+}

@@ -38,8 +38,26 @@
           },
           "type": "array"
         },
+        "post": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PostEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its own write route, answered by its log's receive op."
+        },
         "read": {
           "$ref": "#/$defs/Read"
+        },
+        "receive": {
+          "description": "The capability whose `receive` op writes the kind's log (D-228).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "records": {
           "description": "The log's record kinds of its collection.",
@@ -142,6 +160,32 @@
           "type": "string"
         }
       ]
+    },
+    "PostEntry": {
+      "description": "A kind's own write route: the path, the op the request's body is the\narguments of, the answer's field that names the document after the\nwrite, and the body's fields the answer repeats.",
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "echo": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "op": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "op",
+        "answer"
+      ],
+      "type": "object"
     },
     "Read": {
       "description": "Who reads a kind.",

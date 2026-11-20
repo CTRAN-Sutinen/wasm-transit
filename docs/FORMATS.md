@@ -561,9 +561,11 @@ entry 1 from their heads, with writer `migrate:stops` and
 - `POST /logs/alerts` and `POST /logs/notes` take the same body and
   answer the same way, with the log's document hashes: `200 {seq,
   service_alerts_hash, alert_templates_hash, landed?}` for the alerts
-  log (alerts `put`, `end`, `put_template`), and `200 {seq, notes_hash,
+  log (alerts `put`, `end`, `put_template`, and the whole documents
+  `validate` and `validate_templates`), and `200 {seq, notes_hash,
   landed?}` for the notes log (notes `write`; the server gives `by` and
-  `at`).
+  `at`). Their capabilities' `receive` ops answer them
+  (`docs/architecture/server.md`, "One path for a log").
 - The manifest names `log_seqs`: the seq of the stops, alerts, and notes
   logs' folds whose documents it pins. A page sends it back as
   `read_seq`.
@@ -624,6 +626,13 @@ entry is one kind the store keeps, by its store kind (the envelope's
 - `read` is `open`, `restricted` (never served by hash), or `audit`.
 - `load` is the kernel's load of the kind, when a module reads it from
   the bus: its JSON op and its bulk op's code.
+- `receive` names the capability whose `receive` op writes the kind's
+  log: it runs a write's ops over the head and answers the entry
+  (D-228). Every kind of one log names the same one.
+- `post` is the kind's own write route, which that op answers: its
+  `path`, the `op` the request's body is the arguments of, the
+  `answer` field that names the document after the write, and the body
+  fields it repeats (`echo`).
 - `references` are the fields that name other records or things, each
   with its target, from the current version's schema (D-232; "References",
   below).

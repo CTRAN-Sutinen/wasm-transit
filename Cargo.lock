@@ -2121,6 +2121,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-version",
+ "ts-rs",
 ]
 
 [[package]]

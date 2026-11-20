@@ -85,6 +85,12 @@ pub struct KindEntry {
     /// The log's record kinds of its collection.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub records: Vec<RecordEntry>,
+    /// Its own write route, answered by its log's receive op.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post: Option<PostEntry>,
+    /// The capability whose `receive` op writes the kind's log (D-228).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receive: Option<String>,
     /// The capability that checks a write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
@@ -100,6 +106,18 @@ pub struct KindEntry {
     /// target, from the current version's schema (`x-references`, D-232).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<transit_version::Reference>,
+}
+
+/// A kind's own write route: the path, the op the request's body is the
+/// arguments of, the answer's field that names the document after the
+/// write, and the body's fields the answer repeats.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PostEntry {
+    pub path: String,
+    pub op: String,
+    pub answer: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub echo: Vec<String>,
 }
 
 /// A kind's kernel load: its JSON op and its bulk op's code.
@@ -126,6 +144,8 @@ pub fn kinds() -> Vec<KindEntry> {
                 pointers: s.pointers.iter().map(|p| p.to_string()).collect(),
                 log: s.log.map(|l| l.name.into()),
                 records: s.log.map(|l| l.records.iter().map(|(k, c)| RecordEntry { kind: k.to_string(), collection: c.to_string() }).collect()).unwrap_or_default(),
+                post: s.post.map(|p| PostEntry { path: p.path.into(), op: p.op.into(), answer: p.answer.into(), echo: p.echo.iter().map(|e| e.to_string()).collect() }),
+                receive: s.log.and_then(|l| l.receive).map(Into::into),
                 module: s.check.map(|(m, _)| m.into()),
                 validate: s.check.map(|(_, op)| op.into()),
                 merge: s.merge,

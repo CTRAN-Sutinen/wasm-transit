@@ -39,6 +39,10 @@ The notes about one `target`, oldest first: by when each was written, then by id
 
 The notes written in `[from, to)` (Unix seconds), newest first: by when each was written, then by id. The host gives the span. A day is its start and its end in the agency's zone. A document absent is an empty one.
 
+## receive
+
+A write to the notes log, whole: the server's one call for `POST /notes` and `POST /logs/notes` (D-228). It takes the write (`write`: the fold's checkpoint, the entry's header, and the entries after the fold that the writer did not read), the document at the head (`heads.notes`, registered by the host first), and the intent's ops (`ops`: `{cap: "notes", op: "write", args: {id, target, text}}`). Each note is stamped with the header's writer and clock, never a page's. The answer is the entry's canonical bytes, which the host stores at the header's seq, and `heads.notes`, the document after the write. No entry comes back when the write changes nothing, when its key landed before (`landed`, asked before the ops run), when a record it changes changed in an unread entry (`overlap`), when an op is refused (`refused`, its index and refusals), or when an op does not run (`failed`, its index and why: another log's op, or arguments it cannot read).
+
 ## log_records
 
 The document as the notes log's records: a `note` record for each note, and the document's own record, which keeps the fields outside its collection. A document left out gives no records. The log capability's `compose` takes the answer.

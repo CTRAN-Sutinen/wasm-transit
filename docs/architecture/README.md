@@ -6,8 +6,8 @@ server, the web, and the bus is here and in no other place.
 
 Related documents:
 
-- The root `AGENTS.md` holds the short crate tree and the ownership
-  rules.
+- The root `AGENTS.md` holds a map of the repo, which points to the
+  home of each part, and the ownership rules.
 - `crates/AGENTS.md` states the three architecture laws. Update it
   together with these files. The laws are:
   1. The network is the core data model.

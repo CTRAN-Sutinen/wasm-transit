@@ -24,6 +24,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"rustwasm/server/store"
@@ -183,9 +184,10 @@ func (s *server) seedDisruptions(editsPath string) {
 
 // handleLogs serves each log's entries and its revert and close-gap
 // writes, over cap-log (caplog.go), with POST /logs/<log> the intent
-// write of the stops, alerts, and notes logs (logwrite.go). Every read, revert, and closed gap needs
-// the audit grant when sign-in is on (protectLog): the entries name
-// their writers.
+// write of the stops log (logwrite.go) and of each log a receive op
+// writes (logkinds.go). Every read, revert, and closed gap needs the
+// audit grant when sign-in is on (protectLog): the entries name their
+// writers.
 func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
@@ -197,10 +199,6 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		f = s.disruptionsFold()
 	case "/logs/stops", "/logs/stops/revert", "/logs/stops/close-gap":
 		f = s.stopsLog()
-	case "/logs/alerts", "/logs/alerts/revert", "/logs/alerts/close-gap":
-		f = s.alertsLog()
-	case "/logs/notes", "/logs/notes/revert", "/logs/notes/close-gap":
-		f = s.notesLog()
 	case "/logs/plans", "/logs/plans/close-gap":
 		f = s.plansLog()
 	case "/logs/plans/revert":
@@ -209,17 +207,24 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the plans log has no revert: republish a pick to correct it, or retire it (POST /plans, /plans/retire)", http.StatusMethodNotAllowed)
 		return
 	default:
-		http.Error(w, "no such log (the logs: disruptions, stops, plans, alerts, notes)", http.StatusNotFound)
-		return
+		name, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/logs/"), "/")
+		kept := s.keptLog(name)
+		if kept == nil {
+			http.Error(w, "no such log (the logs: "+strings.Join(append([]string{"disruptions", "stops", "plans"}, s.keptNames()...), ", ")+")", http.StatusNotFound)
+			return
+		}
+		f = kept.fold
 	}
 	switch r.URL.Path {
 	case "/logs/" + f.name:
 		switch {
 		case r.Method == http.MethodGet:
 			s.handleLogEntriesOf(w, r, f)
+		case r.Method == http.MethodPost && s.keptLog(f.name) != nil:
+			s.handleKeptIntent(w, r, s.keptLog(f.name))
 		case r.Method == http.MethodPost && s.intentLogs()[f.name].fold != nil:
 			s.handleIntentWrite(w, r, s.intentLogs()[f.name])
-		case s.intentLogs()[f.name].fold != nil:
+		case s.intentLogs()[f.name].fold != nil || s.keptLog(f.name) != nil:
 			http.Error(w, "use GET or POST", http.StatusMethodNotAllowed)
 		default:
 			http.Error(w, "use GET", http.StatusMethodNotAllowed)

@@ -31,7 +31,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use transit_log::{Checkpoint, Composed, Header, KindRecords, Quarantined, Records, Stored};
+use transit_log::{Checkpoint, Header, KindRecords, Quarantined, Records, Stored};
 
 /// One operation call.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -145,12 +145,7 @@ pub enum Response {
     },
 }
 
-/// A record's identity in a log: the canonical hash of the record as
-/// stored. A record that does not serialize gets a name that never
-/// equals a hash.
-fn record_hash(value: &serde_json::Value) -> String {
-    cap_abi::canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
-}
+use cap_abi::record_hash;
 
 fn checkpoint_of(log: &str, value: Option<serde_json::Value>) -> Result<Checkpoint, String> {
     match value {
@@ -175,23 +170,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Compose { checkpoint, header, next, unread } => {
             let header: Header = parse("header", header)?;
             let next: Vec<KindRecords> = parse("next", next)?;
-            let fold = checkpoint_of(&header.log, checkpoint)?;
-            if header.seq != fold.seq + 1 {
-                return Err(format!("the entry's seq is {}, and the fold is at {}", header.seq, fold.seq));
-            }
-            // An unread entry that does not read is quarantined in the
-            // fold: it changed nothing the write could overlap.
             let unread: Vec<Stored> = parse("unread", unread.unwrap_or(serde_json::Value::Array(Vec::new())))?;
-            let unread: Vec<transit_log::Entry> = unread.iter().filter_map(|s| transit_log::read_entry(&header.log, s).ok()).collect();
-            let none = |landed| Response::Compose { entry: None, changes: 0, landed, overlap: None };
-            Ok(match transit_log::compose(&fold, header, &next, &record_hash) {
-                Composed::Entry(e) => match transit_log::overlap(&e.changes, &unread) {
-                    Some(o) => Response::Compose { entry: None, changes: 0, landed: None, overlap: Some(o) },
-                    None => Response::Compose { changes: e.changes.len(), entry: Some(cap_abi::canonical_bytes(&e)?), landed: None, overlap: None },
-                },
-                Composed::Unchanged => none(None),
-                Composed::Landed(seq) => none(Some(seq)),
-            })
+            let write = transit_log::Write { checkpoint, header, unread };
+            let received = transit_log::receive(&write, &next, &record_hash, &|e| cap_abi::canonical_bytes(e))?;
+            Ok(Response::Compose { entry: received.entry, changes: received.changes, landed: received.landed, overlap: received.overlap })
         }
         Request::Fold { log, checkpoint, entries } => {
             let entries: Vec<Stored> = parse("entries", entries)?;

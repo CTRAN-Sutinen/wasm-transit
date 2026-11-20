@@ -78,6 +78,23 @@ pub enum Request {
         #[ts(optional)]
         notes_hash: Option<String>,
     },
+    /// A write to the notes log, whole (D-228): each op of the write's
+    /// intent over the document at the head (`heads.notes`, registered
+    /// by the host; absent: the empty document), each note stamped with
+    /// the writer and the clock of the entry's header, then the entry
+    /// that records what changed. The ops are `write` (`{cap: "notes",
+    /// op: "write", args: {id, target, text}}`). A refused op answers its
+    /// refusals, and an op that does not run answers why (`failed`): no
+    /// entry either way.
+    Receive {
+        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        write: transit_log::Write,
+        #[serde(default)]
+        #[ts(type = "Record<string, string>")]
+        heads: std::collections::BTreeMap<String, String>,
+        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        ops: Vec<transit_log::OpCall>,
+    },
     /// The notes document assembled from the notes log's records,
     /// registered and answered as its canonical bytes and hash. A record
     /// in another version is refused, naming both.
@@ -115,6 +132,9 @@ pub enum Response {
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
+    /// What the write adds to the notes log (`heads.notes`: the
+    /// document after it).
+    Receive(transit_log::Received),
     LogDocument {
         /// The document's hash (`notes_hash`).
         document_hash: String,
@@ -166,6 +186,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::LogRecords { next })
         }
+        Request::Receive { write, heads, ops } => receive(write, heads, ops),
         Request::LogDocument { records, document } => {
             let template = serde_json::json!({"kind": "notes", "schema_version": transit_notes::SCHEMA_VERSION});
             let notes: Notes = transit_log::assemble(template, document.as_ref(), "notes", &records, false)?;
@@ -174,6 +195,49 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LogDocument { document_hash, document: bytes })
         }
     }
+}
+
+/// A write's ops over the head, then its entry (`Request::Receive`).
+/// An op of a write to the notes log, as a page sends it: never who
+/// wrote it or when, which the entry's header gives.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum Intent {
+    Write { id: String, target: NoteTarget, text: String },
+}
+
+fn receive(write: transit_log::Write, heads: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+    let (by, at) = write.stamp();
+    if let Some(seq) = write.landed()? {
+        return Ok(Response::Receive(transit_log::Received::landed(seq)));
+    }
+    let mut hash = heads.get("notes").cloned();
+    let refused = |op, refusals: Vec<NoteRefusal>| -> Result<Response, String> {
+        Ok(Response::Receive(transit_log::Received::refused(op, serde_json::to_value(refusals).map_err(|e| e.to_string())?)))
+    };
+    let failed = |op, error| Ok(Response::Receive(transit_log::Received::failed(op, error)));
+    for (i, call) in ops.iter().enumerate() {
+        if call.cap != "notes" {
+            return failed(i, format!("{} {} is not a write to the notes log (notes: write)", call.cap, call.op));
+        }
+        let Intent::Write { id, target, text } = match call.request::<Intent>() {
+            Ok(intent) => intent,
+            Err(e) => return failed(i, e),
+        };
+        let written = match dispatch(Request::Write { notes_hash: hash.clone(), id, target, text, by: by.to_string(), at }) {
+            Ok(written) => written,
+            Err(e) => return failed(i, e),
+        };
+        match written {
+            Response::Write { notes_hash: Some(next), .. } => hash = Some(next),
+            Response::Write { refusals, .. } => return refused(i, refusals),
+            _ => unreachable!("write answers write"),
+        }
+    }
+    let Response::LogRecords { next } = dispatch(Request::LogRecords { notes_hash: hash.clone() })? else { unreachable!("log_records answers log_records") };
+    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    received.heads.extend(hash.map(|h| ("notes".to_string(), h)));
+    Ok(Response::Receive(received))
 }
 
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`

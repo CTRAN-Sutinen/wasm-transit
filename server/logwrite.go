@@ -22,13 +22,10 @@ package main
 // the device's clock when the person made the write, kept in the
 // entry's intent beside the server's stamp (D-222).
 //
-// The logs and their ops:
-//
-//	stops   stops add_event, correct_event; requests put, record_work_order
-//	alerts  alerts put, end, put_template
-//	notes   notes write (the server gives `by` and `at`)
-//
-// The write rule of each op is its document's pointer (mayWrite).
+// The stops log and its ops: stops add_event, correct_event; requests
+// put, record_work_order. The write rule of each op is its document's
+// pointer (mayWrite). A log a receive op writes takes its intent writes
+// through logkinds.go.
 
 import (
 	"context"
@@ -38,7 +35,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"rustwasm/server/store"
 )
@@ -79,26 +75,6 @@ func (s *server) intentLogs() map[string]intentLog {
 			answer: func() map[string]any {
 				return map[string]any{"stops_hash": s.stopsDoc.hash, "stop_requests_hash": s.requestsDoc.hash}
 			},
-		},
-		alertsLogName: {
-			fold: s.alertsLog,
-			ops: map[string]map[string]string{
-				"alerts": {"put": alertsPointer, "end": alertsPointer, "put_template": templatesPointer},
-			},
-			run: func(ctx context.Context, _ *http.Request, ops []opsWrite) ([]json.RawMessage, *logRefusal, error) {
-				return s.runAlertsOps(ctx, ops)
-			},
-			answer: func() map[string]any {
-				return map[string]any{"service_alerts_hash": s.alertsDoc.hash, "alert_templates_hash": s.templatesDoc.hash}
-			},
-		},
-		notesLogName: {
-			fold: s.notesLog,
-			ops:  map[string]map[string]string{"notes": {"write": notesPointer}},
-			run: func(ctx context.Context, r *http.Request, ops []opsWrite) ([]json.RawMessage, *logRefusal, error) {
-				return s.runNotesOps(ctx, ops, writerOf(r, "anonymous"))
-			},
-			answer: func() map[string]any { return map[string]any{"notes_hash": s.notesDoc.hash} },
 		},
 	}
 }
@@ -185,131 +161,4 @@ func opArgs(i int, op opsWrite) (map[string]any, *logRefusal) {
 	}
 	args["op"] = op.Op
 	return args, nil
-}
-
-// runAlertsOps runs alerts put, end, and put_template over the alerts
-// log's documents at the head, in one cap-alerts instance, and answers
-// the records of each document they changed. Each op checks its
-// document as a write is; a refusal names its op.
-func (s *server) runAlertsOps(ctx context.Context, ops []opsWrite) ([]json.RawMessage, *logRefusal, error) {
-	var next []json.RawMessage
-	var refusal *logRefusal
-	err := s.withAlerts(ctx, func(host *WasmHost) error {
-		alertsHash, templatesHash := "", ""
-		for _, held := range []struct {
-			doc  logDoc
-			load uint32
-			into *string
-		}{{s.alertsDoc, opLoadServiceAlerts, &alertsHash}, {s.templatesDoc, opLoadAlertTemplates, &templatesHash}} {
-			if held.doc.hash == "" {
-				continue
-			}
-			var loaded map[string]any
-			if err := host.InvokeBytes(ctx, held.load, held.doc.doc, &loaded); err != nil {
-				return err
-			}
-			*held.into = held.doc.hash
-		}
-		touched := map[string]bool{}
-		for i, op := range ops {
-			args, bad := opArgs(i, op)
-			if bad != nil {
-				refusal = bad
-				return nil
-			}
-			field := "alerts_hash"
-			into := &alertsHash
-			if op.Op == "put_template" {
-				field, into = "templates_hash", &templatesHash
-			}
-			if *into != "" {
-				args[field] = *into
-			}
-			var answer struct {
-				Refusals      json.RawMessage `json:"refusals"`
-				AlertsHash    *string         `json:"alerts_hash"`
-				TemplatesHash *string         `json:"templates_hash"`
-			}
-			if err := host.Invoke(ctx, args, &answer); err != nil {
-				refusal = &logRefusal{http.StatusBadRequest, map[string]any{"op": i, "error": err.Error()}}
-				return nil
-			}
-			got := answer.AlertsHash
-			if op.Op == "put_template" {
-				got = answer.TemplatesHash
-			}
-			if got == nil {
-				refusal = &logRefusal{http.StatusUnprocessableEntity, map[string]any{"op": i, "refusals": answer.Refusals}}
-				return nil
-			}
-			*into = *got
-			touched[field] = true
-		}
-		for _, field := range []string{"alerts_hash", "templates_hash"} {
-			if !touched[field] {
-				continue
-			}
-			hash := alertsHash
-			if field == "templates_hash" {
-				hash = templatesHash
-			}
-			var out logNext
-			if err := host.Invoke(ctx, map[string]any{"op": "log_records", field: hash}, &out); err != nil {
-				return err
-			}
-			next = append(next, out.Next...)
-		}
-		return nil
-	})
-	return next, refusal, err
-}
-
-// runNotesOps runs notes write over the notes document at the head, in
-// one cap-notes instance, with the verified writer and the server's
-// clock (a page never names who wrote a note, or when the record says
-// it was written), and answers the notes' records.
-func (s *server) runNotesOps(ctx context.Context, ops []opsWrite, writer string) ([]json.RawMessage, *logRefusal, error) {
-	var next []json.RawMessage
-	var refusal *logRefusal
-	err := s.withNotes(ctx, func(host *WasmHost) error {
-		hash := ""
-		if s.notesDoc.hash != "" {
-			var loaded map[string]any
-			if err := host.InvokeBytes(ctx, opLoadNotes, s.notesDoc.doc, &loaded); err != nil {
-				return err
-			}
-			hash = s.notesDoc.hash
-		}
-		for i, op := range ops {
-			args, bad := opArgs(i, op)
-			if bad != nil {
-				refusal = bad
-				return nil
-			}
-			args["by"], args["at"] = writer, time.Now().Unix()
-			if hash != "" {
-				args["notes_hash"] = hash
-			}
-			var written struct {
-				Refusals  json.RawMessage `json:"refusals"`
-				NotesHash *string         `json:"notes_hash"`
-			}
-			if err := host.Invoke(ctx, args, &written); err != nil {
-				refusal = &logRefusal{http.StatusBadRequest, map[string]any{"op": i, "error": err.Error()}}
-				return nil
-			}
-			if written.NotesHash == nil {
-				refusal = &logRefusal{http.StatusUnprocessableEntity, map[string]any{"op": i, "refusals": written.Refusals}}
-				return nil
-			}
-			hash = *written.NotesHash
-		}
-		var out logNext
-		if err := host.Invoke(ctx, map[string]any{"op": "log_records", "notes_hash": hash}, &out); err != nil {
-			return err
-		}
-		next = out.Next
-		return nil
-	})
-	return next, refusal, err
 }

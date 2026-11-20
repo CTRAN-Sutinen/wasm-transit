@@ -176,6 +176,13 @@ pub fn content_hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
+/// A record's identity in a log (D-190): the canonical hash of the
+/// record as stored. A record that does not serialize gets a name that
+/// never equals a hash. cap-log and every receive op name records by it.
+pub fn record_hash(value: &serde_json::Value) -> String {
+    canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
+}
+
 /// A document's identity: the content hash of its canonical bytes,
 /// RFC 8785 (D-169, [`jcs`]). Streamed into the digest, so hashing never
 /// holds a copy of the document — byte-identical to hashing

@@ -19,8 +19,8 @@ whole GTFS Schedule spec.
 - `docs/guide/` — start here if you are new: what the software does,
   how it works, why it is built this way, and a glossary, in plain
   language.
-- `AGENTS.md` — the crate tree, the commands, the ownership rules,
-  and the conventions. Start here before changing the code, human or
+- `AGENTS.md` — the rules, a map of the repo, the daily commands,
+  the ownership rules, and the conventions. Start here before changing the code, human or
   agent.
 - `docs/architecture/` — the architecture reference, one file per
   topic: per-crate detail, the server, static deployment, the web
@@ -80,8 +80,9 @@ container image, a bucket, sign-in, a load balancer):
 [DEPLOYMENTS-SERVER.md](DEPLOYMENTS-SERVER.md).
 
 Open http://127.0.0.1:8080. `just test` is the host-side gate,
-`just e2e` the browser runner, `just check` both; the full command
-list is in `AGENTS.md`.
+`just e2e` the browser runner, `just check` both. `just --list` names
+every recipe, and the comment above each recipe in the justfile
+describes it.
 
 The agent runner drives the same modules from the command line —
 `node tools/caps-run.mjs list` shows the capabilities,

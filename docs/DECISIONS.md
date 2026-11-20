@@ -4887,8 +4887,11 @@ dispatch test for each rule that left a host (`pick_period_law_test.rs`,
 `requests_law_test.rs`, `disruptions_law_test.rs`, `alerts_law_test.rs`);
 `caps-smoke.mjs` (`read_pick` in an assembly and alone); the `ui-ops`
 gate; the service-change, service-design, stops, and disruptions e2e
-specs. The write sequencing in Go is still open
-(`docs/units/kind-registration.md`).
+specs; the receive ops of the alerts log and the notes log
+(cap-alerts and cap-notes `dispatch_test.rs`, `server/logkinds.go`,
+`alerts_test.go`, `notes_test.go`, `logwrite_test.go`). The write
+sequencing of the stops, plans, and disruptions logs in Go is still
+open (`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-229 — Does the record's integrity encode the domain?

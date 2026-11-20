@@ -115,6 +115,29 @@ pub enum Request {
         #[ts(optional)]
         templates_hash: Option<String>,
     },
+    /// A write to the alerts log, whole (D-228): each op of the write's
+    /// intent over the documents at the head (`heads.service_alerts`,
+    /// `heads.alert_templates`, registered by the host; absent: empty),
+    /// then the entry that records what changed. The ops: `put` (`{id,
+    /// alert}`), `end` (`{id, at}`; the header's clock when `at` is
+    /// absent), `put_template`
+    /// (`{id, template}`), and the whole-document writes `validate`
+    /// (`{alerts, from}`) and `validate_templates` (`{templates, from}`),
+    /// where `from` is the head the writer read (empty: none). An older
+    /// service alerts document comes forward first (D-216). A refused op
+    /// answers its refusals, an op that does not run answers why
+    /// (`failed`), and a whole document over a head it did not read
+    /// answers `moved`: no entry in any of these. `heads` names each
+    /// document the ops wrote.
+    Receive {
+        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        write: transit_log::Write,
+        #[serde(default)]
+        #[ts(type = "Record<string, string>")]
+        heads: std::collections::BTreeMap<String, String>,
+        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        ops: Vec<transit_log::OpCall>,
+    },
     /// One document (`kind`: `service_alerts` or `alert_templates`)
     /// assembled from the alerts log's records of its kind, registered
     /// and answered as its canonical bytes and hash. A record in another
@@ -170,6 +193,8 @@ pub enum Response {
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
+    /// What the write adds to the alerts log.
+    Receive(transit_log::Received),
     LogDocument {
         /// The document's hash (`alerts_hash` or `templates_hash` by its
         /// kind).
@@ -189,6 +214,137 @@ fn registered(next: ServiceAlerts) -> Result<(Vec<AlertRefusal>, Option<String>,
         }
         Err(refusals) => (refusals, None, None),
     })
+}
+
+/// An op of a write to the alerts log, as a page sends it.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum Intent {
+    Put { id: String, alert: ServiceAlert },
+    /// `at` is when the person ended it (Unix seconds): the header's
+    /// clock when the page names none.
+    End {
+        id: String,
+        #[serde(default)]
+        at: Option<u64>,
+    },
+    PutTemplate { id: String, template: AlertTemplate },
+    Validate {
+        alerts: serde_json::Value,
+        #[serde(default)]
+        from: String,
+    },
+    ValidateTemplates {
+        templates: serde_json::Value,
+        #[serde(default)]
+        from: String,
+    },
+}
+
+fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
+    serde_json::to_value(v).map_err(|e| e.to_string())
+}
+
+/// A whole document as the base of a write, and the fields this build
+/// does not know.
+fn whole<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), String> {
+    let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<cap_abi::Base<T>>(doc));
+    Ok((read.map_err(|e| e.to_string())?.0, unknown))
+}
+
+/// The documents a write runs over: each head, whether an op wrote it,
+/// and the unknown fields of the whole documents written.
+#[derive(Default)]
+struct Heads {
+    alerts: Option<String>,
+    templates: Option<String>,
+    wrote_alerts: bool,
+    wrote_templates: bool,
+    unknown_fields: Vec<String>,
+}
+
+/// One op of a write over the heads: none when it ran, the answer that
+/// ends the write when it was refused or moved, or the error of an op
+/// that did not run.
+fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option<transit_log::Received>, String> {
+    let refused = |refusals: serde_json::Value| Ok(Some(transit_log::Received::refused(op, refusals)));
+    match intent {
+        Intent::Put { id, alert } => match dispatch(Request::Put { alerts_hash: heads.alerts.clone(), id, alert })? {
+            Response::Put { alerts_hash: Some(h), .. } => (heads.alerts, heads.wrote_alerts) = (Some(h), true),
+            Response::Put { refusals, .. } => return refused(to_value(&refusals)?),
+            _ => unreachable!("put answers put"),
+        },
+        Intent::End { id, at } => {
+            let held = heads.alerts.clone().ok_or_else(|| format!("no alert {id:?} in the document"))?;
+            match dispatch(Request::End { alerts_hash: held, id, at: at.unwrap_or(now) })? {
+                Response::End { alerts_hash: Some(h), .. } => (heads.alerts, heads.wrote_alerts) = (Some(h), true),
+                Response::End { refusals, .. } => return refused(to_value(&refusals)?),
+                _ => unreachable!("end answers end"),
+            }
+        }
+        Intent::PutTemplate { id, template } => match dispatch(Request::PutTemplate { templates_hash: heads.templates.clone(), id, template })? {
+            Response::PutTemplate { templates_hash: Some(h), .. } => (heads.templates, heads.wrote_templates) = (Some(h), true),
+            Response::PutTemplate { refusals, .. } => return refused(to_value(&refusals)?),
+            _ => unreachable!("put_template answers put_template"),
+        },
+        Intent::Validate { alerts: doc, from } => {
+            if from != heads.alerts.clone().unwrap_or_default() {
+                return Ok(Some(transit_log::Received::moved(heads.alerts.clone())));
+            }
+            // An absent version reads as v1, as the library reads it.
+            let older = transit_alerts::version::schema_version_of(&doc)? < transit_alerts::ALERTS_VERSION;
+            let doc = if older { transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION)?.0 } else { doc };
+            let (doc, unknown) = whole::<ServiceAlerts>(doc)?;
+            match doc.checked() {
+                Ok(doc) => (heads.alerts, heads.wrote_alerts) = (Some(SERVICE_ALERTS.register(doc)?.0), true),
+                Err(refusals) => return refused(to_value(&refusals)?),
+            }
+            heads.unknown_fields.extend(unknown);
+        }
+        Intent::ValidateTemplates { templates: doc, from } => {
+            if from != heads.templates.clone().unwrap_or_default() {
+                return Ok(Some(transit_log::Received::moved(heads.templates.clone())));
+            }
+            let (doc, unknown) = whole::<AlertTemplates>(doc)?;
+            match doc.checked() {
+                Ok(doc) => (heads.templates, heads.wrote_templates) = (Some(ALERT_TEMPLATES.register(doc)?.0), true),
+                Err(refusals) => return refused(to_value(&refusals)?),
+            }
+            heads.unknown_fields.extend(unknown);
+        }
+    }
+    Ok(None)
+}
+
+/// A write's ops over the heads, then its entry (`Request::Receive`).
+fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+    let answer = |received| Ok(Response::Receive(received));
+    if let Some(seq) = write.landed()? {
+        return answer(transit_log::Received::landed(seq));
+    }
+    let (_, now) = write.stamp();
+    let mut heads = Heads { alerts: given.get("service_alerts").cloned(), templates: given.get("alert_templates").cloned(), ..Default::default() };
+    for (i, call) in ops.iter().enumerate() {
+        if call.cap != "alerts" {
+            let error = format!("{} {} is not a write to the alerts log (alerts: put, end, put_template, validate, validate_templates)", call.cap, call.op);
+            return answer(transit_log::Received::failed(i, error));
+        }
+        match call.request::<Intent>().and_then(|intent| step(&mut heads, intent, i, now)) {
+            Ok(None) => {}
+            Ok(Some(ended)) => return answer(ended),
+            Err(e) => return answer(transit_log::Received::failed(i, e)),
+        }
+    }
+    let (alerts, templates) = (heads.alerts.filter(|_| heads.wrote_alerts), heads.templates.filter(|_| heads.wrote_templates));
+    let records = Request::LogRecords { alerts_hash: alerts.clone(), templates_hash: templates.clone() };
+    let Response::LogRecords { next } = dispatch(records)? else { unreachable!("log_records answers log_records") };
+    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    received.heads.extend(alerts.map(|h| ("service_alerts".to_string(), h)));
+    received.heads.extend(templates.map(|h| ("alert_templates".to_string(), h)));
+    heads.unknown_fields.sort();
+    heads.unknown_fields.dedup();
+    received.unknown_fields = heads.unknown_fields;
+    answer(received)
 }
 
 fn held_alerts(hash: Option<&str>) -> Result<std::sync::Arc<ServiceAlerts>, String> {
@@ -274,6 +430,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::LogRecords { next })
         }
+        Request::Receive { write, heads, ops } => receive(write, heads, ops),
         Request::LogDocument { kind, records, document } => {
             let (document_hash, document) = match kind.as_str() {
                 "service_alerts" => {

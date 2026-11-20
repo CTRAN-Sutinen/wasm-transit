@@ -31,6 +31,9 @@
 //! An idempotency key in an entry's intent lands once: a write whose key
 //! the fold holds answers the entry that holds it.
 
+
+pub mod receive;
+pub use receive::{receive, Failed, Moved, OpCall, Received, Refused, Write};
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;

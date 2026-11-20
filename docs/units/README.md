@@ -88,7 +88,7 @@ work; a group is only a way to find them.
 |---|---|
 | [server-assembly.md](server-assembly.md) | the server links one assembly, as a UI does, with authz and each import in instances of their own |
 | [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit, like its answers and writes: one poll, a time limit on every read, "none kept" told apart from "failed", and the failure table checked against them |
-| [kind-registration.md](kind-registration.md) | a document kind declared once: the kernel names no kind, one receive op for each log and one server path for every log, and a gate on where a kind's name appears; the references between records checked, as of what the writer read |
+| [kind-registration.md](kind-registration.md) | a document kind declared once: the kernel names no kind, the stops, plans, and edit logs on the one server path, and a gate on where a kind's name appears; the references between records checked, as of what the writer read |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
 
 ### The documents

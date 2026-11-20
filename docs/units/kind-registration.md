@@ -11,16 +11,17 @@ notes kind is named in this plumbing (2026-11-20):
 - in the kernel: `crates/cap-abi/src/kernel.rs` (its registry and
   load) and `src/bin/gen_manifest.rs` (its schema's example and its
   load's description);
-- in the server: `server/notes.go`, `server/logwrite.go`, and
-  `server/main.go`;
+- in the server: `server/flags.go` (`-notes-wasm`) and `server/main.go`
+  (the module paths by capability);
 - in the engine: `web/src/engine.ts`, as the capability in its typed op
   map.
 
-Each log kind has Go of its own, in files of about 130 to 400 lines.
-The notes, alerts, and stops logs each repeat five functions: `withX`,
-`xLog`, `assembleX`, `xHead`, and `xLogDoc`. The plans log repeats
-four of them. The stop requests are written in the stops log, and have
-`withRequests` and `requestsHead`. Each kind then has its handler.
+The alerts log and the notes log are written through one server path
+(`server/logkinds.go`; `docs/architecture/server.md`, "One path for a
+log"): their capabilities' `receive` ops. The stops log and the plans
+log still have Go of their own, in files of about 130 to 400 lines,
+each with `withX`, `xLog`, `assembleX`, `xHead`, and `xLogDoc`, and the
+stop requests have `withRequests` and `requestsHead`.
 `cap-abi` depends on 18 domain crates (five of them optional, for
 gen-manifest), so the kernel is a hub that every new kind edits. Runs, the work
 rules, and the policy in logs are next (`storage-model.md`), so this
@@ -55,32 +56,28 @@ writer saw, and warns about a write that the world made wrong later
    read, changes how the kernel and the assemblies are built. A
    proposal goes to the user first, with what it costs the arch
    gates and the module sizes.
-2. **One receive op for each log, and one server path.** The steps of
-   a write are one op (D-228). A log that holds two kinds has one
-   receive op, because one entry can change records of both: the stops
-   log holds stops and stop requests, and a stop event and the request
-   it carries out name each other (D-232). So cap-stops' receive op
-   links `transit-requests`, as D-228 places a question that spans
-   kinds. cap-alerts holds both kinds of the alerts log already.
+2. **The other logs on the one server path.** The alerts log and the
+   notes log are on it. The rest follow the same pattern: a `receive`
+   op in the log's capability (`transit_log::receive` composes the
+   entry), the log's line `.received(..)`, each kind's own route as
+   `.posted(..)`, and its Go file deleted.
+   - The stops log: cap-stops' receive op links `transit-requests`,
+     because one entry can change a stop and the request it carries out
+     (D-232, D-228). It takes `checkStops` (`attribute_surveys`, then
+     `validate`), `runStopsOps`, `POST /stops`, `POST /stop-requests`,
+     the work order calls, and the seed from the old pointers.
+     `stops.go`, `requests.go`, and the log parts of `stopslog.go` are
+     deleted.
+   - The plans log: `writePlan` (`freeze`, then `adopt` with the frozen
+     document) becomes cap-plans' receive op. The networks it stores
+     beside the entry stay the host's I/O.
+   - The edit document joins last, with its merge inside its receive
+     op.
+   - The modules' flags (`-notes-wasm` and the others) and the module
+     map in `main.go` name each capability. One setting for every
+     capability's module removes them, beside the old flags.
 
-   The receive op takes the write's intent and the records the write
-   changes, links `transit-log`, and answers the entry and the head it
-   depends on, or the refusals. The server makes the conditional
-   create, and on a conflict asks again. So every log's write is the
-   same in Go: read the head, make one call, create. One route serves
-   every log, and the log's line in the kind list names its capability. The steps the server
-   sequences today become the receive op:
-   - `writePlan` (`server/planslog.go`): `freeze`, then `adopt` with
-     the frozen document;
-   - `checkStops` (`server/stopslog.go`): `attribute_surveys`, then
-     `validate`;
-   - `runStopsOps`, `runNotesOps`, and `runAlertsOps`: each op, then
-     `log_records`.
-
-   The edit document joins last, with its merge inside its receive op.
-   The per-kind Go files (`notes.go`, `alerts.go`, `requests.go`, and
-   the log parts of `stopslog.go` and `planslog.go`) are deleted. The
-   routes and their bytes stay the same, and `server/openapi.json`
+   The routes and their bytes stay the same, and `server/openapi.json`
    compares them. Each error and log line of the route names its kind.
 
    The receive op takes the seq the write read for each log it depends
@@ -88,7 +85,7 @@ writer saw, and warns about a write that the world made wrong later
    client names, and refuses a failure. It runs the check again as of
    now, and warns about a failure (D-233). Check what the outbox
    (D-189) carries today.
-3. **Generated lists in the docs.** `docs/FORMATS.md`, `AGENTS.md`,
+3. **Generated lists in the docs.** `docs/FORMATS.md`,
    `docs/architecture/server.md`, and `storage.md` list the kinds by
    hand today. They point to the kind table and the registry's docs
    site instead.
@@ -108,7 +105,7 @@ never a hook.
 
 ## The references
 
-These start when item 2's receive ops exist.
+These start when every log is on the one path (item 2).
 
 5. **Existence.** cap-log answers each broken loose reference from the
    kind table and the folds: as of a seq, and as of now. `store verify`
@@ -148,10 +145,11 @@ working store (`storage-model.md`, step 2).
   among them.
 - The next new kind (or a test kind added and removed in a Go and Rust
   test) lands touching only the places the gate allows.
-- `go test` and the openapi compatibility gate pass with the per-kind
-  Go files deleted.
-- Each kind's receive op has a dispatch test, and no Go function calls
-  more than one op for a write.
+- `go test` and the openapi compatibility gate pass with the stops,
+  requests, and plans Go files deleted (`notes.go` and `alerts.go` are
+  gone).
+- Each log's receive op has a dispatch test (cap-notes and cap-alerts
+  have theirs), and no Go function calls more than one op for a write.
 - The kind lists in the docs point to the generated sources.
 - The laws in each owning crate: the existence check as of a seq, each reference rule and its coverage,
   and the parity law (a write the client passes as of seq s, the server

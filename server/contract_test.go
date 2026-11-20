@@ -80,6 +80,17 @@ func muxPatterns(t *testing.T) map[string]bool {
 		t.Fatal(err)
 	}
 	out := map[string]bool{}
+	// Each kind's own write route, which routes() registers from the
+	// kind table (logkinds.go).
+	table, err := loadKindTable(defaultKindsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range table.Kinds {
+		if k.Post != nil && k.Receive != "" {
+			out[k.Post.Path] = true
+		}
+	}
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != "routes" {

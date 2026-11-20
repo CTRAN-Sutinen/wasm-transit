@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -103,8 +104,6 @@ func main() {
 		s.networkWasm = *f.networkWasm
 		s.stopsWasm = *f.stopsWasm
 		s.requestsWasm = *f.requestsWasm
-		s.alertsWasm = *f.alertsWasm
-		s.notesWasm = *f.notesWasm
 		s.logWasm = *f.logWasm
 		s.kindsPath = *f.kindsPath
 		s.checkWasm = map[string]string{"authz": *f.authzWasm}
@@ -277,9 +276,15 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/plans/adopt", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleAdopt))
 	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
 	mux.HandleFunc("/stop-requests", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleStopRequests))
-	mux.HandleFunc("/service-alerts", s.protectWrite(func(*http.Request) string { return alertsPointer }, s.handleAlerts))
-	mux.HandleFunc("/alert-templates", s.protectWrite(func(*http.Request) string { return templatesPointer }, s.handleAlerts))
-	mux.HandleFunc("/notes", s.protectWrite(func(*http.Request) string { return notesPointer }, s.handleNotes))
+	// Each kind's own write route (the kind table's `post`), answered by
+	// its log's receive op (logkinds.go). Its write rule is its store kind.
+	if t, err := s.kindTable(); err == nil {
+		for _, k := range t.Kinds {
+			if k.Post != nil && k.Receive != "" {
+				mux.HandleFunc(k.Post.Path, s.protectWrite(s.keptRouteRule, s.handleKeptRoute))
+			}
+		}
+	}
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
 	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
 	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleWorkOrder))
@@ -373,26 +378,12 @@ type server struct {
 	stopsFold    *logFold
 	stopsDoc     logDoc
 	requestsDoc  logDoc
-	// The service alerts capability (cap-alerts) behind POST
-	// /service-alerts and POST /alert-templates (alerts.go), held like
-	// cap-stops; the alerts log's fold and the documents it holds,
-	// guarded by the fold's lock.
-	alertsWasm    string
-	alertsMu      sync.Mutex
-	alertsHeld    *WasmHost
-	alertsLogOnce sync.Once
-	alertsFold    *logFold
-	alertsDoc     logDoc
-	templatesDoc  logDoc
-	// The notes capability (cap-notes) behind POST /notes (notes.go),
-	// held like cap-alerts; the notes log's fold and the document it
-	// holds, guarded by the fold's lock.
-	notesWasm    string
-	notesMu      sync.Mutex
-	notesHeld    *WasmHost
-	notesLogOnce sync.Once
-	notesFold    *logFold
-	notesDoc     logDoc
+	// The logs a receive op writes (logkinds.go), from the kind table;
+	// and the server's one instance of each capability they use.
+	keptOnce  sync.Once
+	kept      map[string]*keptLog
+	modulesMu sync.Mutex
+	modules   map[string]*heldModule
 	// The kind table (kinds.go, -kinds), read once; and the modules
 	// that check a pointer write, by capability id (default
 	// ../web/pkg/cap_<id>.wasm).
@@ -632,15 +623,12 @@ type Manifest struct {
 	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops log's fold), store mode
 	// The stop requests document (the stop_requests pointer head), store mode (D-159).
 	StopRequestsHash string `json:"stop_requests_hash,omitempty"`
-	// The service alerts and alert templates documents (the alerts
-	// log's fold), store mode (D-206, D-210).
-	ServiceAlertsHash  string `json:"service_alerts_hash,omitempty"`
-	AlertTemplatesHash string `json:"alert_templates_hash,omitempty"`
-	// The notes document (the notes log's fold), store mode (D-214).
-	NotesHash string `json:"notes_hash,omitempty"`
+	// Each document of a log a receive op writes (logkinds.go), written
+	// as `<store kind>_hash`, store mode.
+	Logged map[string]string `json:"-"`
 	// The seq of each log's fold whose documents this manifest pins
-	// (stops, alerts, notes), store mode: a page sends it with a write
-	// as read_seq (D-189; logwrite.go).
+	// (the stops log, and each log a receive op writes), store mode: a
+	// page sends it with a write as read_seq (D-189; logwrite.go).
 	LogSeqs     map[string]int64 `json:"log_seqs,omitempty"`
 	BuildHash   string           `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt int64            `json:"generated_at"`
@@ -657,6 +645,53 @@ type Manifest struct {
 	// service it does not list is off, and the frames that need it
 	// say so (docs/architecture/web.md, "External services").
 	Services map[string]Service `json:"services,omitempty"`
+}
+
+// MarshalJSON writes the manifest with each logged document's pin as a
+// field of its own (`<store kind>_hash`).
+func (m Manifest) MarshalJSON() ([]byte, error) {
+	type plain Manifest
+	raw, err := json.Marshal(plain(m))
+	if err != nil || len(m.Logged) == 0 {
+		return raw, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	for field, hash := range m.Logged {
+		fields[field], _ = json.Marshal(hash)
+	}
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads a manifest, each `<kind>_hash` field the struct does
+// not name into Logged.
+func (m *Manifest) UnmarshalJSON(raw []byte) error {
+	type plain Manifest
+	if err := json.Unmarshal(raw, (*plain)(m)); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	t := reflect.TypeOf(plain{})
+	for i := 0; i < t.NumField(); i++ {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		known[name] = true
+	}
+	for field, v := range fields {
+		var hash string
+		if strings.HasSuffix(field, "_hash") && !known[field] && json.Unmarshal(v, &hash) == nil {
+			if m.Logged == nil {
+				m.Logged = map[string]string{}
+			}
+			m.Logged[field] = hash
+		}
+	}
+	return nil
 }
 
 // ManifestAuth is how a page signs in (D-58: writes need a token; reads
@@ -747,10 +782,6 @@ func (s *server) buildManifest() (Manifest, error) {
 			pin  func()
 		}{
 			{s.stopsLog, func() { manifest.StopsHash, manifest.StopRequestsHash = s.stopsDoc.hash, s.requestsDoc.hash }},
-			{s.alertsLog, func() {
-				manifest.ServiceAlertsHash, manifest.AlertTemplatesHash = s.alertsDoc.hash, s.templatesDoc.hash
-			}},
-			{s.notesLog, func() { manifest.NotesHash = s.notesDoc.hash }},
 		} {
 			f := l.fold()
 			if _, err := s.refreshLog(f); err != nil {
@@ -766,6 +797,14 @@ func (s *server) buildManifest() (Manifest, error) {
 			}
 			f.mu.Unlock()
 		}
+		pins, seqs := s.keptPins()
+		manifest.Logged = pins
+		for name, seq := range seqs {
+			if manifest.LogSeqs == nil {
+				manifest.LogSeqs = map[string]int64{}
+			}
+			manifest.LogSeqs[name] = seq
+		}
 		if head, found, err := s.store.Head(buildPointer); err == nil && found {
 			manifest.BuildHash = head.Hash
 		}
@@ -779,7 +818,7 @@ func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	seqs, _ := json.Marshal(m.LogSeqs)
 	sum := sha256.Sum256([]byte(strings.Join([]string{string(seqs),
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, m.ServiceAlertsHash, m.AlertTemplatesHash, m.NotesHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, fmt.Sprint(m.Logged), m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL, fmt.Sprint(m.Auth),
 	}, "|")))
 	return hex.EncodeToString(sum[:])

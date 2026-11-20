@@ -101,6 +101,10 @@ One template written out for a set of stops, routes, and dates. `input` lists `s
 
 The fill writes dates and lists of two or more only in English (a text with no language, or `en`). A blank that it cannot fill stays as written, and `unfilled` names it with its field and language, for a person to fill by hand. A blank cannot be filled when nothing is given for it, an id is not in the network, or a date is not YYYY-MM-DD. The answer also carries the template's cause, effect, and severity.
 
+## receive
+
+A write to the alerts log, whole: the server's one call for `POST /service-alerts`, `POST /alert-templates`, and `POST /logs/alerts` (D-228). It takes the write (`write`: the fold's checkpoint, the entry's header, and the entries after the fold that the writer did not read), the documents at the head (`heads.service_alerts`, `heads.alert_templates`, registered by the host first), and the intent's ops: `put` (`{id, alert}`), `end` (`{id, at}`, ended at `at`, or at the header's clock when the page names no time), `put_template` (`{id, template}`), and the whole-document writes `validate` (`{alerts, from}`) and `validate_templates` (`{templates, from}`). `from` is the head the writer read, empty for none. An older service alerts document comes forward first. The answer is the entry's canonical bytes, which the host stores at the header's seq, and `heads`, each document the ops wrote. A whole document's unknown fields are named (`unknown_fields`). No entry comes back when the write changes nothing, when its key landed before (`landed`), when a record it changes changed in an unread entry (`overlap`), when an op is refused (`refused`), when an op does not run (`failed`), or when a whole document was written over a head the writer did not read (`moved`, with the head now).
+
 ## log_records
 
 The documents as the alerts log's records: a `service_alert` record for each alert, an `alert_template` record for each template, and each document's own record, which keeps the fields outside its collection. Each document left out gives no records. The log capability's `compose` takes the answer.

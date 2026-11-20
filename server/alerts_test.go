@@ -7,7 +7,6 @@ package main
 // both land in one log, the alerts log.
 
 import (
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -15,19 +14,12 @@ import (
 	"rustwasm/server/store"
 )
 
-const alertsWasm = "../web/pkg/cap_alerts.wasm"
-
 func TestAlertsWritesAreValidatedAndLogged(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
-	s.alertsWasm = alertsWasm
-	t.Cleanup(func() {
-		if s.alertsHeld != nil {
-			s.alertsHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/service-alerts", s.handleAlerts)
-	mux.HandleFunc("/alert-templates", s.handleAlerts)
+	mux.HandleFunc("/service-alerts", s.handleKeptRoute)
+	mux.HandleFunc("/alert-templates", s.handleKeptRoute)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL

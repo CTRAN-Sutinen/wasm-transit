@@ -302,6 +302,12 @@
           "collection": "alerts"
         }
       ],
+      "post": {
+        "path": "/service-alerts",
+        "op": "validate",
+        "answer": "alerts_hash"
+      },
+      "receive": "alerts",
       "module": "alerts",
       "validate": "validate",
       "merge": "log",
@@ -356,6 +362,12 @@
           "collection": "templates"
         }
       ],
+      "post": {
+        "path": "/alert-templates",
+        "op": "validate_templates",
+        "answer": "templates_hash"
+      },
+      "receive": "alerts",
       "module": "alerts",
       "validate": "validate_templates",
       "merge": "log",
@@ -384,6 +396,15 @@
           "collection": "notes"
         }
       ],
+      "post": {
+        "path": "/notes",
+        "op": "write",
+        "answer": "notes_hash",
+        "echo": [
+          "id"
+        ]
+      },
+      "receive": "notes",
       "module": "notes",
       "validate": "validate",
       "merge": "log",
@@ -589,7 +610,7 @@
       "versions": [
         {
           "version": 1,
-          "schema": "sha256:c2efd9f0b2e70a63862d08147790ffff93e397456b9023bbb9c15e5f5b5f5f72"
+          "schema": "sha256:8e8d25467771b14f15d6e7b63bd3a8d89770723807672680064061f5cd267ec8"
         }
       ],
       "write": "server",

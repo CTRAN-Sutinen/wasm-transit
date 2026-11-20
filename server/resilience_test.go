@@ -148,7 +148,7 @@ func (f *faultBucket) Create(ctx context.Context, k string, d []byte, m map[stri
 func copyOver(t *testing.T, shared store.Backend, dir string) (*server, *faultBucket, string) {
 	t.Helper()
 	view := &faultBucket{Backend: shared}
-	s := &server{wasm: newTestHost(t), retentionDays: 90, notesWasm: notesWasm}
+	s := &server{wasm: newTestHost(t), retentionDays: 90}
 	st := store.NewServing(view)
 	if dir != "" {
 		if err := st.KeepCache(dir, "mem://shared"); err != nil {
@@ -157,11 +157,7 @@ func copyOver(t *testing.T, shared store.Backend, dir string) (*server, *faultBu
 	}
 	s.store = st
 	s.seedStore("")
-	t.Cleanup(func() {
-		if s.notesHeld != nil {
-			s.notesHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	srv := httptest.NewServer(storeMux(s))
 	t.Cleanup(srv.Close)
 	return s, view, srv.URL
@@ -256,7 +252,7 @@ func TestTwoCopiesOnOneStoreWriteTheSameLogAtTheSameTime(t *testing.T) {
 		return
 	}
 	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), edits)
-	onceEach(t, notesLogName, changedIDs(t, shared, notesLogName), notes)
+	onceEach(t, "notes", changedIDs(t, shared, "notes"), notes)
 
 	time.Sleep(store.FreshnessWindow + 100*time.Millisecond) // each copy probes the bucket again
 	for _, path := range []string{"/edits", "/logs/disruptions", "/logs/notes"} {
@@ -327,7 +323,7 @@ func TestACopyStartedWhileTheBucketIsDownServesItsCache(t *testing.T) {
 		t.Fatalf("back up, ready: %d %+v", code, rd)
 	}
 	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), []string{"e1", "e2"})
-	onceEach(t, notesLogName, changedIDs(t, shared, notesLogName), []string{"n1", "n2"})
+	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1", "n2"})
 }
 
 // A copy with no cache, started while the bucket does not answer, has
@@ -384,7 +380,7 @@ func TestAWriteWhoseAnswerIsLostLandsOnceWhenResent(t *testing.T) {
 	}
 
 	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), []string{"e1"})
-	onceEach(t, notesLogName, changedIDs(t, shared, notesLogName), []string{"n1"})
+	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1"})
 	if log, _, _ := store.New(shared).Log("policy", ""); len(log) != 1 {
 		t.Fatalf("one policy record: %d", len(log))
 	}
@@ -442,7 +438,7 @@ func TestACopyStoppedInTheMiddleOfAWriteLosesNothingAndWritesNothingTwice(t *tes
 	}
 
 	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), []string{"e1", "e2"})
-	onceEach(t, notesLogName, changedIDs(t, shared, notesLogName), []string{"n1"})
+	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1"})
 	time.Sleep(store.FreshnessWindow + 100*time.Millisecond)
 	if _, _, body := httpGet(t, baseB+"/edits"); !strings.Contains(body, `"e1"`) || !strings.Contains(body, `"e2"`) {
 		t.Fatalf("the other copy serves both: %s", body)

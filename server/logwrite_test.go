@@ -27,14 +27,7 @@ import (
 func newIntentServer(t *testing.T) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, store.NewMemory())
-	s.alertsWasm, s.notesWasm = alertsWasm, notesWasm
-	t.Cleanup(func() {
-		for _, h := range []*WasmHost{s.alertsHeld, s.notesHeld} {
-			if h != nil {
-				h.Close(context.Background())
-			}
-		}
-	})
+	closeModules(t, s)
 	srv := httptest.NewServer(storeMux(s))
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -92,11 +85,11 @@ func TestAResentWriteLandsOnceAfterAnotherWriterChangedTheRecord(t *testing.T) {
 	if code != 200 || again["landed"] != true || again["seq"] != first["seq"] {
 		t.Fatalf("the resend lands once, in its first entry: %d %v (first %v)", code, again, first)
 	}
-	head, _ := s.store.LogHeadOf(notesLogName)
+	head, _ := s.store.LogHeadOf("notes")
 	if head.Seq != 2 {
 		t.Fatalf("no third entry: head %d", head.Seq)
 	}
-	_, doc, _, _ := s.notesHead()
+	_, doc, _, _ := s.keptHead("notes")
 	var notes struct {
 		Notes map[string]struct {
 			Text    string `json:"text"`
@@ -135,7 +128,7 @@ func TestAWriteLandsOverAnotherRecordAndConflictsOnItsOwn(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("a write to another record lands: %d %v", code, out)
 	}
-	entry := entryAt(t, s, alertsLogName, int64(out["seq"].(float64)))
+	entry := entryAt(t, s, "alerts", int64(out["seq"].(float64)))
 	intent := entry["intent"].(map[string]any)
 	if intent["claimed_at_ms"] != float64(1770000000123) || entry["at_ms"] == float64(1770000000123) || intent["key"] != "tablet-1/1" {
 		t.Fatalf("the device's time is a claim beside the server's stamp: %v", entry)
@@ -157,7 +150,7 @@ func TestAWriteLandsOverAnotherRecordAndConflictsOnItsOwn(t *testing.T) {
 	if code, out := intentPost(t, base, "alerts", map[string]any{"key": "y", "ops": []any{putAlert("a3", " ")}}); code != 422 || out["op"] != float64(0) {
 		t.Fatalf("a refusal names its op: %d %v", code, out)
 	}
-	if head, _ := s.store.LogHeadOf(alertsLogName); head.Seq != 4 {
+	if head, _ := s.store.LogHeadOf("alerts"); head.Seq != 4 {
 		t.Fatalf("refusals write nothing: head %d", head.Seq)
 	}
 }
@@ -169,7 +162,7 @@ func TestAnAlertEndedThroughItsIntent(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("end: %d %v", code, out)
 	}
-	_, doc, _, _ := s.alertsLogHead(func() logDoc { return s.alertsDoc })
+	_, doc, _, _ := s.keptHead("service_alerts")
 	var alerts struct {
 		Alerts map[string]map[string]any `json:"alerts"`
 	}
@@ -177,4 +170,18 @@ func TestAnAlertEndedThroughItsIntent(t *testing.T) {
 	if a := alerts.Alerts["a1"]; a["status"] != "retired" && a["communication"] == nil {
 		t.Fatalf("the alert ended: %v", a)
 	}
+}
+
+// closeModules closes the server's capability instances when the test
+// ends.
+func closeModules(t *testing.T, s *server) {
+	t.Cleanup(func() {
+		s.modulesMu.Lock()
+		defer s.modulesMu.Unlock()
+		for _, m := range s.modules {
+			if m.host != nil {
+				m.host.Close(context.Background())
+			}
+		}
+	})
 }

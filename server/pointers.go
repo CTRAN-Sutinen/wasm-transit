@@ -436,10 +436,7 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 			kind, doc, ok = s.plansLogDoc(hash)
 		}
 		if !ok {
-			kind, doc, ok = s.alertsLogDoc(hash)
-		}
-		if !ok {
-			kind, doc, ok = s.notesLogDoc(hash)
+			kind, doc, ok = s.keptDoc(hash)
 		}
 		if ok {
 			version := docVersion(doc)

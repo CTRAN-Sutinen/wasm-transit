@@ -69,6 +69,9 @@ pub struct Store {
     pub pointers: &'static [&'static str],
     /// The log that holds its records.
     pub log: Option<Log>,
+    /// Its own write route, when it has one that its log's receive op
+    /// answers: one op over the request's body.
+    pub post: Option<Post>,
     /// The capability that checks a write, and its op.
     pub check: Option<(&'static str, &'static str)>,
     pub merge: Merge,
@@ -80,9 +83,25 @@ pub struct Store {
 #[derive(Debug, Clone, Copy)]
 pub struct Log {
     pub name: &'static str,
+    /// The capability whose `receive` op writes the log (D-228): it runs
+    /// a write's ops over the head and answers the entry. Absent while
+    /// the server still sequences the log's writes itself.
+    pub receive: Option<&'static str>,
     /// Each record kind, and the document field that holds its
     /// collection (an array of records with an `id`, or an object by id).
     pub records: &'static [(&'static str, &'static str)],
+}
+
+/// A kind's own write route, answered by its log's receive op: the
+/// path, the op the request's body is the arguments of, the answer's
+/// field that names the document after the write, and the body's fields
+/// the answer repeats.
+#[derive(Debug, Clone, Copy)]
+pub struct Post {
+    pub path: &'static str,
+    pub op: &'static str,
+    pub answer: &'static str,
+    pub echo: &'static [&'static str],
 }
 
 /// How a kind is written.
@@ -147,7 +166,7 @@ impl Declaration {
         merge: Merge,
         read: Read,
     ) -> Self {
-        self.store = Some(Store { kind, write, route, pointers, log: None, check: None, merge, read });
+        self.store = Some(Store { kind, write, route, pointers, log: None, post: None, check: None, merge, read });
         self
     }
 
@@ -159,10 +178,26 @@ impl Declaration {
         self
     }
 
+    /// The capability whose `receive` op writes the stored kind's log.
+    const fn received(mut self, capability: &'static str) -> Self {
+        if let Some(Store { log: Some(log), .. }) = &mut self.store {
+            log.receive = Some(capability);
+        }
+        self
+    }
+
+    /// The stored kind's own write route.
+    const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
+        if let Some(store) = &mut self.store {
+            store.post = Some(Post { path, op, answer, echo });
+        }
+        self
+    }
+
     /// The log that holds the stored kind's records.
     const fn logged(mut self, name: &'static str, records: &'static [(&'static str, &'static str)]) -> Self {
         if let Some(store) = &mut self.store {
-            store.log = Some(Log { name, records });
+            store.log = Some(Log { name, receive: None, records });
         }
         self
     }
@@ -226,17 +261,23 @@ pub static KINDS: &[Declaration] = &[
         .loaded("service_alerts", "load_service_alerts", 272)
         .stored("service_alerts", Route, "POST /service-alerts", &[], Merge::Log, Open)
         .checked("alerts", "validate")
-        .logged("alerts", &[("service_alert", "alerts")]),
+        .logged("alerts", &[("service_alert", "alerts")])
+        .received("alerts")
+        .posted("/service-alerts", "validate", "alerts_hash", &[]),
     Declaration::new("alert_templates", "alert_templates", "transit_alerts::AlertTemplates", "transit-alerts")
         .loaded("alert_templates", "load_alert_templates", 273)
         .stored("alert_templates", Route, "POST /alert-templates", &[], Merge::Log, Open)
         .checked("alerts", "validate_templates")
-        .logged("alerts", &[("alert_template", "templates")]),
+        .logged("alerts", &[("alert_template", "templates")])
+        .received("alerts")
+        .posted("/alert-templates", "validate_templates", "templates_hash", &[]),
     Declaration::new("notes", "notes", "transit_notes::Notes", "transit-notes")
         .loaded("notes", "load_notes", 274)
         .stored("notes", Route, "POST /notes", &[], Merge::Log, Open)
         .checked("notes", "validate")
-        .logged("notes", &[("note", "notes")]),
+        .logged("notes", &[("note", "notes")])
+        .received("notes")
+        .posted("/notes", "write", "notes_hash", &["id"]),
     Declaration::new("plans", "plans", "transit_plans::PublishedPlans", "transit-plans")
         .stored("plans", Route, "POST /plans, POST /plans/adopt, POST /plans/retire", &["plans"], Merge::Log, Open)
         .checked("plans", "adopt")
@@ -343,14 +384,29 @@ mod tests {
     }
 
     #[test]
+    fn a_kind_s_own_route_is_answered_by_its_log_s_receive_op() {
+        for k in KINDS {
+            let Some(s) = k.store else { continue };
+            if let Some(post) = s.post {
+                assert!(s.log.is_some_and(|l| l.receive.is_some()), "{}: {} needs a receive op", k.name, post.path);
+                assert!(s.route.contains(post.path), "{}: the route's words name {}", k.name, post.path);
+            }
+        }
+    }
+
+    #[test]
     fn a_pointer_kind_is_checked_and_a_logged_kind_merges_by_record() {
         for k in KINDS {
             let Some(s) = k.store else { continue };
             if s.write == Pointer {
                 assert!(s.check.is_some(), "{}: the server refuses a pointer write that no module checks", k.name);
             }
-            if s.log.is_some() {
+            if let Some(log) = s.log {
                 assert!(matches!(s.merge, Merge::Log | Lww), "{}: a log's records merge one by one", k.name);
+                // Every kind of one log is written by one receive op: one
+                // entry can change records of each (D-232).
+                let others = KINDS.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name);
+                assert!(others.into_iter().all(|o| o.receive == log.receive), "the {} log has one receive op", log.name);
             }
         }
     }

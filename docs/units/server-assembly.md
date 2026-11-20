@@ -48,7 +48,7 @@ document registered once.
 5. **The docs.** `docs/architecture/server.md` (the module list, and
    the Why "Single-capability modules, fresh per import"),
    `docs/architecture/bus.md` (the two kinds of module),
-   `AGENTS.md` (the server's hosted capabilities, and `just caps`),
+   the justfile's comment on `caps` (the server's modules and flags),
    and `DEPLOYMENTS-SERVER.md` (the flags).
 
 ## Done when

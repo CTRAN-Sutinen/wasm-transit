@@ -106,3 +106,77 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(err(json!({ "op": "write", "id": "n1" })).contains("missing field"));
     assert!(run(json!({ "op": "load_notes", "notes": [1, 2] }))["error"].is_string());
 }
+
+// ---------------------------------------------------------------------
+// receive: the notes log's write, whole (D-228)
+// ---------------------------------------------------------------------
+
+fn header(seq: u64, key: Option<&str>) -> Value {
+    let mut intent = json!({ "op": "POST /logs/notes" });
+    if let Some(k) = key {
+        intent["key"] = json!(k);
+    }
+    json!({ "log": "notes", "seq": seq, "writer": "r.alvarez", "at_ms": 2_000_000, "module": "cap-notes@test", "intent": intent })
+}
+
+fn write_op(id: &str, text: &str) -> Value {
+    json!({ "cap": "notes", "op": "write", "args": { "id": id, "target": trip(), "text": text } })
+}
+
+/// The fold after the host stores `entry` at seq 1.
+fn folded(entry: &str) -> Value {
+    let stored = [transit_log::Stored { seq: 1, text: entry.into() }];
+    let fold = transit_log::fold(transit_log::Checkpoint::empty("notes"), &stored, &cap_abi::record_hash).unwrap();
+    serde_json::to_value(fold.fold).unwrap()
+}
+
+#[test]
+fn receive_writes_the_note_stamped_by_the_header_and_answers_its_entry() {
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1, Some("device-1/1")) }, "ops": [write_op("n1", "No operator.")] }));
+    let entry: Value = serde_json::from_str(got["entry"].as_str().expect("an entry")).unwrap();
+    assert_eq!(entry["seq"], 1);
+    assert_eq!(got["changes"], 2, "the note and the document's own record: {got}");
+    let note = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "note").expect("the note changes");
+    assert_eq!(note["after"]["written"], json!({ "by": "r.alvarez", "at": 2000 }), "the header's writer and clock, never the page's");
+    let head = got["heads"]["notes"].as_str().expect("the head after the write");
+    // The same write again, over the fold that holds its key, lands once.
+    let again = ok(json!({ "op": "receive", "heads": { "notes": head },
+        "write": { "checkpoint": folded(got["entry"].as_str().unwrap()), "header": header(2, Some("device-1/1")) },
+        "ops": [write_op("n1", "No operator.")] }));
+    assert_eq!(again["landed"], 1, "{again}");
+    assert!(again.get("entry").is_none());
+    // It lands once even when its ops would now be refused.
+    let refused_now = ok(json!({ "op": "receive", "heads": { "notes": head },
+        "write": { "checkpoint": folded(got["entry"].as_str().unwrap()), "header": header(2, Some("device-1/1")) },
+        "ops": [write_op("n1", "  ")] }));
+    assert_eq!(refused_now["landed"], 1, "{refused_now}");
+}
+
+#[test]
+fn receive_answers_a_refused_op_with_no_entry() {
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [write_op("n1", "  ")] }));
+    assert_eq!(got["refused"]["op"], 0, "{got}");
+    assert!(!got["refused"]["refusals"].as_array().unwrap().is_empty());
+    assert!(got.get("entry").is_none() && got.get("heads").is_none());
+}
+
+#[test]
+fn receive_refuses_another_log_s_op_and_a_page_that_names_the_writer_is_not_believed() {
+    let other = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{ "cap": "alerts", "op": "put", "args": {} }] }));
+    assert_eq!(other["failed"]["op"], 0, "{other}");
+    assert!(other["failed"]["error"].as_str().unwrap().contains("not a write to the notes log"), "{other}");
+    let unread = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{ "cap": "notes", "op": "write", "args": { "id": "n1" } }] }));
+    assert!(unread["failed"]["error"].as_str().unwrap().contains("notes write"), "arguments it cannot read: {unread}");
+    let mut named = write_op("n1", "Called the rider.");
+    named["args"]["by"] = json!("someone-else");
+    let got = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [named] }));
+    let entry: Value = serde_json::from_str(got["entry"].as_str().unwrap()).unwrap();
+    let note = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "note").unwrap();
+    assert_eq!(note["after"]["written"]["by"], "r.alvarez");
+}
+
+#[test]
+fn receive_over_a_seq_the_fold_is_not_at_is_an_error() {
+    let e = err(json!({ "op": "receive", "write": { "header": header(3, None) }, "ops": [write_op("n1", "x")] }));
+    assert!(e.contains("seq is 3, and the fold is at 0"), "{e}");
+}

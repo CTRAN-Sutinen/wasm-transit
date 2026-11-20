@@ -28,20 +28,20 @@ into web/pkg/:
 - cap-requests (-requests-wasm) runs in store mode and is held the same
   way. It does the validation behind a stop requests write.
 - cap-alerts (-alerts-wasm) runs in store mode and is held the same
-  way. It runs the alerts log's intent write (`POST /logs/alerts`:
-  `put`, `end`, `put_template`), and does the validation behind a
-  service alerts write (`POST /service-alerts`) and an alert templates
-  write (`POST /alert-templates`). The server serves no feed of the
-  alerts (D-124).
+  way. Its `receive` op writes the alerts log ("One path for a log",
+  below): `POST /logs/alerts` (`put`, `end`, `put_template`), a whole
+  service alerts document (`POST /service-alerts`), and a whole alert
+  templates document (`POST /alert-templates`). The server serves no
+  feed of the alerts (D-124).
 - cap-notes (-notes-wasm) runs in store mode and is held the same way.
-  A note write (`POST /logs/notes`, or `POST /notes`) is one note, not a
-  whole document. The server runs cap-notes `write` over the head with
-  the verified writer and its own clock, so a page never names who
+  Its `receive` op writes the notes log: `POST /logs/notes`, or `POST
+  /notes` for one note. It stamps each note with the verified writer and
+  the server's clock from the entry's header, so a page never names who
   wrote a note (D-214).
 - cap-log (-log-wasm) runs in store mode. It keeps the disruptions log,
-  the stops log, the plans log, the alerts log, and the notes log: each
-  write's entry, the fold, and a revert. The server holds it for its
-  whole lifetime. cap-sync, cap-stops, cap-requests, cap-alerts, and
+  the stops log, the plans log, the alerts log, and the notes log: the
+  fold and a revert, and each write's entry for the logs that no
+  receive op writes yet. The server holds it for its whole lifetime. cap-sync, cap-stops, cap-requests, cap-alerts, and
   cap-notes turn their documents
   into the log's records and back (`log_records`, `log_document`).
 - cap-network (the -network-wasm flag, cap_network.wasm) imports the
@@ -588,11 +588,9 @@ Its HTTP surface:
     (422) or a failed op (400) names its `op`. A key that landed answers
     200 with `landed`, and writes nothing. Each op needs the write rule
     on its document's pointer (`stops`, `stop_requests`).
-  - `POST /logs/alerts` and `POST /logs/notes` are the same intent write
-    for the alerts log (alerts `put`, `end`, `put_template`; the write
-    rule on `service_alerts` or `alert_templates`) and the notes log
-    (notes `write`, with the verified writer and the server's clock;
-    the write rule on `notes`).
+  - `POST /logs/alerts` and `POST /logs/notes` take the same body, and
+    their capability's `receive` op answers them ("One path for a
+    log").
   - `GET /logs/stops?since=`, `POST /logs/stops/revert`, and `POST
     /logs/stops/close-gap` work as the disruptions log's do, and need the
     `audit` rule on `stops`. A revert takes out of the document a record
@@ -604,6 +602,38 @@ Its HTTP surface:
     pointers and no log gets entry 1 from their heads at startup (writer
     `migrate:stops`, the note naming each head). The pointers stay, read
     only.
+- One path for a log (`logkinds.go`; D-228): each log whose kinds the
+  kind table names with a receiving capability (`receive`: the alerts
+  log and the notes log). The server reads the head, makes one call,
+  and creates the entry.
+  - Each kind's document is its capability's `log_document` over the
+    fold's records. The manifest pins it as `<store kind>_hash`
+    (`service_alerts_hash`, `alert_templates_hash`, `notes_hash`), and
+    `/blobs` serves it by that hash.
+  - A write registers the documents at the head in the receiving
+    module, and calls its `receive` op with the write (the checkpoint,
+    the entry's header, and the entries after `read_seq`) and the
+    write's ops. The op runs the ops, checks them, and answers the entry
+    and each document it wrote. The server checks the write rule of
+    each document written (named by its store kind: `service_alerts`,
+    `alert_templates`, `notes`), and creates the entry. When another
+    write took the seq, it asks again over the new head.
+  - `POST /logs/<log>` answers 200 `{seq, <store kind>_hash, landed?}`,
+    422 `{op, refusals}`, 409 `{conflict, overlap, seq}` for a record
+    an unread entry changed, and 400 for an op the log does not take. A
+    key that landed answers 200 with `landed`, before the ops run.
+  - A kind's own route (the kind table's `post`) is one op over the
+    request's body: `POST /notes` (`write`, answering `{notes_hash,
+    id}`), `POST /service-alerts` (`validate`, `{from, alerts}`,
+    answering `{alerts_hash}`), and `POST /alert-templates`
+    (`validate_templates`, `{from, templates}`, answering
+    `{templates_hash}`). A whole document over a head the writer did not
+    read (`from`) answers 409 `{current, seq}`. An older service alerts
+    document comes forward in the op (D-216). The fields a document
+    carries that this build does not know are named in a header
+    (D-167).
+  - The stops log, the plans log, and the disruptions log still sequence
+    their writes in Go (`docs/units/kind-registration.md`).
 - `GET /feed?date=`: the GTFS zip in force on the date (default the
   server's today).
   - It is cap-network `export` of the published pick in force (cap-plans

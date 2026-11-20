@@ -39,10 +39,35 @@ type kindEntry struct {
 	Route    string   `json:"route"`
 	Pointers []string `json:"pointers"`
 	Log      string   `json:"log,omitempty"`
-	Module   string   `json:"module,omitempty"`
-	Validate string   `json:"validate,omitempty"`
-	Merge    string   `json:"merge"`
-	Read     string   `json:"read"` // open, restricted, audit
+	// Records are the log's record kinds of the kind's collection.
+	Records []struct {
+		Kind       string `json:"kind"`
+		Collection string `json:"collection"`
+	} `json:"records,omitempty"`
+	// Receive is the capability whose receive op writes the kind's log.
+	Receive string `json:"receive,omitempty"`
+	// Post is the kind's own write route, answered by that receive op.
+	Post *kindPost `json:"post,omitempty"`
+	// Load is the kernel's load of the kind: a module registers a
+	// document of it on this bulk op.
+	Load *struct {
+		Op   string `json:"op"`
+		Code uint32 `json:"code"`
+	} `json:"load,omitempty"`
+	Module   string `json:"module,omitempty"`
+	Validate string `json:"validate,omitempty"`
+	Merge    string `json:"merge"`
+	Read     string `json:"read"` // open, restricted, audit
+}
+
+// kindPost is a kind's own write route: the path, the op its body is
+// the arguments of, the answer's field that names the document after
+// the write, and the body's fields the answer repeats.
+type kindPost struct {
+	Path   string   `json:"path"`
+	Op     string   `json:"op"`
+	Answer string   `json:"answer"`
+	Echo   []string `json:"echo,omitempty"`
 }
 
 // defaultKindsPath is where `just caps` writes the kind table.
