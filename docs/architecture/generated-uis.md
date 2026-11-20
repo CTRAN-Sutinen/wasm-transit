@@ -621,7 +621,8 @@ questions and session are its `ui.json`.
 
 `disruptions` (`src/uis/disruptions/`) answers what is disrupted today,
 and whether an alert explains it (cap-disruptions, D-213, D-218). A bar
-across the top holds the date and clock, the views (Status, Dispatch),
+across the top holds the date and clock, the views (Status, Alerts,
+Dispatch),
 whether the times are live, and sign-in. Below it, a panel sits beside
 a large map that is always on screen.
 
@@ -649,7 +650,9 @@ template fills its cause, effect, severity, and texts (alerts `fill`
 over the alert's routes, stops, and dates). Alerts `put` checks it as
 it is edited. Save draft and Publish put it and send the document to
 `POST /service-alerts` (409: read again, save again). End alert ends
-it at the host's clock (alerts `end`). The list is then read once the
+it at the host's clock (alerts `end`). Preview shows one stop's board
+with the alert on it (alerts `put`, rt `encode_alerts`, rt `live`,
+board `stop_board`), and downloads the feed's `.pb` file. The list is then read once the
 end's second has passed, because a period holds through its end. Every
 node reads one clock: the page's last poll, or the write's.
 

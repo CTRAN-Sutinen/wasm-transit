@@ -19,21 +19,12 @@ const OP_LOAD_RT = 267;
 
 /// The documents every instance registers before the examples run: the
 /// kernel's worked load examples (JSON) and the bulk fixtures, each
-/// sent only where a linked capability reads its kind.
+/// sent only where a linked capability reads its kind. A kernel load
+/// is named `load_<kind>`, so every load with an example registers.
 function setup(manifest, fixtures) {
-  const kinds = {
-    load_network: "network",
-    load_edits: "edits",
-    load_live: "live",
-    load_boundary: "boundary",
-    load_walks: "walks",
-    load_streets: "streets",
-    load_watchlist: "watchlist",
-    load_work_rules: "work_rules",
-  };
   const steps = [];
   for (const op of manifest.kernel_ops ?? []) {
-    if (kinds[op.name] && op.example?.request) steps.push({ kind: kinds[op.name], json: op.example.request });
+    if (op.name.startsWith("load_") && op.example?.request) steps.push({ kind: op.name.slice(5), json: op.example.request });
   }
   if (fixtures.feed) steps.push({ kind: "feed", op: OP_LOAD_FEED, bytes: fixtures.feed });
   if (fixtures.rt) steps.push({ kind: "rt", op: OP_LOAD_RT, bytes: fixtures.rt });

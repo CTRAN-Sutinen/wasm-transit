@@ -790,7 +790,7 @@ export async function startAlertFor(source: AlertSource): Promise<void> {
 
 /// An alert of the agency's list, opened to edit.
 export function editAlert(id: string, alert: ServiceAlert): Promise<void> {
-  return openForm({ id, fresh: false, alert: structuredClone($state.snapshot(alert)) as ServiceAlert, template: "", unfilled: [], startsNow: false }, null);
+  return openForm({ id, fresh: false, alert: $state.snapshot(alert) as ServiceAlert, template: "", unfilled: [], startsNow: false }, null);
 }
 
 async function openForm(form: AlertForm, stop: string | null): Promise<void> {
