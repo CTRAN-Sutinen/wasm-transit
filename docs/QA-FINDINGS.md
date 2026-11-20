@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-127**. The
+IDs are never reused; the next new finding is **QAF-129**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
 theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
@@ -260,6 +260,24 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot; ride-now's
   "Memory over time" table in `just perf`.
 
+- **QAF-127 UI GAP** — `late_trips` lists trips, and a bus late on its
+  trip is late on its block's next trip too, so one bus is two rows (bus
+  2262 on route 006, 1:20 and 1:41, 2026-11-19 at 13:31). The live
+  summary's late list is one row for each bus, with no names. The
+  Dispatch view's "Late now" reads `late_trips` for now, so it lists
+  bus CTRAN4009 twice (route 030, 3:54 and 5:00, 2026-11-19 at 16:41).
+  The fix is a `by: "vehicle"` option on `late_trips`: one row for each
+  bus, with the names kept.
+  Pin: rt `late_trips` on C-TRAN, 2026-11-19 at 13:31 (39 trips for the
+  live summary's 25 late buses).
+- **QAF-128 UI GAP** — notes `between` names each note's target by id
+  only (a trip id and start, an edit record id, a stop id). The
+  Dispatch view's notes say "Trip 754455 at 4:29 PM", not the route
+  and the trip's first stop. Naming the target is a join with the
+  day's disruptions, which no op answers yet. A note opens its
+  disruption, which names it.
+  Pin: notes `between` over a note on C-TRAN's feed cancel of trip
+  754455, 2026-11-19 at 16:40.
 - **QAF-126 DATA** — C-TRAN's alerts stay open. At 13:31 on
   2026-11-19, 14 of the 15 alerts in force have no end. They have been
   open from 9 to 323 days. Two of them name the same closure (Main &

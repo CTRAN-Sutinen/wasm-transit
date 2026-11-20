@@ -109,6 +109,30 @@ Schedules read these stops but never change them.
 
 **Server:** needed.
 
+## Disruptions
+
+**For anyone who answers for today's service: dispatch, communications,
+and customer service.**
+
+Disruptions shows what is wrong with service today on a large map:
+the buses running late or early, the trips that are cancelled, the
+stops that are closed, and the stops a detour misses.
+
+- **Status** lists each route with a problem as a card: what is
+  cancelled, detoured, or closed, whether riders have an alert about
+  it, and the latest note. Search for a route or a stop to see only
+  what affects it. A transit center includes all of its bays.
+- **Dispatch** lists the buses late now, worst first, with where each
+  bus is, then the detours, the cancelled trips, and today's notes.
+  Pick a late bus to see it on the map.
+
+Open a cancelled trip to see every stop it would have served, its path
+on the map, the next trip, and its notes. Notes are for staff only and
+never reach riders. Cancelled trips come from two places, the
+dispatch record and the live feed, and each is listed as it comes.
+
+**Server:** needed.
+
 ## Read next
 
 [How it works](how-it-works.md) follows one stop display from

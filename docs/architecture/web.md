@@ -195,6 +195,10 @@ documents:
 - `servedStops` returns the deployment's stops document. It is the
   manifest's `stops_hash`, and the page never parses the bytes
   (D-153).
+- `servedServiceAlerts` and `servedNotes` return the deployment's
+  service alerts and notes, by the manifest's `service_alerts_hash` and
+  `notes_hash`, as bytes the page never parses (D-206, D-214).
+  `servedAlertTemplates` returns the alert templates the same way.
 - `stopWarnings` returns the warnings of the stops that a plan
   visits and that are not in service over its period. It uses cap-plans
   `periods`, then cap-stops `visit_warnings`.

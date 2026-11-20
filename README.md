@@ -165,12 +165,13 @@ and the `[oidc]` table in `server/local.toml`
 
 ## Live feeds
 
-The ride-now UI (`/ride-now.html`) and the stop display
-(`/stop-display.html?stop=<id>&layout=center|route|routes`) read the
-agency's GTFS-rt feeds
+The ride-now UI (`/ride-now.html`), the stop display
+(`/stop-display.html?stop=<id>&layout=center|route|routes`), and the
+disruptions UI (`/disruptions.html`) read the agency's GTFS-rt feeds
 named in `web/public/live-feeds.json` (`trips`, `vehicles`,
 `alerts`; an empty URL is a feed the agency does not have), fetched
-directly (every 30 seconds for ride-now, 20 for the display) — each
+directly (every 30 seconds for ride-now and disruptions, 20 for the
+display) — each
 feed must answer over HTTPS with a CORS header. The dev copy also
 names `"proxy": "/rt"`: the server's dev relay, which `just serve`
 and `just dev` turn on (`-rt-proxy`) for feeds that send no CORS

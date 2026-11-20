@@ -625,16 +625,16 @@ type Manifest struct {
 	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans log's fold), store mode
 	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops log's fold), store mode
 	// The stop requests document (the stop_requests pointer head), store mode (D-159).
-	StopRequestsHash string  `json:"stop_requests_hash,omitempty"`
+	StopRequestsHash string `json:"stop_requests_hash,omitempty"`
 	// The service alerts and alert templates documents (the alerts
 	// log's fold), store mode (D-206, D-210).
 	ServiceAlertsHash  string `json:"service_alerts_hash,omitempty"`
 	AlertTemplatesHash string `json:"alert_templates_hash,omitempty"`
 	// The notes document (the notes log's fold), store mode (D-214).
-	NotesHash string `json:"notes_hash,omitempty"`
-	BuildHash        string  `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
-	GeneratedAt      int64   `json:"generated_at"`
-	Publisher        *string `json:"publisher,omitempty"`
+	NotesHash   string  `json:"notes_hash,omitempty"`
+	BuildHash   string  `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
+	GeneratedAt int64   `json:"generated_at"`
+	Publisher   *string `json:"publisher,omitempty"`
 	// The agency's zone (the network's operator timezone, as today()
 	// counts in it): a page reads its clock there, never in the
 	// device's zone (web/src/clock.ts). Empty while none is known.

@@ -73,7 +73,7 @@ func TestNotesWritesAreStampedAndLogged(t *testing.T) {
 	}
 	var doc struct {
 		Notes map[string]struct {
-			Written struct{ By string } `json:"written"`
+			Written struct{ By string }  `json:"written"`
 			Edited  *struct{ By string } `json:"edited"`
 		} `json:"notes"`
 	}

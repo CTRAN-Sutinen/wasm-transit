@@ -87,13 +87,13 @@ func TestAlertsWritesAreValidatedAndLogged(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("a v1 document comes forward at receive: %d %v", code, out)
 	}
-	_, _, v2 := httpGet(t, base+"/blobs/"+out["alerts_hash"].(string))
+	_, v2hdr, v2 := httpGet(t, base+"/blobs/"+out["alerts_hash"].(string))
 	var stored struct {
 		SchemaVersion int `json:"schema_version"`
 	}
 	json.Unmarshal([]byte(v2), &stored)
-	if stored.SchemaVersion != 2 {
-		t.Fatalf("the stored document is v2: %s", v2)
+	if stored.SchemaVersion != 2 || v2hdr.Get("X-Schema-Version") != "2" {
+		t.Fatalf("the stored document is v2, and its blob says so: %q %s", v2hdr.Get("X-Schema-Version"), v2)
 	}
 
 	code, _, entries := httpGet(t, base+"/logs/alerts")

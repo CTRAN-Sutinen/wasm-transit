@@ -556,9 +556,9 @@ The notes document (D-214): the agency's internal notes about its day of service
 
 What is disrupted on a day, and whether an alert explains it (D-213, D-218). A disruption comes from the edit document (a submitted or accepted diversion or trip cancel in force), the live document (a trip instance the feed cancels), or the stops document (a suspended stop). Each is listed as its document gives it, with its origin. A trip that both the edit document and the feed cancel is listed twice, and no rule picks one. cap-disruptions is the seam.
 
-- `disruptions` gives the list. Each carries the names a rider uses (the route; a cancelled trip's start, first stop, and headsign; the stops it takes away), the next trip from the same first stop, the alerts that explain it, and its latest note.
+- `disruptions` gives the list. Each carries the names a rider uses (the route; a cancelled trip's start, first stop, and headsign; the stops it takes away, each with where it is), the next trip from the same first stop, the alerts that explain it, and its latest note. A closed stop is where the stops document puts it on the day; every other stop is where the network puts it.
 - `gaps` gives what no alert explains, with what an alert about each starts from.
-- `today` gives the day by route: each route with a disruption or a late trip, its late trips from the live document's statuses, and how many routes have neither. A suspended stop is listed on every route that serves it. A filter answers one route or one stop.
+- `today` gives the day by route: each route with a disruption or a late trip, its late trips from the live document's statuses, and how many routes have neither. A suspended stop is listed on every route that serves it. A filter answers one route or one stop. A station is one place with its bays.
 
 ## transit-alerts
 

@@ -163,7 +163,8 @@ fn a_cancel_carries_the_names_a_rider_uses_and_the_next_trip() {
     assert_eq!(c.route.as_deref(), Some("10"));
     assert_eq!(c.effect, AlertEffect::NoService);
     assert_eq!(c.start_secs, Some(28800));
-    assert_eq!(c.first_stop, Some(NamedStop { id: "A".into(), name: Some("Main & 1st".into()) }));
+    let a = &w.network.stops["A"];
+    assert_eq!(c.first_stop, Some(NamedStop { id: "A".into(), name: Some("Main & 1st".into()), lat: Some(a.lat), lon: Some(a.lon) }));
     // The next trip of the route from the same first stop in the same
     // direction that runs: t30 at 08:40.
     assert_eq!(c.next_start_secs, Some(31200));
@@ -179,6 +180,8 @@ fn a_detour_and_a_closed_stop_name_their_stops() {
     assert_eq!((detour.start_date.as_deref(), detour.end_date.as_deref()), (Some("2026-11-18"), Some("2026-11-20")));
     let closed = all.iter().find(|d| d.from == Origin::Stops).unwrap();
     assert_eq!(closed.stops[0].name.as_deref(), Some("Main & 2nd"));
+    // A closed stop is where the stops document puts it on the day.
+    assert_eq!((closed.stops[0].lat, closed.stops[0].lon), (Some(45.51), Some(-73.51)));
     assert_eq!((closed.start_date.as_deref(), closed.end_date.as_deref()), (Some("2026-11-01"), Some("2026-12-01")));
 }
 
@@ -279,4 +282,26 @@ fn a_filter_answers_one_route_or_one_stop() {
     let at_b = today(&w.inputs(), &Filter { route: None, stop: Some("B".into()) });
     assert_eq!(at_b.routes.iter().map(|r| r.route.as_str()).collect::<Vec<_>>(), ["10", "20"]);
     assert_eq!(at_b.routes[0].disruptions.len(), 4);
+}
+
+#[test]
+fn a_station_answers_what_touches_its_bays() {
+    // t40 leaves the station's bay A at 08:15. A rider asks about the
+    // station, not the bay: the station answers the cancel at its bay.
+    let mut w = world();
+    let cancel: transit_sync::TripCancel =
+        serde_json::from_value(json!({ "id": "c40", "trip_id": "t40", "start_secs": 29700, "date": "2026-11-19" })).unwrap();
+    w.edits.push(transit_sync::EditRecord {
+        id: "r-40".into(),
+        diversion: None,
+        cancel: Some(cancel),
+        status: transit_sync::EditStatus::Accepted,
+        rev: 1,
+        updated_at: 0,
+        extra: Default::default(),
+    });
+    let at_bay = today(&w.inputs(), &Filter { route: None, stop: Some("SA".into()) });
+    let at_station = today(&w.inputs(), &Filter { route: None, stop: Some("STN".into()) });
+    assert_eq!(at_station, at_bay);
+    assert_eq!(at_station.routes.iter().map(|r| r.route.as_str()).collect::<Vec<_>>(), ["40"]);
 }

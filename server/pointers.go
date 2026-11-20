@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -441,9 +442,10 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 			kind, doc, ok = s.notesLogDoc(hash)
 		}
 		if ok {
+			version := docVersion(doc)
 			w.Header().Set("X-Document-Kind", kind)
-			w.Header().Set("X-Schema-Version", "1")
-			if link := s.storedSchemaLink(kind, 1); link != "" {
+			w.Header().Set("X-Schema-Version", strconv.FormatUint(uint64(version), 10))
+			if link := s.storedSchemaLink(kind, version); link != "" {
 				w.Header().Set("Link", link)
 			}
 			send(doc, func() []byte { return s.gzippedBlob(hash, doc) })
@@ -496,4 +498,16 @@ func (s *server) gzippedBlob(hash string, data []byte) []byte {
 	}
 	s.gzCache[hash] = gz
 	return gz
+}
+
+// docVersion is the schema version a log's document says it is (its
+// `schema_version`), 1 when it says none.
+func docVersion(doc []byte) uint32 {
+	var tag struct {
+		SchemaVersion uint32 `json:"schema_version"`
+	}
+	if json.Unmarshal(doc, &tag) != nil || tag.SchemaVersion < 1 {
+		return 1
+	}
+	return tag.SchemaVersion
 }

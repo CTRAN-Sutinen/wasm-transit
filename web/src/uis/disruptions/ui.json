@@ -1,0 +1,37 @@
+{
+  "id": "disruptions",
+  "title": "Disruptions",
+  "summary": "What is disrupted today, on a large map beside a panel: each affected route as a card, narrowed to a route or a stop by a search, with whether an alert explains each disruption and its latest note; the dispatcher's day (the buses late now, the detours, the cancelled trips from the edit document and the live feed, and today's notes); and one disruption opened with the stops it takes away and its notes.",
+  "questions": [
+    "What is late right now, and where is that bus?",
+    "What do I tell a rider who asks about this route or stop?",
+    "Which disruptions are in force today?",
+    "Which stops does this detour skip?",
+    "Which trips are cancelled today? The live feed's cancels and the edit document's cancels are listed as each source gives them.",
+    "What has dispatch noted about this trip, detour, or stop, and what was noted today?"
+  ],
+  "ops": [
+    "rt.live",
+    "rt.late_trips",
+    "disruptions.today",
+    "notes.on",
+    "notes.between",
+    "directory.entities",
+    "directory.stops",
+    "runcut.trip_stops",
+    "runcut.trip_path",
+    "network.validate"
+  ],
+  "components": [
+    "DisruptionsMap",
+    "RouteStatus",
+    "RouteStopSearch",
+    "DispatchBoard",
+    "DisruptionDetail",
+    "SignInControl",
+    "Unavailable"
+  ],
+  "session": "2026-11-19 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`, the live feeds), at 2560x1300, the read side: 22 affected routes from the feed's cancels and the live statuses, each cancel with its first stop and next trip; a feed cancel opened (its 18 stops as scheduled, its path on the map); a note written through POST /notes shown as the cancel's latest note and in its panel, and among today's notes in Dispatch, which open it; the search narrowed to Fisher's Landing Transit Center (its bays' cancels) and to route 012; Dispatch's late list (51 trips), a late bus picked and shown on the map. Found and fixed: a station matched no bay (the stop filter, D-219), the map framed before its box had its height, a cancel's stops read over the edit document that takes the trip out. Open: QAF-127, QAF-128.",
+  "spec": "web/e2e/ui-disruptions.spec.mjs",
+  "generated": "2026-11-19"
+}

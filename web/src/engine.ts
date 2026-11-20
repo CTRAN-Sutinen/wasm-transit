@@ -46,12 +46,16 @@ import { call, type Assembly, type Route } from "./bus";
 import type { Capability } from "./types/cap_abi/Capability";
 import type { Evicted } from "./types/cap_abi/Evicted";
 import type { Holding } from "./types/cap_abi/Holding";
+import type { Request as AlertsRequest } from "./types/cap_alerts/Request";
+import type { Response as AlertsResponse } from "./types/cap_alerts/Response";
 import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
 import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
 import type { Request as AuthorRequest } from "./types/cap_author/Request";
 import type { Response as AuthorResponse } from "./types/cap_author/Response";
 import type { Request as BoardRequest } from "./types/cap_board/Request";
 import type { Response as BoardResponse } from "./types/cap_board/Response";
+import type { Request as DisruptionsRequest } from "./types/cap_disruptions/Request";
+import type { Response as DisruptionsResponse } from "./types/cap_disruptions/Response";
 import type { Request as DirectoryRequest } from "./types/cap_directory/Request";
 import type { Response as DirectoryResponse } from "./types/cap_directory/Response";
 import type { Request as GtfsRequest } from "./types/cap_gtfs/Request";
@@ -60,6 +64,8 @@ import type { Request as MigrateRequest } from "./types/cap_migrate/Request";
 import type { Response as MigrateResponse } from "./types/cap_migrate/Response";
 import type { Request as NetworkRequest } from "./types/cap_network/Request";
 import type { Response as NetworkResponse } from "./types/cap_network/Response";
+import type { Request as NotesRequest } from "./types/cap_notes/Request";
+import type { Response as NotesResponse } from "./types/cap_notes/Response";
 import type { Request as PlansRequest } from "./types/cap_plans/Request";
 import type { Response as PlansResponse } from "./types/cap_plans/Response";
 import type { Request as RouterRequest } from "./types/cap_router/Request";
@@ -88,13 +94,16 @@ import type { WalkTable } from "./types/WalkTable";
 /// The capabilities the generated UIs assemble, each with its
 /// generated request and response types.
 type Caps = {
+  alerts: [AlertsRequest, AlertsResponse];
   analysis: [AnalysisRequest, AnalysisResponse];
   author: [AuthorRequest, AuthorResponse];
   board: [BoardRequest, BoardResponse];
   directory: [DirectoryRequest, DirectoryResponse];
+  disruptions: [DisruptionsRequest, DisruptionsResponse];
   gtfs: [GtfsRequest, GtfsResponse];
   migrate: [MigrateRequest, MigrateResponse];
   network: [NetworkRequest, NetworkResponse];
+  notes: [NotesRequest, NotesResponse];
   plans: [PlansRequest, PlansResponse];
   requests: [RequestsRequest, RequestsResponse];
   router: [RouterRequest, RouterResponse];
@@ -126,7 +135,10 @@ export type Kind =
   | "layer"
   | "gtfs_rt"
   | "stops"
-  | "stop_requests";
+  | "stop_requests"
+  | "service_alerts"
+  | "alert_templates"
+  | "notes";
 
 /// One document version. Immutable: a new version is a new Doc.
 export class Doc<V = unknown> {
@@ -246,6 +258,9 @@ const LOADERS: Record<Kind, Loader> = {
   gtfs_rt: { bytes: 267, hash: "rt_hash" },
   stops: { bytes: 270, hash: "stops_hash" },
   stop_requests: { bytes: 271, hash: "requests_hash" },
+  service_alerts: { bytes: 272, hash: "alerts_hash" },
+  alert_templates: { bytes: 273, hash: "templates_hash" },
+  notes: { bytes: 274, hash: "notes_hash" },
 };
 
 // ---------------------------------------------------------------------
@@ -563,6 +578,9 @@ type DeploymentManifest = {
   plans_hash?: string;
   stops_hash?: string;
   stop_requests_hash?: string;
+  service_alerts_hash?: string;
+  alert_templates_hash?: string;
+  notes_hash?: string;
   /// The agency's feed the deployment imported (its zip's hash).
   feed_hash?: string;
   /// How a page signs in to write (the server's -oidc-client-id): the
@@ -850,6 +868,34 @@ export async function servedStopRequests(): Promise<Doc | null> {
   const resp = await blobGz(pin);
   if (!resp?.ok) return null;
   return new Doc("stop_requests", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
+}
+
+/// One of the deployment's logged documents, by the hash its manifest
+/// pins: bytes the page never parses, refused unless they answer the
+/// pin. Null when the deployment keeps none yet.
+async function servedLogged(kind: Kind, pin: string | undefined): Promise<Doc | null> {
+  if (!pin) return null;
+  const resp = await blobGz(pin);
+  if (!resp?.ok) return null;
+  return new Doc(kind, { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
+}
+
+/// The deployment's service alerts (the manifest's
+/// `service_alerts_hash`; D-206). Null when it keeps none yet.
+export async function servedServiceAlerts(): Promise<Doc | null> {
+  return servedLogged("service_alerts", (await deploymentManifestNow())?.service_alerts_hash);
+}
+
+/// The deployment's alert templates (the manifest's
+/// `alert_templates_hash`; D-210). Null when it keeps none yet.
+export async function servedAlertTemplates(): Promise<Doc | null> {
+  return servedLogged("alert_templates", (await deploymentManifestNow())?.alert_templates_hash);
+}
+
+/// The deployment's notes (the manifest's `notes_hash`; D-214). Null
+/// when it keeps none yet.
+export async function servedNotes(): Promise<Doc | null> {
+  return servedLogged("notes", (await deploymentManifestNow())?.notes_hash);
 }
 
 /// A plan's period: from its pick date until the next published pick's,

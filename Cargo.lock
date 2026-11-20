@@ -1220,6 +1220,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-ui-disruptions"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-directory",
+ "cap-disruptions",
+ "cap-network",
+ "cap-notes",
+ "cap-rt",
+ "cap-runcut",
+]
+
+[[package]]
 name = "module-ui-ride-now"
 version = "0.1.0"
 dependencies = [

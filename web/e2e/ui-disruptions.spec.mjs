@@ -1,0 +1,120 @@
+// The disruptions UI (src/uis/disruptions; D-213, D-214, D-218): what is
+// disrupted today, and does an alert explain it. Its server is the
+// stops spec's (playwright.config.mjs, :8084): the durable store, which
+// the notes need (POST /notes).
+//
+// Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
+// Montreal; the browser in UTC, which never decides), the fixture feed,
+// an edit document with a detour of route 10 (C skipped) and a cancel
+// of t30's 8:40, and the trip updates (sample-rt.pb: t10 three minutes
+// late at B, bus 4201 near A, served for every live feed URL):
+//
+//   1. Status lists route 10 as a card: the detour and the cancel, each
+//      with "No alert", the cancel with its first stop. The other
+//      routes are counted.
+//   2. A note written about the cancel (POST /notes, the server's
+//      stamp) shows as its latest note, and in the cancel's own panel,
+//      with its stops not served and its path on the map.
+//   3. The search narrows the page to one stop: only what touches C.
+//   4. Dispatch lists t10 late now with its bus, the detour, and the
+//      cancel. Today's notes are the page's day's: the note above is
+//      stamped by the server's clock, on another day, so it is not
+//      among them.
+//   5. The view, the pick, and the open disruption live in the URL
+//      hash: a reload opens the same.
+
+import { test, expect } from "@playwright/test";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import fs from "node:fs";
+
+const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+
+test.use({ baseURL: "http://127.0.0.1:8084", timezoneId: "UTC" });
+
+const edits = [
+  {
+    id: "e-disruptions",
+    rev: 1,
+    status: "accepted",
+    updated_at: 1,
+    diversion: {
+      id: "d-disruptions",
+      route_id: "10",
+      direction_id: null,
+      start_date: "2026-10-23",
+      end_date: "2026-10-23",
+      first_kept_stop: "A",
+      last_kept_stop: "B",
+      skipped_stops: ["C"],
+      added_secs: 300,
+      detour: null,
+    },
+  },
+  {
+    id: "c-disruptions",
+    rev: 1,
+    status: "accepted",
+    updated_at: 1,
+    cancel: { id: "cancel-t30", trip_id: "t30", start_secs: 31200, date: "2026-10-23" },
+  },
+];
+
+async function open(page, hash = "") {
+  await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
+  await page.route("**/edits", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: edits }) }),
+  );
+  await page.route(/\/rt\?url=/, (route) =>
+    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+  );
+  await page.goto(`/disruptions.html${hash}`);
+}
+
+test("the day's disruptions: status, a note, a stop, and dispatch", async ({ page, request }) => {
+  // 2. A note about the cancel, written through the receive path.
+  const note = await request.post("/notes", {
+    data: { id: "n-e2e-cancel", target: { kind: "edit", id: "c-disruptions" }, text: "No operator. Next trip covered." },
+  });
+  expect(note.ok()).toBeTruthy();
+
+  await open(page);
+  await expect(page.getByTestId("live-state")).toContainText("Live", { timeout: 15_000 });
+
+  // 1. Route 10's card: the detour and the cancel, neither explained.
+  const card = page.locator('[data-testid="route-card"][data-route="10"]');
+  await expect(card).toBeVisible();
+  const lines = card.getByTestId("disruption-line");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.nth(0)).toContainText("Detour: Skips 1 stop");
+  await expect(lines.nth(1)).toContainText("Cancelled: 8:40 AM from");
+  await expect(lines.nth(1)).toContainText("No alert");
+  await expect(lines.nth(1)).toContainText("No operator. Next trip covered.");
+  await expect(page.getByTestId("route-status")).toContainText(/Other routes \(\d+\)/);
+
+  // 2. The cancel's own panel: its stops not served, its notes.
+  await lines.nth(1).click();
+  const detail = page.getByTestId("disruption-detail");
+  await expect(detail).toContainText("Cancelled");
+  await expect(detail).toContainText("Stops not served 3");
+  await expect(detail.getByTestId("detail-notes")).toContainText("No operator. Next trip covered.");
+
+  // 5. A reload opens the same panel.
+  await page.reload();
+  await expect(page.getByTestId("disruption-detail")).toContainText("Stops not served 3", { timeout: 15_000 });
+  await detail.getByRole("button", { name: "‹ Back" }).click();
+
+  // 3. One stop: only what touches C (the detour skips it; t30 serves it).
+  await page.getByLabel("Search routes and stops").fill("3rd");
+  await page.getByRole("listbox").getByRole("button", { name: /Main & 3rd/ }).click();
+  await expect(page.getByTestId("search-pick")).toBeVisible();
+  await expect(card.getByTestId("disruption-line")).toHaveCount(2);
+
+  // 4. Dispatch: t10 late, the detour, the cancel; no note on the day.
+  await page.getByRole("navigation", { name: "Views" }).getByRole("button", { name: "Dispatch" }).click();
+  const board = page.getByTestId("dispatch-board");
+  await expect(board.getByTestId("late-row").first()).toContainText("Bus 4201");
+  await expect(board.getByTestId("detours")).toContainText("Skips 1 stop");
+  await expect(board.getByTestId("cancel-row")).toContainText("8:40 AM");
+  await expect(board.getByTestId("day-notes")).toContainText("No notes today");
+});

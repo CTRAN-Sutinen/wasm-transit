@@ -62,14 +62,24 @@ pub enum Origin {
     Stops,
 }
 
-/// A stop by its id, with its name where the network has it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+/// A stop by its id, with its name where the network has it, and where
+/// it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct NamedStop {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub name: Option<String>,
+    /// Where the stop is. A closed stop is where the stops document puts
+    /// it on the day; every other stop is where the network puts it.
+    /// Absent when neither holds the stop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lat: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lon: Option<f64>,
 }
 
 /// One disruption on the day.
@@ -201,7 +211,8 @@ pub struct Today {
 }
 
 /// What [`today`] answers about: one route, or the disruptions that
-/// touch one stop. With a stop, a route is listed for its disruptions
+/// touch one stop (a station: it or any of its bays). With a stop, a
+/// route is listed for its disruptions
 /// there only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -215,7 +226,8 @@ pub struct Filter {
 }
 
 fn named(network: &Network, id: &str) -> NamedStop {
-    NamedStop { id: id.to_string(), name: network.stops.get(id).map(|s| s.name.clone()) }
+    let stop = network.stops.get(id);
+    NamedStop { id: id.to_string(), name: stop.map(|s| s.name.clone()), lat: stop.map(|s| s.lat), lon: stop.map(|s| s.lon) }
 }
 
 fn ymd(d: NaiveDate) -> String {
@@ -370,7 +382,7 @@ pub fn disruptions(i: &Inputs) -> Vec<Disruption> {
     suspended.sort_by(|a, b| a.stop_id.cmp(&b.stop_id));
     for s in suspended {
         let mut d = blank(AlertSource::Stop { stop: s.stop_id.clone() }, Origin::Stops, AlertEffect::NoService);
-        d.stops = vec![named(i.network, &s.stop_id)];
+        d.stops = vec![NamedStop { lat: Some(s.lat), lon: Some(s.lon), ..named(i.network, &s.stop_id) }];
         d.touches = [s.stop_id.clone()].into_iter().collect();
         d.start_date = s.since;
         d.end_date = s.until;
@@ -412,8 +424,15 @@ fn name_key(name: &str) -> (u8, u64, String) {
 pub fn today(i: &Inputs, filter: &Filter) -> Today {
     let date = ymd(i.date);
     let mut by_route: BTreeMap<String, Vec<Disruption>> = BTreeMap::new();
+    // A station is one place with its bays: the stop asked, and each stop
+    // whose parent it is.
+    let place: Option<BTreeSet<&str>> = filter.stop.as_deref().map(|asked| {
+        std::iter::once(asked)
+            .chain(i.network.stops.iter().filter(|(_, s)| s.parent.as_ref().is_some_and(|p| p.as_str() == asked)).map(|(id, _)| id.as_str()))
+            .collect()
+    });
     for d in disruptions(i) {
-        if filter.stop.as_ref().is_some_and(|s| !d.touches.contains(s)) {
+        if place.as_ref().is_some_and(|p| !d.touches.iter().any(|t| p.contains(t.as_str()))) {
             continue;
         }
         let routes: Vec<String> = match (&d.route, d.from) {

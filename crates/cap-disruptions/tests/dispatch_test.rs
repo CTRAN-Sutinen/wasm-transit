@@ -87,7 +87,7 @@ fn the_day_lists_routes_with_their_disruptions() {
     assert_eq!(routes, ["10", "20"], "route 20 serves the suspended stop B");
     let r10 = &today["routes"][0]["disruptions"];
     assert_eq!(r10.as_array().unwrap().len(), 4);
-    assert_eq!(r10[0]["first_stop"], json!({ "id": "A", "name": "Main & 1st" }));
+    assert_eq!(r10[0]["first_stop"], json!({ "id": "A", "name": "Main & 1st", "lat": 45.5, "lon": -73.5 }));
     assert_eq!(r10[1]["explained_by"], json!(["a1"]));
     assert_eq!(r10[2]["from"], "feed");
     assert!(today["unaffected_routes"].as_u64().is_some());

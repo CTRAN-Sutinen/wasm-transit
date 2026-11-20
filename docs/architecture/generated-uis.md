@@ -215,6 +215,26 @@ The stop display's set:
 - DisplayAlerts: the alerts slot, always on screen.
 - DisplaySetup: the three layouts and the stop type-ahead.
 
+The disruptions set:
+
+- DisruptionsMap: the live buses by status (late, very late, early, and
+  the rest small), each cancelled trip at its first stop, each closed
+  stop, and the stops a detour skips, from disruptions `today`. An open
+  trip draws its path. A route picked dims the rest. The legend reads
+  the live document's window. It frames what it draws once, and again
+  when its size changes, until the reader moves it.
+- RouteStatus: disruptions `today` as a card per route. Each
+  disruption is a line with whether an alert explains it and its
+  latest note. The route's late trips are counted.
+- RouteStopSearch: one box over directory `entities` (routes) and
+  `stops`. A pick is a chip with a clear button.
+- DispatchBoard: rt `late_trips`, the day's detours and cancelled trips
+  (`today`, sectioned by what each is), and notes `between`.
+- DisruptionDetail: one disruption, a cancelled trip's stops (runcut
+  `trip_stops`), and its notes (notes `on`).
+
+`disruptionsFormat.ts` holds their formatting.
+
 `rideFormat.ts` holds the formatting of the rider's set and the stop
 display's set (clock times, a row's wait, status words and tones). Each
 frame whose capability can fail takes an `off` prop. A capability that
@@ -575,6 +595,31 @@ trips (`previous`). It follows the deployment and works offline
 ([updates-offline.md](updates-offline.md)). A new build applies itself
 at a poll while the server answers and the setup is closed. Its
 questions and session are its `ui.json`.
+
+`disruptions` (`src/uis/disruptions/`) answers what is disrupted today,
+and whether an alert explains it (cap-disruptions, D-213, D-218). A bar
+across the top holds the date and clock, the views (Status, Dispatch),
+whether the times are live, and sign-in. Below it, a panel sits beside
+a large map that is always on screen.
+
+- **Status**: the search, then each affected route as a card. A search
+  pick narrows the day to one route or one stop (a station with its
+  bays). A route's badge picks the route.
+- **Dispatch**: the trips late now, the detours, the cancelled trips
+  (from the edit document and the live feed, each as given), and
+  today's notes, newest first.
+- **A disruption opened**: what it is and where it came from, the next
+  trip, whether an alert explains it, the stops it takes away, and its
+  notes, oldest first. A cancelled trip shows its every stop and draws
+  its path as scheduled: the edit document's cancel takes the trip out
+  of the patched day.
+
+The page reads the deployment's network, the edit document (`GET
+/edits`), the stops, the service alerts, and the notes (by the
+manifest's hashes, each read again only when its hash moves), and the
+deployment's live feeds. It polls them and the clock every 30 s while
+it is visible. The view, the pick, and the open disruption live in the
+URL hash. Its questions and session are its `ui.json`.
 
 `stops` (`src/uis/stops/`) holds every stop's own life, apart from the
 service plans, which only read it (D-157). It also holds the work asked

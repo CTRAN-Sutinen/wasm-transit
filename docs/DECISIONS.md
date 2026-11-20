@@ -2498,6 +2498,15 @@ Options (each encoded, with the other answer):
   it, and a cancelled trip whose pattern serves it. With a stop, no
   route is listed for lateness alone. The other answer was the routes
   that serve the stop, with all their disruptions.
+- **A station** in the stop filter is one place with its bays: the
+  filter matches the station and each stop whose parent it is. Found on
+  C-TRAN, where every trip leaves from a bay and a search finds the
+  station. The other answer was the station's own id only, which
+  matches nothing there.
+- **A stop's position** in the answer is the stops document's for a
+  closed stop on the day, and the network's for every other stop. The
+  other answer was the network's for every stop, which misses a stop
+  the network does not hold.
 - **A suspended stop** is listed on every route whose pattern serves
   it. The other answer was a list of stops beside the routes.
 - **The late list's `near_stop`** is the stop of the bus's own trip

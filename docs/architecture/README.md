@@ -86,3 +86,4 @@ that is deployed on its own. A deployment puts each UI at its own URL.
 | service-design | No | Loading the published network, publishing picks |
 | service-change | No | Loading the published network, publishing picks |
 | stops | No | Reading and saving the stops document |
+| disruptions | No | The edit document, the stops, the service alerts, and the notes |
