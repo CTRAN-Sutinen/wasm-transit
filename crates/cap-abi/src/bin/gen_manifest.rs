@@ -149,7 +149,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "board",
         file: "module_board.wasm",
-        ops: &["stop_board", "grouped_board", "watchlist_board"],
+        ops: &["stop_board", "grouped_board", "alert_reach", "watchlist_board"],
         documents: &["network", "edits", "live", "watchlist"],
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
@@ -2126,6 +2126,30 @@ fn example_for(
                     "live_hash": live_hash }),
                 json!({ "ok": { "op": "stop_board",
                     "board": transit_dispatch::stop_board(ctx.derived_network(), &day, "A", 28860, 5, Some(&live), None) } }),
+            )
+        }
+        ("board", "alert_reach") => {
+            // Route 10 at stop A, and the station: the first reaches
+            // route 10's two departures at A, the second none at the
+            // station's bays.
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            let alert: transit_alerts::ServiceAlert = serde_json::from_value(json!({
+                "status": "published", "header": [{"text": "Main & 1st: route 10 boards across the street"}],
+                "informed": [{"route": "10", "stop": "A"}, {"stop": "STN"}]
+            })).ok()?;
+            let network = ctx.derived_network();
+            let mut all = Vec::new();
+            let entities: Vec<serde_json::Value> = alert.informed.iter().map(|e| {
+                let r = transit_rt::entity_reading(network, e);
+                all.extend(r.scopes.clone());
+                json!({ "published": r.published.as_ref().ok(), "names": r.names,
+                        "reach": transit_dispatch::alert_reach(network, &day, &r.scopes, "2026-10-23") })
+            }).collect();
+            (
+                json!({ "op": "alert_reach", "network_hash": ctx.network_hash, "date": "2026-10-23", "alert": alert }),
+                json!({ "ok": { "op": "alert_reach", "entities": entities, "reach": transit_dispatch::alert_reach(network, &day, &all, "2026-10-23") } }),
             )
         }
         ("board", "grouped_board") => {

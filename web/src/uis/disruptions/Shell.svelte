@@ -5,8 +5,9 @@
   /// panel shows the open disruption, else the view: Status (the search
   /// and the affected routes) or Dispatch (late now, detours, cancelled
   /// trips, today's notes), or Alerts (the disruptions with no alert,
-  /// and the agency's alerts). An alert being written takes the panel,
-  /// with its rider preview beside the map. Every value is the host's
+  /// and the agency's alerts). An alert being written takes half the
+  /// page, beside what riders see of it (its reach, entity by entity,
+  /// and its map); the rider's board opens in a dialog. Every value is the host's
   /// (host.svelte.ts).
   import {
     dz,
@@ -27,6 +28,9 @@
     setPreviewStop,
     setPreviewQuery,
     downloadFeed,
+    setStartsNow,
+    openPreview,
+    addStop,
     writeNote,
     startAlertFor,
     type View,
@@ -34,6 +38,7 @@
   import AlertsBoard from "../../components/AlertsBoard.svelte";
   import AlertEditor from "../../components/AlertEditor.svelte";
   import AlertPreview from "../../components/AlertPreview.svelte";
+  import AlertReach from "../../components/AlertReach.svelte";
   import DisruptionsMap from "../../components/DisruptionsMap.svelte";
   import RouteStatus from "../../components/RouteStatus.svelte";
   import RouteStopSearch from "../../components/RouteStopSearch.svelte";
@@ -91,6 +96,8 @@
           ontemplate={fillTemplate}
           onsave={saveAlert}
           oncancel={closeForm}
+          onstartsnow={setStartsNow}
+          onpreview={() => openPreview(true)}
         />
       {:else if dz.open}
         <DisruptionDetail
@@ -146,24 +153,32 @@
         />
       {/if}
     </aside>
-    <section class="map">
+    <section class="map" class:hidden={!!dz.form}>
       <DisruptionsMap live={dz.live} day={dz.day} {focus} path={dz.openPath} open={dz.openItem} bus={dz.bus} ondisruption={openDisruption} />
     </section>
     {#if dz.form}
       <aside class="side">
-        <AlertPreview
+        <AlertReach reach={dz.reach} stops={dz.allStops} off={why("Reach")} onstop={addStop} />
+      </aside>
+    {/if}
+    {#if dz.form && dz.previewOpen}
+      <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && openPreview(false)}>
+        <div class="dialog" role="dialog" aria-modal="true" aria-label="Preview" data-testid="preview-dialog">
+          <button type="button" class="close" aria-label="Close" onclick={() => openPreview(false)}>×</button>
+          <AlertPreview
           stop={dz.previewStop}
           board={dz.preview}
           routes={dz.routes}
           canDownload={!!dz.previewFeed}
-          off={why("Preview")}
+          off={why("Preview") || (dz.previewWaits ? "Fill in what Publish needs to see the preview" : "")}
           query={dz.previewQuery}
           found={dz.previewFound}
           oninput={setPreviewQuery}
           onstop={setPreviewStop}
           ondownload={downloadFeed}
         />
-      </aside>
+        </div>
+      </div>
     {/if}
   </main>
 </div>
@@ -182,7 +197,11 @@
   .status { margin: 0; padding: 0.35rem 1rem; font-size: 0.85rem; background: var(--hover); }
   .status.alert { color: var(--bad); }
   .body { display: grid; grid-template-columns: 30rem 1fr; min-height: 0; }
-  .body.writing { grid-template-columns: 34rem 1fr 26rem; }
+  .body.writing { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .map.hidden { display: none; }
+  .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; z-index: 20; }
+  .dialog { position: relative; width: min(32rem, 92vw); max-height: 85vh; overflow: auto; background: var(--surface); border-radius: 10px; padding: 2.2rem 1.2rem 1.2rem; }
+  .close { position: absolute; top: 0.5rem; right: 0.6rem; border: 0; background: none; font-size: 1.3rem; cursor: pointer; color: var(--muted); }
   .side { overflow: auto; padding: 1rem; border-left: 1px solid var(--line); }
   .panel { overflow: auto; padding: 1rem; border-right: 1px solid var(--line); }
   .gap { height: 0.9rem; }

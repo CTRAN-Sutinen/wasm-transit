@@ -29,6 +29,8 @@ import type { AlertFlag } from "../../types/AlertFlag";
 import type { AlertGap } from "../../types/AlertGap";
 import type { AlertList } from "../../types/AlertList";
 import type { AlertRefusal } from "../../types/AlertRefusal";
+import type { EntityReach } from "../../types/cap_board/EntityReach";
+import type { Reach } from "../../types/Reach";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { NoteRefusal } from "../../types/NoteRefusal";
 import type { NoteTarget } from "../../types/NoteTarget";
@@ -58,7 +60,9 @@ const VIEWS: View[] = ["status", "alerts", "dispatch"];
 
 /// The alert open in the form: its id, whether it is new, the alert as
 /// it stands, and the blanks the last fill left (alerts `fill`).
-export type AlertForm = { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[] };
+/// `startsNow`: riders are told from the moment it is saved; the start
+/// is stamped then.
+export type AlertForm = { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[]; startsNow: boolean };
 
 /// How often the page reads the documents, the live feeds, and the
 /// clock again (one timer, kit's whileVisible).
@@ -128,6 +132,12 @@ export const dz = $state({
   /// board `stop_board`) and the feed's bytes.
   form: null as AlertForm | null,
   formStops: [] as { stop_id: string; name: string }[],
+  /// What the form's alert reaches today, entity by entity (board
+  /// `alert_reach`), and every stop, for the map that picks them.
+  reach: null as { entities: EntityReach[]; reach: Reach } | null,
+  allStops: [] as DirectoryStop[],
+  /// The rider preview, open in its dialog.
+  previewOpen: false,
   refusals: [] as AlertRefusal[],
   flags: [] as AlertFlag[],
   previewStop: null as { id: string; name: string } | null,
@@ -135,6 +145,8 @@ export const dz = $state({
   previewQuery: "",
   previewFound: null as { routes: EntityRow[]; stops: DirectoryStop[] } | null,
   preview: null as StopBoard | null,
+  /// The preview waits on the form: what Publish needs is missing.
+  previewWaits: false,
   previewFeed: "",
   /// A write under way, and why the last one was refused (in words).
   busy: false,
@@ -411,11 +423,38 @@ const request = answerGraph(
       run: async () => {
         const form = dz.form;
         if (!form || !network) return void ((dz.refusals = []), (dz.flags = []));
-        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: form.alert });
+        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: stamped(form) });
         dz.refusals = put.refusals;
         if (!put.alerts || !put.alerts_hash) return void (dz.flags = []);
         const next = produced("service_alerts", put.alerts, "alerts", put.alerts_hash);
         dz.flags = (await ask("alerts", "flags", { alerts_hash: next, network_hash: network })).flags.filter((f) => f.alert === form.id);
+      },
+    },
+    {
+      // Every stop: the reach map's stops to pick.
+      id: "directory.stops[all]",
+      frame: "",
+      needs: ["network", "form"],
+      visible: () => !!dz.form,
+      clear: () => (dz.allStops = []),
+      run: async () => {
+        if (!network || dz.allStops.length) return;
+        dz.allStops = (await ask("directory", "stops", { network_hash: network, limit: null })).stops;
+      },
+    },
+    {
+      // What the alert reaches today, read as a rider's app reads the
+      // feed.
+      id: "board.alert_reach",
+      frame: "Reach",
+      needs: ["network", "docs", "form", "clock"],
+      caps: ["board"],
+      clear: () => (dz.reach = null),
+      run: async () => {
+        const form = dz.form;
+        if (!form || !network) return void (dz.reach = null);
+        const { op: _, ...reach } = await ask("board", "alert_reach", { network_hash: network, edits_hash: edits ?? undefined, date: dz.date, alert: stamped(form) });
+        dz.reach = reach;
       },
     },
     {
@@ -424,13 +463,15 @@ const request = answerGraph(
       // agency's feed encoded with it.
       id: "preview",
       frame: "Preview",
-      needs: ["network", "docs", "snapshot", "form", "preview-stop", "clock"],
+      needs: ["network", "docs", "snapshot", "form", "preview-stop", "clock", "preview-open"],
+      visible: () => dz.previewOpen,
       caps: ["alerts", "rt", "board"],
       clear: () => ((dz.preview = null), (dz.previewFeed = "")),
       run: async () => {
         const form = dz.form;
         if (!form || !network || !boundary) return void ((dz.preview = null), (dz.previewFeed = ""));
-        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: { ...form.alert, status: "published" } });
+        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: { ...stamped(form), status: "published" } });
+        dz.previewWaits = !put.alerts;
         if (!put.alerts || !put.alerts_hash) return void ((dz.preview = null), (dz.previewFeed = ""));
         const doc = produced("service_alerts", put.alerts, "alerts", put.alerts_hash);
         const encoded = await ask("rt", "encode_alerts", { network_hash: network, alerts_hash: doc, timestamp: dz.now });
@@ -732,7 +773,7 @@ export function newAlert(gap: AlertGap | null = null): Promise<void> {
   // first stop, as the day names it.
   const key = gap ? JSON.stringify(gap.source) : "";
   const first = gap ? dz.day?.routes.flatMap((r) => r.disruptions).find((d) => JSON.stringify(d.source) === key)?.first_stop?.id : undefined;
-  return openForm({ id: newId("alert"), fresh: true, alert, template: "", unfilled: [] }, gap?.stops?.[0] ?? first ?? null);
+  return openForm({ id: newId("alert"), fresh: true, alert, template: "", unfilled: [], startsNow: true }, gap?.stops?.[0] ?? first ?? null);
 }
 
 /// An alert started from a disruption opened: the day's gap with its
@@ -749,7 +790,7 @@ export async function startAlertFor(source: AlertSource): Promise<void> {
 
 /// An alert of the agency's list, opened to edit.
 export function editAlert(id: string, alert: ServiceAlert): Promise<void> {
-  return openForm({ id, fresh: false, alert: structuredClone($state.snapshot(alert)) as ServiceAlert, template: "", unfilled: [] }, null);
+  return openForm({ id, fresh: false, alert: structuredClone($state.snapshot(alert)) as ServiceAlert, template: "", unfilled: [], startsNow: false }, null);
 }
 
 async function openForm(form: AlertForm, stop: string | null): Promise<void> {
@@ -768,7 +809,35 @@ async function openForm(form: AlertForm, stop: string | null): Promise<void> {
   await request("form", "preview-stop", "view", "open");
 }
 
+/// The form's alert as it would be saved now: a "Starts now" alert is
+/// told from the host's clock.
+function stamped(form: AlertForm): ServiceAlert {
+  if (!form.startsNow) return form.alert;
+  const [first, ...rest] = form.alert.communication ?? [{ start: null, end: null }];
+  return { ...form.alert, communication: [{ ...first, start: dz.now }, ...rest] };
+}
+
+/// "Starts now" set or cleared: cleared, the start is the clock's now,
+/// to change from there.
+export function setStartsNow(on: boolean): Promise<void> {
+  if (!dz.form) return Promise.resolve();
+  dz.form = on ? { ...dz.form, startsNow: true } : { ...dz.form, startsNow: false, alert: stamped({ ...dz.form, startsNow: true }) };
+  return request("form");
+}
+
+export function openPreview(open: boolean): Promise<void> {
+  dz.previewOpen = open;
+  return request("preview-open");
+}
+
+/// A stop clicked on the reach map: added to where the alert applies.
+export function addStop(stop: string): Promise<void> {
+  if (!dz.form) return Promise.resolve();
+  return changeAlert({ ...dz.form.alert, informed: [...dz.form.alert.informed, { stop }] });
+}
+
 export function closeForm(): Promise<void> {
+  dz.previewOpen = false;
   dz.form = null;
   dz.writeError = "";
   return request("form");
@@ -837,7 +906,7 @@ export async function fillTemplate(template: string): Promise<void> {
 export function saveAlert(publish: boolean): Promise<boolean> {
   const form = dz.form;
   if (!form) return Promise.resolve(false);
-  const alert: ServiceAlert = { ...form.alert, status: publish ? "published" : "draft" };
+  const alert: ServiceAlert = { ...stamped(form), status: publish ? "published" : "draft" };
   return writeAlerts(publish ? "Published." : "Saved as a draft.", () => ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert }));
 }
 

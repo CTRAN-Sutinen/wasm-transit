@@ -310,6 +310,8 @@ The materialized day's views, model-native. It is a library shared by the cap-bo
 - The trip cancel that a pick becomes (`cancel_of`: the trip, one instance or all, on a date its service runs).
 - The edit document's named rows: diversion rows and cancel rows.
 
+**An alert's reach** (`alert_reach`, `alert_reach_day`). The departures a board shows an alert on, by the board's own rule: a scope selects a departure when every field it names matches, or when it names the departure's stop and no route or trip. A trip scope speaks on its date only. Over a held day it also reaches the departures the edits took away, which the board lists as skipped (tests/alert_reach_law_test).
+
 **The board at a moment** (`stop_board_at`, `grouped_board_at`).
 - The op gives the date's board. Given the previous date at the same instant, it also gives that date's departures that are still to leave.
 - The instant is the clock's seconds and the date's length (23, 24, or 25 h).
@@ -354,6 +356,7 @@ prost types from the official GTFS-rt proto, and the joins over the network.
 - Output: a GTFS-rt Alerts feed (`FULL_DATASET`). It holds each published alert not yet ended, one entity for each, under the alert's id, in id order. The same document and moment give the same bytes.
 - Each text keeps every translation. A direction is the GTFS code that the export writes. A direction with no code is left out and named, never widened to the whole route.
 - Decoding the feed and resolving it gives back the authored alerts in force (tests/encode_law_test).
+- `entity_reading` reads one authored entity through the same path: the encoder's `informed_entity` (or why the encoder leaves it out), the scopes the reader resolves it to, and what it names in the network's words (a station counts its bays). It equals the round trip of an alert holding only that entity (tests/encode_law_test).
 
 **The alerts read** (`read_alerts`), the inverse of the encode.
 - Input: a GTFS-rt Alerts feed and the network.
@@ -372,7 +375,7 @@ The live document: one rt moment in model vocabulary. It is pure data and has no
 - Vehicles on their trip instances.
 - Every status, classified under the on-time window that the document records. There is one window, never a threshold per view. By default any earliness is early, because a bus that leaves early is a missed bus.
 - What does not run: a trip instance that the feed cancels (`CANCELED`/`DELETED`: `canceled`) and a stop that it skips (`SKIPPED`: `skipped`). Every reader asks through one rule, `LiveDay::runs`.
-- The service alerts in force. Each alert is a set of scopes: route (and one of its directions) / stop / trip instance. Fields within a scope are ANDed, scopes are ORed, and all absent means the agency.
+- The service alerts in force. Each alert holds one scope for each entity it selects: route (and one of its directions) / stop / trip instance. GTFS-rt joins the fields of one entity with AND, and each entity applies to its own affected entity. All fields absent means the agency. A stop's id is matched as written: a station's id selects no departure at its bays (D-221). `AlertScope::on(date, current)` says whether a trip scope speaks on a date.
 
 The crate also holds the classification, the runs and alert-matching rules, and the status summary.
 

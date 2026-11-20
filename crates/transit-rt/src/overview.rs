@@ -5,7 +5,7 @@
 //! host that wants meaning out of the protobuf bytes.
 
 use ts_rs::TS;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::gtfs_rt::trip_descriptor::ScheduleRelationship as TripRelationship;
 use crate::gtfs_rt::trip_update::stop_time_update::ScheduleRelationship as StopRelationship;
@@ -65,7 +65,7 @@ pub struct VehicleView {
 
 /// One informed entity of an alert, in the feed's vocabulary (the
 /// live document resolves it into the network's).
-#[derive(Debug, Clone, Default, Serialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct InformedView {
     pub agency_id: Option<String>,
@@ -247,20 +247,21 @@ pub(crate) fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> Aler
         url: translated(alert.url.as_ref()),
         communication,
         impact: periods(&alert.impact_period),
-        informed: alert
-            .informed_entity
-            .iter()
-            .map(|e| InformedView {
-                agency_id: e.agency_id.clone(),
-                route_id: e.route_id.clone(),
-                route_type: e.route_type,
-                trip_id: e.trip.as_ref().and_then(|t| t.trip_id.clone()),
-                trip_start_time: e.trip.as_ref().and_then(|t| t.start_time.clone()),
-                trip_start_date: e.trip.as_ref().and_then(|t| t.start_date.clone()),
-                stop_id: e.stop_id.clone(),
-                direction_id: e.direction_id,
-            })
-            .collect(),
+        informed: alert.informed_entity.iter().map(informed_view).collect(),
+    }
+}
+
+/// One informed entity as the feed carries it.
+pub(crate) fn informed_view(e: &crate::gtfs_rt::EntitySelector) -> InformedView {
+    InformedView {
+        agency_id: e.agency_id.clone(),
+        route_id: e.route_id.clone(),
+        route_type: e.route_type,
+        trip_id: e.trip.as_ref().and_then(|t| t.trip_id.clone()),
+        trip_start_time: e.trip.as_ref().and_then(|t| t.start_time.clone()),
+        trip_start_date: e.trip.as_ref().and_then(|t| t.start_date.clone()),
+        stop_id: e.stop_id.clone(),
+        direction_id: e.direction_id,
     }
 }
 

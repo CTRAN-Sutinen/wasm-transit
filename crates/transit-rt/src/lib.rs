@@ -31,7 +31,7 @@ pub use overview::{
 };
 pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, StopName, TripProgress};
 pub use live::live_day;
-pub use encode::{encode_alerts, read_alerts, DroppedAlert, EncodedAlerts, ReadAlerts, SkippedEntity};
+pub use encode::{encode_alerts, entity_reading, read_alerts, DroppedAlert, EncodedAlerts, EntityNames, EntityReading, EntityRoute, EntityStop, EntityTrip, ReadAlerts, SkippedEntity};
 
 use prost::Message;
 

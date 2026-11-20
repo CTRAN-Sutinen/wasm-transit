@@ -37,8 +37,10 @@
     ontemplate,
     onsave,
     oncancel,
+    onstartsnow,
+    onpreview,
   }: {
-    form: { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[] };
+    form: { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[]; startsNow: boolean };
     templates: TemplateRow[];
     routes: DirectoryRoute[];
     /// The form's stops by name.
@@ -57,6 +59,9 @@
     ontemplate: (id: string) => void;
     onsave: (publish: boolean) => void;
     oncancel: () => void;
+    /// "Starts now" set (told from the moment it is saved) or cleared.
+    onstartsnow: (on: boolean) => void;
+    onpreview: () => void;
   } = $props();
 
   const a = $derived(form.alert);
@@ -120,7 +125,6 @@
   function setPeriod(start: number | null, end: number | null) {
     set({ communication: [{ start, end }, ...(a.communication ?? []).slice(1)] });
   }
-  const startsNow = $derived(period.start != null && Math.abs(period.start - now) < 90);
 
   // ----- text, by language ("" is the agency's own)
   const langs = $derived([...new Set([...a.header, ...(a.description ?? [])].map((t) => t.lang ?? ""))]);
@@ -237,13 +241,13 @@
     <legend>When</legend>
     <div class="when">
       <span class="lbl">Starts</span>
-      <input type="date" aria-label="Start date" value={startParts?.date ?? ""} onchange={(e) => setPeriod(zonedUnix(e.currentTarget.value, startParts?.time ?? "00:00", zone), period.end)} />
-      <input type="time" aria-label="Start time" value={startParts?.time ?? ""} onchange={(e) => setPeriod(zonedUnix(startParts?.date ?? zonedParts(now, zone).date, e.currentTarget.value, zone), period.end)} />
-      <label class="check"><input type="checkbox" checked={startsNow} onchange={(e) => e.currentTarget.checked && setPeriod(now, period.end)} /> Starts now</label>
+      <input type="date" aria-label="Start date" value={form.startsNow ? "" : (startParts?.date ?? "")} disabled={form.startsNow} onchange={(e) => setPeriod(zonedUnix(e.currentTarget.value, startParts?.time ?? "00:00", zone), period.end)} />
+      <input type="time" aria-label="Start time" value={form.startsNow ? "" : (startParts?.time ?? "")} disabled={form.startsNow} onchange={(e) => setPeriod(zonedUnix(startParts?.date ?? zonedParts(now, zone).date, e.currentTarget.value, zone), period.end)} />
+      <label class="check"><input type="checkbox" checked={form.startsNow} onchange={(e) => onstartsnow(e.currentTarget.checked)} data-testid="starts-now" /> Starts now</label>
       <span class="lbl">Ends</span>
       <input type="date" aria-label="End date" value={endParts?.date ?? ""} disabled={period.end == null} onchange={(e) => setPeriod(period.start, zonedUnix(e.currentTarget.value, endParts?.time ?? "23:59", zone))} />
       <input type="time" aria-label="End time" value={endParts?.time ?? ""} disabled={period.end == null} onchange={(e) => setPeriod(period.start, zonedUnix(endParts?.date ?? zonedParts(now, zone).date, e.currentTarget.value, zone))} />
-      <label class="check"><input type="checkbox" checked={period.end == null} onchange={(e) => setPeriod(period.start, e.currentTarget.checked ? null : (period.start ?? now) + 3600)} data-testid="unknown-end" /> Unknown end</label>
+      <label class="check"><input type="checkbox" checked={period.end == null} onchange={(e) => setPeriod(period.start, e.currentTarget.checked ? null : (form.startsNow ? now : (period.start ?? now)) + 3600)} data-testid="unknown-end" /> Unknown end</label>
     </div>
   </fieldset>
 
@@ -290,6 +294,7 @@
   {/if}
 
   <div class="save">
+    <button type="button" class="left" onclick={onpreview} data-testid="open-preview">Preview</button>
     <button type="button" onclick={oncancel}>Cancel</button>
     <button type="button" disabled={busy} onclick={() => onsave(false)} data-testid="save-draft">Save draft</button>
     <button type="button" class="primary" disabled={busy || refusals.length > 0} onclick={() => onsave(true)} data-testid="publish">Publish</button>
@@ -324,5 +329,6 @@
   .problems { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.88rem; }
   .bad { color: var(--bad); }
   .warn { color: var(--warn); margin: 0; font-size: 0.85rem; }
+  .save .left { margin-right: auto; }
   .save { display: flex; justify-content: flex-end; gap: 0.5rem; position: sticky; bottom: 0; background: var(--surface); padding: 0.5rem 0; border-top: 1px solid var(--line); }
 </style>

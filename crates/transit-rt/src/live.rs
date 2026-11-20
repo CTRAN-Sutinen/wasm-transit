@@ -186,7 +186,7 @@ fn live_alert(view: &AlertView, scopes: Vec<AlertScope>) -> LiveAlert {
 /// entity names nothing. A `direction_id` needs a `route_id` (the
 /// spec's rule) and names that route's model direction by the
 /// export's code (D-204).
-fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
+pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
     if e.route_id.is_none() && e.route_type.is_none() && e.trip_id.is_none() && e.stop_id.is_none() {
         return if e.agency_id.is_some() { vec![AlertScope::default()] } else { Vec::new() };
     }

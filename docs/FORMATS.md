@@ -940,8 +940,9 @@ run `just schema-lock`. That freezes the new version and keeps the
 older ones. One change needs no bump (D-167): an added optional field
 that writes nothing when it is absent. The frozen example then still
 reads to the same bytes. `just caps` fails until `just schema-lock`
-records the new schema in the same version. `just schema-lock` refuses
-every other change.
+records the new schema in the same version. A corrected description
+(a field's doc comment) also reads to the same bytes, and is recorded
+the same way. `just schema-lock` refuses every other change.
 
 Two more gates hold the schemas to the bytes the code really writes,
 where `schemars` and serde can disagree (`skip_serializing_if`,

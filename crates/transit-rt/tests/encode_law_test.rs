@@ -327,3 +327,82 @@ fn a_feed_another_app_wrote_reads_into_the_document() {
     assert!(read.alerts.clone().checked().is_ok());
     assert!(transit_rt::read_alerts(&net, b"not a feed").is_err());
 }
+
+/// Wider than `arb_entity`: fields joined as an author may join them,
+/// including a station, a route type, and a direction with no route.
+fn arb_any_entity() -> impl Strategy<Value = AlertEntity> {
+    (
+        proptest::option::of(prop::sample::select(vec!["10", "20", "40", "nope"])),
+        proptest::option::of(prop::sample::select(vec![3u16, 2])),
+        proptest::option::of(prop::sample::select(vec!["0", "1"])),
+        proptest::option::of(prop::sample::select(vec!["A", "B", "SA", "STN", "nope"])),
+        proptest::option::of(prop::sample::select(vec!["t10", "t40", "nope"])),
+    )
+        .prop_map(|(route, route_type, direction, stop, trip)| AlertEntity {
+            route: route.map(String::from),
+            route_type,
+            direction: direction.map(String::from),
+            stop: stop.map(String::from),
+            trip: trip.map(String::from),
+            ..Default::default()
+        })
+}
+
+proptest! {
+    /// One entity read as the feed reads it: what it is published as,
+    /// and the scopes it resolves to, are those of the whole round trip
+    /// (encode a published alert holding only it, decode, build the
+    /// live document). An entity the encoder leaves out is named, and
+    /// selects nothing.
+    #[test]
+    fn an_entity_reads_as_the_feed_reads_it(e in arb_any_entity()) {
+        let (net, boundary) = network();
+        let reading = transit_rt::entity_reading(&net, &e);
+        let alert = ServiceAlert {
+            status: AlertStatus::Published,
+            header: vec![AlertText { lang: None, text: "x".into() }],
+            informed: vec![e.clone()],
+            ..Default::default()
+        };
+        let doc = ServiceAlerts::default().put("a", alert);
+        let encoded = encode_alerts(&net, &doc, 1000);
+        let overview = decode_overview(&encoded.bytes).unwrap();
+        let published = overview.service_alerts.first().and_then(|a| a.informed.first()).cloned();
+        prop_assert_eq!(reading.published.as_ref().ok().map(|v| serde_json::to_value(v).unwrap()), published.map(|v| serde_json::to_value(v).unwrap()));
+        prop_assert_eq!(reading.published.is_err(), !encoded.skipped.is_empty());
+        let live = live_of(&net, &boundary, &encoded.bytes);
+        let scopes = live.alerts.first().map(|a| a.scopes.clone()).unwrap_or_default();
+        prop_assert_eq!(reading.scopes, scopes);
+    }
+}
+
+/// The spec's own example: route and stop in one entity select that
+/// route at that stop only.
+#[test]
+fn route_and_stop_in_one_entity_select_one_scope() {
+    let (net, _) = network();
+    let reading = transit_rt::entity_reading(&net, &AlertEntity { route: Some("10".into()), stop: Some("A".into()), ..Default::default() });
+    assert_eq!(reading.scopes, vec![AlertScope { route: Some("10".into()), stop: Some("A".into()), ..Default::default() }]);
+}
+
+/// What an entity names, in the network's words: the route's public
+/// name, the stop's name and whether it is a station (with its bays),
+/// a trip's start and headsign.
+#[test]
+fn an_entity_names_what_it_selects() {
+    let (net, _) = network();
+    let named = |e: AlertEntity| transit_rt::entity_reading(&net, &e).names;
+    let n = named(AlertEntity { route: Some("10".into()), stop: Some("A".into()), ..Default::default() });
+    assert_eq!(n.route.as_ref().map(|r| r.name.as_str()), Some("10"));
+    assert_eq!(n.stop.as_ref().map(|s| (s.name.as_str(), s.bays)), Some(("Main & 1st", 0)));
+    assert!(!n.agency);
+    let station = named(AlertEntity { stop: Some("STN".into()), ..Default::default() });
+    assert_eq!(station.stop.as_ref().map(|s| (s.name.as_str(), s.bays)), Some(("Main Station", 2)));
+    let trip = named(AlertEntity { trip: Some("t10".into()), ..Default::default() });
+    let t = trip.trip.unwrap();
+    assert_eq!((t.start_secs, t.headsign.as_deref(), t.route.as_deref()), (Some(28800), Some("Downtown"), Some("10")));
+    assert!(named(AlertEntity::default()).agency);
+    // A name the network does not hold stays its id, marked unknown.
+    let gone = named(AlertEntity { stop: Some("nope".into()), ..Default::default() });
+    assert_eq!(gone.stop.map(|s| (s.name, s.known)), Some(("nope".to_string(), false)));
+}

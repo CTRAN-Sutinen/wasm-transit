@@ -1,7 +1,7 @@
 //! Service alerts in model vocabulary. GTFS-rt's selector rule: the
 //! fields of one informed entity are ANDed (route 12 AT stop 6277),
-//! the entities of one alert are ORed, and an entity naming only the
-//! agency covers everything.
+//! each entity of an alert applies to its own affected entity, and an
+//! entity naming only the agency covers everything.
 
 use transit_live::{AlertScope, LiveAlert, Visit};
 

@@ -132,10 +132,18 @@ stops that are closed, and the stops a detour misses.
 Writing an alert starts with what is known: a cancelled trip's alert
 already names the trip, the day, and what it explains. Pick a template
 to fill in the wording, the route, and the date. Add routes or stops
-by searching. Write the text in English and in any other language your
-riders read. While you write, the preview shows a real stop board with
-your alert on it, and you can download the feed it makes. Save a
-draft, or publish it to riders.
+by searching, or click stops on the map. Write the text in English and
+in any other language your riders read.
+
+Beside the form, "What riders see" shows what each line under
+"Applies to" will actually reach today. A line that names a route and
+a stop means that route at that stop only, not the route's other stops
+and not other routes there. Each line shows how it is written into the
+feed riders' apps read, and how many departures it reaches. You are
+warned when a line reaches nothing, or names a transit center whose
+buses leave from its bays. "Preview" shows a real stop board with your
+alert on it, and you can download the feed it makes. Save a draft, or
+publish it to riders.
 
 Open a cancelled trip to see every stop it would have served, its path
 on the map, the next trip, and its notes. Add a note there instead of

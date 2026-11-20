@@ -69,6 +69,12 @@ A stop with nothing of its own all day, that belongs to a walking group (a stati
 
 An uncut answer has a `per_group` as large as the day. Then the groups' rows together are `stop_board`'s rows.
 
+## alert_reach
+
+What one service alert reaches on `date`, read as a rider's app reads the feed. Each informed entity goes through the feed's own path: the encoder's `informed_entity` (or why it leaves the entity out), then the reader's resolution over the network. GTFS-rt joins the fields of one entity with AND: route 10 with stop A is route 10 at stop A only. Each entity applies to its own affected entity.
+
+For each entity, the answer gives what is published, what it names (the route's name, the stop's name and how many bays it has as a station, a trip's start and headsign), and its reach: the day's departures that a board shows the alert on, by stop and route. Those are the departures of the day patched with the edits in force, and the departures the edits took away, which a board lists as skipped with the alerts about them. A departure is reached when every field of a scope matches it, or when a scope names its stop and no route or trip. A station's own id matches no departure at its bays. A trip speaks on its instance's date only. The answer also gives the whole alert's reach.
+
 ## watchlist_board
 
 The board for a watchlist: each watched stop's board on a service date. The labels follow the document's version.

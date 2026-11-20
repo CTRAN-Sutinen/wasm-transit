@@ -283,7 +283,7 @@
           "type": "array"
         },
         "informed": {
-          "description": "What it is about. The entities are ORed. At least one.",
+          "description": "What it is about: one entity for each affected entity, each\napplying on its own. The fields of one entity are joined by AND.\nAt least one.",
           "items": {
             "$ref": "#/$defs/AlertEntity"
           },

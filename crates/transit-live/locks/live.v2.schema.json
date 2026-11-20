@@ -144,7 +144,7 @@
           "type": "array"
         },
         "scopes": {
-          "description": "What it informs about — ORed; never empty (an alert whose\nentities all fail to resolve is counted, not kept).",
+          "description": "What it informs about: one scope for each entity it selects\n(GTFS-rt adds one `informed_entity` for each affected entity, and\neach applies to its own). Never empty: an alert whose entities\nall fail to resolve is counted, not kept.",
           "items": {
             "$ref": "#/$defs/AlertScope"
           },

@@ -259,6 +259,14 @@ pub struct Visit<'a> {
 }
 
 impl AlertScope {
+    /// Does the scope speak on `date`? A scope with no trip speaks on
+    /// every date. A trip scope speaks on its instance's date; one
+    /// stating no date is `current`'s (the current service day,
+    /// GTFS-rt's reading of an absent `start_date`).
+    pub fn on(&self, date: &str, current: &str) -> bool {
+        self.trip.is_none() || self.date.as_deref().unwrap_or(current) == date
+    }
+
     fn admits(&self, v: &Visit) -> bool {
         self.route.as_deref().is_none_or(|r| r == v.route)
             && self.direction.as_deref().is_none_or(|d| Some(d) == v.direction)
@@ -285,8 +293,10 @@ pub struct LiveAlert {
     /// When service is affected (the impact period, else the active
     /// period); empty means for as long as the alert is shown.
     pub impact: Vec<AlertPeriod>,
-    /// What it informs about — ORed; never empty (an alert whose
-    /// entities all fail to resolve is counted, not kept).
+    /// What it informs about: one scope for each entity it selects
+    /// (GTFS-rt adds one `informed_entity` for each affected entity, and
+    /// each applies to its own). Never empty: an alert whose entities
+    /// all fail to resolve is counted, not kept.
     pub scopes: Vec<AlertScope>,
 }
 
@@ -368,7 +378,7 @@ impl LiveDay {
             .alerts
             .iter()
             .filter_map(|a| {
-                let scopes: Vec<AlertScope> = a.scopes.iter().filter(|s| s.trip.is_none() || here(&s.date)).cloned().collect();
+                let scopes: Vec<AlertScope> = a.scopes.iter().filter(|s| s.on(date, current)).cloned().collect();
                 (!scopes.is_empty()).then(|| LiveAlert { scopes, ..a.clone() })
             })
             .collect();

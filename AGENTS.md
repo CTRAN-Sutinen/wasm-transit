@@ -357,12 +357,14 @@ transit-router   RAPTOR planning over the network model's materialized day: leav
 transit-analysis the planner's analysis library (stats, service types, coverage)
 transit-dispatch the operator's day library: the patched materialized day (diversions
                  patched, cancelled trips out), boards, authored block chains with the
-                 layover ripple, diversion drafts, and trip cancels; and a rider's own
-                 documents (the watchlist and its chain, the device records)
+                 layover ripple, diversion drafts, and trip cancels; the departures
+                 an alert reaches on a day; and a rider's own documents (the
+                 watchlist and its chain, the device records)
 transit-rt       GTFS-rt prost types and the joins over the network. An rt trip id is a
                  model trip id. A trip instance is (trip, service date, start). It
                  also writes the service alerts document as an Alerts feed, and
-                 reads one into it.
+                 reads one into it, and reads one informed entity as a rider's app
+                 reads it.
 transit-live     the live document: rt in the model's vocabulary, each instance's service
                  date, the on-time window, and what does not run (a cancelled trip, a
                  skipped stop). Pure.

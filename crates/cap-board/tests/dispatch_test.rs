@@ -509,3 +509,26 @@ fn a_skipped_stop_answers_its_diversion() {
     assert!(board.skipped.iter().all(|s| s.departure.route == "10" && s.diversion.as_deref() == Some("d1")));
     assert!(stop_board(&network_hash, None, "C", 0, None).skipped.is_empty());
 }
+
+/// An alert's reach through the seam: each entity as the feed carries
+/// it, what it names, and the departures it alone reaches; route 10 at
+/// stop A is route 10 at A only, and the station's own id reaches none
+/// at its bays.
+#[test]
+fn an_alert_reaches_each_entitys_departures_as_published() {
+    let network_hash = load_network();
+    let req = serde_json::json!({ "op": "alert_reach", "network_hash": network_hash, "date": DATE, "alert": {
+        "status": "published", "header": [{ "text": "x" }],
+        "informed": [{ "route": "10", "stop": "A" }, { "stop": "STN" }, { "route": "10", "direction": "nope" }]
+    }});
+    let out: serde_json::Value = serde_json::from_str(&cap_board::dispatch_json(&req.to_string())).unwrap();
+    let e = &out["ok"]["entities"];
+    assert_eq!(e[0]["published"]["route_id"], "10");
+    assert_eq!(e[0]["published"]["stop_id"], "A");
+    assert_eq!(e[0]["reach"]["departures"], 2);
+    assert_eq!(e[0]["reach"]["routes"], serde_json::json!(["10"]));
+    assert_eq!(e[1]["names"]["stop"]["bays"], 2);
+    assert_eq!(e[1]["reach"]["departures"], 0);
+    assert!(e[2]["not_published"].is_string(), "{}", e[2]);
+    assert_eq!(out["ok"]["reach"]["departures"], 2);
+}

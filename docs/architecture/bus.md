@@ -294,6 +294,9 @@ cap-board reads the kernel's network, edit document, live document
   week. It materializes the later days itself and does not hold them.
   The kernel holds only a few days, and a week of days would push them
   out.
+- `alert_reach` gives what one service alert reaches on a date, entity
+  by entity: each informed entity as the GTFS-rt feed publishes it,
+  what it names, and the departures a board shows the alert on.
 - `watchlist_board` gives each watched stop's `stop_board`, with the same
   edits and live document.
 
@@ -303,7 +306,7 @@ after midnight that have not left yet. Each such row names its date
 (`stop_board_at`, `grouped_board_at`). A trip's final visit is an
 arrival and is never a row.
 
-All three ops read one materialized day: `materialize(net, date)`,
+The board ops read one materialized day: `materialize(net, date)`,
 patched with the in-force edits. This is the kernel's held day: one
 materialization for each (network, edits, date), however many boards
 ask. There is no GTFS expansion. The domain code is in the shared

@@ -125,7 +125,10 @@ test("the day's disruptions: status, a note, a stop, and dispatch", async ({ pag
 //      the cancel's gap: its route's name and the day. The alert is
 //      published (POST /service-alerts) and leaves the gap list; in
 //      force, it explains the cancel on Status.
-//   7. The preview opens at the cancelled trip's first stop.
+//   7. What riders see: the cancel's one entity as the feed publishes
+//      it (route 10, trip t30's 8:40 instance) and the departures it
+//      reaches today (t30 at A and C). The preview, opened from its
+//      button, is at the trip's first stop.
 //   8. Ended, it is listed as ended, and the cancel is a gap again.
 //   9. A note is added on the detour's panel and then edited.
 test("an alert from a gap, published and ended, and a note written", async ({ page, request }) => {
@@ -152,8 +155,14 @@ test("an alert from a gap, published and ended, and a note written", async ({ pa
   await expect(editor.getByTestId("applies-to")).toContainText("Route 10 · 8:40 AM trip");
   await editor.getByTestId("template").selectOption("trip-cancelled");
   await expect(editor.getByTestId("header")).toHaveValue("Route 10: trip cancelled on Friday, October 23");
-  // 7. The preview, at the trip's first stop.
-  await expect(page.getByTestId("alert-preview")).toContainText("Main & 1st");
+  // 7. What riders see, and the preview at the trip's first stop.
+  const card = page.getByTestId("reach-card");
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('route_id: "10", trip { trip_id: "t30", start_date: "20261023", start_time: "08:40:00" }');
+  await expect(card).toContainText("2 departures at 2 stops today");
+  await editor.getByTestId("open-preview").click();
+  await expect(page.getByTestId("preview-dialog")).toContainText("Main & 1st");
+  await page.getByTestId("preview-dialog").getByRole("button", { name: "Close" }).click();
   await editor.getByTestId("publish").click();
   await expect(page.getByTestId("alert-row")).toContainText("Route 10: trip cancelled on Friday, October 23");
   await expect(gaps.getByTestId("start-alert")).toHaveCount(1);

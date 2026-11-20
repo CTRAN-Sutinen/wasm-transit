@@ -42,6 +42,128 @@ pub struct SkippedEntity {
     pub reason: String,
 }
 
+/// One authored entity read as the feed reads it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityReading {
+    /// The `informed_entity` the feed carries for it, or why the
+    /// encoder leaves it out.
+    pub published: Result<crate::overview::InformedView, String>,
+    /// The scopes a reader resolves it to over the network: none when
+    /// a field names nothing in it, several for a route type.
+    pub scopes: Vec<transit_live::AlertScope>,
+    /// What it names, in the network's words.
+    pub names: EntityNames,
+}
+
+/// What one entity names, in the network's words. Each field is the
+/// entity's own; a name the network does not hold is its id, marked
+/// unknown.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EntityNames {
+    /// It names nothing but the agency: every rider.
+    pub agency: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route: Option<EntityRoute>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route_type: Option<u16>,
+    /// The route's model direction, by its name where it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub stop: Option<EntityStop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trip: Option<EntityTrip>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EntityRoute {
+    pub id: String,
+    pub name: String,
+    pub known: bool,
+}
+
+/// A stop an entity names. A station (a stop that is the parent of
+/// others) counts its bays: departures leave from the bays, not the
+/// station.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EntityStop {
+    pub id: String,
+    pub name: String,
+    pub known: bool,
+    pub bays: u32,
+}
+
+/// A trip an entity names: its route's public name, the instance's
+/// start where it resolves to one, its date, and its headsign.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EntityTrip {
+    pub id: String,
+    pub known: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub route: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headsign: Option<String>,
+}
+
+fn names(network: &Network, e: &AlertEntity, scopes: &[transit_live::AlertScope]) -> EntityNames {
+    let route_name = |id: &str| network.routes.get(id).map(|r| r.label().to_string());
+    EntityNames {
+        agency: e.route.is_none() && e.route_type.is_none() && e.stop.is_none() && e.trip.is_none(),
+        route: e.route.as_ref().map(|id| EntityRoute { id: id.clone(), name: route_name(id).unwrap_or_else(|| id.clone()), known: network.routes.contains_key(id) }),
+        route_type: e.route_type,
+        direction: e.direction.clone(),
+        stop: e.stop.as_ref().map(|id| EntityStop {
+            id: id.clone(),
+            name: network.stops.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.clone()),
+            known: network.stops.contains_key(id),
+            bays: network.stops.values().filter(|s| s.parent.as_deref() == Some(id.as_str())).count() as u32,
+        }),
+        trip: e.trip.as_ref().map(|id| {
+            let found = network.trip(id);
+            let pattern = found.and_then(|(_, pt, _)| network.patterns.get(&pt.pattern));
+            EntityTrip {
+                id: id.clone(),
+                known: found.is_some(),
+                route: pattern.and_then(|p| route_name(&p.route)),
+                start_secs: e.start_secs.or_else(|| scopes.first().and_then(|s| s.start_secs)),
+                date: e.date.clone(),
+                headsign: found.and_then(|(_, _, t)| t.headsign.clone()),
+            }
+        }),
+    }
+}
+
+/// One entity through the feed's own path: the encoder's selector,
+/// then the reader's resolution. What a rider's app reads of it.
+pub fn entity_reading(network: &Network, e: &AlertEntity) -> EntityReading {
+    let agency = network.operators.keys().next().cloned().unwrap_or_default();
+    match selector(network, &agency, e) {
+        Ok(s) => {
+            let view = crate::overview::informed_view(&s);
+            let scopes = crate::live::resolve_scope(network, &view);
+            EntityReading { names: names(network, e, &scopes), published: Ok(view), scopes }
+        }
+        Err(reason) => EntityReading { names: names(network, e, &[]), published: Err(reason), scopes: Vec::new() },
+    }
+}
+
 /// The published alerts not yet ended at `timestamp` (Unix seconds),
 /// as a GTFS-rt `FeedMessage`.
 pub fn encode_alerts(network: &Network, alerts: &ServiceAlerts, timestamp: u64) -> EncodedAlerts {

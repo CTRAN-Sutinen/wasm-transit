@@ -24,9 +24,9 @@ built and walked on C-TRAN (`src/uis/disruptions/`, its spec
 `e2e/ui-disruptions.spec.mjs`): the map, Status, Alerts, Dispatch, an
 opened disruption with its notes, the alert form, and its rider
 preview. Left for the form: an alert that applies to a direction, a
-trip picked by hand, or a stretch of stops along a route; stops picked
-on the map; the service window (`impact`); and "Created" and "Last
-edited" from the alerts log. The layout is the design canvas (one map, with views a
+trip picked by hand, or a stretch of stops along a route; the service
+window (`impact`); and "Created" and "Last edited" from the alerts
+log. The layout is the design canvas (one map, with views a
 person picks: Status, Alerts, Dispatch; the trip and alert panels
 open over the map).
 

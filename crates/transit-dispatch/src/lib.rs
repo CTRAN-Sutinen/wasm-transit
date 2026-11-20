@@ -24,7 +24,7 @@ pub mod geometry;
 pub use geometry::{trip_path, trip_segment, LegKind, LegPath};
 pub use divert::{cancel_of, cancel_rows, diversion_of, diversion_rows, draft_view, CancelRow, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 use ts_rs::TS;
@@ -907,6 +907,108 @@ pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_grou
     board.alerts = merge_alerts(board.alerts, earlier.alerts);
     board.live |= earlier.live;
     board
+}
+
+/// What an alert reaches on a day: each departure (a visit that is not
+/// its trip's last) that the board would show it on. A scope selects a
+/// visit when every field it names matches (`LiveAlert::touches`), or
+/// when it names the visit's stop and no route or trip
+/// (`touches_stop`): the board's own rule. A trip scope speaks on its
+/// date only ([`AlertScope::on`]).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct Reach {
+    /// How many departures it reaches.
+    pub departures: u32,
+    /// Each stop it reaches, by id, with its departures there.
+    pub stops: Vec<ReachedStop>,
+    /// Each route it reaches, by id.
+    pub routes: Vec<String>,
+    /// Each departure it reaches: (stop, trip, start), for a law to
+    /// compare.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub visits: Vec<(String, String, u32)>,
+}
+
+/// One stop an alert reaches.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct ReachedStop {
+    pub stop: String,
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub departures: u32,
+}
+
+pub fn alert_reach(network: &Network, day: &[MaterializedTrip], scopes: &[transit_live::AlertScope], date: &str) -> Reach {
+    reach_over(network, departures_of(day), scopes, date)
+}
+
+/// [`alert_reach`] over a held day as the board shows it: the patched
+/// day's departures, and the base day's departures the edits in force
+/// took away (the board lists them as skipped, with the alerts about
+/// them).
+pub fn alert_reach_day(network: &Network, day: &Day, scopes: &[transit_live::AlertScope], date: &str) -> Reach {
+    let mut all = departures_of(&day.trips);
+    if let Some(edits) = &day.edits {
+        let kept: BTreeSet<(String, u32, String)> = all.iter().map(|d| (d.trip.to_string(), d.start_secs, d.stop.to_string())).collect();
+        all.extend(departures_of(&edits.base).into_iter().filter(|d| !kept.contains(&(d.trip.to_string(), d.start_secs, d.stop.to_string()))));
+    }
+    reach_over(network, all, scopes, date)
+}
+
+/// One departure as an alert sees it.
+struct Departure<'a> {
+    route: &'a str,
+    pattern: &'a str,
+    trip: &'a str,
+    start_secs: u32,
+    stop: &'a str,
+}
+
+/// Every departure of a day: each visit but its trip's last.
+fn departures_of(day: &[MaterializedTrip]) -> Vec<Departure<'_>> {
+    day.iter()
+        .flat_map(|t| {
+            let departing = t.stop_times.len().saturating_sub(1);
+            t.stop_times[..departing].iter().map(move |st| Departure { route: &t.route, pattern: &t.pattern, trip: &t.trip, start_secs: t.start_secs, stop: &st.stop })
+        })
+        .collect()
+}
+
+fn reach_over(network: &Network, departures: Vec<Departure<'_>>, scopes: &[transit_live::AlertScope], date: &str) -> Reach {
+    let alert = LiveAlert { scopes: scopes.iter().filter(|s| s.on(date, date)).cloned().collect(), ..Default::default() };
+    if alert.scopes.is_empty() {
+        return Reach::default();
+    }
+    let mut by_stop: BTreeMap<String, u32> = BTreeMap::new();
+    let mut routes: BTreeSet<String> = BTreeSet::new();
+    let mut visits = Vec::new();
+    for d in departures {
+        let direction = network.patterns.get(d.pattern).and_then(|p| p.direction.as_deref());
+        let visit = Visit { route: d.route, direction, stop: d.stop, trip: d.trip, start_secs: d.start_secs };
+        if alert.touches(&visit) || alert.touches_stop(d.stop) {
+            *by_stop.entry(d.stop.to_string()).or_default() += 1;
+            routes.insert(d.route.to_string());
+            visits.push((d.stop.to_string(), d.trip.to_string(), d.start_secs));
+        }
+    }
+    let stops: Vec<ReachedStop> = by_stop
+        .into_iter()
+        .map(|(stop, departures)| {
+            let at = network.stops.get(&stop);
+            ReachedStop {
+                name: stop_name(network, Some(&stop)),
+                lat: at.map(|s| s.lat).unwrap_or_default(),
+                lon: at.map(|s| s.lon).unwrap_or_default(),
+                stop,
+                departures,
+            }
+        })
+        .collect();
+    Reach { departures: visits.len() as u32, stops, routes: routes.into_iter().collect(), visits }
 }
 
 /// Attach the live document's alerts: on each row and skipped visit

@@ -243,9 +243,18 @@ The disruptions set:
   link, and what it explains. Every edit is an event with the whole
   alert. Alerts `put`'s refusals and `flags`' notices come back in
   words beside Save draft and Publish.
+- AlertReach: what riders see of the alert (board `alert_reach`): the
+  whole alert's reach today, then one card per informed entity with
+  what it means in words (the fields of one entity are joined by AND;
+  each entity applies on its own), the departures it alone reaches,
+  the `informed_entity` as the feed publishes it, and a warning where
+  it reaches nothing, names a station, names an unknown id, or names
+  no single trip instance. The map shows the reached stops; hovering
+  a card shows its own; a stop clicked on the map is added.
 - AlertPreview: one stop's board (board `stop_board`) over a live
   document whose alerts are the feed encoded with this alert published
-  (rt `encode_alerts`), and the feed downloaded as a .pb file.
+  (rt `encode_alerts`), and the feed downloaded as a .pb file. It
+  opens in a dialog from the form's Preview.
 
 `disruptionsFormat.ts` holds their formatting.
 
@@ -631,8 +640,10 @@ a large map that is always on screen.
   of the patched day. A note is added or edited there (`POST /notes`;
   the server names the writer and the time).
 
-An alert is written in the panel, with its rider preview beside the
-map. Started from a gap, it carries the gap's effect, the riders it
+An alert is written on half the page, beside what riders see of it
+(AlertReach). The day's map is set aside while it is open. "Starts
+now" tells riders from the moment the alert is saved: the start is
+stamped then. Started from a gap, it carries the gap's effect, the riders it
 informs, and what it explains, and it is told from now with no end. A
 template fills its cause, effect, severity, and texts (alerts `fill`
 over the alert's routes, stops, and dates). Alerts `put` checks it as

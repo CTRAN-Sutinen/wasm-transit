@@ -144,6 +144,18 @@ pub enum Request {
     /// so the same answer: `stop_board` for each stop with the same
     /// edits and live document (realtime-first, skipped visits, a
     /// watched station pin pooling its bays).
+    /// What an alert reaches on a day, entity by entity, read as a
+    /// rider's app reads the feed: each entity as published, what it
+    /// names, and the departures it puts the alert on; and the whole
+    /// alert's.
+    AlertReach {
+        network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        edits_hash: Option<String>,
+        date: String,
+        alert: transit_alerts::ServiceAlert,
+    },
     WatchlistBoard {
         watchlist_hash: String,
         network_hash: String,
@@ -170,6 +182,25 @@ pub enum Response {
     StopBoard { board: StopBoard },
     GroupedBoard { board: GroupedBoard },
     WatchlistBoard { stops: Vec<WatchBoardStop> },
+    AlertReach { entities: Vec<EntityReach>, reach: transit_dispatch::Reach },
+}
+
+/// One informed entity of an alert, read as the feed reads it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "cap_board/")]
+pub struct EntityReach {
+    /// The `informed_entity` the feed carries for it; absent when the
+    /// encoder leaves it out (`not_published` says why).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub published: Option<transit_rt::overview::InformedView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub not_published: Option<String>,
+    /// What it names, in the network's words.
+    pub names: transit_rt::EntityNames,
+    /// The departures it alone puts the alert on.
+    pub reach: transit_dispatch::Reach,
 }
 
 /// How many departures each group holds when the caller names none —
@@ -187,6 +218,25 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::StopBoard {
                 board: transit_dispatch::stop_board_at(&network, &days.at(&date, from_secs), &stop_id, limit as usize, live.as_deref()),
             })
+        }
+        Request::AlertReach { network_hash, edits_hash, date, alert } => {
+            let days = Days::read(&network_hash, edits_hash.as_deref(), &date, None)?;
+            let network = NETWORK.require(&network_hash)?;
+            let mut all = Vec::new();
+            let entities = alert
+                .informed
+                .iter()
+                .map(|e| {
+                    let reading = transit_rt::entity_reading(&network, e);
+                    all.extend(reading.scopes.iter().cloned());
+                    let (published, not_published) = match reading.published {
+                        Ok(v) => (Some(v), None),
+                        Err(why) => (None, Some(why)),
+                    };
+                    EntityReach { published, not_published, names: reading.names, reach: transit_dispatch::alert_reach_day(&network, &days.today, &reading.scopes, &date) }
+                })
+                .collect();
+            Ok(Response::AlertReach { entities, reach: transit_dispatch::alert_reach_day(&network, &days.today, &all, &date) })
         }
         Request::GroupedBoard { network_hash, edits_hash, stop_id, date, from_secs, per_group, live_hash, previous } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;

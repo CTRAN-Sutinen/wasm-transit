@@ -1,6 +1,6 @@
 [package]
 name = "cap-board"
-description = "The board capability: when does service leave this stop — at a stop, a station's pooled bays, or a personal saved set (the watchlist document). The materialized day over the NETWORK document, patched with the edits in force; model-native end to end, the domain code lives in the shared transit-dispatch library."
+description = "The board capability: when does service leave this stop — at a stop, a station's pooled bays, or a personal saved set (the watchlist document). The materialized day over the NETWORK document, patched with the edits in force; model-native end to end, the domain code lives in the shared transit-dispatch library. alert_reach answers what one service alert reaches on a date, entity by entity, as the feed publishes it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,6 +15,9 @@ transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
 # The live document (minted by cap-rt) the realtime-first board reads.
 transit-live = { path = "../transit-live" }
+# An alert's entities read as the feed reads them (alert_reach).
+transit-alerts = { path = "../transit-alerts" }
+transit-rt = { path = "../transit-rt" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]

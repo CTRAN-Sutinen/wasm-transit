@@ -134,7 +134,9 @@ pub struct ServiceAlert {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertPeriod>>")]
     pub impact: Vec<AlertPeriod>,
-    /// What it is about. The entities are ORed. At least one.
+    /// What it is about: one entity for each affected entity, each
+    /// applying on its own. The fields of one entity are joined by AND.
+    /// At least one.
     pub informed: Vec<AlertEntity>,
     /// The disruptions it tells riders about: a diversion or trip
     /// cancel, or a suspended stop. Nothing writes an alert from these
