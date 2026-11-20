@@ -51,6 +51,24 @@ the page code reads from either upstream. Writes go only to the
 server, on its own paths (`POST /edits`, `POST /logs/<log>`,
 `POST /plans`).
 
+## What a host does
+
+A host does four things, and no others:
+
+- **It routes values.** It passes a document, a person's choice, or a
+  value from one answer into another op, unchanged.
+- **It owns the clock.** It reads the time in the agency's zone.
+- **It owns the screen.** It keeps what is shown, and puts a selection
+  back when the answer no longer holds it.
+- **It carries out I/O.** It reads, fetches, and makes the conditional
+  create a write answers.
+
+A host applies no domain rule. A value that a rule changes on its way
+between two ops is a third op. The steps of a write are one receive
+op, which answers the entry and the head it depends on. A call to an
+adjacent system splits in three: an op answers what to send, the host
+makes the call, and an op records the answer (D-228).
+
 ## The rules every host keeps
 
 1. **A copy by hash is never old.** Only a head can be old. A host
@@ -98,8 +116,18 @@ The hosts differ in three ways. Each difference is a design decision.
   no label (QAF-130).
 - The rules are written here, and implemented twice: in Go and in
   TypeScript. No suite runs them against each host.
+- Hosts apply domain rules. The pick's period is written in both Go
+  (`server/stops.go`, `server/plans.go`) and TypeScript (`planUntil`
+  in `web/src/engine.ts`). About six other rules are in single browser
+  hosts. The server sequences the steps of several writes between ops
+  (`writePlan`, `checkStops`).
+- The server runs single-capability modules, and composes a flow that
+  needs two capabilities in Go.
 
-The open work is [ui-host-inputs.md](../units/ui-host-inputs.md).
+The open work is [ui-host-inputs.md](../units/ui-host-inputs.md),
+[rules-in-ops.md](../units/rules-in-ops.md),
+[kind-registration.md](../units/kind-registration.md), and
+[server-assembly.md](../units/server-assembly.md).
 
 ## Why
 
@@ -112,3 +140,14 @@ The open work is [ui-host-inputs.md](../units/ui-host-inputs.md).
   defect, or hides one.
 - **Rejected:** shared host code. The server is Go and the browser is
   TypeScript, and the modules are the only code that every host runs.
+
+### A host routes, and applies no rule (this file, "What a host does")
+- **Holds:** a host passes values between ops unchanged. Every rule
+  that changes what is true is in an op.
+- **Because:** parity. A rule in one host is an answer that only that
+  host gives, so a person and an agent who ask the same question get
+  different answers. Routing chooses which question to ask, and that
+  choice belongs to the person, so it may be host code.
+- **Rejected:** a rule that counts copies of host code. It finds a
+  rule written twice, and misses a rule written once.
+- **Decided:** D-228.

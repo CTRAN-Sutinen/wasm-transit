@@ -170,6 +170,14 @@ Always use the extraction pattern, in this order:
 
 A new domain op is a library and a capability, never host code.
 
+A capability is a documented namespace for one need: its ops, its
+`OPS.md`, its schemas, and its worked examples. It is not a wall in
+the domain. Its crate may link any library. A question that spans
+kinds is one op of the capability whose need it answers, and that op
+links each kind's library. A host never composes it from two answers.
+A host routes values between ops unchanged, and applies no domain
+rule (`docs/architecture/hosts.md`; D-226, D-228).
+
 A capability declares no state.
 
 - The documents it reads are the kernel's kinds, named in its

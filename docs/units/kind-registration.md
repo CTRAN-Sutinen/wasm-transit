@@ -48,13 +48,27 @@ capability, and its UI. Nothing else names it.
    read, changes how the kernel and the assemblies are built. A
    proposal goes to the user first, with what it costs the arch
    gates and the module sizes.
-3. **One server path for every log.** One generic route serves each
-   log's read, head, fold, and write. It is driven by the kind table.
+3. **One receive op for each kind, and one server path.** The steps of
+   a write are one op of the kind's capability (D-228). It takes the
+   write's intent and the records the write changes, links
+   `transit-log`, and answers the entry and the head it depends on, or
+   the refusals. The server makes the conditional create, and on a
+   conflict asks again. So every log's write is the same in Go: read
+   the head, make one call, create. One route serves every log, and the
+   kind's line in the list names its capability. The steps the server
+   sequences today become the receive op:
+   - `writePlan` (`server/planslog.go`): `freeze`, then `adopt` with
+     the frozen document;
+   - `checkStops` (`server/stopslog.go`): `attribute_surveys`, then
+     `validate`;
+   - `runStopsOps`, `runNotesOps`, and `runAlertsOps`: each op, then
+     `log_records`.
+
+   The edit document joins last, with its merge inside its receive op.
    The per-kind Go files (`notes.go`, `alerts.go`, `requests.go`, and
    the log parts of `stopslog.go` and `planslog.go`) are deleted. The
-   routes and their bytes stay the same. `server/openapi.json`
-   compares them. Each error and log line of the generic route names
-   its kind.
+   routes and their bytes stay the same, and `server/openapi.json`
+   compares them. Each error and log line of the route names its kind.
 4. **One reader in the engine and one loader in caps-run.**
    `served(kind)` replaces `servedStops`, `servedNotes`, and the
    others. caps-run's `--load KIND:FILE` reads the kind table.
@@ -78,4 +92,6 @@ never a hook.
   test) lands touching only the places the gate allows.
 - `go test` and the openapi compatibility gate pass with the per-kind
   Go files deleted.
+- Each kind's receive op has a dispatch test, and no Go function calls
+  more than one op for a write.
 - The kind lists in the docs point to the generated sources.

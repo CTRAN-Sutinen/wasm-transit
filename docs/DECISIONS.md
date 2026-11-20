@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-226**.
+- IDs are never reused; the next new decision is **D-229**.
 
 ## Summary
 
@@ -133,7 +133,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-75 | How does a published pick come back out? | decided | nothing |
 | D-76 | What does publishing refuse beyond an invalid chain? | decided | nothing |
 | D-77 | How do the capabilities a page uses share one network? | decided | nothing |
-| D-78 | Does the Go server host linked assemblies? | decided | nothing |
+| D-78 | Does the Go server host linked assemblies? | decided; replaced by D-227 | nothing |
 | D-79 | How is a document version rolled back? | decided | nothing |
 | D-80 | Where do retired build artifacts live? | decided | nothing |
 | D-81 | How are op and HTTP contracts versioned? | decided | nothing |
@@ -277,6 +277,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-223 | Does every install download the staff pages' modules? | encoded | nothing |
 | D-224 | What does a server copy started while the bucket does not answer serve? | encoded | nothing |
 | D-225 | Which object stores does the server talk to, and through what code? | decided | nothing |
+| D-226 | What is a capability? | decided | nothing |
+| D-227 | Does the server link an assembly, as a UI does? | decided | nothing |
+| D-228 | What may a host do with an op's answer? | decided | nothing |
 
 ## The trip model
 
@@ -3785,7 +3788,7 @@ wasm 45.7 → 17.8 MB (the `runtime-cost-gate` unit, replaced by D-187; its file
 stays on single-capability modules (D-78).
 
 ### D-78 — Does the Go server host linked assemblies?
-State: Decided.
+State: Decided. Replaced by D-227: the server links an assembly.
 Answer: 2026-11-05 — no: the server keeps single-capability modules;
 only the browser links. The long-lived modules (sync, plans, authz)
 hold no network, so there is nothing to share; every network or
@@ -4817,3 +4820,62 @@ The GCS SDK brings 83 of them, the Azure SDK about 26, and the AWS SDK
 about 8, for three adapters of 129 to 193 lines each.
 Pinned by: none yet (`docs/units/fewer-dependencies.md`).
 Blocks: nothing. The work is `docs/units/fewer-dependencies.md`.
+
+### D-226 — What is a capability?
+State: Decided.
+Answer: 2026-11-20 — a documented namespace for one need: a set of
+ops, each answering a whole question over documents and a person's
+choices, published with its `OPS.md`, schemas, worked examples, and
+evidence. Its crate is thin and may link any library in the DAG. It is
+not a wall in the domain: the libraries own the domain and the kinds.
+The user: "keep a capability as a documented namespace until the actual
+concrete need arises for something more." A capability that a third
+party implements in place of ours is not designed for until a concrete
+need arises.
+Context: a capability carried five jobs: the contract for a need, the
+unit of assembly, the server's process unit, a wall around its
+libraries, and a unit someone could replace. Parity requires that a
+whole question is answered in shared code. A wall around each
+capability's libraries pushed questions that span kinds out to the
+hosts. Law 3 and the extraction pattern already put the domain in
+libraries; this states that the capability is the contract over them.
+Pinned by: none yet (`docs/units/rules-in-ops.md`).
+Blocks: nothing.
+
+### D-227 — Does the server link an assembly, as a UI does?
+State: Decided.
+Answer: 2026-11-20 — yes. The user: "link the server like we link for
+the UIs, i think that is actually more consistent with the host
+discussion we've been having." This replaces D-78.
+Context: D-78 kept single-capability modules on the server, because
+the long-lived modules held no network, a fresh instance for each
+import kept memory down, authz stayed apart so that a trap elsewhere
+could not take the fail-closed check with it, and sync's pinned
+`wasm_hash` changed only when sync did. A server flow that needs two
+capabilities is composed in Go between two modules. `docs/architecture/hosts.md`
+describes one host shape; the server's modules were the exception.
+Pinned by: none yet (`docs/units/server-assembly.md`).
+Blocks: nothing.
+
+### D-228 — What may a host do with an op's answer?
+State: Decided.
+Answer: 2026-11-20 — route it, unchanged. A host routes values between
+ops, owns the clock and the screen, and carries out I/O. It applies no
+domain rule. A question that spans kinds is one op, in the capability
+whose need it answers, linking each kind's library. The steps of a
+write are one receive op for each kind: it answers the entry and the
+head it depends on, and the host makes the conditional create. A call
+to an adjacent system splits in three: an op answers what to send, the
+host makes the call, and an op records the answer. The user accepted
+this and asked for it to be written into the units: "write all this up
+into the units".
+Context: parity requires that every host gives the same answer to one
+question. A rule in one host is an answer only that host gives. An
+audit on 2026-11-20 found the pick's period (retired picks dropped,
+this pick put in place) written in both Go and TypeScript, about six
+other rules in single browser hosts, and about a dozen Go functions
+that sequence a write's steps between ops. Routing a value unchanged
+(a picked group's members, the walks the router takes) is not a rule.
+Pinned by: none yet (`docs/units/rules-in-ops.md`,
+`docs/units/kind-registration.md`).
+Blocks: nothing.
