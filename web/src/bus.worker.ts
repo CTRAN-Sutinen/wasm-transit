@@ -245,7 +245,8 @@ async function handle(request: BusRequest): Promise<BusReply> {
           placed[id] = route;
         }
       }
-      return { ok: { statuses, caps, routes: placed, errors: { ...errors } } };
+      const loads = Object.fromEntries(loaded.kernel_ops.filter((k) => k.kind).map((k) => [k.kind as string, k.code]));
+      return { ok: { statuses, caps, routes: placed, errors: { ...errors }, loads } };
     }
     case "text": {
       const a = await assembledOf(request.cap);

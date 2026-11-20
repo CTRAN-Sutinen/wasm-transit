@@ -4938,8 +4938,10 @@ Pinned by: none yet (`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-232 — How are references declared, and which stage may name which?
-State: Encoded provisionally. Nothing is built. `docs/units/kind-registration.md`
-plans it.
+State: Encoded provisionally. The declarations are built: `x-references`
+on each reference field, the kind table's `references`, a law in each
+owning crate, and the schema lock's rule. The stages, the forms, and
+rules A to C are planned (`docs/units/kind-registration.md`).
 Context:
 - Each reference field states its target in its kind's schema, with a
   keyword beside `"format": "content-hash"`. Examples:
@@ -4978,6 +4980,19 @@ Context:
 - A seq pin carries the entry's hash, so an overwritten entry is
   detected.
 - A stops document's ids are the network's stop ids (D-145; `seed`).
+- A declaration added to a field that had none keeps the kind's
+  version. It states what was already true, and the bytes do not
+  change. The schema lock accepts it in the same version, as it
+  accepts a corrected description.
+- A changed target is a change of meaning. It bumps the kind's version
+  with a migration step, even when the step changes no byte. The lock
+  compares the declarations of the locked schema and of the build.
+- A checker reads each record of a fold brought forward to the current
+  version in memory, never stored, and applies the current
+  declarations.
+- The frozen version that the startup migration writes pins the frozen
+  version it came from, by its hash. Today its `purpose` text alone
+  names the source.
 Options:
 - Declarations in the schemas, with the stages and rules above
   (encoded here).
@@ -4986,7 +5001,13 @@ Options:
 - SQL foreign keys in a database beside the logs. A check inside a
   transaction conflicts with the outbox, and the logs share no
   transaction.
-Pinned by: none yet.
+Pinned by: `tests/references_law_test.rs` in transit-notes,
+transit-alerts, transit-stops, transit-requests, transit-sync,
+transit-plans, and transit-streets; the collector's tests in
+transit-version (`references.rs`); `schema_lock_test.rs`
+(`an_added_reference_declaration_is_recorded_in_the_same_version`,
+`a_changed_or_dropped_reference_target_needs_a_bump`); and the
+checked-in kind table's gate in `just caps` (`crates/cap-abi/kinds.json`).
 Blocks: nothing.
 
 ### D-233 — When does the receive path refuse a write whose reference is broken?
@@ -5006,10 +5027,25 @@ Context:
   - As of now, with the server's module. A failure is accepted with a
     warning. The world changed after the writer read it.
 - A writer with no read seq read now.
+- The server accepts a client module only from the builds it served,
+  within a window that the operator sets. A rogue client then cannot
+  name an old module to get older, looser rules.
+- A check that cannot judge never refuses. After a rollback, a target
+  can be in a version that this build reads ahead (D-186), with a
+  state the rule does not know. The check answers a warning that names
+  the newer version. Otherwise a rollback blocks the writes of every
+  kind that names the target.
+- A rule changes in one release. The as-of-read check runs under the
+  client's module, so a tighter rule warns about an older client's
+  write and never refuses it. A rollback does not turn an honest write
+  into a refusal.
 - A revert or a retire answers the references that name what it
-  removes.
+  removes. `store revert` lists the declared references into the
+  commits it drops, beside the commits.
 - `store verify` reports each broken loose reference, with the entry
-  that broke it.
+  that broke it. A finding names the kind table's hash, the module's
+  hash, and the seq, so it can be judged again after any release or
+  rollback.
 - A domain check refuses only a contradiction within what the writer
   saw. It never refuses on plausibility. Each refusal rule states why
   the write is impossible, beside its law.
@@ -5039,4 +5075,4 @@ Options:
 - The pick in force today only.
 - Each pick in force while the record was live.
 Blocks: the network references of undated records
-(`docs/units/kind-registration.md`, step 8).
+(`docs/units/kind-registration.md`, item 6).

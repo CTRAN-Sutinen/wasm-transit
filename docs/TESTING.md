@@ -146,9 +146,15 @@ and before a release.
    `caps` first. The manifest is generated with real computed examples.
    Extend `gen_manifest`'s `example_for`, so an op's docs cannot drift
    from the module.
-   A new document kind lands in `cap_abi::kernel`. That change adds its
-   registry and bound (`Retain::Host` or `Retain::Last(n)`) and its
-   load, with a worked example in gen-manifest's `kernel_ops`. The kind
+   A new document kind starts as a line in the kind list
+   (`crates/cap-abi/src/kinds.rs`), and `just schema-lock` writes the
+   checked-in kind table. A kind a module reads also lands in
+   `cap_abi::kernel`: its registry and bound (`Retain::Host` or
+   `Retain::Last(n)`) and its load, with a worked example in
+   gen-manifest's `kernel_ops`. A test holds the kernel kind to its line.
+   A kind whose fields name other records declares them
+   (`x-references`), and its crate's `tests/references_law_test.rs`
+   lists them (D-232). The kind
    also goes in the capability's `documents: [...]`. caps-smoke holds
    that every module answers the kernel ops (evict, held, about),
    matching its manifest entry. It also holds that each UI's linked

@@ -121,6 +121,10 @@ pub enum Drift {
     LockAhead { tag: String, version: u32, current: u32 },
     /// The build has no worked example to freeze.
     NoExample { tag: String, version: u32 },
+    /// A field's declared target changed, or its declaration is gone
+    /// (D-232). A changed target changes what the field means, even when
+    /// no byte changes. An added declaration is additive.
+    ReferenceChanged { tag: String, version: u32, path: String, was: String, now: Option<String> },
 }
 
 const BUMP: &str = "Bump the version and add its migration step, then run `just schema-lock`.";
@@ -167,6 +171,10 @@ impl fmt::Display for Drift {
             Drift::NoExample { tag, version } => {
                 write!(f, "{tag} v{version}: the build has no worked example to freeze.")
             }
+            Drift::ReferenceChanged { tag, version, path, was, now } => {
+                let now = now.as_deref().map_or("no target".to_string(), |t| format!("{t:?}"));
+                write!(f, "{tag} v{version}: {path} referred to {was:?}, and now has {now}. A changed target changes what the field means (D-232). {BUMP}")
+            }
         }
     }
 }
@@ -204,10 +212,30 @@ pub fn check(kind: &Kind, lock: &Lock) -> Vec<Drift> {
             }
         }
     }
+    drifts.extend(references_changed(&tag, version, &locked.schema, &kind.schema));
     if kind.schema != locked.schema {
         drifts.push(Drift::SchemaChanged { tag, version, additive: same_bytes });
     }
     drifts
+}
+
+/// Each reference the locked schema declares that the build's schema
+/// declares with another target, or not at all.
+fn references_changed(tag: &str, version: u32, locked: &Value, build: &Value) -> Vec<Drift> {
+    let now = transit_version::references(build);
+    transit_version::references(locked)
+        .into_iter()
+        .filter_map(|was| {
+            let target = now.iter().find(|r| r.path == was.path).map(|r| r.target.clone());
+            (target.as_deref() != Some(was.target.as_str())).then(|| Drift::ReferenceChanged {
+                tag: tag.into(),
+                version,
+                path: was.path,
+                was: was.target,
+                now: target,
+            })
+        })
+        .collect()
 }
 
 /// The lock that records `kind`: `lock` with the current version frozen

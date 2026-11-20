@@ -205,6 +205,8 @@ Then update the documents that describe what you changed.
 - **The kernel** (`crates/cap-abi/src/kernel.rs`). It held the stops
   document for your op. `STOPS.require` in step 3 asked it for the
   document. You change the kernel only to add a new kind of document.
+  A new kind also gets one line in the list of kinds
+  (`crates/cap-abi/src/kinds.rs`).
   Step 5 edited `gen_manifest.rs`, which is in the same crate,
   `cap-abi`. That file builds the manifest. It is not part of the
   kernel.

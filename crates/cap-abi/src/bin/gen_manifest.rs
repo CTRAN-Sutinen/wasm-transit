@@ -439,11 +439,18 @@ fn kernel_ops(feed_hash: &str, net: Option<&NetworkExampleContext>) -> Vec<Kerne
     let evicted = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_EVICT, keep.to_string().as_bytes()));
     let about = answer(kernel::invoke_bytes(&[&EXAMPLE], kernel::OP_ABOUT, b""));
 
-    let load = |code: u32, name: &str, description: &str| KernelOp {
-        code,
-        name: name.into(),
-        description: description.into(),
-        example: example_for("kernel", name, feed_hash, net),
+    // A load's kind and code are its line's in the kind list.
+    let load = |code: u32, name: &str, description: &str| {
+        let line = cap_abi::kinds::KINDS.iter().find_map(|k| k.load.filter(|l| l.op == name));
+        let line = line.unwrap_or_else(|| panic!("the kernel load {name} has no line in crates/cap-abi/src/kinds.rs"));
+        assert_eq!(line.code, code, "{name}: the kind list's code");
+        KernelOp {
+            code,
+            name: name.into(),
+            kind: Some(line.id.into()),
+            description: description.into(),
+            example: example_for("kernel", name, feed_hash, net),
+        }
     };
     vec![
         load(cap_abi::OP_LOAD_NETWORK, "load_network", "Register the NETWORK document under its content hash (idempotent) — one identity in every module that reads networks, registered once per instance however many of its capabilities read it. JSON: {\"op\": \"load_network\", \"network\": …}. Bulk: the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module) — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped."),
@@ -465,18 +472,21 @@ fn kernel_ops(feed_hash: &str, net: Option<&NetworkExampleContext>) -> Vec<Kerne
         KernelOp {
             code: OP_EVICT,
             name: "evict".into(),
+            kind: None,
             description: "EVERY module. Drop everything the keep-set does not name, answering what dropped and what is held after. The bytes are {\"keep\": [hash, …]}: a document stays when its hash is kept; a derived entry (a held day, the router's graph, a street graph) stays only while every document it was computed from is kept. The host names what survives — it owns the documents; the module enforces — it is the hash authority. Asking for an evicted document is the unknown-hash error (`unknown <kind> <hash>: <load op> first`), never a wrong answer: register it again. Ephemeral kinds also bound themselves with no host steering — rt snapshots keep their last 8, live documents their last 4 — and so does each derivation (held days 4, router graphs 8, street and walking graphs 4).".into(),
             example: Some(OpExample { request: keep, response: evicted }),
         },
         KernelOp {
             code: OP_HELD,
             name: "held".into(),
+            kind: None,
             description: "EVERY module. What the module holds, per registry (each document kind its capabilities read, then the derived entries), oldest first (the bytes are ignored) — the inspection a memory gate reads.".into(),
             example: Some(OpExample { request: serde_json::json!(null), response: held }),
         },
         KernelOp {
             code: kernel::OP_ABOUT,
             name: "about".into(),
+            kind: None,
             description: "EVERY module. What the module is: the capabilities it links in index order (an assembly's capability bulk op carries its index in the high 16 bits; a JSON request names its capability as \"cap\" when the module links more than one), each with the document kinds it reads (the bytes are ignored).".into(),
             example: Some(OpExample { request: serde_json::json!(null), response: about }),
         },
@@ -549,6 +559,8 @@ fn main() {
     let documents = document_kinds(net_ctx.as_ref(), &feed_hash);
     let locking = std::env::args().any(|a| a == "--lock");
     let locks = lock_documents(root, &documents, locking);
+    let (table, table_schemas) = kind_table(root, &documents, &locks);
+    lock_kind_table(root, &table, locking);
     if locking {
         return;
     }
@@ -664,6 +676,7 @@ fn main() {
     // evidence names the profile, and only `just registry` — gated,
     // release — is a publish.
     publish_registry(root, &manifest, &documents, &locks, &profile);
+    publish_kind_table(root, &table, &table_schemas);
 
     println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
 }
@@ -790,8 +803,7 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let json = serde_json::to_string_pretty(&pointer).expect("pointer serializes");
     fs::write(registry.join("registry.json"), json + "\n").expect("write pointer");
 
-    let index = publish_documents(&registry, documents, locks, &evidence);
-    publish_kind_table(root, &registry, &index);
+    publish_documents(&registry, documents, locks, &evidence);
 
     println!(
         "registry: {} capabilities published (blobs + records + pointer)",
@@ -799,35 +811,34 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     );
 }
 
-/// One document kind the registry describes: its bus name (the
-/// manifest's `speaks`), its store kind when the sync store persists
-/// it (the envelope's `kind`, docs/FORMATS.md), the crate that owns its
-/// type and keeps its lock (`crates/<owner>/locks/`), and the kind as
-/// the schema lock reads it: its tag, the version this build writes,
-/// the JSON Schema generated from its serde type, a worked example
-/// computed from the fixtures through the owning library (so the
-/// example is exactly a document the modules make), and its migration
-/// chain.
+/// One document kind the registry describes: its line in the kind list
+/// (`cap_abi::kinds::KINDS`: its name, store kind, and the crate that
+/// keeps its lock), and the kind as the schema lock reads it: its tag,
+/// the version this build writes, the JSON Schema generated from its
+/// serde type, a worked example computed from the fixtures through the
+/// owning library (so the example is exactly a document the modules
+/// make), and its migration chain.
 struct DocumentKind {
-    kind: &'static str,
-    store_kind: Option<&'static str>,
-    owner: &'static str,
+    line: &'static cap_abi::kinds::Declaration,
     spec: schema_lock::Kind,
 }
 
+impl DocumentKind {
+    fn store_kind(&self) -> Option<&'static str> {
+        self.line.store.map(|s| s.kind)
+    }
+}
+
 /// A locked kind: its tag and version are the type's own
-/// (`transit_version::Versioned`).
-fn kind<T>(
-    kind: &'static str,
-    store_kind: Option<&'static str>,
-    owner: &'static str,
-    example: Option<serde_json::Value>,
-    migrate: Option<schema_lock::Migrate>,
-) -> DocumentKind
+/// (`transit_version::Versioned`), and the rest is its line in the kind
+/// list. A type whose tag has no line stops the run.
+fn kind<T>(example: Option<serde_json::Value>, migrate: Option<schema_lock::Migrate>) -> DocumentKind
 where
     T: transit_version::Versioned + schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
 {
-    DocumentKind { kind, store_kind, owner, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
+    let line = cap_abi::kinds::by_tag(T::KIND)
+        .unwrap_or_else(|| panic!("the tag {:?} has no line in crates/cap-abi/src/kinds.rs: a kind exists only if it has one", T::KIND));
+    DocumentKind { line, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
 }
 
 /// Check every locked kind against its lock, or (`locking`) write what
@@ -836,7 +847,7 @@ fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec
     let mut drifts = Vec::new();
     let mut locks = Vec::new();
     for doc in documents {
-        let owner = doc.owner;
+        let owner = doc.line.owner;
         let dir = root.join("crates").join(owner).join("locks");
         let lock = schema_lock::read_lock(&dir, doc.spec.tag).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
         if !locking {
@@ -909,65 +920,37 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
     let walks_example = example_for("streets", "walks", feed_hash, net)
         .and_then(|ex| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
-        kind::<transit_network::Network>("network", Some("network_document"), "transit-network", net.map(|n| n.derived.clone()), Some(migrate_network)),
-        kind::<transit_codec::Boundary>("boundary", Some("boundary"), "transit-codec", net.map(|n| n.boundary.clone()), None),
-        kind::<transit_sync::EditDocument>(
-            "operator_edits",
-            Some("edit_records"),
-            "transit-sync",
-            Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
+        kind::<transit_network::Network>(net.map(|n| n.derived.clone()), Some(migrate_network)),
+        kind::<transit_codec::Boundary>(net.map(|n| n.boundary.clone()), None),
+        kind::<transit_sync::EditDocument>(Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
             Some(migrate_edits),
         ),
-        kind::<transit_log::Entry>("log_entry", None, "transit-log", Some(value(&fixture_stops_log().1[1])), None),
-        kind::<transit_log::Checkpoint>("log_checkpoint", None, "transit-log", Some(value(&fixture_stops_log().0)), None),
-        kind::<transit_network::PlanSet>(
-            "plan_set",
-            None,
-            "transit-network",
-            net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
+        kind::<transit_log::Entry>(Some(value(&fixture_stops_log().1[1])), None),
+        kind::<transit_log::Checkpoint>(Some(value(&fixture_stops_log().0)), None),
+        kind::<transit_network::PlanSet>(net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
             None,
         ),
-        kind::<transit_rider::watchlist::Watchlist>(
-            "watchlist",
-            None,
-            "transit-rider",
-            Some(value(&fixture_watchlist())),
+        kind::<transit_rider::watchlist::Watchlist>(Some(value(&fixture_watchlist())),
             Some(migrate_watchlist),
         ),
-        kind::<transit_plans::PublishedPlans>("plans", Some("plans"), "transit-plans", plans_example, None),
-        kind::<transit_plans::FrozenVersions>(
-            "frozen_versions",
-            None,
-            "transit-plans",
-            net.and_then(|n| {
+        kind::<transit_plans::PublishedPlans>(plans_example, None),
+        kind::<transit_plans::FrozenVersions>(net.and_then(|n| {
                 let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), &fixture_plan_set()[0], &n.network_hash, "proposal for public comment").ok()?;
                 serde_json::to_value(frozen).ok()
             }),
             None,
         ),
-        kind::<transit_rider::device::RecentPlaces>(
-            "recent_places",
-            None,
-            "transit-rider",
-            Some(serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
+        kind::<transit_rider::device::RecentPlaces>(Some(serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
                 {"id": "A", "name": "Main St & 1st Ave", "lat": 45.5, "lon": -73.5},
                 {"id": "STN", "name": "Central Station"}
             ]})),
             None,
         ),
-        kind::<transit_rider::device::LiveFeeds>(
-            "live_feeds",
-            None,
-            "transit-rider",
-            Some(serde_json::json!({"kind": "live_feeds", "schema_version": 1,
+        kind::<transit_rider::device::LiveFeeds>(Some(serde_json::json!({"kind": "live_feeds", "schema_version": 1,
                 "trips": "https://agency.example/gtfs-rt/trip-updates.pb", "vehicles": "", "alerts": ""})),
             None,
         ),
-        kind::<transit_authz::Policy>(
-            "policy",
-            Some("policy"),
-            "transit-authz",
-            Some(value(&transit_authz::Policy::current(vec![transit_authz::Rule {
+        kind::<transit_authz::Policy>(Some(value(&transit_authz::Policy::current(vec![transit_authz::Rule {
                 name: "ops-write-edits".into(),
                 roles: vec!["dispatcher".into()],
                 pointers: vec!["edits".into()],
@@ -976,14 +959,10 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             }]))),
             None,
         ),
-        kind::<transit_streets::Streets>("streets", Some("streets"), "transit-streets", streets_example_context().map(|c| value(&c.streets)), None),
-        kind::<transit_streets::walking::WalkTable>("walks", Some("walks"), "transit-streets", walks_example, None),
-        kind::<transit_runs::WorkRules>("work_rules", None, "transit-runs", Some(value(&fixture_work_rules())), None),
-        kind::<kind_table::KindTable>(
-            "kind_table",
-            Some("kind_table"),
-            "cap-abi",
-            // The governance alone: the versions are the published
+        kind::<transit_streets::Streets>(streets_example_context().map(|c| value(&c.streets)), None),
+        kind::<transit_streets::walking::WalkTable>(walks_example, None),
+        kind::<transit_runs::WorkRules>(Some(value(&fixture_work_rules())), None),
+        kind::<kind_table::KindTable>(// The governance alone: the versions are the published
             // schemas', and would move the example with every schema.
             Some(value(&kind_table::KindTable {
                 kind: kind_table::KindTableKind,
@@ -993,12 +972,12 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             })),
             None,
         ),
-        kind::<transit_stops::Stops>("stops", None, "transit-stops", Some(value(&fixture_stops())), None),
-        kind::<transit_requests::StopRequests>("stop_requests", None, "transit-requests", Some(value(&fixture_requests())), None),
-        kind::<transit_alerts::ServiceAlerts>("service_alerts", None, "transit-alerts", Some(value(&fixture_alerts())), Some(migrate_alerts)),
-        kind::<transit_alerts::AlertTemplates>("alert_templates", None, "transit-alerts", Some(value(&fixture_templates())), None),
-        kind::<transit_notes::Notes>("notes", None, "transit-notes", Some(value(&fixture_notes())), None),
-        kind::<transit_live::LiveDay>("live", None, "transit-live", live_example().map(|(live, _)| value(&live)), None),
+        kind::<transit_stops::Stops>(Some(value(&fixture_stops())), None),
+        kind::<transit_requests::StopRequests>(Some(value(&fixture_requests())), None),
+        kind::<transit_alerts::ServiceAlerts>(Some(value(&fixture_alerts())), Some(migrate_alerts)),
+        kind::<transit_alerts::AlertTemplates>(Some(value(&fixture_templates())), None),
+        kind::<transit_notes::Notes>(Some(value(&fixture_notes())), None),
+        kind::<transit_live::LiveDay>(live_example().map(|(live, _)| value(&live)), None),
     ]
 }
 
@@ -1061,7 +1040,7 @@ const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1), ("store_la
 /// schema. Each schema's `$id` names no host. `go test ./server/...`
 /// validates every example against its schema with no Rust
 /// (docs/FORMATS.md).
-fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) -> Vec<serde_json::Value> {
+fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) {
     let schemas = registry.join("schemas");
     let examples = registry.join("examples");
     fs::create_dir_all(&schemas).expect("create registry schemas");
@@ -1070,17 +1049,16 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
     for (doc, lock) in documents.iter().zip(locks) {
         let tag = doc.spec.tag;
         for (&version, locked) in &lock.versions {
-            let (mut schema, text) = (locked.schema.clone(), &locked.example);
+            let text = &locked.example;
             let stem = format!("{tag}.v{version}");
-            schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
-            let schema = serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n";
+            let schema = published_schema(tag, version, &locked.schema);
             let schema_path = format!("schemas/{stem}.schema.json");
             fs::write(registry.join(&schema_path), &schema).expect("write schema");
             let mut entry = serde_json::json!({
-                "kind": doc.kind,
+                "kind": doc.line.name,
                 "tag": tag,
-                "store_kind": doc.store_kind,
-                "owner": doc.owner,
+                "store_kind": doc.store_kind(),
+                "owner": doc.line.owner,
                 "schema_version": version,
                 "written": version == doc.spec.current,
                 "schema": schema_path,
@@ -1101,9 +1079,7 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
         let stem = format!("{tag}.v{version}");
         let dir = registry.parent().expect("the registry is in the tree").join("server/schemas");
         let read = |file: String| fs::read_to_string(dir.join(&file)).unwrap_or_else(|e| panic!("server/schemas/{file}: {e}"));
-        let mut schema: serde_json::Value = serde_json::from_str(&read(format!("{stem}.schema.json"))).expect("a host-owned schema is JSON");
-        schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
-        let schema = serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n";
+        let schema = published_schema(tag, version, &host_owned_schema(registry.parent().expect("the registry is in the tree"), tag, version));
         let example = read(format!("{stem}.example.json"));
         let (schema_path, example_path) = (format!("schemas/{stem}.schema.json"), format!("examples/{stem}.json"));
         fs::write(registry.join(&schema_path), &schema).expect("write schema");
@@ -1126,46 +1102,97 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
     fs::write(registry.join("documents.json"), json + "\n").expect("write documents index");
     publish_web_schemas(registry, &index);
     println!("registry: {} document versions published (schemas + worked examples)", index.len());
-    index
 }
 
-/// The kind table (`kind_table.rs`): each kind's governance, with the
-/// versions the published schemas give it, written beside the server's
-/// modules as `web/pkg/kinds.json`, and each schema it names as
-/// `web/pkg/schemas/<hex>.json` (the server keeps them in the store,
-/// D-202). Every kind the published schemas name has an entry, or the
-/// run stops.
-fn publish_kind_table(root: &Path, registry: &Path, index: &[serde_json::Value]) {
+/// The kind table (`kind_table.rs`): each stored kind's line in the
+/// kind list, with the versions its locked schemas give it and the
+/// references its current schema declares (D-232). It is a function of
+/// the list and the locks alone, so the checked-in copy
+/// (`crates/cap-abi/kinds.json`) needs no module build. Each schema it
+/// names is answered beside it, by hash, as published.
+fn kind_table(root: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock]) -> (kind_table::KindTable, Vec<(String, String)>) {
     let mut kinds = kind_table::kinds();
-    let pkg = root.join("web/pkg");
-    let schemas = pkg.join("schemas");
-    let _ = fs::remove_dir_all(&schemas);
-    fs::create_dir_all(&schemas).expect("create web/pkg/schemas");
-    let mut ungoverned = Vec::new();
-    for e in index {
-        let tag = e["tag"].as_str().expect("a tag");
-        let stored = e["store_kind"].as_str().is_some();
-        let Some(entry) = kinds.iter_mut().find(|k| k.tag == tag) else {
-            if stored {
-                ungoverned.push(tag.to_string());
-            }
-            continue;
-        };
-        let hash = e["schema_hash"].as_str().expect("a schema hash").to_string();
-        let text = fs::read(registry.join(e["schema"].as_str().expect("a schema path"))).expect("the published schema");
-        fs::write(schemas.join(format!("{}.json", hash.trim_start_matches("sha256:"))), text).expect("write the schema");
-        entry.versions.push(kind_table::VersionEntry { version: e["schema_version"].as_u64().expect("a version") as u32, schema: hash });
-    }
-    assert!(ungoverned.is_empty(), "the kind table (crates/cap-abi/src/bin/common/kind_table.rs) has no entry for the stored kinds {ungoverned:?}");
-    let table = kind_table::KindTable {
-        kind: kind_table::KindTableKind,
-        schema_version: kind_table::SCHEMA_VERSION,
-        kinds,
-        extra: Default::default(),
+    let mut schemas = Vec::new();
+    let mut versions = |tag: &str, version: u32, schema: &serde_json::Value| -> Option<kind_table::VersionEntry> {
+        let text = published_schema(tag, version, schema);
+        let hash = cap_abi::content_hash(text.as_bytes());
+        schemas.push((hash.clone(), text));
+        Some(kind_table::VersionEntry { version, schema: hash })
     };
-    let json = cap_abi::canonical_bytes(&table).expect("the kind table serializes");
+    for (doc, lock) in documents.iter().zip(locks) {
+        let Some(entry) = kinds.iter_mut().find(|k| k.tag == doc.spec.tag) else { continue };
+        for (&version, locked) in &lock.versions {
+            entry.versions.extend(versions(doc.spec.tag, version, &locked.schema));
+        }
+        if let Some(current) = lock.versions.get(&doc.spec.current) {
+            entry.references = transit_version::references(&current.schema);
+        }
+    }
+    for &(tag, version) in HOST_OWNED {
+        let entry = kinds.iter_mut().find(|k| k.tag == tag).unwrap_or_else(|| panic!("the host-owned {tag} has no line in the kind list"));
+        let schema = host_owned_schema(root, tag, version);
+        entry.versions.extend(versions(tag, version, &schema));
+    }
+    let table = kind_table::KindTable { kind: kind_table::KindTableKind, schema_version: kind_table::SCHEMA_VERSION, kinds, extra: Default::default() };
+    (table, schemas)
+}
+
+/// The checked-in kind table, beside the list it is generated from.
+const KIND_TABLE: &str = "crates/cap-abi/kinds.json";
+
+/// Hold the checked-in kind table to the list and the locks, or
+/// (`locking`, `just schema-lock`) write it. A plain run stops while it
+/// differs, so a new kind, a changed route, or a new reference shows in a
+/// review's diff.
+fn lock_kind_table(root: &Path, table: &kind_table::KindTable, locking: bool) {
+    let text = serde_json::to_string_pretty(table).expect("the kind table serializes") + "\n";
+    let path = root.join(KIND_TABLE);
+    if locking {
+        if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+            fs::write(&path, &text).expect("write the kind table");
+            println!("kind table: {KIND_TABLE} records the kind list");
+        }
+        return;
+    }
+    if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+        eprintln!(
+            "kind table: {KIND_TABLE} differs from the kind list (crates/cap-abi/src/kinds.rs) and the locked schemas. \
+             Run `just schema-lock` to write it again, and review its diff."
+        );
+        std::process::exit(1);
+    }
+}
+
+/// The kind table written beside the server's modules as
+/// `web/pkg/kinds.json` (its canonical bytes), and each schema it names
+/// as `web/pkg/schemas/<hex>.json` (the server keeps them in the store,
+/// D-202).
+fn publish_kind_table(root: &Path, table: &kind_table::KindTable, schemas: &[(String, String)]) {
+    let pkg = root.join("web/pkg");
+    let dir = pkg.join("schemas");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create web/pkg/schemas");
+    for (hash, text) in schemas {
+        fs::write(dir.join(format!("{}.json", hash.trim_start_matches("sha256:"))), text).expect("write the schema");
+    }
+    let json = cap_abi::canonical_bytes(table).expect("the kind table serializes");
     fs::write(pkg.join("kinds.json"), json).expect("write web/pkg/kinds.json");
-    println!("kind table: {} kinds, {} schemas (web/pkg/kinds.json)", table.kinds.len(), fs::read_dir(&schemas).map(|d| d.count()).unwrap_or(0));
+    println!("kind table: {} kinds, {} schemas (web/pkg/kinds.json)", table.kinds.len(), fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0));
+}
+
+/// A schema as the registry publishes it: its `$id` names no host, in
+/// pretty JSON with a final newline.
+fn published_schema(tag: &str, version: u32, schema: &serde_json::Value) -> String {
+    let mut schema = schema.clone();
+    schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
+    serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n"
+}
+
+/// A host-owned kind's schema, as `server/schemas/` keeps it.
+fn host_owned_schema(root: &Path, tag: &str, version: u32) -> serde_json::Value {
+    let file = root.join(format!("server/schemas/{tag}.v{version}.schema.json"));
+    let text = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    serde_json::from_str(&text).expect("a host-owned schema is JSON")
 }
 
 /// The digest of the source the modules are built from — every file

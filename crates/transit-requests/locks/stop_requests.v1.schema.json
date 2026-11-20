@@ -13,7 +13,8 @@
         },
         "hash": {
           "description": "\"sha256:\" and the 64 hex digits of the file's bytes.",
-          "type": "string"
+          "type": "string",
+          "x-references": "attachment"
         },
         "name": {
           "type": [
@@ -193,7 +194,8 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "x-references": "network.route"
         },
         "section": {
           "type": [
@@ -213,7 +215,8 @@
         },
         "stop": {
           "description": "The stop, by the stops document's lasting id.",
-          "type": "string"
+          "type": "string",
+          "x-references": "stop"
         },
         "street": {
           "description": "Where the work is: the street, the cross street (or address) the\noffset is measured from the center of, the offset in feet, and\nthe side of the street (one of [`SIDES`]).",
@@ -257,7 +260,8 @@
       "properties": {
         "id": {
           "default": "",
-          "type": "string"
+          "type": "string",
+          "x-references": "external.work_order"
         },
         "read_on": {
           "type": [

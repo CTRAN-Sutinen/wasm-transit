@@ -28,7 +28,8 @@
         "network_hash": {
           "description": "\"sha256:<hex>\" of the pick's canonical network document.",
           "format": "content-hash",
-          "type": "string"
+          "type": "string",
+          "x-references": "network"
         },
         "status": {
           "$ref": "#/$defs/PickStatus",
@@ -41,7 +42,8 @@
           "type": [
             "integer",
             "null"
-          ]
+          ],
+          "x-references": "log.stops"
         }
       },
       "required": [

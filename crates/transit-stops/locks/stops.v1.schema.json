@@ -13,7 +13,8 @@
         },
         "hash": {
           "description": "\"sha256:\" and the 64 hex digits of the file's bytes.",
-          "type": "string"
+          "type": "string",
+          "x-references": "attachment"
         },
         "name": {
           "type": [
@@ -84,7 +85,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-references": "feed"
         },
         "id": {
           "description": "Its id, unique within its stop (D-166), so two writers' events\nare told apart and a correction names the event it edits. A\nwriter may give one; an event written without one gets one at\nthe write, derived from its stop and its content\n([`Stops::identified`]).",
@@ -147,7 +149,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-references": "stop"
         },
         "platform": {
           "description": "The platform's own identifier (\"G\", \"3\").",
@@ -168,14 +171,16 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "x-references": "stop"
         },
         "request": {
           "description": "The stop request this event carries out (D-159): its id in the\nstop requests document — a new stop built, a stop relocated or\nremoved. Not checked here: the requests are their own document.",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-references": "stop_request"
         },
         "site": {
           "additionalProperties": {

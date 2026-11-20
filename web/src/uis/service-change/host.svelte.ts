@@ -20,7 +20,7 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, servedStops, stopWarnings, withStopVersions, Doc } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, served, servedNetworkValue, stopWarnings, withStopVersions, Doc } from "../../engine";
 import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, readAgencyZone, today, whileVisible } from "../kit";
 
 import { resumeSignIn } from "../../signin.svelte";
@@ -1019,7 +1019,7 @@ async function readNewRouteOptions(): Promise<void> {
   ]);
   const held = new Set(own.stops.map((x) => x.stop_id));
   const stops: NewRouteStop[] = own.stops.map((x) => ({ value: x.stop_id, label: x.name || x.stop_id, sub: x.stop_id, fromStops: false }));
-  const record = await servedStops();
+  const record = await served("stops");
   if (record) {
     const theirs = await ask("stops", "stops_on", {
       stops_hash: record,
@@ -1053,7 +1053,7 @@ export async function createRoute(spec: NewRouteSpec): Promise<void> {
     { edit: "upsert_route", id: spec.id, route: { name: spec.name, mode: "bus", ...(spec.longName ? { long_name: spec.longName } : {}) } },
     ...spec.directions.map((d) => ({ edit: "set_direction" as const, route: spec.id, id: d.id, name: d.name })),
   ];
-  const record = await servedStops();
+  const record = await served("stops");
   if (record) {
     try {
       const take = await ask("stops", "take_stops", {

@@ -143,7 +143,10 @@ assembly does not link answers alone.
 return answers:
 
 - The engine registers a `Doc` in a module instance on first use. It
-  uses the kernel's load of the document's kind. `load` answers the
+  uses the kernel's load of the document's kind, on its bulk op over the
+  document's bytes. The worker answers each kind's code from the
+  manifest's kernel ops, and the load names the identity in its one
+  `<name>_hash` field. `load` answers the
   load's whole answer (a feed's summary, a layer's headcount). So a
   document registers once per page, however many capabilities read
   it.
@@ -194,13 +197,11 @@ documents:
   timeline. They return every published pick, and one pick's network
   as a value. The page fetches them gzipped and decompresses them (a
   value is parsed in either case) (D-139).
-- `servedStops` returns the deployment's stops document. It is the
-  manifest's `stops_hash`, and the page never parses the bytes
-  (D-153).
-- `servedServiceAlerts` and `servedNotes` return the deployment's
-  service alerts and notes, by the manifest's `service_alerts_hash` and
-  `notes_hash`, as bytes the page never parses (D-206, D-214).
-  `servedAlertTemplates` returns the alert templates the same way.
+- `served(kind)` returns one of the deployment's logged documents
+  (the stops, the stop requests, the service alerts, the alert
+  templates, the notes) by the manifest's `<kind>_hash`, as bytes the
+  page never parses (D-153, D-206, D-214). `kind` is the kernel's id
+  for the kind (`crates/cap-abi/src/kinds.rs`).
 - `stopWarnings` returns the warnings of the stops that a plan
   visits and that are not in service over its period. It asks cap-stops
   `read_pick`, which derives the period from the published plan set.

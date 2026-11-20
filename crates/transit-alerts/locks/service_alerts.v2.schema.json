@@ -58,7 +58,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-references": "network.route"
         },
         "route_type": {
           "description": "Every route published under this GTFS route type.",
@@ -83,14 +84,16 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-references": "network.stop"
         },
         "trip": {
           "description": "A trip, by the model's trip id.",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-references": "network.trip"
         }
       },
       "type": "object"
@@ -134,7 +137,8 @@
           "description": "A record of the edit document (a diversion or a trip cancel), by\nits record id.",
           "properties": {
             "id": {
-              "type": "string"
+              "type": "string",
+              "x-references": "edit_record"
             },
             "kind": {
               "const": "edit",
@@ -155,7 +159,8 @@
               "type": "string"
             },
             "stop": {
-              "type": "string"
+              "type": "string",
+              "x-references": "stop"
             }
           },
           "required": [
@@ -189,7 +194,8 @@
             "date",
             "start_secs"
           ],
-          "type": "object"
+          "type": "object",
+          "x-references": "trip_instance"
         }
       ]
     },

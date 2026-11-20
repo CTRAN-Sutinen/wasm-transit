@@ -452,7 +452,7 @@ async function fetchLive(): Promise<boolean> {
     try {
       const resp = await fetchFeed(urls[kind]);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const snapshot = new Doc("gtfs_rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
+      const snapshot = new Doc("rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
       const { hash } = await load("rt", snapshot);
       if (hash !== snapshots[kind]?.hash) {
         changed = true;

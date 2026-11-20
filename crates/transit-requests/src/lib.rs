@@ -92,6 +92,7 @@ pub struct StopRequests {
 #[ts(export)]
 pub struct StopRequest {
     /// The stop, by the stops document's lasting id.
+    #[schemars(extend("x-references" = "stop"))]
     pub stop: String,
     /// One of [`JOBS`].
     pub job: String,
@@ -109,6 +110,7 @@ pub struct StopRequest {
     /// serves it yet.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
+    #[schemars(extend("x-references" = "network.route"))]
     pub routes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -190,6 +192,7 @@ pub struct StopRequest {
 #[ts(export, rename = "RequestAttachment")]
 pub struct Attachment {
     /// "sha256:" and the 64 hex digits of the file's bytes.
+    #[schemars(extend("x-references" = "attachment"))]
     pub hash: String,
     /// Its media type ("image/jpeg", "application/pdf").
     #[serde(rename = "type")]
@@ -253,6 +256,7 @@ pub struct WorkOrder {
     #[ts(optional)]
     pub system: Option<String>,
     #[serde(default)]
+    #[schemars(extend("x-references" = "external.work_order"))]
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

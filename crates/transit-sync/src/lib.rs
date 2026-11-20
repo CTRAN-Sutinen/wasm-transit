@@ -41,6 +41,7 @@ pub struct DetourPoint {
 #[ts(export)]
 pub struct Diversion {
     pub id: String,
+    #[schemars(extend("x-references" = "network.route"))]
     pub route_id: String,
     /// `None` = both directions. (GTFS's direction_id, kept for the
     /// boundary path; the model matches patterns, not directions.)
@@ -48,10 +49,13 @@ pub struct Diversion {
     pub direction_id: Option<u8>,
     /// Board/anchor points on the normal alignment: the detour happens
     /// between them, and they stay served.
+    #[schemars(extend("x-references" = "network.stop"))]
     pub first_kept_stop: String,
+    #[schemars(extend("x-references" = "network.stop"))]
     pub last_kept_stop: String,
     /// Interior stops no longer served (must not include the anchors).
     #[serde(default)]
+    #[schemars(extend("x-references" = "network.stop"))]
     pub skipped_stops: Vec<String>,
     /// Drawn detour polyline; `None` = alignment unchanged (skip only).
     #[serde(default)]
@@ -98,6 +102,7 @@ pub struct TripCancel {
     /// The cancel's own domain id (stable across re-proposals of one
     /// record, like a diversion's).
     pub id: String,
+    #[schemars(extend("x-references" = "network.trip"))]
     pub trip_id: String,
     /// One instance (seconds after the service-day anchor); `None` =
     /// every instance of the trip on the date.

@@ -129,32 +129,19 @@ function registryPointer() {
   return JSON.parse(readFileSync(join(REGISTRY, "registry.json"), "utf8"));
 }
 
-/// A document kind's kernel load (the manifest's `documents` names the
-/// kinds a capability reads).
-const KIND_LOADS = {
-  network: "load_network",
-  edits: "load_edits",
-  live: "load_live",
-  boundary: "load_boundary",
-  walks: "load_walks",
-  streets: "load_streets",
-  watchlist: "load_watchlist",
-  layer: "load_layer",
-  feed: "load_feed",
-  rt: "load_rt",
-  work_rules: "load_work_rules",
-  stops: "load_stops",
-  stop_requests: "load_stop_requests",
-  service_alerts: "load_service_alerts",
-  alert_templates: "load_alert_templates",
-  notes: "load_notes",
-};
+/// Each document kind's kernel load, by the kind (the manifest's
+/// `documents` names the kinds a capability reads): the registry's
+/// kernel ops, each load with its kind (crates/cap-abi/src/kinds.rs).
+function kindLoads() {
+  return Object.fromEntries((registryPointer().kernel_ops ?? []).filter((k) => k.kind).map((k) => [k.kind, k]));
+}
 
 /// A --load prefix as a bulk op code: a number, or a kind's load.
 function opCode(prefix) {
   if (/^\d+$/.test(prefix)) return Number(prefix);
-  const load = (registryPointer().kernel_ops ?? []).find((k) => k.name === KIND_LOADS[prefix]);
-  if (!load) throw new Error(`--load ${prefix}:FILE — no kernel load for a ${prefix} document (kinds: ${Object.keys(KIND_LOADS).join(", ")})`);
+  const loads = kindLoads();
+  const load = loads[prefix];
+  if (!load) throw new Error(`--load ${prefix}:FILE — no kernel load for a ${prefix} document (kinds: ${Object.keys(loads).join(", ")})`);
   return load.code;
 }
 
@@ -627,7 +614,7 @@ async function runSession() {
         // The kernel's label for the kind is free text ("live
         // document"); the load op's name is exact.
         const missing = UNKNOWN_DOCUMENT.exec(result.text);
-        const kind = missing && Object.keys(KIND_LOADS).find((k) => KIND_LOADS[k] === missing[3]);
+        const kind = missing && Object.values(kindLoads()).find((k) => k.name === missing[3])?.kind;
         const document = kind && heldDocument(kind, missing[2]);
         if (!document || loadCodes[missing[3]] === undefined) break;
         const loaded = JSON.parse(module.invokeBytes(loadCodes[missing[3]], Buffer.from(JSON.stringify(document))));
@@ -720,8 +707,8 @@ export async function main(argv) {
     );
     // The kernel's loads of the documents it reads: every module
     // linking it answers them.
-    const loadOps = new Set((record.documents ?? []).map((kind) => KIND_LOADS[kind]));
-    const kernel = (registryPointer().kernel_ops ?? []).filter((k) => loadOps.has(k.name));
+    const reads = new Set(record.documents ?? []);
+    const kernel = (registryPointer().kernel_ops ?? []).filter((k) => reads.has(k.kind));
     const loads = brief
       ? Object.fromEntries(kernel.map((k) => [k.name, k.code]))
       : Object.fromEntries(kernel.map((k) => [k.name, k]));

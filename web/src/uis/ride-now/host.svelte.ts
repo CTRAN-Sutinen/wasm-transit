@@ -925,7 +925,7 @@ async function fetchLive(): Promise<boolean> {
       continue;
     }
     try {
-      const snapshot = new Doc("gtfs_rt", { bytes: r.bytes });
+      const snapshot = new Doc("rt", { bytes: r.bytes });
       const { hash } = await load("rt", snapshot);
       if (hash !== snapshots[r.kind]?.hash) {
         changed = true;

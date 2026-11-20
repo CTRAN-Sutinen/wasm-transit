@@ -111,7 +111,7 @@ The hosts differ in three ways. Each difference is a design decision.
   create) and counts it as no answer. A read in the browser has no
   time limit. A read that never answers holds the page's poll, and the
   page keeps its last answers with no label.
-- The engine's served reads (`servedStops`, `servedNetwork`, and the
+- The engine's served reads (`served(kind)`, `servedNetwork`, and the
   others) answer null both when the server keeps no document and when
   the read failed (QAF-131). A failed read of the edit document shows
   no label (QAF-130).

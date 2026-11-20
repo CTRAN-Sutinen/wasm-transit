@@ -90,10 +90,10 @@ pub struct WalkTable {
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
     /// The streets document the table walks (a blob in the store).
-    #[schemars(extend("format" = "content-hash"))]
+    #[schemars(extend("format" = "content-hash", "x-references" = "streets"))]
     pub streets_hash: String,
     /// The network whose stops it walks between.
-    #[schemars(extend("format" = "content-hash"))]
+    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
     pub network_hash: String,
     pub speed_mps: f64,
     pub max_walk_secs: u32,

@@ -1,10 +1,13 @@
 //! The kind table (docs/FORMATS.md, "The kind table"): one table for
-//! each build, beside the server's modules (`web/pkg/kinds.json`). It
+//! each build, generated from the kind list (`cap_abi::kinds::KINDS`)
+//! and the locked schemas. It is checked in as `crates/cap-abi/kinds.json`
+//! and written beside the server's modules as `web/pkg/kinds.json`. It
 //! gives each kind the store keeps how it is written, the module that
-//! checks a write, the merge rule, the read class, and the log records
-//! of its collection. The server's receive path reads it, and refuses a
-//! kind with no entry. `store verify` and `store gc` read the copy the
-//! store keeps, to find a log record's schema (D-202).
+//! checks a write, the merge rule, the read class, the log records of
+//! its collection, its kernel load, and its references. The server's
+//! receive path reads it, and refuses a kind with no entry. `store
+//! verify` and `store gc` read the copy the store keeps, to find a log
+//! record's schema (D-202).
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -39,44 +42,7 @@ impl transit_version::Versioned for KindTable {
     }
 }
 
-/// How a kind is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Write {
-    /// `POST /pointers/<name>`, one of `pointers`, checked by `module`'s
-    /// `validate` op, and stored as the module answers it.
-    Pointer,
-    /// Its own route (`route`), which runs its module.
-    Route,
-    /// The server alone: an import, a release, or the manifest.
-    Server,
-}
-
-/// Who reads a kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Read {
-    /// Anyone, by hash (`/blobs/<hash>`; D-152).
-    Open,
-    /// Never served by hash. A client reads only its own projection.
-    Restricted,
-    /// A caller with the audit rule (a log's entries name their writers).
-    Audit,
-}
-
-/// How two writes of a kind meet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Merge {
-    /// The whole document, by CAS on the head the writer read.
-    Replace,
-    /// Last writer wins for each record id (the edit document; D-56).
-    Lww,
-    /// Ops over the log's head; different records never conflict.
-    Log,
-    /// No writer but the server.
-    None,
-}
+pub use cap_abi::kinds::{Merge, Read, Write};
 
 /// One record kind of a log, and where it lives in its document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -127,88 +93,46 @@ pub struct KindEntry {
     pub validate: Option<String>,
     pub merge: Merge,
     pub read: Read,
+    /// The kernel's load of the kind, when a module reads it from the bus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<LoadEntry>,
+    /// The fields that name other records or things, each with its
+    /// target, from the current version's schema (`x-references`, D-232).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<transit_version::Reference>,
 }
 
-/// The governance of each kind: everything but its versions, which come
-/// from the published schemas.
-fn entry(store_kind: &str, tag: &str, write: Write, route: &str, pointers: &[&str], merge: Merge, read: Read) -> KindEntry {
-    KindEntry {
-        store_kind: store_kind.into(),
-        tag: tag.into(),
-        versions: vec![],
-        write,
-        route: route.into(),
-        pointers: pointers.iter().map(|p| p.to_string()).collect(),
-        log: None,
-        records: vec![],
-        module: None,
-        validate: None,
-        merge,
-        read,
-    }
+/// A kind's kernel load: its JSON op and its bulk op's code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadEntry {
+    pub op: String,
+    pub code: u32,
 }
 
-impl KindEntry {
-    fn checked(mut self, module: &str, op: &str) -> Self {
-        self.module = Some(module.into());
-        self.validate = Some(op.into());
-        self
-    }
-
-    fn logged(mut self, log: &str, records: &[(&str, &str)]) -> Self {
-        self.log = Some(log.into());
-        self.records = records.iter().map(|(k, c)| RecordEntry { kind: k.to_string(), collection: c.to_string() }).collect();
-        self
-    }
-}
-
-/// Every kind the store keeps. A test (`every_store_kind_is_governed`)
-/// holds it to the kinds the published schemas name, and the server's
-/// tests hold it to the envelopes the server writes.
+/// The table's entries: one for each line of the kind list that the
+/// store keeps (`cap_abi::kinds::KINDS`), with no versions and no
+/// references. gen-manifest adds those from the locked schemas.
 pub fn kinds() -> Vec<KindEntry> {
-    use Merge::*;
-    use Read::*;
-    use Write::*;
-    vec![
-        entry("edit_records", "edit_records", Route, "POST /edits", &["edits"], Lww, Open)
-            .checked("sync", "sync_edits")
-            .logged("disruptions", &[("edit_record", "records")]),
-        entry("stops", "stops", Route, "POST /stops, POST /logs/stops", &["stops"], Log, Open)
-            .checked("stops", "validate")
-            .logged("stops", &[("stop", "stops")]),
-        entry("stop_requests", "stop_requests", Route, "POST /stop-requests, POST /logs/stops", &["stop_requests"], Log, Open)
-            .checked("requests", "validate")
-            .logged("stops", &[("stop_request", "requests")]),
-        entry("service_alerts", "service_alerts", Route, "POST /service-alerts", &[], Log, Open)
-            .checked("alerts", "validate")
-            .logged("alerts", &[("service_alert", "alerts")]),
-        entry("alert_templates", "alert_templates", Route, "POST /alert-templates", &[], Log, Open)
-            .checked("alerts", "validate_templates")
-            .logged("alerts", &[("alert_template", "templates")]),
-        entry("notes", "notes", Route, "POST /notes", &[], Log, Open)
-            .checked("notes", "validate")
-            .logged("notes", &[("note", "notes")]),
-        entry("plans", "plans", Route, "POST /plans, POST /plans/adopt, POST /plans/retire", &["plans"], Log, Open)
-            .checked("plans", "adopt")
-            .logged("plans", &[("pick", "plans")]),
-        entry("frozen_versions", "frozen_versions", Route, "POST /plans/freeze, POST /plans", &[], Log, Open)
-            .checked("plans", "freeze")
-            .logged("plans", &[("frozen_version", "versions")]),
-        entry("network_document", "network", Route, "POST /plans/freeze, POST /plans; the server's import", &["plan.*", "network"], Replace, Open)
-            .checked("network", "publishable"),
-        entry("boundary", "boundary", Server, "the server's import of the GTFS zip", &["boundary"], None, Open),
-        entry("streets", "streets", Server, "the server's import of the street layer", &["streets"], None, Open),
-        entry("walks", "walks", Server, "the server's walk table", &["walks"], None, Open),
-        entry("derivation", "derivation", Server, "the server's imports", &["derived.*"], None, Open),
-        entry("policy", "policy", Pointer, "POST /pointers/policy", &["policy"], Replace, Restricted).checked("authz", "validate"),
-        entry("manifest", "", Server, "the server's publishing", &["manifest"], None, Open),
-        entry("build", "build", Route, "the server's -dist, and POST /builds", &["build", "build.*"], Replace, Open),
-        entry("build_file", "", Route, "the server's -dist", &[], None, Open),
-        entry("gtfs_feed", "", Server, "the server's -feed", &["source.feed"], None, Open),
-        entry("street_layer", "", Server, "the server's -streets", &["source.streets"], None, Open),
-        entry("log_entry", "log_entry", Route, "the log's own writes", &[], None, Audit),
-        entry("log_checkpoint", "log_checkpoint", Server, "the server's fold", &[], None, Audit),
-        entry("kind_table", "kind_table", Server, "the server's setup of the store", &[], None, Open),
-        entry("store_layout", "store_layout", Server, "the server's setup of the store", &[], None, Open),
-    ]
+    cap_abi::kinds::KINDS
+        .iter()
+        .filter_map(|k| {
+            let s = k.store?;
+            Some(KindEntry {
+                store_kind: s.kind.into(),
+                tag: k.tag.into(),
+                versions: vec![],
+                write: s.write,
+                route: s.route.into(),
+                pointers: s.pointers.iter().map(|p| p.to_string()).collect(),
+                log: s.log.map(|l| l.name.into()),
+                records: s.log.map(|l| l.records.iter().map(|(k, c)| RecordEntry { kind: k.to_string(), collection: c.to_string() }).collect()).unwrap_or_default(),
+                module: s.check.map(|(m, _)| m.into()),
+                validate: s.check.map(|(_, op)| op.into()),
+                merge: s.merge,
+                read: s.read,
+                load: k.load.map(|l| LoadEntry { op: l.op.into(), code: l.code }),
+                references: vec![],
+            })
+        })
+        .collect()
 }

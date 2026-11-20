@@ -63,13 +63,15 @@
             "date",
             "start_secs"
           ],
-          "type": "object"
+          "type": "object",
+          "x-references": "trip_instance"
         },
         {
           "description": "A record of the edit document (a diversion or a trip cancel), by\nits record id.",
           "properties": {
             "id": {
-              "type": "string"
+              "type": "string",
+              "x-references": "edit_record"
             },
             "kind": {
               "const": "edit",
@@ -86,7 +88,8 @@
           "description": "A service alert, by its id.",
           "properties": {
             "id": {
-              "type": "string"
+              "type": "string",
+              "x-references": "service_alert"
             },
             "kind": {
               "const": "alert",
@@ -107,7 +110,8 @@
               "type": "string"
             },
             "stop": {
-              "type": "string"
+              "type": "string",
+              "x-references": "stop"
             }
           },
           "required": [

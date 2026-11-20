@@ -230,6 +230,7 @@ pub struct AlertText {
 pub struct AlertEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    #[schemars(extend("x-references" = "network.route"))]
     pub route: Option<String>,
     /// Every route published under this GTFS route type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -241,10 +242,12 @@ pub struct AlertEntity {
     pub direction: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    #[schemars(extend("x-references" = "network.stop"))]
     pub stop: Option<String>,
     /// A trip, by the model's trip id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    #[schemars(extend("x-references" = "network.trip"))]
     pub trip: Option<String>,
     /// The trip instance's service date, "YYYY-MM-DD". None means the
     /// trip on every date.
@@ -269,13 +272,20 @@ pub struct AlertEntity {
 pub enum AlertSource {
     /// A record of the edit document (a diversion or a trip cancel), by
     /// its record id.
-    Edit { id: String },
+    Edit {
+        #[schemars(extend("x-references" = "edit_record"))]
+        id: String,
+    },
     /// A stop's suspension in the stops document, by the stop's lasting
     /// id.
-    Stop { stop: String },
+    Stop {
+        #[schemars(extend("x-references" = "stop"))]
+        stop: String,
+    },
     /// A trip instance that the live feed cancels (D-216): the model's
     /// trip id, its service date ("YYYY-MM-DD"), and its start in seconds
     /// after the service-day anchor. Version 2.
+    #[schemars(extend("x-references" = "trip_instance"))]
     Trip { trip: String, date: String, start_secs: u32 },
 }
 

@@ -25,7 +25,7 @@
 /// live feeds, and the clock while it is visible. The view, the search,
 /// and the open disruption live in the URL hash.
 
-import { ask, assemble, available, keep, load, produced, servedAlertTemplates, servedNetwork, servedNotes, servedServiceAlerts, servedStops, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, served, servedNetwork, Doc } from "../../engine";
 import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabel, clockLabelAt, installApp, lastGoodText, manifestNow, nowSecs, previousDay, deploymentFeeds, deploymentManifest, fetchFeed, readAgencyZone, reason, staleLabel, today, whileVisible, type FrameState, type LiveUrls } from "../kit";
 import { resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
@@ -498,7 +498,7 @@ const request = answerGraph(
           boundary_hash: boundary,
           rt_hash: snapshots.trips ?? undefined,
           vp_hash: snapshots.vehicles ?? undefined,
-          alerts_hash: produced("gtfs_rt", undefined, "rt", encoded.rt_hash),
+          alerts_hash: produced("rt", undefined, "rt", encoded.rt_hash),
         });
         if (!previewLive.live) throw new Error("the live answer carries no document");
         const liveDoc = produced("live", previewLive.live, "rt", previewLive.live_hash);
@@ -701,10 +701,10 @@ async function readDocuments(): Promise<boolean> {
   if (!manifest) return false;
   logSeqs = manifest.log_seqs ?? {};
   let changed = false;
-  if ((manifest.stops_hash ?? null) !== (stops?.pin ?? null)) ((stops = await servedStops()), (changed = true));
-  if ((manifest.service_alerts_hash ?? null) !== (alerts?.pin ?? null)) ((alerts = await servedServiceAlerts()), (changed = true));
-  if ((manifest.notes_hash ?? null) !== (notes?.pin ?? null)) ((notes = await servedNotes()), (changed = true));
-  if ((manifest.alert_templates_hash ?? null) !== (templates?.pin ?? null)) ((templates = await servedAlertTemplates()), (changed = true));
+  if ((manifest.stops_hash ?? null) !== (stops?.pin ?? null)) ((stops = await served("stops")), (changed = true));
+  if ((manifest.service_alerts_hash ?? null) !== (alerts?.pin ?? null)) ((alerts = await served("service_alerts")), (changed = true));
+  if ((manifest.notes_hash ?? null) !== (notes?.pin ?? null)) ((notes = await served("notes")), (changed = true));
+  if ((manifest.alert_templates_hash ?? null) !== (templates?.pin ?? null)) ((templates = await served("alert_templates")), (changed = true));
   return changed;
 }
 
@@ -722,7 +722,7 @@ async function fetchLive(): Promise<boolean> {
       try {
         const resp = await fetchFeed(urls[kind]!);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const snapshot = new Doc("gtfs_rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
+        const snapshot = new Doc("rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
         const { hash } = await load("rt", snapshot);
         if (hash !== snapshots[kind]?.hash) ((snapshots[kind] = snapshot), (changed = true));
       } catch (e) {

@@ -103,14 +103,24 @@ pub enum NoteTarget {
     /// ("YYYY-MM-DD"), and its start in seconds after the service-day
     /// anchor. A service date names its pick, so the instance is
     /// unambiguous.
+    #[schemars(extend("x-references" = "trip_instance"))]
     Trip { trip: String, date: String, start_secs: u32 },
     /// A record of the edit document (a diversion or a trip cancel), by
     /// its record id.
-    Edit { id: String },
+    Edit {
+        #[schemars(extend("x-references" = "edit_record"))]
+        id: String,
+    },
     /// A service alert, by its id.
-    Alert { id: String },
+    Alert {
+        #[schemars(extend("x-references" = "service_alert"))]
+        id: String,
+    },
     /// A stop, by its lasting id.
-    Stop { stop: String },
+    Stop {
+        #[schemars(extend("x-references" = "stop"))]
+        stop: String,
+    },
 }
 
 /// A note in a list: its id and the note.

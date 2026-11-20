@@ -478,6 +478,7 @@ pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
 
 pub mod jcs;
 pub mod kernel;
+pub mod kinds;
 pub mod manifest;
 pub mod registry;
 pub mod validate;

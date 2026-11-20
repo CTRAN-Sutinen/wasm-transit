@@ -213,7 +213,8 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> [<op>] | sessi
                            # --as NAME names a result. $refs: $name.x, $load.x, $op.x,
                            # $N.path, and $TODAY / $NOW_SECS (a number).
                            # --load [N:|KIND:]FILE for bulk ops (feed:x.zip uses the
-                           # kernel's loads). --op @FILE for big JSON.
+                           # registry's kernel loads, each with its kind). --op @FILE
+                           # for big JSON.
                            # --ask URL asks an oracle ($ask.x). --post URL REF writes a
                            # document to the deployment ($post.x). For example,
                            # POST /plans '$apply.network' publishes a pick.
@@ -242,10 +243,12 @@ just e2e-fast [args]       # the same over `caps-fast` modules. Playwright's arg
 just check                 # both runners, for changes that touch both sides
 just types                 # generate the TS bindings again (gitignored; build runs it)
 just schema-lock           # the documents' schema lock: freeze a kind's new version, or
-                           # record an added optional field in the same version (D-167),
-                           # into the owning crate's locks/. `just caps` fails while a
-                           # kind differs from its lock (docs/FORMATS.md, "The schema
-                           # lock"). It needs no module build.
+                           # record an added optional field or reference declaration in
+                           # the same version (D-167, D-232), into the owning crate's
+                           # locks/; and write the kind table crates/cap-abi/kinds.json
+                           # from the kind list. `just caps` fails while a kind differs
+                           # from its lock, or the table from the list (docs/FORMATS.md,
+                           # "The schema lock"). It needs no module build.
 just http-lock             # the HTTP contract's lock: server/openapi.json copied to
                            # openapi.lock.json once the compatibility gate passes. Run it
                            # when a release ships (docs/architecture/release-artifacts.md).
@@ -383,8 +386,9 @@ transit-live     the live document: rt in the model's vocabulary, each instance'
 transit-version  a document's kind tag and version (D-115): the tag every persisted
                  document writes, and what a reader checks to refuse another version;
                  the one version ahead a release reads, lossless or read-only
-                 (`Versioned::AHEAD`, D-186); and a record's fields this build does
-                 not know, kept and named (`Extra`, D-167)
+                 (`Versioned::AHEAD`, D-186); a record's fields this build does
+                 not know, kept and named (`Extra`, D-167); and the references a
+                 schema declares (`x-references`, D-232)
 transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), merge, and
                  the record envelope; and the record a revert of the disruptions log
                  writes back, stamped to win the merge (D-193). Pure.
@@ -438,16 +442,20 @@ transit-streets  the streets document (canonical: its hash is the streets' hash,
                  file's), its import from street layers (GeoJSON: agency exports, TIGER,
                  OSM), the graph over it (snap, route), and walking (the walk table
                  between stops, and a point's walks to the stops near it)
-cap-abi          the kernel and the seam: the registries (one for each document kind,
-                 with a private constructor), each kind's load, derived entries (the
+cap-abi          the kernel and the seam: the kind list (kinds.rs: one line for each
+                 kind of document; a kind exists only if it has one), the registries
+                 (one for each kind with a load, with a private constructor), each
+                 kind's load, derived entries (the
                  held day, graphs), the routing that an assembly's exports run
                  (`assembly!`; a capability only registers, with `capability!`), the
                  kernel ops (loads, evict, held, about), the canonical form (RFC 8785,
                  `jcs`; D-169), the manifest, the validator, gen-manifest (with
                  the schema lock: each kind's frozen schema and example,
                  kept in the owning crate's locks/; and the kind table, how
-                 each kind the store keeps is written, checked, and read,
-                 web/pkg/kinds.json; D-202), gen-assemblies, and arch-gates
+                 each kind the store keeps is written, checked, and read, and
+                 what its fields name, generated from the list and checked in
+                 as crates/cap-abi/kinds.json; D-202), gen-assemblies, and
+                 arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests cap-alerts cap-notes cap-disruptions cap-log
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)

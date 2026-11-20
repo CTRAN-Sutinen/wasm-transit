@@ -384,7 +384,8 @@ work rules, and the bid over them.
 - **QAF-131 DEFECT** — the engine's reads of a served document answer
   null both when the deployment keeps none and when the read fails
   (`web/src/engine.ts`: `servedNetwork`, `servedNetworkValue`,
-  `servedStops`, `publishedPlanSet`, and the logged documents). So the
+  `served(kind)` for the stops and the other logged documents, and
+  `publishedPlanSet`). So the
   pages report an outage as an empty deployment. The stops app says
   "The deployment publishes no stops yet." Disruptions says "The
   deployment publishes no network." Service design and service change

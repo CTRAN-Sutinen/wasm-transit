@@ -80,10 +80,8 @@ The declarations follow `docs/CONVENTIONS.md`, "Traceable":
 - the journal records which input changed and which answers ran
   again because of it.
 
-The engine's per-kind readers (`servedStops`, `servedNotes`, and the
-others) become one reader in [kind-registration.md](kind-registration.md).
-This unit can start before that one lands, over the readers as they
-are.
+The engine reads every logged document through one reader,
+`served(kind)`.
 
 ## Done when
 

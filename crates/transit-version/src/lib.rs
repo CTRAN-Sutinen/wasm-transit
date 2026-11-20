@@ -13,8 +13,13 @@
 //!   one version ahead for one release ([`Ahead`], D-79, D-186).
 //! - [`Extra`] is a record's fields that this build does not know,
 //!   kept as written (D-167).
+//! - [`references`] reads the references a kind's schema declares
+//!   (`x-references`, D-232).
 
 #![forbid(unsafe_code)]
+
+pub mod references;
+pub use references::{references, Reference};
 
 #[doc(hidden)]
 pub use schemars;

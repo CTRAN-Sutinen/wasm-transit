@@ -193,8 +193,10 @@ schema lock"). It then copies the locks out:
 - the index `registry/documents.json`
 - the kind table beside the server's modules, `web/pkg/kinds.json`,
   with each schema it names as `web/pkg/schemas/<hex>.json` (D-202;
-  `docs/FORMATS.md`, "The kind table"). The run stops when a kind with
-  a store kind has no entry.
+  `docs/FORMATS.md`, "The kind table"). It is generated from the kind
+  list (`crates/cap-abi/src/kinds.rs`), and the run stops while the
+  checked-in copy, `crates/cap-abi/kinds.json`, differs from it. A
+  document type whose tag has no line stops the run too.
 
 The index holds, per kind and version: the `tag` the document carries,
 its bus `kind`, its `store_kind` (the store envelope's kind, when the

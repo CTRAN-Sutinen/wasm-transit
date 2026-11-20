@@ -49,19 +49,26 @@ cap-author `apply` include one for each edit kind, applied to the
 fixture in order. The build fails if an edit kind has no example, or if
 an example stops applying.
 
+**The kind list.** `kinds.rs` lists every kind of document, one line
+for each: its name and tag, its library type and the crate that keeps
+its lock, its kernel load, and how the store keeps it. A kind exists
+only if it has a line. The list is data: no module reads it, so a kind
+costs a module nothing until a capability names it. gen-manifest
+generates the kind table from it (`docs/FORMATS.md`, "The kind table"),
+and gives each load in the registry's kernel ops its kind, which
+caps-run's `--load KIND:FILE` and the pages' engine read. A test holds
+each kernel kind to its line.
+
 **The registries.** The kernel (`kernel.rs`) owns one registry for each
-document kind: network, edits, live, boundary, walks, streets,
-watchlist, layer, feed, rt, work_rules, and stops. It also owns one
-derived registry. Each registry is a `Registry` (`registry.rs`). Its
+kind with a kernel load in the list. It also owns one derived registry. Each registry is a `Registry` (`registry.rs`). Its
 constructor is private to cap-abi, so a capability cannot declare
 shared state.
 
 **Loads.** Each kind's load is a kernel op. The load comes in two forms:
 
-- A bulk op over the document's bytes: 256 network, 259 edits, 260 live,
-  261 boundary, 262 walks, 263 streets, 264 watchlist, 265 layer,
-  266 feed, 267 rt, 269 work_rules, 270 stops, 271 stop_requests,
-  272 service_alerts, 273 alert_templates, and 274 notes.
+- A bulk op over the document's bytes, with the code its line in the
+  list gives it (256 for the network). A code is never reused. The
+  pages register every kind this way.
 - The same op in JSON, for example
   `{"op": "load_network", "network": …}`. The kernel removes it from the
   request before any capability decodes the request. The document stays

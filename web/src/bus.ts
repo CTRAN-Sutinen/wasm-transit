@@ -42,6 +42,9 @@ export type Assembly = {
   caps: Record<string, Capability>;
   routes: Record<string, Route>;
   errors: Record<string, string>;
+  /// Each kind's kernel load, by the kind: its bulk op's code (the
+  /// manifest's kernel ops; crates/cap-abi/src/kinds.rs).
+  loads: Record<string, number>;
 };
 
 let worker: Worker | null = null;

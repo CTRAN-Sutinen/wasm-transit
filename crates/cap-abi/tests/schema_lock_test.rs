@@ -85,6 +85,34 @@ mod retyped {
     }
 }
 
+/// v1 with `stops` declared to name stops (D-232): no byte changes.
+mod declared {
+    #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+    pub struct Thing {
+        pub kind: String,
+        pub schema_version: u32,
+        pub name: String,
+        #[schemars(extend("x-references" = "stop"))]
+        pub stops: Vec<String>,
+        #[serde(flatten)]
+        pub extra: transit_version::Extra,
+    }
+}
+
+/// `declared` with the target changed to the network's stops.
+mod retargeted {
+    #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+    pub struct Thing {
+        pub kind: String,
+        pub schema_version: u32,
+        pub name: String,
+        #[schemars(extend("x-references" = "network.stop"))]
+        pub stops: Vec<String>,
+        #[serde(flatten)]
+        pub extra: transit_version::Extra,
+    }
+}
+
 fn example(version: u32) -> Value {
     json!({ "kind": "thing", "schema_version": version, "name": "Main St", "stops": ["A", "B"] })
 }
@@ -271,4 +299,34 @@ fn a_lock_edited_by_hand_fails() {
     let drifts = schema_lock::check(&v1_kind(), &read_lock(&dir, "thing").unwrap());
     assert!(has(&drifts, |d| matches!(d, Drift::Edited { version: 1, .. })), "{drifts:?}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// D-232: a declaration added to a field that had none states what was
+/// already true. The bytes do not change, so it is recorded in the same
+/// version.
+#[test]
+fn an_added_reference_declaration_is_recorded_in_the_same_version() {
+    let declared = kind::<declared::Thing>("thing", 1, Some(example(1)), None);
+    let drifts = schema_lock::check(&declared, &v1_lock());
+    assert_eq!(drifts.len(), 1, "{drifts:?}");
+    assert!(matches!(drifts[0], Drift::SchemaChanged { additive: true, .. }), "{drifts:?}");
+    let recorded = freeze(&declared, &v1_lock()).expect("the lock command records an added declaration");
+    assert_eq!(schema_lock::check(&declared, &recorded), vec![]);
+}
+
+/// D-232: a changed target changes what the field means, though no byte
+/// changes. It needs a version bump, and so does a dropped declaration.
+#[test]
+fn a_changed_or_dropped_reference_target_needs_a_bump() {
+    let declared = kind::<declared::Thing>("thing", 1, Some(example(1)), None);
+    let lock = freeze(&declared, &v1_lock()).expect("the declaration is recorded");
+    let retargeted = kind::<retargeted::Thing>("thing", 1, Some(example(1)), None);
+    let drifts = freeze(&retargeted, &lock).expect_err("a changed target is refused");
+    assert!(
+        has(&drifts, |d| matches!(d, Drift::ReferenceChanged { path, was, now: Some(now), .. }
+            if path == "/stops/*" && was == "stop" && now == "network.stop")),
+        "{drifts:?}"
+    );
+    let dropped = freeze(&v1_kind(), &lock).expect_err("a dropped declaration is refused");
+    assert!(has(&dropped, |d| matches!(d, Drift::ReferenceChanged { now: None, .. })), "{dropped:?}");
 }

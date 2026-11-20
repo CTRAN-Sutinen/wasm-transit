@@ -122,6 +122,7 @@ pub struct Event {
     /// The stops a consolidation or split succeeds (a stage event).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
+    #[schemars(extend("x-references" = "stop"))]
     pub replaces: Vec<String>,
     /// A person's note on the event ("water main work").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -138,12 +139,14 @@ pub struct Event {
     /// removed. Not checked here: the requests are their own document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    #[schemars(extend("x-references" = "stop_request"))]
     pub request: Option<String>,
     /// The agency's feed an import recorded this event from (D-150): the
     /// feed's id (its hash), so the events a feed recorded are found again
     /// and shown to the planner. A person's own event has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    #[schemars(extend("x-references" = "feed"))]
     pub from_feed: Option<String>,
     /// Its photos and drawings (D-162): a survey's approach and cross
     /// street, a closure's sign.
@@ -163,6 +166,7 @@ pub struct Event {
 #[ts(export)]
 pub struct Attachment {
     /// "sha256:" and the 64 hex digits of the file's bytes.
+    #[schemars(extend("x-references" = "attachment"))]
     pub hash: String,
     /// Its media type ("image/jpeg", "application/pdf").
     #[serde(rename = "type")]
@@ -306,6 +310,7 @@ pub struct Details {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub kind: Option<StopKind>,
+    #[schemars(extend("x-references" = "stop"))]
     /// The station a stop is part of.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

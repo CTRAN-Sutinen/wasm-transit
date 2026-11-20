@@ -1,0 +1,617 @@
+{
+  "kind": "kind_table",
+  "schema_version": 1,
+  "kinds": [
+    {
+      "store_kind": "network_document",
+      "tag": "network",
+      "versions": [
+        {
+          "version": 2,
+          "schema": "sha256:4b66290ba50353cc05b3d5fcd898efbb2c9acc7339668930acd5ab5d4a2f5c21"
+        }
+      ],
+      "write": "route",
+      "route": "POST /plans/freeze, POST /plans; the server's import",
+      "pointers": [
+        "plan.*",
+        "network"
+      ],
+      "module": "network",
+      "validate": "publishable",
+      "merge": "replace",
+      "read": "open",
+      "load": {
+        "op": "load_network",
+        "code": 256
+      }
+    },
+    {
+      "store_kind": "boundary",
+      "tag": "boundary",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:4f5c7f28b329b1564f85ed18cc040c4d943b919c1317e3e35cdbfd550f7cfd7f"
+        }
+      ],
+      "write": "server",
+      "route": "the server's import of the GTFS zip",
+      "pointers": [
+        "boundary"
+      ],
+      "merge": "none",
+      "read": "open",
+      "load": {
+        "op": "load_boundary",
+        "code": 261
+      }
+    },
+    {
+      "store_kind": "gtfs_feed",
+      "tag": "",
+      "versions": [],
+      "write": "server",
+      "route": "the server's -feed",
+      "pointers": [
+        "source.feed"
+      ],
+      "merge": "none",
+      "read": "open",
+      "load": {
+        "op": "load_feed",
+        "code": 266
+      }
+    },
+    {
+      "store_kind": "edit_records",
+      "tag": "edit_records",
+      "versions": [
+        {
+          "version": 2,
+          "schema": "sha256:87cbd55cf18c37999593d2ddd9af28c23ad5f82a2868896c52f8dbaa94388336"
+        }
+      ],
+      "write": "route",
+      "route": "POST /edits",
+      "pointers": [
+        "edits"
+      ],
+      "log": "disruptions",
+      "records": [
+        {
+          "kind": "edit_record",
+          "collection": "records"
+        }
+      ],
+      "module": "sync",
+      "validate": "sync_edits",
+      "merge": "lww",
+      "read": "open",
+      "load": {
+        "op": "load_edits",
+        "code": 259
+      },
+      "references": [
+        {
+          "path": "/records/*/cancel/trip_id",
+          "target": "network.trip"
+        },
+        {
+          "path": "/records/*/diversion/first_kept_stop",
+          "target": "network.stop"
+        },
+        {
+          "path": "/records/*/diversion/last_kept_stop",
+          "target": "network.stop"
+        },
+        {
+          "path": "/records/*/diversion/route_id",
+          "target": "network.route"
+        },
+        {
+          "path": "/records/*/diversion/skipped_stops/*",
+          "target": "network.stop"
+        }
+      ]
+    },
+    {
+      "store_kind": "streets",
+      "tag": "streets",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:3516cb6cb4a4e6f90f0b52e4d1fbe70306a253b5ab1b02b5a87c54a90a312e34"
+        }
+      ],
+      "write": "server",
+      "route": "the server's import of the street layer",
+      "pointers": [
+        "streets"
+      ],
+      "merge": "none",
+      "read": "open",
+      "load": {
+        "op": "load_streets",
+        "code": 263
+      }
+    },
+    {
+      "store_kind": "street_layer",
+      "tag": "",
+      "versions": [],
+      "write": "server",
+      "route": "the server's -streets",
+      "pointers": [
+        "source.streets"
+      ],
+      "merge": "none",
+      "read": "open"
+    },
+    {
+      "store_kind": "walks",
+      "tag": "walks",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:1de517dc34ff3e1461717610db5a3cdc0aec48942d98f37306a48cd4f3138c4a"
+        }
+      ],
+      "write": "server",
+      "route": "the server's walk table",
+      "pointers": [
+        "walks"
+      ],
+      "merge": "none",
+      "read": "open",
+      "load": {
+        "op": "load_walks",
+        "code": 262
+      },
+      "references": [
+        {
+          "path": "/network_hash",
+          "target": "network"
+        },
+        {
+          "path": "/streets_hash",
+          "target": "streets"
+        }
+      ]
+    },
+    {
+      "store_kind": "stops",
+      "tag": "stops",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:ee347ab73fb74cd5f66c454ebf906f436291effcda9ff753a8c034902d901f0e"
+        }
+      ],
+      "write": "route",
+      "route": "POST /stops, POST /logs/stops",
+      "pointers": [
+        "stops"
+      ],
+      "log": "stops",
+      "records": [
+        {
+          "kind": "stop",
+          "collection": "stops"
+        }
+      ],
+      "module": "stops",
+      "validate": "validate",
+      "merge": "log",
+      "read": "open",
+      "load": {
+        "op": "load_stops",
+        "code": 270
+      },
+      "references": [
+        {
+          "path": "/stops/*/*/attachments/*/hash",
+          "target": "attachment"
+        },
+        {
+          "path": "/stops/*/*/from_feed",
+          "target": "feed"
+        },
+        {
+          "path": "/stops/*/*/parent",
+          "target": "stop"
+        },
+        {
+          "path": "/stops/*/*/replaces/*",
+          "target": "stop"
+        },
+        {
+          "path": "/stops/*/*/request",
+          "target": "stop_request"
+        }
+      ]
+    },
+    {
+      "store_kind": "stop_requests",
+      "tag": "stop_requests",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:d29ab744bc183b11658f47008590e435da418f5fb373cda8d3ba43fd9ba66054"
+        }
+      ],
+      "write": "route",
+      "route": "POST /stop-requests, POST /logs/stops",
+      "pointers": [
+        "stop_requests"
+      ],
+      "log": "stops",
+      "records": [
+        {
+          "kind": "stop_request",
+          "collection": "requests"
+        }
+      ],
+      "module": "requests",
+      "validate": "validate",
+      "merge": "log",
+      "read": "open",
+      "load": {
+        "op": "load_stop_requests",
+        "code": 271
+      },
+      "references": [
+        {
+          "path": "/requests/*/attachments/*/hash",
+          "target": "attachment"
+        },
+        {
+          "path": "/requests/*/routes/*",
+          "target": "network.route"
+        },
+        {
+          "path": "/requests/*/stop",
+          "target": "stop"
+        },
+        {
+          "path": "/requests/*/work_order/id",
+          "target": "external.work_order"
+        }
+      ]
+    },
+    {
+      "store_kind": "service_alerts",
+      "tag": "service_alerts",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:256906a3a3058aa45bd3a7f25224e6aa55bb62d3af0d9723ba170a31e9557c66"
+        },
+        {
+          "version": 2,
+          "schema": "sha256:3ca405a43ed17398ebf02381c0e30528ca7a9b8c3f3164678a60da5e31e6b2ba"
+        }
+      ],
+      "write": "route",
+      "route": "POST /service-alerts",
+      "pointers": [],
+      "log": "alerts",
+      "records": [
+        {
+          "kind": "service_alert",
+          "collection": "alerts"
+        }
+      ],
+      "module": "alerts",
+      "validate": "validate",
+      "merge": "log",
+      "read": "open",
+      "load": {
+        "op": "load_service_alerts",
+        "code": 272
+      },
+      "references": [
+        {
+          "path": "/alerts/*/explains/*[kind=edit]/id",
+          "target": "edit_record"
+        },
+        {
+          "path": "/alerts/*/explains/*[kind=stop]/stop",
+          "target": "stop"
+        },
+        {
+          "path": "/alerts/*/explains/*[kind=trip]",
+          "target": "trip_instance"
+        },
+        {
+          "path": "/alerts/*/informed/*/route",
+          "target": "network.route"
+        },
+        {
+          "path": "/alerts/*/informed/*/stop",
+          "target": "network.stop"
+        },
+        {
+          "path": "/alerts/*/informed/*/trip",
+          "target": "network.trip"
+        }
+      ]
+    },
+    {
+      "store_kind": "alert_templates",
+      "tag": "alert_templates",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:954a304e8a518e34013b6a437a421a4363893e977267f5af5f104e233cd598e3"
+        }
+      ],
+      "write": "route",
+      "route": "POST /alert-templates",
+      "pointers": [],
+      "log": "alerts",
+      "records": [
+        {
+          "kind": "alert_template",
+          "collection": "templates"
+        }
+      ],
+      "module": "alerts",
+      "validate": "validate_templates",
+      "merge": "log",
+      "read": "open",
+      "load": {
+        "op": "load_alert_templates",
+        "code": 273
+      }
+    },
+    {
+      "store_kind": "notes",
+      "tag": "notes",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:c45c9aba11f39d4f8867a77e7c2fd90a5c0706a15a23a4d1c5fa838c472442d9"
+        }
+      ],
+      "write": "route",
+      "route": "POST /notes",
+      "pointers": [],
+      "log": "notes",
+      "records": [
+        {
+          "kind": "note",
+          "collection": "notes"
+        }
+      ],
+      "module": "notes",
+      "validate": "validate",
+      "merge": "log",
+      "read": "open",
+      "load": {
+        "op": "load_notes",
+        "code": 274
+      },
+      "references": [
+        {
+          "path": "/notes/*/target[kind=alert]/id",
+          "target": "service_alert"
+        },
+        {
+          "path": "/notes/*/target[kind=edit]/id",
+          "target": "edit_record"
+        },
+        {
+          "path": "/notes/*/target[kind=stop]/stop",
+          "target": "stop"
+        },
+        {
+          "path": "/notes/*/target[kind=trip]",
+          "target": "trip_instance"
+        }
+      ]
+    },
+    {
+      "store_kind": "plans",
+      "tag": "plans",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:f7143113daca6bcfebf903ce61953bd9b4a98e9c08e419973017dade1612ee3b"
+        }
+      ],
+      "write": "route",
+      "route": "POST /plans, POST /plans/adopt, POST /plans/retire",
+      "pointers": [
+        "plans"
+      ],
+      "log": "plans",
+      "records": [
+        {
+          "kind": "pick",
+          "collection": "plans"
+        }
+      ],
+      "module": "plans",
+      "validate": "adopt",
+      "merge": "log",
+      "read": "open",
+      "references": [
+        {
+          "path": "/plans/*/network_hash",
+          "target": "network"
+        },
+        {
+          "path": "/plans/*/stops_seq",
+          "target": "log.stops"
+        }
+      ]
+    },
+    {
+      "store_kind": "frozen_versions",
+      "tag": "frozen_versions",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:6f549cf1657992ec0cf951ae85896c24afac6f88433c47b56ca8a10737c2b9bb"
+        }
+      ],
+      "write": "route",
+      "route": "POST /plans/freeze, POST /plans",
+      "pointers": [],
+      "log": "plans",
+      "records": [
+        {
+          "kind": "frozen_version",
+          "collection": "versions"
+        }
+      ],
+      "module": "plans",
+      "validate": "freeze",
+      "merge": "log",
+      "read": "open",
+      "references": [
+        {
+          "path": "/versions/*/network_hash",
+          "target": "network"
+        }
+      ]
+    },
+    {
+      "store_kind": "log_entry",
+      "tag": "log_entry",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:24d4fa0c3c1bcbf8ec81642f46aff10465dc68c405c470c3d50fb0af708e70ea"
+        }
+      ],
+      "write": "route",
+      "route": "the log's own writes",
+      "pointers": [],
+      "merge": "none",
+      "read": "audit"
+    },
+    {
+      "store_kind": "log_checkpoint",
+      "tag": "log_checkpoint",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:ee64753980fc258bfde8ae4576b088ac52758733b17ef84f630212aab449ed22"
+        }
+      ],
+      "write": "server",
+      "route": "the server's fold",
+      "pointers": [],
+      "merge": "none",
+      "read": "audit"
+    },
+    {
+      "store_kind": "policy",
+      "tag": "policy",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:c3c2d0cf91671532a4c7d4bba82ea0f976ce98ccec4c4736c86f53e906bee74e"
+        }
+      ],
+      "write": "pointer",
+      "route": "POST /pointers/policy",
+      "pointers": [
+        "policy"
+      ],
+      "module": "authz",
+      "validate": "validate",
+      "merge": "replace",
+      "read": "restricted"
+    },
+    {
+      "store_kind": "derivation",
+      "tag": "derivation",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:4e74fdad9eff95c7b124536bfa437c02f9b97cf60863964014d587401aa1513a"
+        }
+      ],
+      "write": "server",
+      "route": "the server's imports",
+      "pointers": [
+        "derived.*"
+      ],
+      "merge": "none",
+      "read": "open"
+    },
+    {
+      "store_kind": "manifest",
+      "tag": "",
+      "versions": [],
+      "write": "server",
+      "route": "the server's publishing",
+      "pointers": [
+        "manifest"
+      ],
+      "merge": "none",
+      "read": "open"
+    },
+    {
+      "store_kind": "build",
+      "tag": "build",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:9a80be9443deefb10608c1f797d3e60847ae284cec1d2195c15a111f56df7882"
+        }
+      ],
+      "write": "route",
+      "route": "the server's -dist, and POST /builds",
+      "pointers": [
+        "build",
+        "build.*"
+      ],
+      "merge": "replace",
+      "read": "open"
+    },
+    {
+      "store_kind": "build_file",
+      "tag": "",
+      "versions": [],
+      "write": "route",
+      "route": "the server's -dist",
+      "pointers": [],
+      "merge": "none",
+      "read": "open"
+    },
+    {
+      "store_kind": "kind_table",
+      "tag": "kind_table",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:c2efd9f0b2e70a63862d08147790ffff93e397456b9023bbb9c15e5f5b5f5f72"
+        }
+      ],
+      "write": "server",
+      "route": "the server's setup of the store",
+      "pointers": [],
+      "merge": "none",
+      "read": "open"
+    },
+    {
+      "store_kind": "store_layout",
+      "tag": "store_layout",
+      "versions": [
+        {
+          "version": 1,
+          "schema": "sha256:7818c31cdc9be1aff73172689195734f6bf68384fb11eb45794763908bcc919e"
+        }
+      ],
+      "write": "server",
+      "route": "the server's setup of the store",
+      "pointers": [],
+      "merge": "none",
+      "read": "open"
+    }
+  ]
+}

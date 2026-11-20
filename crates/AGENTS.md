@@ -181,8 +181,9 @@ rule (`docs/architecture/hosts.md`; D-226, D-228).
 A capability declares no state.
 
 - The documents it reads are the kernel's kinds, named in its
-  `capability! { documents: [...] }`. A new kind goes into
-  `cap_abi::kernel` with its bound and its load.
+  `capability! { documents: [...] }`. A new kind is a line in the kind
+  list (`cap_abi::kinds`), and goes into `cap_abi::kernel` with its
+  bound and its load.
 - What it derives from documents is a library's pure function and its
   key. The kernel holds it through `cap_abi::kernel::derive`, under a
   `Derivation`. A derived entry is a cache, never a dependency.

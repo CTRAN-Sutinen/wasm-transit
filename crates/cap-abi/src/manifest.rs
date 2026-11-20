@@ -75,6 +75,12 @@ pub struct LinkedAssembly {
 pub struct KernelOp {
     pub code: u32,
     pub name: String,
+    /// The kind a load registers, as `capability! { documents: [...] }`
+    /// names it (`crates/cap-abi/src/kinds.rs`). Absent for an op that
+    /// is not a load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub kind: Option<String>,
     pub description: String,
     pub example: Option<OpExample>,
 }

@@ -57,16 +57,19 @@
         },
         "first_kept_stop": {
           "description": "Board/anchor points on the normal alignment: the detour happens\nbetween them, and they stay served.",
-          "type": "string"
+          "type": "string",
+          "x-references": "network.stop"
         },
         "id": {
           "type": "string"
         },
         "last_kept_stop": {
-          "type": "string"
+          "type": "string",
+          "x-references": "network.stop"
         },
         "route_id": {
-          "type": "string"
+          "type": "string",
+          "x-references": "network.route"
         },
         "skipped_stops": {
           "default": [],
@@ -74,7 +77,8 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "x-references": "network.stop"
         },
         "start_date": {
           "format": "date",
@@ -194,7 +198,8 @@
           ]
         },
         "trip_id": {
-          "type": "string"
+          "type": "string",
+          "x-references": "network.trip"
         }
       },
       "required": [

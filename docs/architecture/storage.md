@@ -425,10 +425,11 @@ reading **Because**.
   adopted would have no place); a generic revert of the plans log.
 - **Decided:** D-191. **Provisional:** D-201 (how the server serves it).
 
-### Every kind has one entry, beside the server's modules (`crates/cap-abi/src/bin/common/kind_table.rs`, `server/kinds.go`)
-- **Holds:** gen-manifest writes one kind table for each build,
-  `web/pkg/kinds.json`, beside the server's modules, and stops when a
-  stored kind has no entry. The receive path refuses a pointer write of
+### Every kind has one entry, beside the server's modules (`crates/cap-abi/src/kinds.rs`, `server/kinds.go`)
+- **Holds:** gen-manifest generates one kind table for each build from
+  the kind list, writes it beside the server's modules
+  (`web/pkg/kinds.json`), and stops while the checked-in copy
+  (`crates/cap-abi/kinds.json`) differs. The receive path refuses a pointer write of
   a kind with no entry or with its own route, and checks a pointer kind
   through its module. `/blobs` takes the never-served rule from the
   table's read class.
@@ -436,8 +437,8 @@ reading **Because**.
   every reader, and the rule for each kind was spread over the handler
   as special cases. The table ships with the modules that enforce it, so
   a rollback of the pages never changes what the receive path takes.
-- **Costs:** a new kind is one entry more, and the table must name its
-  route. The policy is the one kind on the generic path today.
+- **Costs:** a new kind is one line more in the list, and the line must
+  name its route. The policy is the one kind on the generic path today.
 - **Rejected:** the table in the page build (a rollback of the pages
   would change the governance); a table the Go host keeps by hand (a
   second copy beside the schemas).

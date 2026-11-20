@@ -3,6 +3,17 @@
     "KindEntry": {
       "description": "One kind the store keeps.",
       "properties": {
+        "load": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The kernel's load of the kind, when a module reads it from the bus."
+        },
         "log": {
           "description": "The log that holds its records.",
           "type": [
@@ -34,6 +45,13 @@
           "description": "The log's record kinds of its collection.",
           "items": {
             "$ref": "#/$defs/RecordEntry"
+          },
+          "type": "array"
+        },
+        "references": {
+          "description": "The fields that name other records or things, each with its\ntarget, from the current version's schema (`x-references`, D-232).",
+          "items": {
+            "$ref": "#/$defs/Reference"
           },
           "type": "array"
         },
@@ -81,6 +99,24 @@
     },
     "KindTableKind": {
       "const": "kind_table"
+    },
+    "LoadEntry": {
+      "description": "A kind's kernel load: its JSON op and its bulk op's code.",
+      "properties": {
+        "code": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "code"
+      ],
+      "type": "object"
     },
     "Merge": {
       "description": "How two writes of a kind meet.",
@@ -142,6 +178,22 @@
       "required": [
         "kind",
         "collection"
+      ],
+      "type": "object"
+    },
+    "Reference": {
+      "description": "One declared reference: where it is in a document, and its target.\n\nThe path is a JSON Pointer with two additions. `*` is each item of an\narray, or each value of an object keyed by id. `[tag=value]` after a\nsegment chooses the branch of a tagged enum, by the value of its tag\nfield (`/notes/*/target[kind=edit]/id`). A declaration on an array\napplies to each item, so its path ends in `*`.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "target"
       ],
       "type": "object"
     },

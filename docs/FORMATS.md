@@ -592,11 +592,17 @@ entry 1 from their heads, with writer `migrate:stops` and
 
 ## The kind table
 
-Each build has one kind table (D-202). gen-manifest writes it beside the
-server's modules as `web/pkg/kinds.json` (the server's `-kinds`), with
-each schema it names as `web/pkg/schemas/<hex>.json`. It is a
-`kind_table` document. Each entry is one kind the store keeps, by its
-store kind (the envelope's `kind`, or a log's document kind):
+Each build has one kind table (D-202). It is generated from the kind
+list, `crates/cap-abi/src/kinds.rs`: one line for each kind of document.
+A kind exists only if it has a line there. The table is checked in as
+`crates/cap-abi/kinds.json`, so a new kind or a changed route shows in a
+review's diff. gen-manifest stops while the checked-in table differs
+from the list and the locked schemas, and `just schema-lock` writes it
+again. gen-manifest also writes it beside the server's modules as
+`web/pkg/kinds.json` (the server's `-kinds`), with each schema it names
+as `web/pkg/schemas/<hex>.json`. It is a `kind_table` document. Each
+entry is one kind the store keeps, by its store kind (the envelope's
+`kind`, or a log's document kind):
 
 ```json
 {"store_kind":"policy","tag":"policy","versions":[{"version":1,"schema":"sha256:…"}],"write":"pointer","route":"POST /pointers/policy","pointers":["policy"],"module":"authz","validate":"validate","merge":"replace","read":"restricted"}
@@ -616,6 +622,11 @@ store kind (the envelope's `kind`, or a log's document kind):
 - `merge` is `replace` (CAS on the head read), `lww` (each record id,
   D-56), `log` (ops over a log's head), or `none`.
 - `read` is `open`, `restricted` (never served by hash), or `audit`.
+- `load` is the kernel's load of the kind, when a module reads it from
+  the bus: its JSON op and its bulk op's code.
+- `references` are the fields that name other records or things, each
+  with its target, from the current version's schema (D-232; "References",
+  below).
 
 A generic pointer write is governed by its kind's entry. A kind with no
 entry is refused. A kind with its own route, or that only the server
@@ -623,8 +634,32 @@ writes, is refused, and the answer names the route. A pointer kind
 heads only its pointers. Its module checks it: what makes it wrong is a
 `422` with the module's answer, and a consequence is accepted and named
 (`warnings`). The store holds the module's canonical bytes, with the
-module in the envelope. gen-manifest stops when a kind with a published
-store kind has no entry.
+module in the envelope.
+
+### References
+
+A field that names another record or thing states its target in its
+kind's schema, with the keyword `x-references` (D-232). A content hash
+keeps `"format": "content-hash"` beside it. The kind table collects them
+as `references: [{path, target}]`, and an ETL reads the same map for its
+joins. A path is a JSON Pointer in which `*` is each item of an array or
+each value of an object by id, and `[tag=value]` chooses a tagged enum's
+branch: `/notes/*/target[kind=edit]/id`. A target is one of these:
+
+- a log record kind: `stop`, `stop_request`, `service_alert`,
+  `edit_record`;
+- a thing of the network, by its model id: `network.route`,
+  `network.stop`, `network.trip`;
+- `trip_instance`: a trip, its service date, and its start;
+- a document by its content hash, by its kind's name in the kind list:
+  `network`, `streets`, `feed`;
+- `attachment`: a file by its content hash;
+- `log.<name>`: an entry of a log by its seq;
+- `external.<name>`: a thing outside the record. It is declared and
+  never checked.
+
+A law in each owning crate (`tests/references_law_test.rs`) lists the
+kind's reference fields, so a new one fails until it is declared.
 
 ## The store describes itself
 
@@ -964,7 +999,11 @@ that writes nothing when it is absent. The frozen example then still
 reads to the same bytes. `just caps` fails until `just schema-lock`
 records the new schema in the same version. A corrected description
 (a field's doc comment) also reads to the same bytes, and is recorded
-the same way. `just schema-lock` refuses every other change.
+the same way, and so is a reference declaration added to a field that
+had none (D-232). A changed or dropped reference target changes what
+the field means, though no byte changes, so it needs a version bump.
+`just schema-lock` refuses every other change. It also writes the
+checked-in kind table ("The kind table").
 
 Two more gates hold the schemas to the bytes the code really writes,
 where `schemars` and serde can disagree (`skip_serializing_if`,

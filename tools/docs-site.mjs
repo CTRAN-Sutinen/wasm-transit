@@ -314,7 +314,7 @@ function documentPage(d) {
     d.kind,
     `<h1>${esc(d.kind)} <span class="muted">v${d.schema_version}</span></h1>
 ${prose(schema.description ?? "")}
-<p class="muted">Schema ${esc(d.schema)}. The store envelope kind is ${esc(d.store_kind ?? "none (not stored)")}.</p>
+<p class="muted">Schema ${esc(d.schema)}. The store kind is ${esc(d.store_kind ?? "none (not stored)")}.</p>
 <h2>Schema</h2>
 <div id="schema">${schemaView(schema)}</div>
 <details class="rawblock"><summary>Raw schema</summary>${raw(schema)}</details>

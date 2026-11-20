@@ -46,7 +46,8 @@
     "network_hash": {
       "description": "The network whose stops it walks between.",
       "format": "content-hash",
-      "type": "string"
+      "type": "string",
+      "x-references": "network"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",
@@ -59,7 +60,8 @@
     "streets_hash": {
       "description": "The streets document the table walks (a blob in the store).",
       "format": "content-hash",
-      "type": "string"
+      "type": "string",
+      "x-references": "streets"
     },
     "walks": {
       "items": {

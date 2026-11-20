@@ -122,23 +122,10 @@ export type Answer<C extends CapId, O> = Extract<Caps[C][1], { op: O }>;
 type DocFields<T> = { [K in keyof T]: K extends `${string}_hash` ? Doc | Exclude<T[K], string> : T[K] };
 export type Args<C extends CapId, O> = DocFields<Omit<RequestOf<C, O>, "op">>;
 
-/// The document kinds that cross into modules by a load op.
-export type Kind =
-  | "network"
-  | "feed"
-  | "edits"
-  | "live"
-  | "boundary"
-  | "walks"
-  | "streets"
-  | "watchlist"
-  | "layer"
-  | "gtfs_rt"
-  | "stops"
-  | "stop_requests"
-  | "service_alerts"
-  | "alert_templates"
-  | "notes";
+/// A document kind that crosses into modules by a load op, by the id
+/// its line in the kind list gives it (crates/cap-abi/src/kinds.rs).
+/// The manifest's kernel ops answer its load.
+export type Kind = string;
 
 /// One document version. Immutable: a new version is a new Doc.
 export class Doc<V = unknown> {
@@ -239,29 +226,11 @@ export class Unavailable extends Error {
 // the ABI: how each kind is registered
 // ---------------------------------------------------------------------
 
-/// How a kind registers: the kernel's load (cap_abi::kernel — the same
-/// op and the same hash in every module whose capabilities read the
-/// kind), on its bulk op over the document's bytes or as its JSON op
-/// carrying its value — and the answer's field that names its hash.
-type Loader = { bytes: number; hash: string } | { json: (doc: Doc) => Record<string, unknown>; hash: string };
-
-const LOADERS: Record<Kind, Loader> = {
-  network: { bytes: 256, hash: "network_hash" },
-  edits: { json: (d) => ({ op: "load_edits", edits: d.value }), hash: "edits_hash" },
-  live: { json: (d) => ({ op: "load_live", live: d.value }), hash: "live_hash" },
-  boundary: { json: (d) => ({ op: "load_boundary", boundary: d.value }), hash: "boundary_hash" },
-  walks: { json: (d) => ({ op: "load_walks", walks: d.value }), hash: "walks_hash" },
-  streets: { bytes: 263, hash: "streets_hash" },
-  watchlist: { json: (d) => ({ op: "load_watchlist", document: d.value }), hash: "watchlist_hash" },
-  layer: { bytes: 265, hash: "layer_hash" },
-  feed: { bytes: 266, hash: "feed_hash" },
-  gtfs_rt: { bytes: 267, hash: "rt_hash" },
-  stops: { bytes: 270, hash: "stops_hash" },
-  stop_requests: { bytes: 271, hash: "requests_hash" },
-  service_alerts: { bytes: 272, hash: "alerts_hash" },
-  alert_templates: { bytes: 273, hash: "templates_hash" },
-  notes: { bytes: 274, hash: "notes_hash" },
-};
+/// Each kind's kernel load, by the kind: the bulk op that registers a
+/// document of it from its bytes (cap_abi::kernel — the same op and the
+/// same hash in every module whose capabilities read the kind). The
+/// worker answers them from the manifest with the first assembly.
+let kernelLoads: Record<string, number> | null = null;
 
 // ---------------------------------------------------------------------
 // the calls
@@ -291,6 +260,7 @@ async function capOf(cap: CapId): Promise<Placed> {
   if (!got) {
     got = call({ type: "ensure", caps: [cap], ui: page }).then(({ ok }) => {
       const answer = ok as Assembly;
+      kernelLoads ??= answer.loads;
       const entry = answer.caps[cap];
       return entry ? { ...entry, route: answer.routes[cap] } : null;
     });
@@ -403,14 +373,15 @@ function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
       await doc.remint();
       return { hash: doc.hash };
     }
-    const loader = LOADERS[doc.kind];
-    const answer = (await invoke(
-      cap,
-      "bytes" in loader ? { op: loader.bytes, bytes: doc.bytes() } : { text: JSON.stringify(loader.json(doc)) },
-      true,
-    )) as Record<string, unknown>;
-    const hash = answer[loader.hash];
-    if (typeof hash !== "string") throw new Error(`${cap} answered no ${loader.hash} for a ${doc.kind} document`);
+    await capOf(cap);
+    const code = kernelLoads?.[doc.kind];
+    if (code === undefined) throw new Error(`the manifest has no kernel load for a ${doc.kind} document`);
+    const answer = (await invoke(cap, { op: code, bytes: doc.bytes() }, true)) as Record<string, unknown>;
+    // A load answers the document's identity in one `<name>_hash` field
+    // (cap_abi::kernel's Loaded), beside what it reports.
+    const hashes = Object.keys(answer).filter((field) => field.endsWith("_hash"));
+    const hash = hashes.length === 1 ? answer[hashes[0]] : undefined;
+    if (typeof hash !== "string") throw new Error(`${cap} answered no one hash for a ${doc.kind} document`);
     doc.witness(cap, hash);
     return { ...answer, hash };
   });
@@ -576,11 +547,9 @@ type DeploymentManifest = {
   network_hash?: string;
   boundary_hash?: string;
   plans_hash?: string;
-  stops_hash?: string;
-  stop_requests_hash?: string;
-  service_alerts_hash?: string;
-  alert_templates_hash?: string;
-  notes_hash?: string;
+  /// Each published document the deployment keeps, by its kind
+  /// (`<kind>_hash`, one for each logged kind).
+  [pin: `${string}_hash`]: string | undefined;
   /// The agency's feed the deployment imported (its zip's hash).
   feed_hash?: string;
   /// How a page signs in to write (the server's -oidc-client-id): the
@@ -843,56 +812,15 @@ export async function publishedPickValue(pick: PublishedPlan): Promise<Doc<Netwo
   return network;
 }
 
-/// The deployment's stops document (the manifest's `stops_hash`; D-153):
-/// every stop as a list of dated events, bytes the page never parses,
-/// refused unless they answer the pin. Null when the deployment keeps
-/// none.
-export async function servedStops(): Promise<Doc | null> {
-  const pin = (await deploymentManifestNow())?.stops_hash;
-  if (!pin) return null;
-  const resp = await blobGz(pin);
-  if (!resp?.ok) return null;
-  return new Doc("stops", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
-}
-
-/// The deployment's stop requests document (the manifest's
-/// `stop_requests_hash`; D-159): the planning team's requests for work at
-/// a stop, bytes the page never parses, refused unless they answer the
-/// pin. Null when the deployment keeps none yet.
-export async function servedStopRequests(): Promise<Doc | null> {
-  const pin = (await deploymentManifestNow())?.stop_requests_hash;
-  if (!pin) return null;
-  const resp = await blobGz(pin);
-  if (!resp?.ok) return null;
-  return new Doc("stop_requests", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
-}
-
-/// One of the deployment's logged documents, by the hash its manifest
-/// pins: bytes the page never parses, refused unless they answer the
-/// pin. Null when the deployment keeps none yet.
-async function servedLogged(kind: Kind, pin: string | undefined): Promise<Doc | null> {
-  if (!pin) return null;
+/// One of the deployment's documents, by the hash its manifest pins
+/// (`<kind>_hash`): bytes the page never parses, refused unless they
+/// answer the pin. Null when the deployment keeps none yet.
+export async function served(kind: Kind): Promise<Doc | null> {
+  const pin = (await deploymentManifestNow())?.[`${kind}_hash`];
+  if (typeof pin !== "string") return null;
   const resp = await blobGz(pin);
   if (!resp?.ok) return null;
   return new Doc(kind, { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
-}
-
-/// The deployment's service alerts (the manifest's
-/// `service_alerts_hash`; D-206). Null when it keeps none yet.
-export async function servedServiceAlerts(): Promise<Doc | null> {
-  return servedLogged("service_alerts", (await deploymentManifestNow())?.service_alerts_hash);
-}
-
-/// The deployment's alert templates (the manifest's
-/// `alert_templates_hash`; D-210). Null when it keeps none yet.
-export async function servedAlertTemplates(): Promise<Doc | null> {
-  return servedLogged("alert_templates", (await deploymentManifestNow())?.alert_templates_hash);
-}
-
-/// The deployment's notes (the manifest's `notes_hash`; D-214). Null
-/// when it keeps none yet.
-export async function servedNotes(): Promise<Doc | null> {
-  return servedLogged("notes", (await deploymentManifestNow())?.notes_hash);
 }
 
 /// What a plan reads of the deployment's stops document (D-157: a pick
@@ -902,7 +830,7 @@ export async function servedNotes(): Promise<Doc | null> {
 /// a plan with no id or pick date.
 export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null): Promise<NetworkWarning[]> {
   if (!(await available("stops"))) return [];
-  const stops = await servedStops();
+  const stops = await served("stops");
   if (!stops) return [];
   return (await ask("stops", "read_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined })).warnings;
 }
@@ -913,7 +841,7 @@ export async function stopWarnings(network: Doc<Network>, published: PublishedPl
 /// itself when there is no stops document.
 export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null): Promise<Doc<Network>> {
   if (!(await available("stops"))) return network;
-  const stops = await servedStops();
+  const stops = await served("stops");
   if (!stops) return network;
   const out = await ask("stops", "export_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined });
   return out.network_hash === network.hash ? network : produced("network", out.network, "stops", out.network_hash);
@@ -924,12 +852,8 @@ export async function withStopVersions(network: Doc<Network>, published: Publish
 /// parses, registered in cap-streets and refused unless they answer
 /// the pin. Null when the deployment publishes none.
 export async function servedStreets(): Promise<Doc | null> {
-  const pin = (await deploymentManifestNow())?.streets_hash;
-  if (!pin) return null;
-  const resp = await blobGz(pin);
-  if (!resp?.ok) return null;
-  const doc = new Doc("streets", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
-  await load("streets", doc);
+  const doc = await served("streets");
+  if (doc) await load("streets", doc);
   return doc;
 }
 

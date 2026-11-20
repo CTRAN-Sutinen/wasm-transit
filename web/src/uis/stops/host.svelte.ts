@@ -27,7 +27,7 @@
 /// and the filters live in the URL hash, so the browser's Back leaves a
 /// task as a phone user expects.
 
-import { ask, assemble, available, produced, servedFeed, servedNetwork, servedStopRequests, servedStops, Doc } from "../../engine";
+import { ask, assemble, available, produced, served, servedFeed, servedNetwork, Doc } from "../../engine";
 import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, deploymentManifest, readAgencyZone, today, whileVisible } from "../kit";
 import { readFetch, resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
@@ -189,9 +189,9 @@ const request = answerGraph(
       run: async () => {
         await readConnection();
         if (!(await available("stops"))) return void (stopsDoc = null);
-        const served = await servedStops().catch(() => null);
-        st.held = !!served;
-        if (served) return void (stopsDoc = served);
+        const held = await served("stops").catch(() => null);
+        st.held = !!held;
+        if (held) return void (stopsDoc = held);
         // No stops document yet: the stops of the network running today,
         // not saved until the first change.
         const network = await servedNetwork(today(), "stops").catch(() => null);
@@ -205,7 +205,7 @@ const request = answerGraph(
       frame: "",
       needs: ["requests-doc"],
       run: async () => {
-        requestsDoc = (await available("requests")) ? await servedStopRequests().catch(() => null) : null;
+        requestsDoc = (await available("requests")) ? await served("stop_requests").catch(() => null) : null;
       },
     },
     {

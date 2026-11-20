@@ -816,11 +816,14 @@ http-lock:
     cp server/openapi.json server/openapi.lock.json
 
 # The documents' schema lock (docs/FORMATS.md, "The schema lock"):
-# freeze a new version of a kind, or record an added optional field
-# in the same version (D-167), into the owning crate's locks/. It
-# refuses every other change: that one needs a version bump.
-# `just caps` (and so `just test`) fails while a kind differs from
-# its lock. It needs no module build.
+# freeze a new version of a kind, or record an added optional field or
+# an added reference declaration in the same version (D-167, D-232),
+# into the owning crate's locks/. It refuses every other change: that
+# one needs a version bump. It also writes the checked-in kind table
+# (crates/cap-abi/kinds.json) from the kind list (crates/cap-abi/src/
+# kinds.rs). `just caps` (and so `just test`) fails while a kind
+# differs from its lock, or the table from the list. It needs no
+# module build.
 schema-lock:
     cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest -- --lock
 

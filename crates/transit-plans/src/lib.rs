@@ -211,7 +211,7 @@ pub struct PublishedPlan {
     /// "YYYY-MM-DD": a published pick is always dated.
     pub effective_from: String,
     /// "sha256:<hex>" of the pick's canonical network document.
-    #[schemars(extend("format" = "content-hash"))]
+    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
     pub network_hash: String,
     #[serde(default)]
     pub status: PickStatus,
@@ -220,6 +220,7 @@ pub struct PublishedPlan {
     /// read no stops, or the pick was published before the plans log.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    #[schemars(extend("x-references" = "log.stops"))]
     pub stops_seq: Option<u64>,
     /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
@@ -485,7 +486,7 @@ impl transit_version::Versioned for FrozenVersions {
 #[ts(export, export_to = "cap_plans/")]
 pub struct FrozenVersion {
     /// "sha256:<hex>" of the version's canonical network document.
-    #[schemars(extend("format" = "content-hash"))]
+    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
     pub network_hash: String,
     pub plan_id: String,
     pub name: String,
