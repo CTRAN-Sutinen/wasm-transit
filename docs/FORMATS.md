@@ -516,7 +516,7 @@ entry 1 from their heads, with writer `migrate:stops` and
   The default date is the server's today. The type is
   `application/zip`, and the ETag is its hash. The zip is cap-network
   `export` of the pick in force. It carries the stops' history over its
-  period (cap-stops `export_versions`). Before the first pick takes
+  period (cap-stops `export_pick`). Before the first pick takes
   effect, the answer is the `-feed` zip.
 - `POST /plans/retire` takes the body `{"id"}`. It answers `200
   {plans_hash, seq}`, or `422 {issues}` (the pick has taken effect, or no

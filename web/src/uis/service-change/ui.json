@@ -43,10 +43,10 @@
     "runcut.suggest_blocks",
     "runcut.block_trips",
     "runcut.fleet_summary",
-    "stops.visit_warnings",
+    "stops.read_pick",
     "stops.stops_on",
     "stops.records",
-    "stops.export_versions"
+    "stops.export_pick"
   ],
   "components": [
     "NetworkMap",

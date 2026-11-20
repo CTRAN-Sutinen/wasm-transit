@@ -898,42 +898,27 @@ export async function servedNotes(): Promise<Doc | null> {
   return servedLogged("notes", (await deploymentManifestNow())?.notes_hash);
 }
 
-/// A plan's period: from its pick date until the next published pick's,
-/// as cap-plans derives it with the plan placed by id (undefined: open).
-async function planUntil(plan: { id: string; name?: string | null; effective_from: string }, published: PublishedPlans | null): Promise<string | undefined> {
-  const others = (published?.plans ?? [])
-    .filter((p) => p.status !== "retired" && p.id !== plan.id)
-    .map((p) => ({ id: p.id, name: p.name, effective_from: p.effective_from }));
-  const { periods } = await ask("plans", "periods", { plans: [...others, { id: plan.id, name: plan.name ?? plan.id, effective_from: plan.effective_from }] });
-  return periods.find((p) => p.id === plan.id)?.until ?? undefined;
-}
-
 /// What a plan reads of the deployment's stops document (D-157: a pick
 /// only reads it): the warnings of the stops its patterns visit that are
-/// not in service over its period. Empty with no stops document or no
-/// pick date.
+/// not in service over its period. cap-stops `read_pick` derives the
+/// period from the published set. Empty with no stops document, and for
+/// a plan with no id or pick date.
 export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null): Promise<NetworkWarning[]> {
-  const plan = network.value?.plan;
-  if (!plan?.id || !plan.effective_from || !(await available("stops"))) return [];
+  if (!(await available("stops"))) return [];
   const stops = await servedStops();
   if (!stops) return [];
-  const until = await planUntil({ id: plan.id, name: plan.name, effective_from: plan.effective_from }, published);
-  return (await ask("stops", "visit_warnings", { network_hash: network, stops_hash: stops, from: plan.effective_from, until })).warnings;
+  return (await ask("stops", "read_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined })).warnings;
 }
 
 /// What an export carries of the deployment's stops document (D-151,
-/// D-157): the plan with the stops' history over its period — each
-/// stop's record on its pick date, and a stop whose record changes
-/// inside the period one stop per version (cap-stops export_versions),
-/// as the server's GET /feed exports a pick. The plan itself when there
-/// is no stops document or pick date.
+/// D-157): the plan with the stops' history over its period (cap-stops
+/// `export_pick`), as the server's GET /feed exports a pick. The plan
+/// itself when there is no stops document.
 export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null): Promise<Doc<Network>> {
-  const plan = network.value?.plan;
-  if (!plan?.id || !plan.effective_from || !(await available("stops"))) return network;
+  if (!(await available("stops"))) return network;
   const stops = await servedStops();
   if (!stops) return network;
-  const until = await planUntil({ id: plan.id, name: plan.name, effective_from: plan.effective_from }, published);
-  const out = await ask("stops", "export_versions", { network_hash: network, stops_hash: stops, from: plan.effective_from, until });
+  const out = await ask("stops", "export_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined });
   return out.network_hash === network.hash ? network : produced("network", out.network, "stops", out.network_hash);
 }
 

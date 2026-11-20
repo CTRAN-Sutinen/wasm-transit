@@ -12,11 +12,13 @@
 //! kernel's `load_stops` registered (refused there unless `validate`
 //! would pass it), and `stops_near` the stops nearest a point on a date
 //! (the field's "which stop am I at?"). `seed` starts a stops document from a network's
-//! stops (transit-network's `stop_record`), and `add_event` places one
+//! stops (transit-stops's `stop_record`), and `add_event` places one
 //! edit and checks it. A pick only reads the document (D-157):
 //! `read_records` gives it each stop's record on its first date, and
 //! `visit_warnings` tells its planner of the stops it visits that are
-//! not in service on its dates. GTFS out and in carry the stops'
+//! not in service on its dates. `read_pick` and `export_pick` ask the
+//! same over the pick's own period, which the published plan set gives
+//! (retired picks bound nothing), so no host derives it. GTFS out and in carry the stops'
 //! history (D-150, D-151): `export_versions` gives cap-network's export
 //! one stop per version, and `import_events` records a feed's
 //! differences as events. `questions` answers what a site survey asks
@@ -141,6 +143,29 @@ pub enum Request {
     /// (D-173); a stop not there yet that day, or not held, is not
     /// answered.
     Records { stops_hash: String, stop_ids: Vec<String>, on: String },
+    /// What a pick reads of the stops over the period the published set
+    /// gives it (D-228): the pick with each stop's record on its first
+    /// date, and the warnings of the stops it visits that are not in
+    /// service over the period — registered, answered with its hash.
+    ReadPick {
+        network_hash: String,
+        stops_hash: String,
+        /// The published plan set (the plans document), none before the
+        /// first publish.
+        #[serde(default)]
+        #[ts(optional)]
+        published: Option<transit_plans::PublishedPlans>,
+    },
+    /// The pick with the stops' history over the period the published
+    /// set gives it, in GTFS terms (D-151, D-228): what `export_versions`
+    /// answers, for the pick's own dates.
+    ExportPick {
+        network_hash: String,
+        stops_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        published: Option<transit_plans::PublishedPlans>,
+    },
     /// What the planner is told of the stops the pick visits over
     /// `[from, until)`: each not in service, and each suspended for the
     /// whole period or with no end — warnings, never refusals.
@@ -260,6 +285,22 @@ pub enum Response {
         #[ts(as = "transit_network::Network")]
         network: cap_abi::Canonical<transit_network::Network>,
     },
+    /// `period` is none when the pick has no id or no date: it is no
+    /// pick, and the network comes back as it was, with no warnings.
+    ReadPick {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        period: Option<transit_stops::stop_record::PickPeriod>,
+        network_hash: String,
+        #[ts(as = "transit_network::Network")]
+        network: cap_abi::Canonical<transit_network::Network>,
+        warnings: Vec<transit_network::NetworkWarning>,
+    },
+    ExportPick {
+        network_hash: String,
+        #[ts(as = "transit_network::Network")]
+        network: cap_abi::Canonical<transit_network::Network>,
+    },
     Records { records: std::collections::BTreeMap<String, transit_network::Stop> },
     VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
     ExportVersions {
@@ -272,12 +313,12 @@ pub enum Response {
         stops: Stops,
         /// The date the differences were recorded on.
         on: String,
-        added: Vec<transit_network::stop_record::AddedEvent>,
+        added: Vec<transit_stops::stop_record::AddedEvent>,
         unlisted: Vec<String>,
         unapplied: Vec<String>,
     },
     Questions { site: Vec<SiteQuestion>, amenities: Vec<String> },
-    FeedEvents { events: Vec<transit_network::stop_record::AddedEvent> },
+    FeedEvents { events: Vec<transit_stops::stop_record::AddedEvent> },
     AttributeSurveys { stops: Stops },
 }
 
@@ -348,7 +389,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Seed { network_hash } => {
             let network = NETWORK.require(&network_hash)?;
-            let seeded = transit_network::stop_record::seed(&network).identified().checked().map_err(|refusals| {
+            let seeded = transit_stops::stop_record::seed(&network).identified().checked().map_err(|refusals| {
                 let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
                 format!("the network's stops do not make a stops document: {}", reasons.join("; "))
             })?;
@@ -405,14 +446,32 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let on = parse_date(&on)?;
             let network = NETWORK.require(&network_hash)?;
             let stops = STOPS.require(&stops_hash)?;
-            let read = transit_network::stop_record::read_records(&network, &stops, on);
+            let read = transit_stops::stop_record::read_records(&network, &stops, on);
             let (network_hash, read) = NETWORK.register(read)?;
             Ok(Response::ReadRecords { network_hash, network: cap_abi::Canonical((*read).clone()) })
+        }
+        Request::ReadPick { network_hash, stops_hash, published } => {
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            match transit_stops::stop_record::read_pick(&network, &stops, published.as_ref()) {
+                Some(read) => {
+                    let (network_hash, network) = NETWORK.register(read.network)?;
+                    Ok(Response::ReadPick { period: Some(read.period), network_hash, network: cap_abi::Canonical((*network).clone()), warnings: read.warnings })
+                }
+                None => Ok(Response::ReadPick { period: None, network_hash, network: cap_abi::Canonical((*network).clone()), warnings: Vec::new() }),
+            }
+        }
+        Request::ExportPick { network_hash, stops_hash, published } => {
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            let exported = transit_stops::stop_record::export_pick(&network, &stops, published.as_ref()).unwrap_or_else(|| (*network).clone());
+            let (network_hash, exported) = NETWORK.register(exported)?;
+            Ok(Response::ExportPick { network_hash, network: cap_abi::Canonical((*exported).clone()) })
         }
         Request::Records { stops_hash, stop_ids, on } => {
             let on = parse_date(&on)?;
             let stops = STOPS.require(&stops_hash)?;
-            Ok(Response::Records { records: transit_network::stop_record::records(&stops, &stop_ids, on) })
+            Ok(Response::Records { records: transit_stops::stop_record::records(&stops, &stop_ids, on) })
         }
         Request::VisitWarnings { network_hash, stops_hash, from, until } => {
             let from = parse_date(&from)?;
@@ -422,7 +481,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             let network = NETWORK.require(&network_hash)?;
             let stops = STOPS.require(&stops_hash)?;
-            Ok(Response::VisitWarnings { warnings: transit_network::stop_record::visit_warnings(&network, &stops, from, until) })
+            Ok(Response::VisitWarnings { warnings: transit_stops::stop_record::visit_warnings(&network, &stops, from, until) })
         }
         Request::ExportVersions { network_hash, stops_hash, from, until } => {
             let from = parse_date(&from)?;
@@ -432,13 +491,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             let network = NETWORK.require(&network_hash)?;
             let stops = STOPS.require(&stops_hash)?;
-            let exported = transit_network::stop_record::export_versions(&network, &stops, from, until);
+            let exported = transit_stops::stop_record::export_versions(&network, &stops, from, until);
             let (network_hash, exported) = NETWORK.register(exported)?;
             Ok(Response::ExportVersions { network_hash, network: cap_abi::Canonical((*exported).clone()) })
         }
         Request::FeedEvents { stops_hash, feed } => {
             let stops = STOPS.require(&stops_hash)?;
-            Ok(Response::FeedEvents { events: transit_network::stop_record::feed_events(&stops, &feed) })
+            Ok(Response::FeedEvents { events: transit_stops::stop_record::feed_events(&stops, &feed) })
         }
         Request::ImportEvents { stops_hash, network_hash, on, feed } => {
             let network = NETWORK.require(&network_hash)?;
@@ -448,8 +507,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             };
             let stops = STOPS.require(&stops_hash)?;
             let imported = match feed {
-                Some(feed) => transit_network::stop_record::import_feed(&stops, &network, on, &feed),
-                None => transit_network::stop_record::import_events(&stops, &network, on),
+                Some(feed) => transit_stops::stop_record::import_feed(&stops, &network, on, &feed),
+                None => transit_stops::stop_record::import_events(&stops, &network, on),
             };
             let (stops_hash, next) = STOPS.register(imported.stops)?;
             Ok(Response::ImportEvents {

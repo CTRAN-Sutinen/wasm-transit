@@ -203,7 +203,7 @@ pub enum NetworkWarning {
         stop: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
-        status: Option<transit_stops::Status>,
+        status: Option<String>,
         from: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

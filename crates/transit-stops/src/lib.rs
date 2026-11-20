@@ -30,9 +30,12 @@
 //!
 //! The stops document sits beside the plans: every plan refers to a
 //! stop by its id, and a fork never copies it (D-147). This crate
-//! depends on no other model crate.
+//! depends on transit-network only for [`stop_record`], the join of a
+//! network and this document. The network does not depend on this crate.
 
 #![forbid(unsafe_code)]
+
+pub mod stop_record;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -518,6 +521,18 @@ pub enum Status {
 }
 
 impl Status {
+    /// The name the document writes (`in_service`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Status::Planned => "planned",
+            Status::Permitted => "permitted",
+            Status::Built => "built",
+            Status::InService => "in_service",
+            Status::Suspended => "suspended",
+            Status::Retired => "retired",
+        }
+    }
+
     /// How far along the stop is: the stages in order, a suspension
     /// counting as in service.
     fn rank(self) -> u8 {

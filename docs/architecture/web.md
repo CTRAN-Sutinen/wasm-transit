@@ -202,14 +202,15 @@ documents:
   `notes_hash`, as bytes the page never parses (D-206, D-214).
   `servedAlertTemplates` returns the alert templates the same way.
 - `stopWarnings` returns the warnings of the stops that a plan
-  visits and that are not in service over its period. It uses cap-plans
-  `periods`, then cap-stops `visit_warnings`.
+  visits and that are not in service over its period. It asks cap-stops
+  `read_pick`, which derives the period from the published plan set.
 - `servedFeed` returns the agency's feed as the deployment imported
   it. It is the manifest's `network_hash`, with `feed_hash` as its
   id. The stops page uses it to show the feed's recorded changes
   (D-150).
 - `withStopVersions` returns a plan with the stops' history over its
-  period. It uses `export_versions`. Each stop's record is on its pick
+  period. It asks cap-stops `export_pick`, which derives the period from the
+  published plan set. Each stop's record is on its pick
   date. A stop whose record changes inside the period becomes one stop
   per version. An export carries this, as the server's `GET /feed`
   does (D-151, D-157).

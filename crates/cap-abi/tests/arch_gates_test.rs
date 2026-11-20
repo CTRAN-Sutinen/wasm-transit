@@ -71,6 +71,19 @@ fn a_model_side_crate_that_reads_the_gtfs_layer_fails() {
 }
 
 #[test]
+fn the_network_depending_on_a_document_library_fails() {
+    let mut ws = lawful();
+    ws.push(package("transit-stops", &["transit-network"]));
+    assert_eq!(dependency_violations(&ws), Vec::<String>::new());
+    for p in ws.iter_mut().filter(|p| p.name == "transit-network") {
+        p.deps.push("transit-stops".into());
+        p.required.push("transit-stops".into());
+    }
+    let found = dependency_violations(&ws);
+    assert!(found.iter().any(|v| v.starts_with("transit-network depends on transit-stops")), "{found:?}");
+}
+
+#[test]
 fn an_unknown_package_is_denied_by_default() {
     let mut ws = lawful();
     ws.push(package("helpers", &[]));

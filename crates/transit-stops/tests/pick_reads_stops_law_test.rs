@@ -14,7 +14,7 @@
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
-use transit_network::stop_record::{read_records, seed, visit_warnings};
+use transit_stops::stop_record::{read_records, seed, visit_warnings};
 use transit_network::{Network, NetworkWarning};
 use transit_stops::{Details, Event, EventKind, Status, Stops};
 
@@ -170,14 +170,14 @@ fn the_warnings_name_the_stop_its_status_and_the_dates() {
     let w = visit_warnings(&net, &stops, day(0), Some(day(30)));
     assert_eq!(
         w,
-        vec![NetworkWarning::StopNotInService { stop: "B".into(), status: Some(Status::Retired), from: date(10), until: Some(date(30)) }],
+        vec![NetworkWarning::StopNotInService { stop: "B".into(), status: Some("retired".into()), from: date(10), until: Some(date(30)) }],
         "a short suspension inside the period is real time's, not the pick's"
     );
     // a suspension with no end warns
     let stops = seed(&net).add_event("A", ev(EventKind::Suspended, 2)).checked().unwrap();
     assert_eq!(
         visit_warnings(&net, &stops, day(0), Some(day(30))),
-        vec![NetworkWarning::StopNotInService { stop: "A".into(), status: Some(Status::Suspended), from: date(2), until: Some(date(30)) }]
+        vec![NetworkWarning::StopNotInService { stop: "A".into(), status: Some("suspended".into()), from: date(2), until: Some(date(30)) }]
     );
     // the record read: B retired on day 10 still has its point and name
     let read = read_records(&net, &seed(&net).add_event("B", ev(EventKind::Retired, 10)), day(20));

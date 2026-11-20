@@ -64,7 +64,7 @@ pub const CODEC_HOMES: &[&str] = &["transit-codec", "cap-gtfs", "cap-network", "
 /// only on the kernel and libraries; a library on libraries; the kernel
 /// on libraries; only an assembly depends on capabilities; and only
 /// the codec's homes (and assemblies, which link them) read the GTFS
-/// layer.
+/// layer. The network depends only on transit-version.
 pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
     let mut out = Vec::new();
     let classes: BTreeMap<&str, Option<Class>> = packages.iter().map(|p| (p.name.as_str(), class(&p.name))).collect();
@@ -85,6 +85,11 @@ pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
             };
             if !allowed {
                 out.push(format!("{} ({own:?}) depends on {dep} ({dep_class:?}): {}", package.name, rule(own)));
+            }
+            if package.name == "transit-network" && dep != "transit-version" {
+                out.push(format!(
+                    "transit-network depends on {dep}: the network is the core model and depends only on transit-version; a library that joins a document to the network depends on the network (crates/AGENTS.md, Law 1)"
+                ));
             }
             if dep == "transit-codec" && own != Class::Assembly && !CODEC_HOMES.contains(&package.name.as_str()) {
                 out.push(format!(

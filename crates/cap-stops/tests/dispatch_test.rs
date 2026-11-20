@@ -407,3 +407,47 @@ fn a_correction_of_an_event_changed_since_is_a_conflict() {
     assert_eq!(stale["conflict"], json!(id));
     assert!(stale["stops"].is_null());
 }
+
+/// A pick reads the stops over the period the published set gives it
+/// (D-228): `read_pick` and `export_pick` agree with the explicit-date
+/// ops, a retired pick bounds nothing, the next published pick does, and
+/// a network with no plan id is no pick.
+#[test]
+fn a_pick_reads_the_stops_over_the_period_the_published_set_gives() {
+    let mut pick = sample_network_value();
+    pick["plan"] = json!({"id": "fall-2026", "name": "Fall 2026", "effective_from": "2026-10-01"});
+    let pick_hash = ok(json!({"op": "load_network", "network": pick}))["network_hash"].clone();
+    let seeded = ok(json!({"op": "seed", "network_hash": pick_hash}));
+    let b = seeded["stops"]["stops"]["B"][0].clone();
+    let renamed = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "A", "event": {"on": "2026-09-01", "event": "changed", "name": "A Street Station"}}));
+    let retired = ok(json!({"op": "add_event", "stops_hash": renamed["stops_hash"], "stop_id": "B", "event": {"on": "2026-11-02", "event": "retired"}}));
+    let moved = ok(json!({"op": "add_event", "stops_hash": retired["stops_hash"], "stop_id": "C",
+        "event": {"on": "2026-11-10", "event": "moved", "lat": b["lat"].as_f64().unwrap() + 0.001, "lon": b["lon"]}}));
+    let stops_hash = moved["stops_hash"].clone();
+    let entry = |id: &str, from: &str, status: &str| json!({"id": id, "name": id, "effective_from": from, "network_hash": "sha256:x", "status": status});
+    let published = json!({"kind": "plans", "schema_version": 1, "plans": [
+        entry("fall-2026", "2026-10-01", "published"), entry("holiday", "2026-11-01", "retired"), entry("winter", "2026-12-01", "published")]});
+
+    let read = ok(json!({"op": "read_pick", "network_hash": pick_hash, "stops_hash": stops_hash, "published": published}));
+    assert_eq!(read["period"], json!({"from": "2026-10-01", "until": "2026-12-01"}), "the retired pick bounds nothing");
+    assert_eq!(read["network"]["stops"]["A"]["name"], "A Street Station");
+    let direct = ok(json!({"op": "read_records", "network_hash": pick_hash, "stops_hash": stops_hash, "on": "2026-10-01"}));
+    assert_eq!(read["network_hash"], direct["network_hash"]);
+    let warned = ok(json!({"op": "visit_warnings", "network_hash": pick_hash, "stops_hash": stops_hash, "from": "2026-10-01", "until": "2026-12-01"}));
+    assert_eq!(read["warnings"], warned["warnings"]);
+    assert_eq!(read["warnings"], json!([{"stop_not_in_service": {"stop": "B", "status": "retired", "from": "2026-11-02", "until": "2026-12-01"}}]));
+
+    let exported = ok(json!({"op": "export_pick", "network_hash": pick_hash, "stops_hash": stops_hash, "published": published}));
+    let versions = ok(json!({"op": "export_versions", "network_hash": pick_hash, "stops_hash": stops_hash, "from": "2026-10-01", "until": "2026-12-01"}));
+    assert_eq!(exported["network_hash"], versions["network_hash"]);
+    assert!(exported["network"]["stops"].as_object().unwrap().contains_key("C@2026-10-01"), "C moved inside the period");
+
+    // before the first publish the pick is open-ended
+    let first = ok(json!({"op": "read_pick", "network_hash": pick_hash, "stops_hash": stops_hash}));
+    assert_eq!(first["period"], json!({"from": "2026-10-01"}));
+
+    // a network with no plan id is no pick: nothing is read
+    let plain = sample_network()["network_hash"].clone();
+    let none = ok(json!({"op": "read_pick", "network_hash": plain, "stops_hash": stops_hash, "published": published}));
+    assert!(none.get("period").is_none() && none["warnings"] == json!([]) && none["network_hash"] == plain);
+}

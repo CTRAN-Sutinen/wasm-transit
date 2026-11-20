@@ -19,7 +19,7 @@
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
-use transit_network::stop_record::{feed_events, import_feed, AddedEvent, export_versions, import_events, read_records, seed};
+use transit_stops::stop_record::{feed_events, import_feed, AddedEvent, export_versions, import_events, read_records, seed};
 use transit_network::{materialize, Network};
 use transit_stops::{Details, Event, EventKind, Stops};
 

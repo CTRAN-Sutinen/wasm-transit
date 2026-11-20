@@ -238,6 +238,18 @@ fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
     plans.iter().filter(|p| p.status == PickStatus::Published).map(PublishedPlan::info).collect()
 }
 
+/// The period a pick governs over a published set: from its own date
+/// until the date of the next pick that is not retired. The pick is
+/// placed by its id (any entry the set holds under that id is replaced),
+/// so the pick's own date wins while it is being moved or republished.
+/// `None` is open-ended: no later pick, or no set yet.
+pub fn period_in(set: Option<&PublishedPlans>, pick: &PlanInfo) -> Option<String> {
+    let mut plans: Vec<PlanInfo> = set.map(|s| chain(&s.plans)).unwrap_or_default();
+    plans.retain(|p| p.id != pick.id);
+    plans.push(pick.clone());
+    periods(&plans).into_iter().find(|p| p.id == pick.id).and_then(|p| p.until)
+}
+
 /// The published plan set: every pick the deployment publishes — the
 /// document the server's `plans` pointer holds and the manifest pins
 /// as `plans_hash`. Every client resolves the pick in force from it.

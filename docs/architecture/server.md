@@ -495,12 +495,13 @@ Its HTTP surface:
     from `/blobs`. `GET /logs/plans` answers the entries. The plans log
     has no revert: a pick is corrected by its own rules.
   - With a stops document, the pick reads it first (D-157). It reads
-    each stop's record on its first date (cap-stops `read_records`), so
+    each stop's record on its first date (cap-stops `read_pick`), so
     the network that the server stores is the read one, whatever copy
     the client sent. It also warns about the stops it visits that are
-    not in service over its period (`visit_warnings`, the period as
-    cap-plans `periods` derives it). These warnings come after
-    cap-network's own.
+    not in service over its period. The same op derives the period from
+    the published set: from the pick's date until the next pick that is
+    not retired. The server does not read the set's picks or their
+    status. These warnings come after cap-network's own.
   - The server never writes the stops document here.
 - `POST /stops` (store mode): write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`.
@@ -605,8 +606,8 @@ Its HTTP surface:
   server's today).
   - It is cap-network `export` of the published pick in force (cap-plans
     `in_force` answers which pick).
-  - With a stops document, cap-stops `export_versions` runs first over
-    the pick's period (cap-plans `periods`). A stop whose record changes
+  - With a stops document, cap-stops `export_pick` runs first over the
+    pick's period (the op derives it from the published set). A stop whose record changes
     inside the period is then one stop per version (D-151).
   - The server keeps the result by the pick's network hash and the stops
     document's.

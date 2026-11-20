@@ -147,6 +147,16 @@ A stop that is not there yet that day, or that the document does not hold, is no
 
 The plan takes a record with author `upsert_stop`. The stops document is never written. `records` reads no network.
 
+## read_pick
+
+What does a pick read of the stops, over the dates it governs? `read_pick` answers the pick's `period`, the pick with each stop's record on its first date, and the warnings of the stops it visits.
+
+The pick's period is from its own date until the date of the next pick in `published` that is not retired. `published` is the published plan set, as the server holds it (none before the first publish). The pick is placed in the set by its id, so the date it carries wins over the date the set holds for it. A retired pick bounds nothing. The last pick is open-ended: its `period` has no `until`.
+
+`network` and `network_hash` are what `read_records` answers on the period's first date. `warnings` are what `visit_warnings` answers over the period. A pick with no id, or with no date, is not a pick: `period` is absent, the network comes back as it was, and there are no warnings. Nothing is written to the stops document.
+
+Every host asks this op. None derives the period itself.
+
 ## visit_warnings
 
 What is the planner told of the stops that the network's patterns visit over its period? The period runs from `from` until `until` (exclusive; open-ended without `until`).
@@ -180,6 +190,12 @@ On every date, the export runs exactly the trips that the pick runs that day, at
 A suspension or a retirement changes no record, so it splits nothing. With no record changing, the answer is `read_records` on `from`.
 
 `export_versions` registers the network and answers it with its `network_hash`.
+
+## export_pick
+
+What are the stops' history in a pick's GTFS export? `export_pick` answers what `export_versions` answers, over the dates the pick governs: from its own date until the date of the next pick in `published` that is not retired. The period is derived as `read_pick` derives it.
+
+A pick with no id, or with no date, comes back as it was. The answer is registered and answered with its `network_hash`, for cap-network's export.
 
 ## import_events
 

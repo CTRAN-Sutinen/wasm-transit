@@ -9,8 +9,8 @@ by shared code:
 The third job is still written by hand in each host: its inputs. An
 input is a document or feed from outside the page. Examples are the
 served network, the edit document, a log's document, the live feed, and
-the deployment's manifest. Each host writes its own `boot`, `poll`,
-`release`, and readers (`readEdits`, `readDocuments`, `fetchLive`,
+the deployment's manifest. Each host writes its own `boot` and `poll`,
+most write a `release`, and each writes its readers (`readEdits`, `readDocuments`, `fetchLive`,
 `followDeployment`, `obtainServed`). It chooses for itself how often to
 read, what to keep when a read fails, and what to say. The hosts are 530
 to 1,384 lines each (2026-11-20).

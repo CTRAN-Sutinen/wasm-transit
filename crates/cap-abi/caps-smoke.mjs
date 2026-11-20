@@ -1616,4 +1616,50 @@ for (const asm of manifest.assemblies) {
   }
 }
 
+// A pick reads the stops document over its own period (D-228): one op,
+// the same answer from the module alone and linked in an assembly, and
+// the same warning the server's publish gives (server/stops_test.go,
+// TestAPublishedPickReadsTheStops). B retires inside the period, A is
+// renamed before it, and a retired pick bounds nothing.
+{
+  const pick = { ...NETWORK, plan: { id: "fall-2026", name: "Fall 2026", effective_from: "2026-09-07" } };
+  const published = {
+    kind: "plans",
+    schema_version: 1,
+    plans: [{ id: "fall-2026", name: "Fall 2026", effective_from: "2026-09-07", network_hash: "sha256:x", status: "published" },
+            { id: "holiday", name: "Holiday", effective_from: "2026-11-30", network_hash: "sha256:x", status: "retired" }],
+  };
+  const stopsAlone = shell(loadModule(byId.stops));
+  const netHash = stopsAlone.invoke({ op: "load_network", network: pick }).network_hash;
+  const seeded = stopsAlone.invoke({ op: "seed", network_hash: netHash }).stops;
+  seeded.stops.A.push({ on: "2026-09-01", event: "changed", name: "A Street Station" });
+  seeded.stops.B.push({ on: "2026-10-15", event: "retired" });
+  const stopsHash = stopsAlone.invoke({ op: "load_stops", stops: seeded }).stops_hash;
+  const read = stopsAlone.invoke({ op: "read_pick", network_hash: netHash, stops_hash: stopsHash, published });
+  assert(read.period.from === "2026-09-07" && read.period.until === undefined, "a pick with only a retired pick after it is open-ended");
+  assert(
+    JSON.stringify(read.warnings) === JSON.stringify([{ stop_not_in_service: { stop: "B", status: "retired", from: "2026-10-15" } }]),
+    "read_pick warns of B, retired inside the period (the server's answer)",
+  );
+  assert(read.network.stops.A.name === "A Street Station", "read_pick takes A's name from the stops document");
+  const direct = stopsAlone.invoke({ op: "read_records", network_hash: netHash, stops_hash: stopsHash, on: "2026-09-07" });
+  assert(direct.network_hash === read.network_hash, "read_pick is read_records on the pick's first date");
+  const exported = stopsAlone.invoke({ op: "export_pick", network_hash: netHash, stops_hash: stopsHash, published });
+  const versions = stopsAlone.invoke({ op: "export_versions", network_hash: netHash, stops_hash: stopsHash, from: "2026-09-07" });
+  assert(exported.network_hash === versions.network_hash, "export_pick is export_versions over the pick's period");
+  const later = { ...published, plans: [...published.plans, { id: "winter", name: "Winter", effective_from: "2026-12-14", network_hash: "sha256:x", status: "published" }] };
+  const bounded = stopsAlone.invoke({ op: "read_pick", network_hash: netHash, stops_hash: stopsHash, published: later });
+  assert(bounded.period.until === "2026-12-14", "the next published pick bounds the period; the retired one does not");
+  const unversioned = stopsAlone.invoke({ op: "read_pick", network_hash: stopsAlone.invoke({ op: "load_network", network: NETWORK }).network_hash, stops_hash: stopsHash });
+  assert(unversioned.period === undefined && unversioned.warnings.length === 0, "a network with no plan id is no pick: nothing read");
+  const asm = manifest.assemblies.find((a) => a.capabilities.includes("stops") && a.capabilities.includes("network"));
+  if (asm) {
+    const linked = shell(new WebAssembly.Instance(new WebAssembly.Module(readFileSync(path.join(DIST, "..", asm.url))), {}).exports);
+    const linkedNet = linked.invoke({ cap: "network", op: "load_network", network: pick }).network_hash;
+    const linkedStops = linked.invoke({ cap: "stops", op: "load_stops", stops: seeded }).stops_hash;
+    const alike = linked.invoke({ cap: "stops", op: "read_pick", network_hash: linkedNet, stops_hash: linkedStops, published });
+    assert(JSON.stringify(alike) === JSON.stringify(read), `read_pick answers alike in assembly ${asm.ui} and alone`);
+  }
+}
+
 console.log("capability modules: ABI smoke ok");

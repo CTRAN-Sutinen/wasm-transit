@@ -8,11 +8,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
-use transit_stops::{Details, Event, EventKind, Status, StopOn, Stops};
+use crate::{Details, Event, EventKind, Status, StopOn, Stops};
 
-use crate::model::{Block, CalendarRule, DateRange, Layover, TripRef};
-use crate::places::{StopInfo, StopKind};
-use crate::{Network, NetworkWarning, Stop};
+use transit_network::model::{Block, CalendarRule, DateRange, Layover, TripRef};
+use transit_network::places::{StopInfo, StopKind};
+use serde::Serialize;
+use transit_network::{Network, NetworkWarning, Stop};
+use transit_plans::{PlanInfo, PublishedPlans};
+use ts_rs::TS;
 
 /// A stops document from a network's stops: each stop one `in_service`
 /// event with no date (no feed records when a stop went into service),
@@ -30,7 +33,7 @@ fn opening(stop: &Stop) -> Event {
         lon: Some(stop.lon),
         details: Details {
             name: Some(stop.name.clone()).filter(|n| !n.is_empty()),
-            kind: (stop.kind == StopKind::Station).then_some(transit_stops::StopKind::Station),
+            kind: (stop.kind == StopKind::Station).then_some(crate::StopKind::Station),
             parent: stop.parent.clone(),
             code: info.code.clone(),
             spoken_name: info.spoken_name.clone(),
@@ -84,7 +87,7 @@ fn record(on: &StopOn) -> Stop {
         lon: on.lon,
         parent: d.parent.clone(),
         kind: match d.kind {
-            Some(transit_stops::StopKind::Station) => StopKind::Station,
+            Some(crate::StopKind::Station) => StopKind::Station,
             _ => StopKind::Stop,
         },
         info: StopInfo {
@@ -134,7 +137,7 @@ pub fn visit_warnings(network: &Network, stops: &Stops, from: NaiveDate, until: 
         let mut open: Option<(Option<Status>, NaiveDate)> = None;
         let mut close = |open: &mut Option<(Option<Status>, NaiveDate)>, end: Option<NaiveDate>| {
             if let Some((status, start)) = open.take() {
-                out.push(NetworkWarning::StopNotInService { stop: id.to_string(), status, from: fmt(start), until: end.map(fmt) });
+                out.push(NetworkWarning::StopNotInService { stop: id.to_string(), status: status.map(|s| s.as_str().to_string()), from: fmt(start), until: end.map(fmt) });
             }
         };
         for (i, &d) in days.iter().enumerate() {
@@ -498,4 +501,66 @@ fn differing(now: &Details, feed: &Details) -> Details {
         site: BTreeMap::new(),
         refs: BTreeMap::new(),
     }
+}
+
+/// The dates a pick governs: from its own date until the next pick's
+/// (`until` none: open-ended). The same answer for every host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_stops/")]
+pub struct PickPeriod {
+    /// "YYYY-MM-DD".
+    pub from: String,
+    /// "YYYY-MM-DD" of the next pick that is not retired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub until: Option<String>,
+}
+
+/// The period the pick governs in the published set `published` (none
+/// before the first publish): see [`transit_plans::period_in`]. `None`
+/// when the pick has no id or no date: a standalone import is no pick.
+pub fn pick_period(network: &Network, published: Option<&PublishedPlans>) -> Option<PickPeriod> {
+    let plan = &network.plan;
+    let from = plan.effective_from?;
+    if plan.id.is_empty() {
+        return None;
+    }
+    let fmt = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+    let info = PlanInfo { id: plan.id.clone(), name: plan.name.clone(), effective_from: Some(fmt(from)) };
+    Some(PickPeriod { from: fmt(from), until: transit_plans::period_in(published, &info) })
+}
+
+/// What a pick reads of the stops document over its period (D-157): each
+/// stop's record on the pick's first date, and the warnings of the stops
+/// it visits that are not in service over the period.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickReads {
+    pub period: PickPeriod,
+    pub network: Network,
+    pub warnings: Vec<NetworkWarning>,
+}
+
+/// [`read_records`] on the pick's first date and [`visit_warnings`] over
+/// its period. `None` when the pick has no period.
+pub fn read_pick(network: &Network, stops: &Stops, published: Option<&PublishedPlans>) -> Option<PickReads> {
+    let period = pick_period(network, published)?;
+    let (from, until) = period_dates(&period)?;
+    Some(PickReads {
+        network: read_records(network, stops, from),
+        warnings: visit_warnings(network, stops, from, until),
+        period,
+    })
+}
+
+/// [`export_versions`] over the pick's period. `None` when the pick has
+/// no period.
+pub fn export_pick(network: &Network, stops: &Stops, published: Option<&PublishedPlans>) -> Option<Network> {
+    let period = pick_period(network, published)?;
+    let (from, until) = period_dates(&period)?;
+    Some(export_versions(network, stops, from, until))
+}
+
+fn period_dates(period: &PickPeriod) -> Option<(NaiveDate, Option<NaiveDate>)> {
+    let parse = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+    Some((parse(&period.from)?, period.until.as_deref().and_then(parse)))
 }

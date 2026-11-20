@@ -33,8 +33,8 @@ called `records`, and used it in the app.
 
 | Step | File | Who does the work |
 |---|---|---|
-| 1. Write the laws | `crates/transit-network/tests/plan_takes_stops_law_test.rs` | You decide what is correct |
-| 2. Write the library function | `crates/transit-network/src/stop_record.rs` | You write the logic |
+| 1. Write the laws | `crates/transit-stops/tests/plan_takes_stops_law_test.rs` | You decide what is correct |
+| 2. Write the library function | `crates/transit-stops/src/stop_record.rs` | You write the logic |
 | 3. Add the op to the capability | `crates/cap-stops/src/lib.rs` | Routine: about 10 lines |
 | 4. Describe the op | `crates/cap-stops/OPS.md` | Routine; the build checks it is there |
 | 5. Add a worked example | `crates/cap-abi/src/bin/gen_manifest.rs` | Routine; the build runs it |
@@ -102,7 +102,7 @@ Records { records: BTreeMap<String, transit_network::Stop> },
 Request::Records { stops_hash, stop_ids, on } => {
     let on = parse_date(&on)?;
     let stops = STOPS.require(&stops_hash)?;
-    Ok(Response::Records { records: transit_network::stop_record::records(&stops, &stop_ids, on) })
+    Ok(Response::Records { records: transit_stops::stop_record::records(&stops, &stop_ids, on) })
 }
 ```
 

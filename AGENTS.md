@@ -542,7 +542,8 @@ The detail for each crate is in `docs/architecture/crates.md`.
   - The manifest pins `network_hash` (with the zip's `feed_hash` as its
     source), the published picks (`plans_hash`; a page loads the pick in
     force), and the sync module's `wasm_hash`.
-  - Every client pins again and validates again.
+  - Every client pins the network and the picks again, and validates
+    them again. No client reads `wasm_hash`.
 - **The sync protocol is LWW for each record id, with tombstones.** It
   is not a CRDT, on purpose: the final authority is the agency's
   scheduling system, through propose, review, and accept.

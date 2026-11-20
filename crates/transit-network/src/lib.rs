@@ -40,7 +40,6 @@ pub mod operators;
 pub mod places;
 pub mod plan_set;
 pub mod signs;
-pub mod stop_record;
 pub mod timetable_edit;
 pub mod validate;
 pub mod version;

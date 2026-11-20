@@ -15,9 +15,11 @@ crates. The pages ship four npm packages at run time.
 ## Scope
 
 1. **The S3 client on the standard library.** It replaces
-   `aws-sdk-go-v2` in `server/store/s3.go`: SigV4 signing, get, put,
-   the conditional create (`If-None-Match: *`), list with
-   continuation, and the object metadata the engine reads. Path-style
+   `aws-sdk-go-v2` in `server/store/s3.go`. It implements the store's
+   `Backend` (`server/store/backend.go`): `Get` with the object's
+   metadata, `Stat`, `Create` as the conditional create
+   (`If-None-Match: *`), `List` after a key, and `Delete`. SigV4 signs
+   each request. Path-style
    addresses stay for S3-compatible stores. The credentials are the
    sources `DEPLOYMENTS-SERVER.md` names: `AWS_ACCESS_KEY_ID` and
    `AWS_SECRET_ACCESS_KEY`, and the role of the machine or pod (the
@@ -26,9 +28,10 @@ crates. The pages ship four npm packages at run time.
    client reads, and no other.
 2. **The GCS client on the JSON API.** It replaces
    `cloud.google.com/go/storage` and `google.golang.org/api` in
-   `server/store/gcs.go`: media download, the upload with
-   `ifGenerationMatch=0` as the conditional create, list with page
-   tokens, and object metadata. The credentials are a service
+   `server/store/gcs.go`. It implements the same five `Backend`
+   methods: media download with the object's metadata, the object's
+   attributes for `Stat`, the upload with `ifGenerationMatch=0` as
+   `Create`, list with page tokens, and delete. The credentials are a service
    account's key file (`GOOGLE_APPLICATION_CREDENTIALS`, a signed JWT
    exchanged for a token, `crypto/rsa`) and the metadata server of the
    machine or pod. The token is cached until shortly before it
@@ -44,8 +47,11 @@ crates. The pages ship four npm packages at run time.
      workspace's dependencies. No crate uses them.
    - `ts-rs` and `schemars` behind a feature that only `gen-manifest`
      and `just types` turn on. A module build compiles neither.
-   - zip with `deflate-flate2` alone, so `zopfli` leaves. The codec's
-     zip bytes stay the same (the fixture's hash).
+   - `zopfli` leaves, if zip allows it. zip 2.6's `deflate` feature
+     brings `zopfli`, and its `deflate-flate2` feature alone does not
+     turn on `flate2`. Check first whether the codec writes through
+     `zopfli`. The codec's zip bytes stay the same (the fixture's
+     hash).
    - A civil date type of our own in place of `chrono`
      (`NaiveDate`, adding days, the weekday, parse and format of
      "YYYY-MM-DD"). Laws first: property tests against `chrono` as a

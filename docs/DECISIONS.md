@@ -4873,7 +4873,7 @@ Context: parity requires that every host gives the same answer to one
 question. A rule in one host is an answer only that host gives. An
 audit on 2026-11-20 found the pick's period (retired picks dropped,
 this pick put in place) written in both Go and TypeScript, about six
-other rules in single browser hosts, and about a dozen Go functions
+other rules in single browser hosts, and about eight Go functions
 that sequence a write's steps between ops. Routing a value unchanged
 (a picked group's members, the walks the router takes) is not a rule.
 Pinned by: none yet (`docs/units/rules-in-ops.md`,

@@ -50,8 +50,8 @@
     "plans.resolve",
     "plans.periods",
     "plans.validate",
-    "stops.visit_warnings",
-    "stops.export_versions"
+    "stops.read_pick",
+    "stops.export_pick"
   ],
   "components": [
     "DesignRail",

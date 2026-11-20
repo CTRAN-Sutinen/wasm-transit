@@ -503,6 +503,7 @@ dependencies = [
  "serde_json",
  "transit-log",
  "transit-network",
+ "transit-plans",
  "transit-stops",
  "transit-version",
  "ts-rs",
@@ -2130,7 +2131,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
- "transit-stops",
  "transit-version",
  "ts-rs",
 ]
@@ -2236,6 +2236,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-network",
+ "transit-plans",
  "transit-version",
  "ts-rs",
 ]

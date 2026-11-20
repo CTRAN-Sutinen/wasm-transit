@@ -3,7 +3,7 @@
 //! service from before any record, at its point with its details, and
 //! passes what a write must pass.
 
-use transit_network::stop_record::seed;
+use transit_stops::stop_record::seed;
 use transit_network::Network;
 use transit_stops::Status;
 

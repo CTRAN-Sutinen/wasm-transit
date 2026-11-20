@@ -4,17 +4,7 @@
 
 The authored network model (planner authority).
 
-**Stops document.** A pick only reads the stops document (D-157).
-- `stop_record::read_records` takes each stop's record as the document has it on the pick's first date.
-- `visit_warnings` warns of a stop that the pick's patterns visit and that is not in service over the pick's period. The stop can be planned, permitted, built, retired, or not there yet. A suspended stop warns only if it is suspended for the whole period or with no end.
-
-**GTFS out and in carry the stops' history** (D-150, D-151).
-- `export_versions` makes a stop whose record changes inside the export's dates into one stop per version. The last version keeps the id. An earlier version takes `<id>@<date>`. The op also splits each pattern that visits the stop by calendar.
-- `import_events` records a feed's differences as events dated the feed's first service date. It reads a made id back as a version.
-- `import_feed` does the same, and each event names the feed (`from_feed`, its hash).
-- `feed_events` returns the events a feed recorded.
-- The stops that the import calls unlisted are only those in service or suspended that day. These are the stops a feed should list.
-- `seed` begins a stops document from a network's stops.
+Its stops are read by `transit-stops`, which depends on it. The network depends on no stops document.
 
 **Routes, directions, and patterns.**
 - A route has directions (`Route.directions`, each named).
@@ -424,6 +414,7 @@ The service-plan chain, and the published plan set. cap-plans is the seam. This 
 **The chain.** It works over the plan set's metadata. It is derived, never stored, deterministic, and order-insensitive.
 - `resolve`: which pick is in force.
 - `periods`: each member's governing window.
+- `period_in`: the window one pick governs in a published set. The pick is placed by its id, so its own date wins, and a retired pick bounds nothing. transit-stops reads it for a pick's reads.
 - `validate`: the chain invariants.
 
 **The published plan set** (store kind `plans`, `PublishedPlans`).
@@ -468,7 +459,20 @@ The runs cut itself is open work (`docs/units/runs-layer.md`). The crate is pure
 
 ## transit-stops
 
-The stops document, beside the plans (D-147, D-153). It depends on no other model crate. cap-stops is the seam. A stop's life is its own, managed apart from the picks, which only read it (D-157).
+The stops document, beside the plans (D-147, D-153). It depends on transit-network, for the join in `stop_record`. cap-stops is the seam. A stop's life is its own, managed apart from the picks, which only read it (D-157).
+
+**A pick reads the stops document** (`stop_record`; D-157, D-228). The join of a network and the stops document is in this crate, because it depends on the network.
+- `pick_period` is the period a pick governs: from its own date until the next published pick that is not retired (transit-plans `period_in`). `read_pick` is `read_records` on the pick's first date and `visit_warnings` over that period. `read_records` takes each stop's record as the document has it on a date.
+- `visit_warnings` warns of a stop that the pick's patterns visit and that is not in service over the pick's period. The stop can be planned, permitted, built, retired, or not there yet. A suspended stop warns only if it is suspended for the whole period or with no end.
+
+**GTFS out and in carry the stops' history** (D-150, D-151).
+- `export_pick` is `export_versions` over the pick's period.
+- `export_versions` makes a stop whose record changes inside the export's dates into one stop per version. The last version keeps the id. An earlier version takes `<id>@<date>`. The op also splits each pattern that visits the stop by calendar.
+- `import_events` records a feed's differences as events dated the feed's first service date. It reads a made id back as a version.
+- `import_feed` does the same, and each event names the feed (`from_feed`, its hash).
+- `feed_events` returns the events a feed recorded.
+- The stops that the import calls unlisted are only those in service or suspended that day. These are the stops a feed should list.
+- `seed` begins a stops document from a network's stops.
 
 **The stop.**
 - Every stop has a lasting id, kept through a move (D-145).
@@ -655,7 +659,7 @@ The plan-chain capability: which service plan governs a date? transit-plans is t
 
 ## cap-stops
 
-The stops capability: what is a stop on a date? transit-stops and transit-network's `stop_record` are the libraries. The kernel's `stops` kind registers a document only if `validate` would pass it.
+The stops capability: what is a stop on a date? transit-stops (with its `stop_record`) is the library. The kernel's `stops` kind registers a document only if `validate` would pass it.
 
 **Reads.**
 - `stops_on` gives every stop, or those named or at the statuses asked, as on a date. It gives each stop's status with since, until, and note, and the stops counted by status.
@@ -672,12 +676,11 @@ The stops capability: what is a stop on a date? transit-stops and transit-networ
 - `attribute_surveys` names the write's new surveys for the writer. It runs before `validate`.
 
 **What a pick reads.**
-- `read_records` gives each stop's record on the pick's first date.
-- `visit_warnings` gives the stops that the pick visits that are not in service over its period.
+- `read_pick` gives the pick with each stop's record on its first date, and the warnings of the stops it visits that are not in service over its period. It derives the period from the published plan set, so no host does. `read_records` and `visit_warnings` answer the same over dates the caller names.
 - `records` gives the record that a plan takes of a stop that the document holds and the plan does not, on the pick date (D-173). The plan copies the record. The document is never written.
 
 **GTFS and the stops' history.**
-- `export_versions` and `import_events` carry GTFS out and in with the stops' history. Amenities, site answers, and references are the document's alone.
+- `export_pick` (over the pick's period), `export_versions` (over named dates), and `import_events` carry GTFS out and in with the stops' history. Amenities, site answers, and references are the document's alone.
 - `on` defaults to the feed's first service date. A named `feed` is named on each event recorded.
 - `feed_events` gives what a feed recorded.
 
@@ -870,7 +873,7 @@ Each entry covers one choice that other code depends on. The heading names the c
 - **Rejected:** typed values inside `amenities`; a separate survey document (the answers are facts about the stop and change by its events); asset records for each part.
 - **Decided:** D-158, D-160, D-163 (D-154 for amenities).
 
-### A feed's stops apply, and the planner sees what they did (transit-network `stop_record`, cap-stops `import_events`, `export_versions`, `feed_events`)
+### A feed's stops apply, and the planner sees what they did (transit-stops `stop_record`, cap-stops `import_events`, `export_versions`, `feed_events`)
 - **Holds:** when the server imports the agency's feed, each difference between the feed's stops and the stops document on the feed's first service date is recorded as an event dated that day, naming the feed. A stop the feed does not list keeps its events, and events dated later stand.
 - **Holds:** the stops page shows what the feed recorded and the stops in service that it does not list. The planner can fix each on its card. A move that was a survey correction becomes a correction of the earlier point.
 - **Holds:** on the way out, a stop whose record changes inside an export's dates is one stops.txt row per version, and the rows share its `stop_code`. The version in force last keeps the id. An earlier version takes `<id>@<its first date>`. A re-import reads those back as versions.

@@ -2,20 +2,26 @@
 
 A kind is one type of document the agency keeps, such as stops,
 alerts, or notes. Adding a kind costs too much. The notes kind is named
-in 13 files outside its tests (2026-11-20):
+in 14 source files outside its tests (2026-11-20). Six of them belong
+there: its library and its capability (`transit-notes`, `cap-notes`),
+the two crates that read notes (`transit-disruptions`,
+`cap-disruptions`), and its page's two files (the disruptions host and
+`DisruptionDetail.svelte`). The other eight are plumbing:
 
 - in the kernel: `crates/cap-abi/src/kernel.rs`,
   `src/bin/common/kind_table.rs`, and `src/bin/gen_manifest.rs`;
 - in the server: `server/notes.go`, `server/logwrite.go`, and
   `server/main.go`;
 - in the runner: `tools/caps-run.mjs`;
-- in the engine: `web/src/engine.ts`;
-- in its page.
+- in the engine: `web/src/engine.ts`.
 
-Each log kind has its own Go file of about 130 to 400 lines. Every file
-holds the same five functions: `withX`, `xLog`, `assembleX`, `xHead`,
-and `xLogDoc`. Then it has a handler. `cap-abi` depends on 17 domain
-crates, so the kernel is a hub that every new kind edits. Runs, the work
+Each log kind has Go of its own, in files of about 130 to 400 lines.
+The notes, alerts, and stops logs each repeat five functions: `withX`,
+`xLog`, `assembleX`, `xHead`, and `xLogDoc`. The plans log repeats
+four of them. The stop requests are written in the stops log, and have
+`withRequests` and `requestsHead`. Each kind then has its handler.
+`cap-abi` depends on 18 domain crates (five of them optional, for
+gen-manifest), so the kernel is a hub that every new kind edits. Runs, the work
 rules, and the policy in logs are next (`storage-model.md`), so this
 cost limits each of them.
 
@@ -77,8 +83,12 @@ capability, and its UI. Nothing else names it.
    hand today. They point to the kind table and the registry's docs
    site instead.
 6. **The line holds.** A gate in `just test` fails when a kind's name
-   appears outside its declaration, its library, its capability, its
-   UI, and their tests.
+   appears outside its declaration, its library, its capability, a
+   capability or library that reads it, its UI, and their tests. A
+   capability reads a kind when its `capability! { documents: [...] }`
+   names it (cap-disruptions and transit-disruptions read notes). The
+   gate refuses only the plumbing: the kernel, the server, the
+   runner, and the engine.
 
 Every item follows `docs/CONVENTIONS.md`, "Traceable". Where a kind
 differs from the others, the difference is a named field in its line,

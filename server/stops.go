@@ -8,8 +8,9 @@ package main
 // (stopslog.go); a write naming a version that is no longer the head is
 // refused (409), and the writer re-reads. A stops write changes no pick. A pick being
 // published reads it (`readPick`): each stop's record on the pick's
-// first date (cap-stops read_records), and the warnings of the stops
-// it visits that are not in service over its period (visit_warnings).
+// first date, and the warnings of the stops it visits that are not in
+// service over its period, as one cap-stops op (read_pick). The op
+// derives the period from the published set.
 //
 // One cap-stops instance serves every use, emptied after each
 // (`withStops`).
@@ -66,13 +67,12 @@ func (s *server) withStops(ctx context.Context, use func(*WasmHost) error) error
 }
 
 // publishedEntry is one pick in the published set, as the host passes
-// it along unread but for its frame.
+// it along unread but for the fields the plans log's seeding names.
 type publishedEntry struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	EffectiveFrom string `json:"effective_from"`
 	NetworkHash   string `json:"network_hash"`
-	Status        string `json:"status,omitempty"`
 }
 
 func publishedEntries(set json.RawMessage) []publishedEntry {
@@ -81,39 +81,6 @@ func publishedEntries(set json.RawMessage) []publishedEntry {
 	}
 	json.Unmarshal(set, &parsed)
 	return parsed.Plans
-}
-
-// windows is each pick's governing period as cap-plans derives it over
-// the published picks (retired ones govern nothing), with `extra`
-// placed by id: id → until (nil = open-ended).
-func (s *server) windows(ctx context.Context, set json.RawMessage, extra *publishedEntry) (map[string]*string, error) {
-	var infos []map[string]any
-	for _, p := range publishedEntries(set) {
-		if p.Status == "retired" || (extra != nil && p.ID == extra.ID) {
-			continue
-		}
-		infos = append(infos, map[string]any{"id": p.ID, "name": p.Name, "effective_from": p.EffectiveFrom})
-	}
-	if extra != nil {
-		infos = append(infos, map[string]any{"id": extra.ID, "name": extra.Name, "effective_from": extra.EffectiveFrom})
-	}
-	var out struct {
-		Periods []struct {
-			ID    string  `json:"id"`
-			Until *string `json:"until"`
-		} `json:"periods"`
-	}
-	if infos == nil {
-		infos = []map[string]any{}
-	}
-	if err := s.plans.Invoke(ctx, map[string]any{"op": "periods", "plans": infos}, &out); err != nil {
-		return nil, err
-	}
-	windows := map[string]*string{}
-	for _, p := range out.Periods {
-		windows[p.ID] = p.Until
-	}
-	return windows, nil
 }
 
 // readPick is what a pick being published reads of the stops document
@@ -126,17 +93,8 @@ func (s *server) readPick(ctx context.Context, pick *canonicalNetwork, set json.
 	if s.stopsWasm == "" {
 		return nil, nil
 	}
-	var frame publishedEntry
-	json.Unmarshal(pick.Plan, &frame)
-	if frame.EffectiveFrom == "" {
-		return nil, nil
-	}
 	_, stops, found, err := s.stopsHead()
 	if err != nil || !found {
-		return nil, err
-	}
-	windows, err := s.windows(ctx, set, &frame)
-	if err != nil {
 		return nil, err
 	}
 	var warnings []json.RawMessage
@@ -153,24 +111,16 @@ func (s *server) readPick(ctx context.Context, pick *canonicalNetwork, set json.
 		if err := host.InvokeBytes(ctx, opLoadStops, stops, &loadedStops); err != nil {
 			return fmt.Errorf("the stops document: %w", err)
 		}
+		// cap-stops derives the pick's period from the published set.
 		var read struct {
-			NetworkHash string          `json:"network_hash"`
-			Network     json.RawMessage `json:"network"`
+			NetworkHash string            `json:"network_hash"`
+			Network     json.RawMessage   `json:"network"`
+			Warnings    []json.RawMessage `json:"warnings"`
 		}
-		if err := host.Invoke(ctx, map[string]any{"op": "read_records", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "on": frame.EffectiveFrom}, &read); err != nil {
+		if err := host.Invoke(ctx, map[string]any{"op": "read_pick", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "published": set}, &read); err != nil {
 			return err
 		}
-		req := map[string]any{"op": "visit_warnings", "network_hash": read.NetworkHash, "stops_hash": loadedStops.StopsHash, "from": frame.EffectiveFrom}
-		if until := windows[frame.ID]; until != nil {
-			req["until"] = *until
-		}
-		var warned struct {
-			Warnings []json.RawMessage `json:"warnings"`
-		}
-		if err := host.Invoke(ctx, req, &warned); err != nil {
-			return err
-		}
-		warnings = warned.Warnings
+		warnings = read.Warnings
 		if read.NetworkHash != pick.DocumentHash {
 			pick.Document, pick.DocumentHash, pick.ProducedBy = string(read.Network), read.NetworkHash, "cap-stops@"+host.Hash()
 		}

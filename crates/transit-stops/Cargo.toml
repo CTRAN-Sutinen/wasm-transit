@@ -7,6 +7,10 @@ license.workspace = true
 
 [dependencies]
 transit-version = { path = "../transit-version" }
+# The join with a network: a pick reads the stops document.
+transit-network = { path = "../transit-network" }
+# The pick's period: which picks bound it.
+transit-plans = { path = "../transit-plans" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ts-rs = { workspace = true }

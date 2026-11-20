@@ -13,7 +13,7 @@
 //!   written, and the plan's stop is an ordinary stop (`upsert_stop`).
 
 use chrono::NaiveDate;
-use transit_network::stop_record::{read_records, records};
+use transit_stops::stop_record::{read_records, records};
 use transit_network::{apply_edits, Network, NetworkEdit};
 use transit_stops::{Details, Event, EventKind, Stops};
 

@@ -444,7 +444,7 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case pick != nil:
 		var err error
-		if zipBytes, err = s.exportedPick(r.Context(), pick.ID, pick.NetworkHash, set); err != nil {
+		if zipBytes, err = s.exportedPick(r.Context(), pick.NetworkHash, set); err != nil {
 			fail(w, err, http.StatusInternalServerError)
 			return
 		}
@@ -473,11 +473,11 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 
 // exportedPick is cap-network's export of a published pick's network
 // with the stops' history over its period (D-151): with a stops
-// document, cap-stops export_versions first — a stop whose record
+// document, cap-stops export_pick first — a stop whose record
 // changes inside the pick's dates is one stop per version. Kept for the
 // process by the pick's network hash and the stops document's (the
 // bytes never change for those two).
-func (s *server) exportedPick(ctx context.Context, id, networkHash string, set []byte) ([]byte, error) {
+func (s *server) exportedPick(ctx context.Context, networkHash string, set []byte) ([]byte, error) {
 	stopsHash, stops, haveStops, err := "", []byte(nil), false, error(nil)
 	if s.stopsWasm != "" {
 		if stopsHash, stops, haveStops, err = s.stopsHead(); err != nil {
@@ -495,7 +495,7 @@ func (s *server) exportedPick(ctx context.Context, id, networkHash string, set [
 		return nil, err
 	}
 	if haveStops {
-		if blob, err = s.stopsVersions(ctx, id, blob, stops, set); err != nil {
+		if blob, err = s.stopsVersions(ctx, blob, stops, set); err != nil {
 			return nil, fmt.Errorf("the stops' history: %w", err)
 		}
 	}
@@ -529,25 +529,11 @@ func (s *server) exportedPick(ctx context.Context, id, networkHash string, set [
 }
 
 // stopsVersions is the pick's network with the stops' history over its
-// period, from its first date until the next pick's (cap-plans periods
-// over the published set): cap-stops export_versions.
-func (s *server) stopsVersions(ctx context.Context, id string, network, stops, set []byte) ([]byte, error) {
-	var frame *publishedEntry
-	for _, p := range publishedEntries(set) {
-		if p.ID == id {
-			frame = &p
-			break
-		}
-	}
-	if frame == nil || frame.EffectiveFrom == "" {
-		return network, nil
-	}
-	windows, err := s.windows(ctx, set, nil)
-	if err != nil {
-		return nil, err
-	}
+// period, from its first date until the next pick's: cap-stops
+// export_pick, which derives the period from the published set.
+func (s *server) stopsVersions(ctx context.Context, network, stops, set []byte) ([]byte, error) {
 	var versioned json.RawMessage
-	err = s.withStops(ctx, func(host *WasmHost) error {
+	err := s.withStops(ctx, func(host *WasmHost) error {
 		var loadedNet struct {
 			NetworkHash string `json:"network_hash"`
 		}
@@ -560,14 +546,10 @@ func (s *server) stopsVersions(ctx context.Context, id string, network, stops, s
 		if err := host.InvokeBytes(ctx, opLoadStops, stops, &loadedStops); err != nil {
 			return fmt.Errorf("the stops document: %w", err)
 		}
-		req := map[string]any{"op": "export_versions", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "from": frame.EffectiveFrom}
-		if until := windows[id]; until != nil {
-			req["until"] = *until
-		}
 		var out struct {
 			Network json.RawMessage `json:"network"`
 		}
-		if err := host.Invoke(ctx, req, &out); err != nil {
+		if err := host.Invoke(ctx, map[string]any{"op": "export_pick", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "published": orNull(set)}, &out); err != nil {
 			return err
 		}
 		versioned = out.Network

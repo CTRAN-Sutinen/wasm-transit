@@ -27,7 +27,7 @@ Each host has four parts:
 | | Server | Browser | caps-run |
 |---|---|---|---|
 | Upstream | the bucket | the server, or the export's files | the files and URLs its user names |
-| Working copy | heads and blobs in memory; with `-store-cache`, the same on disk | IndexedDB (documents, plans, the outbox, the last copy of each read) and the service worker's caches (the pages, the modules, the last copy of a rider page's reads) | the session folder (`.caps-sessions/NAME/`) |
+| Working copy | heads and blobs in memory; with `-store-cache`, the same on disk | IndexedDB (documents, plans, the outbox, and the disruptions page's last copy of the edit document) and the service worker's caches (the pages, the modules, the last copy of a rider page's reads) | the session folder (`.caps-sessions/NAME/`) |
 | Modules | single-capability modules in wazero | the page's linked assembly in its bus worker | any module, or a page's assembly for a replay |
 | Clock | the server's clock | the device's clock, in the agency's zone (`web/src/clock.ts`) | the machine's clock, in the zone of `--tz` or the session's network |
 
@@ -48,8 +48,8 @@ Each upstream answers two kinds of read:
 
 The server answers the same read paths as an export. So one version of
 the page code reads from either upstream. Writes go only to the
-server, on its own paths (`POST /edits`, `POST /logs/<log>`,
-`POST /plans`).
+server, on its own paths (for example `POST /edits`,
+`POST /logs/<log>`, and `POST /plans`).
 
 ## What a host does
 
@@ -80,7 +80,8 @@ makes the call, and an op records the answer (D-228).
    working copy labels the answer with the time its upstream last
    confirmed it:
    - the server: `X-Store-Stale` and `X-Store-As-Of`;
-   - the service worker: `X-Served-From: last-copy`;
+   - the service worker: `X-Served-From: last-copy`, with the copy's
+     own `Date` header as its age;
    - the kit: `staleLabel` and `lastGoodText`.
 4. **The age passes down the chain.** A page that reads a stale answer
    from the server shows the server's as-of time. It does not show the
@@ -116,10 +117,11 @@ The hosts differ in three ways. Each difference is a design decision.
   no label (QAF-130).
 - The rules are written here, and implemented twice: in Go and in
   TypeScript. No suite runs them against each host.
-- Hosts apply domain rules. The pick's period is written in both Go
-  (`server/stops.go`, `server/plans.go`) and TypeScript (`planUntil`
-  in `web/src/engine.ts`). About six other rules are in single browser
-  hosts. The server sequences the steps of several writes between ops
+- Hosts apply domain rules. About six rules are in single browser
+  hosts, and the planning pages filter the published picks for their
+  timeline rows (`syncPlanRows`). A pick's period and what it reads of
+  the stops are one op (cap-stops `read_pick`, `export_pick`), asked
+  the same way by the server, the engine, and caps-run. The server sequences the steps of several writes between ops
   (`writePlan`, `checkStops`).
 - The server runs single-capability modules, and composes a flow that
   needs two capabilities in Go.

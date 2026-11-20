@@ -15,19 +15,16 @@ rules exposed the right way round.
 
 ## Scope
 
-1. **What a pick reads of the stops.** One op of cap-stops, over the
-   network, the stops document, and the published plans. It answers the
-   pick's period (retired picks dropped, this pick put in place), each
-   stop's record on the pick's first date, the visit warnings, and the
-   export's versions. `transit-stops` links `transit-plans`. It
-   replaces:
-   - in Go: `windows`, `readPick` (`server/stops.go`), and
-     `stopsVersions` (`server/plans.go`);
-   - in the engine: `planUntil`, `stopWarnings`, and
-     `withStopVersions` (`web/src/engine.ts`);
-   - in service change and service design: `syncPlanRows`, which
-     filters the published picks and reads each pick's frame for
-     `plans.periods` and `plans.validate`.
+1. **The timeline rows in the planning pages.** In service change and
+   service design, `syncPlanRows` filters the published picks by
+   status, decides which plans on the device count as published, and
+   reads each plan's frame for cap-plans `periods`, `validate`, and
+   `resolve`. One op of cap-plans answers the timeline over the plans
+   on the device and the published set: which are published, the
+   picks not yet on the device, the periods, the chain's issues, and
+   the pick in force. The pages route the answer. (A pick's period and
+   what it reads of the stops are already one op: cap-stops `read_pick`
+   and `export_pick`.)
 2. **The other rules in the browser hosts.** Each becomes an op, or a
    field of an answer that the host already asks for:
    - service change `stampAsPick`: an imported feed becomes a pick on
@@ -40,20 +37,21 @@ rules exposed the right way round.
      gap informs, explains, and does;
    - disruptions `fillTemplate`: the dates and the routes and stops
      without repeats that fill a template;
-   - stops `newStop` and `putRequest`: an id must be new before a
-     write. The receive path already refuses a repeated id, so the host
-     check goes;
+   - stops `newStop` and `putRequest`: a new stop or a new request must
+     not take an id already held. The receive path does not refuse it,
+     because an event added to a stop that exists, and a request put
+     in place of one held, are both ordinary writes. The intent "new"
+     becomes part of the op (cap-stops and cap-requests refuse a held
+     id when the write says it is new);
    - stops `OPEN_WORK` and `STATUSES`: which requests are open work,
-     and the stop statuses, from cap-requests `vocabulary` and cap-stops.
+     and the stop statuses. cap-requests `vocabulary` answers the
+     request statuses, but not which of them are open work. cap-stops
+     has no op that lists the stop statuses.
 3. **The work order system.** `handleWorkOrder` (`server/workorders.go`)
    reads a request's held work order out of the document in Go. An op
    answers what to send the system for a request. The host makes the
    call. `record_work_order` records the answer, as it does now.
 4. **The library edges.**
-   - `transit-network` stops depending on `transit-stops`. The join
-     between a network stop and a stops record
-     (`transit-network/src/stop_record.rs`) moves to `transit-stops`,
-     which then depends on `transit-network`.
    - `transit-dispatch` splits in two: the operator's day, and the
      rider's own documents (the watchlist and its chain, the device
      records).
@@ -75,13 +73,8 @@ screen).
 
 ## Done when
 
-- caps-run gives the same stop warnings and export versions for a
-  pick as the server and the service change page, in one test over
-  the fixture.
 - `just test` finds no `"retired"` or `"published"` status test in
-  `server/*.go` or `web/src/engine.ts`, and no `planUntil`.
+  `web/src/uis/*/host.svelte.ts`.
 - Each rule in item 2 has a law test in its library and a dispatch
   test at its op. The host calls the op.
-- `arch-gates` shows `transit-network` with no dependency on
-  `transit-stops`.
 - The `hosts.md` list of rules in hosts is empty.

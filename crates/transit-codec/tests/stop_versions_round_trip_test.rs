@@ -5,7 +5,7 @@
 //! document it was made from (a made id reads back as a version).
 
 use chrono::NaiveDate;
-use transit_network::stop_record::{export_versions, import_events, seed};
+use transit_stops::stop_record::{export_versions, import_events, seed};
 use transit_network::Network;
 use transit_stops::{Event, EventKind};
 
