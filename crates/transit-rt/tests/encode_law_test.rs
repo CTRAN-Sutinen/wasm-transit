@@ -11,7 +11,8 @@ use prost::Message;
 use proptest::prelude::*;
 use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlert, ServiceAlerts};
 use transit_codec::Boundary;
-use transit_live::{AlertCause, AlertEffect, AlertPeriod, AlertScope, AlertSeverity, LiveAlert, OnTimeWindow};
+use transit_live::{AlertScope, LiveAlert, OnTimeWindow};
+use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use transit_network::{Departs, Network};
 use transit_rt::{decode_overview, encode_alerts, live_day};
 

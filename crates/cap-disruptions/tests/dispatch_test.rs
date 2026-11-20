@@ -101,3 +101,19 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(err(json!({ "op": "gaps", "network_hash": "sha256:nope", "date": "2026-11-19", "now": 0 })).contains("sha256:nope"));
     assert!(err(with("today", json!({ "date": "11/19" }))).contains("11/19"));
 }
+
+/// A new alert starts from the gap it is for, and from nothing without
+/// one (D-228).
+#[test]
+fn a_new_alert_starts_from_its_gap() {
+    let gaps = ok(with("gaps", json!({})));
+    let gap = &gaps["gaps"][0];
+    let start = ok(with("start_alert", json!({ "source": gap["source"] })));
+    assert_eq!(start["alert"]["effect"], gap["effect"]);
+    assert_eq!(start["alert"]["informed"], gap["informed"]);
+    assert_eq!(start["alert"]["explains"], json!([gap["source"]]));
+    assert_eq!(start["alert"]["status"], "draft");
+    assert!(start["preview_stop"].is_string());
+    let blank = ok(with("start_alert", json!({})));
+    assert!(blank["alert"]["explains"].is_null() && blank.get("preview_stop").is_none());
+}

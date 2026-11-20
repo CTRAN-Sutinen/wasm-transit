@@ -395,6 +395,41 @@ pub fn disruptions(i: &Inputs) -> Vec<Disruption> {
     out
 }
 
+/// A new alert, and the stop its rider preview opens at (D-228).
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct AlertStart {
+    /// A draft, told to riders from `now` until someone sets an end.
+    pub alert: transit_alerts::ServiceAlert,
+    /// The stop the preview opens at: a stop the gap takes away, else its
+    /// trip's first stop as the day names it. None with no gap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub preview_stop: Option<String>,
+}
+
+/// What a new alert starts from. With a `source` that is a gap (no
+/// alert explains it), the alert has the gap's effect, informs the riders
+/// the gap names, and explains the source. With a `source` that an alert
+/// explains already, it is blank and explains the source. With no
+/// source, it is blank. The header is left for the writer, and the
+/// alert is told from the host's clock.
+pub fn start_alert(i: &Inputs, source: Option<&AlertSource>) -> AlertStart {
+    let gap = source.and_then(|s| gaps(i).into_iter().find(|g| &g.source == s));
+    let alert = transit_alerts::ServiceAlert {
+        effect: gap.as_ref().map_or(AlertEffect::Unknown, |g| g.effect),
+        header: vec![transit_alerts::AlertText::default()],
+        informed: gap.as_ref().map(|g| g.informed.clone()).unwrap_or_default(),
+        explains: source.cloned().into_iter().collect(),
+        communication: vec![transit_alerts::AlertPeriod { start: Some(i.now), end: None }],
+        ..Default::default()
+    };
+    let preview_stop = gap.and_then(|g| {
+        g.stops.first().cloned().or_else(|| disruptions(i).into_iter().find(|d| d.source == g.source).and_then(|d| d.first_stop).map(|s| s.id))
+    });
+    AlertStart { alert, preview_stop }
+}
+
 /// What no alert explains, with what an alert about each starts from,
 /// in the order of [`disruptions`].
 pub fn gaps(i: &Inputs) -> Vec<AlertGap> {

@@ -9,7 +9,7 @@
 
 use proptest::prelude::*;
 use transit_alerts::*;
-use transit_live::{AlertEffect, AlertPeriod};
+use transit_alerts::{AlertEffect, AlertPeriod};
 
 fn network() -> transit_network::Network {
     let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
@@ -274,6 +274,7 @@ fn the_fill_writes_names_and_dates_in_the_agencys_words() {
     let input = FillInput {
         stops: vec!["A".into()],
         routes: vec!["10".into(), "20".into(), "40".into()],
+        informed: vec![],
         start_date: Some("2026-08-17".into()),
         end_date: Some("2026-11-20".into()),
     };
@@ -284,6 +285,24 @@ fn the_fill_writes_names_and_dates_in_the_agencys_words() {
     assert_eq!(f.effect, AlertEffect::NoService);
     let two = fill(&template("{stop}"), &net, &FillInput { stops: vec!["A".into(), "B".into()], ..Default::default() });
     assert_eq!(two.header[0].text, "Main & 1st and Main & 2nd");
+}
+
+/// The blanks are filled from the alert's own informed entities (D-228):
+/// each route and stop is named once, in the order first informed, beside
+/// any the input names itself. No host collects them.
+#[test]
+fn the_fill_names_each_informed_route_and_stop_once() {
+    use transit_alerts::AlertEntity;
+    let net = network();
+    let entity = |route: Option<&str>, stop: Option<&str>| AlertEntity { route: route.map(Into::into), stop: stop.map(Into::into), ..Default::default() };
+    let informed = vec![entity(Some("10"), None), entity(Some("20"), Some("A")), entity(Some("10"), Some("B")), entity(None, Some("A"))];
+    let t = AlertTemplate { description: text("Use {route} near {stop}."), ..template("{stop}") };
+    let f = fill(&t, &net, &FillInput { informed, ..Default::default() });
+    assert_eq!(f.header[0].text, "Main & 1st and Main & 2nd");
+    assert_eq!(f.description[0].text, "Use 10 and 20 near Main & 1st and Main & 2nd.");
+    // an entity with neither a route nor a stop (the whole agency) names none
+    let none = fill(&template("{stop}"), &net, &FillInput { informed: vec![AlertEntity::default()], ..Default::default() });
+    assert_eq!(none.unfilled.iter().map(|u| u.blank.as_str()).collect::<Vec<_>>(), ["stop"]);
 }
 
 proptest! {

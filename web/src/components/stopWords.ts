@@ -61,6 +61,7 @@ const PROBLEMS: Record<string, string> = {
   unknown_stop: "it names a stop that is not recorded",
   replaces_itself: "a stop cannot replace itself",
   bad_answer: "a survey answer is not one the question takes",
+  stop_exists: "there is already a stop with that id. Choose another id",
 };
 
 export function problemWords(kind: string): string {
@@ -184,6 +185,8 @@ export function requestProblemWords(p: { kind: string; field?: string; value?: s
       return "the request needs an id";
     case "no_stop":
       return "the request names no stop";
+    case "id_taken":
+      return "there is already a request with that id. Choose another id";
     case "unknown":
       return `${(p.field ?? "").replaceAll("_", " ")} "${p.value}" is not one this app knows`;
     case "bad_date":

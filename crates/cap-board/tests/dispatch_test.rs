@@ -281,7 +281,7 @@ fn an_invalid_edit_record_moves_nothing() {
 // The watchlist document — the personal parameter of the same
 // question. The board reads the current version; an older one is
 // refused at the load, naming the migration (its laws are
-// transit-dispatch's, watchlist_migration_test.rs).
+// transit-rider's, watchlist_migration_test.rs).
 // ---------------------------------------------------------------------
 
 fn watchlist() -> Watchlist {

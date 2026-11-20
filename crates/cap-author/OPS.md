@@ -118,3 +118,11 @@ Timetable gestures. These address a route and a direction, and a service type fo
 - `adjust_running_time {route, direction, service_type, from_secs, to_secs, delta_secs}`: the direction's one-start trips under that service type, departing from `from_secs` until before `to_secs`, run `delta_secs` longer. A negative value makes them shorter. The change is in proportion along each trip. Each trip keeps its id and its start. Other service types, frequency trips, and the profiles are not changed.
 - `insert_direction_stop {route, direction, stop, after}`: visit `stop` right after the stop `after`, on every pattern of the direction that visits `after` before its end.
 - `remove_direction_stop {route, direction, stop}`: stop visiting `stop`, on every pattern of the direction. It is refused when the stop is an endpoint.
+
+## stamp_pick
+
+What is an imported feed as a pick? `stamp_pick` stamps the registered network as a pick (D-140): one `set_plan` edit under `id` and `name`, effective from the feed's first service date (the earliest date any service type with trips runs).
+
+A document that is a pick already (it carries a plan id) is not stamped. Neither is a feed that runs no service, because it has no date. It comes back as it was, and `stamped` is false.
+
+The answer is the next document, registered under its own hash, with `issues` and `warnings` as `apply` answers them. The host gives the id and the name. It applies no rule of its own.

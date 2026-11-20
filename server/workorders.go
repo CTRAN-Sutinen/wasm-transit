@@ -8,6 +8,10 @@ package main
 // checked as any write) as one entry of the stops log (stopslog.go),
 // the writer `work-orders:<system>`.
 //
+// The call splits in three (D-228): cap-requests `work_order_call` answers
+// what to send, this host makes the call, and `record_work_order`
+// records the answer. The host reads nothing out of the document.
+//
 // -work-orders names the adapter: unset, none is configured — the
 // manifest offers nothing and a request's work order is entered by
 // hand; `stub:` (or `stub:<name>`) a stand-in that opens STUB-<request>
@@ -120,21 +124,28 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no stop requests yet", http.StatusNotFound)
 		return
 	}
-	var parsed struct {
-		Requests map[string]struct {
-			WorkOrder *workOrder `json:"work_order"`
-		} `json:"requests"`
+	// cap-requests answers what to send the system for the request: the
+	// request for an open, the work order it holds for a refresh.
+	var call struct {
+		Call struct {
+			Request   json.RawMessage `json:"request"`
+			WorkOrder *workOrder      `json:"work_order"`
+		} `json:"call"`
 	}
-	var raw struct {
-		Requests map[string]json.RawMessage `json:"requests"`
-	}
-	json.Unmarshal(doc, &parsed)
-	json.Unmarshal(doc, &raw)
-	held, ok := parsed.Requests[req.Request]
-	if !ok {
-		http.Error(w, "no request "+req.Request, http.StatusNotFound)
+	err = s.withRequests(ctx, func(host *WasmHost) error {
+		var loaded struct {
+			RequestsHash string `json:"requests_hash"`
+		}
+		if err := host.InvokeBytes(ctx, opLoadStopRequests, doc, &loaded); err != nil {
+			return err
+		}
+		return host.Invoke(ctx, map[string]any{"op": "work_order_call", "requests_hash": loaded.RequestsHash, "id": req.Request, "action": req.Action}, &call)
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	held := call.Call
 	// An outbox's resend (D-189): a key that landed answers the work
 	// order the request holds, and the system is not asked again, so a
 	// lost answer never opens a second work order.
@@ -155,7 +166,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	var answer workOrder
 	if req.Action == "open" {
-		answer, err = s.workOrders.Open(ctx, req.Request, raw.Requests[req.Request])
+		answer, err = s.workOrders.Open(ctx, req.Request, held.Request)
 	} else {
 		var ref workOrder
 		if held.WorkOrder != nil {

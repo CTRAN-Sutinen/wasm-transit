@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/transit-network",
+    "crates/transit-rider",
     "crates/transit-codec",
     "crates/transit-router",
     "crates/transit-rt",

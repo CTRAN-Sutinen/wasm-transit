@@ -521,6 +521,9 @@ pub enum Status {
 }
 
 impl Status {
+    /// Every status, in the order a stop goes through them.
+    pub const ALL: [Status; 6] = [Status::Planned, Status::Permitted, Status::Built, Status::InService, Status::Suspended, Status::Retired];
+
     /// The name the document writes (`in_service`).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -671,6 +674,9 @@ pub enum Problem {
     ReplacesItself,
     /// A second event in the stop with an id already used (D-166).
     DuplicateEventId { id: String },
+    /// A write that says the stop is new, under an id the document
+    /// holds (D-228).
+    StopExists,
 }
 
 impl fmt::Display for Refusal {
@@ -695,6 +701,7 @@ impl fmt::Display for Refusal {
             Problem::UnknownStop { stop } => format!("replaces {stop:?}, which is not in the document"),
             Problem::ReplacesItself => "replaces itself".into(),
             Problem::DuplicateEventId { id } => format!("has the id {id:?}, which an event above it has"),
+            Problem::StopExists => "is new, but the document already holds a stop with its id".into(),
         };
         match self.event {
             Some(i) => write!(f, "stop {:?} event {i} {what}", self.stop),
@@ -825,6 +832,13 @@ impl Stops {
     /// so a finer grain changes this function and not its callers.
     pub fn served(&self, id: &str, date: NaiveDate, _secs: u32) -> bool {
         self.stop_on(id, date).is_some_and(|s| s.status == Status::InService)
+    }
+
+    /// The refusal of a write that says stop `id` is new, when the
+    /// document holds that id (D-228). An event added to a held stop is
+    /// an ordinary write, so the intent "new" is stated by the writer.
+    pub fn refuse_taken(&self, id: &str) -> Option<Refusal> {
+        self.stops.contains_key(id).then(|| Refusal { stop: id.to_string(), event: None, problem: Problem::StopExists })
     }
 
     /// The document with `event` added to stop `id` in its place by

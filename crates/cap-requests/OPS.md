@@ -72,12 +72,26 @@ Beside the list, the answer holds counts. The counts are of every request in the
 
 One change: the document with `request` placed under `id`. A new request is added. A request already held under that id is replaced whole. Every other request stays as it was. With no `requests_hash`, the request is the first request of a new document.
 
+With `new` true, the write says the request is new. An id that the document holds is then refused (`id_taken`), and nothing is placed. Without `new`, `put` replaces the request held.
+
 The op then checks the result as `validate` checks a write. There are two outcomes:
 
 - Every refusal is listed and there is no document.
 - There is no refusal. The document is registered and answered with its `requests_hash`.
 
 A page writes the answer through the deployment's receive path (`POST /stop-requests`), which checks it again.
+
+## work_order_call
+
+What does the host send the work order system for request `id`? The op answers it. The host makes the call, and `record_work_order` records the answer. The host applies no rule of its own.
+
+`action` is `open` or `refresh`. The answer is `call`:
+
+- `action`: the action, as asked.
+- `request`: for `open`, the request as the document holds it.
+- `work_order`: the work order the request holds. For `refresh`, this is what the system reads the status of. It is absent when the request holds none.
+
+A request that the document does not hold is an error. So is an action that is not `open` or `refresh`.
 
 ## record_work_order
 
@@ -100,6 +114,7 @@ The lists that a request's answers come from. The op reads no document.
 
 - jobs: `new`, `reinstall`, `relocate_remove`, `repair_improve`, `temporary`.
 - statuses: `drafted`, `submitted`, `ordered`, `completed`, `cancelled`.
+- open_statuses: `drafted`, `submitted`, `ordered`. These are the statuses of work still in flight, which the work queue opens on.
 - sides: `north`, `south`, `east`, `west`.
 - directions: `northbound`, `southbound`, `eastbound`, `westbound`, `clockwise`, `counterclockwise`.
 - markings: `hub`, `curb_mark`, `stake`, `other`.

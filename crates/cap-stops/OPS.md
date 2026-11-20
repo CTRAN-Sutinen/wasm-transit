@@ -104,6 +104,8 @@ What is the document after one more event? `add_event` adds `event` to stop `sto
 - Every other event keeps its order.
 - An id that the document does not hold begins a stop.
 
+With `new` true, the write says the stop is new. An id that the document holds is then refused (`stop_exists`), and nothing is added. Without `new`, an event added to a held stop is an ordinary write.
+
 Then `add_event` checks the result as a write is checked (`validate`). It answers one of two things:
 
 - every refusal, each naming its stop, event, and problem, and no document;
@@ -128,6 +130,12 @@ Then it checks the result as a write is checked. It answers one of two things:
 A stop or an event id that the document does not hold is an error.
 
 With `saw`, the canonical hash of the event as the writer read it, the correction runs only over that event. When the document holds the event changed since, the answer is `conflict` with the event's id, and nothing is corrected (D-166). So two writers who change different events both land, and two who change one event are told which.
+
+## vocabulary
+
+The lists that a stop's answers come from. The op reads no document.
+
+- statuses: `planned`, `permitted`, `built`, `in_service`, `suspended`, `retired`, in the order a stop goes through them.
 
 ## read_records
 

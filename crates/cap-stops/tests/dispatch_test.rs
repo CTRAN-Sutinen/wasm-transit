@@ -451,3 +451,22 @@ fn a_pick_reads_the_stops_over_the_period_the_published_set_gives() {
     let none = ok(json!({"op": "read_pick", "network_hash": plain, "stops_hash": stops_hash, "published": published}));
     assert!(none.get("period").is_none() && none["warnings"] == json!([]) && none["network_hash"] == plain);
 }
+
+/// A write that says the stop is new is refused a held id; an event added
+/// to a held stop without that is an ordinary write (D-228). The
+/// vocabulary lists the statuses in order.
+#[test]
+fn a_new_stop_is_refused_a_held_id_and_the_vocabulary_lists_the_statuses() {
+    let network_hash = sample_network()["network_hash"].clone();
+    let seeded = ok(json!({"op": "seed", "network_hash": network_hash}));
+    let event = json!({"on": "2026-10-01", "event": "changed", "name": "A Street Station"});
+    let refused = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "A", "event": event, "new": true}));
+    assert_eq!(refused["refusals"], json!([{"stop": "A", "problem": {"kind": "stop_exists"}}]));
+    assert!(refused["stops_hash"].is_null());
+    let ordinary = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "A", "event": event}));
+    assert_eq!(ordinary["refusals"], json!([]));
+    let began = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "N9", "new": true,
+        "event": {"on": "2026-10-01", "event": "planned", "lat": 45.5, "lon": -122.3}}));
+    assert_eq!(began["refusals"], json!([]));
+    assert_eq!(ok(json!({"op": "vocabulary"}))["statuses"], json!(["planned", "permitted", "built", "in_service", "suspended", "retired"]));
+}

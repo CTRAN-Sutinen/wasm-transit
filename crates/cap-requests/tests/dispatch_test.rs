@@ -86,6 +86,24 @@ fn the_vocabulary_is_the_librarys() {
     let v = ok(json!({ "op": "vocabulary" }));
     assert_eq!(v["jobs"], json!(transit_requests::JOBS));
     assert_eq!(v["statuses"], json!(transit_requests::STATUSES));
+    assert_eq!(v["open_statuses"], json!(["drafted", "submitted", "ordered"]));
+}
+
+/// A write that says the request is new is refused a held id; an
+/// ordinary put replaces it (D-228).
+#[test]
+fn a_new_request_is_refused_a_held_id() {
+    let held = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "drafted" } }));
+    let refused = ok(json!({ "op": "put", "requests_hash": held["requests_hash"], "id": "R-1", "new": true,
+        "request": { "stop": "N2", "job": "new", "status": "drafted" } }));
+    assert_eq!(refused["refusals"], json!([{ "request": "R-1", "problem": { "kind": "id_taken" } }]));
+    assert!(refused["requests_hash"].is_null());
+    let free = ok(json!({ "op": "put", "requests_hash": held["requests_hash"], "id": "R-2", "new": true,
+        "request": { "stop": "N2", "job": "new", "status": "drafted" } }));
+    assert_eq!(free["refusals"], json!([]));
+    let replaced = ok(json!({ "op": "put", "requests_hash": held["requests_hash"], "id": "R-1",
+        "request": { "stop": "N2", "job": "new", "status": "drafted" } }));
+    assert_eq!(replaced["requests"]["requests"]["R-1"]["stop"], "N2");
 }
 
 #[test]
@@ -138,4 +156,18 @@ fn the_document_and_its_log_records_round_trip() {
     let back = ok(json!({ "op": "log_document", "records": held, "document": {"version": 1, "value": next[1]["records"]["document"]} }));
     assert_eq!(back["requests_hash"], v["document_hash"]);
     assert_eq!(back["document"], v["document"]);
+}
+
+/// The call to the work order system is an op's answer (D-228): the
+/// request for an open, the held work order for a refresh.
+#[test]
+fn the_work_order_call_answers_what_to_send() {
+    let held = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "submitted" } }));
+    let hash = held["requests_hash"].clone();
+    let open = ok(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-1", "action": "open" }));
+    assert_eq!(open["call"], json!({ "action": "open", "request": { "stop": "N1", "job": "new", "status": "submitted" } }));
+    let refresh = ok(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-1", "action": "refresh" }));
+    assert_eq!(refresh["call"], json!({ "action": "refresh" }));
+    assert!(run(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-9", "action": "open" }))["error"].is_string());
+    assert!(run(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-1", "action": "close" }))["error"].is_string());
 }

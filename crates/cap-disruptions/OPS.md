@@ -29,3 +29,9 @@ The day by route. Each route with a disruption or a late trip is listed once, by
 ## gaps
 
 What no alert explains on the day, with what an alert about each starts from: its source, effect, route or trip and start, stops, and dates, and the riders it informs (`informed`): a cancelled trip's instance on its route; a detour's route, and its route at each stop it skips; a closed stop. The order is the order of `today`'s disruptions before they are grouped: the edit document's, in its order; then the feed's cancels, by start; then the suspended stops, by id.
+
+## start_alert
+
+What does a new alert start from? With a `source` that is a gap (no alert explains it), the alert has the gap's effect, informs the riders the gap names, and explains the source. With a `source` that an alert explains already, the alert is blank and explains the source. With no `source`, the alert is blank.
+
+The alert is a draft. Its cause and severity are unknown, and its header is one blank text for the writer. It is told to riders from `now` until someone sets an end. `preview_stop` is the stop that the rider preview opens at: a stop the gap takes away, else the first stop of its trip, as `today` names it. It is absent when there is no gap.

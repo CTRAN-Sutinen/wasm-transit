@@ -777,37 +777,19 @@ export function showBus(at: { lat: number; lon: number }): void {
 // the alert form
 // ---------------------------------------------------------------------
 
-/// A new alert: blank, or started from a gap (its effect, the riders
-/// it informs, and what it explains). It is told to riders from now
-/// until someone sets an end.
-export function newAlert(gap: AlertGap | null = null): Promise<void> {
-  const alert: ServiceAlert = {
-    status: "draft",
-    cause: "unknown",
-    effect: gap?.effect ?? "unknown",
-    severity: "unknown",
-    header: [{ text: "" }],
-    informed: gap ? gap.informed : [],
-    explains: gap ? [gap.source] : [],
-    communication: [{ start: dz.now, end: null }],
-  };
-  // The preview opens at a stop the gap takes away, else at its trip's
-  // first stop, as the day names it.
-  const key = gap ? JSON.stringify(gap.source) : "";
-  const first = gap ? dz.day?.routes.flatMap((r) => r.disruptions).find((d) => JSON.stringify(d.source) === key)?.first_stop?.id : undefined;
-  return openForm({ id: newId("alert"), fresh: true, alert, template: "", unfilled: [], startsNow: true }, gap?.stops?.[0] ?? first ?? null);
+/// A new alert, from what cap-disruptions `start_alert` answers: blank,
+/// or started from a disruption's gap (its effect, the riders it
+/// informs, and what it explains), told to riders from now until someone
+/// sets an end. The preview opens at the stop the op names.
+export async function newAlert(source: AlertSource | null = null): Promise<void> {
+  if (!network) return;
+  const start = await ask("disruptions", "start_alert", { ...documents(), source: source ?? undefined });
+  return openForm({ id: newId("alert"), fresh: true, alert: start.alert, template: "", unfilled: [], startsNow: true }, start.preview_stop ?? null);
 }
 
-/// An alert started from a disruption opened: the day's gap with its
-/// source (disruptions `gaps`), or a blank alert that explains it when
-/// an alert explains it already.
-export async function startAlertFor(source: AlertSource): Promise<void> {
-  if (!network) return;
-  const key = JSON.stringify(source);
-  const gap = (await ask("disruptions", "gaps", documents())).gaps.find((g) => JSON.stringify(g.source) === key) ?? null;
-  if (gap) return newAlert(gap);
-  await newAlert(null);
-  if (dz.form) await changeAlert({ ...dz.form.alert, explains: [source] });
+/// An alert started from a disruption opened (disruptions `start_alert`).
+export function startAlertFor(source: AlertSource): Promise<void> {
+  return newAlert(source);
 }
 
 /// An alert of the agency's list, opened to edit.
@@ -899,7 +881,6 @@ export function setPreviewQuery(text: string): Promise<void> {
 export async function fillTemplate(template: string): Promise<void> {
   const form = dz.form;
   if (!form || !network || !templates) return;
-  const informed = form.alert.informed;
   const period = form.alert.communication?.[0];
   const dateOf = (unix: number | null | undefined) => (unix == null ? undefined : zonedDate(unix));
   const { filled } = await ask("alerts", "fill", {
@@ -907,8 +888,7 @@ export async function fillTemplate(template: string): Promise<void> {
     template,
     network_hash: network,
     input: {
-      routes: [...new Set(informed.map((e) => e.route).filter((x): x is string => !!x))],
-      stops: [...new Set(informed.map((e) => e.stop).filter((x): x is string => !!x))],
+      informed: form.alert.informed,
       start_date: dateOf(period?.start),
       end_date: dateOf(period?.end),
     },

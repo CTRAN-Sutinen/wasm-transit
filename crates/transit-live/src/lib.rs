@@ -23,6 +23,7 @@
 //! nothing here reads GTFS.
 
 use serde::{Deserialize, Serialize};
+use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use ts_rs::TS;
 
 /// The agency's on-time policy: how early and how late still count
@@ -160,68 +161,6 @@ pub struct LiveVehicle {
     /// Its trip's worst stated delay (the same headline as the trip).
     pub delay_secs: Option<i32>,
     pub status: LiveStatus,
-}
-
-/// Why an alert was raised (GTFS-rt's cause, by name).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-#[serde(rename_all = "snake_case")]
-pub enum AlertCause {
-    #[default]
-    Unknown,
-    Other,
-    TechnicalProblem,
-    Strike,
-    Demonstration,
-    Accident,
-    Holiday,
-    Weather,
-    Maintenance,
-    Construction,
-    PoliceActivity,
-    MedicalEmergency,
-    SpecialEvent,
-}
-
-/// What an alert does to service (GTFS-rt's effect, by name).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-#[serde(rename_all = "snake_case")]
-pub enum AlertEffect {
-    NoService,
-    ReducedService,
-    SignificantDelays,
-    Detour,
-    AdditionalService,
-    ModifiedService,
-    Other,
-    #[default]
-    Unknown,
-    StopMoved,
-    NoEffect,
-    AccessibilityIssue,
-}
-
-/// How serious the agency says an alert is.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-#[serde(rename_all = "snake_case")]
-pub enum AlertSeverity {
-    #[default]
-    Unknown,
-    Info,
-    Warning,
-    Severe,
-}
-
-/// A span of time in Unix seconds; an open end is unbounded.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
-pub struct AlertPeriod {
-    #[ts(type = "number | null")]
-    pub start: Option<u64>,
-    #[ts(type = "number | null")]
-    pub end: Option<u64>,
 }
 
 /// One informed entity, resolved: every present field must match

@@ -547,7 +547,9 @@ Its HTTP surface:
   `{"request": "<id>", "action": "open"|"refresh"}`. The work order
   system's adapter (D-165, `docs/architecture/adjacent-systems.md`)
   opens a work order for the request, or reads its status. cap-requests
-  `record_work_order` writes the answer on the request (dated the
+  `work_order_call` answers what to send it (the request, or the work
+  order the request holds), and the server reads nothing out of the
+  document. cap-requests `record_work_order` writes the answer on the request (dated the
   server's today) over the requests at the head when the write runs, as
   one entry of the stops log. The writer is `work-orders:<system>`.
   - 200 `{requests_hash, work_order, landed?}`. A body with a `key`

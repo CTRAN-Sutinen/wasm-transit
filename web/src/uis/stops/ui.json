@@ -25,6 +25,7 @@
     "stops.feed_events",
     "stops.import_events",
     "stops.questions",
+    "stops.vocabulary",
     "requests.requests_for",
     "requests.list",
     "requests.put",

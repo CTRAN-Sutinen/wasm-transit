@@ -5,6 +5,7 @@
   /// A RENDER component.
   import { openText, timeText, whenText } from "./disruptionsFormat";
   import type { AlertGap } from "../types/AlertGap";
+  import type { AlertSource } from "../types/AlertSource";
   import type { AlertList } from "../types/AlertList";
   import type { AlertRow } from "../types/AlertRow";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
@@ -27,7 +28,7 @@
     zone: string | undefined;
     busy: boolean;
     gapsOff: string;
-    onstart: (gap: AlertGap | null) => void;
+    onstart: (source: AlertSource | null) => void;
     onedit: (id: string, alert: ServiceAlert) => void;
     onend: (id: string) => void;
   } = $props();
@@ -81,7 +82,7 @@
     {#each gaps as g (JSON.stringify(g.source))}
       <div class="row">
         <span>{gapTitle(g)}</span>
-        <button type="button" onclick={() => onstart(g)} data-testid="start-alert">Start alert</button>
+        <button type="button" onclick={() => onstart(g.source)} data-testid="start-alert">Start alert</button>
       </div>
     {/each}
   </section>

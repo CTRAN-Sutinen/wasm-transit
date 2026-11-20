@@ -16,7 +16,7 @@
 //!   and pre-alignment included — → v2, tagged.
 //! * `edit_records` (transit-sync): v1, the bare array → v2, the
 //!   tagged document.
-//! * `watchlist` (transit-dispatch): v1 notes and colors → v2 labels,
+//! * `watchlist` (transit-rider): v1 notes and colors → v2 labels,
 //!   the colors dropped and reported.
 //! * `service_alerts` (transit-alerts): v1 → v2, where `explains` gains
 //!   a trip instance (D-216). Every v1 document is a v2 document.
@@ -97,7 +97,7 @@ pub enum Response {
 pub const KINDS: &[(&str, u32)] = &[
     (transit_network::KIND, transit_network::SCHEMA_VERSION),
     (transit_sync::KIND, transit_sync::SCHEMA_VERSION),
-    (transit_dispatch::watchlist::KIND, transit_dispatch::watchlist::SCHEMA_VERSION),
+    (transit_rider::watchlist::KIND, transit_rider::watchlist::SCHEMA_VERSION),
     (transit_alerts::version::KIND, transit_alerts::ALERTS_VERSION),
 ];
 
@@ -112,7 +112,7 @@ fn version_of(kind: &str, doc: &serde_json::Value) -> Result<u32, String> {
     match kind {
         transit_network::KIND => transit_network::schema_version_of(doc),
         transit_sync::KIND => transit_sync::version::schema_version_of(doc),
-        transit_dispatch::watchlist::KIND => transit_dispatch::watchlist::schema_version_of(doc),
+        transit_rider::watchlist::KIND => transit_rider::watchlist::schema_version_of(doc),
         transit_alerts::version::KIND => transit_alerts::version::schema_version_of(doc),
         _ => current(kind),
     }
@@ -130,8 +130,8 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
             let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
             Ok((doc, notes.collect()))
         }
-        transit_dispatch::watchlist::KIND => {
-            let (doc, notes) = transit_dispatch::watchlist::migrate_to(doc, to)?;
+        transit_rider::watchlist::KIND => {
+            let (doc, notes) = transit_rider::watchlist::migrate_to(doc, to)?;
             let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
             Ok((doc, notes.collect()))
         }
@@ -157,7 +157,7 @@ fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), St
     match kind {
         transit_network::KIND => typed::<transit_network::Network>(doc),
         transit_sync::KIND => typed::<transit_sync::EditDocument>(doc),
-        transit_dispatch::watchlist::KIND => typed::<transit_dispatch::watchlist::Watchlist>(doc),
+        transit_rider::watchlist::KIND => typed::<transit_rider::watchlist::Watchlist>(doc),
         transit_alerts::version::KIND => typed::<transit_alerts::ServiceAlerts>(doc),
         _ => loose(doc),
     }

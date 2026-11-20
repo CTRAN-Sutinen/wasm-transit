@@ -7,6 +7,8 @@ license.workspace = true
 
 [dependencies]
 transit-version = { path = "../transit-version" }
+# The alert vocabulary (cause, effect, severity, period) a live alert uses.
+transit-alerts = { path = "../transit-alerts" }
 serde = { workspace = true }
 ts-rs = { workspace = true }
 schemars = { workspace = true }

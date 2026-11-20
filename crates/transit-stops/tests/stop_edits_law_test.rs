@@ -80,3 +80,23 @@ fn a_suspension_added_suspends_the_stop_and_a_new_id_begins_a_stop() {
     let fresh = doc.add_event("n", stop(1, 2, 1)[0].clone());
     assert_eq!(fresh.stops["n"], stop(1, 2, 1));
 }
+
+// A write that says a stop is new (D-228): the intent "new" is a refusal
+// of an id the document holds. An event added to a held stop is still an
+// ordinary write.
+
+#[test]
+fn a_new_stop_is_refused_an_id_the_document_holds() {
+    let doc = Stops::default().add_event("A", Event { event: EventKind::InService, lat: Some(45.0), lon: Some(-122.0), ..Event::default() });
+    let refusal = doc.refuse_taken("A").expect("A is held");
+    assert_eq!(refusal.stop, "A");
+    assert_eq!(refusal.problem, transit_stops::Problem::StopExists);
+    assert!(doc.refuse_taken("B").is_none(), "a free id is accepted");
+    assert!(Stops::default().refuse_taken("A").is_none());
+}
+
+#[test]
+fn every_status_is_listed_in_its_order() {
+    let names: Vec<&str> = Status::ALL.iter().map(|s| s.as_str()).collect();
+    assert_eq!(names, ["planned", "permitted", "built", "in_service", "suspended", "retired"]);
+}

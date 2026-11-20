@@ -211,6 +211,7 @@ fn work_rules_judge_the_waits_of_the_next_document() {
     let issues = |work_rules_hash: Option<String>| {
         match dispatch(Request::Apply { network_hash: base.clone(), edits: vec![], work_rules_hash }).unwrap() {
             Response::Apply { issues, .. } => issues,
+            _ => unreachable!("apply answers apply"),
         }
     };
     assert_eq!(issues(None), vec![], "block 400 keeps the floor at its terminal");
@@ -231,4 +232,16 @@ fn work_rules_judge_the_waits_of_the_next_document() {
     );
     let err = dispatch(Request::Apply { network_hash: base, edits: vec![], work_rules_hash: Some("sha256:nope".into()) }).unwrap_err();
     assert!(err.contains("load_work_rules"), "{err}");
+}
+
+/// An imported feed is stamped as a pick on its first service date; a
+/// pick is not stamped again (D-228).
+#[test]
+fn stamp_pick_stamps_a_feed_once() {
+    let base = load(network());
+    let Response::StampPick { network_hash, network, stamped, .. } = dispatch(Request::StampPick { network_hash: base.clone(), name: "Fall".into(), id: "fall".into() }).unwrap() else { panic!("stamp_pick") };
+    assert!(stamped && network.plan.id == "fall" && network.plan.effective_from.is_some());
+    let Response::StampPick { network_hash: again, stamped, .. } = dispatch(Request::StampPick { network_hash, name: "Other".into(), id: "other".into() }).unwrap() else { panic!("stamp_pick") };
+    assert!(!stamped, "a pick is not stamped again");
+    let _ = again;
 }

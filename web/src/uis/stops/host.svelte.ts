@@ -54,10 +54,7 @@ export type View = "stops" | "work" | "feed";
 /// How the Stops view shows its stops: on a map beside a list, or as a table.
 export type Mode = "map" | "table";
 
-export const STATUSES: Status[] = ["planned", "permitted", "built", "in_service", "suspended", "retired"];
 const VIEWS: View[] = ["stops", "work", "feed"];
-/// The work queue opens on what is still in flight.
-const OPEN_WORK = ["drafted", "submitted", "ordered"];
 
 export const st = $state({
   status: "Reading the stops…",
@@ -114,7 +111,9 @@ export const st = $state({
   /// lists their answers come from (`vocabulary`), and why the last
   /// request was refused.
   requests: [] as IdRequest[],
-  requestVocab: { jobs: [] as string[], statuses: [] as string[], sides: [] as string[], directions: [] as string[], markings: [] as string[] },
+  /// The stop statuses, in a stop's order (cap-stops `vocabulary`).
+  statusList: [] as Status[],
+  requestVocab: { jobs: [] as string[], statuses: [] as string[], openStatuses: [] as string[], sides: [] as string[], directions: [] as string[], markings: [] as string[] },
   requestRefusals: [] as RequestRefusal[],
   /// The work across every stop (cap-requests `list`): the requests at
   /// the statuses and jobs asked, every request counted by status, and
@@ -122,7 +121,7 @@ export const st = $state({
   work: [] as IdRequest[],
   workCounts: [] as RequestCount[],
   workStops: [] as StopOn[],
-  workStatuses: [...OPEN_WORK] as string[],
+  workStatuses: [] as string[],
   workJobs: [] as string[],
   /// Where the work order system's adapter answers (D-165); null when
   /// none is connected — a work order is then entered by hand.
@@ -334,7 +333,7 @@ function writeHash(replace = false): void {
   if (st.request) q.set("request", st.request);
   if (st.task) q.set("task", st.task);
   q.set("show", st.show.join(","));
-  if (st.workStatuses.join(",") !== OPEN_WORK.join(",")) q.set("work", st.workStatuses.join(","));
+  if (st.workStatuses.join(",") !== st.requestVocab.openStatuses.join(",")) q.set("work", st.workStatuses.join(","));
   if (st.workJobs.length) q.set("jobs", st.workJobs.join(","));
   const next = `#${q}`;
   if (location.hash === next) return;
@@ -366,11 +365,11 @@ function readHash(): string[] {
   }
   const show = q.get("show");
   if (show !== null) {
-    const wanted = STATUSES.filter((s) => show.split(",").includes(s));
+    const wanted = st.statusList.filter((s) => show.split(",").includes(s));
     if (wanted.join(",") !== st.show.join(",")) ((st.show = wanted), changed.push("show"));
   }
   const work = q.get("work");
-  const statuses = work === null ? [...OPEN_WORK] : work.split(",").filter(Boolean);
+  const statuses = work === null ? [...st.requestVocab.openStatuses] : work.split(",").filter(Boolean);
   const jobs = (q.get("jobs") ?? "").split(",").filter(Boolean);
   if (statuses.join(",") !== st.workStatuses.join(",") || jobs.join(",") !== st.workJobs.join(","))
     ((st.workStatuses = statuses), (st.workJobs = jobs), changed.push("work"));
@@ -395,6 +394,15 @@ export async function boot(): Promise<void> {
   onBuildReady(() => (st.updateReady = true));
   await Promise.all([readAgencyZone(), resumeSignIn()]);
   await openOutbox("stops", () => void request("stops-doc", "requests-doc", "open"));
+  // The vocabularies come first: the address names statuses from them.
+  if (await available("requests")) {
+    const v = await ask("requests", "vocabulary", {});
+    st.requestVocab = { jobs: v.jobs, statuses: v.statuses, openStatuses: v.open_statuses, sides: v.sides, directions: v.directions, markings: v.markings };
+    st.workStatuses = [...v.open_statuses];
+  }
+  if (await available("stops")) {
+    st.statusList = (await ask("stops", "vocabulary", {})).statuses as Status[];
+  }
   readHash();
   if (await available("stops")) {
     const q = await ask("stops", "questions", {});
@@ -403,10 +411,6 @@ export async function boot(): Promise<void> {
   const manifest = await deploymentManifest<{ services?: Record<string, { path: string }> }>().catch(() => null);
   st.workOrders = manifest?.services?.work_orders?.path ?? null;
   st.attachments = manifest?.services?.attachments?.path ?? null;
-  if (await available("requests")) {
-    const v = await ask("requests", "vocabulary", {});
-    st.requestVocab = { jobs: v.jobs, statuses: v.statuses, sides: v.sides, directions: v.directions, markings: v.markings };
-  }
   writeHash(true);
   await request("stops-doc", "requests-doc", "date", "show", "open", "work");
   say(
@@ -470,7 +474,7 @@ export function setDate(date: string): Promise<void> {
 }
 
 export function toggleStatus(status: Status): Promise<void> {
-  st.show = st.show.includes(status) ? st.show.filter((s) => s !== status) : STATUSES.filter((s) => s === status || st.show.includes(s));
+  st.show = st.show.includes(status) ? st.show.filter((s) => s !== status) : st.statusList.filter((s) => s === status || st.show.includes(s));
   return select("show");
 }
 
@@ -595,8 +599,9 @@ function eventLabel(event: Event): string {
 }
 
 /// One event added to the open stop (or to a new one). True when saved.
-export function addEvent(stopId: string, event: Event, done: string): Promise<boolean> {
-  return write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event }), stopId, { cap: "stops", op: "add_event", args: { stop_id: stopId, event } }, `${eventLabel(event)}: stop ${stopId}`);
+export function addEvent(stopId: string, event: Event, done: string, isNew = false): Promise<boolean> {
+  const fresh = isNew ? { new: true } : {};
+  return write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event, ...fresh }), stopId, { cap: "stops", op: "add_event", args: { stop_id: stopId, event, ...fresh } }, `${eventLabel(event)}: stop ${stopId}`);
 }
 
 /// An event that was wrong, corrected — or, with no event, taken out.
@@ -612,16 +617,13 @@ export function correctEvent(stopId: string, eventId: string, event: Event | nul
   );
 }
 
-/// A new stop: its first event, at the point chosen. An id the document
-/// already holds is another stop's — said beside the form.
+/// A new stop: its first event, at the point chosen. The write says the
+/// stop is new, so cap-stops refuses an id the document already holds
+/// (`stop_exists`), said beside the form.
 /// Saved, it may go straight on to request its installation.
 export async function newStop(stopId: string, event: Event, thenRequest: boolean): Promise<boolean> {
   st.taskError = "";
-  if (st.all.some((s) => s.stop_id === stopId) || (stopsDoc && (await ask("stops", "stop", { stops_hash: stopsDoc, stop_id: stopId, date: readDate() }).catch(() => null)))) {
-    st.taskError = `There is already a stop ${stopId}. Choose another id.`;
-    return false;
-  }
-  const saved = await addEvent(stopId, event, `Added stop ${stopId}.`);
+  const saved = await addEvent(stopId, event, `Added stop ${stopId}.`, true);
   if (saved && thenRequest) startTask("request:new");
   return saved;
 }
@@ -748,16 +750,14 @@ export function keepDraft(stopId: string, draft: SurveyDraft | null): void {
 /// One request placed by id — new, or replacing the one held — checked
 /// by cap-requests `put`, then stored by the deployment's receive path.
 /// Saved, the request's page shows it. True when saved.
-/// A new request (`fresh`) never replaces one held under its id.
+/// A new request (`fresh`) says so in the write: cap-requests refuses an
+/// id the document holds (`id_taken`) instead of replacing that request.
 export async function putRequest(id: string, req: StopRequest, done: string, fresh = false): Promise<boolean> {
-  if (fresh && requestsDoc && (await ask("requests", "list", { requests_hash: requestsDoc })).requests.some((r) => r.id === id)) {
-    st.taskError = `There is already a request ${id}. Choose another id.`;
-    return false;
-  }
-  return writeRequests(req.stop, id, done, (doc) => ask("requests", "put", { ...(doc ? { requests_hash: doc } : {}), id, request: req }), {
+  const isNew = fresh ? { new: true } : {};
+  return writeRequests(req.stop, id, done, (doc) => ask("requests", "put", { ...(doc ? { requests_hash: doc } : {}), id, request: req, ...isNew }), {
     cap: "requests",
     op: "put",
-    args: { id, request: req },
+    args: { id, request: req, ...isNew },
   });
 }
 

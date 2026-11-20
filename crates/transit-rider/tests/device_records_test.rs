@@ -5,7 +5,7 @@
 //! this build does not know (D-167).
 
 use serde_json::json;
-use transit_dispatch::device::{LiveFeeds, RecentPlaces};
+use transit_rider::device::{LiveFeeds, RecentPlaces};
 use transit_version::Versioned;
 
 #[test]

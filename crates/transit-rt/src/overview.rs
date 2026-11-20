@@ -86,17 +86,17 @@ pub struct InformedView {
 #[ts(export)]
 pub struct AlertView {
     pub entity_id: String,
-    pub cause: transit_live::AlertCause,
-    pub effect: transit_live::AlertEffect,
-    pub severity: transit_live::AlertSeverity,
+    pub cause: transit_alerts::AlertCause,
+    pub effect: transit_alerts::AlertEffect,
+    pub severity: transit_alerts::AlertSeverity,
     pub header: Option<String>,
     pub description: Option<String>,
     pub url: Option<String>,
     /// When to show it (the communication period, else the deprecated
     /// active period); empty = always.
-    pub communication: Vec<transit_live::AlertPeriod>,
+    pub communication: Vec<transit_alerts::AlertPeriod>,
     /// When service is affected; empty = while shown.
-    pub impact: Vec<transit_live::AlertPeriod>,
+    pub impact: Vec<transit_alerts::AlertPeriod>,
     pub informed: Vec<InformedView>,
 }
 
@@ -193,7 +193,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
 
 pub(crate) fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> AlertView {
     use crate::gtfs_rt::alert::{Cause, Effect, SeverityLevel};
-    use transit_live::{AlertCause as C, AlertEffect as E, AlertPeriod, AlertSeverity as S};
+    use transit_alerts::{AlertCause as C, AlertEffect as E, AlertPeriod, AlertSeverity as S};
     let periods = |ranges: &[crate::gtfs_rt::TimeRange]| {
         ranges.iter().map(|r| AlertPeriod { start: r.start, end: r.end }).collect::<Vec<_>>()
     };

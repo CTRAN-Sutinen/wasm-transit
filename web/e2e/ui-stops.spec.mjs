@@ -156,7 +156,7 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await page.getByTestId("new-id").fill("B");
   await page.getByTestId("new-name").fill("Main & 9th");
   await page.getByTestId("new-save").click();
-  await expect(page.getByTestId("new-stop-problems")).toContainText("There is already a stop B");
+  await expect(page.getByTestId("new-stop-problems")).toContainText("there is already a stop with that id");
   await page.getByTestId("new-id").fill("N1");
   await page.getByTestId("new-save").click();
   await expect(page.getByTestId("status")).toContainText("Added stop N1", { timeout: 15_000 });

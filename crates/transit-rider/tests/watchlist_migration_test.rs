@@ -23,7 +23,7 @@ use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 use serde_json::{json, Value};
 
-use transit_dispatch::watchlist::{migrate_to, schema_version_of, Watchlist, SCHEMA_VERSION};
+use transit_rider::watchlist::{migrate_to, schema_version_of, Watchlist, SCHEMA_VERSION};
 use transit_version::Versioned;
 
 /// One v1 stop: a note and an optional color.

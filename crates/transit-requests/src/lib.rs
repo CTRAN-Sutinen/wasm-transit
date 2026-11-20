@@ -53,6 +53,8 @@ pub const JOBS: [&str; 5] = ["new", "reinstall", "relocate_remove", "repair_impr
 
 /// A request's life: drafted, submitted, the work order opened
 /// (`ordered`), completed — or cancelled, the tombstone.
+/// The statuses of work still in flight: what the work queue opens on.
+pub const OPEN_STATUSES: [&str; 3] = ["drafted", "submitted", "ordered"];
 pub const STATUSES: [&str; 5] = ["drafted", "submitted", "ordered", "completed", "cancelled"];
 
 /// The side of the street (the worksheet's N, S, E, W).
@@ -266,6 +268,24 @@ pub struct WorkOrder {
     pub extra: transit_version::Extra,
 }
 
+/// What to send the work order system for a request (D-228). The host
+/// makes the call, and `record_work_order` records the answer.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct WorkOrderCall {
+    /// `open` (ask for a work order) or `refresh` (read its status).
+    pub action: String,
+    /// The request, as the document holds it: what an `open` sends.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request: Option<StopRequest>,
+    /// The work order the request holds: what a `refresh` sends. None
+    /// when it holds none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub work_order: Option<WorkOrder>,
+}
+
 /// How many requests stand at one status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -306,6 +326,9 @@ pub enum RequestProblem {
     CompletedBeforeRequested,
     /// An attachment not named by a sha256 content hash and a media type.
     BadAttachment { hash: String },
+    /// A write that says the request is new, under an id the document
+    /// holds (D-228).
+    IdTaken,
 }
 
 impl fmt::Display for RequestRefusal {
@@ -320,6 +343,7 @@ impl fmt::Display for RequestRefusal {
             RequestProblem::NoCompletion => "is completed with no completion date".into(),
             RequestProblem::CompletedBeforeRequested => "is completed before it was requested".into(),
             RequestProblem::BadAttachment { hash } => format!("names an attachment {hash:?} that is not a sha256 hash with a media type"),
+            RequestProblem::IdTaken => "is new, but the document already holds a request with its id".into(),
         };
         write!(f, "request {:?} {what}", self.request)
     }
@@ -330,6 +354,26 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
 }
 
 impl StopRequests {
+    /// What to send the work order system for request `id`: the request
+    /// for an `open`, the work order it holds for a `refresh`. An error
+    /// names a request the document does not hold, or an action that is
+    /// not `open` or `refresh`.
+    pub fn work_order_call(&self, id: &str, action: &str) -> Result<WorkOrderCall, String> {
+        let request = self.requests.get(id).ok_or_else(|| format!("no request {id:?} in the document"))?;
+        match action {
+            "open" => Ok(WorkOrderCall { action: action.into(), request: Some(request.clone()), work_order: request.work_order.clone() }),
+            "refresh" => Ok(WorkOrderCall { action: action.into(), request: None, work_order: request.work_order.clone() }),
+            other => Err(format!("unknown work order action {other:?}: open or refresh")),
+        }
+    }
+
+    /// The refusal of a write that says request `id` is new, when the
+    /// document holds that id (D-228). An ordinary `put` replaces the
+    /// one held, so the intent "new" is stated by the writer.
+    pub fn refuse_taken(&self, id: &str) -> Option<RequestRefusal> {
+        self.requests.contains_key(id).then(|| RequestRefusal { request: id.to_string(), problem: RequestProblem::IdTaken })
+    }
+
     /// One request placed by id — new, or replacing the one held; every
     /// other request as it was. Unchecked: a write passes
     /// [`StopRequests::checked`].

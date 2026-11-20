@@ -35,6 +35,7 @@
     "directory.route_detail",
     "directory.timetable",
     "author.apply",
+    "author.stamp_pick",
     "plans.resolve",
     "plans.in_force",
     "plans.periods",

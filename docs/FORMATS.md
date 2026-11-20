@@ -774,7 +774,7 @@ Every persisted kind, by what a version change does to it:
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
 | `frozen_versions` (every version frozen, by network hash) | transit-plans | authored | `kind`, `schema_version` |
 | `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |
-| `watchlist` | transit-dispatch | authored | `kind`, `schema_version` (before its tags, `"version": "vN"`) |
+| `watchlist` | transit-rider | authored | `kind`, `schema_version` (before its tags, `"version": "vN"`) |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
 | `work_rules` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
@@ -783,8 +783,8 @@ Every persisted kind, by what a version change does to it:
 | `alert_templates` | transit-alerts | authored | `kind`, `schema_version` |
 | `notes` | transit-notes | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | no tag (never persisted yet) |
-| `recent_places` (a rider's recent places, on one device) | transit-dispatch | authored | `kind`, `schema_version` |
-| `live_feeds` (a rider's own live-feed URLs, on one device) | transit-dispatch | authored | `kind`, `schema_version` |
+| `recent_places` (a rider's recent places, on one device) | transit-rider | authored | `kind`, `schema_version` |
+| `live_feeds` (a rider's own live-feed URLs, on one device) | transit-rider | authored | `kind`, `schema_version` |
 | `network` (imported) | transit-codec | derived | `kind`, `schema_version` |
 | `boundary` | transit-codec | derived | `kind`, `schema_version` |
 | `streets` (imported) | transit-streets | derived | `kind`, `schema_version` |

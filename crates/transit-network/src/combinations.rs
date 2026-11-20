@@ -96,6 +96,19 @@ pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
         .min()
 }
 
+/// The edits that stamp an imported feed as a pick (D-140, D-228): one
+/// `set_plan` under `id` and `name`, effective from the feed's first
+/// service date. None when the document is a pick already (it carries a
+/// plan id) or runs no service, so has no date.
+pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::NetworkEdit> {
+    if !network.plan.id.is_empty() {
+        return Vec::new();
+    }
+    let Some(first) = first_service_date(network) else { return Vec::new() };
+    let plan = crate::model::PlanMeta { id: id.into(), name: name.into(), effective_from: Some(first), ..Default::default() };
+    vec![crate::NetworkEdit::SetPlan { plan, through: None }]
+}
+
 /// The service combinations: one per distinct set of types (with
 /// trips) that run on some date, with the dates it holds on. Sorted by
 /// the days it holds (most first), then its first date, then its id.

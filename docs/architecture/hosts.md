@@ -117,9 +117,9 @@ The hosts differ in three ways. Each difference is a design decision.
   no label (QAF-130).
 - The rules are written here, and implemented twice: in Go and in
   TypeScript. No suite runs them against each host.
-- Hosts apply domain rules. About six rules are in single browser
-  hosts, and the planning pages filter the published picks for their
-  timeline rows (`syncPlanRows`). A pick's period and what it reads of
+- Hosts apply domain rules. Service change copies stop records into
+  the edits of a new route (`createRoute`), and the planning pages
+  filter the published picks for their timeline rows (`syncPlanRows`). A pick's period and what it reads of
   the stops are one op (cap-stops `read_pick`, `export_pick`), asked
   the same way by the server, the engine, and caps-run. The server sequences the steps of several writes between ops
   (`writePlan`, `checkStops`).

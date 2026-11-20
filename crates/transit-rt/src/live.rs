@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 
 use transit_codec::Boundary;
-use transit_live::{classify, AlertPeriod, AlertScope, LiveAlert, LiveDay, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow};
+use transit_live::{classify, AlertScope, LiveAlert, LiveDay, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow};
+use transit_alerts::{AlertPeriod};
 use transit_network::Network;
 
 use crate::overview::{AlertView, InformedView, RtOverview, TripUpdateView};

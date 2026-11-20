@@ -13,6 +13,10 @@
 //! - `gaps` answers what no alert explains, with what an alert about
 //!   each starts from.
 //!
+//! - `start_alert` answers what a new alert starts from: for a gap, its
+//!   effect, the riders it informs, and what it explains, and the stop
+//!   the rider preview opens at.
+//!
 //! The module writes nothing.
 
 #![forbid(unsafe_code)]
@@ -23,7 +27,7 @@ use cap_abi::kernel::{EDITS, LIVE, NETWORK, NOTES, SERVICE_ALERTS, STOPS};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use transit_disruptions::{AlertGap, Disruption, Filter, NamedStop, Origin, RouteDay, Today};
+pub use transit_disruptions::{AlertGap, AlertStart, Disruption, Filter, NamedStop, Origin, RouteDay, Today};
 
 /// The documents a question reads, by hash. Each one absent is an empty
 /// one, and no live document means no feed cancels and no late trips.
@@ -77,6 +81,17 @@ pub enum Request {
         #[ts(flatten)]
         documents: Documents,
     },
+    /// What a new alert starts from (D-228): with a `source` that is a
+    /// gap, the gap's effect, informed riders, and what it explains; else
+    /// a blank alert that explains `source`, if one is given.
+    StartAlert {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        documents: Documents,
+        #[serde(default)]
+        #[ts(optional)]
+        source: Option<transit_alerts::AlertSource>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -89,6 +104,11 @@ pub enum Response {
         today: Today,
     },
     Gaps { gaps: Vec<AlertGap> },
+    StartAlert {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        start: AlertStart,
+    },
 }
 
 /// The documents, held: every hash the request names is required.
@@ -154,6 +174,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Gaps { documents } => {
             let held = Held::of(&documents)?;
             Ok(Response::Gaps { gaps: transit_disruptions::gaps(&held.inputs()) })
+        }
+        Request::StartAlert { documents, source } => {
+            let held = Held::of(&documents)?;
+            Ok(Response::StartAlert { start: transit_disruptions::start_alert(&held.inputs(), source.as_ref()) })
         }
     }
 }

@@ -802,23 +802,20 @@ export async function servedFeed(...readers: CapId[]): Promise<{ network: Doc<Ne
 /// The deployment's published network as a VALUE, for a page that
 /// edits it (the planner forks it into a plan; JS owns the documents
 /// it authors): `GET /network`, the import's whole answer, registered
-/// in the network module under the pin it serves, with the date it
-/// first runs service (the import's `first_service_date`, D-140). Null
-/// when the server publishes none.
+/// in the network module under the pin it serves. Null when the server
+/// publishes none.
 export async function servedNetworkValue(): Promise<{
   network: Doc<Network>;
   boundary: Doc<Boundary>;
-  firstServiceDate: string | null;
 } | null> {
   const resp = await fetch("/network").catch(() => null);
   if (!resp?.ok) return null;
-  const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string; first_service_date?: string | null };
+  const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string };
   const network = new Doc<Network>("network", { value: served.network }, { pin: served.network_hash });
   await load("network", network);
   return {
     network,
     boundary: new Doc<Boundary>("boundary", { value: served.boundary }),
-    firstServiceDate: served.first_service_date ?? null,
   };
 }
 

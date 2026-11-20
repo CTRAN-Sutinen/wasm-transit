@@ -315,7 +315,10 @@ The materialized day's views, model-native. It is a library shared by the cap-bo
 - For a diverted trip, the line is the alignment to the first kept stop, then the traced detour, then the alignment from the last kept stop. A skip-only diversion keeps the alignment.
 - The ridden segment is that line sliced between two stops.
 
-**A rider's own documents** (watchlist.rs, device.rs).
+## transit-rider
+
+A rider's own documents. The watchlist and the device records are the rider's, not the agency's. Nothing here reads the network or the operator's day, and transit-dispatch does not depend on this crate. cap-board reads the watchlist, and cap-migrate carries its version chain.
+
 - The watchlist: a rider's saved stops, tagged at v2 (`kind`, `schema_version`). A copy from before the tags names `"version": "vN"`. Its v2 reads as v2, and its v1 comes forward through the chain here (`migrate_to`), each note becoming a label and each dropped color reported. `Versioned::version_in` reads the old marker, so the kernel's refusal names it.
 - The device records ride-now keeps in the browser's store: `recent_places` (the last places a rider looked at) and `live_feeds` (the rider's own GTFS-rt URLs). Each is tagged at v1.
 
@@ -356,7 +359,7 @@ prost types from the official GTFS-rt proto, and the joins over the network.
 
 ## transit-live
 
-The live document: one rt moment in model vocabulary. It is pure data and has no GTFS layer (arch gate). cap-rt mints it and cap-board reads it. No host computes a delay.
+The live document: one rt moment in model vocabulary. It is pure data and has no GTFS layer (arch gate). cap-rt mints it and cap-board reads it. No host computes a delay. It depends on transit-alerts for the alert vocabulary (cause, effect, severity, period).
 
 **Version 2 holds:**
 - Delays per trip instance (trip, service date, start) and stop.
@@ -513,7 +516,7 @@ The stops document, beside the plans (D-147, D-153). It depends on transit-netwo
 - The crate keeps what it does not know through a read and a write, such as another tool's field or an agency's amenity (D-167).
 - A correction edits the event that was wrong. A real change adds an event.
 - The edits answer the next document:
-  - `add_event` places one event by date.
+  - `add_event` places one event by date. `refuse_taken` is the refusal of a write that says a stop is new and names a held id.
   - `correct_event_by_id` takes out the event that was wrong, named by its id, and places the corrected one by date. The corrected event keeps the id.
 
 ## transit-requests
@@ -539,7 +542,8 @@ The stop requests document (D-159). It holds the planning team's requests for wo
 
 **Operations.**
 - `checked` refuses only what makes a request wrong. Each refusal names its request.
-- `put` places one request by id.
+- `put` places one request by id. `refuse_taken` is the refusal of a write that says a request is new and names a held id. `OPEN_STATUSES` are the statuses of work in flight.
+- `work_order_call` is what to send the work order system for a request.
 - `for_stop` gives a stop's requests.
 - `list` gives the work across every stop, at the statuses and of the jobs asked.
 - `counts` gives every request by status.
@@ -565,6 +569,7 @@ What is disrupted on a day, and whether an alert explains it (D-213, D-218). A d
 
 - `disruptions` gives the list. Each carries the names a rider uses (the route; a cancelled trip's start, first stop, and headsign; the stops it takes away, each with where it is), the next trip from the same first stop, the alerts that explain it, and its latest note. A closed stop is where the stops document puts it on the day; every other stop is where the network puts it.
 - `gaps` gives what no alert explains, with what an alert about each starts from, and the riders it informs: a cancelled trip's instance on its route; a detour's route, and its route at each stop it skips; a closed stop.
+- `start_alert` is what a new alert starts from (D-228): for a gap, its effect, the riders it informs, and what it explains, with the stop the rider preview opens at. With no gap, a blank alert, told from `now`.
 - `today` gives the day by route: each route with a disruption or a late trip, its late trips from the live document's statuses, and how many routes have neither. A suspended stop is listed on every route that serves it. A filter answers one route or one stop. A station is one place with its bays.
 
 ## transit-alerts
@@ -573,7 +578,7 @@ The service alerts document and the alert templates document (D-206..D-210). An 
 
 **An alert** is a record by id. The id is its GTFS-rt entity id. It has:
 - its status: draft, published, or retired (withdrawn). There is no review step.
-- its cause, effect, and severity (the transit-live enums);
+- its cause, effect, and severity (the enums of this crate, with the alert period; transit-live uses them);
 - its header, description, and link, each a list of texts with their languages;
 - its communication periods and impact periods, in Unix seconds. The host converts the agency's local times (D-205).
 - its informed entities, in the network's ids: a route, a route type, a direction of a route, a stop, or a trip instance. Every present field must match. An entity with every field absent is the whole agency.
@@ -587,7 +592,7 @@ The service alerts document and the alert templates document (D-206..D-210). An 
 - `put` places one record by id. `end` ends an alert at a moment, and changes nothing before it.
 - `list` gives the agency's list at a moment: in force, upcoming, ended, and drafts. An alert in force with no end says how long it has been open.
 - `offered` gives the templates a menu offers, by name. A retired template is kept and not offered.
-- `fill` writes a template's blanks: names from the network, and dates and lists in English. A blank it cannot fill stays, and is named.
+- `fill` writes a template's blanks: names from the network, and dates and lists in English. The input may give the alert's informed entities, and each route and stop in them is named once. A blank it cannot fill stays, and is named.
 
 Each document is canonical as it stands (records by id). The crate keeps what it does not know.
 
@@ -670,7 +675,8 @@ The stops capability: what is a stop on a date? transit-stops (with its `stop_re
 **Writes.**
 - `validate` gives what a write must pass: every refusal, or the canonical document and its hash, each event with its id. This is the document that the kernel's `load_stops` answers. It names the fields the document carries that this build does not know (`unknown_fields`, D-167).
 - `seed` makes a stops document from a network's stops.
-- `add_event` places one edit by date.
+- `add_event` places one edit by date. With `new`, a held stop id is refused (`stop_exists`): a write states the intent "new", and the receive path replays it (D-228).
+- `vocabulary` gives the stop statuses, in a stop's order.
 - `correct_event` corrects an event that was wrong, named by its id (D-166), or takes it out. With `saw`, the event's hash as the writer read it, an event changed since is a `conflict` that names it, and nothing is corrected.
 - Each of the three is checked as a write is.
 - `attribute_surveys` names the write's new surveys for the writer. It runs before `validate`.
@@ -694,9 +700,10 @@ The stop requests capability: what work has been asked for at a stop, and where 
 - `validate` gives what a write must pass, or the canonical document and its hash. This is the document that `load_stop_requests` answers.
 - `requests_for` gives a stop's requests.
 - `list` gives the work across every stop, by status and job, with every request counted by status.
-- `put` places one request by id, checked. With no document, the first request begins one.
+- `put` places one request by id, checked. With no document, the first request begins one. With `new`, a held id is refused (`id_taken`).
+- `work_order_call` answers what to send the work order system for a request: the request for an `open`, the work order it holds for a `refresh`. The host makes the call.
 - `record_work_order` records what the work order system answered, on its request.
-- `vocabulary` gives the lists that a request's answers come from.
+- `vocabulary` gives the lists that a request's answers come from, and which statuses are open work.
 - `log_records` and `log_document` turn the document into the stops log's records (a `stop_request` record for each request, and the document's own record) and back (D-197).
 
 ## cap-alerts
@@ -724,6 +731,7 @@ The notes capability: what has the agency noted about this? transit-notes is the
 The disruptions capability: what is disrupted on a day, and does an alert explain it? transit-disruptions is the library. It reads the network, the edit document, the live document, the stops, the service alerts, and the notes, each by hash, and writes nothing.
 - `today` gives the day by route, filtered to one route or one stop when asked.
 - `gaps` gives what no alert explains.
+- `start_alert` gives what a new alert starts from, for a gap or blank.
 
 ## cap-log
 
@@ -742,6 +750,7 @@ The authoring capability: what does this network become after these edits? trans
 - With `work_rules_hash`, the op judges a block's waits under the work rules' recovery (D-9).
 - `created` names the entities that a change made.
 - `touched` names the entities that the change altered beyond that, such as the patterns that a redrawn alignment moves.
+- `stamp_pick` stamps an imported feed as a pick (D-140, D-228): one `set_plan` edit under the host's id and name, from the feed's first service date (`transit_network::stamp_as_pick`). A document that is a pick already, or runs no service, comes back as it was.
 
 Every host authors through it, the service-design UI included. Its host sends edits and adopts the answer. It never edits a document.
 

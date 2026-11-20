@@ -94,7 +94,7 @@ The templates the menu offers, by name, then id: each one's id, name, cause, eff
 
 ## fill
 
-One template written out for a set of stops, routes, and dates:
+One template written out for a set of stops, routes, and dates. `input` lists `stops` and `routes`, and may give `informed`, an alert's informed entities. Each stop and route in `informed` is named once, after those listed:
 
 - `{stop}` and `{route}` are the names the network gives them: "Main & 1st", or "10, 20, and 40".
 - `{start date}` and `{end date}` are written from "YYYY-MM-DD" as "Monday, August 17".

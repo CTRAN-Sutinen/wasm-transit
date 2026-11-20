@@ -63,7 +63,16 @@ pub enum Request {
         requests_hash: Option<String>,
         id: String,
         request: StopRequest,
+        /// The write says the request is new (D-228): an id the document
+        /// holds is refused (`id_taken`), and nothing is placed.
+        #[serde(default)]
+        #[ts(optional)]
+        new: Option<bool>,
     },
+    /// What to send the work order system for request `id` (D-228):
+    /// `action` is `open` or `refresh`. The host makes the call, and
+    /// `record_work_order` records the answer.
+    WorkOrderCall { requests_hash: String, id: String, action: String },
     /// What the work order system answered, on request `id` (D-165): its
     /// reference on the request, a drafted or submitted one moved to
     /// ordered — then checked as a write is. An id the document does not
@@ -116,7 +125,8 @@ pub enum Response {
     List { requests: Vec<IdRequest>, counts: Vec<transit_requests::RequestCount> },
     Put { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
     RecordWorkOrder { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
-    Vocabulary { jobs: Vec<String>, statuses: Vec<String>, sides: Vec<String>, directions: Vec<String>, markings: Vec<String> },
+    WorkOrderCall { call: transit_requests::WorkOrderCall },
+    Vocabulary { jobs: Vec<String>, statuses: Vec<String>, open_statuses: Vec<String>, sides: Vec<String>, directions: Vec<String>, markings: Vec<String> },
     LogRecords {
         /// The records of each kind, as the log capability's `compose`
         /// takes them: the collection's records, and the document's own
@@ -169,11 +179,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 counts: held.counts(),
             })
         }
-        Request::Put { requests_hash, id, request } => {
-            let next = match requests_hash {
-                Some(h) => STOP_REQUESTS.require_writable(&h)?.put(&id, request),
-                None => StopRequests::default().put(&id, request),
+        Request::Put { requests_hash, id, request, new } => {
+            let held = match requests_hash {
+                Some(h) => (*STOP_REQUESTS.require_writable(&h)?).clone(),
+                None => StopRequests::default(),
             };
+            if let Some(taken) = new.unwrap_or(false).then(|| held.refuse_taken(&id)).flatten() {
+                return Ok(Response::Put { refusals: vec![taken], requests_hash: None, requests: None });
+            }
+            let next = held.put(&id, request);
             Ok(match next.checked() {
                 Ok(next) => {
                     let (requests_hash, held) = STOP_REQUESTS.register(next)?;
@@ -181,6 +195,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 }
                 Err(refusals) => Response::Put { refusals, requests_hash: None, requests: None },
             })
+        }
+        Request::WorkOrderCall { requests_hash, id, action } => {
+            let call = STOP_REQUESTS.require(&requests_hash)?.work_order_call(&id, &action)?;
+            Ok(Response::WorkOrderCall { call })
         }
         Request::RecordWorkOrder { requests_hash, id, work_order } => {
             let next = STOP_REQUESTS.require_writable(&requests_hash)?.record_work_order(&id, work_order).ok_or_else(|| format!("no request {id:?} in the document"))?;
@@ -195,6 +213,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Vocabulary {} => Ok(Response::Vocabulary {
             jobs: strings(&transit_requests::JOBS),
             statuses: strings(&transit_requests::STATUSES),
+            open_statuses: strings(&transit_requests::OPEN_STATUSES),
             sides: strings(&transit_requests::SIDES),
             directions: strings(&transit_requests::DIRECTIONS),
             markings: strings(&transit_requests::MARKINGS),

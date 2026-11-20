@@ -100,7 +100,20 @@ pub enum Request {
     /// by date — an id the document does not hold begins a stop — then
     /// checked as a write is: every refusal, or the document registered
     /// and answered with its hash.
-    AddEvent { stops_hash: String, stop_id: String, event: Event },
+    ///
+    /// With `new`, the write says the stop is new (D-228): an id the
+    /// document holds is refused (`stop_exists`), and nothing is added.
+    AddEvent {
+        stops_hash: String,
+        stop_id: String,
+        event: Event,
+        #[serde(default)]
+        #[ts(optional)]
+        new: Option<bool>,
+    },
+    /// The lists a stop's answers come from: its statuses, in the order a
+    /// stop goes through them. The op reads no document.
+    Vocabulary {},
     /// The document with the event `event_id` of stop `stop_id`
     /// corrected — taken out and `event` placed by date, keeping its id,
     /// or, with no `event`, taken out — then checked as a write is. A
@@ -254,6 +267,7 @@ pub enum Response {
     },
     Seed { stops_hash: String, stops: Stops },
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
+    Vocabulary { statuses: Vec<String> },
     CorrectEvent {
         refusals: Vec<Refusal>,
         stops_hash: Option<String>,
@@ -396,8 +410,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let (stops_hash, held) = STOPS.register(seeded)?;
             Ok(Response::Seed { stops_hash, stops: (*held).clone() })
         }
-        Request::AddEvent { stops_hash, stop_id, event } => {
-            let next = STOPS.require_writable(&stops_hash)?.add_event(&stop_id, event);
+        Request::Vocabulary {} => Ok(Response::Vocabulary { statuses: Status::ALL.iter().map(|s| s.as_str().to_string()).collect() }),
+        Request::AddEvent { stops_hash, stop_id, event, new } => {
+            let held = STOPS.require_writable(&stops_hash)?;
+            if let Some(taken) = new.unwrap_or(false).then(|| held.refuse_taken(&stop_id)).flatten() {
+                return Ok(Response::AddEvent { refusals: vec![taken], stops_hash: None, stops: None });
+            }
+            let next = held.add_event(&stop_id, event);
             Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = STOPS.register(next)?;

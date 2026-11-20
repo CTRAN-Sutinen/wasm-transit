@@ -39,7 +39,7 @@ use std::sync::Arc;
 
 use transit_dispatch::{BoardAt, Day, GroupedBoard, Overnight, ServiceDay, StopBoard};
 
-pub use transit_dispatch::watchlist::{WatchStop, Watchlist};
+pub use transit_rider::watchlist::{WatchStop, Watchlist};
 
 /// One watched stop's board, with its label. The board is THE stop
 /// board (`stop_board` with the same arguments).

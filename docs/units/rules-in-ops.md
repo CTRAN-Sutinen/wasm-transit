@@ -27,38 +27,9 @@ rules exposed the right way round.
    and `export_pick`.)
 2. **The other rules in the browser hosts.** Each becomes an op, or a
    field of an answer that the host already asks for:
-   - service change `stampAsPick`: an imported feed becomes a pick on
-     its first service date, under a new id;
    - service change `createRoute`: stop records copied into
-     `upsert_stop` edits, with the ids already taken filtered out;
-   - disruptions, the preview stop: the gap's first stop, else the
-     trip's first stop;
-   - disruptions `newAlert` and `startAlertFor`: what a new alert for a
-     gap informs, explains, and does;
-   - disruptions `fillTemplate`: the dates and the routes and stops
-     without repeats that fill a template;
-   - stops `newStop` and `putRequest`: a new stop or a new request must
-     not take an id already held. The receive path does not refuse it,
-     because an event added to a stop that exists, and a request put
-     in place of one held, are both ordinary writes. The intent "new"
-     becomes part of the op (cap-stops and cap-requests refuse a held
-     id when the write says it is new);
-   - stops `OPEN_WORK` and `STATUSES`: which requests are open work,
-     and the stop statuses. cap-requests `vocabulary` answers the
-     request statuses, but not which of them are open work. cap-stops
-     has no op that lists the stop statuses.
-3. **The work order system.** `handleWorkOrder` (`server/workorders.go`)
-   reads a request's held work order out of the document in Go. An op
-   answers what to send the system for a request. The host makes the
-   call. `record_work_order` records the answer, as it does now.
-4. **The library edges.**
-   - `transit-dispatch` splits in two: the operator's day, and the
-     rider's own documents (the watchlist and its chain, the device
-     records).
-   - The alert vocabulary (cause, effect, severity, period) moves from
-     `transit-live` to `transit-alerts`, and `transit-live` depends on
-     it.
-5. **The docs.** `crates/AGENTS.md`, `docs/architecture/crates.md`,
+     `upsert_stop` edits, with the ids already taken filtered out.
+3. **The docs.** `crates/AGENTS.md`, `docs/architecture/crates.md`,
    `docs/architecture/hosts.md` ("Where a host does not keep these
    rules"), the `OPS.md` of each changed capability, and the worked
    examples.

@@ -11,6 +11,6 @@ serde_json = { workspace = true }
 ts-rs = { workspace = true }
 transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
-transit-dispatch = { path = "../transit-dispatch" }
+transit-rider = { path = "../transit-rider" }
 transit-alerts = { path = "../transit-alerts" }
 cap-abi = { path = "../cap-abi" }

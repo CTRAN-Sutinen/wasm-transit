@@ -1,0 +1,17 @@
+[package]
+name = "transit-rider"
+description = "A rider's own documents: the watchlist (saved stops, with its version chain) and the records a device keeps (recent places, live-feed choices). They never describe the agency's service, and no operator document depends on them."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+schemars = { workspace = true }
+serde = { workspace = true }
+# The watchlist's migration chain steps over JSON values.
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

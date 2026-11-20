@@ -273,3 +273,45 @@ fn a_request_names_its_attachments_by_hash() {
     let r = json!({ "stop": "a", "job": "new", "status": "drafted", "attachments": [{ "hash": "sha256:xyz", "type": "image/jpeg" }] });
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::BadAttachment { hash: "sha256:xyz".into() }]);
 }
+
+// A write that says a request is new (D-228): the intent "new" is a
+// refusal of a held id. An ordinary `put` still replaces the one held.
+
+#[test]
+fn a_new_request_is_refused_an_id_the_document_holds() {
+    let held = doc(vec![("r1", request("A", "new", "drafted"))]);
+    let refusal = held.refuse_taken("r1").expect("r1 is held");
+    assert_eq!((refusal.request.as_str(), &refusal.problem), ("r1", &RequestProblem::IdTaken));
+    assert!(held.refuse_taken("r2").is_none(), "a free id is accepted");
+    assert!(StopRequests::default().refuse_taken("r1").is_none());
+    // an ordinary put replaces the one held
+    let replaced = held.put("r1", request("B", "new", "submitted"));
+    assert_eq!(replaced.requests["r1"].stop, "B");
+}
+
+#[test]
+fn the_open_statuses_are_the_ones_before_completed_and_cancelled() {
+    assert_eq!(transit_requests::OPEN_STATUSES, ["drafted", "submitted", "ordered"]);
+    assert!(transit_requests::OPEN_STATUSES.iter().all(|s| STATUSES.contains(s)));
+}
+
+// A call to the work order system splits in three (D-228): an op answers
+// what to send, a host makes the call, and `record_work_order` records
+// the answer.
+
+#[test]
+fn the_work_order_call_says_what_to_send_for_a_request() {
+    let mut with_order = request("A", "new", "ordered");
+    with_order.work_order = Some(transit_requests::WorkOrder { id: "WO-1".into(), ..Default::default() });
+    let held = doc(vec![("r1", request("A", "new", "submitted")), ("r2", with_order.clone())]);
+
+    // open: the system is sent the request; no work order is held yet
+    let open = held.work_order_call("r1", "open").unwrap();
+    assert_eq!((open.action.as_str(), open.request.as_ref().map(|r| r.stop.as_str()), open.work_order.is_none()), ("open", Some("A"), true));
+    // refresh: the system is sent the work order the request holds
+    let refresh = held.work_order_call("r2", "refresh").unwrap();
+    assert_eq!((refresh.action.as_str(), refresh.request.is_none(), refresh.work_order.as_ref().map(|w| w.id.as_str())), ("refresh", true, Some("WO-1")));
+    // a request the document does not hold, and an action it does not know
+    assert!(held.work_order_call("r9", "open").is_err());
+    assert!(held.work_order_call("r1", "close").is_err());
+}

@@ -321,3 +321,56 @@ fn a_station_answers_what_touches_its_bays() {
     assert_eq!(at_station, at_bay);
     assert_eq!(at_station.routes.iter().map(|r| r.route.as_str()).collect::<Vec<_>>(), ["40"]);
 }
+
+// ---------------------------------------------------------------------
+// A new alert (D-228): what it starts from is the library's answer, so
+// no host decides what a new alert informs, explains, and does.
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_new_alert_for_a_gap_starts_from_what_the_gap_says() {
+    let w = world();
+    let g = gaps(&w.inputs());
+    let gap = g.iter().find(|g| g.source == feed_cancel()).unwrap();
+    let start = start_alert(&w.inputs(), Some(&feed_cancel()));
+    let a = &start.alert;
+    assert_eq!((a.status, a.cause, a.effect, a.severity), (AlertStatus::Draft, transit_alerts::AlertCause::Unknown, gap.effect, transit_alerts::AlertSeverity::Unknown));
+    assert_eq!(a.informed, gap.informed);
+    assert_eq!(a.explains, vec![feed_cancel()]);
+    assert_eq!(a.header.len(), 1);
+    assert!(a.header[0].text.is_empty(), "the header is left for the writer");
+    assert_eq!(a.communication, vec![AlertPeriod { start: Some(NOW), end: None }], "told to riders from now until someone sets an end");
+}
+
+#[test]
+fn the_preview_stop_is_a_stop_the_gap_takes_away_else_its_trips_first_stop() {
+    let w = world();
+    // a closed stop names its own stop
+    let closed = start_alert(&w.inputs(), Some(&AlertSource::Stop { stop: "B".into() }));
+    assert_eq!(closed.preview_stop.as_deref(), Some("B"));
+    // a cancelled trip takes away no stop: its trip's first stop, as the day names it
+    let all = disruptions(&w.inputs());
+    let first = all.iter().find(|d| d.source == feed_cancel()).unwrap().first_stop.as_ref().map(|s| s.id.clone());
+    assert!(first.is_some());
+    assert_eq!(start_alert(&w.inputs(), Some(&feed_cancel())).preview_stop, first);
+}
+
+#[test]
+fn a_new_alert_for_an_explained_disruption_is_blank_and_explains_it() {
+    let mut w = world();
+    w.alerts = alerts(vec![("a-feed", explaining(vec![feed_cancel()], AlertStatus::Published, vec![]))]);
+    let start = start_alert(&w.inputs(), Some(&feed_cancel()));
+    assert_eq!(start.alert.explains, vec![feed_cancel()]);
+    assert!(start.alert.informed.is_empty(), "no gap: nothing to start from");
+    assert_eq!(start.alert.effect, AlertEffect::Unknown);
+    assert_eq!(start.preview_stop, None);
+}
+
+#[test]
+fn a_blank_new_alert_explains_nothing_and_is_told_from_now() {
+    let w = world();
+    let start = start_alert(&w.inputs(), None);
+    assert!(start.alert.explains.is_empty() && start.alert.informed.is_empty());
+    assert_eq!(start.alert.communication, vec![AlertPeriod { start: Some(NOW), end: None }]);
+    assert_eq!(start.preview_stop, None);
+}

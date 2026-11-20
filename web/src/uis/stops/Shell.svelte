@@ -11,7 +11,6 @@
   /// host's (host.svelte.ts).
   import {
     st,
-    STATUSES,
     readDate,
     setDate,
     setView,
@@ -162,7 +161,7 @@
       <div class="stops-view">
           <header class="tools">
             <div class="filters" role="group" aria-label="Statuses shown">
-              {#each STATUSES as s (s)}
+              {#each st.statusList as s (s)}
                 <button type="button" class="filter" class:on={st.show.includes(s)} aria-pressed={st.show.includes(s)} onclick={() => toggleStatus(s)} data-testid="filter-{s}">
                   <i class="dot" style="--fill:{STATUS_COLORS[s][0]};--edge:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]}<span class="n">{count(s)}</span>
                 </button>

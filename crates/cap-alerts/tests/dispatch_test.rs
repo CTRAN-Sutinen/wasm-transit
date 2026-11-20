@@ -99,6 +99,10 @@ fn a_template_is_checked_and_filled() {
     let filled = ok(json!({ "op": "fill", "templates_hash": templates_hash, "template": "closure", "network_hash": network_hash(),
         "input": { "stops": ["A"], "start_date": "2026-08-17" } }));
     assert_eq!(filled["filled"]["header"][0]["text"], "The stop at Main & 1st is closed starting Monday, August 17");
+    // the alert's informed entities name each stop once
+    let informed = ok(json!({ "op": "fill", "templates_hash": templates_hash, "template": "closure", "network_hash": network_hash(),
+        "input": { "informed": [{ "stop": "A" }, { "route": "10", "stop": "A" }], "start_date": "2026-08-17" } }));
+    assert_eq!(informed["filled"]["header"][0]["text"], filled["filled"]["header"][0]["text"]);
     let bad = ok(json!({ "op": "put_template", "templates_hash": templates_hash, "id": "x", "template": { "name": "X", "header": [{ "text": "{oops}" }] } }));
     assert_eq!(bad["refusals"][0]["problem"], json!({ "kind": "unknown_blank", "blank": "oops" }));
     assert!(err(json!({ "op": "fill", "templates_hash": templates_hash, "template": "nope", "network_hash": network_hash(), "input": {} })).contains("nope"));

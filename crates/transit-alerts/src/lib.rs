@@ -33,11 +33,72 @@ use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use transit_live::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 
 pub mod version;
 
 pub use version::{ALERTS_VERSION, TEMPLATES_VERSION};
+
+/// Why an alert was raised (GTFS-rt's cause, by name).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertCause {
+    #[default]
+    Unknown,
+    Other,
+    TechnicalProblem,
+    Strike,
+    Demonstration,
+    Accident,
+    Holiday,
+    Weather,
+    Maintenance,
+    Construction,
+    PoliceActivity,
+    MedicalEmergency,
+    SpecialEvent,
+}
+
+/// What an alert does to service (GTFS-rt's effect, by name).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertEffect {
+    NoService,
+    ReducedService,
+    SignificantDelays,
+    Detour,
+    AdditionalService,
+    ModifiedService,
+    Other,
+    #[default]
+    Unknown,
+    StopMoved,
+    NoEffect,
+    AccessibilityIssue,
+}
+
+/// How serious the agency says an alert is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertSeverity {
+    #[default]
+    Unknown,
+    Info,
+    Warning,
+    Severe,
+}
+
+/// A span of time in Unix seconds; an open end is unbounded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct AlertPeriod {
+    #[ts(type = "number | null")]
+    pub start: Option<u64>,
+    #[ts(type = "number | null")]
+    pub end: Option<u64>,
+}
 
 transit_version::kind_tag!(
     /// The service alerts document's kind tag: always `"service_alerts"`.
@@ -726,12 +787,41 @@ pub struct FillInput {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
     pub routes: Vec<String>,
+    /// The alert's informed entities: each route and stop in them is
+    /// named once, after the `routes` and `stops` above.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<AlertEntity>>")]
+    pub informed: Vec<AlertEntity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub start_date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub end_date: Option<String>,
+}
+
+impl FillInput {
+    /// The stops to name: those the input lists, then the informed
+    /// entities' stops, each once.
+    fn stop_ids(&self) -> Vec<String> {
+        unique(self.stops.iter().cloned().chain(self.informed.iter().filter_map(|e| e.stop.clone())))
+    }
+
+    /// The routes to name: those the input lists, then the informed
+    /// entities' routes, each once.
+    fn route_ids(&self) -> Vec<String> {
+        unique(self.routes.iter().cloned().chain(self.informed.iter().filter_map(|e| e.route.clone())))
+    }
+}
+
+fn unique(ids: impl Iterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in ids {
+        if !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
 }
 
 /// A template written out: its cause, effect, and severity, its texts
@@ -810,8 +900,8 @@ fn value(blank: &str, lang: Option<&str>, network: &transit_network::Network, in
         english(lang).then(|| english_date(d))
     };
     match blank {
-        "stop" => names(&input.stops, &|id| network.stops.get(id).map(|s| s.name.clone())),
-        "route" => names(&input.routes, &|id| network.routes.get(id).map(|r| r.label().to_string())),
+        "stop" => names(&input.stop_ids(), &|id| network.stops.get(id).map(|s| s.name.clone())),
+        "route" => names(&input.route_ids(), &|id| network.routes.get(id).map(|r| r.label().to_string())),
         "start date" => date(&input.start_date),
         "end date" => date(&input.end_date),
         _ => None,

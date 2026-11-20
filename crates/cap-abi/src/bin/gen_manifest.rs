@@ -156,7 +156,7 @@ const MODULES: &[ModuleSpec] = &[
         // — the sync contract); the watchlist is the PERSONAL document
         // it reads in the current version (cap-migrate migrates it).
         consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[transit_dispatch::watchlist::SCHEMA_VERSION]), ("live", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[transit_rider::watchlist::SCHEMA_VERSION]), ("live", &[1])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-board/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -266,7 +266,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "author",
         file: "module_author.wasm",
-        ops: &["apply"],
+        ops: &["apply", "stamp_pick"],
         documents: &["network", "work_rules"],
         // Authoring reads and MINTS network documents — the same
         // identity the codec's import produces and every model-side
@@ -308,7 +308,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "read_records", "records", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "log_document"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "log_document"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -325,7 +325,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "requests",
         file: "module_requests.wasm",
-        ops: &["validate", "requests_for", "list", "put", "record_work_order", "vocabulary", "log_records", "log_document"],
+        ops: &["validate", "requests_for", "list", "put", "work_order_call", "record_work_order", "vocabulary", "log_records", "log_document"],
         documents: &["stop_requests"],
         // The stop requests document is the host's (D-159): validate
         // answers its canonical bytes and hash, which the kernel's
@@ -373,7 +373,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "disruptions",
         file: "module_disruptions.wasm",
-        ops: &["today", "gaps"],
+        ops: &["today", "gaps", "start_alert"],
         documents: &["network", "edits", "live", "stops", "service_alerts", "notes"],
         // What is disrupted on a day, and whether an alert explains it
         // (D-218): it reads every document a disruption, its alert, or
@@ -872,16 +872,16 @@ fn migrate_network(doc: serde_json::Value, _from: u32) -> Result<serde_json::Val
     transit_network::migrate_to(doc, transit_network::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
 
-/// Bring a watchlist of an older version forward (transit-dispatch's chain).
+/// Bring a watchlist of an older version forward (transit-rider's chain).
 fn migrate_watchlist(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
-    transit_dispatch::watchlist::migrate_to(doc, transit_dispatch::watchlist::SCHEMA_VERSION).map(|(doc, _)| doc)
+    transit_rider::watchlist::migrate_to(doc, transit_rider::watchlist::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
 
 /// The fixture watchlist: a rider's two saved stops, as the kernel's
 /// load and the board's example read it.
-fn fixture_watchlist() -> transit_dispatch::watchlist::Watchlist {
-    let stop = |id: &str, label: &str| transit_dispatch::watchlist::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
-    transit_dispatch::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
+fn fixture_watchlist() -> transit_rider::watchlist::Watchlist {
+    let stop = |id: &str, label: &str| transit_rider::watchlist::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
+    transit_rider::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
 /// Bring a service alerts document of an older version forward
@@ -927,10 +927,10 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
             None,
         ),
-        kind::<transit_dispatch::watchlist::Watchlist>(
+        kind::<transit_rider::watchlist::Watchlist>(
             "watchlist",
             None,
-            "transit-dispatch",
+            "transit-rider",
             Some(value(&fixture_watchlist())),
             Some(migrate_watchlist),
         ),
@@ -945,20 +945,20 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             }),
             None,
         ),
-        kind::<transit_dispatch::device::RecentPlaces>(
+        kind::<transit_rider::device::RecentPlaces>(
             "recent_places",
             None,
-            "transit-dispatch",
+            "transit-rider",
             Some(serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
                 {"id": "A", "name": "Main St & 1st Ave", "lat": 45.5, "lon": -73.5},
                 {"id": "STN", "name": "Central Station"}
             ]})),
             None,
         ),
-        kind::<transit_dispatch::device::LiveFeeds>(
+        kind::<transit_rider::device::LiveFeeds>(
             "live_feeds",
             None,
-            "transit-dispatch",
+            "transit-rider",
             Some(serde_json::json!({"kind": "live_feeds", "schema_version": 1,
                 "trips": "https://agency.example/gtfs-rt/trip-updates.pb", "vehicles": "", "alerts": ""})),
             None,
@@ -2438,6 +2438,19 @@ fn example_for(
                 json!({ "ok": { "op": "put", "refusals": [], "requests_hash": cap_abi::canonical_hash(&next).ok()?, "requests": next } }),
             )
         }
+        ("requests", "work_order_call") => {
+            // The repair at 6124, ordered: a refresh reads WO-90001.
+            let requests = fixture_requests().checked().ok()?;
+            let id = "R-2027-020";
+            let request: transit_requests::StopRequest = serde_json::from_value(json!({"stop": "6124", "job": "repair_improve", "status": "ordered", "requested_on": "2027-02-01",
+                "work_order": {"system": "Maintenance", "id": "WO-90001", "status": "open", "read_on": "2027-02-02"}})).ok()?;
+            let held = requests.put(id, request).checked().ok()?;
+            let call = held.work_order_call(id, "refresh").ok()?;
+            (
+                json!({ "op": "work_order_call", "requests_hash": cap_abi::canonical_hash(&held).ok()?, "id": id, "action": "refresh" }),
+                json!({ "ok": { "op": "work_order_call", "call": call } }),
+            )
+        }
         ("requests", "record_work_order") => {
             // The repair at 6124: the work order system opened WO-90001.
             let requests = fixture_requests().checked().ok()?;
@@ -2448,9 +2461,13 @@ fn example_for(
                 json!({ "ok": { "op": "record_work_order", "refusals": [], "requests_hash": cap_abi::canonical_hash(&next).ok()?, "requests": next } }),
             )
         }
+        ("stops", "vocabulary") => (
+            json!({ "op": "vocabulary" }),
+            json!({ "ok": { "op": "vocabulary", "statuses": transit_stops::Status::ALL.iter().map(|s| s.as_str()).collect::<Vec<_>>() } }),
+        ),
         ("requests", "vocabulary") => (
             json!({ "op": "vocabulary" }),
-            json!({ "ok": { "op": "vocabulary", "jobs": transit_requests::JOBS, "statuses": transit_requests::STATUSES,
+            json!({ "ok": { "op": "vocabulary", "jobs": transit_requests::JOBS, "statuses": transit_requests::STATUSES, "open_statuses": transit_requests::OPEN_STATUSES,
                 "sides": transit_requests::SIDES, "directions": transit_requests::DIRECTIONS, "markings": transit_requests::MARKINGS } }),
         ),
         ("kernel", "load_service_alerts") => {
@@ -2474,7 +2491,7 @@ fn example_for(
                 json!({ "ok": { "op": "load_notes", "notes_hash": cap_abi::canonical_hash(&notes).ok()?, "notes": notes.notes.len() } }),
             )
         }
-        ("disruptions", "today") | ("disruptions", "gaps") => {
+        ("disruptions", "today") | ("disruptions", "gaps") | ("disruptions", "start_alert") => {
             // 2026-10-23 on the fixture network: the edit document's
             // detour, the live feed over the fixture snapshot, the
             // alerts (one explains trip t10's 08:00 instance), and the
@@ -2495,10 +2512,18 @@ fn example_for(
                 date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23)?,
                 now: ALERTS_NOW,
             };
-            let request = json!({ "op": op, "network_hash": ctx.network_hash, "edits_hash": cap_abi::canonical_hash(&edits).ok()?,
+            let mut request = json!({ "op": op, "network_hash": ctx.network_hash, "edits_hash": cap_abi::canonical_hash(&edits).ok()?,
                 "live_hash": live_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?,
                 "notes_hash": cap_abi::canonical_hash(&notes).ok()?, "date": "2026-10-23", "now": ALERTS_NOW });
-            let answer = if op == "today" {
+            let answer = if op == "start_alert" {
+                // A new alert for the first gap: its effect, riders, and
+                // what it explains.
+                let source = transit_disruptions::gaps(&inputs).first()?.source.clone();
+                request["source"] = serde_json::to_value(&source).ok()?;
+                let mut answer = serde_json::to_value(transit_disruptions::start_alert(&inputs, Some(&source))).ok()?;
+                answer["op"] = json!("start_alert");
+                answer
+            } else if op == "today" {
                 let mut answer = serde_json::to_value(transit_disruptions::today(&inputs, &Default::default())).ok()?;
                 answer["op"] = json!("today");
                 answer
@@ -2644,6 +2669,7 @@ fn example_for(
             let input = transit_alerts::FillInput {
                 stops: vec!["A".into()],
                 routes: vec!["10".into(), "20".into()],
+                informed: vec![],
                 start_date: Some("2026-10-26".into()),
                 end_date: Some("2026-11-20".into()),
             };
@@ -3302,6 +3328,22 @@ fn example_for(
         // Authoring examples run the REAL edit through the shared
         // library: the fixture network stamped as a pick, the answer's
         // hash computed the way every module computes it.
+        ("author", "stamp_pick") => {
+            // The fixture feed, stamped as the fall pick on its first
+            // service date.
+            let ctx = net?;
+            let edits = transit_network::stamp_as_pick(ctx.derived_network(), "Fall 2026 feed", "fall-2026");
+            let next = transit_network::apply_edits(ctx.derived_network(), &edits).ok()?;
+            (
+                json!({ "op": "stamp_pick", "network_hash": ctx.network_hash, "name": "Fall 2026 feed", "id": "fall-2026" }),
+                json!({ "ok": { "op": "stamp_pick",
+                    "network_hash": cap_abi::canonical_hash(&next).ok()?,
+                    "network": next,
+                    "issues": transit_network::validation_issues(&next),
+                    "warnings": transit_network::validation_warnings(&next),
+                    "stamped": true } }),
+            )
+        }
         ("author", "apply") => {
             let ctx = net?;
             let edits = vec![transit_network::NetworkEdit::SetPlan {

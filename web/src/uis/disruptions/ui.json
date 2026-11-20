@@ -25,6 +25,7 @@
     "runcut.trip_path",
     "network.validate",
     "disruptions.gaps",
+    "disruptions.start_alert",
     "alerts.list",
     "alerts.put",
     "alerts.end",

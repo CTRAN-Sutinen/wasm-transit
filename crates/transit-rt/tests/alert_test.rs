@@ -13,7 +13,8 @@
 
 use prost::Message;
 use transit_codec::Boundary;
-use transit_live::{AlertCause, AlertEffect, AlertScope, OnTimeWindow};
+use transit_live::{AlertScope, OnTimeWindow};
+use transit_alerts::{AlertCause, AlertEffect};
 use transit_rt::gtfs_rt::{
     alert, translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader, FeedMessage, TimeRange,
     TranslatedString, TripDescriptor,

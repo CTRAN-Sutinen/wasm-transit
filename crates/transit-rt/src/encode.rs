@@ -16,7 +16,7 @@
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlerts};
-use transit_live::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
+use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use transit_network::Network;
 use ts_rs::TS;
 

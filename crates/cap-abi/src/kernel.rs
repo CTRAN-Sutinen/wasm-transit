@@ -50,7 +50,7 @@ pub use transit_rt::RtOverview;
 pub use transit_streets::Streets;
 pub use transit_streets::walking::WalkTable;
 pub use transit_sync::{EditDocument, EditRecord};
-pub use transit_dispatch::watchlist::Watchlist;
+pub use transit_rider::watchlist::Watchlist;
 pub use transit_runs::WorkRules;
 pub use transit_requests::StopRequests;
 pub use transit_stops::Stops;

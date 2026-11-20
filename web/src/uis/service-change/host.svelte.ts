@@ -261,13 +261,16 @@ async function fetchPick(key: string): Promise<boolean> {
 }
 
 /// A feed's document stamped as a pick on its first service date
-/// (D-140): the date it is listed under, changeable on its row.
-async function stampAsPick(doc: Network, name: string, firstServiceDate: string | null): Promise<Network> {
-  if (doc.plan?.id || !firstServiceDate) return doc;
-  const applied = await apply(doc, [{ edit: "set_plan", plan: { id: crypto.randomUUID(), name, effective_from: firstServiceDate } }]);
-  if (!applied) return doc;
-  authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
-  return applied.network;
+/// (D-140): the date it is listed under, changeable on its row. The
+/// authoring capability decides whether it is stamped (`stamp_pick`);
+/// the host gives the new id.
+async function stampAsPick(doc: Network, name: string): Promise<Network> {
+  if (!(await available("author"))) return doc;
+  const stamped = await ask("author", "stamp_pick", { network_hash: docOf(doc), name, id: crypto.randomUUID() });
+  if (!stamped.stamped) return doc;
+  docs.set(stamped.network, produced("network", stamped.network, "author", stamped.network_hash));
+  authoredHealth.set(stamped.network, { issues: stamped.issues, warnings: stamped.warnings });
+  return stamped.network;
 }
 
 const authoredHealth = new WeakMap<Network, { issues: NetworkError[]; warnings: NetworkWarning[] }>();
@@ -771,7 +774,7 @@ export async function boot(): Promise<void> {
     const served = await servedNetworkValue();
     if (!served?.network.value) return null;
     docs.set(served.network.value, served.network);
-    const network = await stampAsPick(served.network.value, served.network.value.name || "The deployment's feed", served.firstServiceDate);
+    const network = await stampAsPick(served.network.value, served.network.value.name || "The deployment's feed");
     const key = `served:${served.network.pin ?? crypto.randomUUID()}`;
     putPlan(key, network);
     sc.feed = { label: network.name || "the deployment's feed", info: null };
@@ -788,7 +791,7 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
     const info = (await available("gtfs")) ? (await ask("gtfs", "feed_info", { feed_hash: feed })).info : null;
     const imported = await ask("network", "import", { feed_hash: feed });
     docs.set(imported.network, produced("network", imported.network, "network", imported.network_hash));
-    const doc = await stampAsPick(imported.network, label.replace(/\.zip$/i, ""), imported.first_service_date ?? null);
+    const doc = await stampAsPick(imported.network, label.replace(/\.zip$/i, ""));
     const key = `plan-${doc.plan?.id || crypto.randomUUID()}`;
     putPlan(key, doc);
     sc.feed = { label, info };

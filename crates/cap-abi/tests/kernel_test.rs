@@ -172,7 +172,7 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
 /// refused.
 #[test]
 fn the_watchlist_reads_its_v2_from_before_the_tags_and_refuses_every_other_version() {
-    use transit_dispatch::watchlist::Watchlist;
+    use transit_rider::watchlist::Watchlist;
     let read: Watchlist = cap_abi::parse_versioned(br#"{"version":"v2","stops":[{"id":"A","label":"home"}]}"#).unwrap();
     let written = serde_json::to_value(&read).unwrap();
     assert_eq!(written, serde_json::json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "home"}]}));
