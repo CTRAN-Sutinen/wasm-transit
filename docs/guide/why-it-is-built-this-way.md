@@ -162,7 +162,10 @@ not already exist.
 
 **Why.** Object storage keeps data safe when a server fails. Because
 the server keeps nothing important on its own disk, any server can be
-replaced by a new one pointed at the same storage. There is no
+replaced by a new one pointed at the same storage. A server can keep
+a copy on its own disk of what it read. Then, if it restarts while the
+storage is not answering, it still shows that data, marked with its
+age. Losing that copy loses nothing. There is no
 database to run, tune, or back up separately. The agency can switch
 providers. It can also turn on the provider's lock that prevents
 deleting data for a set period, which suits audit rules.

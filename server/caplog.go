@@ -79,8 +79,11 @@ type logFold struct {
 	base json.RawMessage
 	seq  int64
 	// stored is the seq of the newest checkpoint in the bucket.
-	stored      int64
-	asOfMs      int64
+	stored int64
+	asOfMs int64
+	// stale: the head is the one this process, or its disk cache, last
+	// confirmed, because the bucket did not answer (D-119).
+	stale       bool
 	quarantined map[int64]string
 	gaps        []int64
 }
@@ -193,7 +196,7 @@ func (s *server) refreshLogLocked(f *logFold) error {
 		}
 		f.base, f.seq = json.RawMessage(ans.Checkpoint), ans.Seq
 		f.loaded = true
-		if f.seq-f.stored >= checkpointEvery {
+		if !head.Stale && f.seq-f.stored >= checkpointEvery {
 			if err := s.store.PutCheckpoint(f.name, f.seq, f.base); err != nil {
 				log.Printf("ALARM %s log: checkpoint %d: %v", f.name, f.seq, err)
 			} else {
@@ -201,8 +204,13 @@ func (s *server) refreshLogLocked(f *logFold) error {
 			}
 		}
 	}
-	f.asOfMs = head.AsOfMs
+	f.asOfMs, f.stale = head.AsOfMs, head.Stale
 	return nil
+}
+
+// errStaleHead is a write over a stale head: refused, as unavailable.
+func errStaleHead(f *logFold) error {
+	return fmt.Errorf("%w: the %s log's head is as of %d", store.ErrUnavailable, f.name, f.asOfMs)
 }
 
 // refreshLog brings the fold to the head. While the bucket does not
@@ -215,7 +223,7 @@ func (s *server) refreshLog(f *logFold) (stale bool, err error) {
 	if err != nil && errors.Is(err, store.ErrUnavailable) && f.loaded {
 		return true, nil
 	}
-	return false, err
+	return err == nil && f.stale, err
 }
 
 // logRefusal is a write the caller refuses before an entry: the status
@@ -261,6 +269,9 @@ func (s *server) writeLog(f *logFold, w logWrite, run func() ([]json.RawMessage,
 	for attempt := 0; attempt < 5; attempt++ {
 		if err := s.refreshLogLocked(f); err != nil {
 			return 0, false, nil, err
+		}
+		if f.stale {
+			return 0, false, nil, errStaleHead(f)
 		}
 		if len(f.gaps) > 0 {
 			return 0, false, nil, &store.GapError{Log: f.name, Gaps: f.gaps}
@@ -469,7 +480,10 @@ func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *lo
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for attempt := 0; attempt < 5; attempt++ {
-		if err := s.refreshLogLocked(f); err != nil {
+		if err := s.refreshLogLocked(f); err == nil && f.stale {
+			logWriteFailed(w, errStaleHead(f), http.StatusServiceUnavailable)
+			return
+		} else if err != nil {
 			logWriteFailed(w, err, http.StatusInternalServerError)
 			return
 		}

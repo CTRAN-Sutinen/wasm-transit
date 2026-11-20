@@ -4,7 +4,8 @@ The agency's record is one bucket in object storage. The bucket holds
 immutable, content-addressed objects, the pointer logs that name them,
 and the append-only logs of what people edit. Every other copy of a document is a working copy or a copy of
 the record. Examples are a page's IndexedDB, the bus worker's
-registries, a server's head and blob caches, an export, and a backup.
+registries, a server's head and blob caches (in memory, and on its
+disk with `-store-cache`), an export, and a backup.
 Who owns that data and the contract a write meets are in
 [agency-data.md](agency-data.md). The bytes at rest are in
 [`docs/FORMATS.md`](../FORMATS.md): keys, envelope, records, the commit
@@ -56,7 +57,15 @@ against one store's address (an operator's own bucket).
 - **Many processes, one bucket.** Several server processes may share
   one bucket. Each caches heads. Each reads at most 2 s behind another
   process's commit. The model (`store.tla`, `just spec`) checks processes
-  that share a bucket, with the offline collector beside them.
+  that share a bucket, with the offline collector beside them. A Go
+  test runs two server copies that write the same logs at the same
+  time: every write lands once, in one order, and both copies serve
+  the same heads (`server/resilience_test.go`).
+- **A copy's disk cache is a working copy.** With `-store-cache`, a
+  serving process keeps what it read and confirmed on its own disk,
+  and boots on it read-only while the bucket does not answer. It never
+  writes the cache back to the bucket, and the bucket wins the first
+  time it answers ([server.md](server.md), "The disk cache").
 - **Nothing serving deletes.** A serving process opens the store with
   `store.OpenServing`. It creates, reads and lists. It never deletes
   (D-117). The offline tools are in `server/cmd/store` (`just store …`).
@@ -231,8 +240,8 @@ rule.
   service worker, and any HTTP cache in front.
 - A pointer's head (`/pointers/<name>`, `/manifest`, `/edits`) is the
   one thing that can be stale. While the bucket does not answer, a
-  server serves the heads it holds, labelled with their age
-  (D-119; [server.md](server.md)).
+  server serves the heads it holds, in memory or in its disk cache,
+  labelled with their age (D-119, D-224; [server.md](server.md)).
 - A pointer's log (`/pointers/<name>/log?since=`) is the change feed.
   It lists the commits after a hash the reader holds.
 - A log's entries (`/logs/disruptions?since=<seq>`,

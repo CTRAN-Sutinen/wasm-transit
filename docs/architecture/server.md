@@ -138,7 +138,37 @@ While the bucket does not answer (D-119), the server serves the heads
 and blobs it holds (a byte-bounded blob cache; blobs are immutable). It
 labels each such read `X-Store-Stale` / `X-Store-As-Of`. It refuses
 every write with 503 and `Retry-After`. The rider pages show the edit
-document's age (kit's `staleLabel`).
+document's age (kit's `staleLabel`). A bucket call that takes longer
+than its timeout (20 s, 2 min for a create) is a bucket that does not
+answer (`store/degraded.go`).
+
+**The disk cache** (`-store-cache <folder>`, `store/diskcache.go`;
+D-224). A copy keeps a working copy on its own disk of what it reads
+from the bucket and confirms: each blob and its envelope, each
+pointer's and log's last confirmed head with its as-of time, and the
+logs' entries and checkpoints. A copy that starts while the bucket does
+not answer boots on it. It serves those heads, labelled stale as of
+when the bucket last confirmed them. It folds each log from the cached
+checkpoint and entries. It refuses every write with 503, as a running
+copy does. The first time the bucket answers, the copy lists each
+pointer and log again from the start, so a bucket restored to an older
+state wins over the cache. The cache is scoped to its store URL
+(`<folder>/<scope>/store-url`). It keeps at most 4 GB of blobs, the
+least recently used out first, and for each log the newest two
+checkpoints and the entries after the older one: what a boot reads.
+Each file is written whole and renamed into place. A failed cache
+write is ignored. Nothing in the cache is written back to the bucket,
+and losing it loses nothing. Without `-store-cache`, such a copy has
+nothing to serve, and `/readyz` answers `unavailable`.
+
+**More than one copy.** Any number of copies run on one bucket. Each is
+a working copy: it caches heads, and it reads at most 2 s behind
+another copy's commit. Two copies that write the same log at the same
+time race for the next entry's conditional create. The loser reads the
+log again and runs its receive path again (`writeLog`), so every write
+lands once, in one order. `server/resilience_test.go` pins it, with the
+fault harness: an answer lost after the bucket kept the write, a copy
+stopped in the middle of a write, and a slow bucket.
 
 Without `-store`, the server runs over **the dev store**. The edit
 document is in memory (or, with `-edits <path>`, in one flat file on
@@ -202,8 +232,10 @@ Its HTTP surface:
 - `/readyz`: readiness, JSON `{status, store, store_as_of_ms, error}`.
   - 200 `ready`.
   - 200 `degraded` while the bucket does not answer and the cached
-    heads serve labelled reads.
-  - 503 `unavailable` when the store holds no head to serve.
+    heads serve labelled reads. A copy that booted on its disk cache
+    answers the same.
+  - 503 `unavailable` when the store holds no head to serve, in memory
+    or in its disk cache.
   - 503 `draining` once shutdown has begun.
   - Without `-store` it is `ready` with `store: "none"`.
   - It reads the `edits` head, which the store rechecks at most once
@@ -648,6 +680,12 @@ reading **Because**.
 - **Because:** files are large, and their access and keeping differ from the documents'. A URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider). A hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people. The deployment is internal-facing, and its attachments are staff's to see.
 - **Rejected:** URLs in the records. Attachments among the store's blobs. Public reads.
 - **Decided:** D-162.
+
+### A copy boots on its disk cache (`-store-cache`, `store/diskcache.go`)
+- **Holds:** a copy keeps the blobs, heads, entries, and checkpoints it read on its own disk. Started while the bucket does not answer, it serves them read-only, labelled stale, and `/readyz` answers `degraded`. The bucket wins the first time it answers. The flag is opt-in.
+- **Because:** every copy shares one bucket, and a platform restarts containers on its own schedule. Without a cache, an outage that outlasts one restart leaves every copy with nothing to serve. Everything the cache holds but a head is immutable, so only a head can be wrong, and a head is labelled with its age and checked again from the start. The cache is a working copy, never the record: it writes nothing back, so losing it loses nothing.
+- **Rejected:** a cache on by default (a container with no writable volume would fail at boot or lose it on each restart). A distinct `/readyz` answer (a balancer treats it as `degraded` anyway). Serving the cache once the bucket answers.
+- **Provisional:** D-224.
 
 ### Degraded is ready (`/readyz`, `health.go`)
 - **Holds:** `/readyz` stays 200 while the bucket does not answer and cached heads serve. `/healthz` reads nothing.

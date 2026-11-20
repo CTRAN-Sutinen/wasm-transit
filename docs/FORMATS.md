@@ -580,7 +580,8 @@ entry 1 from their heads, with writer `migrate:stops` and
   its bytes, so the server cannot redact it. `POST /logs/stops` needs
   the write rule on each document an op touches.
 - **While the bucket does not answer** (D-119), a server serves the
-  heads and blobs that it holds. Blobs are immutable, so a cached blob
+  heads and blobs that it holds, in memory or in its disk cache
+  (D-224). Blobs are immutable, so a cached blob
   is always correct. The server labels every read whose head the bucket
   did not confirm. The label is `X-Store-Stale: true` and
   `X-Store-As-Of: <Unix ms>` (when the bucket last confirmed it), on

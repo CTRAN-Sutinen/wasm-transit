@@ -174,6 +174,11 @@ and before a release.
    and a whole run must reach every operation it names. The change must
    pass the compatibility gate against `server/openapi.lock.json`
    (docs/architecture/release-artifacts.md, "The HTTP contract").
+   A change to how the server writes the bucket runs under the fault
+   harness (`faultBucket`, `server/resilience_test.go`): a lost answer,
+   a copy stopped in the middle of a write, a slow bucket, and two
+   copies on one bucket. A new way for a write to fail gets its own
+   fault there.
 4. **Playwright e2e for user-visible flows.** Svelte components should
    not need changes when only the ABI underneath changes.
    The spec answers external services with `page.route`:

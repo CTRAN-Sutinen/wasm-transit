@@ -16,8 +16,8 @@ var ErrUnavailable = errors.New("store: the bucket is not answering")
 
 // callTimeout bounds one backend call, so a bucket that hangs is a
 // bucket that does not answer; a create carries a whole blob, so it gets
-// longer.
-const (
+// longer. They are variables only so a test can shorten them.
+var (
 	callTimeout   = 20 * time.Second
 	createTimeout = 2 * time.Minute
 )

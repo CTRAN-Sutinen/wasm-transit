@@ -275,6 +275,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-219 | How is a day's disruptions answer shaped? | encoded | nothing |
 | D-222 | Which time does a write sent late carry? | decided; built | nothing |
 | D-223 | Does every install download the staff pages' modules? | encoded | nothing |
+| D-224 | What does a server copy started while the bucket does not answer serve? | encoded | nothing |
 
 ## The trip model
 
@@ -3555,6 +3556,40 @@ Options:
   schema version, stored and served, never branched on.
 - None: the adjacent system keeps the mapping from its event to this
   repo's record id.
+Blocks: nothing.
+
+### D-224 — What does a server copy started while the bucket does not answer serve?
+State: Encoded provisionally.
+Context: D-119 covers a copy that was running when the bucket stopped
+answering: it serves the heads it holds in memory. A copy that starts
+during the outage holds nothing. The agency runs 24/7, and a platform
+restarts or moves containers on its own schedule. Every copy shares
+the bucket, so an outage that outlasts one restart leaves every copy
+with nothing to serve.
+Options:
+- A disk cache on each copy, opt-in (`-store-cache <folder>`;
+  encoded): the copy keeps the blobs, the heads it confirmed, and the
+  logs' entries and checkpoints it read. It boots on them read-only,
+  labelled stale, and `/readyz` answers `degraded`, as for a running
+  copy. The bucket wins the first time it answers. Bounded at about
+  4 GB of blobs; the newest two checkpoints of each log and the
+  entries after the older one. With no flag, nothing changes.
+- The same cache on by default, in a folder the server picks: every
+  deployment gets it, and a container with no writable volume fails
+  at boot or loses it on each restart.
+- A distinct `/readyz` answer for a copy on its cache: the operator
+  can tell the two apart, and a balancer treats them alike anyway.
+- No cache: such a copy answers `unavailable` until the bucket is
+  back.
+Pinned by: Go `TestACopyStartedWhileTheBucketIsDownServesItsCache`,
+`TestACopyWithNoCacheStartedWhileTheBucketIsDownIsUnavailable`
+(`server/resilience_test.go`);
+`TestACopyStartedWhileTheBucketIsDownServesItsCacheStaleAndRefusesWrites`,
+`TestTheBucketWinsOverTheCacheWhenItAnswers`,
+`TestTheCacheIsScopedToItsStore`, `TestTheCacheIsBounded`
+(`server/store/diskcache_test.go`).
+Why: `docs/architecture/server.md`, Why, "A copy boots on its disk
+cache".
 Blocks: nothing.
 
 ## Authentication and authorization

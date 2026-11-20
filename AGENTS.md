@@ -468,8 +468,10 @@ server/          the Go and wazero host. It runs cap-sync (the edit document and
                  ops, the device's key, the seq it read; D-189). Its HTTP surface is server/openapi.json,
                  which changes by expand, then contract (D-81). It has two proxies:
                  /geocode to a Pelias geocoder, and /rt, a dev feed relay that is off
-                 unless -rt-proxy is set. It is scaffolding and never makes a domain
-                 decision.
+                 unless -rt-proxy is set. Any number of copies share one bucket.
+                 With -store-cache, a copy keeps what it read on its own disk and
+                 boots on it read-only while the bucket does not answer (D-224).
+                 It is scaffolding and never makes a domain decision.
 web/             the Svelte 5 and Vite frontend. / is a picker over the generated UIs
                  (src/uis/<id>/, each its own page and host layer; every page is one).
                  docs/architecture/generated-uis.md is the recipe a new agent follows.

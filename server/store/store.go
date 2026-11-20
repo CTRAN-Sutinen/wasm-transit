@@ -89,8 +89,9 @@ type LogEntry struct {
 }
 
 // Head is a pointer's current value: its highest record. While the
-// bucket does not answer (D-119) it is this process's cached head,
-// Stale, as of the last time the bucket confirmed it.
+// bucket does not answer (D-119) it is this process's cached head, or
+// its disk cache's (diskcache.go, D-224), Stale, as of the last time
+// the bucket confirmed it.
 type Head struct {
 	Name     string   `json:"name"`
 	Hash     string   `json:"hash"` // "" when the pointer does not exist
@@ -127,6 +128,9 @@ type pointer struct {
 	atMs   int64
 	recs   map[int64]LogEntry
 	probed time.Time
+	// fromCache: the head is the disk cache's (diskcache.go). The next
+	// read the bucket answers lists the pointer again from the start.
+	fromCache bool
 }
 
 // Store is one store over a backend. Safe for concurrent use, and for
@@ -135,6 +139,7 @@ type Store struct {
 	b       Backend
 	serving bool
 	cache   *blobCache
+	disk    *diskCache // nil: no disk cache (KeepCache)
 	mu      sync.Mutex
 	ptrs    map[string]*pointer
 	logs    map[string]*logState // the append-only logs (log.go)
@@ -276,7 +281,7 @@ func (s *Store) putBlob(data []byte, env Envelope, wantHash string) (string, err
 	h, _ := ParseHash(hash)
 	ctx := context.Background()
 	if _, err := s.b.Stat(ctx, blobKey(h)); err == nil {
-		s.cache.put(hash, data, env)
+		s.keepBlob(hash, data, env)
 		return hash, nil // idempotent, without re-sending the bytes
 	} else if !errors.Is(err, ErrNotFound) {
 		return "", err
@@ -289,8 +294,15 @@ func (s *Store) putBlob(data []byte, env Envelope, wantHash string) (string, err
 	if err != nil && !errors.Is(err, ErrExists) {
 		return "", err
 	}
-	s.cache.put(hash, data, env)
+	s.keepBlob(hash, data, env)
 	return hash, nil
+}
+
+// keepBlob keeps a blob the bucket holds in memory and in the disk
+// cache.
+func (s *Store) keepBlob(hash string, data []byte, env Envelope) {
+	s.cache.put(hash, data, env)
+	s.disk.putBlob(hash, data, env)
 }
 
 // GetBlob reads a blob and its envelope.
@@ -300,9 +312,16 @@ func (s *Store) GetBlob(hash string) ([]byte, Envelope, error) {
 		return nil, Envelope{}, err
 	}
 	if c, ok := s.cache.get(hash); ok {
+		s.disk.touch(hash)
 		return c.data, c.env, nil // immutable: a cached blob is always correct
 	}
 	data, meta, err := s.b.Get(context.Background(), blobKey(h))
+	if errors.Is(err, ErrUnavailable) {
+		if data, env, ok := s.disk.getBlob(hash); ok {
+			s.cache.put(hash, data, env)
+			return data, env, nil
+		}
+	}
 	if err != nil {
 		return nil, Envelope{}, err
 	}
@@ -310,7 +329,7 @@ func (s *Store) GetBlob(hash string) ([]byte, Envelope, error) {
 	if err := json.Unmarshal([]byte(meta[envelopeMeta]), &env); err != nil {
 		return nil, Envelope{}, fmt.Errorf("blob %s envelope: %w", hash, err)
 	}
-	s.cache.put(hash, data, env)
+	s.keepBlob(hash, data, env)
 	return data, env, nil
 }
 
@@ -438,6 +457,40 @@ func (s *Store) advance(p *pointer, name string) error {
 	}
 	p.loaded = true
 	p.probed = s.now()
+	s.keepHead(p, name)
+	return nil
+}
+
+// keepHead writes the pointer's confirmed head to the disk cache.
+// Caller holds p.mu.
+func (s *Store) keepHead(p *pointer, name string) {
+	s.disk.putHead(name, cachedHead{Seq: p.seq, To: p.to, Envelope: p.env, AtMs: p.atMs, AsOfMs: p.probed.UnixMilli()})
+}
+
+// fromDisk loads the disk cache's head of a pointer this process has
+// not read: the head it serves, stale, while the bucket does not
+// answer. Caller holds p.mu.
+func (s *Store) fromDisk(p *pointer, name string) bool {
+	h, ok := s.disk.head(name)
+	if !ok {
+		return false
+	}
+	p.seq, p.to, p.env, p.atMs = h.Seq, h.To, h.Envelope, h.AtMs
+	p.probed = time.UnixMilli(h.AsOfMs)
+	p.loaded, p.fromCache = true, true
+	return true
+}
+
+// relist lists a pointer the disk cache loaded again from the start.
+// On a failure it keeps the cache's head. Caller holds p.mu.
+func (s *Store) relist(p *pointer, name string) error {
+	seq, to, env, atMs, probed := p.seq, p.to, p.env, p.atMs, p.probed
+	p.seq, p.to, p.env, p.atMs, p.loaded = 0, "", Envelope{}, 0, false
+	if err := s.advance(p, name); err != nil {
+		p.seq, p.to, p.env, p.atMs, p.probed, p.loaded = seq, to, env, atMs, probed, true
+		return err
+	}
+	p.fromCache = false
 	return nil
 }
 
@@ -449,11 +502,15 @@ func (s *Store) fresh(p *pointer, name string) error {
 	if !p.loaded {
 		return s.advance(p, name)
 	}
+	if p.fromCache {
+		return s.relist(p, name)
+	}
 	if s.now().Sub(p.probed) < FreshnessWindow {
 		return nil
 	}
 	if _, err := s.b.Stat(context.Background(), recordKey(name, p.seq+1)); errors.Is(err, ErrNotFound) {
 		p.probed = s.now()
+		s.keepHead(p, name)
 		return nil
 	} else if err != nil {
 		return err
@@ -475,6 +532,9 @@ func (s *Store) Head(name string) (Head, bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := s.fresh(p, name); err != nil {
+		if errors.Is(err, ErrUnavailable) && !p.loaded {
+			s.fromDisk(p, name) // a copy booted while the bucket does not answer
+		}
 		if !errors.Is(err, ErrUnavailable) || !p.loaded {
 			return Head{Name: name}, false, err
 		}
@@ -561,6 +621,7 @@ func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writ
 	p.recs[entry.Seq] = entry
 	p.seq, p.to, p.env, p.atMs = entry.Seq, hash, env, atMs
 	p.probed = s.now()
+	s.keepHead(p, name)
 	// Check: a commit that reused an aged orphan may have had it deleted
 	// under it; the bytes are content-addressed, so the re-create is the
 	// same object. A crash before this line is `store verify`'s to find.

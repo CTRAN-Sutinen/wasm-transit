@@ -20,6 +20,7 @@ type settings struct {
 	publisher      *string
 	editsPath      *string
 	storeURL       *string
+	storeCache     *string
 	retentionDays  *int
 	today          *string
 	migrateWasm    *string
@@ -70,6 +71,7 @@ func serverFlags(fs *flag.FlagSet) *settings {
 		publisher:      fs.String("publisher", "", "manifest provenance (who publishes this schedule)"),
 		editsPath:      fs.String("edits", "", "with no -store (the dev store): a file to keep the edit document in across restarts; empty = in memory only. With -store it seeds the edits pointer once"),
 		storeURL:       fs.String("store", "", "the durable sync store's URL (docs/FORMATS.md): s3://bucket/prefix[?endpoint=URL&region=R] (S3 or an S3-compatible endpoint; credentials from the AWS SDK's default chain) azblob://container/prefix, gs://bucket/prefix, or mem:// (nothing survives the process); enables /pointers, /blobs, /plans, /builds and store-backed /edits and /manifest. Empty = the dev store: edits in memory (or the -edits file), no history, no publishing — for development and -export only"),
+		storeCache:     fs.String("store-cache", "", "with -store: a local folder for this copy's cache of what it read from the bucket (the blobs, the heads it confirmed, the logs' entries and checkpoints). A copy that starts while the bucket does not answer serves from it, labelled stale, and refuses writes (D-119). It is never the record: losing it loses nothing. Empty = no cache, and such a copy has nothing to serve"),
 		retentionDays:  fs.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits"),
 		today:          fs.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)"),
 		migrateWasm:    fs.String("migrate-wasm", dataPath("pkg/cap_migrate.wasm", defaultMigrateWasm), "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup"),

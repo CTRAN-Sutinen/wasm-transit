@@ -52,7 +52,6 @@ work; a group is only a way to find them.
 |---|---|
 | [offline-apps.md](offline-apps.md) | the staff pages through an outage, dogfooded on C-TRAN: built and pinned, not yet run on real data |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
-| [server-resilience.md](server-resilience.md) | more than one server copy proved, a copy restarted while the bucket does not answer, and a fault harness |
 | [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
 
 ### Stops and streets

@@ -69,6 +69,9 @@ crates/*/bindings/
 .caps-sessions/
 /docs-site/
 
+# A server copy's cache of the bucket (-store-cache), when dev keeps one
+.store-cache/
+
 # The server settings a developer keeps to themselves (server/local.example.toml).
 /server/local.toml
 

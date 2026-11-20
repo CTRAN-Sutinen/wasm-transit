@@ -46,6 +46,9 @@ type LogHead struct {
 	Checkpoint int64 `json:"checkpoint"`
 	// AsOfMs is when the bucket last confirmed the head (Unix ms).
 	AsOfMs int64 `json:"as_of_ms"`
+	// Stale: the bucket did not answer this read, and the head is this
+	// process's, or its disk cache's, as of AsOfMs (D-119).
+	Stale bool `json:"stale,omitempty"`
 }
 
 // EntryConflictError is a lost race: another writer created the seq
@@ -82,6 +85,9 @@ type logState struct {
 	loaded bool
 	head   LogHead
 	probed time.Time
+	// fromCache: the head is the disk cache's. The next list the bucket
+	// answers starts again from the checkpoints.
+	fromCache bool
 }
 
 func logPrefix(name string) string         { return "logs/" + name + "/" }
@@ -180,21 +186,57 @@ func (s *Store) listLog(l *logState, name string) error {
 	l.head = head
 	l.loaded = true
 	l.probed = s.now()
+	s.keepLogHead(l, name)
 	return nil
+}
+
+// keepLogHead writes the log's confirmed head to the disk cache.
+// Caller holds l.mu.
+func (s *Store) keepLogHead(l *logState, name string) {
+	if s.disk == nil {
+		return
+	}
+	h := l.head
+	h.Gaps = append([]int64(nil), h.Gaps...)
+	h.AsOfMs = l.probed.UnixMilli()
+	s.disk.putLogHead(name, h)
+}
+
+// relistLog lists a log the disk cache loaded again from the start. On
+// a failure it keeps the cache's head. Caller holds l.mu.
+func (s *Store) relistLog(l *logState, name string) error {
+	saved, probed := l.head, l.probed
+	l.head, l.loaded = LogHead{Log: name}, false
+	if err := s.listLog(l, name); err != nil {
+		l.head, l.probed, l.loaded = saved, probed, true
+		return err
+	}
+	l.fromCache = false
+	return nil
+}
+
+// listFresh lists the log: from the start when the disk cache loaded
+// it. Caller holds l.mu.
+func (s *Store) listFresh(l *logState, name string) error {
+	if l.fromCache {
+		return s.relistLog(l, name)
+	}
+	return s.listLog(l, name)
 }
 
 // freshLog brings the cached head within the freshness window: a first
 // read lists the log; later, at most once per window, one Stat of the
 // next entry. Caller holds l.mu.
 func (s *Store) freshLog(l *logState, name string) error {
-	if !l.loaded || len(l.head.Gaps) > 0 {
-		return s.listLog(l, name)
+	if !l.loaded || l.fromCache || len(l.head.Gaps) > 0 {
+		return s.listFresh(l, name)
 	}
 	if s.now().Sub(l.probed) < FreshnessWindow {
 		return nil
 	}
 	if _, err := s.b.Stat(context.Background(), entryKey(name, l.head.Seq+1)); errors.Is(err, ErrNotFound) {
 		l.probed = s.now()
+		s.keepLogHead(l, name)
 		return nil
 	} else if err != nil {
 		return err
@@ -203,7 +245,9 @@ func (s *Store) freshLog(l *logState, name string) error {
 }
 
 // LogHeadOf answers a log's head: its highest entry, its gaps, and its
-// newest checkpoint.
+// newest checkpoint. While the bucket does not answer, it answers the
+// head this process last confirmed, else the disk cache's, Stale; with
+// neither, the error.
 func (s *Store) LogHeadOf(name string) (LogHead, error) {
 	if !ValidPointerName(name) {
 		return LogHead{Log: name}, fmt.Errorf("store: %q is not a log name", name)
@@ -211,10 +255,18 @@ func (s *Store) LogHeadOf(name string) (LogHead, error) {
 	l := s.logState(name)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if err := s.freshLog(l, name); err != nil {
+	err := s.freshLog(l, name)
+	if err != nil && errors.Is(err, ErrUnavailable) && !l.loaded {
+		if h, ok := s.disk.logHead(name); ok {
+			h.Log, h.Stale = name, false
+			l.head, l.probed, l.loaded, l.fromCache = h, time.UnixMilli(h.AsOfMs), true, true
+		}
+	}
+	if err != nil && (!errors.Is(err, ErrUnavailable) || !l.loaded) {
 		return LogHead{Log: name}, err
 	}
 	h := l.head
+	h.Stale = err != nil
 	h.Gaps = append([]int64(nil), h.Gaps...)
 	h.AsOfMs = l.probed.UnixMilli()
 	return h, nil
@@ -240,7 +292,7 @@ func (s *Store) createEntry(name string, seq int64, data []byte, gap bool) error
 	l := s.logState(name)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if err := s.listLog(l, name); err != nil {
+	if err := s.listFresh(l, name); err != nil {
 		return err
 	}
 	if gap {
@@ -274,16 +326,63 @@ func (s *Store) createEntry(name string, seq int64, data []byte, gap bool) error
 	if !bytes.Equal(got, data) {
 		return fmt.Errorf("log %s entry %d: %w", name, seq, ErrOverwritten)
 	}
+	s.disk.putLogObject(name, "entries", seq, data)
 	return s.listLog(l, name)
 }
 
 // Entries reads the entries after seq `after`, up to `upto` (0: the
 // head), in order. A missing entry in the range is a gap, and is
-// skipped: the caller sees it in LogHead.Gaps.
+// skipped: the caller sees it in LogHead.Gaps. While the bucket does not
+// answer, the disk cache answers when it holds every entry in the range
+// up to the head it kept.
 func (s *Store) Entries(name string, after, upto int64) ([]StoredEntry, error) {
 	if !ValidPointerName(name) {
 		return nil, fmt.Errorf("store: %q is not a log name", name)
 	}
+	out, err := s.entries(name, after, upto)
+	if errors.Is(err, ErrUnavailable) {
+		if cached, ok := s.cachedEntries(name, after, upto); ok {
+			return cached, nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range out {
+		s.disk.putLogObject(name, "entries", e.Seq, []byte(e.Text))
+	}
+	return out, nil
+}
+
+// cachedEntries answers Entries from the disk cache, or false when it
+// does not hold the whole range.
+func (s *Store) cachedEntries(name string, after, upto int64) ([]StoredEntry, bool) {
+	head, ok := s.disk.logHead(name)
+	if !ok {
+		return nil, false
+	}
+	if upto == 0 || upto > head.Seq {
+		upto = head.Seq
+	}
+	gap := map[int64]bool{}
+	for _, g := range head.Gaps {
+		gap[g] = true
+	}
+	out := []StoredEntry{}
+	for seq := after + 1; seq <= upto; seq++ {
+		if gap[seq] {
+			continue
+		}
+		data, ok := s.disk.logObject(name, "entries", seq)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, StoredEntry{Seq: seq, Text: string(data)})
+	}
+	return out, true
+}
+
+func (s *Store) entries(name string, after, upto int64) ([]StoredEntry, error) {
 	ctx := context.Background()
 	start := ""
 	if after > 0 {
@@ -345,18 +444,28 @@ func (s *Store) PutCheckpoint(name string, seq int64, data []byte) error {
 	if !bytes.Equal(got, data) {
 		return fmt.Errorf("log %s checkpoint %d: the stored checkpoint differs from this fold", name, seq)
 	}
+	s.disk.putLogObject(name, "checkpoints", seq, data)
 	l := s.logState(name)
 	l.mu.Lock()
 	if seq > l.head.Checkpoint {
 		l.head.Checkpoint = seq
+		if l.loaded && !l.fromCache {
+			s.keepLogHead(l, name)
+		}
 	}
 	l.mu.Unlock()
 	return nil
 }
 
-// Checkpoints lists a log's checkpoint seqs, oldest first.
+// Checkpoints lists a log's checkpoint seqs, oldest first. While the
+// bucket does not answer, it lists the disk cache's.
 func (s *Store) Checkpoints(name string) ([]int64, error) {
 	objs, err := s.b.List(context.Background(), checkpointsPrefix(name), "")
+	if errors.Is(err, ErrUnavailable) && s.disk != nil {
+		if _, ok := s.disk.logHead(name); ok {
+			return s.disk.logSeqs(name, "checkpoints"), nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -369,8 +478,17 @@ func (s *Store) Checkpoints(name string) ([]int64, error) {
 	return out, nil
 }
 
-// Checkpoint reads the checkpoint at seq.
+// Checkpoint reads the checkpoint at seq, from the bucket, else from
+// the disk cache while the bucket does not answer.
 func (s *Store) Checkpoint(name string, seq int64) ([]byte, error) {
 	data, _, err := s.b.Get(context.Background(), checkpointKey(name, seq))
+	if errors.Is(err, ErrUnavailable) {
+		if cached, ok := s.disk.logObject(name, "checkpoints", seq); ok {
+			return cached, nil
+		}
+	}
+	if err == nil {
+		s.disk.putLogObject(name, "checkpoints", seq, data)
+	}
 	return data, err
 }

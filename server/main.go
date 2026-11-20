@@ -91,6 +91,12 @@ func main() {
 			log.Fatalf("store: %v", err)
 		}
 		s.store = st
+		if *f.storeCache != "" {
+			if err := st.KeepCache(*f.storeCache, *f.storeURL); err != nil {
+				log.Fatalf("-store-cache: %v", err)
+			}
+			log.Printf("store cache: %s (a copy that starts while the bucket does not answer serves from it, read only)", *f.storeCache)
+		}
 		if s.plans, err = NewWasmHost(ctx, *f.plansWasm); err != nil {
 			log.Fatalf("plans module: %v", err)
 		}

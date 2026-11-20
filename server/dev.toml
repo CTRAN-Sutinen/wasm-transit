@@ -39,6 +39,10 @@ publisher = "Dev Transit"
 # requests writes need it. `just store-dev` starts a SeaweedFS to keep it:
 # store = "s3://transit/dev?endpoint=http://127.0.0.1:8333"
 store = "mem://"
+# A local folder for this copy's cache of what it read from the bucket.
+# A copy that starts while the bucket does not answer serves from it,
+# labelled stale, and refuses writes. It is never the record.
+# store-cache = "../.store-cache"
 # With no store (the dev store): a file to keep edits in across restarts.
 # With a store, it seeds the edits pointer once.
 # edits = ""

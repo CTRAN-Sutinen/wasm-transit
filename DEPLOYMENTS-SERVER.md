@@ -159,6 +159,7 @@ The options you are most likely to use:
 | Option | What it does |
 |---|---|
 | `-store` | The bucket ([section 4](#4-prepare-the-bucket)). Always set it in production. |
+| `-store-cache` | A folder on this copy's own disk where it keeps a copy of what it read from the bucket. If the copy starts while the bucket is not answering, it serves from this folder ([section 7](#7-run-it-behind-a-load-balancer)). Set it in production. |
 | `-feed` | Where the GTFS file is: a web address, or `bucket:<name>` for the object `inputs/<name>` in the bucket. |
 | `-streets` | Where the street map file is, in the same forms. Turns on walking directions. |
 | `-publisher` | The agency's name, shown as the source of the schedule. |
@@ -341,8 +342,8 @@ Point the load balancer's health checks at these two addresses:
 | Answer | Code | What it means |
 |---|---|---|
 | `ready` | 200 | All is well. |
-| `degraded` | 200 | The bucket is not answering. The server still serves what it has, but refuses changes until the bucket is back. Every copy shares the bucket, so taking them out of service would not help. |
-| `unavailable` | 503 | The bucket is not answering and this copy has nothing saved to serve. |
+| `degraded` | 200 | The bucket is not answering. The server still serves what it has, but refuses changes until the bucket is back. Every copy shares the bucket, so taking them out of service would not help. A copy that started while the bucket was not answering also says `degraded` when it serves from its `-store-cache` folder. |
+| `unavailable` | 503 | The bucket is not answering and this copy has nothing saved to serve: it has no `-store-cache` folder, or the folder is still empty. |
 | `draining` | 503 | This copy is stopping. |
 
 **Stopping.** When the container is told to stop (SIGTERM), the
@@ -355,7 +356,27 @@ checks less often than every 5 seconds, raise `-drain` to match.
 
 **More than one copy.** Run as many copies as you like on the same
 bucket and the same options. A change made through one copy reaches
-the others within 2 seconds.
+the others within 2 seconds. Two copies can save changes at the same
+moment: each change is kept once, and both copies then show the same
+data.
+
+**Keep a cache on each copy.** Give each copy its own folder with
+`-store-cache`, on a disk that outlives a restart of the container.
+The copy keeps a copy there of what it reads from the bucket. When the
+copy restarts while the bucket is not answering, it serves from that
+folder: the apps show the data with its age, and changes wait, as for
+a copy that was already running. Without the folder, such a copy has
+nothing to serve and answers `unavailable`. The folder is never the
+agency's record: if you lose it, nothing is lost, and the copy fills
+it again. It holds at most about 4 GB.
+
+- With Podman, use a named volume that the server may write:
+  `-v transit-cache:/cache:U` and `-store-cache /cache`.
+- In Kubernetes, an `emptyDir` volume is enough. It outlives a restart
+  of the container in its pod.
+
+If the folder cannot be written, the server stops at start with
+`-store-cache:` in the log.
 
 **Compression and headers.** The server does both itself. The load
 balancer needs no rule for them.
@@ -658,6 +679,8 @@ image.
 | A staff app says "Offline" and "changes waiting to send" | The app cannot reach the server. The person keeps working; what they save waits on their device and is sent, once, when the server answers. Check that the server is running and that the device has a network. |
 | A staff app shows "Not saved" with a reason | The server refused a change when it arrived: someone else changed the same thing, or it no longer fits. The person reads the reason and sends it again or discards it. Nothing else is needed from you. |
 | The server will not start, with `store:` in the error | The store address or the credentials are wrong. |
+| The server will not start, with `-store-cache:` in the error | The cache folder cannot be written. Check the volume and its owner ([section 7](#7-run-it-behind-a-load-balancer)). |
+| A copy that restarted says `unavailable` | The bucket is not answering, and the copy has no cache folder to serve from. Add `-store-cache` ([section 7](#7-run-it-behind-a-load-balancer)). The other copies keep serving. |
 | The server will not start, with `feed:` in the error | The `-feed` address does not answer, or the file is not valid GTFS. (If the address does not answer but the bucket holds an earlier import, the server starts with that instead.) |
 | The log says `ALARM disruptions log: a gap` (or `ALARM stops log: a gap`) | A file in the bucket's `logs/disruptions/entries/` (or `logs/stops/entries/`) folder is missing, so detours and cancellations (or stops and requests) cannot be saved. Restore it from a backup if you can. If not, record why it is missing: `curl -X POST -H "Authorization: Bearer <token>" -d '{"seq": <the missing number>, "cause": "<why>"}' https://<your address>/logs/disruptions/close-gap` (or `/logs/stops/close-gap`). Saving works again at once. |
 | The log says `ALARM disruptions log: entry … is quarantined` (or `stops log`) | One saved change cannot be read, so the server skips it and keeps going. Look at it in `/logs/disruptions` (or `/logs/stops`), where it is listed under `quarantined`, and enter the change again by hand if it is needed. |
