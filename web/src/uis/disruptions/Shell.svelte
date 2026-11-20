@@ -4,8 +4,36 @@
   /// times are live, sign-in) over a panel beside a large map. The
   /// panel shows the open disruption, else the view: Status (the search
   /// and the affected routes) or Dispatch (late now, detours, cancelled
-  /// trips, today's notes). Every value is the host's (host.svelte.ts).
-  import { dz, setView, setQuery, setPick, openDisruption, showBus, retry, why, type View } from "./host.svelte";
+  /// trips, today's notes), or Alerts (the disruptions with no alert,
+  /// and the agency's alerts). An alert being written takes the panel,
+  /// with its rider preview beside the map. Every value is the host's
+  /// (host.svelte.ts).
+  import {
+    dz,
+    setView,
+    setQuery,
+    setPick,
+    openDisruption,
+    showBus,
+    retry,
+    why,
+    newAlert,
+    editAlert,
+    endAlert,
+    closeForm,
+    changeAlert,
+    fillTemplate,
+    saveAlert,
+    setPreviewStop,
+    setPreviewQuery,
+    downloadFeed,
+    writeNote,
+    startAlertFor,
+    type View,
+  } from "./host.svelte";
+  import AlertsBoard from "../../components/AlertsBoard.svelte";
+  import AlertEditor from "../../components/AlertEditor.svelte";
+  import AlertPreview from "../../components/AlertPreview.svelte";
   import DisruptionsMap from "../../components/DisruptionsMap.svelte";
   import RouteStatus from "../../components/RouteStatus.svelte";
   import RouteStopSearch from "../../components/RouteStopSearch.svelte";
@@ -18,6 +46,7 @@
 
   const VIEWS: { id: View; label: string }[] = [
     { id: "status", label: "Status" },
+    { id: "alerts", label: "Alerts" },
     { id: "dispatch", label: "Dispatch" },
   ];
   const focus = $derived(dz.pick?.kind === "route" ? dz.pick.id : "");
@@ -30,10 +59,10 @@
     <span class="when" data-testid="clock">{dz.date ? dateText(dz.date) : ""} · {dz.clock}</span>
     <nav class="views" aria-label="Views">
       {#each VIEWS as v (v.id)}
-        <button type="button" class:on={dz.view === v.id && !dz.open} aria-current={dz.view === v.id ? "page" : undefined} onclick={() => (dz.open ? openDisruption(null) : null, setView(v.id))}>{v.label}</button>
+        <button type="button" class:on={dz.view === v.id && !dz.open && !dz.form} aria-current={dz.view === v.id ? "page" : undefined} onclick={() => (dz.open ? openDisruption(null) : null, dz.form ? closeForm() : null, setView(v.id))}>{v.label}</button>
       {/each}
     </nav>
-    <span class="live" class:off={!dz.live} data-testid="live-state" title={dz.liveError}>{dz.live ? `Live · ${dz.liveAt}` : "No live feed"}</span>
+    <span class="live" class:off={!dz.live} class:partial={!!dz.liveError} data-testid="live-state" title={dz.liveError}>{dz.live ? `Live · ${dz.liveAt}` : "No live feed"}{dz.liveError ? " · A feed is not answering" : ""}</span>
     <SignInControl available={signin.available} name={signin.name} error={signin.error} onsignin={signIn} onsignout={signOut} />
   </header>
   {#if dz.status || dz.editsStale}
@@ -41,9 +70,29 @@
   {/if}
   </div>
 
-  <main class="body">
+  <main class="body" class:writing={!!dz.form}>
     <aside class="panel">
-      {#if dz.open}
+      {#if dz.form}
+        <AlertEditor
+          form={dz.form}
+          templates={dz.templates}
+          routes={dz.routes}
+          stops={dz.formStops}
+          refusals={dz.refusals}
+          flags={dz.flags}
+          zone={dz.zone}
+          now={dz.now}
+          busy={dz.busy}
+          error={dz.writeError || why("Form")}
+          query={dz.query}
+          found={dz.found}
+          oninput={setQuery}
+          onchange={changeAlert}
+          ontemplate={fillTemplate}
+          onsave={saveAlert}
+          oncancel={closeForm}
+        />
+      {:else if dz.open}
         <DisruptionDetail
           disruption={dz.openItem}
           route={dz.openRoute}
@@ -52,7 +101,24 @@
           zone={dz.zone}
           date={dz.date}
           notesOff={why("OpenNotes")}
+          busy={dz.busy}
+          error={dz.writeError}
           onclose={() => openDisruption(null)}
+          onnote={(text, id) => (dz.open ? writeNote(dz.open, text, id) : Promise.resolve(false))}
+          onstartalert={() => dz.open && startAlertFor(dz.open)}
+        />
+      {:else if dz.view === "alerts"}
+        {#if dz.frames.Alerts}<Unavailable title="Service alerts" state={dz.frames.Alerts} onretry={retry} />{/if}
+        <AlertsBoard
+          gaps={dz.gaps}
+          list={dz.alerts}
+          routes={dz.routes}
+          zone={dz.zone}
+          busy={dz.busy}
+          gapsOff={why("Gaps")}
+          onstart={newAlert}
+          onedit={editAlert}
+          onend={endAlert}
         />
       {:else if dz.view === "status"}
         <RouteStopSearch query={dz.query} found={dz.found} pick={dz.pick} oninput={setQuery} onpick={setPick} />
@@ -83,6 +149,22 @@
     <section class="map">
       <DisruptionsMap live={dz.live} day={dz.day} {focus} path={dz.openPath} open={dz.openItem} bus={dz.bus} ondisruption={openDisruption} />
     </section>
+    {#if dz.form}
+      <aside class="side">
+        <AlertPreview
+          stop={dz.previewStop}
+          board={dz.preview}
+          routes={dz.routes}
+          canDownload={!!dz.previewFeed}
+          off={why("Preview")}
+          query={dz.previewQuery}
+          found={dz.previewFound}
+          oninput={setPreviewQuery}
+          onstop={setPreviewStop}
+          ondownload={downloadFeed}
+        />
+      </aside>
+    {/if}
   </main>
 </div>
 
@@ -96,9 +178,12 @@
   .views button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
   .live { margin-left: auto; font-size: 0.85rem; color: var(--ok); }
   .live.off { color: var(--muted); }
+  .live.partial { color: var(--warn); }
   .status { margin: 0; padding: 0.35rem 1rem; font-size: 0.85rem; background: var(--hover); }
   .status.alert { color: var(--bad); }
   .body { display: grid; grid-template-columns: 30rem 1fr; min-height: 0; }
+  .body.writing { grid-template-columns: 34rem 1fr 26rem; }
+  .side { overflow: auto; padding: 1rem; border-left: 1px solid var(--line); }
   .panel { overflow: auto; padding: 1rem; border-right: 1px solid var(--line); }
   .gap { height: 0.9rem; }
   .map { position: relative; min-height: 0; display: grid; }

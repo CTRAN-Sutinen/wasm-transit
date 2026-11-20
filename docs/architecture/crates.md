@@ -557,7 +557,7 @@ The notes document (D-214): the agency's internal notes about its day of service
 What is disrupted on a day, and whether an alert explains it (D-213, D-218). A disruption comes from the edit document (a submitted or accepted diversion or trip cancel in force), the live document (a trip instance the feed cancels), or the stops document (a suspended stop). Each is listed as its document gives it, with its origin. A trip that both the edit document and the feed cancel is listed twice, and no rule picks one. cap-disruptions is the seam.
 
 - `disruptions` gives the list. Each carries the names a rider uses (the route; a cancelled trip's start, first stop, and headsign; the stops it takes away, each with where it is), the next trip from the same first stop, the alerts that explain it, and its latest note. A closed stop is where the stops document puts it on the day; every other stop is where the network puts it.
-- `gaps` gives what no alert explains, with what an alert about each starts from.
+- `gaps` gives what no alert explains, with what an alert about each starts from, and the riders it informs: a cancelled trip's instance on its route; a detour's route, and its route at each stop it skips; a closed stop.
 - `today` gives the day by route: each route with a disruption or a late trip, its late trips from the live document's statuses, and how many routes have neither. A suspended stop is listed on every route that serves it. A filter answers one route or one stop. A station is one place with its bays.
 
 ## transit-alerts
@@ -579,6 +579,7 @@ The service alerts document and the alert templates document (D-206..D-210). An 
 - `flags` tells a person about an alert that passes: an id the network does not have, or a missing translation for a language the deployment names.
 - `put` places one record by id. `end` ends an alert at a moment, and changes nothing before it.
 - `list` gives the agency's list at a moment: in force, upcoming, ended, and drafts. An alert in force with no end says how long it has been open.
+- `offered` gives the templates a menu offers, by name. A retired template is kept and not offered.
 - `fill` writes a template's blanks: names from the network, and dates and lists in English. A blank it cannot fill stays, and is named.
 
 Each document is canonical as it stands (records by id). The crate keeps what it does not know.
@@ -699,7 +700,7 @@ The service alerts capability: what is the agency telling riders? transit-alerts
 - `put` places one alert by id, checked. With no document, the first alert begins one. `end` ends one alert at a moment.
 - `list` gives the agency's list at a moment.
 - `flags` gives what a person is told about the alerts that pass.
-- `validate_templates`, `put_template`, and `fill` are the templates: what a write must pass, one template placed, and one template written out over the network.
+- `validate_templates`, `put_template`, `templates`, and `fill` are the templates: what a write must pass, one template placed, the menu, and one template written out over the network.
 
 cap-rt's `encode_alerts` writes the document as an Alerts feed, and `read_alerts` reads one into it.
 

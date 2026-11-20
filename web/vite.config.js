@@ -140,9 +140,11 @@ export default defineConfig({
     // or a pattern when it begins with ^: the stops document's writes are
     // `/stops` exactly, never the stops page (`/stops.html`); the stop
     // requests' writes are `/stop-requests` and the work order system's
-    // adapter `/stop-requests/work-order`; photos are `/attachments`.
+    // adapter `/stop-requests/work-order`; photos are `/attachments`;
+    // the alerts' writes are `/service-alerts` and `/alert-templates`,
+    // and a note's `/notes`.
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "^/stops$", "^/stop-requests(/|$)", "/attachments", "/feed", "/geocode"].map(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "^/stops$", "^/stop-requests(/|$)", "/attachments", "/service-alerts", "/alert-templates", "^/notes$", "/feed", "/geocode"].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).
         (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
       ),

@@ -8,7 +8,10 @@
     "Which disruptions are in force today?",
     "Which stops does this detour skip?",
     "Which trips are cancelled today? The live feed's cancels and the edit document's cancels are listed as each source gives them.",
-    "What has dispatch noted about this trip, detour, or stop, and what was noted today?"
+    "What has dispatch noted about this trip, detour, or stop, and what was noted today? Write a note in place of an email.",
+    "Which service alerts are in force, which are upcoming, and which have ended?",
+    "Which detours, trip cancels, and stop closures have no alert?",
+    "How do I tell riders about this, and what will they see?"
   ],
   "ops": [
     "rt.live",
@@ -20,7 +23,18 @@
     "directory.stops",
     "runcut.trip_stops",
     "runcut.trip_path",
-    "network.validate"
+    "network.validate",
+    "disruptions.gaps",
+    "alerts.list",
+    "alerts.put",
+    "alerts.end",
+    "alerts.flags",
+    "alerts.templates",
+    "alerts.fill",
+    "rt.encode_alerts",
+    "board.stop_board",
+    "directory.routes",
+    "directory.stops_by_ids"
   ],
   "components": [
     "DisruptionsMap",
@@ -28,10 +42,15 @@
     "RouteStopSearch",
     "DispatchBoard",
     "DisruptionDetail",
+    "AlertsBoard",
+    "AlertEditor",
+    "AlertPreview",
+    "AlertList",
+    "DepartureRows",
     "SignInControl",
     "Unavailable"
   ],
-  "session": "2026-11-19 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`, the live feeds), at 2560x1300, the read side: 22 affected routes from the feed's cancels and the live statuses, each cancel with its first stop and next trip; a feed cancel opened (its 18 stops as scheduled, its path on the map); a note written through POST /notes shown as the cancel's latest note and in its panel, and among today's notes in Dispatch, which open it; the search narrowed to Fisher's Landing Transit Center (its bays' cancels) and to route 012; Dispatch's late list (51 trips), a late bus picked and shown on the map. Found and fixed: a station matched no bay (the stop filter, D-219), the map framed before its box had its height, a cancel's stops read over the edit document that takes the trip out. Open: QAF-127, QAF-128.",
+  "session": "2026-11-19 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`, the live feeds), at 2560x1300, the read side: 22 affected routes from the feed's cancels and the live statuses, each cancel with its first stop and next trip; a feed cancel opened (its 18 stops as scheduled, its path on the map); a note written through POST /notes shown as the cancel's latest note and in its panel, and among today's notes in Dispatch, which open it; the search narrowed to Fisher's Landing Transit Center (its bays' cancels) and to route 012; Dispatch's late list (51 trips), a late bus picked and shown on the map. Found and fixed: a station matched no bay (the stop filter, D-219), the map framed before its box had its height, a cancel's stops read over the edit document that takes the trip out. Open: QAF-127, QAF-128. Then the writing side, the same evening: an alert started from a feed cancel's gap, filled from a template (route Vine-Green, Thursday, November 19), previewed at the trip's first stop, published (the gap left the list), and ended (a gap again); a note added on a cancel and edited (\"Edited 6:13 PM\"); a blank alert for Fisher's Landing Bay A refused without a header, given an end, a Spanish header, previewed with the alert on Bay A's board, the .pb downloaded, saved as a draft, edited, and published. Found and fixed: the write paths missing from the dev proxy, the map framing a box with no size, a stop search left open over the form, the list read at the second the alert ended, and the gap list on another clock than the list. C-TRAN's alerts feed answered 403 throughout; the pill says a feed is not answering.",
   "spec": "web/e2e/ui-disruptions.spec.mjs",
   "generated": "2026-11-19"
 }

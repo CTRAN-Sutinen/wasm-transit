@@ -122,13 +122,25 @@ stops that are closed, and the stops a detour misses.
   cancelled, detoured, or closed, whether riders have an alert about
   it, and the latest note. Search for a route or a stop to see only
   what affects it. A transit center includes all of its bays.
+- **Alerts** lists what riders have not been told about yet, each with
+  "Start alert", and the agency's alerts: in force, upcoming, drafts,
+  and ended. Edit one, or end it now.
 - **Dispatch** lists the buses late now, worst first, with where each
   bus is, then the detours, the cancelled trips, and today's notes.
   Pick a late bus to see it on the map.
 
+Writing an alert starts with what is known: a cancelled trip's alert
+already names the trip, the day, and what it explains. Pick a template
+to fill in the wording, the route, and the date. Add routes or stops
+by searching. Write the text in English and in any other language your
+riders read. While you write, the preview shows a real stop board with
+your alert on it, and you can download the feed it makes. Save a
+draft, or publish it to riders.
+
 Open a cancelled trip to see every stop it would have served, its path
-on the map, the next trip, and its notes. Notes are for staff only and
-never reach riders. Cancelled trips come from two places, the
+on the map, the next trip, and its notes. Add a note there instead of
+sending an email; it shows who wrote it and when. Notes are for staff
+only and never reach riders, and they cannot be deleted. Cancelled trips come from two places, the
 dispatch record and the live feed, and each is listed as it comes.
 
 **Server:** needed.

@@ -637,7 +637,31 @@ fn blanks_in(text: &str) -> Vec<&str> {
     out
 }
 
+/// One template as a menu offers it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct TemplateRow {
+    pub id: String,
+    pub name: String,
+    pub cause: AlertCause,
+    pub effect: AlertEffect,
+    pub severity: AlertSeverity,
+}
+
 impl AlertTemplates {
+    /// The templates offered, by name, then id. A retired template is
+    /// kept and not offered.
+    pub fn offered(&self) -> Vec<TemplateRow> {
+        let mut rows: Vec<TemplateRow> = self
+            .templates
+            .iter()
+            .filter(|(_, t)| !t.retired)
+            .map(|(id, t)| TemplateRow { id: id.clone(), name: t.name.clone(), cause: t.cause, effect: t.effect, severity: t.severity })
+            .collect();
+        rows.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+        rows
+    }
+
     /// One template placed by id, new or replacing the one held.
     /// Unchecked: a write passes [`AlertTemplates::checked`].
     pub fn put(&self, id: &str, template: AlertTemplate) -> AlertTemplates {

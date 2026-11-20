@@ -401,7 +401,8 @@ transit-alerts   the service alerts document and the alert templates document (D
                  severity, texts in each language, periods, informed entities, and
                  the disruptions each explains). It answers what a write must pass,
                  what a person is told about one that passes, ending an alert, the
-                 agency's list, and a template's blanks filled. Pure. transit-rt writes
+                 agency's list, the templates offered, and a template's blanks
+                 filled. Pure. transit-rt writes
                  it as a GTFS-rt Alerts feed and reads one into it.
 transit-disruptions what is disrupted on a day, and whether an alert explains it
                  (D-218): the edit document's diversions and cancels, the live feed's

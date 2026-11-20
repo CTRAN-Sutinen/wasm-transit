@@ -339,7 +339,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "alerts",
         file: "module_alerts.wasm",
-        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "fill", "log_records", "log_document"],
+        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "templates", "fill", "log_records", "log_document"],
         documents: &["service_alerts", "alert_templates", "network"],
         // The service alerts and alert templates documents are the
         // host's (D-206, D-210): validate answers their canonical bytes
@@ -2556,6 +2556,13 @@ fn example_for(
             (
                 json!({ "op": "put_template", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "id": "detour", "template": template }),
                 json!({ "ok": { "op": "put_template", "refusals": [], "templates_hash": cap_abi::canonical_hash(&next).ok()?, "templates": next } }),
+            )
+        }
+        ("alerts", "templates") => {
+            let templates = fixture_templates().checked().ok()?;
+            (
+                json!({ "op": "templates", "templates_hash": cap_abi::canonical_hash(&templates).ok()? }),
+                json!({ "ok": { "op": "templates", "templates": templates.offered() } }),
             )
         }
         ("alerts", "fill") => {

@@ -4,7 +4,7 @@
 //! the kernel's load agree on one identity, a refused document is
 //! refused at both with its reasons named, put begins and changes the
 //! document, end closes an alert, the list, the notices, and the
-//! template fill answer over registered documents, the documents round
+//! template menu and fill answers over registered documents, the documents round
 //! trip through the log, and garbage is an honest error, never a panic.
 
 use serde_json::{json, Value};
@@ -92,6 +92,10 @@ fn a_template_is_checked_and_filled() {
     assert_eq!(v["refusals"], json!([]));
     let templates_hash = ok(json!({ "op": "load_alert_templates", "templates": templates }))["templates_hash"].clone();
     assert_eq!(templates_hash, v["document_hash"]);
+    let menu = ok(json!({ "op": "templates", "templates_hash": templates_hash }));
+    assert_eq!(menu["templates"][0]["id"], "closure");
+    assert_eq!(menu["templates"][0]["name"], "Stop closure");
+    assert_eq!(ok(json!({ "op": "templates" }))["templates"], json!([]));
     let filled = ok(json!({ "op": "fill", "templates_hash": templates_hash, "template": "closure", "network_hash": network_hash(),
         "input": { "stops": ["A"], "start_date": "2026-08-17" } }));
     assert_eq!(filled["filled"]["header"][0]["text"], "The stop at Main & 1st is closed starting Monday, August 17");

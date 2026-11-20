@@ -1224,6 +1224,8 @@ name = "module-ui-disruptions"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "cap-alerts",
+ "cap-board",
  "cap-directory",
  "cap-disruptions",
  "cap-network",

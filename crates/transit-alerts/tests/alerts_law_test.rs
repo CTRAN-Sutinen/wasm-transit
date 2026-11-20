@@ -257,6 +257,14 @@ fn a_template_passes_or_names_its_problem() {
 }
 
 #[test]
+fn the_menu_offers_each_template_not_retired_by_name() {
+    let named = |name: &str, retired: bool| AlertTemplate { name: name.into(), retired, ..template("x") };
+    let t = AlertTemplates::default().put("z", named("Detour", false)).put("a", named("Stop closure", false)).put("old", named("Bridge lift", true));
+    let menu: Vec<(String, String)> = t.offered().into_iter().map(|r| (r.id, r.name)).collect();
+    assert_eq!(menu, [("z".to_string(), "Detour".to_string()), ("a".to_string(), "Stop closure".to_string())]);
+}
+
+#[test]
 fn the_fill_writes_names_and_dates_in_the_agencys_words() {
     let net = network();
     let t = AlertTemplate {

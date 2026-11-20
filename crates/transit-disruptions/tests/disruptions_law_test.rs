@@ -227,6 +227,22 @@ fn a_gap_carries_what_an_alert_about_it_starts_from() {
 }
 
 #[test]
+fn a_gap_names_the_riders_an_alert_about_it_informs() {
+    let w = world();
+    let g = gaps(&w.inputs());
+    let entity = |v: serde_json::Value| -> transit_alerts::AlertEntity { serde_json::from_value(v).unwrap() };
+    // A cancelled trip: its instance, on its route.
+    let feed = g.iter().find(|g| g.source == feed_cancel()).unwrap();
+    assert_eq!(feed.informed, vec![entity(json!({ "route": "10", "trip": "t10", "date": "2026-11-19", "start_secs": 28800 }))]);
+    // A detour: its route, and its route at each stop it skips.
+    let detour = g.iter().find(|g| g.effect == AlertEffect::Detour).unwrap();
+    assert_eq!(detour.informed, vec![entity(json!({ "route": "10" })), entity(json!({ "route": "10", "stop": "B" }))]);
+    // A closed stop: the stop.
+    let stop_b = g.iter().find(|g| g.source == AlertSource::Stop { stop: "B".into() }).unwrap();
+    assert_eq!(stop_b.informed, vec![entity(json!({ "stop": "B" }))]);
+}
+
+#[test]
 fn each_disruption_carries_its_latest_note() {
     let mut w = world();
     let on_trip = NoteTarget::Trip { trip: "t10".into(), date: "2026-11-19".into(), start_secs: 28800 };

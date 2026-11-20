@@ -93,6 +93,13 @@ pub enum Request {
         id: String,
         template: AlertTemplate,
     },
+    /// The templates offered, by name: each not retired. A document
+    /// absent is an empty one.
+    Templates {
+        #[serde(default)]
+        #[ts(optional)]
+        templates_hash: Option<String>,
+    },
     /// Template `template` written out: the stops' and routes' names
     /// from the network, and the dates from `input`.
     Fill { templates_hash: String, template: String, network_hash: String, input: FillInput },
@@ -155,6 +162,7 @@ pub enum Response {
         unknown_fields: Vec<String>,
     },
     PutTemplate { refusals: Vec<TemplateRefusal>, templates_hash: Option<String>, templates: Option<AlertTemplates> },
+    Templates { templates: Vec<transit_alerts::TemplateRow> },
     Fill { filled: Filled },
     LogRecords {
         /// The records of each kind, as the log capability's `compose`
@@ -242,6 +250,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 Err(refusals) => Response::PutTemplate { refusals, templates_hash: None, templates: None },
             })
         }
+        Request::Templates { templates_hash } => Ok(Response::Templates {
+            templates: match templates_hash {
+                Some(h) => ALERT_TEMPLATES.require(&h)?.offered(),
+                None => Vec::new(),
+            },
+        }),
         Request::Fill { templates_hash, template, network_hash, input } => {
             let templates = ALERT_TEMPLATES.require(&templates_hash)?;
             let t = templates.templates.get(&template).ok_or_else(|| format!("no template {template:?} in the document"))?;

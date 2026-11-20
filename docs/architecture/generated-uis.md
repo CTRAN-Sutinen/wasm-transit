@@ -231,7 +231,21 @@ The disruptions set:
 - DispatchBoard: rt `late_trips`, the day's detours and cancelled trips
   (`today`, sectioned by what each is), and notes `between`.
 - DisruptionDetail: one disruption, a cancelled trip's stops (runcut
-  `trip_stops`), and its notes (notes `on`).
+  `trip_stops`), and its notes (notes `on`), with a box to add a note
+  and Edit on each. A disruption no alert explains offers Start alert.
+- AlertsBoard: disruptions `gaps`, each with Start alert, and alerts
+  `list` by tab (in force, upcoming, drafts, ended), each with Edit, and
+  End alert while it is told to riders.
+- AlertEditor: one alert: the template menu (alerts `templates`), the
+  effect, cause, and severity, where it applies (routes and stops by
+  search, the whole agency), when riders are told (Starts now, Unknown
+  end), the text in each language with the blanks a fill left, the
+  link, and what it explains. Every edit is an event with the whole
+  alert. Alerts `put`'s refusals and `flags`' notices come back in
+  words beside Save draft and Publish.
+- AlertPreview: one stop's board (board `stop_board`) over a live
+  document whose alerts are the feed encoded with this alert published
+  (rt `encode_alerts`), and the feed downloaded as a .pb file.
 
 `disruptionsFormat.ts` holds their formatting.
 
@@ -605,6 +619,8 @@ a large map that is always on screen.
 - **Status**: the search, then each affected route as a card. A search
   pick narrows the day to one route or one stop (a station with its
   bays). A route's badge picks the route.
+- **Alerts**: the disruptions no alert explains, each starting an
+  alert, and the agency's alerts in force, upcoming, drafts, and ended.
 - **Dispatch**: the trips late now, the detours, the cancelled trips
   (from the edit document and the live feed, each as given), and
   today's notes, newest first.
@@ -612,7 +628,19 @@ a large map that is always on screen.
   trip, whether an alert explains it, the stops it takes away, and its
   notes, oldest first. A cancelled trip shows its every stop and draws
   its path as scheduled: the edit document's cancel takes the trip out
-  of the patched day.
+  of the patched day. A note is added or edited there (`POST /notes`;
+  the server names the writer and the time).
+
+An alert is written in the panel, with its rider preview beside the
+map. Started from a gap, it carries the gap's effect, the riders it
+informs, and what it explains, and it is told from now with no end. A
+template fills its cause, effect, severity, and texts (alerts `fill`
+over the alert's routes, stops, and dates). Alerts `put` checks it as
+it is edited. Save draft and Publish put it and send the document to
+`POST /service-alerts` (409: read again, save again). End alert ends
+it at the host's clock (alerts `end`). The list is then read once the
+end's second has passed, because a period holds through its end. Every
+node reads one clock: the page's last poll, or the write's.
 
 The page reads the deployment's network, the edit document (`GET
 /edits`), the stops, the service alerts, and the notes (by the

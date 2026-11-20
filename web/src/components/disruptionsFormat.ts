@@ -90,3 +90,44 @@ export function datesText(d: Disruption, today: string): string {
 export function whoText(by: string): string {
   return by.includes("@") ? by.slice(0, by.indexOf("@")) : by;
 }
+
+/// A Unix time as the agency's date and wall time: "YYYY-MM-DD" and
+/// "HH:MM".
+export function zonedParts(unix: number, zone: string | undefined): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: zone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(unix * 1000));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${get("hour")}:${get("minute")}` };
+}
+
+/// The agency's date and wall time as a Unix time.
+export function zonedUnix(date: string, time: string, zone: string | undefined): number {
+  const guess = Date.parse(`${date}T${time || "00:00"}:00Z`) / 1000;
+  const seen = zonedParts(guess, zone);
+  const offset = Date.parse(`${seen.date}T${seen.time}:00Z`) / 1000 - guess;
+  return guess - offset;
+}
+
+/// "Nov 19, 2:32 PM": a Unix time in the agency's zone.
+export function whenText(unix: number | null, zone: string | undefined): string {
+  if (unix == null) return "No end";
+  const { date } = zonedParts(unix, zone);
+  return `${dateText(date)}, ${stampText(unix, zone, date)}`;
+}
+
+/// How long an alert has been told to riders: "Open 3 hours", "Open 41
+/// days".
+export function openText(secs: number): string {
+  const days = Math.floor(secs / 86400);
+  if (days >= 1) return `Open ${days} ${days === 1 ? "day" : "days"}`;
+  const hours = Math.floor(secs / 3600);
+  if (hours >= 1) return `Open ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return `Open ${Math.max(1, Math.floor(secs / 60))} min`;
+}

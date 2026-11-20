@@ -28,4 +28,4 @@ The day by route. Each route with a disruption or a late trip is listed once, by
 
 ## gaps
 
-What no alert explains on the day, with what an alert about each starts from: its source, effect, route or trip and start, stops, and dates. The order is the order of `today`'s disruptions before they are grouped: the edit document's, in its order; then the feed's cancels, by start; then the suspended stops, by id.
+What no alert explains on the day, with what an alert about each starts from: its source, effect, route or trip and start, stops, and dates, and the riders it informs (`informed`): a cancelled trip's instance on its route; a detour's route, and its route at each stop it skips; a closed stop. The order is the order of `today`'s disruptions before they are grouped: the edit document's, in its order; then the feed's cancels, by start; then the suspended stops, by id.

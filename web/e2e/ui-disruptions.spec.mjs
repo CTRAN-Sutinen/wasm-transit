@@ -118,3 +118,63 @@ test("the day's disruptions: status, a note, a stop, and dispatch", async ({ pag
   await expect(board.getByTestId("cancel-row")).toContainText("8:40 AM");
   await expect(board.getByTestId("day-notes")).toContainText("No notes today");
 });
+
+// The writing side, on the same day:
+//
+//   6. A template (POST /alert-templates) fills the alert started from
+//      the cancel's gap: its route's name and the day. The alert is
+//      published (POST /service-alerts) and leaves the gap list; in
+//      force, it explains the cancel on Status.
+//   7. The preview opens at the cancelled trip's first stop.
+//   8. Ended, it is listed as ended, and the cancel is a gap again.
+//   9. A note is added on the detour's panel and then edited.
+test("an alert from a gap, published and ended, and a note written", async ({ page, request }) => {
+  const head = await request.get("/manifest").then((r) => r.json());
+  const templates = await request.post("/alert-templates", {
+    data: {
+      from: head.alert_templates_hash ?? "",
+      templates: {
+        kind: "alert_templates",
+        schema_version: 1,
+        templates: { "trip-cancelled": { name: "Trip cancelled", cause: "other", effect: "no_service", severity: "warning", header: [{ text: "Route {route}: trip cancelled on {start date}" }] } },
+      },
+    },
+  });
+  expect(templates.ok()).toBeTruthy();
+
+  await open(page, "#view=alerts");
+  const gaps = page.getByTestId("gaps");
+  await expect(gaps.getByTestId("start-alert")).toHaveCount(2, { timeout: 15_000 });
+
+  // 6. Started from the cancel's gap, filled, and published.
+  await gaps.locator("div.row", { hasText: "8:40 AM trip cancelled" }).getByTestId("start-alert").click();
+  const editor = page.getByTestId("alert-editor");
+  await expect(editor.getByTestId("applies-to")).toContainText("Route 10 · 8:40 AM trip");
+  await editor.getByTestId("template").selectOption("trip-cancelled");
+  await expect(editor.getByTestId("header")).toHaveValue("Route 10: trip cancelled on Friday, October 23");
+  // 7. The preview, at the trip's first stop.
+  await expect(page.getByTestId("alert-preview")).toContainText("Main & 1st");
+  await editor.getByTestId("publish").click();
+  await expect(page.getByTestId("alert-row")).toContainText("Route 10: trip cancelled on Friday, October 23");
+  await expect(gaps.getByTestId("start-alert")).toHaveCount(1);
+
+  // 8. Ended ten minutes later: listed as ended, and a gap again.
+  await page.clock.setFixedTime(new Date("2026-10-23T08:05:00-04:00"));
+  await page.getByTestId("end-alert").click();
+  await page.getByRole("tab", { name: /Ended/ }).click();
+  await expect(page.getByTestId("alert-row")).toContainText("Route 10: trip cancelled");
+  await expect(gaps.getByTestId("start-alert")).toHaveCount(2);
+
+  // 9. A note on the detour, then edited.
+  await page.getByRole("navigation", { name: "Views" }).getByRole("button", { name: "Status" }).click();
+  await page.locator('[data-testid="route-card"][data-route="10"]').getByTestId("disruption-line").first().click();
+  const detail = page.getByTestId("disruption-detail");
+  await detail.getByTestId("note-box").getByLabel("Note").fill("Water main break. Crew says 3 hours.");
+  await detail.getByTestId("add-note").click();
+  await expect(detail.getByTestId("detail-notes")).toContainText("Water main break. Crew says 3 hours.");
+  await detail.getByTestId("detail-notes").getByRole("button", { name: "Edit" }).click();
+  await detail.getByTestId("detail-notes").getByRole("textbox").fill("Water main break. Crew says 4 hours.");
+  await detail.getByTestId("detail-notes").getByRole("button", { name: "Save" }).click();
+  await expect(detail.getByTestId("detail-notes")).toContainText("Crew says 4 hours.");
+  await expect(detail.getByTestId("detail-notes")).toContainText("Edited");
+});

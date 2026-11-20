@@ -39,10 +39,10 @@
     {#if found && (found.routes.length || found.stops.length)}
       <ul class="found" role="listbox">
         {#each found.routes as r (r.id)}
-          <li><button type="button" onclick={() => onpick({ kind: "route", id: r.id, label: r.name })}><span class="kind">Route</span> {r.name}{#if r.long_name} <span class="muted">{r.long_name}</span>{/if}</button></li>
+          <li><button type="button" onclick={() => onpick({ kind: "route", id: r.id, label: r.name })}><span class="kind">Route</span> {r.name}{#if r.long_name}{" "}<span class="muted">{r.long_name}</span>{/if}</button></li>
         {/each}
         {#each found.stops as s (s.stop_id)}
-          <li><button type="button" onclick={() => onpick({ kind: "stop", id: s.stop_id, label: s.name })}><span class="kind">Stop</span> {s.name} <span class="muted">{s.stop_id}</span></button></li>
+          <li><button type="button" onclick={() => onpick({ kind: "stop", id: s.stop_id, label: s.name })}><span class="kind">Stop</span> {s.name}{" "}<span class="muted">{s.stop_id}</span></button></li>
         {/each}
       </ul>
     {/if}

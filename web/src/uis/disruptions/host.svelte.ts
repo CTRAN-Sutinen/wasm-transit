@@ -22,9 +22,20 @@
 /// live feeds, and the clock while it is visible. The view, the search,
 /// and the open disruption live in the URL hash.
 
-import { ask, assemble, available, keep, load, produced, servedNetwork, servedNotes, servedServiceAlerts, servedStops, Doc } from "../../engine";
-import { answerGraph, clockLabel, deploymentFeeds, deploymentManifest, fetchFeed, readAgencyZone, reason, staleLabel, today, whileVisible, type FrameState, type LiveUrls } from "../kit";
-import { resumeSignIn } from "../../signin.svelte";
+import { ask, assemble, available, keep, load, produced, servedAlertTemplates, servedNetwork, servedNotes, servedServiceAlerts, servedStops, Doc } from "../../engine";
+import { answerGraph, clockLabel, nowSecs, previousDay, deploymentFeeds, deploymentManifest, fetchFeed, readAgencyZone, reason, staleLabel, today, whileVisible, type FrameState, type LiveUrls } from "../kit";
+import { resumeSignIn, writeFetch } from "../../signin.svelte";
+import type { AlertFlag } from "../../types/AlertFlag";
+import type { AlertGap } from "../../types/AlertGap";
+import type { AlertList } from "../../types/AlertList";
+import type { AlertRefusal } from "../../types/AlertRefusal";
+import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
+import type { NoteRefusal } from "../../types/NoteRefusal";
+import type { NoteTarget } from "../../types/NoteTarget";
+import type { ServiceAlert } from "../../types/ServiceAlert";
+import type { StopBoard } from "../../types/StopBoard";
+import type { TemplateRow } from "../../types/TemplateRow";
+import type { Unfilled } from "../../types/Unfilled";
 import type { AlertSource } from "../../types/AlertSource";
 import type { Boundary } from "../../types/Boundary";
 import type { Coord } from "../../types/Coord";
@@ -42,8 +53,12 @@ import type { TripStopView } from "../../types/TripStopView";
 // This page's capabilities answer inside its linked assembly (D-77).
 assemble("disruptions");
 
-export type View = "status" | "dispatch";
-const VIEWS: View[] = ["status", "dispatch"];
+export type View = "status" | "alerts" | "dispatch";
+const VIEWS: View[] = ["status", "alerts", "dispatch"];
+
+/// The alert open in the form: its id, whether it is new, the alert as
+/// it stands, and the blanks the last fill left (alerts `fill`).
+export type AlertForm = { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[] };
 
 /// How often the page reads the documents, the live feeds, and the
 /// clock again (one timer, kit's whileVisible).
@@ -96,6 +111,35 @@ export const dz = $state({
   /// Where a late bus picked in Dispatch is: the map goes to it.
   bus: null as { lat: number; lon: number } | null,
   /// Each frame that shows no answer, and why.
+  /// The host's clock, Unix seconds, as of the last poll.
+  now: 0,
+  /// The agency's alerts (alerts `list`), the disruptions no alert
+  /// explains (disruptions `gaps`), the templates offered (alerts
+  /// `templates`), and every route (directory `routes`: names and
+  /// colors).
+  alerts: null as AlertList | null,
+  gaps: [] as AlertGap[],
+  templates: [] as TemplateRow[],
+  routes: [] as DirectoryRoute[],
+  /// The alert open in the form, its stops by name (directory
+  /// `stops_by_ids`), what a write must pass, what a person is told
+  /// (alerts `flags`), and the rider preview: a stop's board with the
+  /// alert published (alerts `put`, rt `encode_alerts`, rt `live`,
+  /// board `stop_board`) and the feed's bytes.
+  form: null as AlertForm | null,
+  formStops: [] as { stop_id: string; name: string }[],
+  refusals: [] as AlertRefusal[],
+  flags: [] as AlertFlag[],
+  previewStop: null as { id: string; name: string } | null,
+  /// The preview's own stop search.
+  previewQuery: "",
+  previewFound: null as { routes: EntityRow[]; stops: DirectoryStop[] } | null,
+  preview: null as StopBoard | null,
+  previewFeed: "",
+  /// A write under way, and why the last one was refused (in words).
+  busy: false,
+  writeError: "",
+  noteRefusals: [] as NoteRefusal[],
   frames: {} as Record<string, FrameState>,
 });
 
@@ -106,6 +150,7 @@ let editsText = "";
 let stops: Doc | null = null;
 let alerts: Doc | null = null;
 let notes: Doc | null = null;
+let templates: Doc | null = null;
 let live: Doc<LiveDay> | null = null;
 const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
 let urls: Partial<LiveUrls> = {};
@@ -134,7 +179,8 @@ function documents() {
     alerts_hash: alerts ?? undefined,
     notes_hash: notes ?? undefined,
     date: dz.date,
-    now: nowUnix(),
+    // The clock the page last read (each poll, and each write).
+    now: dz.now,
   };
 }
 
@@ -292,6 +338,128 @@ const request = answerGraph(
         dz.openPath = (await ask("runcut", "trip_path", args)).path;
       },
     },
+    {
+      id: "directory.stops?preview",
+      frame: "",
+      needs: ["network", "preview-query"],
+      run: async () => {
+        const text = dz.previewQuery.trim();
+        dz.previewFound = network && text ? { routes: [], stops: (await ask("directory", "stops", { network_hash: network, query: text, limit: FOUND })).stops } : null;
+      },
+    },
+    {
+      // Every route, by name and color: the preview's badges and the
+      // form's route names.
+      id: "directory.routes",
+      frame: "",
+      needs: ["network"],
+      run: async () => {
+        dz.routes = network && (await available("directory")) ? (await ask("directory", "routes", { network_hash: network })).routes : [];
+      },
+    },
+    {
+      id: "alerts.list",
+      frame: "Alerts",
+      needs: ["docs", "clock", "view"],
+      visible: () => dz.view === "alerts",
+      caps: ["alerts"],
+      clear: () => (dz.alerts = null),
+      run: async () => {
+        const { op: _, ...list } = await ask("alerts", "list", { alerts_hash: alerts ?? undefined, now: dz.now });
+        dz.alerts = list;
+      },
+    },
+    {
+      id: "disruptions.gaps",
+      frame: "Gaps",
+      needs: ["network", "docs", "rt.live", "clock", "view"],
+      visible: () => dz.view === "alerts",
+      caps: ["disruptions"],
+      clear: () => (dz.gaps = []),
+      run: async () => {
+        dz.gaps = network ? (await ask("disruptions", "gaps", documents())).gaps : [];
+      },
+    },
+    {
+      id: "alerts.templates",
+      frame: "Templates",
+      needs: ["docs"],
+      caps: ["alerts"],
+      clear: () => (dz.templates = []),
+      run: async () => {
+        dz.templates = (await ask("alerts", "templates", { templates_hash: templates ?? undefined })).templates;
+      },
+    },
+    {
+      // The form's stops by name.
+      id: "directory.stops_by_ids",
+      frame: "",
+      needs: ["network", "form"],
+      run: async () => {
+        const ids = [...new Set((dz.form?.alert.informed ?? []).map((e) => e.stop).filter((x): x is string => !!x))];
+        dz.formStops = network && ids.length ? (await ask("directory", "stops_by_ids", { network_hash: network, ids })).stops : [];
+      },
+    },
+    {
+      // What a write of the form's alert must pass, and what a person
+      // is told about it.
+      id: "alerts.put+flags",
+      frame: "Form",
+      needs: ["network", "docs", "form"],
+      caps: ["alerts"],
+      clear: () => ((dz.refusals = []), (dz.flags = [])),
+      run: async () => {
+        const form = dz.form;
+        if (!form || !network) return void ((dz.refusals = []), (dz.flags = []));
+        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: form.alert });
+        dz.refusals = put.refusals;
+        if (!put.alerts || !put.alerts_hash) return void (dz.flags = []);
+        const next = produced("service_alerts", put.alerts, "alerts", put.alerts_hash);
+        dz.flags = (await ask("alerts", "flags", { alerts_hash: next, network_hash: network })).flags.filter((f) => f.alert === form.id);
+      },
+    },
+    {
+      // What a rider would see at the preview stop with the alert
+      // published: the board over a live document whose alerts are the
+      // agency's feed encoded with it.
+      id: "preview",
+      frame: "Preview",
+      needs: ["network", "docs", "snapshot", "form", "preview-stop", "clock"],
+      caps: ["alerts", "rt", "board"],
+      clear: () => ((dz.preview = null), (dz.previewFeed = "")),
+      run: async () => {
+        const form = dz.form;
+        if (!form || !network || !boundary) return void ((dz.preview = null), (dz.previewFeed = ""));
+        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: { ...form.alert, status: "published" } });
+        if (!put.alerts || !put.alerts_hash) return void ((dz.preview = null), (dz.previewFeed = ""));
+        const doc = produced("service_alerts", put.alerts, "alerts", put.alerts_hash);
+        const encoded = await ask("rt", "encode_alerts", { network_hash: network, alerts_hash: doc, timestamp: dz.now });
+        dz.previewFeed = encoded.feed_b64;
+        const stop = dz.previewStop;
+        if (!stop) return void (dz.preview = null);
+        const previewLive = await ask("rt", "live", {
+          network_hash: network,
+          boundary_hash: boundary,
+          rt_hash: snapshots.trips ?? undefined,
+          vp_hash: snapshots.vehicles ?? undefined,
+          alerts_hash: produced("gtfs_rt", undefined, "rt", encoded.rt_hash),
+        });
+        if (!previewLive.live) throw new Error("the live answer carries no document");
+        const liveDoc = produced("live", previewLive.live, "rt", previewLive.live_hash);
+        dz.preview = (
+          await ask("board", "stop_board", {
+            network_hash: network,
+            edits_hash: edits ?? undefined,
+            stop_id: stop.id,
+            date: dz.date,
+            from_secs: nowSecs(),
+            previous: previousDay(),
+            limit: 6,
+            live_hash: liveDoc,
+          })
+        ).board;
+      },
+    },
   ],
   dz.frames,
   (e) => say(`Error: ${message(e)}`, true),
@@ -394,6 +562,7 @@ export async function boot(): Promise<void> {
   dz.zone = (await deploymentManifest<{ timezone?: string }>())?.timezone;
   dz.date = today();
   dz.clock = clockLabel();
+  dz.now = nowUnix();
   readHash();
   try {
     const served = await servedNetwork(dz.date, "disruptions", "rt", "directory", "runcut");
@@ -408,7 +577,7 @@ export async function boot(): Promise<void> {
   await release();
   say("");
   writeHash(true);
-  await request("network", "docs", "snapshot", "clock", "view", "query", "pick", "open");
+  await request("network", "docs", "snapshot", "clock", "view", "query", "pick", "open", "form", "preview-stop");
   whileVisible(POLL_MS, () => void poll());
 }
 
@@ -423,6 +592,7 @@ export async function poll(): Promise<void> {
     const changed = ["clock"];
     if (date !== dz.date) dz.date = date;
     dz.clock = clockLabel();
+    dz.now = nowUnix();
     const [e, d, l] = await Promise.all([readEdits(), readDocuments(), fetchLive()]);
     if (e || d) changed.push("docs");
     if (l) changed.push("snapshot");
@@ -435,7 +605,7 @@ export async function poll(): Promise<void> {
 
 /// Name what the modules keep: the documents this page holds now.
 function release(): Promise<void> {
-  return keep([network, boundary, edits, stops, alerts, notes, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
+  return keep([network, boundary, edits, stops, alerts, notes, templates, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
 }
 
 /// The sync server's edit document (detours and cancels). An
@@ -465,12 +635,13 @@ async function readEdits(): Promise<boolean> {
 async function readDocuments(): Promise<boolean> {
   const manifest = (await fetch("manifest", { cache: "no-cache" })
     .then((r) => (r.ok ? r.json() : null))
-    .catch(() => null)) as { stops_hash?: string; service_alerts_hash?: string; notes_hash?: string } | null;
+    .catch(() => null)) as { stops_hash?: string; service_alerts_hash?: string; alert_templates_hash?: string; notes_hash?: string } | null;
   if (!manifest) return false;
   let changed = false;
   if ((manifest.stops_hash ?? null) !== (stops?.pin ?? null)) ((stops = await servedStops()), (changed = true));
   if ((manifest.service_alerts_hash ?? null) !== (alerts?.pin ?? null)) ((alerts = await servedServiceAlerts()), (changed = true));
   if ((manifest.notes_hash ?? null) !== (notes?.pin ?? null)) ((notes = await servedNotes()), (changed = true));
+  if ((manifest.alert_templates_hash ?? null) !== (templates?.pin ?? null)) ((templates = await servedAlertTemplates()), (changed = true));
   return changed;
 }
 
@@ -537,6 +708,252 @@ export function openDisruption(source: AlertSource | null): Promise<void> {
 /// A late bus picked: the map goes to it.
 export function showBus(at: { lat: number; lon: number }): void {
   dz.bus = at;
+}
+
+// ---------------------------------------------------------------------
+// the alert form
+// ---------------------------------------------------------------------
+
+/// A new alert: blank, or started from a gap (its effect, the riders
+/// it informs, and what it explains). It is told to riders from now
+/// until someone sets an end.
+export function newAlert(gap: AlertGap | null = null): Promise<void> {
+  const alert: ServiceAlert = {
+    status: "draft",
+    cause: "unknown",
+    effect: gap?.effect ?? "unknown",
+    severity: "unknown",
+    header: [{ text: "" }],
+    informed: gap ? gap.informed : [],
+    explains: gap ? [gap.source] : [],
+    communication: [{ start: dz.now, end: null }],
+  };
+  // The preview opens at a stop the gap takes away, else at its trip's
+  // first stop, as the day names it.
+  const key = gap ? JSON.stringify(gap.source) : "";
+  const first = gap ? dz.day?.routes.flatMap((r) => r.disruptions).find((d) => JSON.stringify(d.source) === key)?.first_stop?.id : undefined;
+  return openForm({ id: newId("alert"), fresh: true, alert, template: "", unfilled: [] }, gap?.stops?.[0] ?? first ?? null);
+}
+
+/// An alert started from a disruption opened: the day's gap with its
+/// source (disruptions `gaps`), or a blank alert that explains it when
+/// an alert explains it already.
+export async function startAlertFor(source: AlertSource): Promise<void> {
+  if (!network) return;
+  const key = JSON.stringify(source);
+  const gap = (await ask("disruptions", "gaps", documents())).gaps.find((g) => JSON.stringify(g.source) === key) ?? null;
+  if (gap) return newAlert(gap);
+  await newAlert(null);
+  if (dz.form) await changeAlert({ ...dz.form.alert, explains: [source] });
+}
+
+/// An alert of the agency's list, opened to edit.
+export function editAlert(id: string, alert: ServiceAlert): Promise<void> {
+  return openForm({ id, fresh: false, alert: structuredClone($state.snapshot(alert)) as ServiceAlert, template: "", unfilled: [] }, null);
+}
+
+async function openForm(form: AlertForm, stop: string | null): Promise<void> {
+  dz.form = form;
+  dz.writeError = "";
+  dz.refusals = [];
+  dz.open = null;
+  dz.view = "alerts";
+  writeHash();
+  const first = stop ?? form.alert.informed.find((e) => e.stop)?.stop ?? null;
+  dz.previewStop = null;
+  if (first && network) {
+    const [s] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [first] })).stops;
+    dz.previewStop = s ? { id: s.stop_id, name: s.name } : null;
+  }
+  await request("form", "preview-stop", "view", "open");
+}
+
+export function closeForm(): Promise<void> {
+  dz.form = null;
+  dz.writeError = "";
+  return request("form");
+}
+
+/// The form's alert as edited.
+export async function changeAlert(alert: ServiceAlert): Promise<void> {
+  if (!dz.form) return;
+  dz.form = { ...dz.form, alert };
+  // The preview follows the first stop the alert names, until one is
+  // picked.
+  const stop = dz.previewStop ? null : alert.informed.find((e) => e.stop)?.stop;
+  if (stop && network) {
+    const [s] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [stop] })).stops;
+    if (s) dz.previewStop = { id: s.stop_id, name: s.name };
+    return request("form", "preview-stop");
+  }
+  return request("form");
+}
+
+/// The stop the preview shows.
+export function setPreviewStop(stop: { id: string; name: string } | null): Promise<void> {
+  dz.previewStop = stop;
+  dz.previewQuery = "";
+  dz.previewFound = null;
+  return request("preview-stop", "preview-query");
+}
+
+export function setPreviewQuery(text: string): Promise<void> {
+  dz.previewQuery = text;
+  return request("preview-query");
+}
+
+/// A template written out for the form's routes, stops, and dates
+/// (alerts `fill`): its cause, effect, severity, and texts replace the
+/// form's. A blank it cannot fill is kept and named.
+export async function fillTemplate(template: string): Promise<void> {
+  const form = dz.form;
+  if (!form || !network || !templates) return;
+  const informed = form.alert.informed;
+  const period = form.alert.communication?.[0];
+  const dateOf = (unix: number | null | undefined) => (unix == null ? undefined : zonedDate(unix));
+  const { filled } = await ask("alerts", "fill", {
+    templates_hash: templates,
+    template,
+    network_hash: network,
+    input: {
+      routes: [...new Set(informed.map((e) => e.route).filter((x): x is string => !!x))],
+      stops: [...new Set(informed.map((e) => e.stop).filter((x): x is string => !!x))],
+      start_date: dateOf(period?.start),
+      end_date: dateOf(period?.end),
+    },
+  });
+  dz.form = {
+    ...form,
+    template,
+    unfilled: filled.unfilled,
+    alert: { ...form.alert, cause: filled.cause, effect: filled.effect, severity: filled.severity, header: filled.header, description: filled.description, url: filled.url },
+  };
+  await request("form");
+}
+
+/// The form's alert saved: as a draft, or published to riders. Alerts
+/// `put` places it, and POST /service-alerts checks it again and keeps
+/// it. True when saved.
+export function saveAlert(publish: boolean): Promise<boolean> {
+  const form = dz.form;
+  if (!form) return Promise.resolve(false);
+  const alert: ServiceAlert = { ...form.alert, status: publish ? "published" : "draft" };
+  return writeAlerts(publish ? "Published." : "Saved as a draft.", () => ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert }));
+}
+
+/// An alert ended now (alerts `end`): its periods end at the host's
+/// clock, or it is withdrawn when riders were never told.
+export function endAlert(id: string): Promise<boolean> {
+  if (!alerts) return Promise.resolve(false);
+  const doc = alerts;
+  const at = nowUnix();
+  // A period holds through its end second: the list is read once that
+  // second has passed.
+  return writeAlerts("Ended.", () => ask("alerts", "end", { alerts_hash: doc, id, at }), at + 1);
+}
+
+async function writeAlerts(done: string, edit: () => Promise<{ refusals: AlertRefusal[]; alerts: unknown | null }>, readAt = 0): Promise<boolean> {
+  dz.busy = true;
+  dz.writeError = "";
+  try {
+    const answer = await edit();
+    if (answer.refusals.length || !answer.alerts) {
+      dz.refusals = answer.refusals;
+      dz.writeError = "Not saved";
+      return false;
+    }
+    const resp = await writeFetch("service-alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: alerts?.pin ?? "", alerts: answer.alerts }),
+    });
+    if (!(await written(resp, "alerts"))) return false;
+    dz.form = null;
+    // The list reads the clock the write was made at.
+    dz.now = Math.max(nowUnix(), readAt);
+    say(done);
+    await readDocuments();
+    await release();
+    await request("docs", "form", "clock");
+    return true;
+  } catch (e) {
+    dz.writeError = message(e);
+    return false;
+  } finally {
+    dz.busy = false;
+  }
+}
+
+/// The receive path's answer, in words. True when it kept the write.
+async function written(resp: Response, what: "alerts" | "notes"): Promise<boolean> {
+  if (resp.ok) return true;
+  if (resp.status === 401) dz.writeError = "Sign in to save";
+  else if (resp.status === 403) dz.writeError = "Your sign-in can't save here";
+  else if (resp.status === 409) {
+    await readDocuments();
+    await release();
+    await request("docs");
+    dz.writeError = "Changed by someone else. Save again.";
+  } else if (resp.status === 422) {
+    const body = (await resp.json().catch(() => ({}))) as { refusals?: unknown[] };
+    if (what === "alerts") dz.refusals = (body.refusals ?? []) as AlertRefusal[];
+    else dz.noteRefusals = (body.refusals ?? []) as NoteRefusal[];
+    dz.writeError = "Not saved";
+  } else dz.writeError = `Not saved: ${(await resp.text()).trim() || resp.status}`;
+  return false;
+}
+
+// ---------------------------------------------------------------------
+// notes (D-214): written through POST /notes, which names the writer
+// and the time
+// ---------------------------------------------------------------------
+
+/// A note written about `target`, or a note's text edited (`id`). True
+/// when saved.
+export async function writeNote(target: NoteTarget, text: string, id: string | null = null): Promise<boolean> {
+  dz.busy = true;
+  dz.writeError = "";
+  dz.noteRefusals = [];
+  try {
+    const resp = await writeFetch("notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: id ?? newId("note"), target, text }),
+    });
+    if (!(await written(resp, "notes"))) return false;
+    await readDocuments();
+    await release();
+    await request("docs");
+    return true;
+  } catch (e) {
+    dz.writeError = message(e);
+    return false;
+  } finally {
+    dz.busy = false;
+  }
+}
+
+/// A new record's id: the agency's date and a random part.
+function newId(kind: string): string {
+  return `${kind}-${dz.date}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+/// The agency's date of a Unix time, "YYYY-MM-DD".
+function zonedDate(unix: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: dz.zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(unix * 1000));
+  return parts;
+}
+
+/// The feed the preview encoded, as a file to keep.
+export function downloadFeed(): void {
+  if (!dz.previewFeed) return;
+  const bytes = Uint8Array.from(atob(dz.previewFeed), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `alerts-${dz.date}.pb`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /// Why a frame has no answer, as text ("" when it answered).

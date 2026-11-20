@@ -28,7 +28,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use transit_alerts::{AlertEffect, AlertSource, AlertStatus, ServiceAlerts};
+use transit_alerts::{AlertEffect, AlertEntity, AlertSource, AlertStatus, ServiceAlerts};
 use transit_live::{LiveDay, LiveStatus};
 use transit_network::Network;
 use transit_notes::{NoteRow, NoteTarget, Notes};
@@ -174,6 +174,10 @@ pub struct AlertGap {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub end_date: Option<String>,
+    /// The riders an alert about it informs: a cancelled trip's instance
+    /// on its route; a detour's route, and its route at each stop it
+    /// skips; a closed stop.
+    pub informed: Vec<AlertEntity>,
 }
 
 /// One route on the day.
@@ -398,6 +402,7 @@ pub fn gaps(i: &Inputs) -> Vec<AlertGap> {
         .into_iter()
         .filter(|d| d.explained_by.is_empty())
         .map(|d| AlertGap {
+            informed: informed(&d),
             source: d.source,
             effect: d.effect,
             // A cancel's gap names its trip; a diversion's, its route.
@@ -408,6 +413,26 @@ pub fn gaps(i: &Inputs) -> Vec<AlertGap> {
             start_date: d.start_date,
             end_date: d.end_date,
         })
+        .collect()
+}
+
+/// The riders an alert about a disruption informs.
+fn informed(d: &Disruption) -> Vec<AlertEntity> {
+    if d.from == Origin::Stops {
+        return d.stops.iter().map(|s| AlertEntity { stop: Some(s.id.clone()), ..Default::default() }).collect();
+    }
+    if let Some(trip) = &d.trip {
+        // The instance's date: the feed's names it; an edit's cancel is
+        // the day's.
+        let date = match &d.source {
+            AlertSource::Trip { date, .. } => Some(date.clone()),
+            _ => d.start_secs.and(d.start_date.clone()),
+        };
+        return vec![AlertEntity { route: d.route.clone(), trip: Some(trip.clone()), date, start_secs: d.start_secs, ..Default::default() }];
+    }
+    let route = AlertEntity { route: d.route.clone(), ..Default::default() };
+    std::iter::once(route)
+        .chain(d.stops.iter().map(|s| AlertEntity { route: d.route.clone(), stop: Some(s.id.clone()), ..Default::default() }))
         .collect()
 }
 

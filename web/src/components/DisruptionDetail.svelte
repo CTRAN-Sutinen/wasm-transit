@@ -2,7 +2,8 @@
   /// One disruption opened: what it is and where it came from, whether
   /// an alert explains it, the stops it takes away (a cancelled trip's
   /// every stop, with its time: runcut `trip_stops`), and its notes,
-  /// oldest first (notes `on`). A RENDER component.
+  /// oldest first (notes `on`), with a box to add one and Edit on each.
+  /// Notes are internal: they never reach riders. A RENDER component.
   import { datesText, kindText, originText, stampText, timeText, titleText, whoText } from "./disruptionsFormat";
   import type { Disruption } from "../types/Disruption";
   import type { NoteRow } from "../types/NoteRow";
@@ -16,7 +17,11 @@
     zone,
     date,
     notesOff,
+    busy,
+    error,
     onclose,
+    onnote,
+    onstartalert,
   }: {
     /// The disruption, or null when the day no longer holds it.
     disruption: Disruption | null;
@@ -27,8 +32,24 @@
     zone: string | undefined;
     date: string;
     notesOff: string;
+    busy: boolean;
+    /// Why the last note was not saved ("" when it was).
+    error: string;
     onclose: () => void;
+    /// A note written (`id` null) or edited. Resolves true when saved.
+    onnote: (text: string, id: string | null) => Promise<boolean>;
+    onstartalert: () => void;
   } = $props();
+
+  let draft = $state("");
+  let editing = $state<string | null>(null);
+  let edited = $state("");
+  async function add() {
+    if (draft.trim() && (await onnote(draft.trim(), null))) draft = "";
+  }
+  async function saveEdit(id: string) {
+    if (edited.trim() && (await onnote(edited.trim(), id))) editing = null;
+  }
 </script>
 
 <section class="detail" data-testid="disruption-detail">
@@ -50,6 +71,7 @@
     {#if datesText(d, date)}<p class="sub">{datesText(d, date)}</p>{/if}
     <p class="told" class:none={!d.explained_by.length} data-testid="detail-alert">
       {d.explained_by.length ? `Alert ${d.explained_by.join(", ")}` : "No alert"}
+      {#if !d.explained_by.length}<button type="button" class="link" onclick={onstartalert} data-testid="detail-start-alert">Start alert</button>{/if}
     </p>
 
     {#if d.trip && tripStops.length}
@@ -74,11 +96,30 @@
       {#each notes as n (n.id)}
         <li>
           <span class="sub">{whoText(n.note.written.by)} · {stampText(n.note.written.at, zone, date)}</span>
-          <span>{n.note.text}</span>
-          {#if n.note.edited}<span class="sub">Edited {stampText(n.note.edited.at, zone, date)} by {whoText(n.note.edited.by)}</span>{/if}
+          {#if editing === n.id}
+            <textarea rows="3" bind:value={edited} aria-label="Note"></textarea>
+            <span class="row">
+              <button type="button" onclick={() => (editing = null)}>Cancel</button>
+              <button type="button" class="primary" disabled={busy || !edited.trim()} onclick={() => saveEdit(n.id)}>Save</button>
+            </span>
+          {:else}
+            <span>{n.note.text}</span>
+            <span class="row">
+              {#if n.note.edited}<span class="sub">Edited {stampText(n.note.edited.at, zone, date)} by {whoText(n.note.edited.by)}</span>{/if}
+              <button type="button" class="link" onclick={() => ((editing = n.id), (edited = n.note.text))}>Edit</button>
+            </span>
+          {/if}
         </li>
       {/each}
     </ul>
+    <div class="write" data-testid="note-box">
+      <textarea rows="3" placeholder="Note" aria-label="Note" bind:value={draft}></textarea>
+      <span class="row">
+        <span class="sub">Internal · Can't be deleted</span>
+        <button type="button" class="primary" disabled={busy || !draft.trim()} onclick={add} data-testid="add-note">Add note</button>
+      </span>
+      {#if error}<span class="bad" role="alert">{error}</span>{/if}
+    </div>
   {/if}
 </section>
 
@@ -98,6 +139,14 @@
   .stops, .notes { list-style: none; margin: 0; padding: 0; }
   .stops li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.25rem 0; border-top: 1px solid var(--line); font-size: 0.9rem; }
   .time { color: var(--muted); white-space: nowrap; }
+  .write { display: grid; gap: 0.4rem; margin-top: 0.4rem; }
+  textarea { font: inherit; padding: 0.45rem 0.55rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); resize: vertical; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  button { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 6px; padding: 0.3rem 0.8rem; cursor: pointer; font: inherit; font-size: 0.85rem; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.link { border: 0; background: none; color: var(--accent); padding: 0 0.3rem; }
+  .bad { color: var(--bad); font-size: 0.85rem; }
   .notes li { display: grid; gap: 0.1rem; padding: 0.45rem 0; border-top: 1px solid var(--line); }
   @media (prefers-color-scheme: dark) {
     .told { color: #93c5fd; }

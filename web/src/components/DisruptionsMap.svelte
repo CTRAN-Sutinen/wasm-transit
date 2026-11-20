@@ -112,6 +112,8 @@
         if ((e as { originalEvent?: unknown }).originalEvent) fitted = null;
       });
       const sized = new ResizeObserver(() => {
+        // A box with no size yet frames nothing (a layout in change).
+        if (container.clientWidth < 50 || container.clientHeight < 50) return;
         map?.resize();
         if (fitted) map?.fitBounds(fitted, { padding: 40, duration: 0, maxZoom: 14 });
       });

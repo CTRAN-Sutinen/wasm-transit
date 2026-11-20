@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-220**.
+- IDs are never reused; the next new decision is **D-221**.
 
 ## Summary
 
@@ -2477,6 +2477,24 @@ Pinned by: transit-disruptions `disruptions_law_test`; cap-disruptions
 Why: `docs/architecture/crates.md`, Why, "What is disrupted is one
 question over every source".
 Blocks: nothing.
+
+### D-220 — Which riders does an alert about a disruption inform?
+State: Encoded provisionally.
+Context: an alert started from a gap (the disruptions UI's "Start
+alert") needs its informed entities. Choosing them in the page would be
+a domain rule in host code, so the gap answers them.
+Options (encoded, with the other answers):
+- **A cancelled trip** informs its trip instance on its route (route,
+  trip, date, start). The other answer was the route alone, which tells
+  every rider of the route about one trip.
+- **A detour** informs its route, and its route at each stop it skips.
+  The other answer was the route alone, which a rider at a skipped
+  stop's board does not see as about that stop.
+- **A closed stop** informs the stop, on every route. The other answer
+  was the stop on each route that serves it.
+Pinned by: transit-disruptions `disruptions_law_test`
+(`a_gap_names_the_riders_an_alert_about_it_informs`).
+Blocks: nothing. A change rewrites that law.
 
 ### D-219 — How is a day's disruptions answer shaped?
 State: Encoded provisionally.

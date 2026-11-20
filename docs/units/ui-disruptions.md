@@ -19,12 +19,14 @@ workspace, so each department knows the others' screens. It splits
 into more UIs only when the workspace is clearly overloaded (D-209).
 
 It follows the generated-UI procedure
-(`docs/architecture/generated-uis.md`). It is at step 7. The read
-side is built and walked on C-TRAN: the map, Status, Dispatch, and an
-opened disruption with its notes (`src/uis/disruptions/`). Left: the
-Alerts view (the list and the gap list), the alert form and its
-preview, writing a note, the spec's writing steps, and the walk of
-every control. The layout is the design canvas (one map, with views a
+(`docs/architecture/generated-uis.md`). It is at step 8. The page is
+built and walked on C-TRAN (`src/uis/disruptions/`, its spec
+`e2e/ui-disruptions.spec.mjs`): the map, Status, Alerts, Dispatch, an
+opened disruption with its notes, the alert form, and its rider
+preview. Left for the form: an alert that applies to a direction, a
+trip picked by hand, or a stretch of stops along a route; stops picked
+on the map; the service window (`impact`); and "Created" and "Last
+edited" from the alerts log. The layout is the design canvas (one map, with views a
 person picks: Status, Alerts, Dispatch; the trip and alert panels
 open over the map).
 
@@ -102,6 +104,7 @@ and the alert form).
 | notes-day | notes `between` | notes, the day's start and end | Dispatch notes | Dispatch view |
 | notes-on | notes `on` | notes, the selected item | the detail panel's notes | a detail panel |
 | path | runcut `trip_stops`, `trip_path` | network, the selected trip, as scheduled | the panel's stops, map (the trip's line) | a trip's detail panel |
+| templates | alerts `templates` | alert templates | the form's template menu | the alert form |
 | fill | alerts `fill` | alert templates, network, the template, the form's routes, stops, and dates | the form's text | the alert form |
 | flags | alerts `flags` | the form's alert (alerts `put` over the head), network | the form's notices | the alert form |
 | preview | alerts `put`, rt `encode_alerts`, rt `live` (`alerts_hash`), board `stop_board` | the form's alert, network, the preview stop | the rider preview | the alert form |

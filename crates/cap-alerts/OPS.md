@@ -88,6 +88,10 @@ With no refusal, the op answers the document's canonical bytes and their hash. T
 
 The templates document with one template placed under its id, then checked as a write is. The answer is every refusal, or the next document registered under its hash. A template that is no longer offered is `retired: true`, and is kept.
 
+## templates
+
+The templates the menu offers, by name, then id: each one's id, name, cause, effect, and severity. A retired template is kept and not offered. With no `templates_hash`, the menu is empty.
+
 ## fill
 
 One template written out for a set of stops, routes, and dates:
