@@ -21,7 +21,7 @@ the same ops and get the same bytes. If the browser computes an answer
 in TypeScript, the other two hosts cannot give that answer. So `web/`
 holds only two kinds of code:
 
-- host glue: I/O, fetch and pagination, IndexedDB, the clock,
+- host glue: I/O, fetch and pagination, IndexedDB, the clock, the outbox,
   settings, polling, the sync POST, and the bus worker
 - render components: props in, events out, and formatting
 
@@ -349,9 +349,13 @@ Sign-in uses the authorization code flow with PKCE:
   with the refresh token.
 
 A read that needs the signed-in person (an attachment) goes through
-`readFetch` (D-162). Every page write goes through `writeFetch`
-(`POST /stops`, `/stop-requests`, `/plans`). A 401 says "sign in" in a
-person's words. A survey's draft waits on the device meanwhile.
+`readFetch` (D-162). Every page write goes through the page's outbox,
+which sends it with `writeFetch` (`POST /logs/<log>`, `/stops`,
+`/plans`, `/stop-requests/work-order`, `/attachments`;
+[updates-offline.md](updates-offline.md), "The outbox"). A 401 holds
+the outbox: the write waits on the device, and the page says "Sign in
+to send" it. A token refresh that cannot reach the provider keeps the
+person signed in; only a provider's refusal signs them out.
 `SignInControl` shows who is signed in where the deployment asks for
 it: the stops page's header, and beside Publish on the planner pages.
 

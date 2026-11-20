@@ -74,9 +74,12 @@
     "FleetPanel",
     "RunTimes",
     "HourGaps",
-    "TripList"
+    "TripList",
+    "SyncStatus"
   ],
   "session": "2026-11-11 on C-TRAN (testdata/ctran-gtfs.zip): three proposals through caps-run — 065 midday every 15 min (+24 trips, +5.9 platform h, peak 77), a spring calendar (Memorial Day on Sunday service, route 899's alternate Tuesdays continued), 071 evenings every 15 min (13 trips, times rewritten) — whose stages the UI follows; findings QAF-103..106, QAF-90 re-confirmed; D-137 a trial",
+  "offline": true,
+  "precache_assembly": false,
   "spec": "web/e2e/ui-service-change.spec.mjs",
   "generated": "2026-11-11"
 }

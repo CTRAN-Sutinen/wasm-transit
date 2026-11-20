@@ -53,7 +53,8 @@ features stay with the server.
   trips and saved stops stay on their device. The one exception is
   address search: the text a rider types goes to the geocoding
   service, and nothing else does. Doing the work on the device is why
-  the rider apps work offline and need no server.
+  the rider apps work offline and need no server, and why the staff
+  apps keep working when the server is away for a while.
 - **The same answer everywhere.** The browser, the server, and a
   command-line tool all run exactly the same code over exactly the
   same data. They give the same answer, byte for byte. You can check

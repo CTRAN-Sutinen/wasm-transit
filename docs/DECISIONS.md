@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-223**.
+- IDs are never reused; the next new decision is **D-224**.
 
 ## Summary
 
@@ -242,7 +242,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-186 | What does a build that reads one version ahead write over a document in that version? | decided; built | nothing |
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
-| D-189 | Do the staff pages work offline, and queue their writes? | decided; not built | nothing |
+| D-189 | Do the staff pages work offline, and queue their writes? | decided; built (the dogfood on C-TRAN open) | nothing |
 | D-190 | How does the agency's record store the data people edit? | decided; the disruptions, stops, and plans logs built | nothing |
 | D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; freezing and adopting built on the server | nothing |
 | D-192 | Are the edit document's existing names renamed to "disruptions"? | unanswered | nothing |
@@ -273,7 +273,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-217 | How is the notes document shaped? | encoded | nothing |
 | D-218 | Which capability answers what is disrupted on a day? | decided; built | nothing |
 | D-219 | How is a day's disruptions answer shaped? | encoded | nothing |
-| D-222 | Which time does a write sent late carry? | decided; not built | nothing |
+| D-222 | Which time does a write sent late carry? | decided; built | nothing |
+| D-223 | Does every install download the staff pages' modules? | encoded | nothing |
 
 ## The trip model
 
@@ -4697,17 +4698,18 @@ to me." Encoded as:
   them.
 - A refusal at send time keeps the work and shows it with the server's
   reasons. Nothing is dropped without a word.
-Context: D-65 made only the two rider pages offline. The staff pages
-need the server only at moments (loading the published documents,
-publishing, writing the stops document). Planning itself runs in the
-browser, over documents in the device's store.
-Options:
-- Online only: a write fails while the server is away, and the work
-  stays local.
-- Offline, with a write failing while the server is away.
-- Offline, with the outbox: writes queue and sync when the server
-  answers.
-Blocks: nothing. The work is `docs/units/offline-apps.md`.
+Pinned by: `web/src/outbox.test.mjs` (the outbox's laws); Go
+`TestAResentWriteLandsOnceAfterAnotherWriterChangedTheRecord`,
+`TestAWriteLandsOverAnotherRecordAndConflictsOnItsOwn`,
+`TestAWorkOrderResentWithItsKeyOpensOnce`; transit-log law 9
+(`a_write_overlaps_only_through_a_record_it_changes`); cap-log
+`a_write_overlaps_an_unread_entry_only_through_a_record_both_change`;
+e2e `offline-staff.spec.mjs` (each staff page), `deploy-builds.spec.mjs`
+("a staff page refused for its version…", "a staff page's assembly…"),
+`ui-stops.spec.mjs` ("a write needs sign-in…").
+Why: `docs/architecture/updates-offline.md`, "Staff pages work offline
+and queue their writes"; the intent write is `docs/architecture/storage.md`.
+Blocks: nothing. The dogfood on C-TRAN is `docs/units/offline-apps.md`.
 
 ### D-222 — Which time does a write sent late carry?
 State: Decided.
@@ -4733,5 +4735,30 @@ Options:
   wrong record.
 - The server's stamp as the record, and the device's time as a claim
   beside it (chosen).
-Pinned by: none yet (`docs/units/offline-apps.md`).
-Blocks: nothing. The work is `docs/units/offline-apps.md`.
+Pinned by: Go `TestAWriteLandsOverAnotherRecordAndConflictsOnItsOwn`;
+cap-log `the_devices_time_is_a_claim_beside_the_hosts`;
+`web/src/outbox.test.mjs` "a write that waited carries the time it was
+made, as a claim"; e2e `offline-staff.spec.mjs` "the disruptions page
+through an outage…".
+Blocks: nothing.
+
+### D-223 — Does every install download the staff pages' modules?
+State: Encoded provisionally.
+Context: D-189 makes the four staff pages offline pages. The service
+worker precached the linked assembly of every offline page, and a build
+of every UI on one origin shares one worker. So a rider's phone that
+installs ride-now would also download service design, service change,
+stops, and disruptions: about 70 MB more.
+Options:
+- Precache every offline page's assembly: a staff page boots offline
+  even before its first use, and every install downloads them all.
+- A staff page's assembly stays out of the shared shell
+  (`"precache_assembly": false` in its `ui.json`). The worker keeps it,
+  by its hash, the first time the page loads it. A UI built alone still
+  precaches its own (encoded). The cost: a staff page never opened
+  online does not boot offline.
+Pinned by: e2e `deploy-builds.spec.mjs` "a staff page's assembly is
+kept on first use, not precached".
+Why: `docs/architecture/updates-offline.md`, "A staff page's assembly
+is cached on first use".
+Blocks: nothing.

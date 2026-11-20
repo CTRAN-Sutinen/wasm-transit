@@ -15,6 +15,8 @@
 //!
 //! - [`compose`] answers the entry for one write: the records that
 //!   differ from the fold, each `before` filled from the fold.
+//! - [`overlap`] names a record a write changes that an entry its
+//!   writer did not read changed too (D-189).
 //! - [`apply`] applies an entry, all or none, checking each `before`.
 //! - [`fold`] folds stored entries after a checkpoint, and quarantines
 //!   an entry it cannot read or apply.
@@ -71,6 +73,12 @@ pub struct Intent {
     /// entry closing a gap names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The writer's device clock when the person made the write, Unix
+    /// epoch milliseconds: a claim beside the host's `at_ms`, never the
+    /// entry's time (D-222). A write that waited on the device carries
+    /// it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_at_ms: Option<u64>,
     /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     pub extra: transit_version::Extra,
@@ -287,6 +295,32 @@ pub fn compose(fold: &Checkpoint, header: Header, next: &[KindRecords], hash: Ha
         return Composed::Unchanged;
     }
     Composed::Entry(Entry::new(header, changes, None))
+}
+
+/// A record that a write changes and that an entry the writer did not
+/// read changed too.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Overlap {
+    pub kind: String,
+    pub id: String,
+    /// The latest unread entry that changed the record.
+    pub seq: u64,
+}
+
+/// The first of `changes` (in kind and id order) that one of the
+/// `unread` entries changed: the entries after the fold the writer
+/// read. A write is checked against the records it changes, never the
+/// whole log's head. So a change to another record does not refuse it,
+/// and a change to the same record is for a person to settle.
+pub fn overlap(changes: &[Change], unread: &[Entry]) -> Option<Overlap> {
+    changes.iter().find_map(|c| {
+        unread
+            .iter()
+            .filter(|e| e.changes.iter().any(|u| u.kind == c.kind && u.id == c.id))
+            .map(|e| e.seq)
+            .max()
+            .map(|seq| Overlap { kind: c.kind.clone(), id: c.id.clone(), seq })
+    })
 }
 
 /// Apply an entry to the fold, all or none. Each change's `before` must
@@ -585,7 +619,10 @@ mod tests {
     //! 7. one entry may change records of two kinds;
     //! 8. `split` and `join` are inverse over a collection, and a
     //!    document's fields outside its collection (D-167) survive its
-    //!    records and its assembly.
+    //!    records and its assembly;
+    //! 9. a write overlaps the entries its writer did not read exactly
+    //!    when one of them changed a record the write changes, and it
+    //!    names the latest such entry.
     use super::*;
     use proptest::prelude::*;
     use serde_json::json;
@@ -659,6 +696,33 @@ mod tests {
             prop_assert_eq!(fold(at, &log[cut..], &hash).unwrap().fold, live);
         }
 
+        /// Law 9.
+        #[test]
+        fn a_write_overlaps_only_through_a_record_it_changes(
+            start in doc(),
+            others in proptest::collection::vec(doc(), 0..4),
+            mine in doc(),
+        ) {
+            let mut fold = Checkpoint::empty("stops");
+            write(&mut fold, &[stops(&start.iter().map(|(k, v)| (k.as_str(), v.clone())).collect::<Vec<_>>())], None);
+            let read = fold.clone();
+            let mut unread = Vec::new();
+            for o in &others {
+                let next = KindRecords { kind: "stop".into(), version: 1, records: o.clone() };
+                if let Some(e) = write(&mut fold, &[next], None) {
+                    unread.push(e);
+                }
+            }
+            // The write as the writer made it, over the fold it read.
+            let next = KindRecords { kind: "stop".into(), version: 1, records: mine.clone() };
+            let ours = changes(&read, std::slice::from_ref(&next), &hash);
+            let expected = ours.iter().find_map(|c| {
+                unread.iter().rev().find(|e| e.changes.iter().any(|u| u.id == c.id)).map(|e| (c.id.clone(), e.seq))
+            });
+            let got = overlap(&ours, &unread).map(|o| (o.id, o.seq));
+            prop_assert_eq!(got, expected);
+        }
+
         /// Law 8.
         #[test]
         fn split_and_join_are_inverse(records in doc()) {
@@ -684,6 +748,18 @@ mod tests {
         let other = [stops(&[("A", json!({"e": 2}))])];
         assert_eq!(compose(&fold, header(2, Some("device-1/42")), &other, &hash), Composed::Landed(first.seq), "the resend lands once");
         assert!(matches!(compose(&fold, header(2, Some("device-1/43")), &other, &hash), Composed::Entry(_)));
+    }
+
+    #[test]
+    fn another_record_changed_meanwhile_is_no_overlap() {
+        let mut fold = Checkpoint::empty("stops");
+        write(&mut fold, &[stops(&[("A", json!(1)), ("B", json!(1))])], None);
+        let read = fold.clone();
+        let theirs = write(&mut fold, &[stops(&[("A", json!(1)), ("B", json!(2))])], None).unwrap();
+        let mine = changes(&read, &[stops(&[("A", json!(5)), ("B", json!(1))])], &hash);
+        assert_eq!(overlap(&mine, std::slice::from_ref(&theirs)), None, "B changed, the write changes A");
+        let same = changes(&read, &[stops(&[("A", json!(1)), ("B", json!(7))])], &hash);
+        assert_eq!(overlap(&same, std::slice::from_ref(&theirs)), Some(Overlap { kind: "stop".into(), id: "B".into(), seq: 2 }));
     }
 
     #[test]

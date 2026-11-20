@@ -404,7 +404,9 @@ transit-log      the append-only log of the agency's record, kind-agnostic (D-19
                  D-197): an entry of changed records (each record's hash as stored
                  before, and its new state), the fold, checkpoints, the revert (a
                  record the entry created leaves the fold, D-198), the gap and
-                 quarantine rules, and the idempotency keys. A document becomes
+                 quarantine rules, the idempotency keys, and the overlap: a
+                 write is checked against the records it changes, against the
+                 entries its writer did not read (D-189). A document becomes
                  records and back by its collection. Pure.
 transit-alerts   the service alerts document and the alert templates document (D-206,
                  D-210): the agency's alerts in the network's ids (cause, effect,
@@ -461,7 +463,9 @@ server/          the Go and wazero host. It runs cap-sync (the edit document and
                  records), cap-alerts (the service alerts and alert templates
                  documents' writes and records), cap-notes (each note's write,
                  stamped with the verified writer and the server's clock, and its
-                 records), and cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
+                 records), and cap-authz when sign-in is on. A page writes the
+                 stops, alerts, and notes logs by intent (POST /logs/<log>: the
+                 ops, the device's key, the seq it read; D-189). Its HTTP surface is server/openapi.json,
                  which changes by expand, then contract (D-81). It has two proxies:
                  /geocode to a Pelias geocoder, and /rt, a dev feed relay that is off
                  unless -rt-proxy is set. It is scaffolding and never makes a domain
@@ -470,7 +474,9 @@ web/             the Svelte 5 and Vite frontend. / is a picker over the generate
                  (src/uis/<id>/, each its own page and host layer; every page is one).
                  docs/architecture/generated-uis.md is the recipe a new agent follows.
                  Each page runs its linked assembly in the page's one bus worker,
-                 behind the engine.
+                 behind the engine. Every page installs and works offline, and a
+                 staff page's writes wait in its outbox on the device until the
+                 server answers (src/outbox.ts; D-189).
 ```
 
 The detail for each crate is in `docs/architecture/crates.md`.

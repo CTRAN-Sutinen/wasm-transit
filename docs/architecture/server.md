@@ -27,14 +27,16 @@ into web/pkg/:
 - cap-requests (-requests-wasm) runs in store mode and is held the same
   way. It does the validation behind a stop requests write.
 - cap-alerts (-alerts-wasm) runs in store mode and is held the same
-  way. It does the validation behind a service alerts write
-  (`POST /service-alerts`) and an alert templates write
-  (`POST /alert-templates`). The server serves no feed of the alerts
-  (D-124).
+  way. It runs the alerts log's intent write (`POST /logs/alerts`:
+  `put`, `end`, `put_template`), and does the validation behind a
+  service alerts write (`POST /service-alerts`) and an alert templates
+  write (`POST /alert-templates`). The server serves no feed of the
+  alerts (D-124).
 - cap-notes (-notes-wasm) runs in store mode and is held the same way.
-  A note write (`POST /notes`) is one note, not a whole document. The
-  server runs cap-notes `write` over the head with the verified writer
-  and its own clock, so a page never names who wrote a note (D-214).
+  A note write (`POST /logs/notes`, or `POST /notes`) is one note, not a
+  whole document. The server runs cap-notes `write` over the head with
+  the verified writer and its own clock, so a page never names who
+  wrote a note (D-214).
 - cap-log (-log-wasm) runs in store mode. It keeps the disruptions log,
   the stops log, the plans log, the alerts log, and the notes log: each
   write's entry, the fold, and a revert. The server holds it for its
@@ -514,7 +516,10 @@ Its HTTP surface:
   `record_work_order` writes the answer on the request (dated the
   server's today) over the requests at the head when the write runs, as
   one entry of the stops log. The writer is `work-orders:<system>`.
-  - 200 `{requests_hash, work_order}`.
+  - 200 `{requests_hash, work_order, landed?}`. A body with a `key`
+    whose entry landed answers the request's work order, and the system
+    is not asked again, so an outbox's resend never opens a second one
+    (D-189).
   - 501 `{configured: false}` with no adapter.
   - The manifest's `services.work_orders` offers the route only when an
     adapter is configured.
@@ -533,17 +538,25 @@ Its HTTP surface:
   cap-log engine in `caplog.go`; docs/FORMATS.md, "The logs"). It holds
   the stops document and the stop requests document, because completing
   a request and adding the stop's event is one transaction (D-197).
-  - `POST /logs/stops` `{"key", "ops": [{"cap", "op", "args"}]}` runs
-    each op over the documents at the head, in order (stops:
+  - `POST /logs/stops` `{"key", "ops": [{"cap", "op", "args"}],
+    "read_seq", "claimed_at_ms"}` is the stops log's intent write
+    (`logwrite.go`; [storage.md](storage.md), "The intent write"). It
+    runs each op over the documents at the head, in order (stops:
     `add_event`, `correct_event`; requests: `put`, `record_work_order`),
     names the surveyor and validates as `POST /stops` does, and writes
     what changed as one entry. Two writers who change different stops
     both land. A `correct_event` with `saw` (the event's hash as read)
     of an event changed since answers 409 with `conflict`, the event's
-    id. A refusal (422) or a failed op (400) names its `op`. A key that
-    landed answers 200 with `landed`, and writes nothing. Each op needs
-    the write rule on its document's pointer (`stops`,
-    `stop_requests`).
+    id. A record changed by an entry after `read_seq` that the write
+    changes too answers 409 with `conflict` and `overlap`. A refusal
+    (422) or a failed op (400) names its `op`. A key that landed answers
+    200 with `landed`, and writes nothing. Each op needs the write rule
+    on its document's pointer (`stops`, `stop_requests`).
+  - `POST /logs/alerts` and `POST /logs/notes` are the same intent write
+    for the alerts log (alerts `put`, `end`, `put_template`; the write
+    rule on `service_alerts` or `alert_templates`) and the notes log
+    (notes `write`, with the verified writer and the server's clock;
+    the write rule on `notes`).
   - `GET /logs/stops?since=`, `POST /logs/stops/revert`, and `POST
     /logs/stops/close-gap` work as the disruptions log's do, and need the
     `audit` rule on `stops`. A revert takes out of the document a record

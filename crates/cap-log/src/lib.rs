@@ -10,7 +10,9 @@
 //! of two capabilities, and no capability calls another.
 //!
 //! - `compose` answers the entry for one write: the records that differ
-//!   from the fold, each with its hash as stored before.
+//!   from the fold, each with its hash as stored before. A record the
+//!   write changes that an entry its writer did not read changed too
+//!   answers the overlap, and no entry.
 //! - `fold` folds stored entries after a checkpoint into the records by
 //!   kind, and quarantines an entry it cannot read or apply.
 //! - `revert` answers the entry that writes back the states before an
@@ -41,8 +43,11 @@ pub enum Request {
     /// that `next` leaves out leaves the fold. The answer is the entry,
     /// or none when nothing changed, or the entry that holds the write's
     /// idempotency key (`header.intent.key`) when it landed before.
+    /// `unread` are the entries after the fold the writer read: a record
+    /// the write changes that one of them changed answers `overlap`, and
+    /// no entry.
     Compose {
-        /// The fold the write read (absent: the empty log).
+        /// The fold the write runs over (absent: the empty log).
         #[serde(default)]
         #[ts(optional, type = "any")]
         checkpoint: Option<serde_json::Value>,
@@ -50,6 +55,9 @@ pub enum Request {
         header: serde_json::Value,
         #[ts(type = "any")]
         next: serde_json::Value,
+        #[serde(default)]
+        #[ts(optional, type = "Array<{ seq: number, text: string }>")]
+        unread: Option<serde_json::Value>,
     },
     /// The fold of a log's entries after a checkpoint (absent: from the
     /// empty log), in `seq` order.
@@ -104,6 +112,11 @@ pub enum Response {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional, type = "number")]
         landed: Option<u64>,
+        /// A record the write changes that an unread entry changed too:
+        /// a person settles it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional, type = "{ kind: string, id: string, seq: number }")]
+        overlap: Option<transit_log::Overlap>,
     },
     Fold {
         /// The last entry the fold read.
@@ -159,17 +172,25 @@ fn parse<T: serde::de::DeserializeOwned>(what: &str, value: serde_json::Value) -
 /// The typed dispatch. Failures are `{"error": ...}`, never panics.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::Compose { checkpoint, header, next } => {
+        Request::Compose { checkpoint, header, next, unread } => {
             let header: Header = parse("header", header)?;
             let next: Vec<KindRecords> = parse("next", next)?;
             let fold = checkpoint_of(&header.log, checkpoint)?;
             if header.seq != fold.seq + 1 {
                 return Err(format!("the entry's seq is {}, and the fold is at {}", header.seq, fold.seq));
             }
+            // An unread entry that does not read is quarantined in the
+            // fold: it changed nothing the write could overlap.
+            let unread: Vec<Stored> = parse("unread", unread.unwrap_or(serde_json::Value::Array(Vec::new())))?;
+            let unread: Vec<transit_log::Entry> = unread.iter().filter_map(|s| transit_log::read_entry(&header.log, s).ok()).collect();
+            let none = |landed| Response::Compose { entry: None, changes: 0, landed, overlap: None };
             Ok(match transit_log::compose(&fold, header, &next, &record_hash) {
-                Composed::Entry(e) => Response::Compose { changes: e.changes.len(), entry: Some(cap_abi::canonical_bytes(&e)?), landed: None },
-                Composed::Unchanged => Response::Compose { entry: None, changes: 0, landed: None },
-                Composed::Landed(seq) => Response::Compose { entry: None, changes: 0, landed: Some(seq) },
+                Composed::Entry(e) => match transit_log::overlap(&e.changes, &unread) {
+                    Some(o) => Response::Compose { entry: None, changes: 0, landed: None, overlap: Some(o) },
+                    None => Response::Compose { changes: e.changes.len(), entry: Some(cap_abi::canonical_bytes(&e)?), landed: None, overlap: None },
+                },
+                Composed::Unchanged => none(None),
+                Composed::Landed(seq) => none(Some(seq)),
             })
         }
         Request::Fold { log, checkpoint, entries } => {

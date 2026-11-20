@@ -182,8 +182,8 @@ func (s *server) seedDisruptions(editsPath string) {
 }
 
 // handleLogs serves each log's entries and its revert and close-gap
-// writes, over cap-log (caplog.go), with POST /logs/stops the stops
-// log's writes (stopslog.go). Every read, revert, and closed gap needs
+// writes, over cap-log (caplog.go), with POST /logs/<log> the intent
+// write of the stops, alerts, and notes logs (logwrite.go). Every read, revert, and closed gap needs
 // the audit grant when sign-in is on (protectLog): the entries name
 // their writers.
 func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -217,9 +217,9 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet:
 			s.handleLogEntriesOf(w, r, f)
-		case r.Method == http.MethodPost && f.name == stopsLogName:
-			s.handleStopsOps(w, r)
-		case f.name == stopsLogName:
+		case r.Method == http.MethodPost && s.intentLogs()[f.name].fold != nil:
+			s.handleIntentWrite(w, r, s.intentLogs()[f.name])
+		case s.intentLogs()[f.name].fold != nil:
 			http.Error(w, "use GET or POST", http.StatusMethodNotAllowed)
 		default:
 			http.Error(w, "use GET", http.StatusMethodNotAllowed)

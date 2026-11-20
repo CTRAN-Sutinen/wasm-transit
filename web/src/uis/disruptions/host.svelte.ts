@@ -1,8 +1,11 @@
 /// The disruptions UI's host layer: the ONLY file of this UI that asks
 /// the capability bus. It owns I/O (the deployment's network, the edit
 /// document from GET /edits, the service alerts and notes by the
-/// manifest's hashes, and the agency's live feeds), the clock, and the
-/// selection. Every list, count, and line it writes into `dz` is an
+/// manifest's hashes, and the agency's live feeds), the clock, the
+/// selection, and the outbox (D-189): each alert and note is written as
+/// its intent (POST /logs/alerts, /logs/notes), which waits on the
+/// device while the server does not answer. The page installs and
+/// boots offline on its last documents, and says how old they are. Every list, count, and line it writes into `dz` is an
 /// op's answer, adopted as-is.
 ///
 /// One question underlies the page: what is disrupted today, and does
@@ -23,8 +26,9 @@
 /// and the open disruption live in the URL hash.
 
 import { ask, assemble, available, keep, load, produced, servedAlertTemplates, servedNetwork, servedNotes, servedServiceAlerts, servedStops, Doc } from "../../engine";
-import { answerGraph, clockLabel, nowSecs, previousDay, deploymentFeeds, deploymentManifest, fetchFeed, readAgencyZone, reason, staleLabel, today, whileVisible, type FrameState, type LiveUrls } from "../kit";
-import { resumeSignIn, writeFetch } from "../../signin.svelte";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabel, clockLabelAt, installApp, lastGoodText, manifestNow, nowSecs, previousDay, deploymentFeeds, deploymentManifest, fetchFeed, readAgencyZone, reason, staleLabel, today, whileVisible, type FrameState, type LiveUrls } from "../kit";
+import { resumeSignIn } from "../../signin.svelte";
+import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
 import type { AlertFlag } from "../../types/AlertFlag";
 import type { AlertGap } from "../../types/AlertGap";
 import type { AlertList } from "../../types/AlertList";
@@ -152,8 +156,19 @@ export const dz = $state({
   busy: false,
   writeError: "",
   noteRefusals: [] as NoteRefusal[],
+  /// The server did not answer the last read: the page works from its
+  /// last documents, confirmed at `asOf` ("4:05 PM").
+  offline: false,
+  asOf: "",
+  /// A new build waits (kit's buildWaiting): the person applies it.
+  updateReady: false,
   frames: {} as Record<string, FrameState>,
 });
+
+/// The seq of each log's fold the page's documents came from (the
+/// manifest's log_seqs): a write names it, so the server checks the
+/// write against the records it changes (D-189).
+let logSeqs: Record<string, number> = {};
 
 let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
@@ -599,7 +614,10 @@ addEventListener("popstate", followHash);
 // ---------------------------------------------------------------------
 
 export async function boot(): Promise<void> {
+  void installApp();
+  onBuildReady(() => (dz.updateReady = true));
   await Promise.all([readAgencyZone(), resumeSignIn()]);
+  await openOutbox("disruptions", () => void afterWrite());
   dz.zone = (await deploymentManifest<{ timezone?: string }>())?.timezone;
   dz.date = today();
   dz.clock = clockLabel();
@@ -634,6 +652,8 @@ export async function poll(): Promise<void> {
     if (date !== dz.date) dz.date = date;
     dz.clock = clockLabel();
     dz.now = nowUnix();
+    await sendWaiting();
+    dz.updateReady = buildWaiting();
     const [e, d, l] = await Promise.all([readEdits(), readDocuments(), fetchLive()]);
     if (e || d) changed.push("docs");
     if (l) changed.push("snapshot");
@@ -655,10 +675,10 @@ function release(): Promise<void> {
 async function readEdits(): Promise<boolean> {
   if (!network) return false;
   try {
-    const resp = await fetch("edits");
-    if (!resp.ok) return false;
-    dz.editsStale = staleLabel(resp, "Detours and cancels");
-    const text = await resp.text();
+    const read = await lastGoodText("disruptions", "edits");
+    if (!read) return false;
+    dz.editsStale = read.resp ? staleLabel(read.resp, "Detours and cancels") : `Detours and cancels as of ${clockLabelAt(read.asOfMs)} — the server is not answering.`;
+    const text = read.text;
     if (text === editsText) return false;
     editsText = text;
     const document = JSON.parse(text) as EditDocument;
@@ -674,10 +694,12 @@ async function readEdits(): Promise<boolean> {
 /// hashes: each read again only when its hash moved. True when any
 /// changed.
 async function readDocuments(): Promise<boolean> {
-  const manifest = (await fetch("manifest", { cache: "no-cache" })
-    .then((r) => (r.ok ? r.json() : null))
-    .catch(() => null)) as { stops_hash?: string; service_alerts_hash?: string; alert_templates_hash?: string; notes_hash?: string } | null;
+  const now = await manifestNow<{ stops_hash?: string; service_alerts_hash?: string; alert_templates_hash?: string; notes_hash?: string; log_seqs?: Record<string, number> }>();
+  dz.offline = !now.answered;
+  dz.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
+  const manifest = now.manifest;
   if (!manifest) return false;
+  logSeqs = manifest.log_seqs ?? {};
   let changed = false;
   if ((manifest.stops_hash ?? null) !== (stops?.pin ?? null)) ((stops = await servedStops()), (changed = true));
   if ((manifest.service_alerts_hash ?? null) !== (alerts?.pin ?? null)) ((alerts = await servedServiceAlerts()), (changed = true));
@@ -901,49 +923,55 @@ export async function fillTemplate(template: string): Promise<void> {
 }
 
 /// The form's alert saved: as a draft, or published to riders. Alerts
-/// `put` places it, and POST /service-alerts checks it again and keeps
-/// it. True when saved.
+/// `put` checks it here first, then the write goes as its intent
+/// (POST /logs/alerts), which the server runs over the head it holds.
+/// True when it was kept (sent, or waiting on the device).
 export function saveAlert(publish: boolean): Promise<boolean> {
   const form = dz.form;
   if (!form) return Promise.resolve(false);
   const alert: ServiceAlert = { ...stamped(form), status: publish ? "published" : "draft" };
-  return writeAlerts(publish ? "Published." : "Saved as a draft.", () => ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert }));
+  const label = `${publish ? "Publish" : "Draft"} alert: ${alert.header?.[0]?.text ?? form.id}`;
+  return writeAlerts(publish ? "Published." : "Saved as a draft.", label, { cap: "alerts", op: "put", args: { id: form.id, alert } }, () =>
+    ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert }),
+  );
 }
 
 /// An alert ended now (alerts `end`): its periods end at the host's
-/// clock, or it is withdrawn when riders were never told.
+/// clock, or it is withdrawn when riders were never told. The time is
+/// the person's act, so it travels in the write's arguments (D-222).
 export function endAlert(id: string): Promise<boolean> {
   if (!alerts) return Promise.resolve(false);
   const doc = alerts;
   const at = nowUnix();
   // A period holds through its end second: the list is read once that
   // second has passed.
-  return writeAlerts("Ended.", () => ask("alerts", "end", { alerts_hash: doc, id, at }), at + 1);
+  return writeAlerts("Ended.", `End alert ${id}`, { cap: "alerts", op: "end", args: { id, at } }, () => ask("alerts", "end", { alerts_hash: doc, id, at }), at + 1);
 }
 
-async function writeAlerts(done: string, edit: () => Promise<{ refusals: AlertRefusal[]; alerts: unknown | null }>, readAt = 0): Promise<boolean> {
+async function writeAlerts(
+  done: string,
+  label: string,
+  op: { cap: string; op: string; args: unknown },
+  check: () => Promise<{ refusals: AlertRefusal[]; alerts: unknown | null }>,
+  readAt = 0,
+): Promise<boolean> {
   dz.busy = true;
   dz.writeError = "";
   try {
-    const answer = await edit();
+    const answer = await check();
     if (answer.refusals.length || !answer.alerts) {
       dz.refusals = answer.refusals;
       dz.writeError = "Not saved";
       return false;
     }
-    const resp = await writeFetch("service-alerts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: alerts?.pin ?? "", alerts: answer.alerts }),
-    });
-    if (!(await written(resp, "alerts"))) return false;
+    const outcome = await queueWrite({ log: "alerts", ops: [op], readSeq: logSeqs.alerts, label });
+    if (!(await settled(outcome, "alerts"))) return false;
     dz.form = null;
     // The list reads the clock the write was made at.
     dz.now = Math.max(nowUnix(), readAt);
-    say(done);
-    await readDocuments();
-    await release();
-    await request("docs", "form", "clock");
+    say(outcome.state === "sent" ? done : waitingText());
+    if (outcome.state === "sent") await afterWrite();
+    await request("form", "clock");
     return true;
   } catch (e) {
     dz.writeError = message(e);
@@ -953,46 +981,55 @@ async function writeAlerts(done: string, edit: () => Promise<{ refusals: AlertRe
   }
 }
 
-/// The receive path's answer, in words. True when it kept the write.
-async function written(resp: Response, what: "alerts" | "notes"): Promise<boolean> {
-  if (resp.ok) return true;
-  if (resp.status === 401) dz.writeError = "Sign in to save";
-  else if (resp.status === 403) dz.writeError = "Your sign-in can't save here";
-  else if (resp.status === 409) {
-    await readDocuments();
-    await release();
-    await request("docs");
-    dz.writeError = "Changed by someone else. Save again.";
-  } else if (resp.status === 422) {
-    const body = (await resp.json().catch(() => ({}))) as { refusals?: unknown[] };
+/// What the page says of a write that waits on the device.
+function waitingText(): string {
+  return outbox.needsSignIn ? "Saved on this device. Sign in to send it." : "Saved on this device. It is sent when the server answers.";
+}
+
+/// A write the server kept: the documents read again.
+async function afterWrite(): Promise<void> {
+  await readDocuments();
+  await release();
+  await request("docs");
+}
+
+/// The outcome of a write the person just saved. A write the server
+/// refused at once stays in its form with the server's reasons, so the
+/// outbox does not keep a second copy. True when it was kept.
+async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<boolean> {
+  if (outcome.state !== "held") return true;
+  const w = outbox.held.find((h) => h.key === outcome.key);
+  await discardWrite(outcome.key);
+  const body = (outcome.reasons ?? {}) as { refusals?: unknown[] };
+  if (outcome.status === 409) {
+    await afterWrite();
+    dz.writeError = "Changed by someone else. Check it, and save again.";
+  } else if (outcome.status === 422) {
     if (what === "alerts") dz.refusals = (body.refusals ?? []) as AlertRefusal[];
     else dz.noteRefusals = (body.refusals ?? []) as NoteRefusal[];
     dz.writeError = "Not saved";
-  } else dz.writeError = `Not saved: ${(await resp.text()).trim() || resp.status}`;
+  } else dz.writeError = w ? heldReason(w) : `Not saved (${outcome.status})`;
   return false;
 }
 
 // ---------------------------------------------------------------------
-// notes (D-214): written through POST /notes, which names the writer
-// and the time
+// notes (D-214): written as their intent (POST /logs/notes); the
+// server names the writer and the time
 // ---------------------------------------------------------------------
 
-/// A note written about `target`, or a note's text edited (`id`). True
-/// when saved.
+/// A note written about `target`, or a note's text edited (`id`). The
+/// note keeps the id it was made with, through every resend. True when
+/// it was kept (sent, or waiting on the device).
 export async function writeNote(target: NoteTarget, text: string, id: string | null = null): Promise<boolean> {
   dz.busy = true;
   dz.writeError = "";
   dz.noteRefusals = [];
   try {
-    const resp = await writeFetch("notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: id ?? newId("note"), target, text }),
-    });
-    if (!(await written(resp, "notes"))) return false;
-    await readDocuments();
-    await release();
-    await request("docs");
+    const op = { cap: "notes", op: "write", args: { id: id ?? newId("note"), target, text } };
+    const outcome = await queueWrite({ log: "notes", ops: [op], readSeq: logSeqs.notes, label: `${id ? "Edit note" : "Note"}: ${text.trim().slice(0, 60)}` });
+    if (!(await settled(outcome, "notes"))) return false;
+    if (outcome.state === "sent") await afterWrite();
+    else say(waitingText());
     return true;
   } catch (e) {
     dz.writeError = message(e);
@@ -1000,6 +1037,38 @@ export async function writeNote(target: NoteTarget, text: string, id: string | n
   } finally {
     dz.busy = false;
   }
+}
+
+// ---------------------------------------------------------------------
+// the outbox and the build, as the page shows them
+// ---------------------------------------------------------------------
+
+/// The writes the server refused, each with its reasons in words.
+export function heldWrites(): { key: string; label: string; reason: string }[] {
+  return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
+}
+
+/// Send what waits now.
+export function sendNow(): Promise<void> {
+  return sendWaiting();
+}
+
+/// A refused write sent again, over the documents the page reads now.
+export async function retryHeld(key: string): Promise<void> {
+  await readDocuments();
+  const w = outbox.held.find((h) => h.key === key);
+  await retryWrite(key, { readSeq: w?.log ? logSeqs[w.log] : undefined });
+}
+
+/// The person drops a refused write.
+export function discardHeld(key: string): Promise<void> {
+  return discardWrite(key);
+}
+
+/// The person accepts the new version: never over a form being written.
+export function applyUpdate(): void {
+  if (dz.form || dz.busy) return;
+  applyBuild();
 }
 
 /// A new record's id: the agency's date and a random part.

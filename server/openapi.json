@@ -1305,7 +1305,7 @@
       "post": {
         "operationId": "writeStopsLog",
         "summary": "Write to the stops log: ops over the documents at the head, as one entry.",
-        "description": "Store mode only. Each op runs over the stops document or the stop requests document at the head, in order (stops: add_event, correct_event; requests: put, record_work_order), checked as a write is, and what they changed is written as one entry. A write sent again with its key lands once. When sign-in is on, each op needs the write rule on its document's pointer (stops, stop_requests).",
+        "description": "Store mode only. Each op runs over the stops document or the stop requests document at the head, in order (stops: add_event, correct_event; requests: put, record_work_order), checked as a write is, and what they changed is written as one entry. A write sent again with its key lands once. The alerts and notes logs take the same intent write (D-189). When sign-in is on, each op needs the write rule on its document's pointer (stops, stop_requests).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1343,6 +1343,16 @@
                         "op"
                       ]
                     }
+                  },
+                  "read_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The log's seq whose documents the writer read (the manifest's log_seqs). A record the write changes that a later entry changed is a 409, and a change to another record is not."
+                  },
+                  "claimed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
                   }
                 },
                 "required": [
@@ -1443,7 +1453,7 @@
             }
           },
           "409": {
-            "description": "A correction names an event another writer changed since: `conflict` is its id, `op` the op.",
+            "description": "A correction names an event another writer changed since (`conflict` is its id, `op` the op), or a record the write changes was changed by an entry after `read_seq` (`conflict` is its kind and id, and `overlap` names it and that entry).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1454,6 +1464,29 @@
                     },
                     "conflict": {
                       "type": "string"
+                    },
+                    "overlap": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "seq"
+                      ]
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "description": "The log's head."
                     }
                   },
                   "required": [
@@ -1732,6 +1765,726 @@
           },
           "503": {
             "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/alerts": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getAlertsLog",
+        "summary": "Get the alerts log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the service alerts document or the alert templates document (D-206, D-210), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the service_alerts pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The entries after `since`, the log's head, its gaps, its newest checkpoint, the entries the fold quarantined, and its documents' hashes.",
+                  "properties": {
+                    "log": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "log",
+                    "head",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the service_alerts pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "writeAlertsLog",
+        "summary": "Write to the alerts log: ops over the documents at the head, as one entry.",
+        "description": "Store mode only. Each op runs over the service alerts document or the alert templates document at the head, in order (alerts: put, end, put_template), checked as a write is, and what they changed is written as one entry (D-189). A write sent again with its key lands once. When sign-in is on, each op needs the write rule on its document's pointer (service_alerts, alert_templates).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key: a resend with the same key lands once."
+                  },
+                  "ops": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "cap": {
+                          "type": "string",
+                          "enum": [
+                            "alerts"
+                          ]
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "object",
+                          "description": "The op's arguments, without the document's hash."
+                        }
+                      },
+                      "required": [
+                        "cap",
+                        "op"
+                      ]
+                    }
+                  },
+                  "read_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The log's seq whose documents the writer read (the manifest's log_seqs). A record the write changes that a later entry changed is a 409, and a change to another record is not."
+                  },
+                  "claimed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  }
+                },
+                "required": [
+                  "ops"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry's seq and the documents after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "service_alerts_hash": {
+                      "type": "string"
+                    },
+                    "alert_templates_hash": {
+                      "type": "string"
+                    },
+                    "landed": {
+                      "type": "boolean",
+                      "description": "The key landed before: no entry was written."
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "service_alerts_hash",
+                    "alert_templates_hash"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a write the log runs (text), or an op fails (JSON; `op` names it).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies a write an op needs.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A record the write changes was changed by an entry after `read_seq`: `conflict` is its kind and id, and `overlap` names it and that entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "conflict": {
+                      "type": "string"
+                    },
+                    "overlap": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "seq"
+                      ]
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "description": "The log's head."
+                    }
+                  },
+                  "required": [
+                    "conflict"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A document is refused; `op` names the op when one refused it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "refusals": {}
+                  },
+                  "required": [
+                    "refusals"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/notes": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getNotesLog",
+        "summary": "Get the notes log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the notes document (D-214), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the notes pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The entries after `since`, the log's head, its gaps, its newest checkpoint, the entries the fold quarantined, and its documents' hashes.",
+                  "properties": {
+                    "log": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "log",
+                    "head",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the notes pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "writeNotesLog",
+        "summary": "Write to the notes log: ops over the notes document at the head, as one entry.",
+        "description": "Store mode only. Each op (notes: write) runs over the notes document at the head, in order, with the verified writer and the server's clock as `by` and `at`, and what they changed is written as one entry (D-189, D-214). A write sent again with its key lands once. When sign-in is on, it needs the write rule on the notes pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key: a resend with the same key lands once."
+                  },
+                  "ops": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "cap": {
+                          "type": "string",
+                          "enum": [
+                            "notes"
+                          ]
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "object",
+                          "description": "The op's arguments, without the document's hash."
+                        }
+                      },
+                      "required": [
+                        "cap",
+                        "op"
+                      ]
+                    }
+                  },
+                  "read_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The log's seq whose documents the writer read (the manifest's log_seqs). A record the write changes that a later entry changed is a 409, and a change to another record is not."
+                  },
+                  "claimed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  }
+                },
+                "required": [
+                  "ops"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry's seq and the documents after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "notes_hash": {
+                      "type": "string"
+                    },
+                    "landed": {
+                      "type": "boolean",
+                      "description": "The key landed before: no entry was written."
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "notes_hash"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a write the log runs (text), or an op fails (JSON; `op` names it).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies a write an op needs.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A record the write changes was changed by an entry after `read_seq`: `conflict` is its kind and id, and `overlap` names it and that entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "conflict": {
+                      "type": "string"
+                    },
+                    "overlap": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "seq"
+                      ]
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "description": "The log's head."
+                    }
+                  },
+                  "required": [
+                    "conflict"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A document is refused; `op` names the op when one refused it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "refusals": {}
+                  },
+                  "required": [
+                    "refusals"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2697,6 +3450,10 @@
                       "open",
                       "refresh"
                     ]
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key (D-189): a resend whose key landed answers the work order the request holds, and the work order system is not asked again."
                   }
                 },
                 "required": [
@@ -4989,6 +5746,10 @@
           },
           "work_order": {
             "$ref": "#/components/schemas/WorkOrder"
+          },
+          "landed": {
+            "type": "boolean",
+            "description": "The key landed before: the work order system was not asked again."
           }
         },
         "required": [
@@ -5262,6 +6023,22 @@
           "notes_hash": {
             "type": "string",
             "description": "The notes document (the notes log's fold), store mode (D-214)."
+          },
+          "log_seqs": {
+            "type": "object",
+            "description": "The seq of each log's fold whose documents this manifest pins, store mode: a page sends it with a write as read_seq (D-189).",
+            "properties": {
+              "stops": {
+                "type": "integer"
+              },
+              "alerts": {
+                "type": "integer"
+              },
+              "notes": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
           },
           "build_hash": {
             "type": "string"

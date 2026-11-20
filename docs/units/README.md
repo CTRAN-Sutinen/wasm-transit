@@ -50,7 +50,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
+| [offline-apps.md](offline-apps.md) | the staff pages through an outage, dogfooded on C-TRAN: built and pinned, not yet run on real data |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
 | [server-resilience.md](server-resilience.md) | more than one server copy proved, a copy restarted while the bucket does not answer, and a fault harness |
 | [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
@@ -119,15 +119,13 @@ before starting it.
   in seniority order (`docs/ROADMAP.md` 7). It starts once the runs
   cut lands ([runs-layer.md](runs-layer.md)). It needs workforce and
   seniority data (QAF-17), and a bid is a new shared document.
-- **The stops page offline** (deferred by the user 2026-11-12;
-  2026-11-13: "in the future we will definitely want to build full
-  offline support"): a copy of the stops document on the device that
-  every edit lands in first, begun from the deployment's document, the
-  network it serves, a GTFS zip, or a stops file; saved to a file;
-  sent when the store answers; several stops surveyed with no signal
-  and sent later. Open: when the deployment's document moved on while
-  edits waited (replay each edit, checked, and list the ones that no
-  longer fit, recommended; or choose one of the two documents).
+- **The stops page with no deployment** (deferred by the user
+  2026-11-12; 2026-11-13: "in the future we will definitely want to
+  build full offline support"): a stops document begun on the device
+  from a GTFS zip or a stops file, and saved to a file. Edits made with
+  no signal already wait on the device and are run again over the
+  deployment's document when it answers, each checked, and the ones
+  that no longer fit are listed (D-189).
 - **A database beside the logs** — only when one of D-190's two needs
   arrives: data that must be deletable, or throughput that a log
   cannot carry (the bid is the likely first). It is fed from the logs,

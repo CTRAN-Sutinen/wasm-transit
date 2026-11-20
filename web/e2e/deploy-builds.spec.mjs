@@ -130,19 +130,57 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
   }
 });
 
-// The worker's scope is the deployment's root, so it controls a
-// planner's page too — but answers only the offline pages from its
-// shell: a page outside them reads the deployment's current manifest
-// (its shell copy names one build's modules, gone after the next).
-test("a page that is not offline reads the current manifest, not the shell's", async ({ page }) => {
+// A staff page is an offline page too (D-189), but its assembly stays
+// out of the shell every install downloads (D-223: a rider's install
+// never fetches a planner's modules). The page reads its capability
+// manifest from the shell, and the worker keeps its assembly on first
+// use, hash-named, forever.
+test("a staff page's assembly is kept on first use, not precached", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await controlled(page, "/stop-display.html?stop=A&layout=routes");
+  const cached = (name) =>
+    page.evaluate(async (name) => {
+      const out = [];
+      for (const key of await caches.keys()) {
+        for (const req of await (await caches.open(key)).keys()) if (req.url.includes(name)) out.push(key.startsWith("shell-") ? "shell" : key);
+      }
+      return out;
+    }, name);
+  expect(await cached("ui-service-change-")).toEqual([]);
+  expect(await cached("ui-stop-display-")).toEqual(["shell"]);
   const manifests = [];
   page.on("response", (r) => {
     if (r.url().includes("caps/manifest.json")) manifests.push({ ui: new URL(r.url()).searchParams.get("ui"), sw: r.fromServiceWorker() });
   });
   await page.goto("/service-change.html");
-  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller)).toBe(true);
-  await expect.poll(() => manifests.length, { timeout: 20_000 }).toBeGreaterThan(0);
-  expect(manifests).toEqual([{ ui: "service-change", sw: false }]);
+  await expect.poll(() => manifests.find((m) => m.ui === "service-change"), { timeout: 20_000 }).toEqual({ ui: "service-change", sw: true });
+  await expect.poll(() => cached("ui-service-change-"), { timeout: 20_000 }).toEqual(["content-addressed"]);
+});
+
+// A staff page is told of a new build and applies it only when the
+// person accepts (D-189): a document another build wrote (here an edit
+// document one version ahead) makes it look for the deployment's
+// build at once; it shows "A new version is ready" and never reloads
+// under the person.
+test("a staff page refused for its version gets the deployment's build, and applies it only when the person accepts", async ({ page }) => {
+  const original = fs.readFileSync(swPath, "utf8");
+  try {
+    await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
+    const before = await controlled(page, "/disruptions.html");
+    await expect(page.getByTestId("clock")).toContainText("7:55");
+    await page.evaluate(() => (window.__notReloaded = true));
+    fs.writeFileSync(swPath, original.replace(`const BUILD = "${before}";`, `const BUILD = "${before}-next";`));
+    await page.route("**/edits", (route) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 99, records: [] }) }),
+    );
+    // The next read of the edit document meets the newer version.
+    await page.clock.fastForward(30_000);
+    await expect(page.getByTestId("update-ready")).toContainText("A new version is ready", { timeout: 30_000 });
+    expect(await page.evaluate(() => window.__notReloaded)).toBe(true);
+    expect(await buildOf(page)).toBe(before);
+    await page.getByTestId("update-ready").getByRole("button", { name: "Reload" }).click();
+    await expect.poll(() => buildOf(page), { timeout: 20_000 }).toBe(`${before}-next`);
+  } finally {
+    fs.writeFileSync(swPath, original);
+  }
 });

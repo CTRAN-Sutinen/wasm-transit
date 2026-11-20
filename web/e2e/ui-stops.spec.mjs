@@ -46,11 +46,12 @@
 //   - the stops near the device (cap-stops `stops_near`), nearest first;
 //   - the stops' map is kept, not rebuilt, on the way to a stop and back;
 //   - signed in (D-58, D-163; its own server on :8090 with sign-in on,
-//     and a stand-in provider on :8089): a write before signing in is
-//     refused in words and its draft kept; signing in goes out to the
-//     provider and back to the same stop; the survey then saves, its
-//     surveyor the signed-in person's name, and a photo added and shown
-//     only to the signed-in;
+//     and a stand-in provider on :8089): a write before signing in
+//     waits on the device, and the page says it needs a sign-in
+//     (D-189); signing in goes out to the provider and back to the same
+//     stop, and the survey that waited is sent, its surveyor the
+//     signed-in person's name; a photo added and shown only to the
+//     signed-in;
 //   - what the agency's feed did to the stops record (D-150: the feed
 //     applies, and the planner sees what it did): the Feed review page,
 //     each stop linked to its record.
@@ -493,26 +494,31 @@ test.describe("signed in", () => {
     await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("signin-button")).toBeVisible();
 
-    // not signed in: refused in words beside Save, the survey's draft kept
+    // not signed in: the survey waits on this device (D-189), and the
+    // page says it needs a sign-in to be sent
     await page.getByTestId("action-survey").click();
     await page.getByTestId("survey-on_street").fill("Main St");
     await page.getByTestId("survey-save").click();
-    await expect(page.getByTestId("survey-problems")).toContainText("Sign in to save", { timeout: 15_000 });
-    await page.getByTestId("survey-close").click();
-    await expect(page.getByTestId("action-survey")).toHaveText("Continue survey");
+    await expect(page.getByTestId("status")).toContainText("Saved on this device. Sign in to send it.", { timeout: 15_000 });
+    await expect(page.getByTestId("sync-waiting")).toContainText("Sign in to send 1 change");
 
-    // out to the provider and back to the same stop
+    // out to the provider and back to the same stop; the survey that
+    // waited is sent, its surveyor the signed-in person
     await page.getByTestId("signin-button").click();
     await expect(page.getByTestId("signin-name")).toHaveText("Rosa Ortiz", { timeout: 15_000 });
     await expect(page).toHaveURL(/stops\.html#.*open=A/);
     await expect(page).not.toHaveURL(/[?&]code=/);
+    await expect(page.getByTestId("sync-status")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("stop-surveyed")).toContainText("Last surveyed on 2026-11-02 by Rosa Ortiz.", { timeout: 15_000 });
 
+    // signed in, a survey with a photo saves at once
     await page.getByTestId("action-survey").click();
-    await expect(page.getByTestId("survey-on_street")).toHaveValue("Main St");
+    await page.getByTestId("survey-on_street").fill("Main Street");
     await page.getByTestId("survey-attachments-camera").setInputFiles({ name: "sign.png", mimeType: "image/png", buffer: PNG });
     await expect(page.getByTestId("survey-review")).toContainText("1 photo", { timeout: 15_000 });
     await page.getByTestId("survey-save").click();
     await expect(page.getByTestId("stop-surveyed")).toContainText("Last surveyed on 2026-11-02 by Rosa Ortiz.", { timeout: 15_000 });
+    await expect(page.getByTestId("sync-status")).toHaveCount(0);
 
     await page.getByTestId("signout").click();
     await expect(page.getByTestId("signin-button")).toBeVisible();

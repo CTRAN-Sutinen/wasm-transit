@@ -1,23 +1,25 @@
-/// The rider pages' service worker (D-63, D-65) — ONE lifecycle for
-/// updates and offline. `npm run build` writes it to dist/sw.js with
-/// BUILD (the build's identity: a hash over the shell's files) and
-/// SHELL (the files it precaches) above this text (vite.config.ts,
-/// "the service worker"), so every build is a byte-different worker
-/// and the browser's update check finds it.
+/// The offline pages' service worker (D-63, D-65, D-189) — ONE
+/// lifecycle for updates and offline, for every page whose ui.json says
+/// `"offline": true` (the rider pages and the staff pages). `npm run
+/// build` writes it to dist/sw.js with BUILD (the build's identity: a
+/// hash over the shell's files) and SHELL (the files it precaches)
+/// above this text (vite.config.ts, "the service worker"), so every
+/// build is a byte-different worker and the browser's update check
+/// finds it.
 ///
-/// - Install precaches the shell — the rider pages, their scripts and
-///   styles, the capability manifest, and each rider page's linked
-///   assembly — and WAITS: a new build never takes over an open page.
-///   The page applies it (src/uis/kit.ts, "the app's build"): a
-///   rider's at the next cold start or navigation, or when they accept
-///   "a new version is ready"; a display at its next poll while the
-///   server answers. `apply` is the page's message.
+/// - Install precaches the shell — the offline pages, their scripts
+///   and styles, the capability manifest, and each offline page's
+///   linked assembly — and WAITS: a new build never takes over an open
+///   page. The page applies it (src/uis/kit.ts, "the app's build"): a
+///   rider's or a staff page's at the next cold start or navigation, or
+///   when the person accepts "a new version is ready"; a display at its
+///   next poll while the server answers. `apply` is the page's message.
 /// - Activate takes the open pages and keeps this build's shell and the
 ///   one before it (a page another tab moved past still loads the
 ///   files of the build it runs); older shells are dropped.
 /// - The worker answers for the offline pages (OFFLINE, their UI ids)
 ///   only. Its scope is the deployment's root, so every other page on
-///   the origin (a planner's) is controlled by it too: that page's
+///   the origin (the picker) is controlled by it too: that page's
 ///   capability manifest — asked with `?ui=<id>` by the bus worker —
 ///   comes from the network, never the shell's copy, which names this
 ///   build's modules and goes stale at the next build. Hash-named
@@ -33,7 +35,9 @@
 ///   prefix (a static host's /ride/, D-131) matches as one at the root.
 ///   Never cached: live feeds and the dev relay (a prediction is never
 ///   replayed as live), the edit document (offline, the boards are the
-///   schedule and say so), writes, and the geocoder.
+///   schedule and say so; the disruptions page keeps its own last copy,
+///   src/uis/kit.ts `lastGoodText`), writes (a staff page's outbox keeps
+///   them, src/outbox.svelte.ts), and the geocoder.
 
 /* global BUILD, SHELL, OFFLINE */
 
@@ -47,7 +51,7 @@ const SCOPE = new URL(self.registration.scope).pathname;
 const SHELL_URLS = new Set(SHELL.map((p) => new URL(p, self.registration.scope).pathname));
 /// Scope-relative paths (no leading slash).
 const HASHED = [/^assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/, /^caps\/[^/]+-[0-9a-f]{64}\.wasm$/, /^blobs\/sha256:[0-9a-f]{64}(\.gz)?$/];
-const PUBLISHED = ["manifest", "network/document", "network/boundary", "streets", "walks", "live-feeds.json"];
+const PUBLISHED = ["manifest", "network", "network/document", "network/boundary", "streets", "walks", "live-feeds.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL)));

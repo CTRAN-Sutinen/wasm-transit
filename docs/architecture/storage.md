@@ -166,22 +166,46 @@ by kind:
   change different records never conflict. Each write that changes a
   record is one entry of the disruptions log. A mistake is fixed by a
   revert, which is a new entry (`POST /logs/disruptions/revert`).
-- **Stops and stop requests** are one log. `POST /logs/stops` sends ops,
-  each run over the documents at the head, with the device's
-  idempotency key. Two writers who change different stops both land. A
-  correction of an event that another writer changed since is a `409`
-  that names the event. Completing a request and adding the stop's event
-  is one entry. `POST /stops` and `POST /stop-requests` still take the
-  whole document under `from`, and a moved head is a `409`; each such
-  write is one entry too. The work order system's answer and the feed's
-  differences run over the head and need no `from`.
-- **Service alerts and templates** (`POST /service-alerts`,
-  `POST /alert-templates`) take the whole document under `from`, and a
-  moved head is a `409`. Each write is one entry of the alerts log.
-- **Notes** (`POST /notes`) take one note, not a document, and run over
-  the head with no `from`. Two people who note at once never conflict.
-  Each write is one entry of the notes log, and the same text written
-  again is none.
+- **The intent write** (`POST /logs/<log>`, D-189) is how a page writes
+  the stops log, the alerts log, and the notes log. The body is what the
+  person asked for: `{key, ops, read_seq, claimed_at_ms}`. The server
+  runs each op over the documents at the head, in order, so the
+  module's checks run on what the server holds, and writes what the
+  ops changed as one entry.
+  - The key is the device's idempotency key. Every resend carries it,
+    and a key that landed answers the entry that holds it. So a write
+    whose answer was lost lands once.
+  - `read_seq` is the log's seq whose documents the page read (the
+    manifest's `log_seqs`). The write is checked against the records it
+    changes, not the whole log's head: cap-log's `compose` reads the
+    entries after `read_seq`, and a record that one of them changed and
+    the write changes too is a `409` that names it (`overlap`). A change
+    to another record does not refuse the write.
+  - `claimed_at_ms` is the device's clock when the person made a write
+    that waited. The entry keeps it in its intent, beside the server's
+    stamp, and no rule reads it as the record's time (D-222).
+- **Stops and stop requests** are one log, written by intent (stops
+  `add_event`, `correct_event`; requests `put`, `record_work_order`).
+  Two writers who change different stops both land. A correction of an
+  event that another writer changed since is a `409` that names the
+  event. Completing a request and adding the stop's event is one entry.
+  `POST /stops` and `POST /stop-requests` still take the whole document
+  under `from`, and a moved head is a `409`; each such write is one
+  entry too. A page uses `POST /stops` only for the first stops
+  document. The work order system's answer and the feed's differences
+  run over the head and need no `from`. The work order route takes a
+  key too: a resend whose key landed answers the request's work order,
+  and the system is not asked again.
+- **Service alerts and templates** are one log, written by intent
+  (alerts `put`, `end`, `put_template`). `POST /service-alerts` and
+  `POST /alert-templates` still take the whole document under `from`,
+  and a moved head is a `409`. Each write is one entry of the alerts
+  log.
+- **Notes** are written by intent (notes `write`): one note, not a
+  document. The server gives `by` and `at`. `POST /notes` takes one note
+  the same way, with no key. Two people who note at once never
+  conflict. Each write is one entry of the notes log, and the same text
+  written again is none.
 - **Picks and the plan set** (`POST /plans/freeze`, `/plans/adopt`,
   `/plans`, `/plans/retire`) are each one entry of the plans log.
   cap-plans answers the next frozen versions and plan set over the head,

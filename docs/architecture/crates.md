@@ -412,8 +412,8 @@ The sync document: `EditRecord`, `FeedManifest`, `EditReport`, and the edit docu
 ## transit-log
 
 The append-only log of the agency's record, kind-agnostic (D-190, D-197). cap-log is the seam.
-- An `Entry` (kind `log_entry`) is one write: its place (`log`, `seq`), the writer, the time, the module, the intent (with the writer's idempotency `key`), and each change `{kind, version, id, before, after}`. A `Checkpoint` (kind `log_checkpoint`) is the fold up to an entry: every record by kind and id with its version, and every key with its entry.
-- `compose` answers the entry for one write from the fold and each touched kind's records. `apply` applies an entry all or none. `fold` folds stored entries and quarantines what does not read or apply. `revert` answers the changes that write back the states before an entry. A kind whose merge would undo that writes back its own records: `revert_states` gives each record's state now and before, and `revert_with` writes what the kind gives in their place.
+- An `Entry` (kind `log_entry`) is one write: its place (`log`, `seq`), the writer, the time, the module, the intent (with the writer's idempotency `key`, and the device's `claimed_at_ms` for a write that waited, D-222), and each change `{kind, version, id, before, after}`. A `Checkpoint` (kind `log_checkpoint`) is the fold up to an entry: every record by kind and id with its version, and every key with its entry.
+- `compose` answers the entry for one write from the fold and each touched kind's records. `overlap` names the first record a write changes that an entry its writer did not read changed too (D-189). `apply` applies an entry all or none. `fold` folds stored entries and quarantines what does not read or apply. `revert` answers the changes that write back the states before an entry. A kind whose merge would undo that writes back its own records: `revert_states` gives each record's state now and before, and `revert_with` writes what the kind gives in their place.
 - `document_records`, `split`, `join`, and `assemble` turn a document into records (its collection, and its own record, so fields outside the collection are kept) and back, refusing a record in another version.
 - The record hash is the caller's (cap-log passes the canonical hash), so the crate is pure.
 
@@ -725,7 +725,7 @@ The disruptions capability: what is disrupted on a day, and does an alert explai
 ## cap-log
 
 The log capability: what does this write add to the log, and what does the log hold? transit-log is the library. It is stateless, and it never reads a record.
-- `compose` gives one write's entry: each record that differs from the fold, with its hash as stored before. It gives no entry when nothing changed, and the entry that holds the key when the write's idempotency key landed before.
+- `compose` gives one write's entry: each record that differs from the fold, with its hash as stored before. It gives no entry when nothing changed, and the entry that holds the key when the write's idempotency key landed before. Given the entries after the fold its writer read (`unread`), it gives no entry and the `overlap` when one of them changed a record the write changes: a write is checked against the records it changes, not the whole log.
 - `fold` folds the entries after a checkpoint into the records by kind and id, and gives the checkpoint. It quarantines an entry it cannot read or apply.
 - `revert` gives the entry that writes back the states before an entry. A record the entry created leaves the fold (D-198). A record a later entry changed refuses it. Its answer gives each record's state now and before (`states`). A kind's capability may answer other records to write back (`written`), and the host sends them with the revert again.
 - `close_gap` gives the empty entry that closes a gap, with its cause.

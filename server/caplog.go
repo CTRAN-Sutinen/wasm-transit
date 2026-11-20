@@ -226,9 +226,23 @@ type logRefusal struct {
 }
 
 // logWrite is one write to a log: who, what asked for it, and the
-// writer's idempotency key.
+// writer's idempotency key. readSeq, when set, is the log's seq the
+// writer read: a record the write changes that a later entry changed
+// is refused (409), and a change to another record is not. claimedAtMs
+// is the device's clock when the person made the write: a claim beside
+// the server's stamp (D-222), 0 when the writer gives none.
 type logWrite struct {
 	writer, op, argsHash, key, note string
+	readSeq                         *int64
+	claimedAtMs                     int64
+}
+
+// logOverlap is the 409 of a write that changes a record an entry
+// after its read changed too: a person settles it.
+type logOverlap struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Seq  int64  `json:"seq"`
 }
 
 // writeLog runs one write through the receive path into one entry.
@@ -271,20 +285,37 @@ func (s *server) writeLog(f *logFold, w logWrite, run func() ([]json.RawMessage,
 				intent[k] = v
 			}
 		}
+		if w.claimedAtMs > 0 {
+			intent["claimed_at_ms"] = w.claimedAtMs
+		}
 		header := map[string]any{"log": f.name, "seq": f.seq + 1, "writer": w.writer, "at_ms": time.Now().UnixMilli(), "module": "cap-log@" + m.Hash(), "intent": intent}
 		req := map[string]any{"op": "compose", "header": header, "next": next}
 		if len(f.base) > 0 {
 			req["checkpoint"] = f.base
 		}
+		// The entries the writer did not read: a record the write
+		// changes that one of them changed is for a person to settle.
+		if w.readSeq != nil && *w.readSeq < f.seq {
+			unread, err := s.store.Entries(f.name, max(*w.readSeq, 0), f.seq)
+			if err != nil {
+				return 0, false, nil, err
+			}
+			req["unread"] = unread
+		}
 		var composed struct {
-			Entry  string `json:"entry"`
-			Landed *int64 `json:"landed"`
+			Entry   string      `json:"entry"`
+			Landed  *int64      `json:"landed"`
+			Overlap *logOverlap `json:"overlap"`
 		}
 		if err := s.logOp(req, &composed); err != nil {
 			return 0, false, nil, err
 		}
 		if composed.Landed != nil {
 			return *composed.Landed, true, nil, nil
+		}
+		if composed.Overlap != nil {
+			o := composed.Overlap
+			return 0, false, &logRefusal{http.StatusConflict, map[string]any{"conflict": o.Kind + " " + o.ID, "overlap": o, "seq": f.seq}}, nil
 		}
 		if composed.Entry == "" {
 			return f.seq, false, nil, nil

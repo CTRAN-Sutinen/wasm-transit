@@ -183,6 +183,10 @@ unchanged.
 `stop_board` or `plan`. Each op is documented with a worked example
 that the build runs to make sure it stays correct.
 
+**Outbox.** The list of changes a staff app saved on the device while
+the server did not answer. The app sends them, in order, when the
+server answers again.
+
 **Pattern.** One sequence of stops a route serves in one direction.
 A route with a short-turn or a branch has more than one pattern.
 Agencies may call a pattern a variant.

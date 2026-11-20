@@ -74,8 +74,9 @@ works, what each person does instead, and how the part recovers.
   page's cache, and an exported bundle can each be lost, and nothing
   of the record is lost with them. A server copy that cannot reach the
   bucket serves the documents it last confirmed, labelled stale, and
-  refuses writes with `503` ([storage.md](storage.md)). A rider page
-  keeps running offline on the documents it holds
+  refuses writes with `503` ([storage.md](storage.md)). Every page
+  keeps running offline on the documents it holds, and a staff page's
+  writes wait on the device until the server answers
   ([updates-offline.md](updates-offline.md)).
 - **The bucket alone recovers the agency.** It holds:
   - the record: the log keeps every state of every record

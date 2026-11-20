@@ -136,8 +136,9 @@ walking (QAF-85).
 - **Live replanning:** when rt says the rider misses the connection, the
   app replans. The router plans over the live document (`live_hash`). No
   UI re-plans when a new snapshot breaks the rider's connection.
-- **PWA / offline:** the app is already local-first. Installable offline
-  trip planning is nearly free.
+- **PWA / offline:** every generated UI installs and works offline, and
+  a staff page's writes wait on the device until the server answers
+  (D-65, D-189; `docs/architecture/updates-offline.md`).
 
 ## 6. The data plane: module composition
 

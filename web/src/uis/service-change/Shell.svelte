@@ -54,7 +54,14 @@
     endNewRoute,
     createRoute,
     why,
+    heldWrites,
+    sendNow,
+    retryHeld,
+    discardHeld,
+    applyUpdate,
   } from "./host.svelte";
+  import { outbox } from "../../outbox.svelte";
+  import SyncStatus from "../../components/SyncStatus.svelte";
   import NetworkMap from "../../components/NetworkMap.svelte";
   import StopMap from "../../components/StopMap.svelte";
   import StopRecord from "../../components/StopRecord.svelte";
@@ -135,6 +142,21 @@
       <div class="jump">
         <Combobox label="Open a route" bind:value={jump} options={routeOptions} placeholder="Open a route…" onchange={(v) => { if (v) openRoute(v); jump = ""; }} />
       </div>
+    </div>
+    <div class="sync-slot">
+      <SyncStatus
+        waiting={outbox.waiting}
+        held={heldWrites()}
+        offline={sc.offline || outbox.offline}
+        asOf={sc.asOf}
+        needsSignIn={outbox.needsSignIn}
+        updateReady={sc.updateReady}
+        canUpdate={!sc.busy}
+        onsend={sendNow}
+        onretry={retryHeld}
+        ondiscard={discardHeld}
+        onupdate={applyUpdate}
+      />
     </div>
   </header>
   <nav class="stages" aria-label="Stages">
@@ -376,4 +398,6 @@
     .two, .route, .stops { grid-template-columns: 1fr; }
     .status { margin: 0.3rem 0; text-align: left; flex-basis: 100%; }
   }
+  .sync-slot { flex-basis: 100%; }
+  .sync-slot:empty { display: none; }
 </style>

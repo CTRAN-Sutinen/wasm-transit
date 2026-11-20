@@ -392,7 +392,9 @@ service design app. It takes effect on its date.
 **To update,** build a new image ([section 3](#3-build-the-image)) and
 replace the containers with it, one at a time. When the new version
 starts, it records its pages in the bucket. Open apps download the
-new version in the background and switch to it safely.
+new version in the background and switch to it safely. A staff app
+(service design, service change, stops, disruptions) says "A new
+version is ready" and switches only when the person clicks Reload.
 
 A new version can store some data in a newer format. When it starts,
 it converts the data in use to that format: the edits, the schedule in
@@ -653,6 +655,8 @@ image.
 | The log says `auth OFF` | Turn on sign-in ([section 6](#6-turn-on-sign-in)). |
 | `/readyz` says `degraded` | The bucket is not answering. Check the provider's status and the credentials. The apps keep working, but changes wait. |
 | Saving a detour fails with 503 | The same: the bucket is not answering. The app keeps the change and tries again. |
+| A staff app says "Offline" and "changes waiting to send" | The app cannot reach the server. The person keeps working; what they save waits on their device and is sent, once, when the server answers. Check that the server is running and that the device has a network. |
+| A staff app shows "Not saved" with a reason | The server refused a change when it arrived: someone else changed the same thing, or it no longer fits. The person reads the reason and sends it again or discards it. Nothing else is needed from you. |
 | The server will not start, with `store:` in the error | The store address or the credentials are wrong. |
 | The server will not start, with `feed:` in the error | The `-feed` address does not answer, or the file is not valid GTFS. (If the address does not answer but the bucket holds an earlier import, the server starts with that instead.) |
 | The log says `ALARM disruptions log: a gap` (or `ALARM stops log: a gap`) | A file in the bucket's `logs/disruptions/entries/` (or `logs/stops/entries/`) folder is missing, so detours and cancellations (or stops and requests) cannot be saved. Restore it from a backup if you can. If not, record why it is missing: `curl -X POST -H "Authorization: Bearer <token>" -d '{"seq": <the missing number>, "cause": "<why>"}' https://<your address>/logs/disruptions/close-gap` (or `/logs/stops/close-gap`). Saving works again at once. |

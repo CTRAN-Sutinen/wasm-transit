@@ -50,6 +50,15 @@
             "null"
           ]
         },
+        "claimed_at_ms": {
+          "description": "The writer's device clock when the person made the write, Unix\nepoch milliseconds: a claim beside the host's `at_ms`, never the\nentry's time (D-222). A write that waited on the device carries\nit.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "key": {
           "description": "The writer's idempotency key: a write sent again with the same\nkey lands once.",
           "type": [

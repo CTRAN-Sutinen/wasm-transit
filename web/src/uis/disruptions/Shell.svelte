@@ -33,8 +33,15 @@
     addStop,
     writeNote,
     startAlertFor,
+    heldWrites,
+    sendNow,
+    retryHeld,
+    discardHeld,
+    applyUpdate,
     type View,
   } from "./host.svelte";
+  import { outbox } from "../../outbox.svelte";
+  import SyncStatus from "../../components/SyncStatus.svelte";
   import AlertsBoard from "../../components/AlertsBoard.svelte";
   import AlertEditor from "../../components/AlertEditor.svelte";
   import AlertPreview from "../../components/AlertPreview.svelte";
@@ -73,6 +80,19 @@
   {#if dz.status || dz.editsStale}
     <p class="status" class:alert={dz.alert} role="status">{dz.status || dz.editsStale}</p>
   {/if}
+  <SyncStatus
+    waiting={outbox.waiting}
+    held={heldWrites()}
+    offline={dz.offline || outbox.offline}
+    asOf={dz.asOf}
+    needsSignIn={outbox.needsSignIn}
+    updateReady={dz.updateReady}
+    canUpdate={!dz.form && !dz.busy}
+    onsend={sendNow}
+    onretry={retryHeld}
+    ondiscard={discardHeld}
+    onupdate={applyUpdate}
+  />
   </div>
 
   <main class="body" class:writing={!!dz.form}>

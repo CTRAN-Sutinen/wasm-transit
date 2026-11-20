@@ -56,12 +56,17 @@ function claims(jwt: string): Record<string, unknown> {
   }
 }
 
+/// The provider answered, and refused: the person signs in again.
+class Refused extends Error {}
+
 let discovered: Promise<{ authorization_endpoint: string; token_endpoint: string }> | null = null;
 function discovery(issuer: string) {
   discovered ??= fetch(`${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`).then((r) => {
     if (!r.ok) throw new Error(`the sign-in provider did not answer (${r.status})`);
     return r.json();
   });
+  // A provider that did not answer is asked again next time.
+  discovered.catch(() => (discovered = null));
   return discovered;
 }
 
@@ -78,7 +83,7 @@ async function tokenRequest(form: Record<string, string>): Promise<Tokens> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: auth.client_id, ...form }),
   });
-  if (!resp.ok) throw new Error(`the sign-in provider refused (${resp.status})`);
+  if (!resp.ok) throw new Refused(`the sign-in provider refused (${resp.status})`);
   const t = (await resp.json()) as { access_token: string; refresh_token?: string; expires_in?: number; id_token?: string };
   const who = claims(t.id_token ?? t.access_token);
   const name = String(who.name ?? who.preferred_username ?? who.email ?? who.sub ?? "");
@@ -148,8 +153,11 @@ async function accessToken(): Promise<string | null> {
     const next = await tokenRequest({ grant_type: "refresh_token", refresh_token: t.refresh });
     keep(TOKENS, next);
     return next.access;
-  } catch {
-    signOut();
+  } catch (e) {
+    // The provider refused: sign in again. The provider did not answer
+    // (the network is away): the person stays signed in, and a write
+    // waits in the outbox until a refresh succeeds (D-189).
+    if (e instanceof Refused) signOut();
     return null;
   }
 }

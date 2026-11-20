@@ -12,7 +12,10 @@
 //!    fold (D-198); a later change refuses it; a kind's written records
 //!    take the place of the states before, over the states it answers;
 //! 5. a bad entry is quarantined and named; a gap's entry needs a cause;
-//! 6. the entry's `seq` must follow the fold.
+//! 6. the entry's `seq` must follow the fold;
+//! 7. a write over the head overlaps an unread entry only through a
+//!    record both change, and the overlap names it; a key that landed
+//!    answers before the overlap; the device's time is kept as a claim.
 
 use cap_log::{dispatch_json};
 use serde_json::{json, Value};
@@ -181,4 +184,34 @@ fn a_bad_entry_is_quarantined_and_a_gap_needs_a_cause() {
 fn the_entry_follows_the_fold() {
     assert!(err(json!({"op": "compose", "header": header(3, None), "next": [stops(json!({"A": [1]}))]})).contains("fold is at 0"));
     assert!(err(json!({"op": "fold", "log": "plans", "checkpoint": {"kind": "log_checkpoint", "schema_version": 1, "log": "stops", "seq": 0, "records": {}, "keys": {}}, "entries": []})).contains("stops log"));
+}
+
+#[test]
+fn a_write_overlaps_an_unread_entry_only_through_a_record_both_change() {
+    let mut log = Log::new();
+    log.write(json!([stops(json!({"A": [1], "B": [1]}))]), None);
+    let read_at = log.seq();
+    log.write(json!([stops(json!({"A": [1], "B": [2]}))]), Some("other-device/1"));
+    let unread: Vec<Value> = log.entries[read_at as usize..].to_vec();
+    let compose = |next: Value, key: Option<&str>| {
+        ok(json!({"op": "compose", "header": header(log.seq() + 1, key), "next": next,
+            "checkpoint": log.checkpoint.clone().unwrap(), "unread": unread}))
+    };
+    let other = compose(json!([stops(json!({"A": [1, 5], "B": [2]}))]), None);
+    assert!(other["entry"].is_string() && other.get("overlap").is_none(), "{other}");
+    let same = compose(json!([stops(json!({"A": [1], "B": [2, 7]}))]), None);
+    assert_eq!(same["overlap"], json!({"kind": "stop", "id": "B", "seq": 2}));
+    assert!(same.get("entry").is_none());
+    let resent = compose(json!([stops(json!({"A": [1], "B": [2, 7]}))]), Some("other-device/1"));
+    assert_eq!(resent["landed"], json!(2), "a key that landed answers first");
+}
+
+#[test]
+fn the_devices_time_is_a_claim_beside_the_hosts() {
+    let mut h = header(1, Some("tablet-4/18"));
+    h["intent"]["claimed_at_ms"] = json!(999);
+    let answer = ok(json!({"op": "compose", "header": h, "next": [stops(json!({"A": [1]}))]}));
+    let entry: Value = serde_json::from_str(answer["entry"].as_str().unwrap()).unwrap();
+    assert_eq!(entry["at_ms"], json!(1000), "the host's stamp is the entry's time");
+    assert_eq!(entry["intent"]["claimed_at_ms"], json!(999));
 }

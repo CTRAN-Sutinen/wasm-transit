@@ -39,7 +39,7 @@ Service design helps plan a service change. It shows how the network
 performs today, who it reaches, and what a proposed change costs. When
 the change is ready, it publishes it for a future date.
 
-**Server:** needed.
+**Server:** needed now and then. See "When the server is away" below.
 
 ## Service change
 
@@ -60,7 +60,7 @@ needs (each bus's day drawn as a bar, with its trips one click away),
 and review the whole proposal for weekdays, Saturdays and
 Sundays, against a plan you choose there.
 
-**Server:** needed.
+**Server:** needed now and then. See "When the server is away" below.
 
 ## Stops
 
@@ -107,7 +107,7 @@ looking needs no sign-in. The survey records you as the surveyor, from
 your sign-in. A change entered wrong is corrected, not added to.
 Schedules read these stops but never change them.
 
-**Server:** needed.
+**Server:** needed now and then. See "When the server is away" below.
 
 ## Disruptions
 
@@ -151,7 +151,29 @@ sending an email; it shows who wrote it and when. Notes are for staff
 only and never reach riders, and they cannot be deleted. Cancelled trips come from two places, the
 dispatch record and the live feed, and each is listed as it comes.
 
-**Server:** needed.
+**Server:** needed now and then. See "When the server is away" below.
+
+## When the server is away
+
+The staff apps (Service design, Service change, Stops, and Disruptions)
+install like an app and keep working when the server does not answer
+for a while. Open each one once while the server answers, so the device
+keeps a copy of it.
+
+- The app works from the data it last read, and says so: "Offline ·
+  data as of 4:05 PM".
+- What you save waits on the device. The app shows how many changes
+  wait to be sent. Closing or reloading the page keeps them.
+- When the server answers again, the app sends them in the order you
+  made them. Each is saved once, even if a send has to be repeated.
+- If you are not signed in, the changes wait until you sign in.
+- The server still checks each change when it arrives. If someone else
+  changed the same thing in the meantime, or the change no longer fits,
+  the app keeps your change and shows why it was not saved. You choose
+  to send it again or discard it. Nothing is dropped without telling
+  you.
+- A new version of an app waits until you choose Reload. It never
+  reloads the page while you are working.
 
 ## Read next
 

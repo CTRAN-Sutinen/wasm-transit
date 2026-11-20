@@ -631,10 +631,14 @@ type Manifest struct {
 	ServiceAlertsHash  string `json:"service_alerts_hash,omitempty"`
 	AlertTemplatesHash string `json:"alert_templates_hash,omitempty"`
 	// The notes document (the notes log's fold), store mode (D-214).
-	NotesHash   string  `json:"notes_hash,omitempty"`
-	BuildHash   string  `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
-	GeneratedAt int64   `json:"generated_at"`
-	Publisher   *string `json:"publisher,omitempty"`
+	NotesHash string `json:"notes_hash,omitempty"`
+	// The seq of each log's fold whose documents this manifest pins
+	// (stops, alerts, notes), store mode: a page sends it with a write
+	// as read_seq (D-189; logwrite.go).
+	LogSeqs     map[string]int64 `json:"log_seqs,omitempty"`
+	BuildHash   string           `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
+	GeneratedAt int64            `json:"generated_at"`
+	Publisher   *string          `json:"publisher,omitempty"`
 	// The agency's zone (the network's operator timezone, as today()
 	// counts in it): a page reads its clock there, never in the
 	// device's zone (web/src/clock.ts). Empty while none is known.
@@ -729,20 +733,32 @@ func (s *server) buildManifest() (Manifest, error) {
 		if hash, _, found, err := s.plansHead(); err == nil && found {
 			manifest.PlansHash = hash
 		}
-		if hash, _, found, err := s.stopsHead(); err == nil && found {
-			manifest.StopsHash = hash
-		}
-		if hash, _, found, err := s.requestsHead(); err == nil && found {
-			manifest.StopRequestsHash = hash
-		}
-		if hash, _, found, err := s.alertsLogHead(func() logDoc { return s.alertsDoc }); err == nil && found {
-			manifest.ServiceAlertsHash = hash
-		}
-		if hash, _, found, err := s.alertsLogHead(func() logDoc { return s.templatesDoc }); err == nil && found {
-			manifest.AlertTemplatesHash = hash
-		}
-		if hash, _, found, err := s.notesHead(); err == nil && found {
-			manifest.NotesHash = hash
+		// Each log's documents and the seq of the fold they are, read
+		// under one lock: a page sends that seq with a write (read_seq),
+		// so the write is checked against the records it changes.
+		for _, l := range []struct {
+			fold func() *logFold
+			pin  func()
+		}{
+			{s.stopsLog, func() { manifest.StopsHash, manifest.StopRequestsHash = s.stopsDoc.hash, s.requestsDoc.hash }},
+			{s.alertsLog, func() {
+				manifest.ServiceAlertsHash, manifest.AlertTemplatesHash = s.alertsDoc.hash, s.templatesDoc.hash
+			}},
+			{s.notesLog, func() { manifest.NotesHash = s.notesDoc.hash }},
+		} {
+			f := l.fold()
+			if _, err := s.refreshLog(f); err != nil {
+				continue
+			}
+			f.mu.Lock()
+			l.pin()
+			if f.seq > 0 {
+				if manifest.LogSeqs == nil {
+					manifest.LogSeqs = map[string]int64{}
+				}
+				manifest.LogSeqs[f.name] = f.seq
+			}
+			f.mu.Unlock()
 		}
 		if head, found, err := s.store.Head(buildPointer); err == nil && found {
 			manifest.BuildHash = head.Hash
@@ -755,7 +771,8 @@ func (s *server) buildManifest() (Manifest, error) {
 // but the generated_at stamp): a change re-commits the manifest pointer.
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
-	sum := sha256.Sum256([]byte(strings.Join([]string{
+	seqs, _ := json.Marshal(m.LogSeqs)
+	sum := sha256.Sum256([]byte(strings.Join([]string{string(seqs),
 		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, m.ServiceAlertsHash, m.AlertTemplatesHash, m.NotesHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL, fmt.Sprint(m.Auth),
 	}, "|")))

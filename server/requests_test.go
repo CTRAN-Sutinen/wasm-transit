@@ -156,3 +156,54 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 		t.Fatal("an adapter not written yet is refused at start, never guessed")
 	}
 }
+
+// countingWorkOrders counts the work orders the system is asked to open.
+type countingWorkOrders struct {
+	workOrderSystem
+	opened int
+}
+
+func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.RawMessage) (workOrder, error) {
+	c.opened++
+	return c.workOrderSystem.Open(ctx, id, request)
+}
+
+// An outbox's resend of a work order whose answer was lost (D-189): its
+// key landed, so the server answers the work order the request holds,
+// and the system is not asked to open a second one.
+func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
+	s := newStoreServer(t, store.NewMemory())
+	s.requestsWasm = requestsWasm
+	t.Cleanup(func() {
+		if s.requestsHeld != nil {
+			s.requestsHeld.Close(context.Background())
+		}
+	})
+	stub, err := newWorkOrders("stub:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	system := &countingWorkOrders{workOrderSystem: stub}
+	s.workOrders = system
+	mux := storeMux(s)
+	mux.HandleFunc("/stop-requests", s.handleStopRequests)
+	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	body, _ := json.Marshal(map[string]any{"from": "", "requests": map[string]any{"requests": map[string]any{"R-1": map[string]any{"stop": "A", "job": "new", "status": "submitted"}}}})
+	if code, _, resp := httpPost(t, srv.URL+"/stop-requests", string(body)); code != 200 {
+		t.Fatalf("a request: %d %s", code, resp)
+	}
+	open := `{"request":"R-1","action":"open","key":"stops/tablet-7"}`
+	code, _, first := httpPost(t, srv.URL+"/stop-requests/work-order", open)
+	if code != 200 {
+		t.Fatalf("open: %d %s", code, first)
+	}
+	code, _, again := httpPost(t, srv.URL+"/stop-requests/work-order", open)
+	var out map[string]any
+	json.Unmarshal([]byte(again), &out)
+	wo, _ := out["work_order"].(map[string]any)
+	if code != 200 || out["landed"] != true || wo["id"] != "STUB-R-1" || system.opened != 1 {
+		t.Fatalf("the resend lands once, the system asked once: %d %s (opened %d)", code, again, system.opened)
+	}
+}

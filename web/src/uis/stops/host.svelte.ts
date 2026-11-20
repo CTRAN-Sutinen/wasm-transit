@@ -1,8 +1,10 @@
 /// The stops UI's host layer — the ONLY file of this UI that calls the
 /// capability bus. It owns I/O (the stops and stop requests documents
-/// read through the manifest, their writes through POST /stops and
-/// POST /stop-requests, the work order adapter, attachments, the
-/// device's location, the URL hash) and the selection. Every list,
+/// read through the manifest, their writes as intents through POST
+/// /logs/stops, the work order adapter, attachments, the device's
+/// location, the URL hash), the selection, and the outbox (D-189): a
+/// write, a work order, or a photo made while the server does not
+/// answer waits on the device, in order, and is sent when it answers. Every list,
 /// count, card, and choice it writes into `st` is an op's answer,
 /// adopted as-is.
 ///
@@ -10,10 +12,11 @@
 /// service, suspended for a while, retired — managed here, apart from
 /// the service plans, which only read it (D-157). Each change is one
 /// event: cap-stops `add_event` (or `correct_event`, for an event that
-/// was wrong) places and checks it, and POST /stops — the deployment's
-/// receive path — checks it again and stores it. With no stops document
-/// yet, the page reads the stops of the network that runs today
-/// (cap-stops `seed`), and the first change saves that document.
+/// was wrong) places and checks it, and the change is sent as its intent
+/// (POST /logs/stops): the deployment's receive path runs it again over
+/// the stops it holds. With no stops document yet, the page reads the
+/// stops of the network that runs today (cap-stops `seed`), and the
+/// first change saves that document (POST /stops).
 ///
 /// The page's screens: the stops (on a map beside a list, or a table),
 /// the work across them (cap-requests `list`), what the feed did, one
@@ -25,8 +28,9 @@
 /// task as a phone user expects.
 
 import { ask, assemble, available, produced, servedFeed, servedNetwork, servedStopRequests, servedStops, Doc } from "../../engine";
-import { answerGraph, reason, type FrameState, deploymentManifest, readAgencyZone, today } from "../kit";
-import { readFetch, resumeSignIn, writeFetch } from "../../signin.svelte";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, deploymentManifest, readAgencyZone, today, whileVisible } from "../kit";
+import { readFetch, resumeSignIn } from "../../signin.svelte";
+import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
 
 // This page's capabilities answer inside its linked assembly (D-77).
 assemble("stops");
@@ -70,6 +74,12 @@ export const st = $state({
   /// shows the stops of the network running today, and the first change
   /// saves them.
   held: false,
+  /// The server did not answer the last read: the page works from its
+  /// last documents, confirmed at `asOf` ("4:05 PM").
+  offline: false,
+  asOf: "",
+  /// A new build waits (kit's buildWaiting): the person applies it.
+  updateReady: false,
   /// Every stop on the date (the search box's options), and those the
   /// filters show, with every stop counted by status.
   all: [] as StopOn[],
@@ -178,6 +188,7 @@ const request = answerGraph(
       frame: "",
       needs: ["stops-doc"],
       run: async () => {
+        await readConnection();
         if (!(await available("stops"))) return void (stopsDoc = null);
         const served = await servedStops().catch(() => null);
         st.held = !!served;
@@ -380,7 +391,10 @@ addEventListener("hashchange", followHash);
 addEventListener("popstate", followHash);
 
 export async function boot(): Promise<void> {
+  void installApp();
+  onBuildReady(() => (st.updateReady = true));
   await Promise.all([readAgencyZone(), resumeSignIn()]);
+  await openOutbox("stops", () => void request("stops-doc", "requests-doc", "open"));
   readHash();
   if (await available("stops")) {
     const q = await ask("stops", "questions", {});
@@ -402,6 +416,42 @@ export async function boot(): Promise<void> {
         ? `${st.all.length} stops on ${readDate()}.`
         : `${st.all.length} stops from the schedule running today. The first change you save keeps them as the stops record.`,
   );
+  whileVisible(POLL_MS, () => void poll());
+}
+
+/// How often the page sends what waits, looks for a new build, and
+/// reads the stops again when the log moved.
+const POLL_MS = 30_000;
+
+/// The seq of the stops log's fold the page's documents came from (the
+/// manifest's log_seqs): a write names it, so the server checks it
+/// against the records it changes (D-189).
+let stopsSeq: number | undefined;
+
+/// Whether the server answers, the time it last confirmed the page's
+/// documents, and the stops log's seq. True when the seq moved.
+async function readConnection(): Promise<boolean> {
+  const now = await manifestNow<{ log_seqs?: Record<string, number> }>();
+  st.offline = !now.answered;
+  st.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
+  const seq = now.manifest?.log_seqs?.stops;
+  if (!now.manifest || seq === stopsSeq) return false;
+  stopsSeq = seq;
+  return true;
+}
+
+let polling = false;
+
+async function poll(): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    await sendWaiting();
+    st.updateReady = buildWaiting();
+    if (await readConnection()) await request("stops-doc", "requests-doc");
+  } finally {
+    polling = false;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -538,16 +588,28 @@ export function clearNear(): Promise<void> {
 // the changes: each one event, written through POST /stops
 // ---------------------------------------------------------------------
 
+/// How the outbox names a change: its event, in words.
+function eventLabel(event: Event): string {
+  const kind = (event as { event?: string }).event ?? "change";
+  return kind.charAt(0).toUpperCase() + kind.slice(1).replaceAll("_", " ");
+}
+
 /// One event added to the open stop (or to a new one). True when saved.
 export function addEvent(stopId: string, event: Event, done: string): Promise<boolean> {
-  return write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event }), stopId);
+  return write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event }), stopId, { cap: "stops", op: "add_event", args: { stop_id: stopId, event } }, `${eventLabel(event)}: stop ${stopId}`);
 }
 
 /// An event that was wrong, corrected — or, with no event, taken out.
 /// The event is named by its id (D-166), so another writer's event
 /// saved above it does not change which event is corrected.
 export function correctEvent(stopId: string, eventId: string, event: Event | null, done: string): Promise<boolean> {
-  return write(done, (doc) => ask("stops", "correct_event", { stops_hash: doc, stop_id: stopId, event_id: eventId, event: event ?? undefined }), stopId);
+  return write(
+    done,
+    (doc) => ask("stops", "correct_event", { stops_hash: doc, stop_id: stopId, event_id: eventId, event: event ?? undefined }),
+    stopId,
+    { cap: "stops", op: "correct_event", args: { stop_id: stopId, event_id: eventId, ...(event ? { event } : {}) } },
+    `${event ? "Correction" : "Event taken out"}: stop ${stopId}`,
+  );
 }
 
 /// A new stop: its first event, at the point chosen. An id the document
@@ -575,6 +637,8 @@ async function write(
   done: string,
   edit: (doc: Doc) => Promise<{ refusals: Refusal[]; stops: unknown | null }>,
   stopId: string,
+  op: { cap: string; op: string; args: unknown },
+  label: string,
 ): Promise<boolean> {
   if (!stopsDoc) return false;
   const doc = stopsDoc;
@@ -589,26 +653,14 @@ async function write(
       say("That change does not fit the stop's history.", true);
       return false;
     }
-    const from = st.held ? (doc.pin ?? "") : "";
-    const resp = await writeFetch("/stops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, stops: answer.stops }) });
-    if (resp.status === 401 || resp.status === 403) {
-      st.taskError = resp.status === 401 ? "Sign in to save. Your change is not saved yet." : "Your sign-in may not change the stops here.";
-      say(st.taskError, true);
-      return false;
-    }
-    if (resp.status === 422) {
-      st.refusals = ((await resp.json()) as { refusals?: Refusal[] }).refusals ?? [];
-      say("The server refuses that change.", true);
-      return false;
-    }
-    if (resp.status === 409) {
-      await request("stops-doc");
-      st.taskError = "Someone else saved a change first. The stops are read again: save yours again.";
-      say(st.taskError, true);
-      return false;
-    }
-    if (!resp.ok) throw new Error(`the server did not save it: ${(await resp.text()).trim() || resp.status}`);
-    // Saved: the task ends where its answer is read, replacing the
+    // The first change keeps the stops the page read from the schedule
+    // as the stops record: the whole document (POST /stops). Every
+    // change after it is its intent, run over the stops the server holds.
+    const outcome = st.held
+      ? await queueWrite({ log: "stops", ops: [op], readSeq: stopsSeq, label })
+      : await queueWrite({ url: "stops", body: { from: "", stops: answer.stops }, label });
+    if (!(await settled(outcome, "stops"))) return false;
+    // Kept: the task ends where its answer is read, replacing the
     // task's place in the history (Back does not reopen a saved form).
     st.point = null;
     st.open = stopId;
@@ -616,8 +668,8 @@ async function write(
     st.request = "";
     taskPushed = false;
     writeHash(true);
-    await request("stops-doc", "open");
-    say(done);
+    if (outcome.state === "sent") await request("stops-doc", "open");
+    say(outcome.state === "sent" ? done : waitingText());
     return true;
   } catch (e) {
     st.taskError = `Error: ${message(e)}`;
@@ -627,6 +679,34 @@ async function write(
   } finally {
     st.busy = false;
   }
+}
+
+/// What the page says of a write that waits on the device.
+function waitingText(): string {
+  return outbox.needsSignIn ? "Saved on this device. Sign in to send it." : "Saved on this device. It is sent when the server answers.";
+}
+
+/// The outcome of a write the person just saved. A write the server
+/// refused at once stays in its task with the server's reasons, so the
+/// outbox does not keep a second copy. True when it was kept (sent, or
+/// waiting on the device).
+async function settled(outcome: Outcome, what: "stops" | "requests"): Promise<boolean> {
+  if (outcome.state !== "held") return true;
+  const w = outbox.held.find((h) => h.key === outcome.key);
+  await discardWrite(outcome.key);
+  const body = (outcome.reasons ?? {}) as { refusals?: unknown[] };
+  if (outcome.status === 422) {
+    if (what === "stops") st.refusals = (body.refusals ?? []) as Refusal[];
+    else st.requestRefusals = (body.refusals ?? []) as RequestRefusal[];
+    st.taskError = "The server refuses that change.";
+  } else if (outcome.status === 409) {
+    await request(what === "stops" ? "stops-doc" : "requests-doc", "open");
+    st.taskError = "Someone else changed this first. It is read again: check it, and save yours again.";
+  } else if (outcome.status === 403) {
+    st.taskError = what === "stops" ? "Your sign-in may not change the stops here." : "Your sign-in may not change requests here.";
+  } else st.taskError = w ? heldReason(w) : `Not saved (${outcome.status}).`;
+  say(st.taskError, true);
+  return false;
 }
 
 // ---------------------------------------------------------------------
@@ -674,7 +754,11 @@ export async function putRequest(id: string, req: StopRequest, done: string, fre
     st.taskError = `There is already a request ${id}. Choose another id.`;
     return false;
   }
-  return writeRequests(req.stop, id, done, (doc) => ask("requests", "put", { ...(doc ? { requests_hash: doc } : {}), id, request: req }));
+  return writeRequests(req.stop, id, done, (doc) => ask("requests", "put", { ...(doc ? { requests_hash: doc } : {}), id, request: req }), {
+    cap: "requests",
+    op: "put",
+    args: { id, request: req },
+  });
 }
 
 /// A work order opened by hand (no work order system connected, D-165):
@@ -684,7 +768,11 @@ export async function putRequest(id: string, req: StopRequest, done: string, fre
 export function recordWorkOrder(id: string, stop: string, wo: WorkOrder): Promise<boolean> {
   if (!requestsDoc) return Promise.resolve(false);
   const doc = requestsDoc;
-  return writeRequests(stop, id, `Work order ${wo.id} recorded on ${id}.`, () => ask("requests", "record_work_order", { requests_hash: doc, id, work_order: wo }));
+  return writeRequests(stop, id, `Work order ${wo.id} recorded on ${id}.`, () => ask("requests", "record_work_order", { requests_hash: doc, id, work_order: wo }), {
+    cap: "requests",
+    op: "record_work_order",
+    args: { id, work_order: wo },
+  });
 }
 
 async function writeRequests(
@@ -692,6 +780,7 @@ async function writeRequests(
   id: string,
   done: string,
   edit: (doc: Doc | null) => Promise<{ refusals: RequestRefusal[]; requests: unknown | null }>,
+  op: { cap: string; op: string; args: unknown },
 ): Promise<boolean> {
   const doc = requestsDoc;
   st.requestRefusals = [];
@@ -705,32 +794,15 @@ async function writeRequests(
       say("That request is not complete.", true);
       return false;
     }
-    const from = doc?.pin ?? "";
-    const resp = await writeFetch("/stop-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, requests: answer.requests }) });
-    if (resp.status === 401 || resp.status === 403) {
-      st.taskError = resp.status === 401 ? "Sign in to save the request. It is not saved yet." : "Your sign-in may not change requests here.";
-      say(st.taskError, true);
-      return false;
-    }
-    if (resp.status === 422) {
-      st.requestRefusals = ((await resp.json()) as { refusals?: RequestRefusal[] }).refusals ?? [];
-      say("The server refuses that request.", true);
-      return false;
-    }
-    if (resp.status === 409) {
-      await request("requests-doc");
-      st.taskError = "Someone else saved a request first. The requests are read again: save yours again.";
-      say(st.taskError, true);
-      return false;
-    }
-    if (!resp.ok) throw new Error(`the server did not save it: ${(await resp.text()).trim() || resp.status}`);
+    const outcome = await queueWrite({ log: "stops", ops: [op], readSeq: stopsSeq, label: `Request ${id}: stop ${stop}` });
+    if (!(await settled(outcome, "requests"))) return false;
     st.open = stop;
     st.request = id;
     st.task = "";
     taskPushed = false;
     writeHash(true);
-    await request("requests-doc", "open");
-    say(done);
+    if (outcome.state === "sent") await request("requests-doc", "open");
+    say(outcome.state === "sent" ? done : waitingText());
     return true;
   } catch (e) {
     st.taskError = `Error: ${message(e)}`;
@@ -750,14 +822,21 @@ export async function workOrder(id: string, action: "open" | "refresh"): Promise
   st.busy = true;
   say(action === "open" ? "Opening a work order…" : "Reading the work order's status…");
   try {
-    const resp = await writeFetch(st.workOrders, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: id, action }) });
-    if (resp.status === 501) return say("No work order system is connected. Enter the work order by hand.", true);
-    if (resp.status === 401 || resp.status === 403) return say(resp.status === 401 ? "Sign in to reach the work order system." : "Your sign-in may not change requests here.", true);
-    if (resp.status === 409) return void (await request("requests-doc"), say("The requests changed meanwhile. They are read again: try again.", true));
-    if (!resp.ok) throw new Error(`the work order system did not answer: ${(await resp.text()).trim() || resp.status}`);
-    const out = (await resp.json()) as { work_order: { id: string; status?: string } };
+    // The key lets a resend whose answer was lost land once: the
+    // server answers the work order the request holds (D-189).
+    const outcome = await queueWrite({ url: st.workOrders.replace(/^\//, ""), body: { request: id, action }, keyed: true, label: `${action === "open" ? "Open a work order" : "Read the work order"}: ${id}` });
+    if (outcome.state === "waiting") return say(outbox.needsSignIn ? "Sign in to reach the work order system. The request waits on this device." : "The work order system is asked when the server answers.");
+    if (outcome.state === "held") {
+      await discardWrite(outcome.key);
+      if (outcome.status === 501) return say("No work order system is connected. Enter the work order by hand.", true);
+      if (outcome.status === 403) return say("Your sign-in may not change requests here.", true);
+      if (outcome.status === 409) return void (await request("requests-doc"), say("The requests changed meanwhile. They are read again: try again.", true));
+      return say(`Error: the work order system did not answer: ${typeof outcome.reasons === "string" ? outcome.reasons.trim() : outcome.status}`, true);
+    }
+    const out = outcome.body as { work_order: { id: string; status?: string } | null };
     await request("requests-doc");
-    say(action === "open" ? `Work order ${out.work_order.id} opened for ${id}.` : `Work order ${out.work_order.id}: ${out.work_order.status ?? "no status"}.`);
+    const wo = out.work_order;
+    say(!wo ? `No work order on ${id}.` : action === "open" ? `Work order ${wo.id} opened for ${id}.` : `Work order ${wo.id}: ${wo.status ?? "no status"}.`);
   } catch (e) {
     say(`Error: ${message(e)}`, true);
     console.error(e);
@@ -773,17 +852,31 @@ export async function workOrder(id: string, action: "open" | "refresh"): Promise
 
 export type Attachment = { hash: string; type: string; name?: string; caption?: string; taken_on?: string };
 
-/// One file added: its hash and type, or null with the reason said.
+/// The media types the deployment takes (server/attachments.go).
+const ATTACHMENT_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"];
+
+/// One file added: its hash and type, or null with the reason said. The
+/// file is named by the hash of its bytes, as the deployment names it,
+/// and queued in the outbox before the write that names it (D-162,
+/// D-189): offline, it waits on the device with the change.
 export async function addAttachment(file: File): Promise<Attachment | null> {
   if (!st.attachments) return null;
-  const resp = await writeFetch(st.attachments, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
-  if (resp.status === 401) return (say("Sign in to add photos.", true), null);
-  if (resp.status === 403) return (say("Your sign-in may not add photos here.", true), null);
-  if (resp.status === 413) return (say(`${file.name} is larger than 25 MB.`, true), null);
-  if (resp.status === 415) return (say(`${file.name} is not a photo or a PDF.`, true), null);
-  if (!resp.ok) return (say(`Error: the photo was not kept: ${(await resp.text()).trim() || resp.status}`, true), null);
-  const out = (await resp.json()) as { hash: string; type: string };
-  return { hash: out.hash, type: out.type, name: file.name, taken_on: readDate() };
+  const type = (file.type || "").toLowerCase();
+  if (file.size > 25 << 20) return (say(`${file.name} is larger than 25 MB.`, true), null);
+  if (!ATTACHMENT_TYPES.includes(type)) return (say(`${file.name} is not a photo or a PDF.`, true), null);
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const hash = "sha256:" + Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  const outcome = await queueWrite({ url: st.attachments.replace(/^\//, ""), body: file, contentType: type, label: `Photo ${file.name}` });
+  if (outcome.state === "held") {
+    await discardWrite(outcome.key);
+    if (outcome.status === 403) return (say("Your sign-in may not add photos here.", true), null);
+    if (outcome.status === 413) return (say(`${file.name} is larger than 25 MB.`, true), null);
+    if (outcome.status === 415) return (say(`${file.name} is not a photo or a PDF.`, true), null);
+    return (say(`Error: the photo was not kept (${outcome.status}).`, true), null);
+  }
+  // Shown from the device's copy until the deployment holds it.
+  shown.set(hash, Promise.resolve(URL.createObjectURL(file)));
+  return { hash, type, name: file.name, taken_on: readDate() };
 }
 
 const shown = new Map<string, Promise<string | null>>();
@@ -803,6 +896,37 @@ export function attachmentSrc(hash: string): Promise<string | null> {
     shown.set(hash, got);
   }
   return got;
+}
+
+// ---------------------------------------------------------------------
+// the outbox and the build, as the page shows them
+// ---------------------------------------------------------------------
+
+/// The writes the server refused, each with its reasons in words.
+export function heldWrites(): { key: string; label: string; reason: string }[] {
+  return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
+}
+
+/// Send what waits now.
+export function sendNow(): Promise<void> {
+  return sendWaiting();
+}
+
+/// A refused write sent again, over the stops the page reads now.
+export async function retryHeld(key: string): Promise<void> {
+  await readConnection();
+  await retryWrite(key, { readSeq: stopsSeq });
+}
+
+/// The person drops a refused write.
+export function discardHeld(key: string): Promise<void> {
+  return discardWrite(key);
+}
+
+/// The person accepts the new version: never over a task being written.
+export function applyUpdate(): void {
+  if (st.task || st.busy) return;
+  applyBuild();
 }
 
 /// Why a frame has no answer, as text ("" when it answered).

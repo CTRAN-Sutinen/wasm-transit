@@ -15,8 +15,8 @@ package main
 // is written from its OpenAPI spec and slots in behind the same
 // interface.
 //
-//	POST /stop-requests/work-order  body: {"request": "<id>", "action": "open"|"refresh"}
-//	                                200 {requests_hash, work_order}
+//	POST /stop-requests/work-order  body: {"request": "<id>", "action": "open"|"refresh", "key": "<idempotency key>"}
+//	                                200 {requests_hash, work_order, landed?}
 //	                                501 {configured: false}   no adapter
 //	                                404 no such request · 409 the requests moved · 422 {refusals}
 
@@ -100,6 +100,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Request string `json:"request"`
 		Action  string `json:"action"`
+		Key     string `json:"key"`
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
 	if err == nil {
@@ -134,6 +135,24 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no request "+req.Request, http.StatusNotFound)
 		return
 	}
+	// An outbox's resend (D-189): a key that landed answers the work
+	// order the request holds, and the system is not asked again, so a
+	// lost answer never opens a second work order.
+	if req.Key != "" {
+		f := s.stopsLog()
+		f.mu.Lock()
+		_, landed, err := s.keyLanded(f, req.Key)
+		hash := s.requestsDoc.hash
+		f.mu.Unlock()
+		if err != nil {
+			fail(w, err, http.StatusInternalServerError)
+			return
+		}
+		if landed {
+			writeJSON(w, http.StatusOK, map[string]any{"requests_hash": hash, "work_order": held.WorkOrder, "landed": true})
+			return
+		}
+	}
 	var answer workOrder
 	if req.Action == "open" {
 		answer, err = s.workOrders.Open(ctx, req.Request, raw.Requests[req.Request])
@@ -156,7 +175,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	// runs, so a request written meanwhile is kept.
 	writer := "work-orders:" + s.workOrders.Name()
 	f := s.stopsLog()
-	_, _, refusal, err := s.writeLog(f, logWrite{writer: writer, op: "POST /stop-requests/work-order", argsHash: store.HashOf(body)}, func() ([]json.RawMessage, *logRefusal, error) {
+	_, _, refusal, err := s.writeLog(f, logWrite{writer: writer, op: "POST /stop-requests/work-order", argsHash: store.HashOf(body), key: req.Key}, func() ([]json.RawMessage, *logRefusal, error) {
 		var records []json.RawMessage
 		var refusal *logRefusal
 		err := s.withRequests(ctx, func(host *WasmHost) error {

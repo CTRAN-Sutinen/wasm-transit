@@ -19,9 +19,11 @@ web/src/uis/<id>/ui.json       the descriptor the picker renders: id (= the dire
                                capabilities they name are what its linked assembly
                                links; the kernel's loads are not ops), components,
                                session (the dogfood session: date, feed, open
-                               findings), spec, generated, and `offline: true`
+                               findings), spec, generated, `offline: true`
                                for a page that installs and works offline
-                               ([updates-offline.md](updates-offline.md))
+                               ([updates-offline.md](updates-offline.md)), and
+                               `precache_assembly: false` for one whose assembly
+                               the worker keeps on first use (a staff page, D-223)
 web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), mounts
                                Shell, then awaits the host's boot (the layout paints first)
 web/src/uis/<id>/Shell.svelte  placement only: reads the host's answers state, passes
@@ -458,9 +460,10 @@ Its failure table. Service change has the same table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error | the plans kept on the device, and every view and change, which run in the page | publishing, with the error in the Publish frame. A first load of the published network says "Load a GTFS feed to begin." (QAF-131) | — | the person publishes again. The plan stays on the device. | none |
-| The bucket: no answer (the server answers) | `503` on a publish | the same | publishing, with the server's reason | — | the person publishes again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
-| Sign-in: none, or expired | `401` | everything | publishing: "sign in to publish" | — | the person signs in and publishes again | none |
+| The server, or the device's network: no answer | a fetch error; the worker's last copy of the manifest | the plans kept on the device, and every view and change, which run in the page. It boots offline from the worker, and says "Offline · data as of" the time the server last answered. A page never opened online says "Load a GTFS feed to begin." (QAF-131) | — | a publish waits on the device (the outbox), counted on the page | the outbox sends it when the server answers, against the plan set as it is then | e2e `offline-staff` "service design: a publish made offline…", "service change: it boots offline…" |
+| A publish refused when it is sent (a pick now dated in the past, a plan that no longer validates) | `422` | everything | the publish, held with the server's reasons | — | the person sends it again or discards it | e2e `offline-staff` "service design…", "service change…" |
+| The bucket: no answer (the server answers) | `503` on a publish | the same | — | the publish waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side); `outbox.test.mjs` "a 503 keeps the write waiting" |
+| Sign-in: none, or expired | `401` | everything | — | the publish waits: "Sign in to send" | the outbox sends it once the person signs in | `outbox.test.mjs` "no valid sign-in holds the outbox…" |
 
 `service-change` (`src/uis/service-change/`) serves the same need as
 service-design. Its layout follows the stages that a service change took
@@ -700,8 +703,9 @@ a large map that is always on screen.
   trip, whether an alert explains it, the stops it takes away, and its
   notes, oldest first. A cancelled trip shows its every stop and draws
   its path as scheduled: the edit document's cancel takes the trip out
-  of the patched day. A note is added or edited there (`POST /notes`;
-  the server names the writer and the time).
+  of the patched day. A note is added or edited there (notes `write`,
+  sent as its intent to `POST /logs/notes`; the server names the writer
+  and the time, and the note keeps the id it was made with).
 
 An alert is written on half the page, beside what riders see of it
 (AlertReach). The day's map is set aside while it is open. "Starts
@@ -710,9 +714,11 @@ stamped then. Started from a gap, it carries the gap's effect, the riders it
 informs, and what it explains, and it is told from now with no end. A
 template fills its cause, effect, severity, and texts (alerts `fill`
 over the alert's routes, stops, and dates). Alerts `put` checks it as
-it is edited. Save draft and Publish put it and send the document to
-`POST /service-alerts` (409: read again, save again). End alert ends
-it at the host's clock (alerts `end`). Preview shows one stop's board
+it is edited. Save draft and Publish put it and send the put as its
+intent to `POST /logs/alerts`. A `409` means another person changed the
+same alert since the page read it; a change to another alert does not
+refuse it. End alert ends it at the host's clock (alerts `end`, the time
+in its arguments). Preview shows one stop's board
 with the alert on it (alerts `put`, rt `encode_alerts`, rt `live`,
 board `stop_board`), and downloads the feed's `.pb` file. The list is then read once the
 end's second has passed, because a period holds through its end. Every
@@ -729,11 +735,12 @@ Its failure table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error | the documents last read, until a reload, with no label (QAF-130). At boot: "The deployment publishes no network." (QAF-131) | every save, with the error. The form stays filled in. | — | the next poll, 30 s later. A save is made again by hand. | none |
-| The bucket: no answer (the server answers) | `X-Store-Stale` on the edit document | detours and cancels, labelled with their age. The stops, alerts, and notes carry no label. | saves, with the server's `503` reason | — | the next poll | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
+| The server, or the device's network: no answer | a fetch error; the worker's last copy of the manifest | the documents last read. A reload boots from the worker on them. "Offline · data as of" the time the server last answered, and the detours and cancels labelled with the time the page read them. A page never opened online says "The deployment publishes no network." (QAF-131) | — | a note or an alert saved meanwhile waits on the device (the outbox), counted on the page | the outbox sends each once, in order, when the server answers | e2e `offline-staff` "the disruptions page through an outage…" |
+| A write refused when it is sent (another dispatcher changed the same note or alert since the page read it, a change the module refuses) | `409`, `422` | everything | the write, held with the server's reasons | — | the person sends it again (over what the page reads then) or discards it | e2e `offline-staff` "the disruptions page: a note edit refused at send time…" |
+| The bucket: no answer (the server answers) | `X-Store-Stale` on the edit document; `503` on a save | detours and cancels, labelled with their age. The stops, alerts, and notes carry no label. | — | a save waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
 | A live feed: no answer | a fetch error, or a status other than 200 | the schedule's day. The live state shows the feed's error. | the buses on the map, and lateness | — | the next poll | none |
 | A live feed: frozen | not detected (QAF-129) | old buses and lateness as live | nothing | — | — | none |
-| Sign-in: none, or expired | `401` | everything | saves: "Sign in to save" | — | the person signs in and saves again | none |
+| Sign-in: none, or expired | `401` | everything | — | a save waits: "Saved on this device. Sign in to send it." | the outbox sends it once the person signs in | `outbox.test.mjs` "no valid sign-in holds the outbox…" |
 
 `stops` (`src/uis/stops/`) holds every stop's own life, apart from the
 service plans, which only read it (D-157). It also holds the work asked
@@ -895,9 +902,10 @@ Its failure table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error | the page as it was loaded. A survey half filled stays on the device. | every save, as "Error: …". At boot: "The deployment publishes no stops yet." (QAF-131) | — | the person saves again. The survey's draft survives a reload. | none |
-| The bucket: no answer (the server answers) | `503` on a save | the same | saves, with the server's reason | — | the person saves again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
+| The server, or the device's network: no answer | a fetch error; the worker's last copy of the manifest | the stops and requests last read. A reload boots from the worker on them, with "Offline · data as of" the time the server last answered. A survey half filled stays on the device. A page never opened online says "The deployment publishes no stops yet." (QAF-131) | — | a change, a request, a work order request, or a photo saved meanwhile waits on the device (the outbox), in order, a photo before the survey that names it | the outbox sends each when the server answers; the server runs each change again over the stops it holds | e2e `offline-staff` "the stops page: a queued change runs over a moved head…" |
+| A change refused when it is sent (another writer changed the same stop since the page read it, a change the module refuses) | `409`, `422` | everything | the change, held with the server's reasons | — | the person sends it again (over what the page reads then) or discards it | e2e `offline-staff` "the stops page…" |
+| The bucket: no answer (the server answers) | `503` on a save | the same | — | the save waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
 | The network: unreadable | the read fails | the stop's record | the Routes card says the routes cannot be read, never that no route stops there | — | the next read | e2e `ui-stops` "a stop whose routes cannot be read says so…" |
-| Sign-in: none, or expired | `401` | everything | saves: "Sign in to save. Your change is not saved yet." A survey's draft is kept. | — | the person signs in and saves again | e2e `ui-stops` "a write needs sign-in…" |
+| Sign-in: none, or expired | `401` | everything | — | a save waits: "Saved on this device. Sign in to send it." | the outbox sends it once the person signs in | e2e `ui-stops` "a write needs sign-in…" |
 | The work order system: none connected | `501` | the request | opening a work order: "No work order system is connected. Enter the work order by hand." | the person enters the work order by hand, on the page | — | none |
-| The attachments store: no answer | a fetch error | the record | adding a photo or a drawing, with the reason | — | the person adds it again | none |
+| The attachments store: no answer | a fetch error | the record | — | a photo or a drawing waits on the device, named by its hash, shown from the device's copy | the outbox sends it before the survey that names it | none |

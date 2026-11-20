@@ -18,7 +18,10 @@
     sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, setLayerReading, selectGroup, openRoute, clearRoute,
     selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
     redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, why, setEditType, type View,
+    heldWrites, sendNow, retryHeld, discardHeld, applyUpdate,
   } from "./host.svelte";
+  import { outbox } from "../../outbox.svelte";
+  import SyncStatus from "../../components/SyncStatus.svelte";
   import { today } from "../kit";
   import { spansText } from "../../components/designFormat";
   import DesignRail from "../../components/DesignRail.svelte";
@@ -105,6 +108,19 @@
       onclearstop={clearStop}
       onclearwindow={() => setWindow(null)}
       onhealth={() => setView("proposal")}
+    />
+    <SyncStatus
+      waiting={outbox.waiting}
+      held={heldWrites()}
+      offline={sd.offline || outbox.offline}
+      asOf={sd.asOf}
+      needsSignIn={outbox.needsSignIn}
+      updateReady={sd.updateReady}
+      canUpdate={!sd.busy}
+      onsend={sendNow}
+      onretry={retryHeld}
+      ondiscard={discardHeld}
+      onupdate={applyUpdate}
     />
 
     <main class="view" data-testid="view-{sd.view}">

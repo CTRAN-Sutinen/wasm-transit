@@ -5,7 +5,8 @@ server itself. The bucket is the agency's record, and each server copy
 is a working copy over it. The store already answers a bucket that
 stops answering: a running copy serves its cached heads with a stale
 label and refuses writes with `503` and `Retry-After` (D-119). The
-page's side of a short outage is `offline-apps.md`. This unit is the
+page's side of a short outage is its outbox
+(`docs/architecture/updates-offline.md`, D-189). This unit is the
 server's side: more than one copy, a copy restarted while the bucket
 does not answer, and tests that keep each failure mode working.
 

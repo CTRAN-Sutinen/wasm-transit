@@ -86,7 +86,14 @@ function oneUi(id) {
 // manifest, and those UIs' linked assemblies. BUILD hashes the shell's
 // bytes, so a build that changes any of them is a byte-different
 // worker the browser's update check installs (and leaves waiting).
-const offline = uis.filter((id) => (!only || id === only) && JSON.parse(fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8")).offline === true);
+// A UI whose ui.json says `"precache_assembly": false` (the staff pages,
+// D-223) keeps its assembly out of the shared shell: a rider's install
+// never downloads a planner's modules. The worker keeps that assembly
+// forever on its first use (it is hash-named), and a one-UI build
+// (`only`) precaches its own assembly.
+const uiJson = (id) => JSON.parse(fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8"));
+const offline = uis.filter((id) => (!only || id === only) && uiJson(id).offline === true);
+const precached = offline.filter((id) => only || uiJson(id).precache_assembly !== false);
 function serviceWorker() {
   let outDir = "";
   return {
@@ -104,7 +111,7 @@ function serviceWorker() {
         ...offline.map((id) => `${id}.html`),
         ...assets,
         ...(caps ? ["caps/manifest.json"] : []),
-        ...(caps?.assemblies ?? []).filter((a) => offline.includes(a.ui)).map((a) => a.url),
+        ...(caps?.assemblies ?? []).filter((a) => precached.includes(a.ui)).map((a) => a.url),
       ];
       const hash = createHash("sha256");
       for (const file of shell) hash.update(file).update(fs.readFileSync(path.join(outDir, file)));

@@ -205,11 +205,19 @@ and before a release.
      that open pages re-pin a republished network without a reload, and
      that one network is held and memory stays flat.
    - `web/e2e/deploy-builds.spec.mjs` has its own server over a copy of
-     the build. With deploy-rollback, these are the only specs that
-     allow service workers. Every other spec runs with them blocked,
-     because `page.route` never sees what a worker answers. The spec
-     pins that both rider pages boot offline, and that a new build
-     applies at a display's poll and at a rider's next navigation.
+     the build. With deploy-rollback and offline-staff, these are the
+     only specs that allow service workers. Every other spec runs with
+     them blocked, because `page.route` never sees what a worker
+     answers. The spec pins that both rider pages boot offline, that a
+     new build applies at a display's poll and at a rider's next
+     navigation, that a staff page applies one only when the person
+     accepts, and that a staff page's assembly is kept on first use.
+   - `web/e2e/offline-staff.spec.mjs` has its own store-mode server over
+     a copy of the build. It takes the browser's network away for an
+     outage (`context.setOffline`), and pins each staff page's outbox:
+     it boots offline from the worker, a write made offline waits and
+     is sent once when the server answers, and a write refused at send
+     time is kept and shown with its reasons.
    - `web/e2e/deploy-rollback.spec.mjs` has its own store-mode server
      over another copy. It runs build A, then B, then `POST /builds`
      back to A. The display then runs A's bytes again.

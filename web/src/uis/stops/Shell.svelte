@@ -1,7 +1,8 @@
 <script lang="ts">
   /// The stops UI's layout (D-157): PLACEMENT ONLY. A bar across the top
   /// (the views — Stops, Work, Feed review — the date, a search, New
-  /// stop, sign-in, the status line) over one screen the width of the
+  /// stop, sign-in, the status line), what waits to be sent and whether
+  /// the server answers, over one screen the width of the
   /// page, chosen by what is open: a survey's page; a request's page; a
   /// stop's page (a short change on it as a card under its header); the
   /// map with a narrow panel, only while a point is placed (a new stop, a
@@ -40,7 +41,14 @@
     attachmentSrc,
     retry,
     why,
+    heldWrites,
+    sendNow,
+    retryHeld,
+    discardHeld,
+    applyUpdate,
   } from "./host.svelte";
+  import { outbox } from "../../outbox.svelte";
+  import SyncStatus from "../../components/SyncStatus.svelte";
   import StopLifeMap from "../../components/StopLifeMap.svelte";
   import StopLifeList from "../../components/StopLifeList.svelte";
   import StopsTable from "../../components/StopsTable.svelte";
@@ -130,6 +138,21 @@
     <button type="button" class="new" disabled={st.busy || task === "new"} onclick={() => { void openStop("").then(() => startTask("new")); }} data-testid="new-stop-start">New stop</button>
     <SignInControl available={signin.available} name={signin.name} error={signin.error} onsignin={signIn} onsignout={signOut} />
     <p class="status" class:alert={st.alert} role="status" data-testid="status">{st.busy ? "… " : ""}{st.status}</p>
+    <div class="sync-slot">
+      <SyncStatus
+        waiting={outbox.waiting}
+        held={heldWrites()}
+        offline={st.offline || outbox.offline}
+        asOf={st.asOf}
+        needsSignIn={outbox.needsSignIn}
+        updateReady={st.updateReady}
+        canUpdate={!task && !st.busy}
+        onsend={sendNow}
+        onretry={retryHeld}
+        ondiscard={discardHeld}
+        onupdate={applyUpdate}
+      />
+    </div>
   </header>
 
   <main class="screen">
@@ -277,4 +300,6 @@
     .focused { grid-template-rows: minmax(0, 1fr); }
     .focused .bar { display: none; }
   }
+  .sync-slot { flex-basis: 100%; }
+  .sync-slot:empty { display: none; }
 </style>

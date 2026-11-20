@@ -25,6 +25,9 @@ const staticFetchRoot = path.join(os.tmpdir(), "transit-e2e-static-fetch");
 /// of two UIs' bundles the server commits (src-<id>), and what each
 /// UI's host serves (host-<id>, written by tools/ui-deploy.mjs).
 const uiOriginsRoot = path.join(os.tmpdir(), "transit-e2e-ui-origins");
+/// The copy of the build the :8095 server commits to its store, for the
+/// staff pages offline (e2e/offline-staff.spec.mjs, D-189).
+const offlineDist = path.join(os.tmpdir(), "transit-e2e-offline");
 
 // E2E tests run against the built app (npm run build) served by the
 // Go sync server — on their OWN port, never reused: a shared server
@@ -48,8 +51,8 @@ export default defineConfig({
     // The rider pages register a service worker (web/service-worker.js),
     // and page.route never sees what a worker answers — every spec that
     // serves its own feeds and edits runs without one.
-    // e2e/deploy-builds.spec.mjs and e2e/deploy-rollback.spec.mjs
-    // allow it, each on its own server.
+    // e2e/deploy-builds.spec.mjs, e2e/deploy-rollback.spec.mjs, and
+    // e2e/offline-staff.spec.mjs allow it, each on its own server.
     serviceWorkers: "block",
   },
   webServer: [
@@ -116,6 +119,18 @@ export default defineConfig({
       command: `bash -c 'rm -rf "${releasesDist}" && cp -r ../web/dist "${releasesDist}" && exec go run . -addr 127.0.0.1:8086 -store mem:// -dist "${releasesDist}" -feed ../web/e2e/fixtures/sample-gtfs.zip'`,
       cwd: "../server",
       url: "http://127.0.0.1:8086",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // The staff pages offline and their outbox
+      // (e2e/offline-staff.spec.mjs, D-189): a store-mode server whose
+      // pages run under the service worker. The spec takes the page's
+      // network away (context.setOffline), as an outage looks to it.
+      command: `bash -c 'rm -rf "${offlineDist}" && cp -r ../web/dist "${offlineDist}" && exec go run . -addr 127.0.0.1:8095 -today 2026-08-01 -store mem:// -dist "${offlineDist}" -feed ../web/e2e/fixtures/sample-gtfs.zip -work-orders stub:Maintenance -attachments mem://'`,
+      cwd: "../server",
+      url: "http://127.0.0.1:8095/healthz",
       reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",

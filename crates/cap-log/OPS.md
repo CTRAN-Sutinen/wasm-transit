@@ -14,6 +14,8 @@ The host gives the `header`: the log, the `seq` it will create (the fold's `seq`
 
 The answer is the entry's canonical bytes, or no entry when nothing changed. When the fold holds the write's key, the write landed before: the answer is no entry and `landed`, the entry that holds it. So an outbox's resend lands once.
 
+`unread` are the stored entries after the fold the writer read (the log's seq it names, `read_seq`), as the host read them. A record the write changes that one of them changed too answers no entry and `overlap`: the record's kind and id, and the latest such entry. A person settles it. A change to another record is no overlap, so a write is checked against the records it changes, never the whole log. A key that landed answers before an overlap. The intent's `claimed_at_ms` is the device's clock when the person made a write that waited: the entry keeps it as a claim beside the host's `at_ms` (D-222).
+
 ## fold
 
 Fold a log's entries after a `checkpoint` (absent: the empty log), in `seq` order, as the host read them (`{seq, text}`).

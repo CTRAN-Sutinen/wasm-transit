@@ -20,9 +20,10 @@
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc, stopWarnings, withStopVersions, publishedPlanSet } from "../../engine";
-import { answerGraph, reason, type FrameState, readAgencyZone, today } from "../kit";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, readAgencyZone, today, whileVisible } from "../kit";
 
-import { resumeSignIn, writeFetch } from "../../signin.svelte";
+import { resumeSignIn } from "../../signin.svelte";
+import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting } from "../../outbox.svelte";
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
 assemble("service-design");
@@ -70,6 +71,13 @@ export type CoverageParams = { radius_m: number; frequent_secs: number; min_depa
 export type HourWindow = { from: number; to: number };
 
 export const sd = $state({
+  /// The server did not answer the last read: the page works from its
+  /// last documents, confirmed at `asOf` ("4:05 PM"), and a publish
+  /// waits on the device (D-189).
+  offline: false,
+  asOf: "",
+  /// A new build waits (kit's buildWaiting): the person applies it.
+  updateReady: false,
   status: "Load a GTFS feed to begin.",
   /// The status is something the planner must not miss: a refusal, an
   /// error, a change that left the plan with issues.
@@ -744,7 +752,12 @@ async function select(...inputs: string[]): Promise<void> {
 export async function boot(): Promise<void> {
   // The agency's zone before anything reads the date (the pick in
   // force is the agency's today's).
+  void installApp();
+  onBuildReady(() => (sd.updateReady = true));
   await Promise.all([restorePlans(readStoredSet), readAgencyZone(), resumeSignIn()]);
+  await openOutbox("service-design", () => void published());
+  whileVisible(POLL_MS, () => void poll());
+  void poll();
   syncPlanRows();
   sd.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : (sd.plans[0]?.key ?? "");
   readHash();
@@ -1056,16 +1069,27 @@ export async function publishPlan(): Promise<void> {
   if (!doc) return;
   sd.published = null;
   sd.publishRefused = [];
+  // The publish runs when it is sent, against the published plans as
+  // they are then (D-189): while the server does not answer, it waits
+  // on this device.
   await act("Publish", () => {}, async () => {
-    const resp = await writeFetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
-    if (resp.status === 401 || resp.status === 403) throw new Error(resp.status === 401 ? "sign in to publish" : "your sign-in may not publish plans here");
-    if (resp.status === 422) {
-      const answer = (await resp.json()) as { issues?: object[]; refusals?: object[] };
+    const outcome = await queueWrite({ url: "plans", body: doc, label: `Publish "${doc.plan?.name ?? "plan"}"` });
+    if (outcome.state === "waiting") {
+      say(outbox.needsSignIn ? "The publish waits on this device. Sign in to send it." : "The publish waits on this device. It is sent when the server answers.");
+      return;
+    }
+    if (outcome.state === "sent") {
+      sd.published = outcome.body as { plans_hash: string };
+      return;
+    }
+    await discardWrite(outcome.key);
+    if (outcome.status === 422) {
+      const answer = (outcome.reasons ?? {}) as { issues?: object[]; refusals?: object[] };
       sd.publishRefused = [...(answer.issues ?? []), ...(answer.refusals ?? [])];
       return;
     }
-    if (!resp.ok) throw new Error(`the server did not publish it: ${(await resp.text()).trim() || resp.status}`);
-    sd.published = (await resp.json()) as { plans_hash: string };
+    if (outcome.status === 403) throw new Error("your sign-in may not publish plans here");
+    throw new Error(`the server did not publish it: ${typeof outcome.reasons === "string" ? outcome.reasons.trim() : outcome.status}`);
   });
 }
 
@@ -1083,4 +1107,61 @@ export async function exportPlan(): Promise<void> {
     URL.revokeObjectURL(link.href);
     sd.exported = out.feed_hash;
   });
+}
+
+// ---------------------------------------------------------------------
+// the outbox and the build, as the page shows them (D-189)
+// ---------------------------------------------------------------------
+
+/// How often the page sends what waits, looks for a new build, and
+/// reads whether the server answers.
+const POLL_MS = 30_000;
+
+let polling = false;
+
+async function poll(): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    await sendWaiting();
+    sd.updateReady = buildWaiting();
+    const now = await manifestNow();
+    sd.offline = !now.answered;
+    sd.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
+  } finally {
+    polling = false;
+  }
+}
+
+/// A publish that waited was kept: the published plans read again.
+async function published(): Promise<void> {
+  say("A publish that waited on this device was sent.");
+}
+
+/// The writes the server refused, each with its reasons in words.
+export function heldWrites(): { key: string; label: string; reason: string }[] {
+  return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
+}
+
+/// Send what waits now.
+export function sendNow(): Promise<void> {
+  return sendWaiting();
+}
+
+/// A refused publish sent again, against the published plans as they
+/// are now.
+export async function retryHeld(key: string): Promise<void> {
+  await retryWrite(key);
+}
+
+/// The person drops a refused write.
+export function discardHeld(key: string): Promise<void> {
+  return discardWrite(key);
+}
+
+/// The person accepts the new version. The plans live on the device, so
+/// a reload keeps them; it waits while a change is under way.
+export function applyUpdate(): void {
+  if (sd.busy) return;
+  applyBuild();
 }

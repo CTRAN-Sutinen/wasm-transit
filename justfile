@@ -222,6 +222,11 @@ _host-tests:
     # the two texts transit-version writes, and nothing else, ask for
     # the deployment's build (D-79, D-186).
     node --test web/src/versions.test.mjs
+    # The outbox (web/src/outbox.ts; D-189): writes in order, the same
+    # key on every attempt, a network failure or a 5xx waiting, a 401
+    # holding the outbox, a refusal held with its reasons, a reload
+    # keeping what waits, and the device's time as a claim.
+    node --test web/src/outbox.test.mjs
     # The docs site (tools/docs-site.mjs): static pages from the
     # registry. Each capability, op, kernel op, and document kind has
     # its place, and no local link is broken.

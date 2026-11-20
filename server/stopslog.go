@@ -8,16 +8,11 @@ package main
 // and the requests document. The host decides nothing.
 //
 // Every write is one entry: POST /stops, POST /stop-requests, the work
-// order system's answer, the feed's recorded differences, and
-//
-//	POST /logs/stops  body: {"key": "<the device's idempotency key>",
-//	                         "ops": [{"cap": "stops"|"requests", "op": "...", "args": {...}}]}
-//	                  200 {seq, stops_hash, stop_requests_hash, landed?}
-//	                  422 {op, refusals}   409 {op, conflict}
-//
-// which runs each op over the documents at the head, in order, and
-// writes what they changed as one entry. A key that landed answers the
-// entry that holds it. The documents are served by hash from /blobs, as
+// order system's answer, the feed's recorded differences, and POST
+// /logs/stops, the intent write (logwrite.go): stops add_event and
+// correct_event, requests put and record_work_order, each run over the
+// documents at the head, in order. A key that landed answers the entry
+// that holds it. The documents are served by hash from /blobs, as
 // the manifest pins them (stops_hash, stop_requests_hash). The old
 // `stops` and `stop_requests` pointers stay in the bucket, read only.
 
@@ -25,11 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-
-	"rustwasm/server/store"
 )
 
 // stopsLogName is the stops log's name in the bucket.
@@ -247,72 +239,6 @@ func fromMoved(from string, held logDoc, seq int64) *logRefusal {
 		return nil
 	}
 	return &logRefusal{http.StatusConflict, map[string]any{"current": held.hash, "seq": seq}}
-}
-
-// opsWrite is one op of POST /logs/stops.
-type opsWrite struct {
-	Cap  string          `json:"cap"`
-	Op   string          `json:"op"`
-	Args json.RawMessage `json:"args"`
-}
-
-// stopsOps are the ops POST /logs/stops runs, by capability, and the
-// pointer whose write rule each needs.
-var stopsOps = map[string]struct {
-	ops     map[string]bool
-	pointer string
-}{
-	"stops":    {map[string]bool{"add_event": true, "correct_event": true}, stopsPointer},
-	"requests": {map[string]bool{"put": true, "record_work_order": true}, requestsPointer},
-}
-
-// handleStopsOps is POST /logs/stops: each op run over the documents at
-// the head, in order, and what they changed written as one entry.
-func (s *server) handleStopsOps(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
-	var req struct {
-		Key string     `json:"key"`
-		Ops []opsWrite `json:"ops"`
-	}
-	if err == nil {
-		err = json.Unmarshal(body, &req)
-	}
-	if err != nil || len(req.Ops) == 0 {
-		http.Error(w, `body: {"key": "<idempotency key>", "ops": [{"cap": "stops"|"requests", "op": "...", "args": {...}}]}`, http.StatusBadRequest)
-		return
-	}
-	for i, op := range req.Ops {
-		known, ok := stopsOps[op.Cap]
-		if !ok || !known.ops[op.Op] {
-			http.Error(w, fmt.Sprintf("op %d: %s %s is not a write POST /logs/stops runs (stops: add_event, correct_event; requests: put, record_work_order)", i, op.Cap, op.Op), http.StatusBadRequest)
-			return
-		}
-		if allow, reason := s.mayWrite(r, known.pointer); !allow {
-			http.Error(w, "forbidden: "+reason, http.StatusForbidden)
-			return
-		}
-	}
-	ctx := r.Context()
-	by := nameOf(r, "anonymous")
-	f := s.stopsLog()
-	seq, landed, refusal, err := s.writeLog(f, logWrite{writer: writerOf(r, "anonymous"), op: "POST /logs/stops", argsHash: store.HashOf(body), key: req.Key}, func() ([]json.RawMessage, *logRefusal, error) {
-		return s.runStopsOps(ctx, req.Ops, by)
-	})
-	if err != nil {
-		logWriteFailed(w, err, http.StatusBadRequest)
-		return
-	}
-	if refusal != nil {
-		writeJSON(w, refusal.status, refusal.body)
-		return
-	}
-	f.mu.Lock()
-	answer := map[string]any{"seq": seq, "stops_hash": s.stopsDoc.hash, "stop_requests_hash": s.requestsDoc.hash}
-	f.mu.Unlock()
-	if landed {
-		answer["landed"] = true
-	}
-	writeJSON(w, http.StatusOK, answer)
 }
 
 // runStopsOps runs the ops over the documents at the head (the fold's

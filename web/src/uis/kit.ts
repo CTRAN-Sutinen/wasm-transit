@@ -7,6 +7,7 @@
 /// only file that asks the bus — through the engine, src/engine.ts),
 /// and `<id>.html` at the web root.
 
+import { get as idbGet, set as idbSet } from "idb-keyval";
 import { onNewerBuild } from "../versions";
 import { previousClock, serviceClock } from "../clock";
 import { available, readJournal, startJournal, type CapId } from "../engine";
@@ -124,11 +125,12 @@ export function answerGraph(nodes: AnswerNode[], frames: Record<string, FrameSta
 // the app's build — ONE lifecycle for updates and offline (D-63, D-65):
 // the service worker (web/service-worker.js, written to dist/sw.js by
 // the build) precaches a new build in the background and leaves it
-// waiting; the page decides when it applies. A rider's page applies it
-// at the next cold start or navigation (`installApp`) or when the
-// rider accepts it; a display at its next poll while the server
+// waiting; the page decides when it applies. A rider's or a staff
+// page applies it at the next cold start or navigation (`installApp`)
+// or when the person accepts it (a staff page says so at once,
+// `onBuildReady`; D-189); a display at its next poll while the server
 // answers. Never over unsaved device data — the host says what that
-// is.
+// is (a staff page's outbox is on the device, and survives the reload).
 // ---------------------------------------------------------------------
 
 let registration: ServiceWorkerRegistration | null = null;
@@ -160,7 +162,22 @@ export async function installApp(): Promise<void> {
   // A document another build wrote: look for the deployment's build now.
   // The page applies it by its own rule, as for any new build.
   onNewerBuild(() => void registration?.update().catch(() => {}));
+  // A new build that finished downloading is said at once (onBuildReady).
+  registration.addEventListener("updatefound", () => {
+    const next = registration?.installing;
+    next?.addEventListener("statechange", () => {
+      if (next.state === "installed" && navigator.serviceWorker.controller) for (const f of readyHandlers) f();
+    });
+  });
   void readBuild();
+}
+
+const readyHandlers = new Set<() => void>();
+
+/// Run `handler` when a new build has downloaded and waits: a page that
+/// asks the person to apply it shows that at once, not at its next poll.
+export function onBuildReady(handler: () => void): void {
+  readyHandlers.add(handler);
 }
 
 /// Whether a new build has downloaded and waits (asking the browser to
@@ -189,6 +206,41 @@ export function applyBuild(): void {
 export async function serverAnswers(): Promise<boolean> {
   const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
   return !!resp?.ok && resp.headers.get("X-Served-From") !== "last-copy";
+}
+
+// ---------------------------------------------------------------------
+// working offline (D-189): what the server last confirmed. A staff page
+// works from its last good documents while the server is away, and
+// says how old they are. A page never shows an old answer as current.
+// ---------------------------------------------------------------------
+
+/// The deployment's manifest now: `answered` when the server answered
+/// (not the worker's last copy), and `asOfMs`, when the server last
+/// confirmed it (the answer's Date header). The manifest is null when
+/// neither the server nor the worker has one.
+export async function manifestNow<T>(): Promise<{ manifest: T | null; answered: boolean; asOfMs: number }> {
+  const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
+  if (!resp?.ok) return { manifest: null, answered: false, asOfMs: 0 };
+  const answered = resp.headers.get("X-Served-From") !== "last-copy";
+  const date = Date.parse(resp.headers.get("Date") ?? "");
+  return { manifest: (await resp.json().catch(() => null)) as T | null, answered, asOfMs: Number.isFinite(date) ? date : answered ? Date.now() : 0 };
+}
+
+/// A read the worker does not keep (a document with no hash, as GET
+/// /edits serves it): the server's answer, kept on the device as this
+/// page's last good copy; when the server does not answer, that copy,
+/// with the time it was read. `asOfMs` is 0 for an answer read now.
+export async function lastGoodText(ui: string, url: string): Promise<{ resp: Response | null; text: string; asOfMs: number } | null> {
+  const key = `held/${ui}/${url}`;
+  const resp = await fetch(url).catch(() => null);
+  if (resp?.ok) {
+    const text = await resp.text();
+    void idbSet(key, { text, atMs: Date.now() }).catch(() => {});
+    return { resp, text, asOfMs: 0 };
+  }
+  if (resp && resp.status < 500) return null;
+  const held = (await idbGet(key).catch(() => undefined)) as { text: string; atMs: number } | undefined;
+  return held ? { resp: null, text: held.text, asOfMs: held.atMs } : null;
 }
 
 /// The build this page runs, as its worker names it (inspection: the

@@ -305,9 +305,11 @@ because one entry may change the records of two capabilities:
 - `module` is the cap-log build that answered the entry.
 - `intent` is what asked for the write: `op` (the endpoint or the op),
   `args_hash` (the hash of the request's body, or of the pointer head a
-  migration copied), `key` (the writer's idempotency key), and `note`
+  migration copied), `key` (the writer's idempotency key), `note`
   (the cause that a gap's entry names, or the heads a migration
-  copied).
+  copied), and `claimed_at_ms` (the device's clock when the person
+  made a write that waited on the device: a claim beside the entry's
+  `at_ms`, never its time; D-222).
 - `changes` holds each record that the entry changed, in kind and id
   order: `{kind, version, id, before, after}`. `version` is the version
   of the record's document kind. A record in that version is valid as
@@ -372,7 +374,10 @@ The rules:
 
 An idempotency key in `intent.key` lands once: a write sent again with
 a key the fold holds writes nothing, and the answer names the entry
-that holds the key. A change's `before` is the hash of the record as
+that holds the key. A write that names the seq it read (`read_seq`) is
+checked against the entries after it: a record that one of them changed
+and the write changes too refuses the write, and a change to another
+record does not (cap-log `compose`, `unread`). A change's `before` is the hash of the record as
 the entry that wrote it stored it, never of a migrated copy. A record
 in an older version comes forward through its kind's migration chain
 as a one-record document.
@@ -498,10 +503,12 @@ entry 1 from their heads, with writer `migrate:stops` and
   record names a file by `sha256:<hex>`.
 - `POST /stop-requests/work-order` takes the body
   `{"request", "action": "open" | "refresh"}`. It answers one of these:
-  - `200 {requests_hash, work_order}`. The `work_order` is the work
-    order system's answer on the request, recorded over the requests at
-    the head as one entry of the stops log. The entry's writer is
-    `work-orders:<system>`.
+  - `200 {requests_hash, work_order, landed?}`. The `work_order` is the
+    work order system's answer on the request, recorded over the
+    requests at the head as one entry of the stops log. The entry's
+    writer is `work-orders:<system>`. The body may carry a `key`: a
+    resend whose key landed answers the work order the request holds,
+    with `landed`, and the system is not asked again (D-189).
   - `501 {configured: false}` with no adapter (`-work-orders`).
   - `404`.
   - `422 {refusals}`.
@@ -539,13 +546,27 @@ entry 1 from their heads, with writer `migrate:stops` and
 - `POST /logs/disruptions/close-gap` takes `{"seq": N, "cause"}`. It
   answers `200 {log, seq}`, or `409` when entry N is no gap.
 - `POST /logs/stops` takes `{"key", "ops": [{"cap": "stops" |
-  "requests", "op", "args"}]}`. Each op runs over the documents at the
-  head, in order (stops: `add_event`, `correct_event`; requests: `put`,
+  "requests", "op", "args"}], "read_seq", "claimed_at_ms"}` (the intent
+  write, D-189). Each op runs over the documents at the head, in order
+  (stops: `add_event`, `correct_event`; requests: `put`,
   `record_work_order`), checked as `POST /stops` and `POST
   /stop-requests` check a write, and what they changed is one entry. It
   answers `200 {seq, stops_hash, stop_requests_hash, landed?}`, `400
   {op, error}`, `409 {op, conflict}` (a `correct_event` whose `saw`
-  names an event changed since), or `422 {op?, refusals}`.
+  names an event changed since), `409 {conflict, overlap: {kind, id,
+  seq}, seq}` (an entry after `read_seq` changed a record the write
+  changes), or `422 {op?, refusals}`. `read_seq` is optional: without
+  it, the write is checked by its ops alone. `claimed_at_ms` goes into
+  the entry's `intent` as is (D-222).
+- `POST /logs/alerts` and `POST /logs/notes` take the same body and
+  answer the same way, with the log's document hashes: `200 {seq,
+  service_alerts_hash, alert_templates_hash, landed?}` for the alerts
+  log (alerts `put`, `end`, `put_template`), and `200 {seq, notes_hash,
+  landed?}` for the notes log (notes `write`; the server gives `by` and
+  `at`).
+- The manifest names `log_seqs`: the seq of the stops, alerts, and notes
+  logs' folds whose documents it pins. A page sends it back as
+  `read_seq`.
 - `GET /logs/stops?since=<seq>&limit=<n>` answers `{"log", "head",
   "gaps", "checkpoint", "entries", "quarantined"}`, as the disruptions
   log's does. `POST /logs/stops/revert` and `POST

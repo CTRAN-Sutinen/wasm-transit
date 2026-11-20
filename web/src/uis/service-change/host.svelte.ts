@@ -21,9 +21,10 @@
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, servedStops, stopWarnings, withStopVersions, Doc } from "../../engine";
-import { answerGraph, reason, type FrameState, readAgencyZone, today } from "../kit";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, readAgencyZone, today, whileVisible } from "../kit";
 
-import { resumeSignIn, writeFetch } from "../../signin.svelte";
+import { resumeSignIn } from "../../signin.svelte";
+import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting } from "../../outbox.svelte";
 // This page's capabilities answer inside its linked assembly (D-77).
 assemble("service-change");
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
@@ -72,6 +73,13 @@ export type PlanRow = { key: string; id: string; name: string; effectiveFrom: st
 export type HourWindow = { from: number; to: number };
 
 export const sc = $state({
+  /// The server did not answer the last read: the page works from its
+  /// last documents, confirmed at `asOf` ("4:05 PM"), and a publish
+  /// waits on the device (D-189).
+  offline: false,
+  asOf: "",
+  /// A new build waits (kit's buildWaiting): the person applies it.
+  updateReady: false,
   status: "Load a GTFS feed to begin.",
   alert: false,
   busy: false,
@@ -736,7 +744,12 @@ addEventListener("popstate", () => {
 /// first pick takes effect — the deployment's feed, as a read-only
 /// pick on its first service date (D-140), beside the published picks.
 export async function boot(): Promise<void> {
+  void installApp();
+  onBuildReady(() => (sc.updateReady = true));
   await Promise.all([restorePlans(readStoredSet), readAgencyZone(), resumeSignIn()]);
+  await openOutbox("service-change", () => void published());
+  whileVisible(POLL_MS, () => void poll());
+  void poll();
   sc.pickSet = await publishedPlanSet().catch(() => null);
   syncPlanRows();
   sc.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : "";
@@ -1266,21 +1279,32 @@ export async function publishPlan(): Promise<void> {
   if (!doc) return;
   sc.published = null;
   sc.publishRefused = [];
+  // The publish runs when it is sent, against the published plans as
+  // they are then (D-189): while the server does not answer, it waits
+  // on this device.
   await act("Publish", () => {}, async () => {
-    const resp = await writeFetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
-    if (resp.status === 401 || resp.status === 403) throw new Error(resp.status === 401 ? "sign in to publish" : "your sign-in may not publish plans here");
-    if (resp.status === 422) {
-      const answer = (await resp.json()) as { issues?: object[]; refusals?: object[] };
+    const outcome = await queueWrite({ url: "plans", body: doc, label: `Publish "${doc.plan?.name ?? "plan"}"` });
+    if (outcome.state === "waiting") {
+      say(outbox.needsSignIn ? "The publish waits on this device. Sign in to send it." : "The publish waits on this device. It is sent when the server answers.");
+      return;
+    }
+    if (outcome.state === "sent") {
+      sc.published = outcome.body as { plans_hash: string };
+      // Published now: on the timeline as a pick, read-only (D-139).
+      sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
+      syncPlanRows();
+      await select("plans");
+      say(`Published "${doc.plan?.name}": it takes effect ${doc.plan?.effective_from}. It no longer changes; fork it to change it.`);
+      return;
+    }
+    await discardWrite(outcome.key);
+    if (outcome.status === 422) {
+      const answer = (outcome.reasons ?? {}) as { issues?: object[]; refusals?: object[] };
       sc.publishRefused = [...(answer.issues ?? []), ...(answer.refusals ?? [])];
       return;
     }
-    if (!resp.ok) throw new Error(`the server did not publish it: ${(await resp.text()).trim() || resp.status}`);
-    sc.published = (await resp.json()) as { plans_hash: string };
-    // Published now: on the timeline as a pick, read-only (D-139).
-    sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
-    syncPlanRows();
-    await select("plans");
-    say(`Published "${doc.plan?.name}": it takes effect ${doc.plan?.effective_from}. It no longer changes; fork it to change it.`);
+    if (outcome.status === 403) throw new Error("your sign-in may not publish plans here");
+    throw new Error(`the server did not publish it: ${typeof outcome.reasons === "string" ? outcome.reasons.trim() : outcome.status}`);
   });
 }
 
@@ -1298,4 +1322,63 @@ export async function exportPlan(): Promise<void> {
     URL.revokeObjectURL(link.href);
     sc.exported = out.feed_hash;
   });
+}
+
+// ---------------------------------------------------------------------
+// the outbox and the build, as the page shows them (D-189)
+// ---------------------------------------------------------------------
+
+/// How often the page sends what waits, looks for a new build, and
+/// reads whether the server answers.
+const POLL_MS = 30_000;
+
+let polling = false;
+
+async function poll(): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    await sendWaiting();
+    sc.updateReady = buildWaiting();
+    const now = await manifestNow();
+    sc.offline = !now.answered;
+    sc.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
+  } finally {
+    polling = false;
+  }
+}
+
+/// A publish that waited was kept: the published plans read again.
+async function published(): Promise<void> {
+  sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
+  syncPlanRows();
+  say("A publish that waited on this device was sent.");
+}
+
+/// The writes the server refused, each with its reasons in words.
+export function heldWrites(): { key: string; label: string; reason: string }[] {
+  return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
+}
+
+/// Send what waits now.
+export function sendNow(): Promise<void> {
+  return sendWaiting();
+}
+
+/// A refused publish sent again, against the published plans as they
+/// are now.
+export async function retryHeld(key: string): Promise<void> {
+  await retryWrite(key);
+}
+
+/// The person drops a refused write.
+export function discardHeld(key: string): Promise<void> {
+  return discardWrite(key);
+}
+
+/// The person accepts the new version. The plans live on the device, so
+/// a reload keeps them; it waits while a change is under way.
+export function applyUpdate(): void {
+  if (sc.busy) return;
+  applyBuild();
 }
