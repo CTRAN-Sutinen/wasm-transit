@@ -156,6 +156,11 @@ pub enum Request {
     /// (D-173); a stop not there yet that day, or not held, is not
     /// answered.
     Records { stops_hash: String, stop_ids: Vec<String>, on: String },
+    /// The edits that take stops into a plan (D-173, D-228): `upsert_stop`
+    /// for each of `stop_ids` that the plan does not hold, once each, in
+    /// order, with its record on `on`. A stop not answered on `on`
+    /// refuses the take.
+    TakeStops { network_hash: String, stops_hash: String, stop_ids: Vec<String>, on: String },
     /// What a pick reads of the stops over the period the published set
     /// gives it (D-228): the pick with each stop's record on its first
     /// date, and the warnings of the stops it visits that are not in
@@ -316,6 +321,7 @@ pub enum Response {
         network: cap_abi::Canonical<transit_network::Network>,
     },
     Records { records: std::collections::BTreeMap<String, transit_network::Stop> },
+    TakeStops { edits: Vec<transit_network::NetworkEdit> },
     VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
     ExportVersions {
         network_hash: String,
@@ -491,6 +497,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let on = parse_date(&on)?;
             let stops = STOPS.require(&stops_hash)?;
             Ok(Response::Records { records: transit_stops::stop_record::records(&stops, &stop_ids, on) })
+        }
+        Request::TakeStops { network_hash, stops_hash, stop_ids, on } => {
+            let on = parse_date(&on)?;
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            match transit_stops::stop_record::take_stops(&network, &stops, &stop_ids, on) {
+                Ok(edits) => Ok(Response::TakeStops { edits }),
+                Err(missing) => Err(format!("not in the stops record on {on}: {}", missing.join(", ")).into()),
+            }
         }
         Request::VisitWarnings { network_hash, stops_hash, from, until } => {
             let from = parse_date(&from)?;

@@ -25,11 +25,7 @@ rules exposed the right way round.
    the pick in force. The pages route the answer. (A pick's period and
    what it reads of the stops are already one op: cap-stops `read_pick`
    and `export_pick`.)
-2. **The other rules in the browser hosts.** Each becomes an op, or a
-   field of an answer that the host already asks for:
-   - service change `createRoute`: stop records copied into
-     `upsert_stop` edits, with the ids already taken filtered out.
-3. **The docs.** `crates/AGENTS.md`, `docs/architecture/crates.md`,
+2. **The docs.** `crates/AGENTS.md`, `docs/architecture/crates.md`,
    `docs/architecture/hosts.md` ("Where a host does not keep these
    rules"), the `OPS.md` of each changed capability, and the worked
    examples.
@@ -46,6 +42,4 @@ screen).
 
 - `just test` finds no `"retired"` or `"published"` status test in
   `web/src/uis/*/host.svelte.ts`.
-- Each rule in item 2 has a law test in its library and a dispatch
-  test at its op. The host calls the op.
 - The `hosts.md` list of rules in hosts is empty.

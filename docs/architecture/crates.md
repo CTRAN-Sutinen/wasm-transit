@@ -684,6 +684,7 @@ The stops capability: what is a stop on a date? transit-stops (with its `stop_re
 **What a pick reads.**
 - `read_pick` gives the pick with each stop's record on its first date, and the warnings of the stops it visits that are not in service over its period. It derives the period from the published plan set, so no host does. `read_records` and `visit_warnings` answer the same over dates the caller names.
 - `records` gives the record that a plan takes of a stop that the document holds and the plan does not, on the pick date (D-173). The plan copies the record. The document is never written.
+- `take_stops` gives the `upsert_stop` edits that a new route needs (D-173, D-228): one for each stop the plan does not hold, once each, in order. A stop the document does not answer on the date refuses the take. The host applies the edits.
 
 **GTFS and the stops' history.**
 - `export_pick` (over the pick's period), `export_versions` (over named dates), and `import_events` carry GTFS out and in with the stops' history. Amenities, site answers, and references are the document's alone.

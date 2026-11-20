@@ -4879,3 +4879,153 @@ that sequence a write's steps between ops. Routing a value unchanged
 Pinned by: none yet (`docs/units/rules-in-ops.md`,
 `docs/units/kind-registration.md`).
 Blocks: nothing.
+
+### D-229 — Does the record's integrity encode the domain?
+State: Decided.
+Answer: 2026-11-20 — yes. The user: "the bet is really that encoding
+that domain awareness is worth it. and i think it is". The user set
+the premise: "any data written by a client should be expected to have
+the references it needs for the domain locally, when the data is
+written ... since the same bytes are running on the client and the
+server the domain checks can be the same on both sides". The record
+stays in the logs. No SQL database is added for integrity. Analysts
+read the record through an ETL flow, never in the logs (the user: "it
+is explicitly a non goal to have an analyst working in the log data").
+Context: a SQL foreign key is structural. It says that a row with the
+key exists. It knows nothing of lifecycles, service dates, or what the
+writer saw. In this repo each kind has a lifecycle, a valid time in
+service dates, and lasting ids that the agency names, and the same
+module runs on every host. So a reference is checked by the rules of
+the kinds at both ends (D-232, D-233). The cost is those rules, written
+and kept in the owning modules. Two signs that the bet does not pay:
+staff work around refusals (a rule judges plausibility, not
+contradiction), and a kind's states or references ship without their
+rules.
+Pinned by: none yet (`docs/units/integrity.md`).
+Blocks: nothing.
+
+### D-230 — When an adoption breaks a live reference, does it refuse or warn?
+State: Decided.
+Answer: 2026-11-20 — warn. The user: "warn".
+Context: adopting a pick changes which network governs its dates. A
+live detour, alert, or stop request that names a route or a stop on
+those dates can stop resolving. Adopting is a planning decision with
+known consequences, and the detour or the alert is done again either
+way. A refusal would let one stale alert block a service change.
+Pinned by: none yet (`docs/units/integrity.md`).
+Blocks: nothing.
+
+### D-231 — Does compaction drop a retired record that a live reference names?
+State: Decided.
+Answer: 2026-11-20 — no. It skips the record. The user: "skip". The
+record leaves the fold in a later compaction, when nothing live names
+it.
+Context: compaction (D-57) is the one removal from a fold that no
+person asks for. If it dropped a record that a live reference names,
+compaction alone would break the reference.
+Pinned by: none yet (`docs/units/integrity.md`).
+Blocks: nothing.
+
+### D-232 — How are references declared, and which stage may name which?
+State: Encoded provisionally. Nothing is built. `docs/units/integrity.md`
+plans it.
+Context:
+- Each reference field states its target in its kind's schema, with a
+  keyword beside `"format": "content-hash"`. Examples:
+  `"x-references": "stop"`, `"network.route"`, `"trip_instance"`,
+  `"external.work_order"`. An external target is declared and never
+  checked. gen-manifest collects the declarations into the kind table
+  (`references: [{path, target}]`). An ETL reads the same map for its
+  joins.
+- The stages, from the least durable to the most durable:
+  1. a device or working copy;
+  2. the working store (drafts, attachments, caches; gc deletes);
+  3. the record's live fold (it changes only by entries);
+  4. pinned content (entries, frozen versions, and derived documents
+     by hash);
+  5. in force (adopted picks, published documents).
+- The forms of a reference: loose (an id), pinned to a point
+  (`(log, seq, entry hash)`), and pinned to content (a hash). An id that
+  a service date resolves is loose, because an adoption changes what
+  the date resolves to.
+- Rule A: a reference never names a less durable stage. So gc and
+  compaction check only their own stage and the stages below it.
+- Rule B: an immutable referrer uses only pinned forms.
+- Rule C: a promotion (freeze, adopt, publish) pins each loose
+  reference that it carries, or the promotion is refused.
+- A reference inside one document must resolve, or the write is
+  refused. The stops document does this for `replaces` today.
+- A reference about a record as it was pins. A note is about a record
+  as it was. A reference that depends on a record as it is stays loose.
+  An alert explains a detour as it is. Today `NoteTarget` is loose.
+- A reference cycle across logs is a design error. A cycle needs
+  atomic creation, and only one log is atomic. The one cycle today (a
+  stop event's `request` and a request's `stop`) is in the stops log.
+- An attachment that a record names is a gc root. The working store
+  plan puts attachments where gc deletes (`docs/units/storage-model.md`),
+  and stop events and stop requests name attachments by hash.
+- A seq pin carries the entry's hash, so an overwritten entry is
+  detected.
+- A stops document's ids are the network's stop ids (D-145; `seed`).
+Options:
+- Declarations in the schemas, with the stages and rules above
+  (encoded here).
+- Declarations only in the Rust types. The store, `store verify`, and
+  an ETL cannot read them.
+- SQL foreign keys in a database beside the logs. A check inside a
+  transaction conflicts with the outbox, and the logs share no
+  transaction.
+Pinned by: none yet.
+Blocks: nothing.
+
+### D-233 — When does the receive path refuse a write whose reference is broken?
+State: Encoded provisionally. Nothing is built. `docs/units/integrity.md`
+plans it.
+Context:
+- A write carries the seq it read for each log it depends on. This is
+  a list, not one number. D-189's outbox carries the seq it read.
+  Whether it covers each log is to be checked.
+- The server runs the kind's domain check twice. Each referenced
+  document is folded at the seq of the check.
+  - As of the read seq, with the module that the client names in
+    `produced_by` (the server keeps every build it served). A failure
+    is refused. An honest client ran the same check on the same data,
+    and would not send the write. A module that the server never
+    served is refused.
+  - As of now, with the server's module. A failure is accepted with a
+    warning. The world changed after the writer read it.
+- A writer with no read seq read now.
+- A revert or a retire answers the references that name what it
+  removes.
+- `store verify` reports each broken loose reference, with the entry
+  that broke it.
+- A domain check refuses only a contradiction within what the writer
+  saw. It never refuses on plausibility. Each refusal rule states why
+  the write is impossible, beside its law.
+- The owning module holds a rule for each reference: a referrer in
+  state X needs a target in states Y. An existence check is the rule
+  where Y is every state.
+- A law: a write that the client's check passes as of seq s passes
+  the server's check as of s.
+Options:
+- Refuse as of the read seq, warn as of now (encoded here).
+- Never refuse across documents. Every client is treated as stale, so
+  a rogue client can write.
+- Refuse as of now, as SQL does. An honest offline write that raced a
+  removal is lost.
+Pinned by: none yet.
+Blocks: nothing.
+
+### D-234 — Over which service dates does an undated record's reference resolve?
+State: Unanswered.
+Context: a network reference resolves in the pick in force on the
+referrer's service dates (D-232). A stop request's `routes` and a
+note have no service dates, so they need a rule.
+Options:
+- The pick in force today, and each adopted pick after it
+  (recommended). A request for a route that the next pick drops is
+  what a planner needs to hear.
+- The pick in force today only.
+- Each pick in force while the record was live.
+Blocks: the network references of undated records
+(`docs/units/integrity.md`, step 4).

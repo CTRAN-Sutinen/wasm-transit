@@ -13,7 +13,7 @@ use crate::{Details, Event, EventKind, Status, StopOn, Stops};
 use transit_network::model::{Block, CalendarRule, DateRange, Layover, TripRef};
 use transit_network::places::{StopInfo, StopKind};
 use serde::Serialize;
-use transit_network::{Network, NetworkWarning, Stop};
+use transit_network::{Network, NetworkEdit, NetworkWarning, Stop};
 use transit_plans::{PlanInfo, PublishedPlans};
 use ts_rs::TS;
 
@@ -75,6 +75,25 @@ pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network 
 /// held, is not answered; the document is never written.
 pub fn records(stops: &Stops, ids: &[String], on: NaiveDate) -> BTreeMap<String, Stop> {
     ids.iter().filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found)))).collect()
+}
+
+/// The edits that take the named stops into a plan (D-173, D-228): one
+/// `upsert_stop` for each stop the plan does not hold, in the order
+/// named and once each, carrying its record on `on`. A stop the
+/// document does not answer on `on` refuses the whole take: the error
+/// names each such stop. The plan and the document are never written.
+pub fn take_stops(network: &Network, stops: &Stops, ids: &[String], on: NaiveDate) -> Result<Vec<NetworkEdit>, Vec<String>> {
+    let mut seen = std::collections::BTreeSet::new();
+    let wanted: Vec<&String> = ids.iter().filter(|id| !network.stops.contains_key(*id) && seen.insert(*id)).collect();
+    let mut edits = Vec::new();
+    let mut missing = Vec::new();
+    for id in wanted {
+        match stops.stop_on(id, on) {
+            Some(found) => edits.push(NetworkEdit::UpsertStop { id: id.clone(), stop: record(&found) }),
+            None => missing.push(id.clone()),
+        }
+    }
+    if missing.is_empty() { Ok(edits) } else { Err(missing) }
 }
 
 /// A stop's record in the network's terms (amenities, the site survey,

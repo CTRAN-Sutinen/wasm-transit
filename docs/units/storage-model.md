@@ -52,6 +52,8 @@ write, and the store describes itself (D-202, D-203; `docs/FORMATS.md`,
      rebase until two people need to edit one draft at once.
    - A draft is a transitory record. gc deletes it once it is frozen
      or abandoned, on the working store's schedule.
+   - An attachment that a record names is a gc root (D-232,
+     `integrity.md`). gc never deletes it.
 3. **The policy log.** The policy moves into a restricted log that the
    server never serves openly.
 4. **Permissions per change.** The receive path knows which records a

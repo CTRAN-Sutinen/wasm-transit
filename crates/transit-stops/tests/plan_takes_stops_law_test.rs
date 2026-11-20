@@ -81,3 +81,48 @@ fn a_stop_not_there_yet_or_not_held_is_not_answered() {
     // a planned stop is there from its planned date: a plan may take it
     assert!(records(&stops, &ids, day("2027-01-04")).contains_key("N2"));
 }
+
+// A new route takes its stops in (D-173, D-228): `take_stops` answers the
+// `upsert_stop` edits for the named stops, one rule for every host.
+//
+// * a stop the plan already holds is left as the plan has it: no edit;
+// * a stop named twice is taken once, in the order named;
+// * each edit carries the record `records` answers, so applying the
+//   edits gives the plan an ordinary stop;
+// * a stop the stops document does not answer on `on` refuses the whole
+//   take, naming each such stop.
+
+use transit_stops::stop_record::take_stops;
+
+#[test]
+fn a_stop_the_plan_holds_is_not_taken_and_the_rest_are_taken_once_in_order() {
+    let stops = doc();
+    let net = network();
+    let held = net.stops.keys().next().expect("the plan holds a stop").clone();
+    let ids = vec!["N1".to_string(), held.clone(), "N1".to_string(), "N2".to_string()];
+    let edits = take_stops(&net, &stops, &ids, day("2027-01-04")).expect("all there");
+    let named: Vec<&str> = edits
+        .iter()
+        .map(|e| match e {
+            NetworkEdit::UpsertStop { id, .. } => id.as_str(),
+            other => panic!("only upsert_stop: {other:?}"),
+        })
+        .collect();
+    assert_eq!(named, vec!["N1", "N2"]);
+    let plan = apply_edits(&net, &edits).unwrap();
+    assert_eq!(plan.stops["N1"], records(&stops, &["N1".to_string()], day("2027-01-04"))["N1"]);
+    assert_eq!(plan.stops[&held], net.stops[&held], "a held stop is unchanged");
+}
+
+#[test]
+fn a_take_with_a_stop_not_answered_is_refused_naming_each() {
+    let stops = doc();
+    let ids = vec!["N1".to_string(), "N2".to_string(), "Z".to_string()];
+    let refused = take_stops(&network(), &stops, &ids, day("2026-11-13")).unwrap_err();
+    assert_eq!(refused, vec!["N2".to_string(), "Z".to_string()]);
+}
+
+#[test]
+fn a_take_of_nothing_is_no_edits() {
+    assert_eq!(take_stops(&network(), &doc(), &[], day("2026-11-13")).unwrap(), vec![]);
+}

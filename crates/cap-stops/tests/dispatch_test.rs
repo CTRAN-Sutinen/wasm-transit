@@ -245,6 +245,16 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
     assert!(taken["records"].get("Z").is_none());
     let early = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1"], "on": "2026-10-19"}));
     assert_eq!(early["records"], json!({}));
+    // a new route takes its stops: the plan's own are left, the rest are
+    // upsert_stop edits with the record, once each; a stop not answered
+    // refuses the take, naming it
+    let take = ok(json!({"op": "take_stops", "network_hash": network_hash, "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "A", "N1"], "on": "2026-10-20"}));
+    assert_eq!(take["edits"].as_array().unwrap().len(), 1);
+    assert_eq!(take["edits"][0]["edit"], "upsert_stop");
+    assert_eq!(take["edits"][0]["id"], "N1");
+    assert_eq!(take["edits"][0]["stop"], taken["records"]["N1"]);
+    let refused = err(json!({"op": "take_stops", "network_hash": network_hash, "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "Z"], "on": "2026-10-20"}));
+    assert!(refused.contains("Z") && !refused.contains("N1"), "{refused}");
     let retired = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "B", "event": {"on": "2026-11-02", "event": "retired"}}));
     let warned = ok(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-10-01", "until": "2026-12-01"}));
     assert_eq!(warned["warnings"], json!([{"stop_not_in_service": {"stop": "B", "status": "retired", "from": "2026-11-02", "until": "2026-12-01"}}]));

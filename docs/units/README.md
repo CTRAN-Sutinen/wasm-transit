@@ -52,6 +52,7 @@ work; a group is only a way to find them.
 |---|---|
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
 | [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
+| [integrity.md](integrity.md) | the references between records declared and checked: the writer's check replayed as of what it read, warnings when the world moves, and the transitions that pin |
 
 ### Stops and streets
 

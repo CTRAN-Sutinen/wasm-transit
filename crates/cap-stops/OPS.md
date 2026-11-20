@@ -155,6 +155,12 @@ A stop that is not there yet that day, or that the document does not hold, is no
 
 The plan takes a record with author `upsert_stop`. The stops document is never written. `records` reads no network.
 
+## take_stops
+
+Which edits take stops into a plan? A new route may visit stops that the stops document holds and the plan does not. `take_stops` answers `edits`: one `upsert_stop` for each of `stop_ids` that the plan (`network_hash`) does not hold, once each, in the order named. Each carries the record that `records` answers on `on`.
+
+A stop that the plan holds is left as the plan has it. If any stop is not answered on `on` (not there yet, or not held), the op is refused and names each one. The host applies the edits with author `apply`. The stops document is never written.
+
 ## read_pick
 
 What does a pick read of the stops, over the dates it governs? `read_pick` answers the pick's `period`, the pick with each stop's record on its first date, and the warnings of the stops it visits.

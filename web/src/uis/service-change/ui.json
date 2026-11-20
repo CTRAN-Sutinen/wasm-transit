@@ -46,7 +46,7 @@
     "runcut.fleet_summary",
     "stops.read_pick",
     "stops.stops_on",
-    "stops.records",
+    "stops.take_stops",
     "stops.export_pick"
   ],
   "components": [

@@ -308,7 +308,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "log_document"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "log_document"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -2318,6 +2318,23 @@ fn example_for(
             (
                 json!({ "op": "records", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_ids": ids, "on": "2026-11-13" }),
                 json!({ "ok": { "op": "records", "records": records } }),
+            )
+        }
+        ("stops", "take_stops") => {
+            // A new route visits 9906 (planned 2026-10-20, in the stops
+            // document) and a stop the plan holds: the plan's own is
+            // left, 9906 is taken with its record.
+            let net = net?.derived_network().clone();
+            let stops = transit_stops::Stops::empty()
+                .add_event("9906", serde_json::from_value(json!({"on": "2026-10-20", "event": "planned", "lat": 45.58, "lon": -122.348, "name": "Washougal Transit Center", "code": "9906"})).ok()?)
+                .checked()
+                .ok()?;
+            let held = net.stops.keys().next()?.clone();
+            let ids = vec!["9906".to_string(), held];
+            let edits = transit_stops::stop_record::take_stops(&net, &stops, &ids, chrono::NaiveDate::from_ymd_opt(2026, 11, 13)?).ok()?;
+            (
+                json!({ "op": "take_stops", "network_hash": cap_abi::canonical_hash(&net).ok()?, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_ids": ids, "on": "2026-11-13" }),
+                json!({ "ok": { "op": "take_stops", "edits": edits } }),
             )
         }
         ("stops", "visit_warnings") => {

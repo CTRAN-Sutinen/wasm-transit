@@ -1049,23 +1049,24 @@ export async function createRoute(spec: NewRouteSpec): Promise<void> {
     return;
   }
   sc.newRouteProblems = [];
-  const fromStops = new Set(sc.newRoute.stops.filter((x) => x.fromStops).map((x) => x.value));
-  const taken = [...new Set(spec.directions.flatMap((d) => d.stops))].filter((id) => fromStops.has(id));
   const edits: NetworkEdit[] = [
     { edit: "add_route", id: spec.id },
     { edit: "upsert_route", id: spec.id, route: { name: spec.name, mode: "bus", ...(spec.longName ? { long_name: spec.longName } : {}) } },
     ...spec.directions.map((d) => ({ edit: "set_direction" as const, route: spec.id, id: d.id, name: d.name })),
   ];
-  if (taken.length) {
-    const record = await servedStops();
-    const records: Partial<Record<string, Stop>> = record ? (await ask("stops", "records", { stops_hash: record, stop_ids: taken, on: periodFrom() })).records : {};
-    for (const id of taken) {
-      const stop = records[id];
-      if (!stop) {
-        sc.newRouteProblems = [`Stop ${id} is not in the stops record on ${periodFrom()}.`];
-        return;
-      }
-      edits.push({ edit: "upsert_stop", id, stop });
+  const record = await servedStops();
+  if (record) {
+    try {
+      const take = await ask("stops", "take_stops", {
+        network_hash: docOf(doc),
+        stops_hash: record,
+        stop_ids: spec.directions.flatMap((d) => d.stops),
+        on: periodFrom(),
+      });
+      edits.push(...take.edits);
+    } catch (e) {
+      sc.newRouteProblems = [`Not created: ${message(e)}`];
+      return;
     }
   }
   for (const d of spec.directions) {
