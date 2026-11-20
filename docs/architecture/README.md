@@ -26,6 +26,7 @@ Related documents:
 | [agency-data.md](agency-data.md) | Who owns the data (the agency). Applications are interfaces. Reads are open, and the receive path governs writes. |
 | [crates.md](crates.md) | Every crate, from the bottom up: the model, the codecs, the libraries, the kernel, the capabilities, and the generated assemblies |
 | [bus.md](bus.md) | The capability bus: one module interface, documents named by hash, linked assemblies, and the rules the bus depends on |
+| [hosts.md](hosts.md) | What a host is (an upstream, a working copy, the modules, a clock), the rules every host keeps, and the three ways the hosts differ |
 | [server.md](server.md) | The Go host: its routes, the documents it publishes, sign-in, and publishing picks |
 | [storage.md](storage.md) | The agency's record: the bucket, what it holds for each shape of data, and how it is written and read |
 | [static-deployment.md](static-deployment.md) | A rider UI deployed with no server: the export, the bundle, and following a GTFS URL |

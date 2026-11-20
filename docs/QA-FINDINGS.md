@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-132**. The
+IDs are never reused; the next new finding is **QAF-134**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
 theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
@@ -398,6 +398,23 @@ work rules, and the bid over them.
   Pin: seen in the code, 2026-11-19. To reproduce: the stops app with
   `blobs/<stops_hash>.gz` failing; it shows "stops from the schedule
   running today".
+
+- **QAF-132 DEFECT** — a fork made in the first moments after service
+  change opens is lost without a word. The form clears and the plan
+  list never shows the fork. The cause is not found yet. A first load
+  of the plans that lands after the fork may replace the plan set.
+  Pin: seen on C-TRAN, 2026-11-20. To reproduce: open
+  `service-change.html` in a fresh profile, and at once open
+  "Plan & calendar", fill a name and a date, and press Fork. The same
+  steps after 1.5 s keep the fork.
+- **QAF-133 UI GAP** — a staff page says "Offline · data as of …" for
+  up to 30 s after the server answers again. The sent writes are
+  already confirmed ("A publish that waited on this device was
+  sent.") while the banner still says the page is offline, because
+  the page reads the manifest again only at its next poll.
+  Pin: seen on C-TRAN, 2026-11-20, on service change, disruptions, and
+  stops. To reproduce: stop the server, make a write, start the
+  server, and watch the banner for 30 s.
 
 ## Data the bus does not have
 

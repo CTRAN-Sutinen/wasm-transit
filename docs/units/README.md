@@ -50,7 +50,6 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [offline-apps.md](offline-apps.md) | the staff pages through an outage, dogfooded on C-TRAN: built and pinned, not yet run on real data |
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
 | [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
 
@@ -82,6 +81,14 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [ui-disruptions.md](ui-disruptions.md) | running today's service through disruptions and telling riders: late buses, detours drawn and proposed, today's cancels, internal notes, the agency's service alerts and what has none |
+
+### The code the agency owns
+
+| unit | what it is |
+|---|---|
+| [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit, like its answers and writes: one poll, a time limit on every read, "none kept" told apart from "failed", and the failure table checked against them |
+| [kind-registration.md](kind-registration.md) | a document kind declared once: the kernel names no kind, one server path for every log, one reader in the engine, and a gate on where a kind's name appears |
+| [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
 
 ### The documents
 

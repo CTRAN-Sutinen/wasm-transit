@@ -2,7 +2,8 @@
 
 Git is the user's (see the root AGENTS.md). Frontend shape and file
 ownership are in `docs/architecture/web.md`. This file holds the
-gotchas, for Rust, wasm, ops, and the frontend.
+gotchas, for Rust, wasm, ops, and the frontend, the writing rules,
+and the rules that keep code traceable.
 
 - **serde_json must keep the `float_roundtrip` feature** (root
   Cargo.toml workspace dep). The default parser is 1 ULP off on some
@@ -134,6 +135,43 @@ STE dictionary. Technical words and code names stay.
   style back.
 - **Decided:** D-174.
 
+
+## Traceable
+
+A reader must get from a symptom to the code that caused it with
+search and reading alone. A reader must not need to know a framework
+to do it. Code that removes repetition must keep each connection
+visible.
+
+- **Use explicit lists.** Each kind, input, route, or capability is
+  one entry in one list that a person reads. Do not find entries by
+  discovery: no link-time registration, no scan of a folder, no
+  entry that exists because a crate is linked.
+- **Keep each connection to one hop.** A declaration names the code
+  that it drives. That code names the declaration. A generic path
+  names the entry it acts for in each error and log line
+  (`log notes: refused …`).
+- **Write generic code only where the cases are the same.** Where an
+  entry differs, give it a named field in its declaration. Do not add
+  a hook or an override.
+- **Make generated files say where they come from.** A generated file
+  starts with its source and the command that writes it, and tells
+  the reader not to edit it. One command writes it, and a person can
+  then read it.
+- **Record why a thing happened.** Where code runs because something
+  changed, a record names the change. The journal records each module
+  call (`docs/architecture/web.md`, "The journal").
+
+### Why: traceable
+- **Holds:** the rules above apply to every change that removes
+  repetition: declared kinds, declared inputs, the answer graph, and
+  the generated files.
+- **Because:** code repeated in many files is readable, but no reader
+  can know they found every copy. Code that a declaration drives
+  removes the copies. If the reader cannot follow the connection, the
+  code is not clearer. Each rule keeps one connection open to search.
+- **Rejected:** repetition kept for explicitness. A gate that counts
+  the copies holds the line, and a reader still cannot see them.
 
 ## Frontend
 

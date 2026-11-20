@@ -129,14 +129,16 @@ Where the detail lives:
   `crates/`. Arch gates in `just test` enforce them.
 - `docs/architecture/`: the architecture reference, one file for each
   topic. Its README indexes them. It covers the detail of each crate,
-  the bus and its rules, the server, storage (the agency's record),
-  static deployment, the web, and the generated UIs. Each topic gives
+  the bus and its rules, the hosts and the rules they share, the
+  server, storage (the agency's record), static deployment, the web,
+  and the generated UIs. Each topic gives
   its What, and its Why where the reason is not obvious.
 - `docs/units/`: the open work, one file for each unit. Read its README
   before you touch anything. A unit's file is deleted when the unit
   lands.
-- `docs/CONVENTIONS.md`: how to write comments and documents, and the
-  gotchas for Rust, wasm, ops, and the frontend.
+- `docs/CONVENTIONS.md`: how to write comments and documents, the
+  rules that keep code traceable, and the gotchas for Rust, wasm, ops,
+  and the frontend.
 - `docs/TESTING.md`: the testing expectations and the dogfood-QA rules.
 - `docs/FORMATS.md`: the sync store's formats at rest (blobs,
   envelopes, and pointer logs), and the invariants that JSON Schema

@@ -4,7 +4,9 @@ The web layer is Svelte 5 runes + Vite, in TypeScript end to end. It
 is a multi-page build. `/` is the picker (`index.html` →
 `src/picker/`), with one card per generated UI
 ([generated-uis.md](generated-uis.md)). Every page is a generated UI.
-There is no other shell.
+There is no other shell. The browser is one of three hosts. The rules
+it keeps with the others, and how it differs from them, are in
+[hosts.md](hosts.md).
 
 Every page lives at the bundle's root. Every fetch is relative, so a
 bundle serves from any path. The relative fetches are:

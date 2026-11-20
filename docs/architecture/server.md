@@ -1,7 +1,8 @@
 # The server (`server/`)
 
-The server is a Go + wazero host. It is scaffolding only: HTTP, the
-manifest, and proxies. It must never make a domain decision. The host
+The server is a Go + wazero host. The rules it keeps with the other
+hosts, and how it differs from them, are in [hosts.md](hosts.md). It
+is scaffolding only: HTTP, the manifest, and proxies. It must never make a domain decision. The host
 reads the feed's own feed_info.txt version field. This is one boundary
 CSV field: I/O, not domain.
 

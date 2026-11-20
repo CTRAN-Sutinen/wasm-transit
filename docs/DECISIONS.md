@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-224**.
+- IDs are never reused; the next new decision is **D-226**.
 
 ## Summary
 
@@ -242,7 +242,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-186 | What does a build that reads one version ahead write over a document in that version? | decided; built | nothing |
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 | D-188 | Is the migration module cut by use? | decided | nothing |
-| D-189 | Do the staff pages work offline, and queue their writes? | decided; built (the dogfood on C-TRAN open) | nothing |
+| D-189 | Do the staff pages work offline, and queue their writes? | decided; built and dogfooded on C-TRAN | nothing |
 | D-190 | How does the agency's record store the data people edit? | decided; the disruptions, stops, and plans logs built | nothing |
 | D-191 | Is a service-change draft part of the agency's record, and what does publishing mean? | decided; freezing and adopting built on the server | nothing |
 | D-192 | Are the edit document's existing names renamed to "disruptions"? | unanswered | nothing |
@@ -276,6 +276,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-222 | Which time does a write sent late carry? | decided; built | nothing |
 | D-223 | Does every install download the staff pages' modules? | encoded | nothing |
 | D-224 | What does a server copy started while the bucket does not answer serve? | encoded | nothing |
+| D-225 | Which object stores does the server talk to, and through what code? | decided | nothing |
 
 ## The trip model
 
@@ -3049,7 +3050,7 @@ Options:
 Blocks: nothing.
 
 ### D-113 — Where does the sync store live in production?
-State: Decided.
+State: Decided. Its Azure Blob target is replaced by D-225.
 Answer: 2026-11-06 — object storage: "I want it to store to S3/Blob/GCS";
 "make the design explicit that it needs to use an object storage
 backend." The user tests against a Ceph RGW instance (S3-compatible).
@@ -3069,7 +3070,7 @@ Why: `docs/architecture/storage.md`, Why, "Object storage, create-only".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-116 — Which managed object store does a deployment run on?
-State: Decided.
+State: Decided. D-225 removes Azure Blob from the choices.
 Answer: 2026-11-18 — the operator's concern, not this repo's. The user,
 on treating the store's provider and its real-account check like the
 backups (D-82): "yes". The agency picks S3, Azure Blob, or GCS with its
@@ -4744,7 +4745,7 @@ e2e `offline-staff.spec.mjs` (each staff page), `deploy-builds.spec.mjs`
 `ui-stops.spec.mjs` ("a write needs sign-in…").
 Why: `docs/architecture/updates-offline.md`, "Staff pages work offline
 and queue their writes"; the intent write is `docs/architecture/storage.md`.
-Blocks: nothing. The dogfood on C-TRAN is `docs/units/offline-apps.md`.
+Blocks: nothing. Dogfooded on C-TRAN, 2026-11-20: the `session` of the service change, disruptions, and stops `ui.json` files.
 
 ### D-222 — Which time does a write sent late carry?
 State: Decided.
@@ -4797,3 +4798,22 @@ kept on first use, not precached".
 Why: `docs/architecture/updates-offline.md`, "A staff page's assembly
 is cached on first use".
 Blocks: nothing.
+
+### D-225 — Which object stores does the server talk to, and through what code?
+State: Decided.
+Answer: 2026-11-20 — S3 (and S3-compatible stores) and GCS, each
+through a client written on the Go standard library. Azure Blob is cut.
+The user, on minimizing dependencies: "i think the goal is really to
+minimize dependencies where possible"; "i think we can just cut azure
+and for GCP/GCS just do the same thing, hand write the code to
+interact with the JSON api". This replaces D-113's Azure Blob target.
+D-113's contract for the engine is unchanged.
+2026-11-20 — confirmed after comparing the three providers' features
+and the cost of a hand-written client for each: "it seems like azure
+is the easiest cut to me". The S3 API reaches AWS and every
+S3-compatible store, and the GCS JSON API takes the least code.
+Context: the server binary links 100 Go modules (measured 2026-11-20).
+The GCS SDK brings 83 of them, the Azure SDK about 26, and the AWS SDK
+about 8, for three adapters of 129 to 193 lines each.
+Pinned by: none yet (`docs/units/fewer-dependencies.md`).
+Blocks: nothing. The work is `docs/units/fewer-dependencies.md`.
