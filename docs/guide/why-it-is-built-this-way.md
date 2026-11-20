@@ -19,6 +19,7 @@ The choices are:
 11. [Check the rules by machine, and test from intent](#11-check-the-rules-by-machine-and-test-from-intent)
 12. [The agency owns its data, not the apps](#12-the-agency-owns-its-data-not-the-apps)
 13. [Make the rider apps work for everyone, on old phones too](#13-make-the-rider-apps-work-for-everyone-on-old-phones-too)
+14. [Plan for the outage](#14-plan-for-the-outage)
 
 ## 1. Do the work on the rider's device
 
@@ -287,6 +288,29 @@ name every feed and map host, so a new host needs a new export. A test
 cannot replace a person who uses a screen reader. That check is done by
 hand.
 
+## 14. Plan for the outage
+
+**The choice.** Every system has outages. So each part of the software
+says what it still does when something it depends on stops working,
+and how it catches up afterwards. A page never shows old information
+as if it were current. Everything the agency needs to recover is kept
+in one place, the agency's storage: every version of its data, a plain
+description of how to read it, and the programs that read it.
+
+**Why.** A transit agency keeps running when its technology fails.
+Dispatch has the radio, and staff have their fallback procedures. The
+software must make it clear when to change to those procedures, and
+it must not get in their way. Keeping its data, the description of
+that data, and the programs together means the agency can recover
+without this project, its developers, or any vendor. It can run the
+stored programs again to get the same answers as at the time. It can
+also read the data with ordinary tools.
+
+**The cost.** Each app takes more design work. Its builders must list
+every way it can fail, and ask the agency what its staff do in each
+case. Some apps cannot meet every case yet. Those gaps stay listed as
+open work until they are fixed.
+
 ## Questions still open
 
 Some choices are not settled yet. Each open question, with its
@@ -306,3 +330,4 @@ behind its choices, including the alternatives that were rejected:
 | 1, 10 | [architecture/updates-offline.md](../architecture/updates-offline.md) and [architecture/web.md](../architecture/web.md) |
 | 13 | [architecture/web.md](../architecture/web.md), [architecture/static-deployment.md](../architecture/static-deployment.md), and [TESTING.md](../TESTING.md) |
 | 11 | [TESTING.md](../TESTING.md) |
+| 14 | [architecture/README.md](../architecture/README.md), "Built for the outage" |

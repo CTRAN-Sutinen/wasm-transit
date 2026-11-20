@@ -337,6 +337,13 @@ no file with that name. Each export brings its own `_headers`.
 Before the first real deployment, `npx wrangler deploy --dry-run`
 checks the configuration and the files without uploading anything.
 
+**A second host.** An export is plain static files. You can deploy the
+same export folder to a second web host, so that the app stays up when
+one host is down. Put both hosts behind the same address, and fail
+over in DNS. Do not give the second host its own address: an
+installed screen or phone keeps the address it was set up with. Deploy
+each export to both hosts, and keep their `site/` folders the same.
+
 ## 6. Check the deployment
 
 Replace `HOST` with the app's address, for example

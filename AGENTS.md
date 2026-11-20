@@ -20,6 +20,14 @@ for each deployment. Neither shape is a subset of the other:
 - a change made for one shape adds to that shape and takes no
   capability from the other.
 
+**Built for the outage.** An agency keeps running when its technology
+fails, and the project is designed the same way. For each failure,
+the design states what still works, what each person does instead,
+and how it recovers. The bucket alone recovers the agency: the log,
+the store's description and schemas, and every build. A page never
+shows an old answer as current. Each UI writes a failure table
+(`docs/architecture/README.md`, "Built for the outage").
+
 **Each generated UI is its own product.** It is deployed, updated, and
 rolled back on its own. It is not a part of one app. Which UIs need the
 server is in `docs/architecture/README.md` ("Deployment shapes", "Each

@@ -303,6 +303,11 @@ from the stops record; the log names that change `import:feed`.
    pages cannot sign in and their changes are refused; tools that send
    their own sign-in token still work.
 
+   **When your sign-in provider is down.** Reading still works. Saving
+   needs a valid token. A person whose token expires while the provider
+   is down cannot save until it is back. Set the token's lifetime in
+   your provider so that a token lasts a working shift.
+
 ### Keep photos and drawings
 
 Stop surveys and requests can carry photos and site drawings. They are

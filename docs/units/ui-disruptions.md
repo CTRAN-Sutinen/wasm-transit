@@ -53,6 +53,16 @@ a record of who has read a change or a note, and where. sync
 - The window when service is affected (`impact`).
 - "Created" and "Last edited", with who and when, from the alerts log.
 
+## When it fails
+
+The page has no failure table yet (`docs/architecture/generated-uis.md`,
+step 5). Write it for the server, the bucket behind it, each live
+feed, sign-in, and the device's network. Ask the user what dispatch,
+communications, and customer service do instead in each case. Known
+now: the page says when a live feed does not answer, but not how old
+the last positions are. A note or an alert cannot be written while the
+server does not answer.
+
 ## Other open items
 
 - Dispatch's late list shows a bus twice when its block's next trip is
@@ -62,6 +72,7 @@ a record of who has read a change or a note, and where. sync
 
 ## Done when
 
+- The failure table is written, and the page meets each row.
 - Questions 4, 5, and 8 are answered on the page, or 8 is decided
   out of scope.
 - The alert form takes every "Applies to" above, the window, and the

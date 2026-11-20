@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-129**. The
+IDs are never reused; the next new finding is **QAF-132**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
 theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
@@ -355,6 +355,45 @@ work rules, and the bid over them.
   day.
   Pin: `just qa`, `stops.html#on=2027-03-01&open=1132`.
 
+
+## Outages
+
+- **QAF-129 OP GAP** — a live feed that keeps answering with old data
+  reads as live. The live path reads a snapshot's header timestamp only
+  to decide whether an alert is in force (`crates/transit-rt/src/live.rs`).
+  No op answers a snapshot's age, or whether its vehicle positions
+  stopped moving. So a feed that answers 200 with a frozen snapshot
+  shows its buses and predictions as live in ride-now, the stop
+  display, and disruptions. The fix is the snapshot's age in the live
+  answer, against the host's clock. The age past which a snapshot is
+  not live is the agency's to name.
+  Pin: seen in the code, 2026-11-19. To reproduce: serve one C-TRAN
+  vehicle positions file as the deployment's feed for an hour; the
+  pages show its buses as live.
+- **QAF-130 UI GAP** — a failed read of the edit document is silent.
+  Ride-now, the stop display, and disruptions keep the last good edit
+  document while they are open. They label it only when the server
+  says that its bucket is not answering (`X-Store-Stale`). When the
+  server does not answer at all, nothing says so. A rider page that
+  boots offline has no edit document. Its boards show the schedule
+  with no detours and no word that detours could not be read.
+  Pin: seen in the code, 2026-11-19. To reproduce: the stop display
+  booted offline from its worker (`e2e/deploy-builds.spec.mjs`) over a
+  deployment with a detour; the board shows no note.
+- **QAF-131 DEFECT** — the engine's reads of a served document answer
+  null both when the deployment keeps none and when the read fails
+  (`web/src/engine.ts`: `servedNetwork`, `servedNetworkValue`,
+  `servedStops`, `publishedPlanSet`, and the logged documents). So the
+  pages report an outage as an empty deployment. The stops app says
+  "The deployment publishes no stops yet." Disruptions says "The
+  deployment publishes no network." Service design and service change
+  say "Load a GTFS feed to begin.", and service change shows no
+  published picks. When only the stops blob fails, the stops app shows
+  the stops seeded from today's network as if no record existed. The
+  server refuses a save over it with 409, so the record is safe.
+  Pin: seen in the code, 2026-11-19. To reproduce: the stops app with
+  `blobs/<stops_hash>.gz` failing; it shows "stops from the schedule
+  running today".
 
 ## Data the bus does not have
 

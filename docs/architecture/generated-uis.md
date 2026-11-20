@@ -313,6 +313,34 @@ any code. Delete it when the UI lands.
    depend on another node's answer in a way `needs` cannot say. Ask the
    user before you extend the answer graph in `kit.ts` to cover one.
    The answer graph carries no domain knowledge.
+
+   Then write the failure table below it
+   ([README.md](README.md), "Built for the outage"). Write one row for
+   each way an input can fail. The inputs are the server, the bucket
+   behind it, a live feed, an oracle, sign-in, an adjacent system, and
+   the device's network. An input can fail in more than one way: it
+   does not answer, it answers slowly, it refuses, or it answers with
+   old data as if it were new (a live feed whose buses stop moving).
+   Each way gets its own row. Each row has:
+   - how the page knows that the input failed: a network error, a
+     status code, a header, or a time inside the data. A failure that
+     the page cannot detect is a finding.
+   - what the page still shows, and how it says how old that is
+   - what the page refuses, and how it says so
+   - what the person does instead
+   - how the page catches up when the input comes back
+   - the pin: the test that holds the row
+
+   What the page still shows and what it refuses follow from the
+   answer graph above. The nodes that need the failed input fail or go
+   stale, and every other node keeps answering.
+
+   The agency names what its staff do instead. Ask the user, and do
+   not invent a procedure. Until the agency names it, the cell is "—".
+   A row the page cannot meet yet is open work in the unit. A row that
+   needs an op is a finding. When the UI lands, its table moves into
+   its description below, and the unit keeps the rows that are still
+   open.
 6. **Write the host from the table.** `host.svelte.ts` declares the
    table's nodes as `AnswerNode`s. It requests inputs from event
    handlers. The host `ask`s the engine for every op that a node runs,
@@ -426,6 +454,14 @@ its keep-set (the plan set's current networks and the layer). Undo
 restores an earlier document version that the host keeps. Nothing is
 inverted.
 
+Its failure table. Service change has the same table.
+
+| Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
+|---|---|---|---|---|---|---|
+| The server, or the device's network: no answer | a fetch error | the plans kept on the device, and every view and change, which run in the page | publishing, with the error in the Publish frame. A first load of the published network says "Load a GTFS feed to begin." (QAF-131) | — | the person publishes again. The plan stays on the device. | none |
+| The bucket: no answer (the server answers) | `503` on a publish | the same | publishing, with the server's reason | — | the person publishes again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
+| Sign-in: none, or expired | `401` | everything | publishing: "sign in to publish" | — | the person signs in and publishes again | none |
+
 `service-change` (`src/uis/service-change/`) serves the same need as
 service-design. Its layout follows the stages that a service change took
 when it was worked through the ops on C-TRAN (three proposals, assessed,
@@ -537,6 +573,10 @@ forward move through the stages. The UI has no single-key shortcuts. Its
 authoring path (fork, apply, undo, export, publish) is service-design's,
 copied. A UI never imports another's files.
 
+Its failure table is service design's. Service change also shows the
+published picks. With no answer from the server, it shows none
+(QAF-131).
+
 `ride-now` (`src/uis/ride-now/`) is a full-bleed map with a panel over
 it. The panel is a card at the left on a wide screen, and a sheet over
 the bottom of the map on a phone. The live pill and the alerts button
@@ -594,6 +634,18 @@ text and the near point or the rider's. It shows Pelias's answer as
 given. A point that it answers keeps the name it was shown with. Nothing
 keeps the query. Its questions and session are its `ui.json`.
 
+Its failure table.
+
+| Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
+|---|---|---|---|---|---|---|
+| The server, or the device's network: no answer | a fetch error. The worker answers the manifest and the network from its last copy. | the schedule it holds. It boots offline from the worker, and its boards say they are the schedule. | address search. A detour that the page has not read yet is missing with no word (QAF-130). | — | the next poll reads the manifest and the edit document. A new network re-pins with no reload. | e2e `deploy-builds` "both pages boot offline…", `static-deploy` "ride now boots offline…" |
+| The bucket: no answer (the server answers) | `X-Store-Stale` | detours, labelled "Detours as of …" | nothing (it writes nothing) | — | the next poll | e2e `ui-ride-now` "says how old detours are…" |
+| A live feed: no answer | a fetch error, or a status other than 200 | the schedule, and the feed's error in the live feeds panel | live predictions and buses | — | the next poll | none |
+| A live feed: frozen | not detected (QAF-129) | old buses and predictions as live | nothing | — | — | none |
+| The geocoder: no answer | a fetch error | stops by name, the device's location, and a tapped point | addresses | — | the next search | none |
+| The agency's GTFS URL, in a static deployment that follows it: no answer | a fetch error | the last zip the device kept. With none: "The agency's schedule could not be read. This page will try again." | a new schedule | — | checks again in an hour | none |
+| The map's tiles: no answer | not detected | the map with no base layer | nothing | — | the next tile request | none |
+
 `stop-display` (`src/uis/stop-display/`) is the screen at a stop, a
 passenger information display. It has three full-screen layouts over one
 `grouped_board` answer:
@@ -618,6 +670,16 @@ trips (`previous`). It follows the deployment and works offline
 ([updates-offline.md](updates-offline.md)). A new build applies itself
 at a poll while the server answers and the setup is closed. Its
 questions and session are its `ui.json`.
+
+Its failure table.
+
+| Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
+|---|---|---|---|---|---|---|
+| The server, or the device's network: no answer | a fetch error. The worker answers the manifest and the network from its last copy. | the schedule it holds. It boots offline from the worker, and its board says it is the schedule. | a new build: it applies one only while the server answers (`serverAnswers`). A detour that the page has not read yet is missing with no word (QAF-130). | — | the next poll. A new network re-pins with no reload. | e2e `deploy-builds` "both pages boot offline…", `static-deploy` "the stop display boots offline…" |
+| The bucket: no answer (the server answers) | `X-Store-Stale` | detours, with their age | nothing (it writes nothing) | — | the next poll | e2e `ui-stop-display` "a detour served while the server's store is not answering says its age" |
+| A live feed: no answer | a fetch error, or a status other than 200 | the schedule | live predictions | — | the next poll | e2e `ui-stop-display` "a live feed that stops answering turns the board to the schedule…" |
+| A live feed: frozen | not detected (QAF-129) | old predictions as live | nothing | — | — | none |
+| The agency's GTFS URL, in a static deployment that follows it: no answer | a fetch error | the last zip the device kept. With none: "The agency's schedule could not be read. This screen will try again." | a new schedule | — | checks again in an hour | e2e `static-feed-url` "the stop display boots offline on the last zip it had" |
 
 `disruptions` (`src/uis/disruptions/`) answers what is disrupted today,
 and whether an alert explains it (cap-disruptions, D-213, D-218). A bar
@@ -662,6 +724,16 @@ manifest's hashes, each read again only when its hash moves), and the
 deployment's live feeds. It polls them and the clock every 30 s while
 it is visible. The view, the pick, and the open disruption live in the
 URL hash. Its questions and session are its `ui.json`.
+
+Its failure table.
+
+| Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
+|---|---|---|---|---|---|---|
+| The server, or the device's network: no answer | a fetch error | the documents last read, until a reload, with no label (QAF-130). At boot: "The deployment publishes no network." (QAF-131) | every save, with the error. The form stays filled in. | — | the next poll, 30 s later. A save is made again by hand. | none |
+| The bucket: no answer (the server answers) | `X-Store-Stale` on the edit document | detours and cancels, labelled with their age. The stops, alerts, and notes carry no label. | saves, with the server's `503` reason | — | the next poll | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
+| A live feed: no answer | a fetch error, or a status other than 200 | the schedule's day. The live state shows the feed's error. | the buses on the map, and lateness | — | the next poll | none |
+| A live feed: frozen | not detected (QAF-129) | old buses and lateness as live | nothing | — | — | none |
+| Sign-in: none, or expired | `401` | everything | saves: "Sign in to save" | — | the person signs in and saves again | none |
 
 `stops` (`src/uis/stops/`) holds every stop's own life, apart from the
 service plans, which only read it (D-157). It also holds the work asked
@@ -818,3 +890,14 @@ web.md "Signing in"). A change saved before signing in is refused in
 words beside its Save, and a survey's draft is kept. The view, the
 stops' mode, the date, the open stop, the open request, the task, and
 the filters live in the URL hash, so the browser's Back leaves a task.
+
+Its failure table.
+
+| Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
+|---|---|---|---|---|---|---|
+| The server, or the device's network: no answer | a fetch error | the page as it was loaded. A survey half filled stays on the device. | every save, as "Error: …". At boot: "The deployment publishes no stops yet." (QAF-131) | — | the person saves again. The survey's draft survives a reload. | none |
+| The bucket: no answer (the server answers) | `503` on a save | the same | saves, with the server's reason | — | the person saves again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
+| The network: unreadable | the read fails | the stop's record | the Routes card says the routes cannot be read, never that no route stops there | — | the next read | e2e `ui-stops` "a stop whose routes cannot be read says so…" |
+| Sign-in: none, or expired | `401` | everything | saves: "Sign in to save. Your change is not saved yet." A survey's draft is kept. | — | the person signs in and saves again | e2e `ui-stops` "a write needs sign-in…" |
+| The work order system: none connected | `501` | the request | opening a work order: "No work order system is connected. Enter the work order by hand." | the person enters the work order by hand, on the page | — | none |
+| The attachments store: no answer | a fetch error | the record | adding a photo or a drawing, with the reason | — | the person adds it again | none |

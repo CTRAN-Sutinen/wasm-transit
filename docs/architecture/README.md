@@ -62,6 +62,49 @@ nothing from the other. Both shapes serve the same documents at the
 same paths (`manifest`, `blobs/<hash>`), so one version of the page
 code serves both.
 
+## Built for the outage
+
+A transit agency keeps running when its technology fails. It has
+fallback procedures. This project is designed the same way. Each
+part is designed for the outage it will have, not only to be
+available. For each failure, the design states three things: what still
+works, what each person does instead, and how the part recovers.
+
+- **Every copy but the bucket is a working copy.** A server copy, a
+  page's cache, and an exported bundle can each be lost, and nothing
+  of the record is lost with them. A server copy that cannot reach the
+  bucket serves the documents it last confirmed, labelled stale, and
+  refuses writes with `503` ([storage.md](storage.md)). A rider page
+  keeps running offline on the documents it holds
+  ([updates-offline.md](updates-offline.md)).
+- **The bucket alone recovers the agency.** It holds:
+  - the record: the log keeps every state of every record
+    ([storage.md](storage.md));
+  - how to read the record: the store's layout, a plain README, the
+    kind table, and every schema (`docs/FORMATS.md`, "The store
+    describes itself");
+  - the code that reads it: every module and every UI build, by hash
+    ([release-artifacts.md](release-artifacts.md)).
+
+  So there are two ways to recover. Run the stored builds again in any
+  wasm host, which gives the same answers as at the time. Or read the
+  documents with no software: each one is plain JSON or an open
+  format, and it names its kind and version. Neither way needs this
+  repo, a build machine, or a vendor.
+- **Each UI names what it does without each input.** A page never
+  shows an old answer as a current one. The generated-UI procedure
+  writes a failure table for each UI
+  ([generated-uis.md](generated-uis.md), step 5).
+
+### Why
+
+Availability and resilience are different measures. Availability
+counts the time a system is up. Every system has outages, so
+resilience asks what happens during one. An agency's own procedures
+already answer that for its staff. The software must say what it
+still does, so that the staff know when to change to their fallback
+procedure, and the work comes back together when the outage ends.
+
 ## Each UI is its own product
 
 Each generated UI ([generated-uis.md](generated-uis.md)) is a product
