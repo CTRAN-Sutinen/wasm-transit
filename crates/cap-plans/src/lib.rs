@@ -7,16 +7,21 @@
 //! and network a client loads; in_use answers the picks whose networks
 //! the server brings forward at startup). The plans log also holds the
 //! frozen versions (freeze, D-191); log_records and log_document turn
-//! both documents into the log's records and back. The domain
+//! both documents into the log's records and back. A pick written
+//! to the plans log is checked here too (`pick`, D-237): the network's
+//! publish check (transit-network), and the stops it reads on its
+//! first date (transit-stops), in the same op as the entry. The domain
 //! code (resolution, governing periods, chain validity) lives in the
 //! shared `transit-plans` library — the cross-document counterpart
-//! of transit-sync's merge; this module is the seam. Pure,
-//! stateless, no registries: the host owns the plan set (a JS-owned
-//! document) and pushes its distilled metadata per call, and the
-//! chain is derived on every answer, never stored.
+//! of transit-sync's merge; this module is the seam. The plan set
+//! comes inline: the host owns it (a JS-owned document) and pushes
+//! its distilled metadata per call, and the chain is derived on every
+//! answer, never stored. A pick's network and the stops document
+//! register on the kernel's loads.
 
 #![forbid(unsafe_code)]
 
+use cap_abi::kernel::{NETWORK, STOPS};
 use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -144,18 +149,35 @@ pub enum Request {
     /// `frozen_versions`; absent: none), then the entry that records
     /// what changed. The ops (cap `plans`): `freeze` (`{plan,
     /// network_hash, purpose}`), `adopt` (`{network_hash, today,
-    /// stops_seq}`), `retire` (`{id, today}`), and `migrate`: each pick
-    /// of the published set frozen as "published before the plans log",
-    /// and both documents recorded (an empty log's first entry, from the
-    /// old pointer). `today` is the agency's date, which the host's clock
-    /// gives. A refused op answers its issues, and an op that does not
-    /// run answers why (`failed`): no entry either way.
+    /// stops_seq}`), `retire` (`{id, today}`), `pick`, and `migrate`:
+    /// each pick of the published set frozen as "published before the
+    /// plans log", and both documents recorded (an empty log's first
+    /// entry, from the old pointer). `today` is the agency's date, which
+    /// the host's clock gives. A refused op answers its issues, and an
+    /// op that does not run answers why (`failed`): no entry either way.
+    ///
+    /// `pick` (`{purpose?, adopt, today, stops_seq?}`, D-237) writes the
+    /// network the host registered (`loaded.network_hash`) as a pick:
+    /// refused with `{issues, refusals}` when it does not publish; its
+    /// stop records read from the stops document on its first date
+    /// (`loaded.stops_hash`, when adopted); frozen under `purpose` and
+    /// put in force when `adopt`. The answer's `made` is the network
+    /// for the host to store as the head of `plan.<id>` before the
+    /// entry, and its `answer` is `{plan_id, network_hash, timezone,
+    /// warnings, stop_warnings}`. A plan issue is refused as
+    /// `{issues}`.
     Receive {
         #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
         write: transit_log::Write,
         #[serde(default)]
         #[ts(type = "Record<string, unknown>")]
         documents: std::collections::BTreeMap<String, serde_json::Value>,
+        /// The hashes of the documents the host registered on the
+        /// kernel's loads before the write, by the load's answer field
+        /// (`network_hash`, `stops_hash`).
+        #[serde(default)]
+        #[ts(type = "Record<string, string>")]
+        loaded: std::collections::BTreeMap<String, String>,
         #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
         ops: Vec<transit_log::OpCall>,
     },
@@ -354,7 +376,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::LogRecords { next })
         }
-        Request::Receive { write, documents, ops } => receive(write, documents, ops),
+        Request::Receive { write, documents, loaded, ops } => receive(write, documents, loaded, ops),
         Request::LogDocument { kind, records, document } => {
             let document = match kind.as_str() {
                 PLANS_DOCUMENT => {
@@ -396,6 +418,15 @@ enum Intent {
         id: String,
         today: String,
     },
+    Pick {
+        #[serde(default)]
+        purpose: Option<String>,
+        #[serde(default)]
+        adopt: bool,
+        today: String,
+        #[serde(default)]
+        stops_seq: Option<u64>,
+    },
     Migrate {},
 }
 
@@ -410,15 +441,25 @@ struct Heads {
     wrote_frozen: bool,
 }
 
-/// One op over the heads: none when it ran, the issues of a refused
-/// one, or the error of an op that did not run.
-fn step(heads: &mut Heads, intent: Intent) -> Result<Option<Vec<PlanIssue>>, String> {
+/// What a write's ops make beside the documents: the documents the host
+/// stores before the entry, and the answer for the route.
+#[derive(Default)]
+struct Made {
+    documents: Vec<transit_log::MadeDocument>,
+    answer: Option<serde_json::Value>,
+}
+
+/// One op over the heads: none when it ran, the refusals of a refused
+/// one (a plan op's issues), or the error of an op that did not run.
+fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<String, String>, made: &mut Made) -> Result<Option<serde_json::Value>, String> {
+    let issues = |issues: Vec<PlanIssue>| serde_json::to_value(issues).map(Some).map_err(|e| e.to_string());
     match intent {
+        Intent::Pick { purpose, adopt, today, stops_seq } => return pick(heads, loaded, made, purpose, adopt, &today, stops_seq),
         Intent::Freeze { plan, network_hash, purpose } => {
             let base = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
             match transit_plans::freeze(&base, &plan, &network_hash, &purpose) {
                 Ok(next) => (heads.frozen, heads.wrote_frozen) = (Some(next), true),
-                Err(issues) => return Ok(Some(issues)),
+                Err(i) => return issues(i),
             }
         }
         Intent::Adopt { network_hash, today, stops_seq } => {
@@ -426,14 +467,14 @@ fn step(heads: &mut Heads, intent: Intent) -> Result<Option<Vec<PlanIssue>>, Str
             let frozen = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
             match transit_plans::adopt(&base, &frozen, &network_hash, parse_date(&today)?, stops_seq) {
                 Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
-                Err(issues) => return Ok(Some(issues)),
+                Err(i) => return issues(i),
             }
         }
         Intent::Retire { id, today } => {
             let base = heads.published.clone().ok_or("nothing is published")?;
             match transit_plans::retire(&base, &id, parse_date(&today)?) {
                 Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
-                Err(issues) => return Ok(Some(issues)),
+                Err(i) => return issues(i),
             }
         }
         Intent::Migrate {} => {
@@ -442,7 +483,7 @@ fn step(heads: &mut Heads, intent: Intent) -> Result<Option<Vec<PlanIssue>>, Str
                 let plan = PlanInfo { id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()) };
                 match transit_plans::freeze(&frozen, &plan, &p.network_hash, MIGRATED_PURPOSE) {
                     Ok(next) => frozen = next,
-                    Err(issues) => return Ok(Some(issues)),
+                    Err(i) => return issues(i),
                 }
             }
             heads.wrote_published = heads.published.is_some();
@@ -454,13 +495,93 @@ fn step(heads: &mut Heads, intent: Intent) -> Result<Option<Vec<PlanIssue>>, Str
     Ok(None)
 }
 
+/// The `pick` op (D-237): the registered network checked as a pick, its
+/// stop records read when adopted, then frozen and adopted over the
+/// heads. A network that does not publish is refused with `{issues,
+/// refusals}`, as cap-network's `publishable` answers it; a plan issue
+/// with `{issues}`.
+fn pick(
+    heads: &mut Heads,
+    loaded: &std::collections::BTreeMap<String, String>,
+    made: &mut Made,
+    purpose: Option<String>,
+    adopt: bool,
+    today: &str,
+    stops_seq: Option<u64>,
+) -> Result<Option<serde_json::Value>, String> {
+    let network_hash = loaded.get("network_hash").ok_or("a pick writes the network the host registered (load_network), and none was")?;
+    // The pick is stored: a network read one version ahead is written in
+    // this build's version, and a read-only one is refused (D-186).
+    let network = NETWORK.require_writable(network_hash)?;
+    let check = transit_network::publish_check(&network);
+    if !check.publishes() {
+        return Ok(Some(serde_json::json!({ "issues": check.issues, "refusals": check.refusals })));
+    }
+    // A pick reads the stops document (D-157): each stop's record on its
+    // first date, and the warnings of the stops it visits that are not
+    // in service over its period.
+    let mut stop_warnings = Vec::new();
+    let mut read = None;
+    if let (true, Some(stops_hash)) = (adopt, loaded.get("stops_hash")) {
+        let stops = STOPS.require(stops_hash)?;
+        if let Some(r) = transit_stops::stop_record::read_pick(&network, &stops, heads.published.as_ref()) {
+            stop_warnings = r.warnings;
+            read = Some(r.network);
+        }
+    }
+    let network = read.as_ref().unwrap_or(&*network);
+    let document = cap_abi::canonical_bytes(network)?;
+    let document_hash = cap_abi::content_hash(document.as_bytes());
+    if read.is_none() && &document_hash != network_hash && NETWORK.read_ahead(network_hash).is_none() {
+        return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
+    }
+    let plan: PlanInfo = serde_json::to_value(&network.plan).and_then(serde_json::from_value).map_err(|e| format!("the pick's plan frame: {e}"))?;
+    let issues = |issues: Vec<PlanIssue>| Ok(Some(serde_json::json!({ "issues": issues })));
+    if let Some(purpose) = purpose {
+        let base = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
+        match transit_plans::freeze(&base, &plan, &document_hash, &purpose) {
+            Ok(next) => (heads.frozen, heads.wrote_frozen) = (Some(next), true),
+            Err(i) => return issues(i),
+        }
+        made.documents.push(transit_log::MadeDocument {
+            // The network's store kind (the kind list's `stored`).
+            kind: "network_document".to_string(),
+            version: transit_network::SCHEMA_VERSION,
+            document,
+            document_hash: document_hash.clone(),
+            pointer: Some(format!("plan.{}", plan.id)),
+        });
+    }
+    if adopt {
+        let base = heads.published.clone().unwrap_or_else(PublishedPlans::empty);
+        let frozen = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
+        match transit_plans::adopt(&base, &frozen, &document_hash, parse_date(today)?, stops_seq) {
+            Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
+            Err(i) => return issues(i),
+        }
+    }
+    made.answer = Some(serde_json::json!({
+        "plan_id": plan.id,
+        "network_hash": document_hash,
+        "timezone": network.timezone(),
+        "warnings": check.warnings,
+        "stop_warnings": stop_warnings,
+    }));
+    Ok(None)
+}
+
 /// A document given inline, read as the base of a write.
 fn given<T: serde::de::DeserializeOwned + transit_version::Versioned>(documents: &std::collections::BTreeMap<String, serde_json::Value>, kind: &str) -> Result<Option<T>, String> {
     documents.get(kind).filter(|v| !v.is_null()).map(|v| cap_abi::read_base::<T>(v.clone()).map(|(doc, _)| doc)).transpose()
 }
 
 /// A write's ops over the heads, then its entry (`Request::Receive`).
-fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<String, serde_json::Value>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+fn receive(
+    write: transit_log::Write,
+    documents: std::collections::BTreeMap<String, serde_json::Value>,
+    loaded: std::collections::BTreeMap<String, String>,
+    ops: Vec<transit_log::OpCall>,
+) -> Result<Response, String> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
@@ -472,13 +593,14 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
     if let Some(frozen) = &heads.frozen {
         frozen_spoken(frozen)?;
     }
+    let mut made = Made::default();
     for (i, call) in ops.iter().enumerate() {
         if call.cap != "plans" {
-            return answer(transit_log::Received::failed(i, format!("{} {} is not a write to the plans log (plans: freeze, adopt, retire, migrate)", call.cap, call.op)));
+            return answer(transit_log::Received::failed(i, format!("{} {} is not a write to the plans log (plans: freeze, adopt, retire, pick, migrate)", call.cap, call.op)));
         }
-        match call.request::<Intent>().and_then(|intent| step(&mut heads, intent)) {
+        match call.request::<Intent>().and_then(|intent| step(&mut heads, intent, &loaded, &mut made)) {
             Ok(None) => {}
-            Ok(Some(issues)) => return answer(transit_log::Received::refused(i, serde_json::to_value(issues).map_err(|e| e.to_string())?)),
+            Ok(Some(refusals)) => return answer(transit_log::Received::refused(i, refusals)),
             Err(e) => return answer(transit_log::Received::failed(i, e)),
         }
     }
@@ -494,6 +616,8 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
     }
     let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
     received.heads = written;
+    received.made = made.documents;
+    received.answer = made.answer;
     answer(received)
 }
 
@@ -515,5 +639,5 @@ cap_abi::capability! {
     id: "plans",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [],
+    documents: [NETWORK, STOPS],
 }

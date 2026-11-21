@@ -282,6 +282,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-228 | What may a host do with an op's answer? | decided | nothing |
 | D-235 | Where do the worked examples' fixtures live, and what may depend on them? | decided | nothing |
 | D-236 | Which modules do the test runners build? | decided; built | nothing |
+| D-237 | Where do a pick's checks run? | decided; built | nothing |
 
 ## The trip model
 
@@ -5129,4 +5130,27 @@ about an hour, nearly all of it in the links. LTO changes a module's
 size and speed, not its answers. The registry builds release itself.
 Pinned by: the justfile (`test`, `e2e`, `check`, and their `-release`
 recipes); `AGENTS.md`, "Commands"; `docs/TESTING.md`.
+Blocks: nothing.
+
+### D-237 — Where do a pick's checks run?
+State: Decided.
+Answer: 2026-11-20 — in the plans log's receive op. cap-plans links
+transit-network (the publish check and the canonical bytes) and
+transit-stops (what a pick reads of the stops), and its `pick` op does
+the whole write: the check, the stop records, the freeze, and the
+adoption. The user agreed to the recommendation, and noted that the
+server assembly (`docs/units/server-assembly.md`) takes care of most of
+its costs.
+Context: `POST /plans`, `/plans/freeze`, and `/plans/adopt` called
+cap-network, then cap-stops `read_pick`, then cap-plans `receive`, in
+Go. The unit's rule is one op for each write, and the read-seq check
+(D-233) replays a write's check as one op.
+- Cost: the server's single cap-plans module links two more libraries.
+  In the pages, service-change and service-design already link both;
+  ride-now and stop-display gain transit-stops. The server assembly
+  links each library once.
+- The alternative kept the Go sequence, and allowed read ops before a
+  write's one op. It cost no size, but kept the checks in host code.
+Pinned by: `crates/cap-plans/tests/dispatch_test.rs` (the `pick`
+laws); the server's plans tests (`just test`).
 Blocks: nothing.

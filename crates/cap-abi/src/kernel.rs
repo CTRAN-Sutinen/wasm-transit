@@ -136,7 +136,15 @@ pub struct LoadAnswer {
 #[ts(export, export_to = "cap_abi/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Loaded {
-    LoadNetwork { network_hash: String },
+    /// The network's zone (its operator's time zone), when it names
+    /// one: a host reads its clock there to give a date in the
+    /// network's own day (a pick's "today", D-237).
+    LoadNetwork {
+        network_hash: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        timezone: Option<String>,
+    },
     LoadEdits { edits_hash: String },
     LoadLive { live_hash: String },
     LoadBoundary { boundary_hash: String },
@@ -395,7 +403,7 @@ pub static NETWORK: Kind<Network> = Kind {
     registry: Registry::documents("network", "load_network", Retain::Host),
     parse: |bytes| crate::parse_network(bytes),
     json: |e| e.field(e.network, "network").map(Cow::Borrowed),
-    answer: |network_hash, _| Loaded::LoadNetwork { network_hash },
+    answer: |network_hash, network| Loaded::LoadNetwork { network_hash, timezone: network.timezone().map(str::to_string) },
 };
 
 /// Operator edit documents (the tagged document, wholesale-replaced

@@ -57,58 +57,6 @@ func (s *server) plansEnvelope() store.Envelope {
 	return store.Envelope{Kind: "plans", SchemaVersion: 1, ProducedBy: "cap-plans@" + s.plans.Hash()}
 }
 
-// canonicalPick runs a received network through a fresh cap-network:
-// register (kernel op 256; gzip or plain), what refuses it as a pick
-// (`publishable`: its issues and refusing warnings, answered as the
-// 422 body), and the canonical document with its plan frame. The
-// instance closes with the call.
-func canonicalPick(ctx context.Context, wasmPath string, body []byte) (doc canonicalNetwork, issues json.RawMessage, err error) {
-	host, err := NewWasmHost(ctx, wasmPath)
-	if err != nil {
-		return doc, nil, fmt.Errorf("network module: %w", err)
-	}
-	defer host.Close(ctx)
-	var loaded struct {
-		NetworkHash   string   `json:"network_hash"`
-		UnknownFields []string `json:"unknown_fields"`
-	}
-	if err := host.InvokeBytes(ctx, opLoadNetwork, body, &loaded); err != nil {
-		return doc, nil, fmt.Errorf("not a network document: %w", err)
-	}
-	var checked struct {
-		Issues   []json.RawMessage `json:"issues"`
-		Refusals []json.RawMessage `json:"refusals"`
-		Warnings json.RawMessage   `json:"warnings"`
-	}
-	if err := host.Invoke(ctx, map[string]any{"op": "publishable", "network_hash": loaded.NetworkHash}, &checked); err != nil {
-		return doc, nil, err
-	}
-	if len(checked.Issues)+len(checked.Refusals) > 0 {
-		refused, _ := json.Marshal(map[string]any{"issues": checked.Issues, "refusals": checked.Refusals})
-		return doc, refused, nil
-	}
-	if err := host.Invoke(ctx, map[string]any{"op": "document", "network_hash": loaded.NetworkHash}, &doc); err != nil {
-		return doc, nil, err
-	}
-	doc.Warnings = checked.Warnings
-	doc.ProducedBy = "cap-network@" + host.Hash()
-	doc.UnknownFields = loaded.UnknownFields
-	return doc, nil, nil
-}
-
-// canonicalNetwork is cap-network's document answer: the bytes, their
-// hash, and the plan frame (passed through to cap-plans unread).
-type canonicalNetwork struct {
-	Document     string          `json:"document"`
-	DocumentHash string          `json:"document_hash"`
-	Plan         json.RawMessage `json:"plan"`
-	Timezone     string          `json:"timezone"`
-	Warnings     json.RawMessage `json:"-"`
-	ProducedBy   string          `json:"-"`
-	// The fields the pick carries that this build does not know (D-167).
-	UnknownFields []string `json:"-"`
-}
-
 func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil || s.plans == nil {
 		http.Error(w, "publishing needs the store (start with -store <url>)", http.StatusNotFound)
@@ -186,55 +134,24 @@ func (s *server) publishNetwork(ctx context.Context, body []byte, writer string)
 	return s.adoptNetwork(ctx, body, publishPurpose, writer, "POST /plans")
 }
 
-// adoptNetwork puts a network in force: cap-network checks it and
-// answers its canonical bytes and plan frame, the pick reads the stops
-// document (its warnings, and the stops log entry it read), and
-// cap-plans answers the next published set over the frozen versions.
-// With purpose, the network is frozen in the same entry; without, it
-// must be frozen already. One entry of the plans log under writer.
+// adoptNetwork puts a network in force: one write of cap-plans' `pick`
+// op (writePick), which checks the network, reads the stops document,
+// and answers the next published set over the frozen versions. With
+// purpose, the network is frozen in the same entry; without, it must be
+// frozen already. One entry of the plans log under writer.
 func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, writer, op string) (publishedPick, *publishRefusal) {
 	var out publishedPick
-	pick, issues, err := canonicalPick(ctx, s.networkWasm, body)
-	if err != nil {
-		return out, refusedWith(http.StatusBadRequest, err)
-	}
-	if issues != nil {
-		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: issues}
-	}
-	// The pick names the agency's zone: today below is its date.
-	if pick.Timezone != "" {
-		s.zoneMu.Lock()
-		s.zone = pick.Timezone
-		s.zoneMu.Unlock()
-	}
-	_, current, _, err := s.keptHead("plans")
-	if err != nil {
-		return out, refusedWith(http.StatusInternalServerError, err)
-	}
-	// A pick only reads the stops document (D-157): each stop's record
-	// on its first date, and the warnings of the stops it visits that
-	// are not in service over its period. The adoption names the stops
-	// log entry it read (D-191).
-	stopsSeq := s.stopsSeqRead()
-	stopWarnings, err := s.readPick(ctx, &pick, orNull(current))
-	if err != nil {
-		return out, refusedWith(http.StatusInternalServerError, err)
-	}
-	seq, refusal, err := s.writePlan(ctx, planWrite{pick: pick, purpose: purpose, adopt: true, stopsSeq: stopsSeq}, writer, op)
+	pick, refused, err := s.writePick(ctx, body, purpose, true, writer, op)
 	if err != nil {
 		return out, refusedWith(http.StatusConflict, err)
 	}
-	if refusal != nil {
-		if m, ok := refusal.body.(map[string]any); ok && refusal.status == http.StatusBadRequest {
-			return out, &publishRefusal{code: refusal.status, text: fmt.Sprint(m["error"])}
-		}
-		body, _ := json.Marshal(refusal.body)
-		return out, &publishRefusal{code: refusal.status, json: body}
+	if refused != nil {
+		return out, refused
 	}
 	plansHash, _, _, _ := s.keptHead("plans")
 	return publishedPick{
-		planID: planID(pick), networkHash: pick.DocumentHash, plansHash: plansHash, seq: seq,
-		warnings: withWarnings(pick.Warnings, stopWarnings), unknownFields: pick.UnknownFields,
+		planID: pick.planID, networkHash: pick.networkHash, plansHash: plansHash, seq: pick.seq,
+		warnings: pick.warnings, unknownFields: pick.unknownFields,
 	}, nil
 }
 

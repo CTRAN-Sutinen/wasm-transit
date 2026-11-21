@@ -40,52 +40,104 @@ func orNull(doc []byte) json.RawMessage {
 	return json.RawMessage(doc)
 }
 
-// planWrite is one write of a pick to the plans log: a freeze, an
-// adoption, or both in one entry.
-type planWrite struct {
-	pick    canonicalNetwork
-	purpose string // the freeze's; "" = no freeze
-	adopt   bool
-	// stopsSeq is the stops log entry the adoption read (0: none).
-	stopsSeq int64
+// pickWritten is what a pick's write answers: the pick's plan id and
+// network, the entry's seq, the warnings (the network's, then the stops
+// it visits that are not in service), and the fields the network
+// carries that this build does not know (D-167).
+type pickWritten struct {
+	planID        string
+	networkHash   string
+	seq           int64
+	warnings      json.RawMessage
+	unknownFields []string
 }
 
-// writePlan runs a freeze, an adoption, or both through cap-plans over
-// the plans log's head, as one entry. The network is the head of its
-// plan.<id> pointer first, so a frozen version is always stored.
-func (s *server) writePlan(ctx context.Context, w planWrite, writer, op string) (seq int64, refusal *logRefusal, err error) {
-	var frame struct {
-		ID string `json:"id"`
-	}
-	json.Unmarshal(w.pick.Plan, &frame)
-	if w.purpose != "" {
-		pointer := "plan." + frame.ID
-		if !store.ValidPointerName(pointer) {
-			return 0, &logRefusal{http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("plan id %q cannot name a pointer (letters, digits, '.', '_', '-')", frame.ID)}}, nil
-		}
-		env := store.Envelope{Kind: "network_document", SchemaVersion: networkVersion, ProducedBy: w.pick.ProducedBy}
-		if err := commitHead(s.store, pointer, []byte(w.pick.Document), env, w.pick.DocumentHash, writer); err != nil {
-			return 0, nil, err
-		}
-	}
+// writePick writes a received network to the plans log as a pick, in one
+// op of cap-plans' receive (`pick`, D-237): the network's publish check,
+// the stops it reads when adopted (D-157), the freeze under purpose (""
+// = none), and the adoption. The module registers the network and the
+// stops document on its kernel loads. The network is stored as the head
+// of plan.<id> before the entry, so a frozen version is always stored.
+// The routes checked the write rule, so none is asked here. An error is
+// the server's; a refusal is the writer's.
+func (s *server) writePick(ctx context.Context, body []byte, purpose string, adopt bool, writer, op string) (pickWritten, *publishRefusal, error) {
+	var out pickWritten
 	l := s.keptLogOf("plans")
 	if l == nil {
-		return 0, nil, fmt.Errorf("the kind table names no log for the plans")
+		return out, nil, fmt.Errorf("the kind table names no log for the plans")
 	}
-	var ops []json.RawMessage
-	if w.purpose != "" {
-		op, _ := json.Marshal(map[string]any{"cap": "plans", "op": "freeze", "args": map[string]any{"plan": w.pick.Plan, "network_hash": w.pick.DocumentHash, "purpose": w.purpose}})
-		ops = append(ops, op)
+	args := map[string]any{"adopt": adopt}
+	if purpose != "" {
+		args["purpose"] = purpose
 	}
-	if w.adopt {
-		args := map[string]any{"network_hash": w.pick.DocumentHash, "today": s.today()}
-		if w.stopsSeq > 0 {
-			args["stops_seq"] = w.stopsSeq
+	loads := []hostLoad{{opLoadNetwork, body}}
+	if adopt {
+		// The adoption names the stops log entry it read (D-191).
+		if seq := s.stopsSeqRead(); seq > 0 {
+			args["stops_seq"] = seq
 		}
-		op, _ := json.Marshal(map[string]any{"cap": "plans", "op": "adopt", "args": args})
-		ops = append(ops, op)
+		_, stops, found, err := s.keptHead("stops")
+		if err != nil {
+			return out, nil, err
+		}
+		if found {
+			loads = append(loads, hostLoad{opLoadStops, stops})
+		}
 	}
-	return s.receivePlans(ctx, l, logWrite{writer: writer, op: op, argsHash: w.pick.DocumentHash}, ops)
+	seq, _, got, refusal, err := s.receiveLog(ctx, nil, l, logWrite{writer: writer, op: op, argsHash: store.HashOf(body)}, receiveCall{
+		loads: loads,
+		onLoad: func(answer map[string]any) {
+			if _, network := answer["network_hash"]; !network {
+				return
+			}
+			// The pick names the agency's zone: today below is its date.
+			if zone, _ := answer["timezone"].(string); zone != "" {
+				s.zoneMu.Lock()
+				s.zone = zone
+				s.zoneMu.Unlock()
+			}
+			fields, _ := answer["unknown_fields"].([]any)
+			for _, f := range fields {
+				out.unknownFields = append(out.unknownFields, fmt.Sprint(f))
+			}
+		},
+		opsAfterLoads: func() []json.RawMessage {
+			args["today"] = s.today()
+			call, _ := json.Marshal(map[string]any{"cap": "plans", "op": "pick", "args": args})
+			return []json.RawMessage{call}
+		},
+	})
+	var refusedLoad *loadError
+	switch {
+	case errors.As(err, &refusedLoad):
+		return out, refusedWith(http.StatusBadRequest, fmt.Errorf("not a network document: %w", refusedLoad.err)), nil
+	case err != nil:
+		return out, nil, err
+	case got.Failed != nil:
+		return out, nil, errors.New(got.Failed.Error)
+	case got.Refused != nil:
+		// The pick op's refusal is the 422 body: {issues, refusals} when
+		// the network does not publish, {issues} for a plan issue.
+		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: got.Refused.Refusals}, nil
+	case refusal != nil:
+		if m, ok := refusal.body.(map[string]any); ok && refusal.status == http.StatusBadRequest {
+			return out, &publishRefusal{code: refusal.status, text: fmt.Sprint(m["error"])}, nil
+		}
+		body, _ := json.Marshal(refusal.body)
+		return out, &publishRefusal{code: refusal.status, json: body}, nil
+	}
+	var answer struct {
+		PlanID       string            `json:"plan_id"`
+		NetworkHash  string            `json:"network_hash"`
+		Warnings     json.RawMessage   `json:"warnings"`
+		StopWarnings []json.RawMessage `json:"stop_warnings"`
+	}
+	if err := json.Unmarshal(got.Answer, &answer); err != nil {
+		return out, nil, fmt.Errorf("the pick's answer: %w", err)
+	}
+	out.planID, out.networkHash, out.seq = answer.PlanID, answer.NetworkHash, seq
+	out.warnings = withWarnings(answer.Warnings, answer.StopWarnings)
+	return out, nil, nil
 }
 
 // receivePlans writes the plans log through its receive op. The routes
@@ -130,35 +182,20 @@ func (s *server) handleFreeze(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	pick, issues, err := canonicalPick(r.Context(), s.networkWasm, body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if issues != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		w.Write(issues)
-		return
-	}
 	writer := writerOf(r, "anonymous")
-	seq, refusal, err := s.writePlan(r.Context(), planWrite{pick: pick, purpose: purpose}, writer, "POST /plans/freeze")
+	pick, refused, err := s.writePick(r.Context(), body, purpose, false, writer, "POST /plans/freeze")
 	if err != nil {
 		logWriteFailed(w, err, http.StatusInternalServerError)
 		return
 	}
-	if refusal != nil {
-		if m, ok := refusal.body.(map[string]any); ok && refusal.status == http.StatusBadRequest {
-			http.Error(w, fmt.Sprint(m["error"]), refusal.status)
-			return
-		}
-		writeJSON(w, refusal.status, refusal.body)
+	if refused != nil {
+		refused.write(w)
 		return
 	}
-	flagUnknown(w, "plans", writer, pick.UnknownFields)
+	flagUnknown(w, "plans", writer, pick.unknownFields)
 	frozenHash, _, _, _ := s.keptHead("frozen_versions")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"plan_id": planID(pick), "network_hash": pick.DocumentHash, "frozen_versions_hash": frozenHash, "seq": seq, "warnings": pick.Warnings,
+		"plan_id": pick.planID, "network_hash": pick.networkHash, "frozen_versions_hash": frozenHash, "seq": pick.seq, "warnings": pick.warnings,
 	})
 }
 
@@ -210,12 +247,4 @@ func (s *server) plansWriteReady(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
-}
-
-func planID(pick canonicalNetwork) string {
-	var frame struct {
-		ID string `json:"id"`
-	}
-	json.Unmarshal(pick.Plan, &frame)
-	return frame.ID
 }

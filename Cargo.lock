@@ -424,7 +424,9 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-log",
+ "transit-network",
  "transit-plans",
+ "transit-stops",
  "transit-version",
  "ts-rs",
 ]

@@ -64,6 +64,6 @@ pub use model::{
 pub use plan_set::{PlanSet, PlanSetKind, PLAN_SET_VERSION};
 pub use signs::visit_destination;
 pub use validate::{
-    publish_refusals, recovery_floors, required_recovery, validation_issues_under, RecoveryAt, routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,
+    publish_check, publish_refusals, recovery_floors, required_recovery, validation_issues_under, PublishCheck, RecoveryAt, routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,
     walking_group,
 };

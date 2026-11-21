@@ -1,6 +1,6 @@
 [package]
 name = "cap-plans"
-description = "The plan-chain capability: which service plan governs a date — resolution, governing periods, and chain validity over the plan set's metadata (the chain is derived, never stored; unversioned plans never resolve). The domain code lives in the shared transit-plans library; pure ops, no registries."
+description = "The plan-chain capability: which service plan governs a date — resolution, governing periods, and chain validity over the plan set's metadata (the chain is derived, never stored; unversioned plans never resolve). The domain code lives in the shared transit-plans library; pure ops over the plan set; a pick it writes is checked as a network and reads the stops document."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,4 +13,8 @@ ts-rs = { workspace = true }
 chrono = { workspace = true }
 transit-plans = { path = "../transit-plans" }
 transit-log = { path = "../transit-log" }
+# A pick's checks (D-237): the network's publish check and canonical
+# bytes, and what the pick reads of the stops document.
+transit-network = { path = "../transit-network" }
+transit-stops = { path = "../transit-stops" }
 cap-abi = { path = "../cap-abi" }

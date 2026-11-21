@@ -192,10 +192,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Publishable { network_hash } => {
             let network = NETWORK.require(&network_hash)?;
-            let refusals = transit_network::publish_refusals(&network);
-            let warnings =
-                transit_network::validation_warnings(&network).into_iter().filter(|w| !refusals.contains(w)).collect();
-            Ok(Response::Publishable { issues: transit_network::validation_issues(&network), refusals, warnings })
+            let transit_network::PublishCheck { issues, refusals, warnings } = transit_network::publish_check(&network);
+            Ok(Response::Publishable { issues, refusals, warnings })
         }
         Request::StoredPlans { document } => Ok(Response::StoredPlans { plans: transit_network::plan_set::stored_plans(document)? }),
     }

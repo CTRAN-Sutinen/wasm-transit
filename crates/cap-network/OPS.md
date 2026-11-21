@@ -48,7 +48,7 @@ The answer returns the zip base64-encoded, under the content hash of those bytes
 
 Return a registered document's canonical bytes. These are its serialization, and they are the bytes that its `network_hash` names. The answer also carries that hash, the document's plan frame, and its `timezone` (as `import` answers it).
 
-A host stores these bytes when it persists a network that it was sent in any serialization. An example is the sync server that publishes a pick. The module is the hash authority. The host stores exactly these bytes and never reads them.
+A host stores these bytes when it persists a network that it was sent in any serialization. The module is the hash authority. The host stores exactly these bytes and never reads them.
 
 ## publishable
 
@@ -57,7 +57,7 @@ Answer what refuses a registered network as a published pick. The answer has two
 - its validation issues;
 - `refusals`: the warnings that refuse publication. A pick that runs no service in its period would hand every rider an empty schedule on its date.
 
-The remaining warnings ride along in `warnings` and never refuse. The sync server asks this op before `POST /plans` stores a pick.
+The remaining warnings ride along in `warnings` and never refuse. cap-plans runs the same check (transit-network's `publish_check`) on every pick the plans log takes, so an agent or a tool that asks this op gets the server's answer before it sends a pick.
 
 ## stored_plans
 

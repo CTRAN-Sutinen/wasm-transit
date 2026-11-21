@@ -542,6 +542,32 @@ pub fn publish_refusals(network: &Network) -> Vec<NetworkWarning> {
         .collect()
 }
 
+/// What a network is as a published pick: its validation issues, the
+/// warnings that refuse publication ([`publish_refusals`]), and the
+/// other warnings, which publish. A pick publishes when `issues` and
+/// `refusals` are both empty. cap-network's `publishable` answers it,
+/// and cap-plans runs it on every pick it writes.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PublishCheck {
+    pub issues: Vec<NetworkError>,
+    pub refusals: Vec<NetworkWarning>,
+    pub warnings: Vec<NetworkWarning>,
+}
+
+impl PublishCheck {
+    /// Whether the network publishes.
+    pub fn publishes(&self) -> bool {
+        self.issues.is_empty() && self.refusals.is_empty()
+    }
+}
+
+/// [`PublishCheck`] of a network.
+pub fn publish_check(network: &Network) -> PublishCheck {
+    let refusals = publish_refusals(network);
+    let warnings = validation_warnings(network).into_iter().filter(|w| !refusals.contains(w)).collect();
+    PublishCheck { issues: validation_issues(network), refusals, warnings }
+}
+
 /// First-issue gate: `Ok` iff the network is valid.
 pub fn validate(network: &Network) -> Result<(), NetworkError> {
     network.validate()

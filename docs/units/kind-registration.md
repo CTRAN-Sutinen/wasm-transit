@@ -18,9 +18,7 @@ notes kind is named in this plumbing (2026-11-20):
 
 Every log the server keeps is written through one server path
 (`server/logkinds.go`; `docs/architecture/server.md`, "One path for a
-log"): its capability's `receive` op. A pick's checks before the plans
-log's write are still sequenced in Go (`adoptNetwork`: cap-network's
-check, then cap-stops `read_pick`).
+log"): its capability's `receive` op, one op for each write.
 `cap-abi` depends on 18 domain crates (five of them optional, for
 gen-manifest), so the kernel is a hub that every new kind edits. Runs, the work
 rules, and the policy in logs are next (`storage-model.md`), so this
@@ -62,14 +60,8 @@ writer saw, and warns about a write that the world made wrong later
    `receive` op in the log's capability (`transit_log::receive`
    composes the entry), the log's line `.received(..)`, each kind's own
    route as `.posted(..)`, and the seed from the kind table's `pointers`
-   (`seedKept`, the op's `migrate`).
-   - A pick's checks: `adoptNetwork` still calls cap-network (the
-     network's issues and its canonical bytes) and cap-stops
-     (`read_pick`) before the plans log's receive op. Making them one
-     op means cap-plans links transit-network's check and
-     transit-stops's `read_pick`, which adds to its module's size. A
-     proposal goes to the user first. `server/stops.go` (what a pick
-     reads of the stops) goes with it.
+   (`seedKept`, the op's `migrate`). A pick's checks run in the plans
+   log's receive op (cap-plans `pick`, D-237).
 
    The routes and their bytes stay the same, and `server/openapi.json`
    compares them. Each error and log line of the route names its kind.
@@ -77,8 +69,12 @@ writer saw, and warns about a write that the world made wrong later
    The receive op takes the seq the write read for each log it depends
    on. It runs the kind's check as of that seq, under the module the
    client names, and refuses a failure. It runs the check again as of
-   now, and warns about a failure (D-233). Check what the outbox
-   (D-189) carries today.
+   now, and warns about a failure (D-233). The outbox (D-189) carries
+   one `read_seq` today, the seq of the log the write goes to, and the
+   receive op gets the entries after it as `unread`. It carries no seq
+   of another log, no client module, and nothing on a route's write. A
+   pick's adoption also names the stops log's seq it read
+   (`stops_seq`).
 3. **Generated lists in the docs.** `docs/FORMATS.md`,
    `docs/architecture/server.md`, and `storage.md` list the kinds by
    hand today. They point to the kind table and the registry's docs
@@ -146,7 +142,7 @@ working store (`storage-model.md`, step 2).
   test) lands touching only the places the gate allows.
 - Each log's receive op has a dispatch test (cap-sync, cap-stops,
   cap-plans, cap-notes, and cap-alerts have theirs), and no Go function
-  calls more than one op for a write (a pick's checks still do).
+  calls more than one op for a write.
 - The kind lists in the docs point to the generated sources.
 - The laws in each owning crate: the existence check as of a seq, each reference rule and its coverage,
   and the parity law (a write the client passes as of seq s, the server

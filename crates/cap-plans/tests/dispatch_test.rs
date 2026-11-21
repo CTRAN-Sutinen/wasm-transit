@@ -308,3 +308,104 @@ fn receive_migrate_freezes_each_published_pick_and_records_both() {
     let version = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "frozen_version").unwrap();
     assert_eq!(version["after"]["purpose"], "published before the plans log", "{version}");
 }
+
+// ---------------------------------------------------------------------
+// pick: a pick's checks in the plans log's write (D-237)
+// ---------------------------------------------------------------------
+
+/// A kernel op on the module (a load), answered.
+fn kernel(req: serde_json::Value) -> serde_json::Value {
+    let out: serde_json::Value = serde_json::from_str(&cap_plans::invoke(&req.to_string())).unwrap();
+    out.get("ok").cloned().unwrap_or_else(|| panic!("{req}: {out}"))
+}
+
+/// The sample network as a pick of `plan`, registered: its hash.
+fn registered_pick(plan: serde_json::Value) -> String {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
+    let mut network = serde_json::from_str::<serde_json::Value>(&text).unwrap()["network"].clone();
+    network["plan"] = plan;
+    kernel(serde_json::json!({"op": "load_network", "network": network}))["network_hash"].as_str().unwrap().to_string()
+}
+
+fn fall_2026() -> serde_json::Value {
+    serde_json::json!({"id": "fall-2026", "name": "Fall 2026", "effective_from": "2026-10-01"})
+}
+
+/// A stops document over the sample's stops: A renamed before the pick's
+/// date, B retired inside its period.
+fn registered_stops() -> String {
+    let stops = serde_json::json!({"kind": "stops", "schema_version": 1, "stops": {
+        "A": [{"on": "2020-01-01", "event": "in_service", "lat": 45.5, "lon": -73.5, "name": "Main & 1st"},
+              {"on": "2026-09-01", "event": "changed", "name": "A Street Station"}],
+        "B": [{"on": "2020-01-01", "event": "in_service", "lat": 45.51, "lon": -73.51, "name": "Main & 2nd"},
+              {"on": "2026-11-02", "event": "retired"}]
+    }});
+    kernel(serde_json::json!({"op": "load_stops", "stops": stops}))["stops_hash"].as_str().unwrap().to_string()
+}
+
+fn pick_write(loaded: serde_json::Value, args: serde_json::Value) -> serde_json::Value {
+    answer(serde_json::json!({ "op": "receive", "write": { "header": header(1, None) }, "loaded": loaded,
+        "ops": [{"cap": "plans", "op": "pick", "args": args}] }))
+}
+
+/// A pick that does not publish is refused as cap-network's
+/// `publishable` answers it, with no entry and nothing to store.
+#[test]
+fn a_pick_that_does_not_publish_is_refused_with_its_issues_and_refusals() {
+    let network_hash = registered_pick(serde_json::json!({"id": "far", "name": "Far", "effective_from": "2199-01-01"}));
+    let got = pick_write(serde_json::json!({"network_hash": network_hash}),
+        serde_json::json!({"purpose": "the published pick", "adopt": true, "today": "2026-01-01"}));
+    let refusals = &got["refused"]["refusals"];
+    assert!(refusals["issues"].is_array(), "{got}");
+    assert_eq!(refusals["refusals"][0].as_object().map(|o| o.keys().next().cloned()), Some(Some("no_service_in_plan_period".into())), "{got}");
+    assert!(got.get("entry").is_none() && got.get("made").is_none(), "{got}");
+}
+
+/// A pick frozen and adopted in one entry names the network for the host
+/// to store first: the canonical bytes the kernel registered, as the head
+/// of plan.<id>, the hash the adoption names.
+#[test]
+fn a_pick_freezes_and_adopts_and_names_the_network_to_store_first() {
+    let network_hash = registered_pick(fall_2026());
+    let got = pick_write(serde_json::json!({"network_hash": network_hash}),
+        serde_json::json!({"purpose": "the published pick", "adopt": true, "today": "2026-01-01", "stops_seq": 4}));
+    assert_eq!(entry_kinds(&got), vec!["frozen_version", "frozen_versions", "pick", "plans"], "{got}");
+    let made = &got["made"][0];
+    assert_eq!(made["pointer"], "plan.fall-2026");
+    assert_eq!(made["kind"], "network_document");
+    assert_eq!(made["document_hash"], network_hash, "no stops were read: the registered bytes");
+    assert_eq!(cap_abi::content_hash(made["document"].as_str().unwrap().as_bytes()), network_hash);
+    assert_eq!(got["answer"]["plan_id"], "fall-2026");
+    assert_eq!(got["answer"]["network_hash"], network_hash);
+    assert_eq!(got["answer"]["stop_warnings"], serde_json::json!([]));
+}
+
+/// An adopted pick reads the stops document over its period (D-157): the
+/// stored network carries each stop's record on its first date, and the
+/// warnings name a stop not in service inside it. The same answer as
+/// cap-stops' `read_pick`, which calls the same library function.
+#[test]
+fn an_adopted_pick_reads_the_stops_document() {
+    let network_hash = registered_pick(fall_2026());
+    let got = pick_write(serde_json::json!({"network_hash": network_hash, "stops_hash": registered_stops()}),
+        serde_json::json!({"purpose": "the published pick", "adopt": true, "today": "2026-01-01"}));
+    let made = &got["made"][0];
+    let stored: serde_json::Value = serde_json::from_str(made["document"].as_str().unwrap()).unwrap();
+    assert_eq!(stored["stops"]["A"]["name"], "A Street Station", "{got}");
+    assert_ne!(made["document_hash"], network_hash);
+    assert_eq!(got["answer"]["network_hash"], made["document_hash"], "the adoption names the stored bytes");
+    assert_eq!(got["answer"]["stop_warnings"][0]["stop_not_in_service"]["stop"], "B", "{got}");
+}
+
+/// A freeze alone puts nothing in force and reads no stops; a pick with
+/// no registered network does not run.
+#[test]
+fn a_freeze_alone_reads_no_stops_and_a_pick_needs_its_network() {
+    let network_hash = registered_pick(fall_2026());
+    let got = pick_write(serde_json::json!({"network_hash": network_hash, "stops_hash": registered_stops()}),
+        serde_json::json!({"purpose": "proposal for public comment", "today": "2026-01-01"}));
+    assert_eq!(entry_kinds(&got), vec!["frozen_version", "frozen_versions"], "{got}");
+    assert_eq!(got["made"][0]["document_hash"], network_hash, "a freeze stores the network as sent");
+    let none = pick_write(serde_json::json!({}), serde_json::json!({"adopt": true, "today": "2026-01-01"}));
+    assert!(none["failed"]["error"].as_str().unwrap().contains("load_network"), "{none}");
+}

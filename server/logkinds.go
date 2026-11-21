@@ -462,18 +462,50 @@ type received struct {
 	} `json:"failed"`
 	UnknownFields []string          `json:"unknown_fields"`
 	Heads         map[string]string `json:"heads"`
+	// Made are the documents the write made, stored before its entry
+	// (a pick's network, as the head of plan.<id>).
+	Made []madeDocument `json:"made"`
+	// Answer is what the op answers beside the entry, for the route.
+	Answer json.RawMessage `json:"answer"`
 }
+
+// madeDocument is a document a write made: its canonical bytes under
+// their hash, its kind and version for the envelope, and the pointer it
+// becomes the head of ("": a blob only).
+type madeDocument struct {
+	Kind         string `json:"kind"`
+	Version      uint32 `json:"version"`
+	Document     string `json:"document"`
+	DocumentHash string `json:"document_hash"`
+	Pointer      string `json:"pointer"`
+}
+
+// loadError is a document the host registered before the write that
+// the module refused: the caller's input, not the server's failure.
+type loadError struct{ err error }
+
+func (e *loadError) Error() string { return e.err.Error() }
+func (e *loadError) Unwrap() error { return e.err }
 
 // receiveCall is a write's call beside its entry's header: its ops, the
 // documents the host registers in the receiving module first (a feed's
 // network), and the documents it runs over in place of the fold's (an
 // empty log's first entry, from the old pointers), by store kind. A
 // kind with a kernel load is registered, and the op gets its hash in
-// `heads`; a kind with none is given inline, in `documents`.
+// `heads`; a kind with none is given inline, in `documents`. Each load's
+// hash goes to the op in `loaded`, by the load's answer field
+// (`network_hash`).
 type receiveCall struct {
 	ops   []json.RawMessage
 	loads []hostLoad
 	heads map[string][]byte
+	// onLoad is given each load's answer (a network's unknown fields,
+	// its zone).
+	onLoad func(answer map[string]any)
+	// opsAfterLoads, when set, gives the ops after the loads answered,
+	// in place of ops: an op's argument read from a load's answer (a
+	// pick's "today" in the network's zone).
+	opsAfterLoads func() []json.RawMessage
 }
 
 // hostLoad is a document the host registers on a kernel load.
@@ -541,10 +573,19 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 		got = received{}
 		err := s.withModuleOf(ctx, l.receive, func(host *WasmHost, declares map[string]bool) error {
 			write["header"].(map[string]any)["module"] = "cap-" + l.receive + "@" + host.Hash()
+			loadedHashes := map[string]string{}
 			for _, load := range call.loads {
 				var loaded map[string]any
 				if err := host.InvokeBytes(ctx, load.code, load.doc, &loaded); err != nil {
-					return err
+					return &loadError{err}
+				}
+				for k, v := range loaded {
+					if h, ok := v.(string); ok && strings.HasSuffix(k, "_hash") {
+						loadedHashes[k] = h
+					}
+				}
+				if call.onLoad != nil {
+					call.onLoad(loaded)
 				}
 			}
 			heads := map[string]string{}
@@ -569,9 +610,16 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 				}
 				heads[k.StoreKind] = loadedHash(loaded)
 			}
-			req := map[string]any{"op": "receive", "write": write, "heads": heads, "ops": call.ops}
+			ops := call.ops
+			if call.opsAfterLoads != nil {
+				ops = call.opsAfterLoads()
+			}
+			req := map[string]any{"op": "receive", "write": write, "heads": heads, "ops": ops}
 			if len(documents) > 0 {
 				req["documents"] = documents
+			}
+			if len(loadedHashes) > 0 {
+				req["loaded"] = loadedHashes
 			}
 			if r != nil {
 				req["by"] = nameOf(r, "anonymous")
@@ -607,6 +655,24 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 		}
 		if got.Entry == "" {
 			return f.seq, false, got, nil, nil
+		}
+		// The documents the write made, stored first: the entry never
+		// names a document the store does not hold.
+		module := write["header"].(map[string]any)["module"].(string)
+		for _, d := range got.Made {
+			env := store.Envelope{Kind: d.Kind, SchemaVersion: d.Version, ProducedBy: module}
+			if d.Pointer == "" {
+				if _, err := s.store.PutBlob([]byte(d.Document), env, d.DocumentHash); err != nil {
+					return 0, false, got, nil, err
+				}
+				continue
+			}
+			if !store.ValidPointerName(d.Pointer) {
+				return 0, false, got, &logRefusal{http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("%q cannot name a pointer (letters, digits, '.', '_', '-')", d.Pointer)}}, nil
+			}
+			if err := commitHead(s.store, d.Pointer, []byte(d.Document), env, d.DocumentHash, w.writer); err != nil {
+				return 0, false, got, nil, err
+			}
 		}
 		err = s.store.AppendEntry(f.name, f.seq+1, []byte(got.Entry))
 		var ce *store.EntryConflictError

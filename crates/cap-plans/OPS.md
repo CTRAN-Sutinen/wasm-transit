@@ -6,7 +6,7 @@ The service-plan chain: which plan governs a date. Service changes are picks. Th
 - `periods` gives a window for every member.
 - `validate` reports violations of the chain's rules.
 
-Unversioned plans are standalone. They never resolve, and they are never flagged. All ops are pure ops over the metadata that the host pushes on each call.
+Unversioned plans are standalone. They never resolve, and they are never flagged. The chain's ops are pure ops over the metadata that the host pushes on each call. A pick written to the plans log is checked here too (`receive`, its `pick` op): the network's publish check, and the stops it reads on its first date. Its network and the stops document register on the kernel's loads.
 
 ## resolve
 
@@ -103,10 +103,11 @@ The sync server asks this once, to seed the plans log from the plans pointer.
 
 ## receive
 
-A write to the plans log, whole: the server's one call for `POST /plans`, `POST /plans/freeze`, `POST /plans/adopt`, `POST /plans/retire`, and the log's first entry (D-228). This capability holds no registry, so the host gives the documents at the head inline (`documents.plans`, `documents.frozen_versions`; absent: none). It takes the write (`write`: the fold's checkpoint, the entry's header, and the entries after the fold that the writer did not read) and the ops, each `{cap: "plans", op, args}`:
+A write to the plans log, whole: the server's one call for `POST /plans`, `POST /plans/freeze`, `POST /plans/adopt`, `POST /plans/retire`, and the log's first entry (D-228). The host gives the plans log's documents at the head inline (`documents.plans`, `documents.frozen_versions`; absent: none). It registers a pick's network and the stops document on the kernel's loads first, and gives their hashes in `loaded` (`network_hash`, `stops_hash`). It takes the write (`write`: the fold's checkpoint, the entry's header, and the entries after the fold that the writer did not read) and the ops, each `{cap: "plans", op, args}`:
 
 - `freeze` (`{plan, network_hash, purpose}`) and `adopt` (`{network_hash, today, stops_seq}`), as the ops of the same name take them, over the documents the earlier ops left. A publish is a freeze, then an adoption, in one entry.
 - `retire` (`{id, today}`).
+- `pick` (`{purpose?, adopt, today, stops_seq?}`, D-237): the network in `loaded.network_hash` written as a pick. A network that does not publish is refused with `{issues, refusals}`, as cap-network's `publishable` answers it. When `adopt`, the pick reads the stops document in `loaded.stops_hash`: each stop's record on its first date, and the warnings of the stops it visits that are not in service over its period. The pick is then frozen under `purpose` (absent: not frozen) and put in force when `adopt`. A plan issue is refused with `{issues}`. The answer's `made` is the network for the host to store as the head of `plan.<id>` before the entry, and its `answer` is `{plan_id, network_hash, timezone, warnings, stop_warnings}`. `POST /plans`, `POST /plans/freeze`, and `POST /plans/adopt` each send one `pick`.
 - `migrate`: each pick of the published set frozen as "published before the plans log", and both documents recorded. The host sends it with the old `plans` pointer's head to give an empty log its first entry.
 
 `today` is the agency's date, which the host's clock gives. The answer is the entry's canonical bytes, which the host stores at the header's seq, and `heads`, the hash of each document the write wrote. No entry comes back when the write changes nothing, when its key landed before (`landed`), when a record it changes changed in an unread entry (`overlap`), when an op is refused (`refused`, its index and its `issues` as `refusals`), or when an op does not run (`failed`).

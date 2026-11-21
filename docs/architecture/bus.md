@@ -223,10 +223,12 @@ The network codec capability. Its ops:
   `boundary_hash` names the import's boundary, the export uses that
   numbering. The zip registers as a feed.
 - `publishable`: what refuses a network as a published pick. That is its
-  issues, and a pick with no service in its period (D-76).
+  issues, and a pick with no service in its period (D-76). cap-plans'
+  `pick` op runs the same check (transit-network `publish_check`).
 - `document`: a registered network's canonical bytes, hash, plan frame,
-  and time zone. The server stores this when it publishes a pick it got
-  in any serialization.
+  and time zone. A host stores these bytes when it keeps a network it got
+  in any serialization. The server's picks take the same bytes from
+  cap-plans' `pick` op, which links the same library.
 
 The domain code is in the shared transit-codec library.
 

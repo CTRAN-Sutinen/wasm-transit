@@ -108,6 +108,32 @@ pub struct Received {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, String>>")]
     pub heads: BTreeMap<String, String>,
+    /// The documents the write made that the host stores before the
+    /// entry, so the entry never names a document the store does not
+    /// hold.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<MadeDocument>>")]
+    pub made: Vec<MadeDocument>,
+    /// What the op answers beside the entry, for the route's answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "unknown")]
+    pub answer: Option<Value>,
+}
+
+/// A document a write made, for the host to store before the entry: its
+/// canonical bytes under their hash, with its kind and version for the
+/// envelope, and the pointer it becomes the head of (absent: a blob
+/// only).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct MadeDocument {
+    pub kind: String,
+    pub version: u32,
+    pub document: String,
+    pub document_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub pointer: Option<String>,
 }
 
 impl Received {

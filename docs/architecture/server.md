@@ -27,7 +27,9 @@ table names, from that folder.
   the plans log ("One path for a log", below): POST /plans,
   /plans/freeze, /plans/adopt, and /plans/retire. It turns the published
   plan set and the frozen versions into the plans log's records and
-  back, and answers the picks in use and in force.
+  back, and answers the picks in use and in force. A pick's checks run
+  in the same op (`pick`, D-237): the network's publish check, and the
+  stops it reads on its first date.
 - cap-stops (-stops-wasm) runs in store mode. The server makes one
   instance on first use and empties it after each use (the kernel's
   `evict`). Its `receive` op writes the stops log ("One path for a
@@ -479,48 +481,54 @@ Its HTTP surface:
   (cap-authz `effective`). It is the only client-readable form of the
   policy.
 - `POST /plans/freeze?purpose=…` (store mode): freeze a version
-  (D-191). The body is a network, checked as `POST /plans` checks it.
-  The server commits the network to `plan.<id>`, then the plans log's
-  receive op (`plans freeze`) writes the frozen version as one entry.
-  Nothing is put in force.
+  (D-191). The body is a network, checked as `POST /plans` checks it,
+  in one `plans pick` op with no adoption. The server commits the
+  network to `plan.<id>`, then writes the frozen version as one entry.
+  Nothing is put in force, and no stops are read.
 - `POST /plans/adopt` `{"network_hash"}` (store mode): put a frozen
-  version in force from its date (D-191). The receive op (`plans
-  adopt`) refuses a network that no frozen version has (422
-  `not_frozen`). The pick names
-  the stops log entry it read (`stops_seq`).
+  version in force from its date (D-191), as one `plans pick` op with
+  no freeze. It refuses a network that no frozen version has (422
+  `not_frozen`). The pick names the stops log entry it read
+  (`stops_seq`).
 - `POST /plans` (store mode): publish a pick (docs/ROADMAP.md 1, D-74):
   a freeze and an adoption in one entry of the plans log, the version's
   purpose `?purpose=` or `published`. The body is the pick's network in
   any serialization.
-  - A fresh cap-network registers it. It answers what refuses it
-    (`publishable`: its issues, and a pick with no service in its
-    period, which gives 422 with `issues` and `refusals`). It also
-    answers the pick's canonical bytes and plan frame.
-  - The plans log's receive op runs `plans freeze`, then `plans adopt`,
-    in one call, and answers the entry, or why it refuses the pick (422
-    with `issues`: the chain, or a pick dated before today, D-76).
+  - The whole write is one op of the plans log's receive op: `plans
+    pick` (D-237). cap-plans registers the network on its kernel load,
+    with the stops document beside it.
+  - The op answers what refuses the network as a pick (its issues, and
+    a pick with no service in its period, which gives 422 with `issues`
+    and `refusals`), as cap-network's `publishable` answers it: both
+    call transit-network's `publish_check`.
+  - It then freezes the pick and adopts it, and answers the entry, or
+    why it refuses the pick (422 with `issues`: the chain, or a pick
+    dated before today, D-76).
   - `POST /plans/retire` `{"id"}` retires a pick that has not taken
     effect (D-75), as one entry of the plans log (`plans retire`).
   - "Today" is the agency's date. It is the host clock read in the
-    network's zone, as cap-network answers it beside the hash (the
-    feed's import, else the last published pick's `document`). Until a
+    network's zone: the feed's import (cap-network), else the last
+    published pick's, which the kernel's `load_network` answers beside
+    the pick's hash before the `pick` op runs. Until a
     zone is known, it uses the host's own zone. `-today` pins it on a
     test server.
-  - The server commits the network to `plan.<id>`, then writes the
-    plans log's entry. The log's fold is the set, and the manifest pins
+  - The op answers the network's canonical bytes in `made`. The server
+    commits them to `plan.<id>`, then writes the plans log's entry. The log's fold is the set, and the manifest pins
     it as `plans_hash`. Clients read the set and each pick's network
     from `/blobs`. `GET /logs/plans` answers the entries. The plans log
     has no revert: a pick is corrected by its own rules. A page never
     writes it by intent (`POST /logs/plans` is 405): a freeze stores its
     network first.
-  - With a stops document, the pick reads it first (D-157). It reads
-    each stop's record on its first date (cap-stops `read_pick`), so
-    the network that the server stores is the read one, whatever copy
-    the client sent. It also warns about the stops it visits that are
-    not in service over its period. The same op derives the period from
-    the published set: from the pick's date until the next pick that is
-    not retired. The server does not read the set's picks or their
-    status. These warnings come after cap-network's own.
+  - With a stops document, the pick reads it before the freeze
+    (D-157). It reads each stop's record on its first date
+    (transit-stops `read_pick`, the function behind cap-stops
+    `read_pick`), so the network that the server stores is the read
+    one, whatever copy the client sent. It also warns about the stops
+    it visits that are not in service over its period. The op derives
+    the period from the published set: from the pick's date until the
+    next pick that is not retired. The server does not read the set's
+    picks or their status. These warnings come after the network's
+    own.
   - The server never writes the stops document here.
 - `POST /stops` (store mode): write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`.
@@ -701,6 +709,10 @@ reading **Because**.
 ### No domain logic in Go (`server/*.go`)
 - **Holds:** every domain answer comes from a capability module. The Go host does I/O, routing, and proxies only. Logic that the server needs becomes a capability.
 - **Because:** the server and a page that have the same documents must answer the same bytes ([web.md](web.md), "Parity"). Go logic is a second implementation to keep in step.
+
+### A write is one op (`logkinds.go`, `planslog.go` `writePick`)
+- **Holds:** each write the server takes is one op of its log's receive op. A pick's checks (the network's publish check, the stops it reads) run inside cap-plans' `pick`, which links their libraries (D-237). Go registers the documents and stores what the op made, and sequences no checks.
+- **Because:** checks sequenced in Go are host logic, and the read-seq check (D-233) replays a write's check as one op. The cost is a larger single cap-plans module: it links transit-network and transit-stops.
 
 ### The server imports the feed; pages register the network (`network.go`, `feedSource`)
 - **Holds:** with a server, pages never parse GTFS. They register the imported network.

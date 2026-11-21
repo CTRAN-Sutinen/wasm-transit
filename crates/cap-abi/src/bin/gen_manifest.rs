@@ -297,9 +297,11 @@ const MODULES: &[ModuleSpec] = &[
         id: "plans",
         file: "module_plans.wasm",
         ops: &["resolve", "validate", "timeline", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "receive", "log_document"],
-        documents: &[],
-        consumes: &[],
-        speaks: &[("plans", &[1]), ("frozen_versions", &[1])],
+        // A pick it writes is checked as a network and reads the stops
+        // document (D-237): both register on the kernel's loads.
+        documents: &["network", "stops"],
+        consumes: &[("network", "network")],
+        speaks: &[("plans", &[1]), ("frozen_versions", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("stops", &[transit_stops::SCHEMA_VERSION])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-plans/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).

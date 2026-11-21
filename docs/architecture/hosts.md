@@ -124,9 +124,9 @@ The hosts differ in three ways. Each difference is a design decision.
   a new route takes in (`take_stops`), the timeline of plans and the
   pick in force (cap-plans `timeline`), a stamped pick (cap-author
   `stamp_pick`), an alert's start (cap-disruptions `start_alert`), and
-  a work order's call (cap-requests `work_order_call`). The server
-  still sequences a pick's checks before the plans log's write
-  (cap-network's, then cap-stops `read_pick`).
+  a work order's call (cap-requests `work_order_call`). A pick's checks
+  run in the plans log's receive op (cap-plans `pick`), which links the
+  same library functions.
 - The server runs single-capability modules, and composes a flow that
   needs two capabilities in Go.
 
