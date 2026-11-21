@@ -111,6 +111,9 @@ export const st = $state({
   /// lists their answers come from (`vocabulary`), and why the last
   /// request was refused.
   requests: [] as IdRequest[],
+  /// The open stop's requests that name it while it is retired today
+  /// (cap-stops `request_warnings`, D-238): why, by request id.
+  requestWarnings: {} as Record<string, string>,
   /// The stop statuses, in a stop's order (cap-stops `vocabulary`).
   statusList: [] as Status[],
   requestVocab: { jobs: [] as string[], statuses: [] as string[], openStatuses: [] as string[], sides: [] as string[], directions: [] as string[], markings: [] as string[] },
@@ -285,6 +288,21 @@ const request = answerGraph(
         st.nearby = (
           await ask("stops", "stops_near", { stops_hash: stopsDoc, date: readDate(), lat: st.near.lat, lon: st.near.lon, limit: 12, statuses: [...st.show] })
         ).stops;
+      },
+    },
+    {
+      // The rule of each request's reference to the open stop, on the
+      // agency's today (D-238): the day a write would be judged on, not
+      // the date read.
+      id: "stops.request_warnings",
+      frame: "Requests",
+      needs: ["document.stops", "document.requests", "open"],
+      caps: ["stops"],
+      clear: () => (st.requestWarnings = {}),
+      run: async () => {
+        if (!stopsDoc || !requestsDoc || !st.open) return void (st.requestWarnings = {});
+        const got = await ask("stops", "request_warnings", { stops_hash: stopsDoc, requests_hash: requestsDoc, date: today(), stop: st.open });
+        st.requestWarnings = Object.fromEntries(got.warnings.map((w) => [w.request, `This request names stop ${w.stop}, which ${w.reason}.`]));
       },
     },
     {

@@ -150,6 +150,8 @@ export async function installApp(): Promise<void> {
   } catch {
     return;
   }
+  // A blocked context resolves with no registration.
+  if (!registration) return;
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     // An applied build reloads into itself; the first install takes

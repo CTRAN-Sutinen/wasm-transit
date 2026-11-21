@@ -310,7 +310,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "receive", "log_document"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "request_warnings", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "receive", "log_document"],
         documents: &["stops", "stop_requests", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -2290,6 +2290,24 @@ fn example_for(
                 json!({ "op": "stop", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "date": "2027-07-01" }),
                 json!({ "ok": { "op": "stop", "stop": stops.stop_on("6124", date), "events": stops.stops["6124"],
                     "next": stops.next_events("6124", date).iter().map(|k| k.as_str()).collect::<Vec<_>>() } }),
+            )
+        }
+        ("stops", "request_warnings") => {
+            // 6124 retired on 2027-10-01; the drafted repair request on it
+            // is open, so it is named.
+            let retired = transit_stops::Event { on: Some("2027-10-01".into()), event: transit_stops::EventKind::Retired, ..Default::default() };
+            let stops = fixture_stops().add_event("6124", retired).checked().ok()?;
+            let requests = fixture_requests().checked().ok()?;
+            let date = chrono::NaiveDate::from_ymd_opt(2027, 11, 1)?;
+            let warnings: Vec<serde_json::Value> = requests
+                .requests
+                .iter()
+                .filter_map(|(id, r)| transit_stops::request_rule::request_rule(&stops, id, r, date))
+                .map(|b| json!({ "request": b.request, "stop": b.stop, "reason": b.reason() }))
+                .collect();
+            (
+                json!({ "op": "request_warnings", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "date": "2027-11-01" }),
+                json!({ "ok": { "op": "request_warnings", "warnings": warnings } }),
             )
         }
         ("stops", "seed") => {

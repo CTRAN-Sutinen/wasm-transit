@@ -117,5 +117,3 @@ working store (`storage-model.md`, step 2).
 - A Go round trip: a write that fails as of its read seq is refused, a
   write that fails only as of now is accepted with its warning, and
   `store verify` reports the broken reference with its entry.
-- A dogfood session on C-TRAN data: a planner retires a stop that an
-  open request names, and the person who wrote the request sees it.

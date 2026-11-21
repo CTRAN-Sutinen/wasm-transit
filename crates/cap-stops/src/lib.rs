@@ -97,6 +97,19 @@ pub enum Request {
     /// oldest first — the card's record and its history — and what it
     /// may become that day: the lifecycle events a write would accept.
     Stop { stops_hash: String, stop_id: String, date: String },
+    /// The rule of each request's reference to its stop on `date`, the
+    /// agency's today (transit-stops `request_rule`, D-238): each request
+    /// that breaks it, with why, in request id order. Only the requests
+    /// of `stop` when given. What a request's page shows before any
+    /// write.
+    RequestWarnings {
+        stops_hash: String,
+        requests_hash: String,
+        date: String,
+        #[serde(default)]
+        #[ts(optional)]
+        stop: Option<String>,
+    },
     /// A stops document from a network's stops: each one `in_service`
     /// event with no date, carrying its point and details — registered,
     /// answered with its hash.
@@ -285,6 +298,17 @@ pub enum Request {
     },
 }
 
+/// A request that breaks the rule of its reference to its stop: the
+/// request, its stop, and why, as the end of the sentence a page shows
+/// ("… names stop B, which was retired on 2026-10-01").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_stops/")]
+pub struct RequestWarning {
+    pub request: String,
+    pub stop: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_stops/")]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -308,6 +332,7 @@ pub enum Response {
         #[ts(type = "Array<\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"retired\">")]
         next: Vec<String>,
     },
+    RequestWarnings { warnings: Vec<RequestWarning> },
     Seed { stops_hash: String, stops: Stops },
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
     Vocabulary { statuses: Vec<String> },
@@ -441,6 +466,19 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             let stops = STOPS.require(&stops_hash)?;
             Ok(Response::StopsNear { stops: stops.near(date, lat, lon, limit.unwrap_or(10) as usize, radius_m, statuses.as_deref()) })
+        }
+        Request::RequestWarnings { stops_hash, requests_hash, date, stop } => {
+            let date = parse_date(&date)?;
+            let stops = STOPS.require(&stops_hash)?;
+            let requests = STOP_REQUESTS.require(&requests_hash)?;
+            let warnings = requests
+                .requests
+                .iter()
+                .filter(|(_, r)| stop.as_ref().is_none_or(|s| *s == r.stop))
+                .filter_map(|(id, r)| transit_stops::request_rule::request_rule(&stops, id, r, date))
+                .map(|b| RequestWarning { reason: b.reason(), request: b.request, stop: b.stop })
+                .collect();
+            Ok(Response::RequestWarnings { warnings })
         }
         Request::Stop { stops_hash, stop_id, date } => {
             let date = parse_date(&date)?;

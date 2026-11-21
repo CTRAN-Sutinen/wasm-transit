@@ -20,6 +20,7 @@
     "stops.stops_on",
     "stops.stops_near",
     "stops.stop",
+    "stops.request_warnings",
     "stops.add_event",
     "stops.correct_event",
     "stops.feed_events",

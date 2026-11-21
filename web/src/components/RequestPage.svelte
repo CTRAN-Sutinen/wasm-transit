@@ -35,6 +35,7 @@
     workOrders,
     refusals,
     error,
+    warning = "",
     onsave,
     onworkorder,
     onhandorder,
@@ -62,6 +63,9 @@
     workOrders: boolean;
     refusals: RequestRefusal[];
     error: string;
+    /// Why the request's stop no longer takes it (cap-stops
+    /// `request_warnings`, D-238), in words; empty when it does.
+    warning?: string;
     onsave: (id: string, request: StopRequest, done: string) => void;
     onworkorder: (id: string, action: "open" | "refresh") => void;
     onhandorder: (id: string, wo: WorkOrder) => void;
@@ -219,6 +223,7 @@
         {/if}
       {/if}
     </div>
+    {#if warning}<p class="warning" role="status" data-testid="request-warning">{warning}</p>{/if}
   </header>
 
   <div class="body">
@@ -419,6 +424,7 @@
   .track li.done { color: var(--text); border-bottom-color: color-mix(in srgb, var(--ok) 60%, var(--line)); }
   .track li.now { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
   .cancelled { color: var(--muted); text-decoration: line-through; font-weight: 600; margin: 0; }
+  .warning { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-left: 3px solid var(--warn); }
   .body { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; min-height: 0; }
   .sheet { overflow: auto; padding: 1.2rem 1.6rem 3rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(26rem, 1fr)); gap: 1.2rem; align-content: start; }
   .card { border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1.1rem; min-width: 0; }

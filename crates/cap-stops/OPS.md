@@ -91,6 +91,10 @@ It also answers `next`: what the stop may become that day. `next` lists the life
 
 A stop that the document does not hold is an error.
 
+## request_warnings
+
+Which open requests name a stop that is retired? `request_warnings` judges each request's reference to its stop by the rule the stops log judges a write by (transit-stops `request_rule`, D-238), on `date`: the agency's today, which the host's clock gives. An open request (drafted, submitted, ordered) needs a stop that is not retired on that date. A completed or cancelled request, and the request that the stop's `retired` event names, are never named. The answer lists each request that breaks the rule, in request id order, as `{request, stop, reason}`. `reason` is the end of the sentence a page shows: "… names stop B, which was retired on 2026-10-01". With `stop`, only that stop's requests are judged. It needs both documents registered (`load_stops`, `load_stop_requests`).
+
 ## seed
 
 What stops document do a registered network's stops make? `seed` answers a stops document with one `in_service` event for each stop, with no date (no feed records when a stop went into service). Each event carries the stop's point and every detail. The document is registered and answered with its `stops_hash`.

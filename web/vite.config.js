@@ -149,9 +149,9 @@ export default defineConfig({
     // requests' writes are `/stop-requests` and the work order system's
     // adapter `/stop-requests/work-order`; photos are `/attachments`;
     // the alerts' writes are `/service-alerts` and `/alert-templates`,
-    // and a note's `/notes`.
+    // a note's `/notes`, and a log's writes and its revert `/logs/<log>`.
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "^/stops$", "^/stop-requests(/|$)", "/attachments", "/service-alerts", "/alert-templates", "^/notes$", "/feed", "/geocode"].map(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/logs", "^/stops$", "^/stop-requests(/|$)", "/attachments", "/service-alerts", "/alert-templates", "^/notes$", "/feed", "/geocode"].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).
         (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
       ),

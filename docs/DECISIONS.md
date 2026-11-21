@@ -5228,9 +5228,15 @@ cap-stops' dispatch tests (`an_open_request_on_a_stop_retired_when_read_is_refus
 `retiring_a_stop_that_an_open_request_names_warns_the_planner`,
 `a_request_already_broken_can_still_be_changed_or_cancelled`);
 `server/references_test.go`
-(`TestRetiringAStopWarnsOfTheOpenRequestThatNamesIt`); e2e `ui-stops`
-("a request on a stop retired after the page read it is saved with the
-retirement as its warning").
+(`TestRetiringAStopWarnsOfTheOpenRequestThatNamesIt`); cap-stops'
+`request_warnings_names_each_open_request_on_a_stop_retired_that_day`;
+e2e `ui-stops` ("a request on a stop retired after the page read it is
+saved with the retirement as its warning", "an open request on a
+retired stop says so when its page opens"); a dogfood session on the
+C-TRAN feed, 2026-11-21: in the stops page under `just qa`, a repair
+request submitted on stop 8126, the stop retired (the save warned of
+the request), the request opened (its page said the stop was retired),
+then cancelled (the warning went).
 Why: `docs/FORMATS.md`, "References"; `docs/architecture/crates.md`,
 transit-stops.
 Blocks: nothing.

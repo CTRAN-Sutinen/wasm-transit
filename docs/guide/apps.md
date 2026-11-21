@@ -94,7 +94,8 @@ everything that has happened to it. From there:
 - **Request work**: the paper installation sheet as a page. A request
   shows where it stands (draft, submitted, work order open, completed)
   and the next step: submit it, open its work order, complete it, then
-  update the stop's record.
+  update the stop's record. If the stop has been retired while the
+  request is still open, the request says so when you open it.
 - **Report issue**: a description and photos, saved as a draft request
   for the planning team to finish.
 

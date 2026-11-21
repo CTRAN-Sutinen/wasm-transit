@@ -59,6 +59,8 @@
 //     sync status until the person dismisses it.
 //   - a request saved on a stop that another planner retired after the
 //     page read it lands, and its warning names the retirement (D-238).
+//   - an open request whose stop was retired says so on its page when it
+//     opens, before any write (D-238).
 
 import { test, expect } from "@playwright/test";
 
@@ -572,4 +574,21 @@ test("a request on a stop retired after the page read it is saved with the retir
   const warned = page.getByTestId("sync-warned");
   await expect(warned).toContainText("Saved with a warning", { timeout: 15_000 });
   await expect(warned).toContainText("names stop RULE, which was retired on 2026-07-01.");
+});
+
+test("an open request on a retired stop says so when its page opens", async ({ page, request }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  const post = async (key, op) => {
+    const resp = await request.post("/logs/stops", { data: { key, ops: [op] } });
+    expect(resp.status(), await resp.text()).toBe(200);
+  };
+  await post("e2e/open-1", { cap: "stops", op: "add_event", args: { stop_id: "RULE2", new: true,
+    event: { on: "2026-01-01", event: "in_service", lat: 45.641, lon: -122.601, name: "Rule test stop 2" } } });
+  await post("e2e/open-2", { cap: "requests", op: "put", args: { id: "R-RULE2", new: true,
+    request: { stop: "RULE2", job: "repair_improve", status: "submitted", requested_on: "2026-06-01" } } });
+  // The stop is retired later (the server's date is 2026-08-01): the
+  // planner's write is warned of R-RULE2, and the requester sees it here.
+  await post("e2e/open-3", { cap: "stops", op: "add_event", args: { stop_id: "RULE2", event: { on: "2026-07-01", event: "retired" } } });
+  await page.goto("/stops.html#on=2026-11-02&open=RULE2&request=R-RULE2");
+  await expect(page.getByTestId("request-warning")).toHaveText("This request names stop RULE2, which was retired on 2026-07-01.", { timeout: 15_000 });
 });

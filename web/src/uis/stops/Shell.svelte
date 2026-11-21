@@ -216,7 +216,7 @@
           <RequestPage id={held?.id ?? ""} request={screen === "request" ? (held?.request ?? null) : null} stopId={st.open} {stopName}
             taken={st.requests.map((r) => r.id)} job={task === "request:new" ? "new" : task === "report" ? "repair_improve" : ""}
             vocab={st.requestVocab} date={readDate()} busy={st.busy} workOrders={!!st.workOrders}
-            refusals={st.requestRefusals} error={st.taskError}
+            refusals={st.requestRefusals} error={st.taskError} warning={screen === "request" && held ? (st.requestWarnings[held.id] ?? "") : ""}
             onsave={(id, r, done) => putRequest(id, r, done, screen === "new-request")}
             onworkorder={workOrder} onhandorder={(id, wo) => recordWorkOrder(id, st.open, wo)}
             onrecord={() => startTask("change")} onstop={() => openStop(st.open)}

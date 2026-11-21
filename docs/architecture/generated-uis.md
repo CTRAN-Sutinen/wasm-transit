@@ -806,7 +806,9 @@ as the screen holds:
   along the route to each ("~" where the import estimated it). The
   source is directory `stop_detail` over `servedNetwork` on the date. It
   is read only, which is why the page links the network capability too.
-- Work: its requests (requests `requests_for`).
+- Work: its requests (requests `requests_for`). An open request whose
+  stop is retired today says so on its page (stops `request_warnings`,
+  on the agency's today, not the date read; D-238).
 - Last survey: when, by whom, the answers grouped as the Service Stop
   Worksheet groups them, and its ids in other systems.
 - History: every event, newest first, each correctable.

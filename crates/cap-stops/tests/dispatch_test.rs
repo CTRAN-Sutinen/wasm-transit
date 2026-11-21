@@ -701,3 +701,21 @@ fn a_request_already_broken_can_still_be_changed_or_cancelled() {
     let got = rule_write(&retired, &retired, &held, json!([put("R-OLD", "B", "cancelled")]));
     assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "cancelled: {got}");
 }
+
+/// What a request's page shows before any write (D-238): each open
+/// request whose stop is retired on the date, with why; a completed one
+/// and a stop's own retiring request are not named; `stop` narrows.
+#[test]
+fn request_warnings_names_each_open_request_on_a_stop_retired_that_day() {
+    let stops = ok(json!({"op": "load_stops", "stops": stops_with_b(Some("2026-10-01"))}))["stops_hash"].clone();
+    let mut requests = requests_sample();
+    requests["requests"]["R-B"] = json!({"stop": "B", "job": "repair_improve", "status": "ordered", "work_order": {"id": "WO-1"}});
+    requests["requests"]["R-DONE"] = json!({"stop": "B", "job": "repair_improve", "status": "cancelled"});
+    let requests = ok(json!({"op": "load_stop_requests", "requests": requests}))["requests_hash"].clone();
+    let got = ok(json!({"op": "request_warnings", "stops_hash": stops, "requests_hash": requests, "date": "2026-11-21"}));
+    assert_eq!(got["warnings"], json!([{"request": "R-B", "stop": "B", "reason": "was retired on 2026-10-01"}]));
+    let before = ok(json!({"op": "request_warnings", "stops_hash": stops, "requests_hash": requests, "date": "2026-09-30"}));
+    assert_eq!(before["warnings"], json!([]), "B is in service before its retirement");
+    let other = ok(json!({"op": "request_warnings", "stops_hash": stops, "requests_hash": requests, "date": "2026-11-21", "stop": "6124"}));
+    assert_eq!(other["warnings"], json!([]), "only the requests of 6124");
+}
