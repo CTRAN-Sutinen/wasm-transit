@@ -305,6 +305,32 @@ pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, befo
     out
 }
 
+/// The ids of the `target` records that a held record of the folds names
+/// through a declared reference, in any state of the referrer: what
+/// compaction keeps (D-231). The existence check judges every held
+/// referrer, so a record that one names must stay in its fold. A
+/// referrer whose log is not given names nothing.
+pub fn named(kinds: &[KindReferences], folds: &BTreeMap<String, Records>, target: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for k in kinds {
+        let Some(fold) = k.log.as_ref().and_then(|l| folds.get(l)) else { continue };
+        for r in &k.records {
+            let Some(records) = fold.get(&r.kind) else { continue };
+            for d in k.references.iter().filter(|d| d.target == target) {
+                let Some(rest) = record_path(&d.path, &r.collection) else { continue };
+                for record in records.values() {
+                    for (_, value) in values_at(&record.value, &rest) {
+                        if let Value::String(names) = value {
+                            out.insert(names.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Each record of the folds in a version newer than its kind's table
 /// reads: the existence check does not judge its references.
 pub fn unjudged(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> Vec<Unjudged> {

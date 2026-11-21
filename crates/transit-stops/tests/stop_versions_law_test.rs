@@ -156,7 +156,10 @@ proptest! {
     }
 
     /// A re-import of this repo's own export adds no event, and names as
-    /// unlisted only the stops the export does not carry.
+    /// unlisted only the stops the export does not carry. It names as
+    /// unapplied exactly the stops the export lists that are retired on its
+    /// first date: a pick that still visits one is the planner's warning,
+    /// and the feed lists the retired id.
     #[test]
     fn a_reimport_of_the_export_adds_no_event(stops in arb_stops(&fixture()), from in 0u32..40, len in proptest::option::of(5u32..60)) {
         let net = fixture();
@@ -164,7 +167,14 @@ proptest! {
         let exported = export_versions(&net, &stops, day(from), until);
         let imported = import_events(&stops, &exported, day(from));
         prop_assert!(imported.added.is_empty(), "{:?}", imported.added);
-        prop_assert!(imported.unapplied.is_empty(), "{:?}", imported.unapplied);
+        let retired: Vec<String> = exported
+            .stops
+            .keys()
+            .filter(|id| !id.contains('@'))
+            .filter(|id| stops.stop_on(id, day(from)).is_some_and(|s| s.status == transit_stops::Status::Retired))
+            .cloned()
+            .collect();
+        prop_assert_eq!(&imported.unapplied, &retired);
         prop_assert_eq!(&imported.stops, &stops);
     }
 
@@ -282,4 +292,22 @@ fn an_import_names_its_feed_on_every_event_it_records() {
     assert_eq!(feed_events(&named.stops, "sha256:feed"), named.added);
     assert!(feed_events(&named.stops, "sha256:other").is_empty());
     assert!(feed_events(&stops, "sha256:feed").is_empty());
+}
+
+/// Ids across networks: a stop's life ends at `retired`, and the document
+/// refuses any event after it. A feed that lists a retired stop's id
+/// reuses the id, whether or not its point and details match: the stop
+/// is named in `unapplied` for a person, and nothing is added for it.
+#[test]
+fn a_feed_that_lists_a_retired_stop_names_it_unapplied() {
+    let net = fixture();
+    let stops = seed(&net).add_event("B", ev(EventKind::Retired, 10)).checked().unwrap();
+    let mut feed = read_records(&net, &stops, day(0));
+    let same = import_events(&stops, &feed, day(20));
+    assert_eq!((same.added.clone(), same.unapplied.clone()), (vec![], vec!["B".to_string()]), "the same point and details");
+    feed.stops.get_mut("B").unwrap().lat += 0.001;
+    let moved = import_events(&stops, &feed, day(20));
+    assert_eq!((moved.added.iter().filter(|a| a.stop == "B").count(), moved.unapplied.clone()), (0, vec!["B".to_string()]), "another point");
+    let before = import_events(&stops, &read_records(&net, &stops, day(0)), day(5));
+    assert!(before.unapplied.is_empty(), "before its retirement the stop is in service: {:?}", before.unapplied);
 }

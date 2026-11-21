@@ -706,6 +706,12 @@ whose target it changed. `store revert` lists the records that
 name a document it drops by hash (cap-log `naming`), so an operator
 sees which records still name a document that is no longer the head.
 
+Compaction never breaks a reference (D-231). The tombstone compaction
+(D-57) skips a retired record that a held record of any log names
+(transit-log `named`), in any state of the referrer, since the
+existence check judges every held referrer. The record leaves in a
+later compaction, when nothing names it.
+
 ## The store describes itself
 
 A reader with only the bucket finds how to read it (D-203). Each serving

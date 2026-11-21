@@ -295,3 +295,20 @@ fn the_receive_op_refuses_as_of_the_read_and_warns_as_of_now() {
     let landed = transit_log::receive(&unjudged, &[request("R-3", "Z")], &hash, &canonical).unwrap();
     assert!(landed.entry.is_some() && landed.broken.is_empty() && landed.references.is_empty(), "the stops log is not judged: {landed:?}");
 }
+
+/// What compaction keeps (D-231): `named` is each record of a target kind
+/// that a held record of the given folds names, through a declared
+/// reference, in any state. A filtered path names only its own kind, and a
+/// fold not given names nothing.
+#[test]
+fn named_is_every_target_a_held_record_names_in_any_state() {
+    let notes = records(&[("note", json!({
+        "n1": {"target": {"kind": "alert", "id": "a1"}, "status": "retired"},
+        "n2": {"target": {"kind": "alert", "id": "a9"}},
+        "n3": {"target": {"kind": "stop", "stop": "a2"}}
+    }))]);
+    let folds: BTreeMap<String, Records> = [("notes".to_string(), notes)].into_iter().collect();
+    let named = transit_log::named(&kinds(), &folds, "service_alert");
+    assert_eq!(named.into_iter().collect::<Vec<_>>(), vec!["a1".to_string(), "a9".to_string()], "n3 names a stop, not an alert");
+    assert!(transit_log::named(&kinds(), &BTreeMap::new(), "service_alert").is_empty(), "no fold given names nothing");
+}

@@ -230,7 +230,7 @@ The answer has these parts:
 - the next document, registered, with its `stops_hash`;
 - `added`: each event added, as a stop and an event;
 - `unlisted`: the stops that the document has in service or suspended on `on` and that the feed does not list. They keep their events. A stop that is planned, permitted, built, retired, or not there yet is expected to be missing from a feed, and `unlisted` does not name it;
-- `unapplied`: the stops whose difference would break their history. Nothing is added for them.
+- `unapplied`: the stops whose difference would break their history. Nothing is added for them. A stop retired on the feed's date that the feed still lists is always here, since the feed reuses a retired id.
 
 The caller writes the document through the receive path.
 

@@ -86,8 +86,10 @@ never a hook.
    every state of a target kind is covered by each rule that names the
    kind. A rule over a lifecycle that is a Rust enum is a `match` with
    no wildcard arm, so the compiler holds that law. The stop request's
-   `status` is a string: find out why before the first rule, then make
-   it an enum or give it a coverage test. The rules for notes and
+   `status` is a string so that a newer build's status still reads (a
+   write refuses one it does not know), so the rule gets a coverage
+   test over `STATUSES`. The rule's date is Blocked: D-238. The rules
+   for notes and
    alerts land with `ui-disruptions.md`. The network references of
    undated records are Blocked: D-234.
 
@@ -99,15 +101,11 @@ never a hook.
    module the server never served is refused. The existence check needs
    none of this, because it runs in cap-log, which no page links.
 7. **The transitions.** An adoption warns about the live references
-   it breaks (D-230). Compaction skips a retired record that a live
-   reference names (D-231). A promotion pins each loose reference, or
+   it breaks (D-230). A promotion pins each loose reference, or
    is refused (rule C). A note's target pins to `(log, seq, entry hash)`.
    The frozen version that the startup migration writes pins its
    source by hash. Check first whether a `derivation` record already
    names it.
-8. **Ids across networks.** The stops document refuses an event after
-    `retired`. Check whether an imported network can reuse a retired
-    stop id, and refuse or flag it if it can.
 
 An attachment that a record names is a gc root. It lands with the
 working store (`storage-model.md`, step 2).

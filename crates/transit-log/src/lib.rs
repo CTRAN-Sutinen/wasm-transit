@@ -34,7 +34,7 @@
 
 pub mod receive;
 pub mod references;
-pub use references::{added, added_in, blame, broken, naming, touched, touched_in, unjudged, values_at, Broken, Declared, EntryRef, KindReferences, KindVersion, Naming, RecordKind, Unjudged};
+pub use references::{added, added_in, blame, broken, named, naming, touched, touched_in, unjudged, values_at, Broken, Declared, EntryRef, KindReferences, KindVersion, Naming, RecordKind, Unjudged};
 pub use receive::{receive, Conflict, Failed, Moved, OpCall, Received, Refused, MadeDocument, Write};
 use std::collections::BTreeMap;
 

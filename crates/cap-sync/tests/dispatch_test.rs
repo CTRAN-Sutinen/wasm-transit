@@ -431,6 +431,29 @@ fn receive_answers_a_moved_head_and_compacts_over_the_head() {
     assert!(entry["changes"].as_array().unwrap().iter().any(|c| c["kind"] == "edit_record" && c["after"].is_null()), "the old tombstone leaves the document: {entry}");
 }
 
+/// D-231: compaction skips an old tombstone that a held alert names, and
+/// still drops one that nothing names.
+#[test]
+fn receive_compact_keeps_a_tombstone_that_a_held_record_names() {
+    let doc = transit_sync::EditDocument::new(vec![record("e1", EditStatus::Retired, 2, 1_000), record("e2", EditStatus::Retired, 2, 1_000)]);
+    let docv = serde_json::to_value(&doc).unwrap();
+    let first = ok(serde_json::json!({ "op": "receive", "documents": { "edit_records": docv }, "write": { "header": receive_header(1) },
+        "ops": [{ "cap": "sync", "op": "migrate" }] }));
+    let stored = [transit_log::Stored { seq: 1, text: first["entry"].as_str().unwrap().into() }];
+    let fold = transit_log::fold(Checkpoint::empty("disruptions"), &stored, &cap_abi::record_hash).unwrap();
+    let kinds = serde_json::json!([{ "store_kind": "service_alerts", "log": "alerts",
+        "records": [{ "kind": "service_alert", "collection": "alerts" }],
+        "references": [{ "path": "/alerts/*/explains/*[kind=edit]/id", "target": "edit_record" }] }]);
+    let alerts = serde_json::json!({ "service_alert": { "a1": { "version": 1, "value": { "status": "retired", "explains": [{ "kind": "edit", "id": "e1" }] } } } });
+    let compacted = ok(serde_json::json!({ "op": "receive", "documents": { "edit_records": docv },
+        "write": { "checkpoint": serde_json::to_value(fold.fold).unwrap(), "header": receive_header(2),
+                   "references": kinds, "now": { "alerts": alerts } },
+        "ops": [{ "cap": "sync", "op": "compact", "args": { "horizon_ms": 1_000 } }] }));
+    let entry: serde_json::Value = serde_json::from_str(compacted["entry"].as_str().unwrap_or_else(|| panic!("{compacted}"))).unwrap();
+    let dropped: Vec<&str> = entry["changes"].as_array().unwrap().iter().filter(|c| c["kind"] == "edit_record" && c["after"].is_null()).map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(dropped, vec!["e2"], "a1 names e1, so e1 stays: {entry}");
+}
+
 #[test]
 fn receive_migrate_records_the_head_and_another_log_s_op_fails() {
     let doc = serde_json::to_value(vec![record("e1", EditStatus::Submitted, 1, 1_000)]).unwrap();

@@ -480,12 +480,20 @@ pub fn clamp_timestamps(records: &[EditRecord], now_ms: u64) -> Vec<EditRecord> 
 /// in-force records are never dropped, and the input is never mutated.
 /// Returns the compacted document and how many records were dropped.
 pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<EditRecord>, usize) {
+    compact_keeping(records, now_ms, horizon_ms, &std::collections::BTreeSet::new())
+}
+
+/// [`compact`], except that a record whose id is in `keep` is never
+/// dropped (D-231): a live reference names it, and dropping it would
+/// break the reference. It leaves in a later compaction, when nothing
+/// names it.
+pub fn compact_keeping(records: &[EditRecord], now_ms: u64, horizon_ms: u64, keep: &std::collections::BTreeSet<String>) -> (Vec<EditRecord>, usize) {
     let horizon = now_ms.saturating_sub(horizon_ms);
     let mut dropped = 0;
     let kept = records
         .iter()
         .filter(|r| {
-            let old_tombstone = r.status == EditStatus::Retired && r.updated_at < horizon;
+            let old_tombstone = r.status == EditStatus::Retired && r.updated_at < horizon && !keep.contains(&r.id);
             if old_tombstone {
                 dropped += 1;
             }
@@ -819,6 +827,21 @@ mod receive_tests {
         let (again, dropped_again) = compact(&kept, now, horizon);
         assert_eq!(dropped_again, 0);
         assert_eq!(again, kept);
+    }
+
+    #[test]
+    fn compact_keeping_never_drops_a_named_record() {
+        // D-231: a retired record that a live reference names stays until
+        // nothing names it; every other old tombstone still goes.
+        let now = 1_000_000u64;
+        let docs = vec![
+            rec("named", EditStatus::Retired, 2, now - 200_000),
+            rec("free", EditStatus::Retired, 2, now - 200_000),
+        ];
+        let keep: std::collections::BTreeSet<String> = ["named".to_string()].into_iter().collect();
+        let (kept, dropped) = compact_keeping(&docs, now, 100_000, &keep);
+        assert_eq!((dropped, kept.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()), (1, vec!["named"]));
+        assert_eq!(compact(&docs, now, 100_000), compact_keeping(&docs, now, 100_000, &Default::default()), "compact keeps nothing named");
     }
 
     #[test]

@@ -436,6 +436,9 @@ Its HTTP surface:
     `migrate:edits`), else from the `-edits` file (writer
     `migrate:-edits`): the receive op's `migrate`. Then the tombstone
     compaction (D-57) runs as one entry (`sync compact`, writer `gc`).
+    It skips a tombstone that a held record of another log names
+    (D-231), so the server gives it the logs as the reference checks
+    read them.
   - A page never writes the log by intent (`POST /logs/disruptions` is
     405): `POST /edits` is the client protocol.
   - An entry the fold cannot apply is quarantined, and a gap stops

@@ -103,7 +103,8 @@ pub enum Request {
     /// (D-56), merged with the head, and its drafts submitted; with
     /// `from`, a head the writer did not read answers `moved`.
     /// `compact` (`{horizon_ms}`): the tombstones older than the
-    /// horizon dropped (D-57). `migrate`: the head read as `read_edits`
+    /// horizon dropped (D-57), except one that a held record of
+    /// `write.now` names (D-231). `migrate`: the head read as `read_edits`
     /// reads it and recorded (an empty log's first entry, from the old
     /// pointer or the dev store's file); a head with no records writes
     /// nothing.
@@ -311,7 +312,15 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
                 let client = transit_sync::clamp_timestamps(&client, now_ms);
                 records = transit_sync::submit(transit_sync::merge(&client, &records), now_ms);
             }
-            Intent::Compact { horizon_ms } => records = transit_sync::compact(&records, now_ms, horizon_ms).0,
+            // A record that a held record names stays (D-231): the logs
+            // now, as the host gives them for the reference checks.
+            Intent::Compact { horizon_ms } => {
+                let keep = match (&write.references, write.now.as_ref().or(write.read.as_ref())) {
+                    (Some(kinds), Some(now)) => transit_log::named(kinds, now, RECORD_KIND),
+                    _ => Default::default(),
+                };
+                records = transit_sync::compact_keeping(&records, now_ms, horizon_ms, &keep).0
+            }
             // A document with no records writes nothing.
             Intent::Migrate {} if records.is_empty() => continue,
             Intent::Migrate {} => {}

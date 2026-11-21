@@ -386,8 +386,9 @@ pub struct ImportedStops {
     /// not there yet is expected missing from a feed, and is not named.
     pub unlisted: Vec<String>,
     /// The stops whose difference could not be recorded without breaking
-    /// their history (a retired stop the feed still lists with another
-    /// record): nothing is added for them, for a person to look at.
+    /// their history: a stop retired on the feed's date that the feed
+    /// still lists (its id reused), or a later event the feed's would
+    /// contradict. Nothing is added for them, for a person to look at.
     pub unapplied: Vec<String>,
 }
 
@@ -449,6 +450,13 @@ fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -
         let mut events: Vec<Event> = Vec::new();
         let now = stops.stop_on(id, on);
         let feed_open = opening(stop);
+        // A retired stop's life has ended, and the document refuses any
+        // event after `retired`: a feed that lists its id reuses the id,
+        // even with the same point and details. A person looks at it.
+        if now.as_ref().is_some_and(|s| s.status == Status::Retired) {
+            unapplied.push(id.to_string());
+            continue;
+        }
         match now.as_ref().map(|s| s.status) {
             None => events.push(Event { on: Some(fmt_date(on)), ..feed_open.clone() }),
             Some(Status::Planned | Status::Permitted | Status::Built) => {

@@ -283,6 +283,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-235 | Where do the worked examples' fixtures live, and what may depend on them? | decided | nothing |
 | D-236 | Which modules do the test runners build? | decided; built | nothing |
 | D-237 | Where do a pick's checks run? | decided; built | nothing |
+| D-238 | On which date must an open stop request's stop not be retired? | unanswered | kind-registration item 6 |
 
 ## The trip model
 
@@ -4941,7 +4942,16 @@ it.
 Context: compaction (D-57) is the one removal from a fold that no
 person asks for. If it dropped a record that a live reference names,
 compaction alone would break the reference.
-Pinned by: none yet (`docs/units/kind-registration.md`).
+Encoded as: a reference is live while its referring record is held in
+its log's fold, in any state, since the existence check judges every
+held referrer. cap-sync's `compact` keeps each edit record that
+transit-log `named` finds in the logs the host gives with the write.
+Pinned by: `named_is_every_target_a_held_record_names_in_any_state`
+(transit-log), `compact_keeping_never_drops_a_named_record`
+(transit-sync), cap-sync's
+`receive_compact_keeps_a_tombstone_that_a_held_record_names`, and
+`server/compact_references_test.go`.
+Why: `docs/FORMATS.md`, "References".
 Blocks: nothing.
 
 ### D-232 — How are references declared, and which stage may name which?
@@ -5167,3 +5177,26 @@ Go. The unit's rule is one op for each write, and the read-seq check
 Pinned by: `crates/cap-plans/tests/dispatch_test.rs` (the `pick`
 laws); the server's plans tests (`just test`).
 Blocks: nothing.
+
+### D-238 — On which date must an open stop request's stop not be retired?
+State: Unanswered.
+Context: the first reference rule (kind-registration item 6) is stop
+request to stop. A retired stop's life has ended: the stops document
+refuses every event after `retired`, so no work can be done at it. The
+proposed rule: a request that is open (`drafted`, `submitted`,
+`ordered`) needs a stop that is not retired. A `completed` or
+`cancelled` request accepts a stop in any state: it is history. The
+request that a stop's `retired` event names is exempt, because the
+retirement is that request's outcome. A stop's status is dated (its
+events applied up to a date), and a request has no service dates. So
+the rule needs a date. The status is a string so that a newer build's
+status still reads, so a coverage test over `STATUSES` holds the rule.
+Options:
+- The stop's status on the write's date, from the entry's clock in
+  the agency's time zone (recommended). A retirement dated later does
+  not refuse: a repair before a planned removal is real work. The
+  warning as of now appears when the retirement date arrives and the
+  next write touches the request.
+- Any `retired` event, whatever its date. A request on a stop with a
+  retirement planned for next year is refused today.
+Blocks: kind-registration item 6 (`docs/units/kind-registration.md`).
