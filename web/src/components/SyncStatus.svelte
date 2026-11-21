@@ -1,12 +1,14 @@
 <script lang="ts">
   /// What a staff page holds that the server has not confirmed (D-189):
   /// the writes that wait to be sent, the writes the server refused
-  /// with its reasons, whether the server answers and the time of the
+  /// with its reasons, the writes it kept with a warning (a broken
+  /// reference, D-233), whether the server answers and the time of the
   /// data the page works from, and a new version that waits. A RENDER
   /// component: the state and the actions are the page's (its host,
   /// over src/outbox.svelte.ts and kit's build lifecycle). It shows
   /// nothing while all is sent and the server answers.
   type Held = { key: string; label: string; reason: string };
+  type Warned = { key: string; label: string; warning: string };
   let {
     waiting,
     held,
@@ -15,9 +17,11 @@
     needsSignIn = false,
     updateReady = false,
     canUpdate = true,
+    warned = [],
     onsend,
     onretry,
     ondiscard,
+    ondismiss = () => {},
     onupdate,
   }: {
     waiting: number;
@@ -29,15 +33,18 @@
     updateReady?: boolean;
     /// False while the page holds unsaved work: the update waits.
     canUpdate?: boolean;
+    /// The writes the server kept with a warning (a broken reference).
+    warned?: Warned[];
     onsend: () => void;
     onretry: (key: string) => void;
     ondiscard: (key: string) => void;
+    ondismiss?: (key: string) => void;
     onupdate: () => void;
   } = $props();
   const changes = (n: number) => `${n} change${n === 1 ? "" : "s"}`;
 </script>
 
-{#if offline || waiting || held.length || updateReady}
+{#if offline || waiting || held.length || warned.length || updateReady}
   <div class="sync" data-testid="sync-status" role="status">
     {#if offline}
       <p class="line" data-testid="sync-offline">
@@ -57,6 +64,15 @@
         <p class="actions">
           <button type="button" onclick={() => onretry(h.key)} data-testid="sync-retry">Send again</button>
           <button type="button" class="quiet" onclick={() => ondiscard(h.key)} data-testid="sync-discard">Discard</button>
+        </p>
+      </div>
+    {/each}
+    {#each warned as w (w.key)}
+      <div class="held" data-testid="sync-warned">
+        <p><strong>Saved with a warning:</strong> {w.label}</p>
+        <p class="reason">{w.warning}</p>
+        <p class="actions">
+          <button type="button" class="quiet" onclick={() => ondismiss(w.key)} data-testid="sync-dismiss">Dismiss</button>
         </p>
       </div>
     {/each}

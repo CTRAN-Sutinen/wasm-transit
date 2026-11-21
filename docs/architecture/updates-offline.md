@@ -105,6 +105,12 @@ They share one lifecycle (D-63, D-65):
     reasons, and whether the server answers (the `SyncStatus`
     component). A write the server refuses at once stays in its form
     with the reasons, and does not stay in the outbox.
+  - A write the server kept whose answer names `references` (the
+    references it left broken, D-233) shows "Saved with a warning", each
+    reference in words ("Stop request R-1 names stop 6124, which isn't
+    on record."), until the person dismisses it. The warning lives in
+    the page only: a reload drops it, and `store verify` still lists
+    the reference.
 
   The worker reads every path relative to its scope. So a bundle served
   under a prefix caches as one at the root. The map's tiles

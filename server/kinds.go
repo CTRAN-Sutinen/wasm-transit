@@ -26,6 +26,9 @@ import (
 // kindTable is web/pkg/kinds.json, as the host reads it.
 type kindTable struct {
 	Kinds []kindEntry `json:"kinds"`
+	// raw are the kinds as the table states them, for the modules that
+	// read the table's other fields (cap-log's existence check).
+	raw json.RawMessage
 }
 
 type kindEntry struct {
@@ -85,6 +88,11 @@ func loadKindTable(path string) (*kindTable, error) {
 	if err := json.Unmarshal(raw, &t); err != nil {
 		return nil, fmt.Errorf("the kind table %s: %w", path, err)
 	}
+	var kinds struct {
+		Kinds json.RawMessage `json:"kinds"`
+	}
+	json.Unmarshal(raw, &kinds)
+	t.raw = kinds.Kinds
 	return &t, nil
 }
 

@@ -215,3 +215,20 @@ fn the_devices_time_is_a_claim_beside_the_hosts() {
     assert_eq!(entry["at_ms"], json!(1000), "the host's stamp is the entry's time");
     assert_eq!(entry["intent"]["claimed_at_ms"], json!(999));
 }
+
+/// The existence check over the kind table as `just caps` writes it and
+/// a fold the log answered: a stop request naming a stop the fold does
+/// not hold is broken (D-233).
+#[test]
+fn references_answers_each_broken_reference_from_the_kind_table_and_the_folds() {
+    let table: Value = serde_json::from_str(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../cap-abi/kinds.json")).unwrap()).unwrap();
+    let folds = json!({"stops": {
+        "stop": {"A": {"version": 1, "value": [{"on": "2020-01-01", "event": "in_service", "lat": 45.5, "lon": -122.6}]}},
+        "stop_request": {"R-1": {"version": 1, "value": {"stop": "A", "job": "repair_improve", "status": "submitted"}},
+                         "R-2": {"version": 1, "value": {"stop": "Z", "job": "repair_improve", "status": "submitted"}}}
+    }});
+    let got = ok(json!({"op": "references", "kinds": table["kinds"], "folds": folds}));
+    assert_eq!(got["broken"], json!([{"log": "stops", "kind": "stop_request", "id": "R-2", "field": "/stop", "target": "stop", "names": "Z"}]));
+    let bad = err(json!({"op": "references", "kinds": "nope", "folds": {}}));
+    assert!(bad.contains("kinds"), "{bad}");
+}

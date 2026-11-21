@@ -6,8 +6,8 @@
 ///
 /// A host opens it at boot (`openOutbox`), queues each write the person
 /// saves (`queueWrite`), and shows `outbox`: how many writes wait, the
-/// ones the server refused with its reasons, and whether the server
-/// answers. It sends what waits again on its own: when the device comes
+/// ones the server refused with its reasons, the ones it kept with a
+/// warning (a broken reference, D-233), and whether the server answers. It sends what waits again on its own: when the device comes
 /// back online, on a timer while anything waits, and when the host asks
 /// (`sendWaiting`, at each poll).
 
@@ -26,7 +26,16 @@ export const outbox = $state({
   offline: false,
   /// The server asks for sign-in before it takes what waits.
   needsSignIn: false,
+  /// The writes the server kept that leave a broken reference (its
+  /// answer's `references`, D-233), until the person dismisses them.
+  warned: [] as Warned[],
 });
+
+/// A reference a write left broken, as the server answers it.
+export type BrokenReference = { log: string; kind: string; id: string; field: string; target: string; names: string };
+
+/// A write the server kept, with the references it left broken.
+export type Warned = { key: string; label: string; references: BrokenReference[] };
 
 let box: Outbox | null = null;
 
@@ -74,7 +83,11 @@ export async function openOutbox(ui: string, onsent: (w: Waiting, body: unknown)
     newKey: () => `${ui}/${crypto.randomUUID()}`,
   });
   box.onchange = show;
-  box.onsent = onsent;
+  box.onsent = (w, body) => {
+    const references = (body as { references?: BrokenReference[] } | null)?.references;
+    if (Array.isArray(references) && references.length) outbox.warned = [...outbox.warned, { key: w.key, label: w.label, references }];
+    onsent(w, body);
+  };
   await box.restore();
   addEventListener("online", () => void sendWaiting());
   timer ??= setInterval(() => {
@@ -128,4 +141,22 @@ export function heldReason(w: Waiting): string {
   if (typeof body.error === "string") return body.error;
   if (typeof w.reasons === "string" && w.reasons.trim()) return w.reasons.trim();
   return `The server refused it (${w.status}).`;
+}
+
+/// The writes kept with a warning, each in words.
+export function warnedWrites(): { key: string; label: string; warning: string }[] {
+  return outbox.warned.map((w) => ({ key: w.key, label: w.label, warning: w.references.map(referenceWarning).join(" ") }));
+}
+
+/// The person dismisses a write's warning.
+export function dismissWarning(key: string): void {
+  outbox.warned = outbox.warned.filter((w) => w.key !== key);
+}
+
+/// A broken reference in words: "Stop request R-1 names stop 6124, which
+/// isn't on record."
+export function referenceWarning(r: BrokenReference): string {
+  const words = (kind: string) => kind.replaceAll("_", " ");
+  const what = words(r.kind);
+  return `${what.charAt(0).toUpperCase()}${what.slice(1)} ${r.id} names ${words(r.target)} ${r.names}, which isn't on record.`;
 }

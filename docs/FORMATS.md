@@ -678,6 +678,27 @@ branch: `/notes/*/target[kind=edit]/id`. A target is one of these:
 A law in each owning crate (`tests/references_law_test.rs`) lists the
 kind's reference fields, so a new one fails until it is declared.
 
+The existence check reads the same map (transit-log `broken`, cap-log
+`references`; D-233). A reference whose target is a log record kind
+must name a record that the target's log holds in its fold. The record
+may be in any state: a retired record still exists. The path's first
+segment is the collection and its second the record's id, so the rest
+is read in each record. The check does not judge the other targets.
+`store verify` reports each broken reference of each log's head, with
+the entry that broke it: the later of the entry that last wrote the
+referring record and the entry that last changed the target. A finding
+names the kind table's hash, the module's hash, and each log's seq, so
+it can be judged again after a release or a rollback.
+
+A referring record in a version newer than the kind table reads (after
+a rollback, D-186) is not judged, since the table's declarations may
+not be its fields. The check lists it as `unjudged`, a warning, and
+never as broken. A write answers the broken references its entry
+touches as `references`, beside its answer: those it wrote broken, and
+those whose target it changed. `store revert` lists the records that
+name a document it drops by hash (cap-log `naming`), so an operator
+sees which records still name a document that is no longer the head.
+
 ## The store describes itself
 
 A reader with only the bucket finds how to read it (D-203). Each serving
@@ -970,6 +991,9 @@ as well as the code, and an operator runs it by hand:
    entry after that head. Each one names its writer and its document
    by hash, and the documents stay in the store as plain JSON (D-115).
    A person enters their content again by hand, in the older build.
+   The tool also lists `references`: the records of every log that
+   still name a dropped document by its hash (D-233; `-kinds` and
+   `-log` choose the kind table and the log module).
 
 The logs are not moved back this way. An entry of the disruptions log
 or the stops log is undone by its revert, and a pick in the plans log

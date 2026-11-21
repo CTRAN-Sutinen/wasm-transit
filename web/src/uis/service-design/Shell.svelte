@@ -20,7 +20,7 @@
     redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, why, setEditType, type View,
     heldWrites, sendNow, retryHeld, discardHeld, applyUpdate,
   } from "./host.svelte";
-  import { outbox } from "../../outbox.svelte";
+  import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
   import { today } from "../kit";
   import { spansText } from "../../components/designFormat";
@@ -112,6 +112,8 @@
     <SyncStatus
       waiting={outbox.waiting}
       held={heldWrites()}
+      warned={warnedWrites()}
+      ondismiss={dismissWarning}
       offline={sd.offline || outbox.offline}
       asOf={sd.asOf}
       needsSignIn={outbox.needsSignIn}

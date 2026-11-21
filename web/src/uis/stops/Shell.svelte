@@ -46,7 +46,7 @@
     discardHeld,
     applyUpdate,
   } from "./host.svelte";
-  import { outbox } from "../../outbox.svelte";
+  import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
   import StopLifeMap from "../../components/StopLifeMap.svelte";
   import StopLifeList from "../../components/StopLifeList.svelte";
@@ -141,6 +141,8 @@
       <SyncStatus
         waiting={outbox.waiting}
         held={heldWrites()}
+        warned={warnedWrites()}
+        ondismiss={dismissWarning}
         offline={st.offline || outbox.offline}
         asOf={st.asOf}
         needsSignIn={outbox.needsSignIn}

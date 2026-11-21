@@ -37,3 +37,21 @@ The answer's `states` gives each record the revert writes back, with its state n
 ## close_gap
 
 Answer the entry that closes a gap in a log: no changes, and the cause in `header.intent.note`, which is required. The host creates it at the missing `seq`, and writes to the log go on.
+
+## references
+
+Answer each broken reference of the folds (D-232, D-233): a reference a kind declares whose target record its log's fold does not hold. `kinds` are the kind table's kinds as `just caps` writes them; the op reads each one's `log`, `records`, and `references`. `folds` are the logs' records by log name, as `fold` answers them.
+
+A reference path names a field of the kind's document (`/requests/*/stop`). Its first segment is the collection and its second the record's id, so the rest of the path is read in each record of that collection. A segment is a field, `*` (each element or value), or either with a filter (`target[kind=alert]`).
+
+A target is judged when it is a record kind that a log keeps and that log's fold is given. A record the fold holds exists in any state: retired is a state, and the rules of each reference judge states. The network's things, a trip instance, a document or an attachment by hash, an entry by seq, and an external thing are not judged here. Each broken reference names the referring record (`log`, `kind`, `id`), the `field` in it (a JSON pointer inside the record), the `target`, and the id it `names`, in (log, kind, id, field) order.
+
+A referring record in a version newer than the kind table reads (after a rollback, D-186) is not judged: the table's declarations may not be its fields. The answer lists it in `unjudged` (its log, kind, id, `version`, and the version the table `reads`), a warning, never a broken reference.
+
+With `entries` (each log's stored entries, `{seq, text}`), each broken reference also names the `entry` that broke it: the later of the entry that last wrote the referring record and the entry that last changed the target. In one log the later is the higher seq; across two logs it is the later clock. A target never written names the referrer's entry. `store verify` asks it this way.
+
+With `log` and `entry` (one entry of that log, `{seq, text}`), the answer is only the broken references that entry touches: those whose referring record it wrote, and those whose target it changed, each naming that entry. The server asks it this way after each write, and answers them as the write's warnings.
+
+## naming
+
+Answer each declared reference of the folds whose value is one of `hashes`: the referring record (`log`, `kind`, `id`), its `field`, the declared `target`, and the hash it `names`, in (log, kind, id, field) order. Every target is read, since a document by hash can be any kind's. `store revert` asks it for the commits it drops, so an operator sees which records still name a document that is no longer the head.

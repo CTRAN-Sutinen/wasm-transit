@@ -466,7 +466,17 @@ func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *lo
 		if err := s.refreshLogLocked(f); err != nil {
 			log.Printf("%s log: after the revert: %v", f.name, err)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"log": f.name, "seq": seq, "reverts": req.Seq, "changes": ans.Changes})
+		answer := map[string]any{"log": f.name, "seq": seq, "reverts": req.Seq, "changes": ans.Changes}
+		// The references the revert broke (D-233), read over every log's
+		// fold: this log's lock is let go for it, and taken again for
+		// the deferred unlock.
+		f.mu.Unlock()
+		refs := s.writeReferences(f.name, seq, ans.Entry)
+		f.mu.Lock()
+		if len(refs) > 0 {
+			answer["references"] = refs
+		}
+		writeJSON(w, http.StatusOK, answer)
 		return
 	}
 	http.Error(w, fmt.Sprintf("the %s log moved on every attempt", f.name), http.StatusConflict)
@@ -503,4 +513,46 @@ func (s *server) handleLogCloseGapOf(w http.ResponseWriter, r *http.Request, f *
 	}
 	log.Printf("%s log: entry %d closes the gap: %s", f.name, req.Seq, req.Cause)
 	writeJSON(w, http.StatusOK, map[string]any{"log": f.name, "seq": req.Seq})
+}
+
+// writeReferences are the broken references a write touches, as of now
+// (D-233): those its entry wrote broken, and those whose target it
+// changed, judged over every log's fold by cap-log's existence check.
+// They are the write's warnings, for a person: a write that landed is
+// never undone by them. A check that fails is logged and answers none.
+func (s *server) writeReferences(logName string, seq int64, entry string) []json.RawMessage {
+	t, err := s.kindTable()
+	if err != nil || t.raw == nil || entry == "" {
+		return nil
+	}
+	folds := map[string]json.RawMessage{}
+	for name, kept := range s.keptLogs() {
+		f := kept.fold
+		f.mu.Lock()
+		err := s.refreshLogLocked(f)
+		base := f.base
+		f.mu.Unlock()
+		if err != nil {
+			log.Printf("references: the %s log: %v", name, err)
+			continue
+		}
+		var c struct {
+			Records json.RawMessage `json:"records"`
+		}
+		if json.Unmarshal(base, &c) == nil && c.Records != nil {
+			folds[f.name] = c.Records
+		}
+	}
+	var got struct {
+		Broken []json.RawMessage `json:"broken"`
+	}
+	req := map[string]any{"op": "references", "kinds": t.raw, "folds": folds, "log": logName, "entry": map[string]any{"seq": seq, "text": entry}}
+	if err := s.logOp(req, &got); err != nil {
+		log.Printf("references: the %s log's entry %d: %v", logName, seq, err)
+		return nil
+	}
+	for _, b := range got.Broken {
+		log.Printf("references: the %s log's entry %d leaves a broken reference: %s", logName, seq, b)
+	}
+	return got.Broken
 }

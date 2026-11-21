@@ -166,7 +166,10 @@ schema marks each field that names a blob in the store
 (`"format": "content-hash"`). `store verify` and `store gc` follow those
 marks from every named blob and every log record, so a pick whose
 network is missing is a break, and gc keeps what a log names
-(`docs/FORMATS.md`, "The store describes itself").
+(`docs/FORMATS.md`, "The store describes itself"). `store verify` also
+reports each broken reference of each log's head: a declared reference
+whose target record is not in its log's fold. That is a finding for a
+person, not a break (`docs/FORMATS.md`, "References").
 
 The newest authored kinds keep fields they do not know. The stops and
 stop requests types carry an `extra` map. A field that a newer writer

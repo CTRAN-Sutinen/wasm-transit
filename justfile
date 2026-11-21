@@ -1004,8 +1004,14 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
     exec go run . "${args[@]}"
 
 # The sync store's offline tools (server/cmd/store; only verify runs a module):
-#   just store verify [-log M] <url>   read the whole store, exit 1 on the first
-#                                    break; cap-log (M) folds each log checkpoint
+#   just store verify [-log M] [-kinds K] <url>
+#                                    read the whole store, exit 1 on the first
+#                                    break; cap-log (M) folds each log checkpoint,
+#                                    and reports each broken reference of each
+#                                    log's head under the kind table K (default
+#                                    web/pkg/kinds.json; empty: none), with the
+#                                    entry that broke it, and the records in a
+#                                    version newer than K reads (unjudged)
 #   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's
 #                                    own delete-capable credentials
 #   just store dump <url> <dir>      write every object to a folder (each at

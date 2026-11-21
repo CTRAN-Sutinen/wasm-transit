@@ -650,7 +650,17 @@ Its HTTP surface:
     and each document it wrote. The server checks the write rule of
     each document written (the kind's first pointer, else its store
     kind: `edits`, `stops`, `service_alerts`), and creates the entry. When another write took the seq, it asks again over the new
-    head.
+    head. Documents the op made (a pick's network, in `made`) are stored
+    first.
+  - After the entry, the server asks cap-log's existence check
+    (`references`) over every log's fold, refreshed, for the broken
+    references that entry touches: those it wrote broken, and those
+    whose target it changed (D-233). `POST /logs/<log>`, each kind's own
+    route, and a revert (`POST /logs/<log>/revert`) answer them as
+    `references`, beside the answer, each with
+    the referring record, its field, the target, the id it names, and
+    the entry. They are warnings for a person: the write has landed. A
+    check that fails is logged and answers none.
   - The writes the server makes itself take the same call with no
     write rule: the feed's differences (`stops import_events`, over the
     feed's network, which the server registers first) and the plans'
@@ -658,7 +668,7 @@ Its HTTP surface:
   - An empty log gets entry 1 from its kinds' old pointers (the kind
     table's `pointers`) at startup: the receive op's `migrate` records
     their heads as they are (writer `migrate:<log>`).
-  - `POST /logs/<log>` answers 200 `{seq, <store kind>_hash, landed?}`,
+  - `POST /logs/<log>` answers 200 `{seq, <store kind>_hash, landed?, references?}`,
     422 `{op, refusals}`, 409 `{conflict, overlap, seq}` for a record
     an unread entry changed, 409 `{op, conflict}` for an event changed
     since the writer read it, and 400 for an op the log does not take. A

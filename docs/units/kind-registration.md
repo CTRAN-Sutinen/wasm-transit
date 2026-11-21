@@ -30,10 +30,9 @@ capability, and its UI. Nothing else names it.
 A record also names other records: a note names an alert, an alert
 names a detour, a stop request names a stop. Each kind's schema
 declares these fields (`x-references`; `docs/FORMATS.md`,
-"References"), and nothing checks them yet. The record checks blobs only, through the `content-hash`
-marks that `store verify` and `store gc` follow. The declaration and
-the receive op are where those checks belong. So this unit also checks
-each reference by the rules of the kinds at both ends (D-229). A
+"References"). The existence check reads them: `store verify`, each
+write, and `store revert` name the references whose target record is
+gone. What is left is the rules of the kinds at both ends (D-229). A
 reference is declared with its kind, and has a stage and a form
 (D-232). The receive op replays the writer's own check as of the seq
 the writer read. It refuses a write that was wrong in the world the
@@ -102,14 +101,6 @@ never a hook.
 
 These start when every log is on the one path (item 2).
 
-5. **Existence.** cap-log answers each broken loose reference from the
-   kind table and the folds: as of a seq, and as of now. `store verify`
-   reports them, each with the entry that broke it. The receive op
-   answers them as warnings. A revert or a retire answers the
-   references that name what it removes, and `store revert` lists the
-   references into the commits it drops. A check that cannot judge a
-   target in a newer version warns and never refuses. A finding names
-   the kind table, the module, and the seq (D-233).
 6. **A rule for each reference.** Each owning module states which
    target states each referrer state needs, with a justification for
    each refusal. Start with stop request to stop. A law checks that

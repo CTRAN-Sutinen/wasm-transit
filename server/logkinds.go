@@ -736,6 +736,8 @@ func (s *server) handleKeptIntent(w http.ResponseWriter, r *http.Request, l *kep
 	l.fold.mu.Unlock()
 	if landed {
 		answer["landed"] = true
+	} else if refs := s.writeReferences(l.fold.name, seq, got.Entry); len(refs) > 0 {
+		answer["references"] = refs
 	}
 	writeJSON(w, http.StatusOK, answer)
 }
@@ -792,7 +794,7 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	op, _ := json.Marshal(map[string]any{"cap": k.Module, "op": post.Op, "args": args})
 	write := logWrite{writer: writerOf(r, "anonymous"), op: "POST " + post.Path, argsHash: store.HashOf(body)}
-	_, _, got, refusal, err := s.receiveLog(r.Context(), r, route.log, write, receiveCall{ops: []json.RawMessage{op}})
+	seq, landed, got, refusal, err := s.receiveLog(r.Context(), r, route.log, write, receiveCall{ops: []json.RawMessage{op}})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusBadRequest)
 		return
@@ -821,6 +823,11 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	for _, field := range post.Echo {
 		if v, ok := args[field]; ok {
 			answer[field] = v
+		}
+	}
+	if !landed {
+		if refs := s.writeReferences(route.log.fold.name, seq, got.Entry); len(refs) > 0 {
+			answer["references"] = refs
 		}
 	}
 	writeJSON(w, http.StatusOK, answer)

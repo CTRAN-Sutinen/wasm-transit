@@ -567,6 +567,11 @@ image.
   ```
 
   It reads everything and stops with an error at the first problem.
+  Its report also lists `references.broken`: records that name another
+  record the bucket no longer holds (a stop request whose stop was
+  reverted, for example), each with the log entry that broke it. These
+  are not errors in the bucket. Show them to the staff who own the
+  records.
   The bucket explains itself: its `README` file says, in plain words,
   what each folder holds. The server writes it, with the `layout` file
   and the `schemas/` and `kinds/` folders, the first time it starts on
@@ -645,7 +650,9 @@ image.
   ```
 
   The tool moves the data back and lists every change made since then,
-  with who made it. Those changes stay in the bucket. A person enters
+  with who made it. Those changes stay in the bucket. Under
+  `references` it also lists the records that still name one of those
+  changes, such as a frozen schedule version: tell their owners. A person enters
   them again by hand in the app. Detours, cancellations, and stops are
   not undone this way: undo their entries one by one, as above. The
   published schedules are not undone this way either: publish the

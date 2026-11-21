@@ -33,6 +33,8 @@
 
 
 pub mod receive;
+pub mod references;
+pub use references::{blame, broken, naming, touched, unjudged, values_at, Broken, Declared, EntryRef, KindReferences, KindVersion, Naming, RecordKind, Unjudged};
 pub use receive::{receive, Conflict, Failed, Moved, OpCall, Received, Refused, MadeDocument, Write};
 use std::collections::BTreeMap;
 

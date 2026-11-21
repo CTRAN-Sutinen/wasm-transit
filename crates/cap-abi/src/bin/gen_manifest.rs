@@ -239,7 +239,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "log",
         file: "module_log.wasm",
-        ops: &["compose", "fold", "revert", "close_gap"],
+        ops: &["compose", "fold", "revert", "close_gap", "references", "naming"],
         documents: &[],
         // The log is the host's to store (D-190, D-197): compose answers
         // each write's entry, fold the records and a checkpoint. It never
@@ -3289,6 +3289,36 @@ fn example_for(
             header.intent.note = Some("entry 3 was deleted from the bucket by hand".into());
             let entry = cap_abi::canonical_bytes(&transit_log::Entry::new(header.clone(), Vec::new(), None)).ok()?;
             (json!({ "op": "close_gap", "header": header }), json!({ "ok": { "op": "close_gap", "entry": entry } }))
+        }
+        ("log", "references") => {
+            // A stop request naming a stop the stops log does not hold.
+            let kinds = json!([
+                {"store_kind": "stops", "log": "stops", "records": [{"kind": "stop", "collection": "stops"}], "references": []},
+                {"store_kind": "stop_requests", "log": "stops", "records": [{"kind": "stop_request", "collection": "requests"}],
+                 "references": [{"path": "/requests/*/stop", "target": "stop"}]}
+            ]);
+            let folds = json!({"stops": {
+                "stop": {"6124": {"version": 1, "value": [{"on": "2004-09-01", "event": "in_service", "lat": 45.6934, "lon": -122.6512}]}},
+                "stop_request": {"R-1": {"version": 1, "value": {"stop": "6124"}}, "R-2": {"version": 1, "value": {"stop": "7001"}}}
+            }});
+            let table: Vec<transit_log::KindReferences> = serde_json::from_value(kinds.clone()).ok()?;
+            let held: std::collections::BTreeMap<String, transit_log::Records> = serde_json::from_value(folds.clone()).ok()?;
+            let broken = transit_log::broken(&table, &held);
+            (json!({ "op": "references", "kinds": kinds, "folds": folds }), json!({ "ok": { "op": "references", "broken": broken } }))
+        }
+        ("log", "naming") => {
+            // A frozen version that names a network a revert dropped.
+            let kinds = json!([
+                {"store_kind": "frozen_versions", "log": "plans", "records": [{"kind": "frozen_version", "collection": "versions"}],
+                 "references": [{"path": "/versions/*/network_hash", "target": "network"}]}
+            ]);
+            let net = net?;
+            let folds = json!({"plans": {"frozen_version": {"fall-2026@1": {"version": 1, "value": {"network_hash": net.network_hash, "purpose": "the published pick"}}}}});
+            let hashes = vec![net.network_hash.clone()];
+            let table: Vec<transit_log::KindReferences> = serde_json::from_value(kinds.clone()).ok()?;
+            let held: std::collections::BTreeMap<String, transit_log::Records> = serde_json::from_value(folds.clone()).ok()?;
+            let found = transit_log::naming(&table, &held, &hashes);
+            (json!({ "op": "naming", "kinds": kinds, "folds": folds, "hashes": hashes }), json!({ "ok": { "op": "naming", "references": found } }))
         }
         ("stops", "log_records") => {
             let stops = fixture_stops().checked().ok()?;

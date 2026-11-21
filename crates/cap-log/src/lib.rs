@@ -94,6 +94,39 @@ pub enum Request {
         #[ts(type = "any")]
         header: serde_json::Value,
     },
+    /// Each broken reference of the folds (D-232, D-233): a declared
+    /// reference (the kind table's `kinds`, each with its `log`,
+    /// `records`, and `references`) whose target record its log's fold
+    /// does not hold. `folds` are the logs' records by log, as `fold`
+    /// answers them. A target whose log is not given is not judged.
+    /// With `entries` (each log's stored entries), each broken reference
+    /// names the entry that broke it. With `entry` (one entry of `log`,
+    /// as stored), the answer is only the broken references that entry
+    /// touches: what a write answers as warnings.
+    References {
+        #[ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>")]
+        kinds: serde_json::Value,
+        #[ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>")]
+        folds: serde_json::Value,
+        #[serde(default)]
+        #[ts(optional, type = "Record<string, Array<{ seq: number, text: string }>>")]
+        entries: Option<serde_json::Value>,
+        #[serde(default)]
+        #[ts(optional)]
+        log: Option<String>,
+        #[serde(default)]
+        #[ts(optional, type = "{ seq: number, text: string }")]
+        entry: Option<serde_json::Value>,
+    },
+    /// Each declared reference of the folds whose value is one of
+    /// `hashes`: what names the documents a pointer's revert drops.
+    Naming {
+        #[ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>")]
+        kinds: serde_json::Value,
+        #[ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>")]
+        folds: serde_json::Value,
+        hashes: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -143,6 +176,19 @@ pub enum Response {
     CloseGap {
         entry: String,
     },
+    References {
+        #[ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string, entry?: { log: string, seq: number } }>")]
+        broken: Vec<transit_log::Broken>,
+        /// The records in a version newer than the table reads, whose
+        /// references are not judged (absent with `entry`).
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[ts(optional, type = "Array<{ log: string, kind: string, id: string, version: number, reads: number }>")]
+        unjudged: Vec<transit_log::Unjudged>,
+    },
+    Naming {
+        #[ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string }>")]
+        references: Vec<transit_log::Naming>,
+    },
 }
 
 use cap_abi::record_hash;
@@ -174,6 +220,27 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let write = transit_log::Write { checkpoint, header, unread };
             let received = transit_log::receive(&write, &next, &record_hash, &|e| cap_abi::canonical_bytes(e))?;
             Ok(Response::Compose { entry: received.entry, changes: received.changes, landed: received.landed, overlap: received.overlap })
+        }
+        Request::References { kinds, folds, entries, log, entry } => {
+            let kinds: Vec<transit_log::KindReferences> = parse("kinds", kinds)?;
+            let folds: std::collections::BTreeMap<String, Records> = parse("folds", folds)?;
+            let mut broken = transit_log::broken(&kinds, &folds);
+            if let Some(entry) = entry {
+                let log = log.ok_or("an entry needs its log")?;
+                let entry: Stored = parse("entry", entry)?;
+                return Ok(Response::References { broken: transit_log::touched(broken, &kinds, &log, &entry), unjudged: Vec::new() });
+            }
+            let unjudged = transit_log::unjudged(&kinds, &folds);
+            if let Some(entries) = entries {
+                let entries: std::collections::BTreeMap<String, Vec<Stored>> = parse("entries", entries)?;
+                transit_log::blame(&mut broken, &kinds, &entries);
+            }
+            Ok(Response::References { broken, unjudged })
+        }
+        Request::Naming { kinds, folds, hashes } => {
+            let kinds: Vec<transit_log::KindReferences> = parse("kinds", kinds)?;
+            let folds: std::collections::BTreeMap<String, Records> = parse("folds", folds)?;
+            Ok(Response::Naming { references: transit_log::naming(&kinds, &folds, &hashes) })
         }
         Request::Fold { log, checkpoint, entries } => {
             let entries: Vec<Stored> = parse("entries", entries)?;

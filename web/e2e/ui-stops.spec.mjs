@@ -55,6 +55,8 @@
 //   - what the agency's feed did to the stops record (D-150: the feed
 //     applies, and the planner sees what it did): the Feed review page,
 //     each stop linked to its record.
+//   - a write kept with a broken reference (D-233) says so beside the
+//     sync status until the person dismisses it.
 
 import { test, expect } from "@playwright/test";
 
@@ -523,4 +525,28 @@ test.describe("signed in", () => {
     await page.getByTestId("signout").click();
     await expect(page.getByTestId("signin-button")).toBeVisible();
   });
+});
+
+// A write the server keeps with a warning (D-233): its answer names a
+// reference the write left broken. The page says so beside the sync
+// status, in words, until the person dismisses it. The server's answer
+// is pinned by its Go round trip (server/requests_test.go); here the
+// page's side, over the real answer with a broken reference added.
+test("a write kept with a broken reference says so until dismissed", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.route("**/logs/stops", async (route) => {
+    const resp = await route.fetch();
+    const body = await resp.json();
+    body.references = [{ log: "stops", kind: "stop_request", id: "STN-20261102", field: "/stop", target: "stop", names: "STN", entry: { log: "stops", seq: body.seq } }];
+    await route.fulfill({ response: resp, json: body });
+  });
+  await page.goto("/stops.html#on=2026-11-02&open=STN");
+  await page.getByTestId("action-request").click();
+  await page.getByTestId("request-job-repair_improve").click();
+  await page.getByTestId("request-save-draft").click();
+  const warned = page.getByTestId("sync-warned");
+  await expect(warned).toContainText("Saved with a warning", { timeout: 15_000 });
+  await expect(warned).toContainText("Stop request STN-20261102 names stop STN, which isn't on record.");
+  await page.getByTestId("sync-dismiss").click();
+  await expect(warned).toHaveCount(0);
 });

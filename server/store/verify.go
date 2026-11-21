@@ -30,6 +30,31 @@ type VerifyReport struct {
 	Schemas    int `json:"schemas"`
 	Tables     int `json:"tables"`
 	Referenced int `json:"referenced"`
+	// References is the existence check's finding (D-233), when verify
+	// was given a ReferenceChecker. A broken reference is a finding for
+	// a person, not a break of the store.
+	References *ReferenceFindings `json:"references,omitempty"`
+}
+
+// ReferenceChecker is the existence check (D-233): given each log's fold
+// at its head (the checkpoint's bytes) and each log's entries, it
+// answers each broken reference, with the kind table and the module it
+// judged with.
+type ReferenceChecker func(heads map[string][]byte, entries map[string][]StoredEntry) (*ReferenceFindings, error)
+
+// ReferenceFindings is what the existence check found: the kind table's
+// hash and the module's hash it judged with, the seq of each log it
+// read, and each broken reference as the module answers it (the
+// referring record, its field, the target, and the entry that broke it).
+// So a finding can be judged again after a release or a rollback.
+type ReferenceFindings struct {
+	KindTable string            `json:"kind_table"`
+	Module    string            `json:"module"`
+	Seqs      map[string]int64  `json:"seqs"`
+	Broken    []json.RawMessage `json:"broken"`
+	// Unjudged are the records in a version newer than the kind table
+	// reads, whose references were not judged (D-186): a warning.
+	Unjudged []json.RawMessage `json:"unjudged,omitempty"`
 }
 
 // A LogFolder is the module that owns a log's kinds: the fold of the
@@ -70,8 +95,18 @@ func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 // with the fold of the entries after the checkpoint before it (or from
 // the first entry). A checkpoint that differs is a break.
 func VerifyFolding(ctx context.Context, b Backend, fold LogFolder) (VerifyReport, error) {
+	return VerifyChecking(ctx, b, fold, nil)
+}
+
+// VerifyChecking is VerifyFolding, and with refs, the existence check
+// over each log's fold at its head (D-233): its findings are in the
+// report's References. refs needs fold.
+func VerifyChecking(ctx context.Context, b Backend, fold LogFolder, refs ReferenceChecker) (VerifyReport, error) {
 	var r VerifyReport
-	if err := verifyLogs(ctx, b, &r, fold); err != nil {
+	if refs != nil && fold == nil {
+		return r, fmt.Errorf("store verify: the existence check needs the log module to fold each log")
+	}
+	if err := verifyLogs(ctx, b, &r, fold, refs); err != nil {
 		return r, err
 	}
 	objs, err := b.List(ctx, "pointers/", "")
@@ -290,7 +325,7 @@ type logHeader struct {
 
 // verifyLogs checks every log under logs/: the keys, the entries from 1
 // with no gap, and each object's header against its key.
-func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder) error {
+func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder, refs ReferenceChecker) error {
 	objs, err := b.List(ctx, "logs/", "")
 	if err != nil {
 		return err
@@ -319,6 +354,7 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder)
 		}
 	}
 	sort.Strings(names)
+	heads, entries, seqs := map[string][]byte{}, map[string][]StoredEntry{}, map[string]int64{}
 	// Every log's entries are log_entry documents and its checkpoints
 	// log_checkpoint documents (cap-log, D-197).
 	read := func(key, name string, seq int64, kind string) error {
@@ -384,7 +420,34 @@ func verifyLogs(ctx context.Context, b Backend, r *VerifyReport, fold LogFolder)
 			r.Folded++
 			prev, prevSeq = stored, seq
 		}
+		if refs == nil || len(l.entries) == 0 {
+			continue
+		}
+		// The existence check reads each log's fold at its head, and
+		// every entry, to name the entry that broke a reference.
+		all := make([]StoredEntry, 0, len(l.entries))
+		for _, e := range l.entries {
+			data, _, err := b.Get(ctx, entryKey(name, e))
+			if err != nil {
+				return err
+			}
+			all = append(all, StoredEntry{Seq: e, Text: string(data)})
+		}
+		head, err := fold(name, prev, all[prevSeq:])
+		if err != nil {
+			return broken(entryKey(name, int64(len(l.entries))), "the fold of entries %d..%d: %v", prevSeq+1, len(l.entries), err)
+		}
+		heads[name], entries[name], seqs[name] = head, all, int64(len(l.entries))
 	}
+	if refs == nil {
+		return nil
+	}
+	found, err := refs(heads, entries)
+	if err != nil {
+		return fmt.Errorf("store verify: the existence check: %w", err)
+	}
+	found.Seqs = seqs
+	r.References = found
 	return nil
 }
 

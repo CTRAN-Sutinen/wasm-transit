@@ -40,7 +40,7 @@
     applyUpdate,
     type View,
   } from "./host.svelte";
-  import { outbox } from "../../outbox.svelte";
+  import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
   import AlertsBoard from "../../components/AlertsBoard.svelte";
   import AlertEditor from "../../components/AlertEditor.svelte";
@@ -83,6 +83,8 @@
   <SyncStatus
     waiting={outbox.waiting}
     held={heldWrites()}
+    warned={warnedWrites()}
+    ondismiss={dismissWarning}
     offline={dz.offline || outbox.offline}
     asOf={dz.asOf}
     needsSignIn={outbox.needsSignIn}

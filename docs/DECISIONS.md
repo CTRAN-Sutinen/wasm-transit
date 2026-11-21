@@ -5018,8 +5018,11 @@ checked-in kind table's gate in `just caps` (`crates/cap-abi/kinds.json`).
 Blocks: nothing.
 
 ### D-233 — When does the receive path refuse a write whose reference is broken?
-State: Encoded provisionally. Nothing is built. `docs/units/kind-registration.md`
-plans it.
+State: Encoded provisionally. The existence check is built: cap-log
+`references` and `naming`, `store verify`'s and `store revert`'s
+reports, a write's warnings, and the unjudged record of a newer
+version. The rules, and the refusal as of the read seq, are planned
+(`docs/units/kind-registration.md`).
 Context:
 - A write carries the seq it read for each log it depends on. This is
   a list, not one number. D-189's outbox carries the seq it read.
@@ -5067,7 +5070,13 @@ Options:
   a rogue client can write.
 - Refuse as of now, as SQL does. An honest offline write that raced a
   removal is lost.
-Pinned by: none yet.
+Pinned by: the existence check's laws (`crates/transit-log/tests/references_check_test.rs`);
+cap-log's dispatch test; `server/cmd/store/main_test.go`
+(`TestVerifyReportsABrokenReferenceWithTheEntryThatBrokeIt`,
+`TestRevertListsTheReferencesIntoTheCommitsItDrops`);
+`server/requests_test.go` (`TestAWriteAnswersTheBrokenReferencesItLeaves`);
+e2e `ui-stops` ("a write kept with a broken reference says so until
+dismissed").
 Blocks: nothing.
 
 ### D-234 — Over which service dates does an undated record's reference resolve?

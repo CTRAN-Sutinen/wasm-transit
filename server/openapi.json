@@ -1388,6 +1388,9 @@
                     "landed": {
                       "type": "boolean",
                       "description": "The key landed before: no entry was written."
+                    },
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
                     }
                   },
                   "required": [
@@ -1988,6 +1991,9 @@
                     "landed": {
                       "type": "boolean",
                       "description": "The key landed before: no entry was written."
+                    },
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
                     }
                   },
                   "required": [
@@ -2347,6 +2353,9 @@
                     "landed": {
                       "type": "boolean",
                       "description": "The key landed before: no entry was written."
+                    },
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
                     }
                   },
                   "required": [
@@ -5683,6 +5692,9 @@
         "properties": {
           "stops_hash": {
             "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -5694,6 +5706,9 @@
         "properties": {
           "requests_hash": {
             "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -6189,6 +6204,9 @@
           },
           "changes": {
             "type": "integer"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -6398,6 +6416,9 @@
         "properties": {
           "alerts_hash": {
             "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -6414,6 +6435,9 @@
           "id": {
             "type": "string",
             "description": "The note's id."
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -6426,11 +6450,60 @@
         "properties": {
           "templates_hash": {
             "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
           "templates_hash"
         ]
+      },
+      "BrokenReferences": {
+        "type": "array",
+        "description": "The broken references the write leaves, as of now (D-233): those it wrote broken, and those whose target it changed. Each names the referring record, its field (a JSON pointer inside the record), the declared target, the id it names, and the entry. A warning for a person: the write landed. Absent when there are none.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "log": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "field": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "names": {
+              "type": "string"
+            },
+            "entry": {
+              "type": "object",
+              "properties": {
+                "log": {
+                  "type": "string"
+                },
+                "seq": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "required": [
+            "log",
+            "kind",
+            "id",
+            "field",
+            "target",
+            "names"
+          ]
+        }
       }
     },
     "securitySchemes": {

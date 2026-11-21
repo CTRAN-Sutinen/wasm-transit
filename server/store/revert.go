@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // RevertReport is what a revert did: the pointer moved from one head
 // back to an older one, and the commits that move dropped.
@@ -9,6 +12,11 @@ type RevertReport struct {
 	From    string     `json:"from"`
 	To      string     `json:"to"`
 	Dropped []LogEntry `json:"dropped"`
+	// References are the records that name a dropped commit's document
+	// by its hash, as the existence check found them (D-233): they still
+	// name a document that is no longer the head, for a person to judge.
+	// Absent when no check ran.
+	References []json.RawMessage `json:"references,omitempty"`
 }
 
 // Revert moves pointer name back to to, a head its log holds. It is the
