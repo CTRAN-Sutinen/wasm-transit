@@ -182,3 +182,57 @@ func TestDevConfigShowsEverySetting(t *testing.T) {
 		}
 	})
 }
+
+// The module setting's law: each capability's module is cap_<id>.wasm in
+// -modules, unless the capability's own flag names a file; and a
+// relative -modules in a settings file is read from the file's folder.
+func TestEachModuleIsReadFromTheModulesFolder(t *testing.T) {
+	_, f := parsed(t, "-modules", "/m", "-notes-wasm", "/elsewhere/notes.wasm")
+	for id := range f.moduleFlags() {
+		want := filepath.Join("/m", "cap_"+id+".wasm")
+		if id == "notes" {
+			want = "/elsewhere/notes.wasm"
+		}
+		if got := f.module(id); got != want {
+			t.Errorf("%s: %q, want %q", id, got, want)
+		}
+	}
+	if got := f.module("a_new_kind"); got != "/m/cap_a_new_kind.wasm" {
+		t.Errorf("a capability with no flag of its own: %q", got)
+	}
+
+	dir := t.TempDir()
+	p := writeConfig(t, dir, "m.toml", "modules = \"pkg\"\n")
+	fs, f := parsed(t, "-config", p)
+	if err := applyConfig(fs, f.configs); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.module("stops"), filepath.Join(dir, "pkg", "cap_stops.wasm"); got != want {
+		t.Errorf("from a settings file: %q, want %q", got, want)
+	}
+}
+
+// The hosted modules follow the kind table: every capability a kind
+// names is hosted, from the modules folder, with no line in the server.
+func TestHostedModulesFollowTheKindTable(t *testing.T) {
+	s := &server{modulesDir: "/m", moduleFiles: map[string]string{"notes": "/x/notes.wasm"}}
+	s.kinds = &kindTable{Kinds: []kindEntry{{StoreKind: "test_kind", Module: "testkind", Receive: "testlog"}}}
+	s.kindsOnce.Do(func() {})
+	got := s.hostedModules(false)
+	for id, want := range map[string]string{
+		"sync": "/m/cap_sync.wasm", "testkind": "/m/cap_testkind.wasm", "testlog": "/m/cap_testlog.wasm",
+	} {
+		if got[id] != want {
+			t.Errorf("%s: %q, want %q", id, got[id], want)
+		}
+	}
+	if _, ok := got["authz"]; ok {
+		t.Error("cap-authz is hosted only when sign-in is on")
+	}
+	if s.hostedModules(true)["authz"] != "/m/cap_authz.wasm" {
+		t.Error("cap-authz is hosted when sign-in is on")
+	}
+	if s.modulePath("notes") != "/x/notes.wasm" {
+		t.Errorf("a capability's own flag wins: %q", s.modulePath("notes"))
+	}
+}

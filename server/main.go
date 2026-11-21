@@ -53,11 +53,11 @@ func main() {
 	mime.AddExtensionType(".pmtiles", "application/vnd.pmtiles")
 
 	ctx := context.Background()
-	host, err := NewWasmHost(ctx, *f.wasmPath)
+	host, err := NewWasmHost(ctx, f.module("sync"))
 	if err != nil {
 		log.Fatalf("wasm host: %v", err)
 	}
-	log.Printf("sync module loaded: %s (%s)", *f.wasmPath, host.Hash())
+	log.Printf("sync module loaded: %s (%s)", f.module("sync"), host.Hash())
 
 	s := &server{
 		dist:          *f.dist,
@@ -66,7 +66,9 @@ func main() {
 		editsPath:     *f.editsPath,
 		retentionDays: *f.retentionDays,
 		fixedToday:    *f.today,
-		migrateWasm:   *f.migrateWasm,
+		migrateWasm:   f.module("migrate"),
+		modulesDir:    *f.modulesDir,
+		moduleFiles:   map[string]string{},
 	}
 	if *f.attachmentsURL != "" {
 		if s.attachments, err = store.OpenBackend(context.Background(), *f.attachmentsURL); err != nil {
@@ -98,22 +100,24 @@ func main() {
 			}
 			log.Printf("store cache: %s (a copy that starts while the bucket does not answer serves from it, read only)", *f.storeCache)
 		}
-		if s.plans, err = NewWasmHost(ctx, *f.plansWasm); err != nil {
+		if s.plans, err = NewWasmHost(ctx, f.module("plans")); err != nil {
 			log.Fatalf("plans module: %v", err)
 		}
-		s.networkWasm = *f.networkWasm
-		s.logWasm = *f.logWasm
+		s.networkWasm = f.module("network")
+		s.logWasm = f.module("log")
 		s.kindsPath = *f.kindsPath
-		s.checkWasm = map[string]string{"authz": *f.authzWasm}
+		s.checkWasm = map[string]string{"authz": f.module("authz")}
 		if _, err := s.kindTable(); err != nil {
 			log.Fatalf("store mode: %v", err)
 		}
 		// The modules by capability, before the seeds: a log's first
 		// entry runs through its receive op (logkinds.go).
-		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm, "alerts": *f.alertsWasm, "notes": *f.notesWasm, "log": *f.logWasm}
-		if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
-			s.serverModules["authz"] = *f.authzWasm
+		for id, p := range f.moduleFlags() {
+			if *p != "" {
+				s.moduleFiles[id] = *p
+			}
 		}
+		s.serverModules = s.hostedModules(*f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "")
 		s.seedStore(*f.editsPath)
 		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
@@ -134,7 +138,7 @@ func main() {
 			issuer: *f.oidcIssuer, jwksURL: *f.oidcJWKS, audience: *f.oidcAud,
 			keyFile: *f.oidcKey, rolesClaim: *f.oidcRoles, nameClaim: *f.oidcName,
 			clientID: *f.oidcClientID, scope: *f.oidcScope,
-		}, *f.authzWasm, *f.policyFile)
+		}, f.module("authz"), *f.policyFile)
 		if err != nil {
 			log.Fatalf("authz: %v", err)
 		}
@@ -150,7 +154,7 @@ func main() {
 		}
 	}
 	if *f.feedPath != "" {
-		s.feeder = &feedSource{src: newSource(*f.feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: *f.networkWasm}
+		s.feeder = &feedSource{src: newSource(*f.feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: f.module("network")}
 		s.feeder.onImport = func(feed *loadedFeed) {
 			if err := s.recordFeed(context.Background(), feed); err != nil {
 				log.Printf("stops: the feed's differences were not recorded: %v", err)
@@ -161,7 +165,7 @@ func main() {
 		}
 	}
 	if *f.streetsPath != "" {
-		s.streets = &streetsSource{src: newSource(*f.streetsPath, "source.streets", "street_layer", s.store), streetsWasm: *f.streetsWasm}
+		s.streets = &streetsSource{src: newSource(*f.streetsPath, "source.streets", "street_layer", s.store), streetsWasm: f.module("streets")}
 		if _, err := s.publishedStreets(); err != nil {
 			log.Fatalf("streets: %v", err)
 		}
@@ -323,9 +327,9 @@ type server struct {
 	// The edit document. Opaque JSON: the artifact owns the schema
 	// and every domain decision about it (merge, submit, validation)
 	// — this host only stores and ferries it.
-	editsMu sync.Mutex
-	edits           json.RawMessage // the edit document (current version)
-	editsPath       string          // the dev store's file; empty = in memory only
+	editsMu   sync.Mutex
+	edits     json.RawMessage // the edit document (current version)
+	editsPath string          // the dev store's file; empty = in memory only
 
 	// The durable sync store (store mode, -store): blobs + CAS'd
 	// pointers. nil = the dev store (no -store): edits in memory or the
@@ -407,6 +411,10 @@ type server struct {
 	builds        buildState
 	buildEvery    time.Duration
 	serverModules map[string]string
+	// modulesDir is -modules, the folder of the capability modules; and
+	// moduleFiles are the capabilities whose own flag names a file.
+	modulesDir  string
+	moduleFiles map[string]string
 	// uiDists are the UIs' bundles (-ui-dist), each committed to its own
 	// build.<id> pointer (D-171).
 	uiDists []*uiDist

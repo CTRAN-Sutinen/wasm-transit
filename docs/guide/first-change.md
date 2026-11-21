@@ -15,8 +15,8 @@ kernel. The [glossary](glossary.md) defines every term.
    [README](../../README.md) describes.
 2. Build the modules with `just caps-fast`. This is the fast build for
    day-to-day work. It takes about 10 seconds after a library change.
-3. Run the checks with `just test-fast`. They should pass before you
-   change anything.
+3. Run the checks with `just test`. They should pass before you change
+   anything.
 
 ## The example
 
@@ -44,7 +44,7 @@ called `records`, and used it in the app.
 | 9. Call the op from the app | `web/src/uis/service-change/host.svelte.ts` | You decide when to ask |
 | 10. Show the answer | a component in `web/src/components/` | You design the screen |
 | 11. Test in the browser | `web/e2e/ui-service-change.spec.mjs` | You write the test |
-| 12. Run all the checks | `just test-fast`, then `just check` | The build |
+| 12. Run all the checks | `just check` | The build |
 
 Four steps need real thought: 1, 2, 9, and 10. Any application needs
 that thought. The other steps follow a pattern, and the build tells you
@@ -183,14 +183,17 @@ the new-route form lists the stops the planner picked.
 
 Add or extend the app's browser test in `web/e2e/`. The test for this
 change builds a new route from start to finish. Run one test while you
-work: `just e2e-fast e2e/ui-service-change.spec.mjs`. The path is from
+work: `just e2e e2e/ui-service-change.spec.mjs`. The path is from
 the `web/` folder.
 
 ## 12. Run all the checks
 
-- While you work: `just test-fast` and `just e2e-fast`.
+- While you work: `just test`, and `just e2e` with one test.
 - Before you finish: `just check`. It runs every check, including the
-  browser tests, on the release build. It takes about 15 minutes.
+  browser tests.
+- When a whole piece of work is done: `just check-release`. It runs the
+  same checks on the release build, which takes about an hour to
+  build.
 - Try the change on real data. `just qa` starts the apps on C-TRAN's
   schedule.
 

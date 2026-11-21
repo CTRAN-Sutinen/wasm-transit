@@ -186,15 +186,17 @@ only the site's own `.html` files and listens on loopback only.
     rename breaks a trace, fix the trace in the same change.
   - Where things are kept: a map of the bucket, drawn from the kind
     table, that places each kind in its log, its pointer history, or
-    its own keys. Under it, two stories, step by step, of the files in
-    the bucket. One saved note shows a log: the entry, the fold, two
+    its own keys. Under it, three stories, step by step, of the files
+    in the bucket. One saved note shows a log: the entry, the fold, two
     servers racing for one entry, the manifest's blob and pointer
     record, a revert, and a checkpoint. One new feed shows pointer
     histories: the zip's pointer record, the derived network, the
     derivation record, a start that does no work, two servers that make
-    the same bytes, and reading every version. Each step names one new
-    word, and its code. The stories are written by hand like the traces
-    (`BUCKET_STORIES`).
+    the same bytes, and reading every version. One published service
+    change shows both: a draft on the planner's device, its network
+    frozen in the plan's pointer history, and the plans log entry that
+    names it by hash. Each step names one new word, and its code. The
+    stories are written by hand like the traces (`BUCKET_STORIES`).
   - What each UI links: a table of capabilities and UI assemblies.
 - `cap-<id>.html` gives a capability's purpose and, for each op, its
   description and worked example (the same collapsible tree).
@@ -205,7 +207,7 @@ only the site's own `.html` files and listens on loopback only.
   to it, in the list below the tree. The example is a collapsible JSON
   tree. The raw JSON of both is in a closed block.
 
-Apart from the two traces and the two bucket stories, the site has no
+Apart from the two traces and the bucket stories, the site has no
 content of its own. To
 change a page, edit the
 capability's `OPS.md`, or a crate's `description` in its `Cargo.toml`,

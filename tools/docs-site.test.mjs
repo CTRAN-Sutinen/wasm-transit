@@ -148,7 +148,7 @@ test("the bucket map places every kind in the kind table", () => {
   for (const k of table) assert.ok(map.includes(`data-kind="${k.store_kind}"`), `the bucket map places ${k.store_kind}`);
 });
 
-for (const id of ["story-note", "story-feed"]) test(`the bucket story ${id} names code that exists, and every row appears at a step it has`, () => {
+for (const id of ["story-note", "story-feed", "story-plan"]) test(`the bucket story ${id} names code that exists, and every row appears at a step it has`, () => {
   const html = page("architecture.html");
   assert.ok(html.includes(`id="${id}"`), `${id} is on the page`);
   const section = html.slice(html.indexOf(`id="${id}"`), html.indexOf("</section>", html.indexOf(`id="${id}"`)));

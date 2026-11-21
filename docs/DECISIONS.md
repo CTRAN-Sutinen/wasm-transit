@@ -281,6 +281,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-227 | Does the server link an assembly, as a UI does? | decided | nothing |
 | D-228 | What may a host do with an op's answer? | decided | nothing |
 | D-235 | Where do the worked examples' fixtures live, and what may depend on them? | decided | nothing |
+| D-236 | Which modules do the test runners build? | decided; built | nothing |
 
 ## The trip model
 
@@ -5110,4 +5111,22 @@ Options:
   libraries. No shared crate, and the fixture code is repeated.
 Pinned by: nothing yet (item 3 of
 `docs/units/capability-declared-once.md` builds it).
+Blocks: nothing.
+
+### D-236 — Which modules do the test runners build?
+State: Decided.
+Answer: 2026-11-20 — the wasm-fast modules (no whole-program LTO,
+incremental). `just test`, `just e2e`, and `just check` build them, and
+a change runs them before it is called done. `just test-release`,
+`just e2e-release`, and `just check-release` run the same over the
+release modules when a unit is done. The user: "if they behave the same
+then it isn't worth the build time, it might be worth it for the end of
+a whole unit but not constantly. this shouldn't be the default behavior
+for tests".
+Context: the release profile links each module with full LTO and one
+codegen unit. A change to cap-abi rebuilds every module, so a gate took
+about an hour, nearly all of it in the links. LTO changes a module's
+size and speed, not its answers. The registry builds release itself.
+Pinned by: the justfile (`test`, `e2e`, `check`, and their `-release`
+recipes); `AGENTS.md`, "Commands"; `docs/TESTING.md`.
 Blocks: nothing.

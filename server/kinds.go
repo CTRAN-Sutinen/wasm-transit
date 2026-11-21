@@ -208,11 +208,7 @@ type kindCheck struct {
 // checkKind runs the entry's validate op over the document in a fresh
 // instance of its module, closed after: a pointer write is rare.
 func (s *server) checkKind(ctx context.Context, e *kindEntry, doc json.RawMessage) (kindCheck, error) {
-	path := s.checkWasm[e.Module]
-	if path == "" {
-		path = "../web/pkg/cap_" + e.Module + ".wasm"
-	}
-	host, err := NewWasmHost(ctx, path)
+	host, err := NewWasmHost(ctx, s.modulePath(e.Module))
 	if err != nil {
 		return kindCheck{}, fmt.Errorf("the %s module: %w", e.Module, err)
 	}

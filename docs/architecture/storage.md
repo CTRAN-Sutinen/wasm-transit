@@ -18,7 +18,9 @@ has to be.
 To see it first: the architecture page of `just docs` ("Where things
 are kept") maps where each kind of document lives, drawn from the kind
 table. It then steps through the files that one saved note makes (a
-log) and that one new feed makes (pointer histories).
+log), one new feed makes (pointer histories), and one published
+service change makes (both: a frozen network in its plan's pointer
+history, named by a plans log entry).
 
 ## The record
 

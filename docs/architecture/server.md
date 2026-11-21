@@ -9,7 +9,12 @@ CSV field: I/O, not domain.
 The server links no assemblies (D-78). Nothing it holds for a long time
 is a network, and authz keeps its own instance. It instantiates the
 single-capability modules it needs. `just caps` rebuilds all of them
-into web/pkg/:
+into web/pkg/. The server reads each capability's module as
+`cap_<id>.wasm` in one folder, the `-modules` setting (by default
+web/pkg/, and kodata/pkg/ in the image). A capability's own flag below
+names a different file for that capability only. A new kind's
+capability needs no flag: the server hosts every capability the kind
+table names, from that folder.
 
 - cap-sync (the -wasm flag, cap_sync.wasm) is the op behind POST
   /edits. In store mode its `receive` op writes the disruptions log

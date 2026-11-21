@@ -12,7 +12,7 @@
 // dependencies from `cargo metadata` (no build), and the kind table
 // (crates/cap-abi/kinds.json) to name each kind a capability loads.
 // The only
-// hand-written content is the two traces (`TRACES`) and the two bucket
+// hand-written content is the two traces (`TRACES`) and the bucket
 // stories (`BUCKET_STORIES`), and the test checks the code each of
 // their steps names. To change a description, edit the
 // capability's OPS.md, or the crate's `description` in its Cargo.toml,
@@ -317,7 +317,7 @@ li:not(.now) .stepbody > p:first-child { color: var(--muted); }
 .area li { font-size: 0.88em; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
 .area code.key { font-weight: 600; }
 .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: none; }
-.entry { --c: var(--kind); } .pointer { --c: var(--kernel); } .blob { --c: var(--asm); }
+.entry { --c: var(--kind); } .pointer { --c: var(--kernel); } .blob { --c: var(--asm); } .device { --c: var(--muted); }
 .files { padding: 10px 12px; }
 ul.tree { list-style: none; margin: 0; padding: 0; font: 0.84em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; display: grid; gap: 2px; }
 ul.tree li { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 3px 6px; border-radius: 4px; }
@@ -328,6 +328,7 @@ ul.tree li.file { margin-left: 1.4em; }
 ul.tree li.file .mark { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; align-self: center; }
 ul.tree li.file.pointer .mark { border-radius: 2px; }
 ul.tree li.file.blob .mark { border-radius: 1px; transform: rotate(45deg); }
+ul.tree li.file.device .mark { background: none; border: 1.5px solid var(--c); border-radius: 2px; }
 ul.tree li .note { color: var(--muted); font-family: system-ui, sans-serif; }
 ul.tree li.new { background: color-mix(in srgb, var(--out) 14%, transparent); }
 ul.tree li.new .note { color: var(--fg); }
@@ -867,9 +868,9 @@ for (const sec of document.querySelectorAll("section.trace:not(.bucket)")) {
 //
 // - The bucket map, drawn from the kind table: each kind the store
 //   keeps, under the log or the pointer history that holds it.
-// - Two bucket stories, written by hand like the traces: the files one
-//   saved note makes (a log), and the files one new feed makes (pointer
-//   histories), step by step. Each row says the step it appears at
+// - The bucket stories, written by hand like the traces: the files one
+//   saved note makes (a log), one new feed makes (pointer histories),
+//   and one published service change makes (both), step by step. Each row says the step it appears at
 //   (`at`), or the one step it shows at (`only`). Each step names its
 //   code (`code`), and the test checks it.
 function bucketMap() {
@@ -947,18 +948,44 @@ const FEED_ROWS = [
 ];
 
 const FEED_STEPS = [
-  { title: "Documents kept whole", word: null, text: "Some documents are not collections of records. The network, the streets, and the GTFS zip are replaced whole, and rarely. Each version is one blob, and a pointer history says which version is current. The names here are examples.", code: [["server/store/store.go", "func (s *Store) CAS("]] },
+  { title: "Documents kept whole", word: null, text: "Some documents are not collections of records. The agency's GTFS zip, and the network and streets the server makes from its inputs, are replaced whole, and rarely. Each version is one blob, and a pointer history says which version is current. The names here are examples.", code: [["server/store/store.go", "func (s *Store) CAS("]] },
   { title: "The agency publishes a new feed", word: "pointer record", text: "At start, the server reads the agency's GTFS zip. Its bytes changed, so the server stores the zip as a blob and adds record 12 to its pointer history. The record names the old zip, the new one, the writer, and the time. A pointer record is one move of the pointer, never edited.", hot: ["src12"], code: [["server/source.go", "func (s *source) commit()"], ["server/source.go", 's.st.CAS(s.pointer, from, s.body, env, "", "import:"+s.raw, time.Now().UnixMilli())']] },
-  { title: "The server makes the network", word: "derived", text: "The network capability imports the zip and answers the network and the boundary. The server stores each one as a blob, and moves each one's pointer. These documents are derived: made from an input, by a module.", hot: ["net", "n12"], code: [["server/derived.go", "func commitDerivation("], ["server/derived.go", 'commitHead(st, doc.tag, doc.body, env, doc.hash, "server")']] },
+  { title: "The server imports the feed's network", word: "derived", text: "The network capability imports the zip and answers the network and the boundary. The server stores each one as a blob, and moves each one's pointer. These documents are derived: made from an input, by a module.", hot: ["net", "n12"], code: [["server/derived.go", "func commitDerivation("], ["server/derived.go", 'commitHead(st, doc.tag, doc.body, env, doc.hash, "server")']] },
   { title: "It writes down how", word: "derivation", text: "Last, the server stores a derivation record: which zip went in, which module ran, and which documents came out. It is written last on purpose. If the server stops before this, the next start makes the same documents again, with the same bytes.", hot: ["d12"], code: [["server/derived.go", 'commitHead(st, pointer, body, env, "", "server")']] },
   { title: "The next start does no work", word: null, text: "When a server starts with the same zip, it reads the derivation record, sees the same inputs, and serves the stored network. It runs no import. An import costs C-TRAN about 5 GB of memory at its peak, so this matters.", hot: ["d12"], code: [["server/derived.go", "func storedDerivation("]] },
   { title: "Two servers make the same network", word: null, text: "Two copies of the server start together, and both make the network from the same zip. The bytes are the same, so the fingerprint is the same. The second finds that network already current, and writes no record.", code: [["server/store/store.go", "// Idempotent redelivery: the same document is already the head"]] },
   { title: "Every version can still be read", word: "pointer history", text: "Nothing in a pointer history is deleted. Its records list each version, who made it current, and when. An auditor can read the exact network a pick was built from. To go back, an operator adds a new record that names an older version, and the move is kept too.", hot: ["n11", "n12"], code: [["server/pointers.go", "func (s *server) handlePointerLog("], ["server/cmd/store/main.go", "store revert [-writer W] <url> <pointer> <hash>"]] },
 ];
 
+const PLAN_ROWS = [
+  { dir: "on the planner's device", note: "the browser's own storage, not the bucket" },
+  { name: "draft: spring-2027", note: "a fork of the running pick, edited", at: 1, area: "device", id: "draft" },
+  { dir: "blobs/", note: "files named by the fingerprint of their bytes" },
+  { name: "52aa17…9c07", note: "the running pick's network", at: 1, area: "blob" },
+  { name: "b3e9d1…5a20", note: "the spring-2027 network, frozen", at: 2, area: "blob", id: "net" },
+  { name: "4b7a91…02c3", note: "the manifest that names the new pick", at: 4, area: "blob" },
+  { dir: "pointers/plan.spring-2027/", note: "every network this plan froze" },
+  { name: "00000000000000000001.json", note: "frozen for public comment", at: 1, area: "pointer", id: "p1" },
+  { name: "00000000000000000002.json", note: "frozen to adopt: b3e9d1…", at: 2, area: "pointer", id: "p2" },
+  { dir: "logs/plans/entries/", note: "the plans log: freezes, adoptions, retirements" },
+  { name: "…01.json to …36.json", note: "36 earlier entries", at: 1, area: "entry" },
+  { name: "00000000000000000037.json", note: "freezes b3e9d1… and adopts it from 2027-03-01", at: 3, area: "entry", id: "e37" },
+  { dir: "pointers/manifest/", note: "which manifest is current" },
+  { name: "00000000000000000017.json", note: "names the new pick", at: 4, area: "pointer" },
+];
+
+const PLAN_STEPS = [
+  { title: "The draft is on the planner's device", word: "draft", text: "A planner changes service in a draft: a fork of a published pick. The draft is kept in the browser on their device, not in the bucket. Each edit asks the author capability for the next network, and the draft keeps it whole.", hot: ["draft"], code: [["crates/transit-network/src/edit.rs", "pub fn apply_edits("], ["web/src/plans.svelte.ts", "idbSet(PLANS_KEY, set)"]] },
+  { title: "Publishing freezes the network", word: "freeze", text: "The planner publishes. The server first stores the draft's network as a blob, and makes it the head of the plan's own pointer history, pointers/plan.spring-2027/. Record 1, frozen earlier for public comment, stays. A frozen network never changes.", hot: ["p1"], code: [["server/planslog.go", 'pointer := "plan." + frame.ID']] },
+  { title: "The plans log names it", word: "adopt", text: "Then one entry in the plans log records the freeze and the adoption together: the frozen version, named by its fingerprint, and the pick that runs it from 2027-03-01. A log entry names a document kept whole by its fingerprint, and never copies it.", hot: ["net", "p2"], code: [["server/planslog.go", '"cap": "plans", "op": "freeze"']] },
+  { title: "Pages see the new pick", word: null, text: "When a page next asks for the manifest, it names the new published plan set. A page reads the pick in force on each date, and the network that pick names, by its fingerprint.", hot: ["e37"], code: [["server/main.go", 's.store.CAS("manifest", from, body, env, "", "server", time.Now().UnixMilli())']] },
+  { title: "Corrected by publishing again", word: null, text: "The plans log has no revert. A wrong pick is published again, or retired before it takes effect, and both are new entries. So every proposal and every network that was ever in force stays readable.", hot: ["p1", "p2", "e37"], code: [["server/disruptions.go", "the plans log has no revert"]] },
+];
+
 const BUCKET_STORIES = [
   { id: "story-note", title: "One note in the bucket", lede: "A collection of records that people change one at a time is kept as a log. The write trace above ends here. Each step adds files, and names the one new word it needs.", rows: NOTE_ROWS, steps: NOTE_STEPS },
-  { id: "story-feed", title: "One new feed in the bucket", lede: "A document that is replaced whole, and rarely, is kept as a pointer history instead. This story follows a new GTFS zip.", rows: FEED_ROWS, steps: FEED_STEPS },
+  { id: "story-feed", title: "One new feed in the bucket", lede: "A document that is replaced whole, and rarely, is kept as a pointer history instead. This story follows a new GTFS zip from the agency. The network it makes is the deployment's feed network. Planners author networks too: the next story follows one.", rows: FEED_ROWS, steps: FEED_STEPS },
+  { id: "story-plan", title: "A planner publishes a service change", lede: "A network a planner authors is a draft on their device until it is published. Publishing keeps it whole, in its plan's pointer history, and the plans log names it by its fingerprint. This is where the two ways of keeping meet.", rows: PLAN_ROWS, steps: PLAN_STEPS },
 ];
 
 function bucketStory(story) {
@@ -1125,7 +1152,7 @@ ${bus.rows}
 ${TRACES.map(traceSection).join("\n")}
 
 <h2 id="bucket">Where things are kept</h2>
-<p class="lede">The agency's record is one bucket in object storage. A file in it is written once and never changed. A kind is kept as a log when it is a collection of records that people change one at a time, such as stops, alerts, or notes. It is kept whole, in a pointer history, when it is replaced whole and rarely, such as the network or a build. The map shows where each kind lives, drawn from the kind table. The two stories below it follow one of each into the bucket.</p>
+<p class="lede">The agency's record is one bucket in object storage. A file in it is written once and never changed. A kind is kept as a log when it is a collection of records that people change one at a time, such as stops, alerts, or notes. It is kept whole, in a pointer history, when it is replaced whole and rarely, such as the network or a build. The map shows where each kind lives, drawn from the kind table. The stories below it follow one of each into the bucket, and then a network a planner authors, which uses both.</p>
 ${bucketMap()}
 ${BUCKET_STORIES.map(bucketStory).join("\n")}
 

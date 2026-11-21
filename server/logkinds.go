@@ -87,16 +87,52 @@ type heldModule struct {
 // with the documents it declares.
 const opAbout = 268
 
-// modulePath is where a capability's module is: the one the server was
-// started with (-<cap>-wasm), or where `just caps` writes it.
+// modulePath is where a capability's module is: the file its own flag
+// names (-<cap>-wasm), else cap_<id>.wasm in -modules (by default where
+// `just caps` writes it).
 func (s *server) modulePath(capability string) string {
 	if p := s.checkWasm[capability]; p != "" {
+		return p
+	}
+	if p := s.moduleFiles[capability]; p != "" {
 		return p
 	}
 	if p := s.serverModules[capability]; p != "" {
 		return p
 	}
-	return "../web/pkg/cap_" + capability + ".wasm"
+	dir := s.modulesDir
+	if dir == "" {
+		dir = "../web/pkg"
+	}
+	return moduleIn(dir, capability)
+}
+
+// serverCapabilities are the capabilities the server runs for itself,
+// whatever kinds it keeps: the edit merge, the feed and street imports,
+// the plan chain, migration, and the logs.
+var serverCapabilities = []string{"sync", "network", "streets", "plans", "migrate", "log"}
+
+// hostedModules are the modules this server hosts, by capability, as
+// each build keeps them: the server's own, every capability the kind
+// table names (a kind's module and its receive op's), and cap-authz
+// when sign-in is on. A new kind's capability joins from its line.
+func (s *server) hostedModules(authz bool) map[string]string {
+	ids := append([]string{}, serverCapabilities...)
+	if t, err := s.kindTable(); err == nil {
+		for _, e := range t.Kinds {
+			ids = append(ids, e.Module, e.Receive)
+		}
+	}
+	if authz {
+		ids = append(ids, "authz")
+	}
+	out := map[string]string{}
+	for _, id := range ids {
+		if id != "" {
+			out[id] = s.modulePath(id)
+		}
+	}
+	return out
 }
 
 // withModule runs `use` on the server's one instance of a capability,

@@ -63,17 +63,17 @@ provider's bucket runs the same way: `just store-contract URL`, with
 the provider's credentials. That is the operator's check before going
 live (`DEPLOYMENTS-SERVER.md`, "Prepare the bucket").
 
-**The edit loop.** `just test-fast` runs every suite and gate `just
-test` runs, over the `wasm-fast` modules (`just caps-fast`: release
-semantics without whole-program LTO). A
-library change then costs seconds to a minute of module build, not
-about ten minutes. It is the loop, not the gate. A change still passes
-`just test` before you call it done, because only release modules
-ship. `just e2e-fast` is the browser side of the same loop. It runs the
-specs over the `wasm-fast` modules and passes Playwright's arguments
-through. One spec (`just e2e-fast e2e/ui-stops.spec.mjs`) or one test
-by name (`-g`) runs alone. `just e2e` is the gate. Two more things keep
-the loop short without testing less:
+**The modules the gates run.** `just test` and `just e2e` run over the
+`wasm-fast` modules (`just caps-fast`: release semantics without
+whole-program LTO, incremental). A library change then costs seconds to
+a minute of module build, not an hour. LTO changes a module's size and
+speed, not its answers, so a change passes `just test` (and `just e2e`
+when the UI shows it) before you call it done. `just e2e` passes
+Playwright's arguments through: one spec (`just e2e
+e2e/ui-stops.spec.mjs`) or one test by name (`-g`) runs alone. The
+release modules, the bytes the registry publishes, run when a unit is
+done: `just test-release`, `just e2e-release`, `just check-release`
+(D-236). Two more things keep the loop short without testing less:
 
 - Dependencies are optimized in dev and test builds
   (`[profile.dev.package."*"]` in `Cargo.toml`). The workspace's own

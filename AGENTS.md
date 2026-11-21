@@ -189,23 +189,27 @@ Where the detail lives:
 - `just test` is the host-side gate, with no browser. Run it before you
   say any change is done.
 - `just e2e` adds the browser runner. Run it for changes the UI shows.
+  It runs all the specs, or one spec or one test by name.
 - `just check` runs both. Run it for changes that touch both sides.
 
-While you iterate, `just test-fast` runs the same host-side suites over
-the wasm-fast modules. `just e2e-fast` runs the browser specs: all of
-them, or one spec or one test by name. Neither is the gate. Build and
-test through these recipes, not by hand.
+These build the wasm-fast modules: no whole-program LTO, so a change
+builds in a minute. They behave as the release modules do; only their
+size differs. `just test-release`, `just e2e-release`, and `just
+check-release` run the same over the release modules, which take about
+an hour to build. Run them when a unit is done, not for each change
+(D-236). Build and test through these recipes, not by hand.
 
 ```
 just test                  # the host-side gate (Rust, smokes, runner gates, web parity
                            # ratchets, Go -race), with no browser
-just e2e                   # the browser gate (Playwright; it builds first)
+just e2e [args]            # the browser gate (Playwright; it builds first)
 just check                 # both gates
-just test-fast             # the edit loop's runners, over the wasm-fast modules.
-just e2e-fast [args]       # Neither is a gate.
+just test-release          # the same over the release modules: when a unit is done
+just e2e-release
+just check-release
 just build                 # the frontend (it type-checks first: the TS layer is a gate)
-just caps                  # the modules, the manifest, and the local registry
-just caps-fast             # the same under the wasm-fast profile: the edit loop's build
+just caps                  # the release modules, the manifest, and the local registry
+just caps-fast             # the same under the wasm-fast profile: what the gates build
 just types                 # the TS bindings again (gitignored; build runs it)
 just schema-lock           # freeze a document kind's new version (docs/FORMATS.md)
 just serve                 # the sync server on :8080

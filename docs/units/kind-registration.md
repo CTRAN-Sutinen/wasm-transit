@@ -11,8 +11,8 @@ notes kind is named in this plumbing (2026-11-20):
 - in the kernel: `crates/cap-abi/src/kernel.rs` (its registry and
   load) and `src/bin/gen_manifest.rs` (its schema's example and its
   load's description);
-- in the server: `server/flags.go` (`-notes-wasm`) and `server/main.go`
-  (the module paths by capability);
+- in the server: `server/flags.go` (`-notes-wasm`, an older flag kept
+  beside the `-modules` folder);
 - in the engine: `web/src/engine.ts`, as the capability in its typed op
   map.
 
@@ -70,9 +70,6 @@ writer saw, and warns about a write that the world made wrong later
      transit-stops's `read_pick`, which adds to its module's size. A
      proposal goes to the user first. `server/stops.go` (what a pick
      reads of the stops) goes with it.
-   - The modules' flags (`-notes-wasm` and the others) and the module
-     map in `main.go` name each capability. One setting for every
-     capability's module removes them, beside the old flags.
 
    The routes and their bytes stay the same, and `server/openapi.json`
    compares them. Each error and log line of the route names its kind.

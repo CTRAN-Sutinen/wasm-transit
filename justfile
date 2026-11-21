@@ -27,10 +27,9 @@ default:
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
 # cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops,
-# cap_requests, cap_alerts, cap_notes, cap_log — the server's default -wasm,
-# -network-wasm, -streets-wasm, -authz-wasm, -plans-wasm, -migrate-wasm,
-# -stops-wasm, -requests-wasm, -alerts-wasm, -notes-wasm and -log-wasm flags; rebuilt
-# with the modules, never by hand), with the kind table
+# cap_requests, cap_alerts, cap_notes, cap_log — the server's default
+# -modules folder, where it reads each capability's module as
+# cap_<id>.wasm; rebuilt with the modules, never by hand), with the kind table
 # web/pkg/kinds.json (-kinds) and the
 # schemas it names in web/pkg/schemas/ (D-202). The
 # registry also publishes every document kind's JSON Schema and a
@@ -47,17 +46,22 @@ caps:
     just _modules target "$profile"
     CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
-    for cap in sync network streets authz plans migrate stops requests alerts notes log; do
+    # The server's modules: its own (server/logkinds.go,
+    # serverCapabilities, and cap-authz), and every capability the kind
+    # table names, so a new kind's capability needs no line here.
+    caps=$(node -e 'const t = require("./web/pkg/kinds.json"); const s = new Set(["sync", "network", "streets", "authz", "plans", "migrate", "log"]); for (const k of t.kinds) { if (k.module) s.add(k.module); if (k.receive) s.add(k.receive); } console.log([...s].join(" "))')
+    for cap in $caps; do
         cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
 
-# The iteration loop's modules: `just caps` under the wasm-fast profile
+# The modules the tests run: `just caps` under the wasm-fast profile
 # (Cargo.toml — no whole-program LTO, incremental), so a change to one
-# library rebuilds its modules in seconds to a minute instead of ~10
-# minutes. The pages, e2e specs, and caps-run read them the same way
-# (the local registry's evidence says `profile: wasm-fast`). `just
-# test-fast` runs the host-side suites over them; `just test`, `just
-# e2e`, and `just registry` build release themselves.
+# library rebuilds its modules in seconds to a minute, not an hour. They
+# behave as the release modules do; only their size differs. The pages,
+# e2e specs, and caps-run read them the same way (the local registry's
+# evidence says `profile: wasm-fast`). `just test` and `just e2e` build
+# them; `just test-release`, `just e2e-release`, and `just registry`
+# build release themselves.
 caps-fast:
     CAPS_PROFILE=wasm-fast just caps
 
@@ -67,7 +71,7 @@ caps-fast:
 # Its content comes from the code: the registry holds the purposes, the
 # op descriptions, the examples, and the schemas, and the architecture
 # page draws the crates from `cargo metadata`. Only its two traces and
-# its two bucket stories are written by hand, and its test checks the code they
+# its bucket stories are written by hand, and its test checks the code they
 # name
 # (docs/architecture/registry.md, "The docs site").
 docs mode="build" port="8085":
@@ -175,27 +179,28 @@ types:
 # test
 # ---------------------------------------------------------------
 
-# The host-side runner: Rust suites, Go -race, artifact smoke in
-# Node, capability-module smoke (needs `caps` built — hash-pinned
-# modules and the manifest the smoke verifies against), runner
-# gates, web parity ratchets. No browser — the gate for logic
-# changes under a stable op surface; pair with a real-data caps-run
-# session (docs/TESTING.md, dogfood QA). Browser cover is `e2e`.
-# TS_RS_EXPORT_DIR keeps the ts-rs bindings regenerating into
-# web/src/types on every run (.cargo/config.toml pins the same path
-# for plain cargo runs; without either, ts-rs scatters them into
-# crates/*/bindings).
-test: caps _host-tests
+# The host-side runner, and the check a change runs before it is
+# called done: Rust suites, Go -race, artifact smoke in Node,
+# capability-module smoke (hash-pinned modules and the manifest the
+# smoke verifies against), runner gates, web parity ratchets. No
+# browser — pair with a real-data caps-run session (docs/TESTING.md,
+# dogfood QA). Browser cover is `e2e`. It builds the wasm-fast modules
+# (`caps-fast`: no whole-program LTO, incremental), which behave as the
+# release modules do, so a library change costs a minute of module
+# build, not an hour of LTO. `test-release` runs the same over the
+# release modules. TS_RS_EXPORT_DIR keeps the ts-rs bindings
+# regenerating into web/src/types on every run (.cargo/config.toml
+# pins the same path for plain cargo runs; without either, ts-rs
+# scatters them into crates/*/bindings).
+test: caps-fast _host-tests
 
-# The edit loop's runner: the same suites and gates as `test`, over
-# the wasm-fast modules (`caps-fast`), so a library change costs
-# seconds to a minute of module build instead of ~10 minutes of
-# whole-program LTO. Not the gate: `just test` (release modules) is
-# what a change runs before it is called done.
-test-fast: caps-fast _host-tests
+# The same suites and gates over the release modules (`caps`: whole-
+# program LTO, the bytes the registry publishes). Run it when a unit
+# is done, and before a release; `registry` builds release itself.
+test-release: caps _host-tests
 
 # The host-side suites and gates over whichever modules were built
-# last (`test` and `test-fast` build them first).
+# last (`test` and `test-release` build them first).
 _host-tests:
     #!/usr/bin/env bash
     set -e
@@ -831,28 +836,31 @@ http-lock:
 schema-lock:
     cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest -- --lock
 
-# Browser e2e (Chromium via Playwright, against the Go server).
-# Builds first; the runner starts the server unless :8080 is taken.
-# For UI-visible changes: each generated UI's spec, the picker, and
-# the published-network spec (module surfaces as the UIs read them).
-e2e: caps build (build-ui "ride-now") (build-ui "stop-display") (build-ui "stops") (build-ui "service-change")
-    cd web && npx playwright test
-
-# The edit loop's browser runner: `e2e` over the wasm-fast modules
-# (`caps-fast`), the pages, and the UIs the specs serve alone (the two
-# rider UIs, and the stops and service-change UIs at their own origins),
-# with Playwright's arguments passed through — one spec, one test by
+# Browser e2e (Chromium via Playwright, against the Go server), over
+# the wasm-fast modules (`caps-fast`), the pages, and the UIs the specs
+# serve alone (the two rider UIs, and the stops and service-change UIs
+# at their own origins). The runner starts the server unless :8080 is
+# taken. For UI-visible changes: each generated UI's spec, the picker,
+# and the published-network spec (module surfaces as the UIs read
+# them). Playwright's arguments pass through — one spec, one test by
 # name, or every spec when none is given:
-#   just e2e-fast e2e/ui-stops.spec.mjs
-#   just e2e-fast e2e/ui-service-change.spec.mjs -g "a published pick"
-# Not the gate: `just e2e` (release modules) is.
-e2e-fast *args: caps-fast types
+#   just e2e e2e/ui-stops.spec.mjs
+#   just e2e e2e/ui-service-change.spec.mjs -g "a published pick"
+e2e *args: caps-fast types
     cd web && npm run typecheck && npm run build
     cd web && for ui in ride-now stop-display stops service-change; do UI=$ui npx vite build || exit 1; done
     cd web && npx playwright test {{ args }}
 
+# Every spec over the release modules (`caps`). Run it when a unit is
+# done, and before a release.
+e2e-release: caps build (build-ui "ride-now") (build-ui "stop-display") (build-ui "stops") (build-ui "service-change")
+    cd web && npx playwright test
+
 # Both runners — for changes that touch both sides.
 check: test e2e
+
+# Both runners over the release modules: when a unit is done.
+check-release: test-release e2e-release
 
 # Browser performance baselines (docs/TESTING.md, "Performance
 # baselines"): the real feed and recorded live feeds through a UI,
@@ -1028,9 +1036,8 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     set -e
     rm -rf server/kodata
     mkdir -p server/kodata/pkg server/kodata/dist-ui
-    for cap in sync network streets authz plans migrate stops requests alerts notes log; do
-        cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
-    done
+    # The server's modules: web/pkg/ holds only those (`just caps`).
+    cp web/pkg/cap_*.wasm server/kodata/pkg/
     # The kind table and the schemas it names (-kinds; D-202): the
     # receive path reads the table, and the store keeps the schemas.
     cp web/pkg/kinds.json server/kodata/pkg/
