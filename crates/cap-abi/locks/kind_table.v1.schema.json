@@ -3,6 +3,13 @@
     "KindEntry": {
       "description": "One kind the store keeps.",
       "properties": {
+        "intent": {
+          "description": "False when a page never writes the kind's log by intent (absent:\nit does, or the kind is in no log).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "load": {
           "anyOf": [
             {

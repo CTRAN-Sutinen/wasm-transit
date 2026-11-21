@@ -404,6 +404,14 @@ where
     }
 }
 
+/// A whole document that a write sends, read as the base of the write
+/// ([`Base`]), and the fields it carries that this build does not know
+/// (D-167). A receive op reads a whole-document write with it.
+pub fn read_base<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), String> {
+    let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<Base<T>>(doc));
+    Ok((read.map_err(|e| e.to_string())?.0, unknown))
+}
+
 impl<T> std::ops::Deref for Base<T> {
     type Target = T;
     fn deref(&self) -> &T {

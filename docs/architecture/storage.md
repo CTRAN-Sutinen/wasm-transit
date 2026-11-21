@@ -15,6 +15,11 @@ the model those three share. It says what the record is, what it holds
 by shape, how it is written and read, and where it is not yet what it
 has to be.
 
+To see it first: the architecture page of `just docs` ("Where things
+are kept") maps where each kind of document lives, drawn from the kind
+table. It then steps through the files that one saved note makes (a
+log) and that one new feed makes (pointer histories).
+
 ## The record
 
 With `-store <url>` the server keeps the record in object storage.
@@ -129,6 +134,8 @@ and the document is the fold).
 | Collections: records by id, few writers | the published plan set (picks), the frozen versions | rare: a freeze, an adoption, a retirement | without bound (frozen versions) | log (`plans`) |
 | Collections: records by id, many writers | the edit document (detours, trip cancels) | frequent, one record at a time | without bound | log (`disruptions`) |
 | Collections: records by id, many writers | stops, stop requests | frequent, one record at a time | without bound | log (`stops`) |
+| Collections: records by id, many writers | service alerts, alert templates | frequent, one record at a time | without bound | log (`alerts`) |
+| Collections: records by id, many writers | notes | frequent, one record at a time | without bound | log (`notes`) |
 | Attachments: binary | photos and site drawings (D-162) | per record | steady | not stored yet |
 | Event tables: many rows, append only | none yet (heartbeats keep only the latest; TIDES, AVL and APC are not held) | n/a | n/a | n/a |
 
@@ -186,8 +193,8 @@ by kind:
     whose answer was lost lands once.
   - `read_seq` is the log's seq whose documents the page read (the
     manifest's `log_seqs`). The write is checked against the records it
-    changes, not the whole log's head: cap-log's `compose` reads the
-    entries after `read_seq`, and a record that one of them changed and
+    changes, not the whole log's head: the receive op reads the
+    entries after `read_seq` (`transit_log::receive`), and a record that one of them changed and
     the write changes too is a `409` that names it (`overlap`). A change
     to another record does not refuse the write.
   - `claimed_at_ms` is the device's clock when the person made a write
@@ -354,30 +361,36 @@ reading **Because**.
 - **Holds:** cap-log never reads a record. A change is `{kind, version,
   id, before, after}`. Each kind's capability turns its document into
   records (its collection, and the document's own record) and back. One
-  entry may hold the records of two capabilities. `before` hashes the
+  entry may hold the records of two kinds. A log that a receive op
+  writes takes the whole write from one capability, which links each
+  kind's library: the stops log's is cap-stops, which links
+  transit-requests (`crates/transit-log/src/receive.rs`; D-228). `before` hashes the
   record as stored. A revert takes a record the reverted entry created
   out of the document. A kind whose merge would undo that (the edit
   document's LWW) writes back its own records instead: stamped to win
   the merge, and a created record retired (D-193).
 - **Because:** completing a request and adding the stop's event is one
-  transaction, and capabilities never call each other. A log module that
-  reads no record lets the server compose one entry from the changes of
-  two modules without deciding anything. A stop is one record, because
+  transaction, and capabilities never call each other. A question that
+  spans kinds is one op, in the capability whose need it answers, so
+  the write's steps are not sequenced in a host (D-228). The shared
+  library composes the entry and reads no record, so each receive op
+  composes it the same way. A stop is one record, because
   an event's place among events on the same day is the order of writing.
   Hashing the stored bytes keeps the chain checkable when two builds of
   different versions write in turn. The log keeps every state, so the
   tombstone of the documents' design is no longer needed where no merge
   would bring a dropped record back.
 - **Costs:** a revert is refused when any later entry changed the same
-  stop, not only the same event. A compound write runs one module per
-  kind and one more to compose. A disruptions revert asks cap-log twice,
-  with cap-sync between.
+  stop, not only the same event. cap-stops links transit-requests, and
+  runs the requests' write ops from that library (`put`,
+  `record_work_order`) beside cap-requests, which keeps them as its own
+  ops. A disruptions revert asks cap-log twice, with cap-sync between.
 - **Rejected:** requests merged into cap-stops (one module, two needs:
-  law 3); a cap-stops op that depends on transit-requests (couples two
-  crates); an event as a record (its order is not in its content); an
-  engine of its own for each log (two engines to keep, and the same
-  rules written twice).
-- **Decided:** D-197, D-198.
+  law 3); the server sequencing a stops write between cap-stops and
+  cap-requests (a rule only that host applies: D-228); an event as a
+  record (its order is not in its content); an engine of its own for
+  each log (two engines to keep, and the same rules written twice).
+- **Decided:** D-197, D-198, D-228.
 
 ### The derived documents are stored when they are made (`server/derived.go`)
 - **Holds:** the network, the boundary, the streets, and the walk table
@@ -403,7 +416,7 @@ reading **Because**.
   verify would follow one more kind of reference).
 - **Decided:** D-199. **Provisional:** D-200 (the derivation record).
 
-### Freezing and adopting are two acts in one log (`server/planslog.go`, `crates/transit-plans`, `crates/cap-plans`)
+### Freezing and adopting are two acts in one log (`crates/transit-plans`, `crates/cap-plans` `receive`, `server/planslog.go`)
 - **Holds:** a freeze writes a network version to the record by hash,
   with what it is, and puts nothing in force. Only a frozen version is
   adopted, and the pick names the stops log entry it read. The published

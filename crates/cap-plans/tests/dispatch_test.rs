@@ -239,3 +239,72 @@ fn the_timeline_answers_rows_the_pick_in_force_and_the_chain() {
     let bad = ask(serde_json::json!({"op": "timeline", "today": "2026-13-01", "plans": []}));
     assert!(bad.get("err").is_some() || bad.get("error").is_some(), "{bad}");
 }
+
+// ---------------------------------------------------------------------
+// receive: the plans log's write, whole (D-228)
+// ---------------------------------------------------------------------
+
+fn header(seq: u64, key: Option<&str>) -> serde_json::Value {
+    let mut intent = serde_json::json!({ "op": "POST /plans" });
+    if let Some(k) = key {
+        intent["key"] = serde_json::json!(k);
+    }
+    serde_json::json!({ "log": "plans", "seq": seq, "writer": "planner-1", "at_ms": 2_000_000, "module": "cap-plans@test", "intent": intent })
+}
+
+fn entry_kinds(got: &serde_json::Value) -> Vec<String> {
+    let entry: serde_json::Value = serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("an entry: {got}"))).unwrap();
+    let mut kinds: Vec<String> = entry["changes"].as_array().unwrap().iter().map(|c| c["kind"].as_str().unwrap().to_string()).collect();
+    kinds.sort();
+    kinds.dedup();
+    kinds
+}
+
+fn fall() -> serde_json::Value {
+    serde_json::json!({"id": "fall", "name": "Fall", "effective_from": "2026-09-07"})
+}
+
+#[test]
+fn receive_freezes_and_adopts_in_one_entry() {
+    let got = answer(serde_json::json!({ "op": "receive", "write": { "header": header(1, Some("k1")) }, "ops": [
+        {"cap": "plans", "op": "freeze", "args": {"plan": fall(), "network_hash": hash(1), "purpose": "the published pick"}},
+        {"cap": "plans", "op": "adopt", "args": {"network_hash": hash(1), "today": "2026-01-01", "stops_seq": 4}}
+    ] }));
+    assert_eq!(entry_kinds(&got), vec!["frozen_version", "frozen_versions", "pick", "plans"], "{got}");
+    assert!(got["heads"]["plans"].is_string() && got["heads"]["frozen_versions"].is_string(), "{got}");
+}
+
+#[test]
+fn receive_answers_a_refused_adoption_with_its_issues_and_no_entry() {
+    let got = answer(serde_json::json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [
+        {"cap": "plans", "op": "adopt", "args": {"network_hash": hash(2), "today": "2026-01-01"}}
+    ] }));
+    assert_eq!(got["refused"]["op"], 0, "{got}");
+    assert_eq!(got["refused"]["refusals"][0]["kind"], "not_frozen", "{got}");
+    assert!(got.get("entry").is_none());
+    let bad = answer(serde_json::json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{"cap": "stops", "op": "add_event"}] }));
+    assert!(bad["failed"]["error"].as_str().unwrap().contains("not a write to the plans log"), "{bad}");
+}
+
+#[test]
+fn receive_retires_over_the_documents_it_is_given() {
+    let frozen = answer(serde_json::json!({"op": "freeze", "frozen": null, "plan": fall(), "network_hash": hash(1), "purpose": "p"}))["frozen"].clone();
+    let set = answer(serde_json::json!({"op": "adopt", "published": null, "frozen": frozen, "network_hash": hash(1), "today": "2026-01-01"}))["published"].clone();
+    let got = answer(serde_json::json!({ "op": "receive", "documents": {"plans": set, "frozen_versions": frozen},
+        "write": { "header": header(1, None) },
+        "ops": [{"cap": "plans", "op": "retire", "args": {"id": "fall", "today": "2026-01-01"}}] }));
+    assert_eq!(entry_kinds(&got), vec!["pick", "plans"], "only the published set is written: {got}");
+    assert!(got["heads"].get("frozen_versions").is_none(), "{got}");
+}
+
+#[test]
+fn receive_migrate_freezes_each_published_pick_and_records_both() {
+    let frozen = answer(serde_json::json!({"op": "freeze", "frozen": null, "plan": fall(), "network_hash": hash(1), "purpose": "p"}))["frozen"].clone();
+    let set = answer(serde_json::json!({"op": "adopt", "published": null, "frozen": frozen, "network_hash": hash(1), "today": "2026-01-01"}))["published"].clone();
+    let got = answer(serde_json::json!({ "op": "receive", "documents": {"plans": set},
+        "write": { "header": header(1, None) }, "ops": [{"cap": "plans", "op": "migrate"}] }));
+    assert_eq!(entry_kinds(&got), vec!["frozen_version", "frozen_versions", "pick", "plans"], "{got}");
+    let entry: serde_json::Value = serde_json::from_str(got["entry"].as_str().unwrap()).unwrap();
+    let version = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "frozen_version").unwrap();
+    assert_eq!(version["after"]["purpose"], "published before the plans log", "{version}");
+}

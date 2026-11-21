@@ -392,7 +392,7 @@ fn the_document_and_its_log_records_round_trip() {
         records["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": 1, "value": v}))).collect();
     let document = json!({"version": 1, "value": next[1]["records"]["document"]});
     let back = ok(json!({"op": "log_document", "records": held, "document": document}));
-    assert_eq!(back["stops_hash"], hash, "the same document, the same identity");
+    assert_eq!(back["document_hash"], hash, "the same document, the same identity");
     assert_eq!(back["document"], valid["document"]);
     let mut newer = held.clone();
     newer["7001"]["version"] = json!(2);
@@ -479,4 +479,124 @@ fn a_new_stop_is_refused_a_held_id_and_the_vocabulary_lists_the_statuses() {
         "event": {"on": "2026-10-01", "event": "planned", "lat": 45.5, "lon": -122.3}}));
     assert_eq!(began["refusals"], json!([]));
     assert_eq!(ok(json!({"op": "vocabulary"}))["statuses"], json!(["planned", "permitted", "built", "in_service", "suspended", "retired"]));
+}
+
+// ---------------------------------------------------------------------
+// receive: the stops log's write, whole (D-228)
+// ---------------------------------------------------------------------
+
+fn header(seq: u64, key: Option<&str>) -> Value {
+    let mut intent = json!({ "op": "POST /logs/stops" });
+    if let Some(k) = key {
+        intent["key"] = json!(k);
+    }
+    json!({ "log": "stops", "seq": seq, "writer": "sub-7", "at_ms": 2_000_000, "module": "cap-stops@test", "intent": intent })
+}
+
+fn requests_sample() -> Value {
+    json!({ "kind": "stop_requests", "schema_version": 1, "requests": {
+        "R-1": { "stop": "6124", "job": "repair_improve", "status": "submitted" }
+    } })
+}
+
+/// The fold after the host stores `entry` at seq 1.
+fn folded(entry: &str) -> Value {
+    let stored = [transit_log::Stored { seq: 1, text: entry.into() }];
+    let fold = transit_log::fold(transit_log::Checkpoint::empty("stops"), &stored, &cap_abi::record_hash).unwrap();
+    serde_json::to_value(fold.fold).unwrap()
+}
+
+fn kinds_changed(entry: &Value) -> Vec<String> {
+    let mut kinds: Vec<String> = entry["changes"].as_array().unwrap().iter().map(|c| c["kind"].as_str().unwrap().to_string()).collect();
+    kinds.sort();
+    kinds.dedup();
+    kinds
+}
+
+#[test]
+fn receive_writes_a_stop_and_the_request_it_carries_out_as_one_entry() {
+    let stops = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let requests = ok(json!({"op": "load_stop_requests", "requests": requests_sample()}))["requests_hash"].clone();
+    let event = json!({"on": "2027-10-01", "event": "changed", "amenities": {"shelter": true}, "request": "R-1"});
+    let ordered = json!({"system": "manual", "id": "WO-9", "status": "open"});
+    let got = ok(json!({ "op": "receive", "heads": {"stops": stops, "stop_requests": requests},
+        "write": { "header": header(1, Some("dev/1")) },
+        "ops": [
+            {"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": event}},
+            {"cap": "requests", "op": "record_work_order", "args": {"id": "R-1", "work_order": ordered}}
+        ] }));
+    let entry: Value = serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("an entry: {got}"))).unwrap();
+    assert!(kinds_changed(&entry).contains(&"stop".to_string()) && kinds_changed(&entry).contains(&"stop_request".to_string()), "{entry}");
+    assert!(got["heads"]["stops"].is_string() && got["heads"]["stop_requests"].is_string(), "both documents written: {got}");
+    // The same key again, over the fold that holds it, lands once.
+    let again = ok(json!({ "op": "receive", "heads": got["heads"].clone(),
+        "write": { "checkpoint": folded(got["entry"].as_str().unwrap()), "header": header(2, Some("dev/1")) },
+        "ops": [{"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": event}}] }));
+    assert_eq!(again["landed"], 1, "{again}");
+}
+
+#[test]
+fn receive_records_only_the_documents_its_ops_wrote() {
+    let stops = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let requests = ok(json!({"op": "load_stop_requests", "requests": requests_sample()}))["requests_hash"].clone();
+    let got = ok(json!({ "op": "receive", "heads": {"stops": stops, "stop_requests": requests},
+        "write": { "header": header(1, None) },
+        "ops": [{"cap": "requests", "op": "put", "args": {"id": "R-2", "request": {"stop": "7001", "job": "new", "status": "drafted"}, "new": true}}] }));
+    let entry: Value = serde_json::from_str(got["entry"].as_str().unwrap()).unwrap();
+    assert_eq!(kinds_changed(&entry), vec!["stop_request", "stop_requests"], "the requests and their document's own record: {entry}");
+    assert!(got["heads"].get("stops").is_none(), "{got}");
+    let taken = ok(json!({ "op": "receive", "heads": {"stop_requests": requests}, "write": { "header": header(1, None) },
+        "ops": [{"cap": "requests", "op": "put", "args": {"id": "R-1", "request": {"stop": "7001", "job": "new", "status": "drafted"}, "new": true}}] }));
+    assert_eq!(taken["refused"]["op"], 0, "a new request under a held id: {taken}");
+}
+
+#[test]
+fn receive_names_the_signed_in_writer_on_each_new_survey() {
+    let stops = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let mut whole = sample();
+    whole["stops"]["7001"].as_array_mut().unwrap().push(json!({"on": "2027-06-01", "event": "changed", "surveyed_by": "someone-else", "amenities": {"bench": true}}));
+    let got = ok(json!({ "op": "receive", "heads": {"stops": stops.clone()}, "by": "Rae Alvarez",
+        "write": { "header": header(1, None) },
+        "ops": [{"cap": "stops", "op": "validate", "args": {"stops": whole, "from": stops}}] }));
+    let entry: Value = serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("an entry: {got}"))).unwrap();
+    let stop = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "stop" && c["id"] == "7001").expect("stop 7001 changes");
+    let surveyed: Vec<&Value> = stop["after"].as_array().unwrap().iter().filter_map(|e| e.get("surveyed_by")).collect();
+    assert_eq!(surveyed, vec![&json!("Rae Alvarez")], "the host's name, never the page's: {stop}");
+}
+
+#[test]
+fn receive_answers_a_moved_head_a_conflict_and_another_log_s_op_with_no_entry() {
+    // validate gives each event its id (D-166)
+    let valid: Value = serde_json::from_str(ok(json!({"op": "validate", "stops": sample()}))["document"].as_str().unwrap()).unwrap();
+    let stops = ok(json!({"op": "load_stops", "stops": valid}))["stops_hash"].clone();
+    let moved = ok(json!({ "op": "receive", "heads": {"stops": stops.clone()}, "write": { "header": header(1, None) },
+        "ops": [{"cap": "stops", "op": "validate", "args": {"stops": sample(), "from": "sha256:old"}}] }));
+    assert_eq!(moved["moved"]["current"], stops, "{moved}");
+    let card = ok(json!({"op": "stop", "stops_hash": stops, "stop_id": "6124", "date": "2026-01-06"}));
+    let event_id = card["events"][0]["id"].clone();
+    let conflict = ok(json!({ "op": "receive", "heads": {"stops": stops}, "write": { "header": header(1, None) },
+        "ops": [{"cap": "stops", "op": "correct_event", "args": {"stop_id": "6124", "event_id": event_id, "saw": "sha256:stale"}}] }));
+    assert_eq!(conflict["conflict"], json!({"op": 0, "id": event_id}), "{conflict}");
+    let other = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{"cap": "notes", "op": "write", "args": {}}] }));
+    assert!(other["failed"]["error"].as_str().unwrap().contains("not a write to the stops log"), "{other}");
+    let none = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{"cap": "stops", "op": "add_event", "args": {"stop_id": "1", "event": {"on": "2027-01-01", "event": "planned", "lat": 45.0, "lon": -122.0}}}] }));
+    assert_eq!(none["failed"]["error"], "no stops document yet", "{none}");
+    for answer in [moved, conflict, other, none] {
+        assert!(answer.get("entry").is_none(), "{answer}");
+    }
+}
+
+#[test]
+fn receive_migrate_records_the_heads_as_they_are_and_a_feed_needs_a_stops_document() {
+    let stops = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let requests = ok(json!({"op": "load_stop_requests", "requests": requests_sample()}))["requests_hash"].clone();
+    let got = ok(json!({ "op": "receive", "heads": {"stops": stops, "stop_requests": requests},
+        "write": { "header": header(1, None) }, "ops": [{"cap": "stops", "op": "migrate"}] }));
+    assert_eq!(got["heads"], json!({"stops": stops, "stop_requests": requests}), "the same documents: {got}");
+    let entry: Value = serde_json::from_str(got["entry"].as_str().unwrap()).unwrap();
+    assert_eq!(kinds_changed(&entry), vec!["stop", "stop_request", "stop_requests", "stops"], "{entry}");
+    let net = sample_network()["network_hash"].clone();
+    let nothing = ok(json!({ "op": "receive", "write": { "header": header(1, None) },
+        "ops": [{"cap": "stops", "op": "import_events", "args": {"network_hash": net, "feed": "sha256:feed"}}] }));
+    assert!(nothing.get("entry").is_none() && nothing.get("failed").is_none(), "{nothing}");
 }

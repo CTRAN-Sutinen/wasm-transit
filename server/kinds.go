@@ -46,6 +46,9 @@ type kindEntry struct {
 	} `json:"records,omitempty"`
 	// Receive is the capability whose receive op writes the kind's log.
 	Receive string `json:"receive,omitempty"`
+	// Intent false: a page never writes the kind's log by intent
+	// (POST /logs/<log>); only the kind's routes write it.
+	Intent *bool `json:"intent,omitempty"`
 	// Post is the kind's own write route, answered by that receive op.
 	Post *kindPost `json:"post,omitempty"`
 	// Load is the kernel's load of the kind: a module registers a
@@ -130,6 +133,17 @@ func (e *kindEntry) heads(pointer string) bool {
 		}
 	}
 	return false
+}
+
+// rule is the policy pointer whose write rule governs a write of the
+// kind: its first pointer, else its store kind.
+func (e *kindEntry) rule() string {
+	for _, p := range e.Pointers {
+		if !strings.HasSuffix(p, "*") {
+			return p
+		}
+	}
+	return e.StoreKind
 }
 
 // current is the newest version the table names for the kind (1 when it

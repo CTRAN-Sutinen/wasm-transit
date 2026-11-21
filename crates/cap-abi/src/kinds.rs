@@ -90,10 +90,15 @@ pub struct Log {
     /// Each record kind, and the document field that holds its
     /// collection (an array of records with an `id`, or an object by id).
     pub records: &'static [(&'static str, &'static str)],
+    /// Whether a page writes the log by intent (`POST /logs/<log>`).
+    /// False: only the kind's routes write it (a freeze stores its
+    /// network first; `POST /edits` is the edit document's protocol).
+    pub intent: bool,
 }
 
 /// A kind's own write route, answered by its log's receive op: the
-/// path, the op the request's body is the arguments of, the answer's
+/// path, the op the request's body is the arguments of (an op of the
+/// kind's checking capability, as the receive op takes it), the answer's
 /// field that names the document after the write, and the body's fields
 /// the answer repeats.
 #[derive(Debug, Clone, Copy)]
@@ -186,6 +191,15 @@ impl Declaration {
         self
     }
 
+    /// The stored kind's log takes no write by intent: only its routes
+    /// write it.
+    const fn no_intent(mut self) -> Self {
+        if let Some(Store { log: Some(log), .. }) = &mut self.store {
+            log.intent = false;
+        }
+        self
+    }
+
     /// The stored kind's own write route.
     const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
         if let Some(store) = &mut self.store {
@@ -197,7 +211,7 @@ impl Declaration {
     /// The log that holds the stored kind's records.
     const fn logged(mut self, name: &'static str, records: &'static [(&'static str, &'static str)]) -> Self {
         if let Some(store) = &mut self.store {
-            store.log = Some(Log { name, receive: None, records });
+            store.log = Some(Log { name, receive: None, records, intent: true });
         }
         self
     }
@@ -228,7 +242,9 @@ pub static KINDS: &[Declaration] = &[
         .loaded("edits", "load_edits", 259)
         .stored("edit_records", Route, "POST /edits", &["edits"], Lww, Open)
         .checked("sync", "sync_edits")
-        .logged("disruptions", &[("edit_record", "records")]),
+        .logged("disruptions", &[("edit_record", "records")])
+        .received("sync")
+        .no_intent(),
     Declaration::new("live", "live", "transit_live::LiveDay", "transit-live").loaded("live", "load_live", 260),
     Declaration::new("rt", "", "transit_rt::RtOverview", "").loaded("rt", "load_rt", 267),
     // Streets and walking.
@@ -251,12 +267,16 @@ pub static KINDS: &[Declaration] = &[
         .loaded("stops", "load_stops", 270)
         .stored("stops", Route, "POST /stops, POST /logs/stops", &["stops"], Merge::Log, Open)
         .checked("stops", "validate")
-        .logged("stops", &[("stop", "stops")]),
+        .logged("stops", &[("stop", "stops")])
+        .received("stops")
+        .posted("/stops", "validate", "stops_hash", &[]),
     Declaration::new("stop_requests", "stop_requests", "transit_requests::StopRequests", "transit-requests")
         .loaded("stop_requests", "load_stop_requests", 271)
         .stored("stop_requests", Route, "POST /stop-requests, POST /logs/stops", &["stop_requests"], Merge::Log, Open)
         .checked("requests", "validate")
-        .logged("stops", &[("stop_request", "requests")]),
+        .logged("stops", &[("stop_request", "requests")])
+        .received("stops")
+        .posted("/stop-requests", "validate", "requests_hash", &[]),
     Declaration::new("service_alerts", "service_alerts", "transit_alerts::ServiceAlerts", "transit-alerts")
         .loaded("service_alerts", "load_service_alerts", 272)
         .stored("service_alerts", Route, "POST /service-alerts", &[], Merge::Log, Open)
@@ -281,11 +301,15 @@ pub static KINDS: &[Declaration] = &[
     Declaration::new("plans", "plans", "transit_plans::PublishedPlans", "transit-plans")
         .stored("plans", Route, "POST /plans, POST /plans/adopt, POST /plans/retire", &["plans"], Merge::Log, Open)
         .checked("plans", "adopt")
-        .logged("plans", &[("pick", "plans")]),
+        .logged("plans", &[("pick", "plans")])
+        .received("plans")
+        .no_intent(),
     Declaration::new("frozen_versions", "frozen_versions", "transit_plans::FrozenVersions", "transit-plans")
         .stored("frozen_versions", Route, "POST /plans/freeze, POST /plans", &[], Merge::Log, Open)
         .checked("plans", "freeze")
-        .logged("plans", &[("frozen_version", "versions")]),
+        .logged("plans", &[("frozen_version", "versions")])
+        .received("plans")
+        .no_intent(),
     Declaration::new("log_entry", "log_entry", "transit_log::Entry", "transit-log").stored("log_entry", Route, "the log's own writes", &[], Merge::None, Audit),
     Declaration::new("log_checkpoint", "log_checkpoint", "transit_log::Checkpoint", "transit-log")
         .stored("log_checkpoint", Server, "the server's fold", &[], Merge::None, Audit),
@@ -405,8 +429,10 @@ mod tests {
                 assert!(matches!(s.merge, Merge::Log | Lww), "{}: a log's records merge one by one", k.name);
                 // Every kind of one log is written by one receive op: one
                 // entry can change records of each (D-232).
-                let others = KINDS.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name);
-                assert!(others.into_iter().all(|o| o.receive == log.receive), "the {} log has one receive op", log.name);
+                let mut others = KINDS.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name);
+                assert!(others.clone().all(|o| o.receive == log.receive), "the {} log has one receive op", log.name);
+                // A log takes a page's intent write, or does not, whole.
+                assert!(others.all(|o| o.intent == log.intent), "the {} log's kinds agree on intent", log.name);
             }
         }
     }

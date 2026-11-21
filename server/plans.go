@@ -207,7 +207,7 @@ func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, writer,
 		s.zone = pick.Timezone
 		s.zoneMu.Unlock()
 	}
-	_, current, _, err := s.plansHead()
+	_, current, _, err := s.keptHead("plans")
 	if err != nil {
 		return out, refusedWith(http.StatusInternalServerError, err)
 	}
@@ -231,10 +231,7 @@ func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, writer,
 		body, _ := json.Marshal(refusal.body)
 		return out, &publishRefusal{code: refusal.status, json: body}
 	}
-	f := s.plansLog()
-	f.mu.Lock()
-	plansHash := s.plansDoc.hash
-	f.mu.Unlock()
+	plansHash, _, _, _ := s.keptHead("plans")
 	return publishedPick{
 		planID: planID(pick), networkHash: pick.DocumentHash, plansHash: plansHash, seq: seq,
 		warnings: withWarnings(pick.Warnings, stopWarnings), unknownFields: pick.UnknownFields,
@@ -254,7 +251,7 @@ func (s *server) commitPicksForward() {
 	if s.store == nil || s.plans == nil {
 		return
 	}
-	_, set, found, err := s.plansHead()
+	_, set, found, err := s.keptHead("plans")
 	if err != nil || !found {
 		if err != nil {
 			log.Printf("commit forward: the plans log: %v", err)
@@ -360,7 +357,7 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `body: {"id": "<plan id>"}`, http.StatusBadRequest)
 		return
 	}
-	if _, _, found, err := s.plansHead(); err != nil || !found {
+	if _, _, found, err := s.keptHead("plans"); err != nil || !found {
 		if err != nil {
 			fail(w, err, http.StatusInternalServerError)
 		} else {
@@ -368,21 +365,9 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	ctx := r.Context()
-	seq, _, refusal, err := s.writeLog(s.plansLog(), logWrite{writer: writerOf(r, "anonymous"), op: "POST /plans/retire", note: req.ID}, func() ([]json.RawMessage, *logRefusal, error) {
-		var next planAnswer
-		if err := s.plans.Invoke(ctx, map[string]any{
-			"op": "retire", "published": orNull(s.plansDoc.doc), "id": req.ID, "today": s.today(),
-		}, &next); err != nil {
-			return nil, nil, err
-		}
-		if r := next.refused(); r != nil {
-			return nil, r, nil
-		}
-		var records logNext
-		err := s.plans.Invoke(ctx, map[string]any{"op": "log_records", "published": json.RawMessage(*next.Document)}, &records)
-		return records.Next, nil, err
-	})
+	l := s.keptLogOf("plans")
+	op, _ := json.Marshal(map[string]any{"cap": "plans", "op": "retire", "args": map[string]any{"id": req.ID, "today": s.today()}})
+	seq, refusal, err := s.receivePlans(r.Context(), l, logWrite{writer: writerOf(r, "anonymous"), op: "POST /plans/retire", note: req.ID}, []json.RawMessage{op})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusInternalServerError)
 		return
@@ -391,10 +376,7 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, refusal.status, refusal.body)
 		return
 	}
-	f := s.plansLog()
-	f.mu.Lock()
-	plansHash := s.plansDoc.hash
-	f.mu.Unlock()
+	plansHash, _, _, _ := s.keptHead("plans")
 	writeJSON(w, http.StatusOK, map[string]any{"plans_hash": plansHash, "seq": seq})
 }
 
@@ -419,7 +401,7 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	var set []byte
 	if s.store != nil && s.plans != nil {
-		_, held, found, err := s.plansHead()
+		_, held, found, err := s.keptHead("plans")
 		if err != nil {
 			fail(w, err, http.StatusInternalServerError)
 			return
@@ -479,10 +461,8 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 // bytes never change for those two).
 func (s *server) exportedPick(ctx context.Context, networkHash string, set []byte) ([]byte, error) {
 	stopsHash, stops, haveStops, err := "", []byte(nil), false, error(nil)
-	if s.stopsWasm != "" {
-		if stopsHash, stops, haveStops, err = s.stopsHead(); err != nil {
-			return nil, err
-		}
+	if stopsHash, stops, haveStops, err = s.keptHead("stops"); err != nil {
+		return nil, err
 	}
 	key := networkHash + "|" + stopsHash
 	s.feedMu.Lock()
@@ -533,7 +513,7 @@ func (s *server) exportedPick(ctx context.Context, networkHash string, set []byt
 // export_pick, which derives the period from the published set.
 func (s *server) stopsVersions(ctx context.Context, network, stops, set []byte) ([]byte, error) {
 	var versioned json.RawMessage
-	err := s.withStops(ctx, func(host *WasmHost) error {
+	err := s.withModule(ctx, "stops", func(host *WasmHost) error {
 		var loadedNet struct {
 			NetworkHash string `json:"network_hash"`
 		}

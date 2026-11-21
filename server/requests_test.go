@@ -15,18 +15,12 @@ import (
 	"rustwasm/server/store"
 )
 
-const requestsWasm = "../web/pkg/cap_requests.wasm"
 
 func TestStopRequestsWritesAreValidated(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
-	s.requestsWasm = requestsWasm
-	t.Cleanup(func() {
-		if s.requestsHeld != nil {
-			s.requestsHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/stop-requests", s.handleStopRequests)
+	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL
@@ -77,15 +71,10 @@ func TestStopRequestsWritesAreValidated(t *testing.T) {
 // the day it was read.
 func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
-	s.requestsWasm = requestsWasm
-	t.Cleanup(func() {
-		if s.requestsHeld != nil {
-			s.requestsHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	s.fixedToday = "2026-09-02"
 	mux := storeMux(s)
-	mux.HandleFunc("/stop-requests", s.handleStopRequests)
+	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
 	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -141,7 +130,7 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	if r["status"] != "ordered" || wo["id"] != "STUB-R-1" || wo["system"] != "stub" || wo["read_on"] != "2026-09-02" {
 		t.Fatalf("the work order on the request: %v", r)
 	}
-	if w := lastLogWriter(t, s, stopsLogName); w != "work-orders:stub" {
+	if w := lastLogWriter(t, s, "stops"); w != "work-orders:stub" {
 		t.Fatalf("the writer is the system: %q", w)
 	}
 	s.fixedToday = "2026-09-09"
@@ -173,12 +162,7 @@ func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.R
 // and the system is not asked to open a second one.
 func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
-	s.requestsWasm = requestsWasm
-	t.Cleanup(func() {
-		if s.requestsHeld != nil {
-			s.requestsHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	stub, err := newWorkOrders("stub:")
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +170,7 @@ func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
 	system := &countingWorkOrders{workOrderSystem: stub}
 	s.workOrders = system
 	mux := storeMux(s)
-	mux.HandleFunc("/stop-requests", s.handleStopRequests)
+	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
 	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

@@ -14,7 +14,8 @@
 //! as the log's records (one `edit_record` for each record, and the
 //! document's own record), `log_document` assembles the document from
 //! the fold's records, and `log_revert` answers the records a revert
-//! writes back, stamped to win the merge (D-193). The host
+//! writes back, stamped to win the merge (D-193). `receive` writes
+//! the disruptions log whole (D-228). The host
 //! owns both documents (wholesale-replaced, JS/store-owned) and the
 //! clock (`now_ms` is the only route; hosts own time), and clamps the
 //! incoming clock at receive (D-56). transit-sync is the domain
@@ -93,6 +94,28 @@ pub enum Request {
         #[ts(optional, type = "{ version: number, value: unknown }")]
         document: Option<transit_log::Held>,
     },
+    /// A write to the disruptions log, whole (D-228): each op over the
+    /// edit document at the head, given inline (`documents.edit_records`;
+    /// absent: the empty document), then the entry that records what
+    /// changed. The ops (cap `sync`): `sync` (`{client, from}`), the
+    /// sync protocol's write: the client's document brought forward and
+    /// read as `read_edits` reads it, its clock clamped to the entry's
+    /// (D-56), merged with the head, and its drafts submitted; with
+    /// `from`, a head the writer did not read answers `moved`.
+    /// `compact` (`{horizon_ms}`): the tombstones older than the
+    /// horizon dropped (D-57). `migrate`: the head read as `read_edits`
+    /// reads it and recorded (an empty log's first entry, from the old
+    /// pointer or the dev store's file); a head with no records writes
+    /// nothing.
+    Receive {
+        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        write: transit_log::Write,
+        #[serde(default)]
+        #[ts(type = "Record<string, unknown>")]
+        documents: std::collections::BTreeMap<String, serde_json::Value>,
+        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        ops: Vec<transit_log::OpCall>,
+    },
     /// The records a revert of the disruptions log writes back (D-193),
     /// over the log capability's `states`: each edit record as it was
     /// before the reverted write, or retired when that write created it,
@@ -153,6 +176,9 @@ pub enum Response {
         document: String,
         document_hash: String,
     },
+    /// What the write adds to the disruptions log (`heads.edit_records`:
+    /// the document after it).
+    Receive(transit_log::Received),
     LogRevert {
         /// The records to write back, as the log capability's `revert`
         /// takes them (`written`).
@@ -197,6 +223,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let doc: transit_sync::EditDocument = transit_log::assemble(template, document.as_ref(), "records", &records, true)?;
             Ok(Response::LogDocument { document: cap_abi::canonical_bytes(&doc)?, document_hash: cap_abi::canonical_hash(&doc)? })
         }
+        Request::Receive { write, documents, ops } => receive(write, documents, ops),
         Request::LogRevert { states, now_ms } => {
             let record = |held: &Option<transit_log::Held>, id: &str| -> Result<Option<transit_sync::EditRecord>, String> {
                 match held {
@@ -216,6 +243,95 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LogRevert { written })
         }
     }
+}
+
+/// An op of a write to the disruptions log, as the host sends it.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum Intent {
+    Sync {
+        client: serde_json::Value,
+        #[serde(default)]
+        from: Option<String>,
+    },
+    Compact {
+        horizon_ms: u64,
+    },
+    Migrate {},
+}
+
+/// A received or stored edit document's records, brought forward first
+/// when it is older (the migration is transit-sync's own), and how many
+/// malformed records were dropped.
+fn read(doc: &serde_json::Value) -> Result<(Vec<transit_sync::EditRecord>, usize), String> {
+    let older = transit_sync::version::schema_version_of(doc)? < transit_sync::SCHEMA_VERSION;
+    let doc = if older { transit_sync::version::migrate_to(doc.clone(), transit_sync::SCHEMA_VERSION)?.0 } else { doc.clone() };
+    let (read, dropped) = transit_sync::read_document(&doc)?;
+    Ok((read.records, dropped))
+}
+
+/// A write's ops over the head, then its entry (`Request::Receive`).
+fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<String, serde_json::Value>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+    let answer = |received| Ok(Response::Receive(received));
+    if let Some(seq) = write.landed()? {
+        return answer(transit_log::Received::landed(seq));
+    }
+    let now_ms = write.header.at_ms;
+    let head = documents.get(transit_sync::KIND).filter(|v| !v.is_null());
+    let mut records = match head {
+        Some(doc) => read(doc)?.0,
+        None => Vec::new(),
+    };
+    let head_hash = head.map(|_| canonical(&records)).transpose()?.map(|(_, h)| h);
+    let mut wrote = false;
+    let mut unknown_fields = Vec::new();
+    for (i, call) in ops.iter().enumerate() {
+        if call.cap != "sync" {
+            return answer(transit_log::Received::failed(i, format!("{} {} is not a write to the disruptions log (sync: sync, compact, migrate)", call.cap, call.op)));
+        }
+        let intent = match call.request::<Intent>() {
+            Ok(intent) => intent,
+            Err(e) => return answer(transit_log::Received::failed(i, e)),
+        };
+        match intent {
+            Intent::Sync { client, from } => {
+                // An empty log has read nothing: `from` is empty, or the
+                // empty document's hash.
+                let empty_log = write.header.seq == 1;
+                if let Some(from) = from {
+                    if from != head_hash.clone().unwrap_or_default() && !(empty_log && from.is_empty()) {
+                        return answer(transit_log::Received::moved(head_hash));
+                    }
+                }
+                let client = match read(&client) {
+                    Ok((client, _)) => client,
+                    Err(e) => return answer(transit_log::Received::failed(i, e)),
+                };
+                unknown_fields.extend(transit_sync::unknown_fields(&client));
+                let client = transit_sync::clamp_timestamps(&client, now_ms);
+                records = transit_sync::submit(transit_sync::merge(&client, &records), now_ms);
+            }
+            Intent::Compact { horizon_ms } => records = transit_sync::compact(&records, now_ms, horizon_ms).0,
+            // A document with no records writes nothing.
+            Intent::Migrate {} if records.is_empty() => continue,
+            Intent::Migrate {} => {}
+        }
+        wrote = true;
+    }
+    let mut next = Vec::new();
+    let mut heads = std::collections::BTreeMap::new();
+    if wrote {
+        let document = transit_sync::EditDocument::new(records.clone());
+        let doc = serde_json::to_value(&document).map_err(|e| e.to_string())?;
+        next = transit_log::document_records(&doc, "records", RECORD_KIND, transit_sync::KIND, transit_sync::SCHEMA_VERSION)?;
+        heads.insert(transit_sync::KIND.to_string(), canonical(&records)?.1);
+    }
+    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    received.heads = heads;
+    unknown_fields.sort();
+    unknown_fields.dedup();
+    received.unknown_fields = unknown_fields;
+    answer(received)
 }
 
 /// The kind of an edit record in the disruptions log.

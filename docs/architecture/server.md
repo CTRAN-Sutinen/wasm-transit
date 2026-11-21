@@ -12,21 +12,28 @@ single-capability modules it needs. `just caps` rebuilds all of them
 into web/pkg/:
 
 - cap-sync (the -wasm flag, cap_sync.wasm) is the op behind POST
-  /edits. In store mode it also turns the edit document into the
-  disruptions log's records and back, and answers what a revert writes
-  back. The server holds it for its whole lifetime.
+  /edits. In store mode its `receive` op writes the disruptions log
+  ("One path for a log", below). It also turns the edit document into
+  the log's records and back, and answers what a revert writes back.
+  The server holds it for its whole lifetime.
 - cap-authz (-authz-wasm) runs when authentication is on. In store
   mode a fresh instance also checks each policy write (`validate`).
-- cap-plans (-plans-wasm) runs in store mode. It is the op behind
-  POST /plans, /plans/freeze, /plans/adopt, and /plans/retire, and it
-  turns the published plan set and the frozen versions into the plans
-  log's records and back.
+- cap-plans (-plans-wasm) runs in store mode. Its `receive` op writes
+  the plans log ("One path for a log", below): POST /plans,
+  /plans/freeze, /plans/adopt, and /plans/retire. It turns the published
+  plan set and the frozen versions into the plans log's records and
+  back, and answers the picks in use and in force.
 - cap-stops (-stops-wasm) runs in store mode. The server makes one
   instance on first use and empties it after each use (the kernel's
-  `evict`). It does the validation behind a stops write. It also reads
+  `evict`). Its `receive` op writes the stops log ("One path for a
+  log", below): `POST /logs/stops`, a whole stops document (`POST
+  /stops`), a whole stop requests document (`POST /stop-requests`), the
+  work order system's answer, and the feed's differences. It also reads
   the stops document for a published pick.
 - cap-requests (-requests-wasm) runs in store mode and is held the same
-  way. It does the validation behind a stop requests write.
+  way. It assembles the stop requests document from the stops log's
+  records, and answers what to send the work order system
+  (`work_order_call`).
 - cap-alerts (-alerts-wasm) runs in store mode and is held the same
   way. Its `receive` op writes the alerts log ("One path for a log",
   below): `POST /logs/alerts` (`put`, `end`, `put_template`), a whole
@@ -40,10 +47,11 @@ into web/pkg/:
   wrote a note (D-214).
 - cap-log (-log-wasm) runs in store mode. It keeps the disruptions log,
   the stops log, the plans log, the alerts log, and the notes log: the
-  fold and a revert, and each write's entry for the logs that no
-  receive op writes yet. The server holds it for its whole lifetime. cap-sync, cap-stops, cap-requests, cap-alerts, and
-  cap-notes turn their documents
-  into the log's records and back (`log_records`, `log_document`).
+  fold, a revert, a closed gap, and where a key landed. Each log's
+  receive op answers its writes' entries. The server holds it for its
+  whole lifetime. cap-sync, cap-stops, cap-requests, cap-plans,
+  cap-alerts, and cap-notes turn their documents into the log's records
+  and back (`log_records`, `log_document`).
 - cap-network (the -network-wasm flag, cap_network.wasm) imports the
   configured GTFS zip (the kernel's `load_feed` + `import`). It also
   canonicalizes and validates each published pick. It runs in a fresh
@@ -166,7 +174,7 @@ nothing to serve, and `/readyz` answers `unavailable`.
 a working copy: it caches heads, and it reads at most 2 s behind
 another copy's commit. Two copies that write the same log at the same
 time race for the next entry's conditional create. The loser reads the
-log again and runs its receive path again (`writeLog`), so every write
+log again and asks its receive op again (`receiveLog`), so every write
 lands once, in one order. `server/resilience_test.go` pins it, with the
 fault harness: an answer lost after the bucket kept the write, a copy
 stopped in the middle of a write, and a slow bucket.
@@ -403,14 +411,14 @@ Its HTTP surface:
 - `/edits`: the edit document. `POST` a client document and receive the
   LWW-merged result (cap-sync's `sync_edits`). The receive path clamps
   client timestamps to the server clock (D-56). `GET` reads the
-  server's document. With `-store`, the record is the disruptions log,
-  which cap-log keeps (`disruptions.go`, `caplog.go`; docs/FORMATS.md,
-  "The logs"):
-  - A `POST` merges with the fold, asks cap-sync's `log_records` for
-    the merged document's records, and asks cap-log's `compose` for the
-    entry, which it creates at the next seq. A write that changes
-    nothing writes no entry. A lost race reads the log again and runs
-    the receive path again. A gap in the log answers 503.
+  server's document. With `-store`, the record is the disruptions log
+  ("One path for a log"; docs/FORMATS.md, "The logs"):
+  - A `POST` is one call to cap-sync's `receive` (`sync sync`): the
+    client's document brought forward and read, its clock clamped to
+    the entry's, merged with the fold, its drafts submitted, and the
+    entry composed. The server creates the entry at the next seq. A
+    write that changes nothing writes no entry. A lost race reads the
+    log again and asks again. A gap in the log answers 503.
   - `GET` serves the fold: cap-log's `fold` brings the records to the
     log's head at most once per 2 s, and cap-sync's `log_document`
     assembles the document. Every 256
@@ -418,8 +426,11 @@ Its HTTP surface:
     the newest checkpoint that equals the fold from the one before it.
   - At startup, a store with the old `edits` pointer and no log gets
     the log's first entry from the pointer's head (writer
-    `migrate:edits`). Then the tombstone compaction (D-57) runs as one
-    entry (writer `gc`).
+    `migrate:edits`), else from the `-edits` file (writer
+    `migrate:-edits`): the receive op's `migrate`. Then the tombstone
+    compaction (D-57) runs as one entry (`sync compact`, writer `gc`).
+  - A page never writes the log by intent (`POST /logs/disruptions` is
+    405): `POST /edits` is the client protocol.
   - An entry the fold cannot apply is quarantined, and a gap stops
     writes. Each logs a line that starts with `ALARM disruptions log`.
 
@@ -464,12 +475,13 @@ Its HTTP surface:
   policy.
 - `POST /plans/freeze?purpose=…` (store mode): freeze a version
   (D-191). The body is a network, checked as `POST /plans` checks it.
-  cap-plans `freeze` answers the next frozen versions. The server
-  commits the network to `plan.<id>`, then writes the frozen version as
-  one entry of the plans log. Nothing is put in force.
+  The server commits the network to `plan.<id>`, then the plans log's
+  receive op (`plans freeze`) writes the frozen version as one entry.
+  Nothing is put in force.
 - `POST /plans/adopt` `{"network_hash"}` (store mode): put a frozen
-  version in force from its date (D-191). cap-plans `adopt` refuses a
-  network that no frozen version has (422 `not_frozen`). The pick names
+  version in force from its date (D-191). The receive op (`plans
+  adopt`) refuses a network that no frozen version has (422
+  `not_frozen`). The pick names
   the stops log entry it read (`stops_seq`).
 - `POST /plans` (store mode): publish a pick (docs/ROADMAP.md 1, D-74):
   a freeze and an adoption in one entry of the plans log, the version's
@@ -479,11 +491,11 @@ Its HTTP surface:
     (`publishable`: its issues, and a pick with no service in its
     period, which gives 422 with `issues` and `refusals`). It also
     answers the pick's canonical bytes and plan frame.
-  - cap-plans `freeze`, then `adopt`, answer the next frozen versions
-    and published set, or why they refuse the pick (422: the chain, or a
-    pick dated before today, D-76).
+  - The plans log's receive op runs `plans freeze`, then `plans adopt`,
+    in one call, and answers the entry, or why it refuses the pick (422
+    with `issues`: the chain, or a pick dated before today, D-76).
   - `POST /plans/retire` `{"id"}` retires a pick that has not taken
-    effect (D-75), as one entry of the plans log.
+    effect (D-75), as one entry of the plans log (`plans retire`).
   - "Today" is the agency's date. It is the host clock read in the
     network's zone, as cap-network answers it beside the hash (the
     feed's import, else the last published pick's `document`). Until a
@@ -493,7 +505,9 @@ Its HTTP surface:
     plans log's entry. The log's fold is the set, and the manifest pins
     it as `plans_hash`. Clients read the set and each pick's network
     from `/blobs`. `GET /logs/plans` answers the entries. The plans log
-    has no revert: a pick is corrected by its own rules.
+    has no revert: a pick is corrected by its own rules. A page never
+    writes it by intent (`POST /logs/plans` is 405): a freeze stores its
+    network first.
   - With a stops document, the pick reads it first (D-157). It reads
     each stop's record on its first date (cap-stops `read_pick`), so
     the network that the server stores is the read one, whatever copy
@@ -505,7 +519,8 @@ Its HTTP surface:
   - The server never writes the stops document here.
 - `POST /stops` (store mode): write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`.
-  - A fresh cap-stops first names the person who writes as the surveyor
+  - The stops log's receive op (cap-stops `receive`, the op `stops
+    validate`) first names the person who writes as the surveyor
     of every survey that the held document does not hold
     (`attribute_surveys`, D-158). The name is never one that the client
     sent. It is the verified token's `-oidc-name-claim` (default
@@ -549,9 +564,10 @@ Its HTTP surface:
   opens a work order for the request, or reads its status. cap-requests
   `work_order_call` answers what to send it (the request, or the work
   order the request holds), and the server reads nothing out of the
-  document. cap-requests `record_work_order` writes the answer on the request (dated the
-  server's today) over the requests at the head when the write runs, as
-  one entry of the stops log. The writer is `work-orders:<system>`.
+  document. The stops log's receive op (`requests record_work_order`)
+  writes the answer on the request (dated the server's today) over the
+  requests at the head when the write runs, as one entry of the stops
+  log. The writer is `work-orders:<system>`.
   - 200 `{requests_hash, work_order, landed?}`. A body with a `key`
     whose entry landed answers the request's work order, and the system
     is not asked again, so an outbox's resend never opens a second one
@@ -561,8 +577,8 @@ Its HTTP surface:
     adapter is configured.
 - `POST /stop-requests` (store mode): write the stop requests document
   (D-159): `{"from": "<the head read, or empty>", "requests": {...}}`.
-  - A fresh cap-requests validates it (422 with `refusals`) and answers
-    its canonical bytes.
+  - The stops log's receive op (the op `requests validate`) validates
+    it (422 with `refusals`) and answers its canonical bytes.
   - The server writes the change as one entry of the stops log (409
     with `current` when `from` is not the document at the head). The
     manifest pins the document as `stop_requests_hash`, and `/blobs`
@@ -570,13 +586,13 @@ Its HTTP surface:
   - The server refuses a raw pointer commit of the requests (400).
   - The first request begins the document (a page makes it with
     cap-requests `put`).
-- `/logs/stops` (store mode): the stops log (`stopslog.go`, over the
-  cap-log engine in `caplog.go`; docs/FORMATS.md, "The logs"). It holds
+- `/logs/stops` (store mode): the stops log (cap-stops `receive`, "One
+  path for a log"; docs/FORMATS.md, "The logs"). It holds
   the stops document and the stop requests document, because completing
   a request and adding the stop's event is one transaction (D-197).
   - `POST /logs/stops` `{"key", "ops": [{"cap", "op", "args"}],
     "read_seq", "claimed_at_ms"}` is the stops log's intent write
-    (`logwrite.go`; [storage.md](storage.md), "The intent write"). It
+    ([storage.md](storage.md), "The intent write"). It
     runs each op over the documents at the head, in order (stops:
     `add_event`, `correct_event`; requests: `put`, `record_work_order`),
     names the surveyor and validates as `POST /stops` does, and writes
@@ -586,11 +602,9 @@ Its HTTP surface:
     id. A record changed by an entry after `read_seq` that the write
     changes too answers 409 with `conflict` and `overlap`. A refusal
     (422) or a failed op (400) names its `op`. A key that landed answers
-    200 with `landed`, and writes nothing. Each op needs the write rule
-    on its document's pointer (`stops`, `stop_requests`).
-  - `POST /logs/alerts` and `POST /logs/notes` take the same body, and
-    their capability's `receive` op answers them ("One path for a
-    log").
+    200 with `landed`, and writes nothing. Each document the write
+    writes needs its write rule (`stops`, `stop_requests`).
+  - `POST /logs/alerts` and `POST /logs/notes` take the same body.
   - `GET /logs/stops?since=`, `POST /logs/stops/revert`, and `POST
     /logs/stops/close-gap` work as the disruptions log's do, and need the
     `audit` rule on `stops`. A revert takes out of the document a record
@@ -600,40 +614,61 @@ Its HTTP surface:
     assembles each document from its records. It stores a checkpoint
     every 256 entries. A store with the old `stops` and `stop_requests`
     pointers and no log gets entry 1 from their heads at startup (writer
-    `migrate:stops`, the note naming each head). The pointers stay, read
-    only.
+    `migrate:stops`, the note naming each head; "One path for a log").
+    The pointers stay, read only.
 - One path for a log (`logkinds.go`; D-228): each log whose kinds the
-  kind table names with a receiving capability (`receive`: the alerts
-  log and the notes log). The server reads the head, makes one call,
-  and creates the entry.
+  kind table names with a receiving capability (`receive`: the
+  disruptions log, the stops log, the plans log, the alerts log, and the
+  notes log). The server reads the head, makes one call, and creates
+  the entry.
   - Each kind's document is its capability's `log_document` over the
     fold's records. The manifest pins it as `<store kind>_hash`
-    (`service_alerts_hash`, `alert_templates_hash`, `notes_hash`), and
-    `/blobs` serves it by that hash.
+    (`edit_records_hash`, `stops_hash`, `stop_requests_hash`,
+    `plans_hash`, `frozen_versions_hash`, `service_alerts_hash`,
+    `alert_templates_hash`, `notes_hash`), with the log's seq in
+    `log_seqs`. `/blobs` serves each by its hash, and `GET /logs/<log>`
+    names them too.
   - A write registers the documents at the head in the receiving
-    module, and calls its `receive` op with the write (the checkpoint,
+    module, each on its kernel load when the module declares the kind
+    (its `about`). Any other goes inline as `documents` (the plans' and
+    the edit document). Then it calls its `receive` op with the write (the checkpoint,
     the entry's header, and the entries after `read_seq`) and the
     write's ops. The op runs the ops, checks them, and answers the entry
     and each document it wrote. The server checks the write rule of
-    each document written (named by its store kind: `service_alerts`,
-    `alert_templates`, `notes`), and creates the entry. When another
-    write took the seq, it asks again over the new head.
+    each document written (the kind's first pointer, else its store
+    kind: `edits`, `stops`, `service_alerts`), and creates the entry. When another write took the seq, it asks again over the new
+    head.
+  - The writes the server makes itself take the same call with no
+    write rule: the feed's differences (`stops import_events`, over the
+    feed's network, which the server registers first) and the plans'
+    writes, whose routes check the `plans` rule first.
+  - An empty log gets entry 1 from its kinds' old pointers (the kind
+    table's `pointers`) at startup: the receive op's `migrate` records
+    their heads as they are (writer `migrate:<log>`).
   - `POST /logs/<log>` answers 200 `{seq, <store kind>_hash, landed?}`,
     422 `{op, refusals}`, 409 `{conflict, overlap, seq}` for a record
-    an unread entry changed, and 400 for an op the log does not take. A
+    an unread entry changed, 409 `{op, conflict}` for an event changed
+    since the writer read it, and 400 for an op the log does not take. A
     key that landed answers 200 with `landed`, before the ops run.
-  - A kind's own route (the kind table's `post`) is one op over the
-    request's body: `POST /notes` (`write`, answering `{notes_hash,
-    id}`), `POST /service-alerts` (`validate`, `{from, alerts}`,
-    answering `{alerts_hash}`), and `POST /alert-templates`
-    (`validate_templates`, `{from, templates}`, answering
-    `{templates_hash}`). A whole document over a head the writer did not
+  - A kind's own route (the kind table's `post`) is one op of the
+    kind's checking capability over the request's body: `POST /notes`
+    (`write`, answering `{notes_hash, id}`), `POST /service-alerts`
+    (`validate`, `{from, alerts}`, answering `{alerts_hash}`), `POST
+    /alert-templates` (`validate_templates`, `{from, templates}`,
+    answering `{templates_hash}`), `POST /stops` (`stops validate`,
+    `{from, stops}`, answering `{stops_hash}`), and `POST
+    /stop-requests` (`requests validate`, `{from, requests}`, answering
+    `{requests_hash}`). A whole document over a head the writer did not
     read (`from`) answers 409 `{current, seq}`. An older service alerts
     document comes forward in the op (D-216). The fields a document
     carries that this build does not know are named in a header
     (D-167).
-  - The stops log, the plans log, and the disruptions log still sequence
-    their writes in Go (`docs/units/kind-registration.md`).
+  - Every log the server keeps is on this path. A log that a page never
+    writes by intent (the kind table's `intent: false`: the plans log,
+    the disruptions log) answers `POST /logs/<log>` with 405. A log
+    with an LWW kind (the edit document) writes back its own records on
+    a revert, through that kind's `log_revert` (D-193), and its
+    document is there from the empty log on.
 - `GET /feed?date=`: the GTFS zip in force on the date (default the
   server's today).
   - It is cap-network `export` of the published pick in force (cap-plans

@@ -284,6 +284,10 @@ Each part has one home for its detail:
 - The web and the generated UIs: `docs/architecture/web.md` and
   `docs/architecture/generated-uis.md`.
 
+`just docs` draws this map, the capabilities and the documents they
+read, and what each UI links, from the code (`architecture.html`). The
+same page traces one request and one write through the code.
+
 A new crate, capability, kind, or recipe does not change this file.
 Its home changes.
 

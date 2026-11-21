@@ -91,6 +91,10 @@ pub struct KindEntry {
     /// The capability whose `receive` op writes the kind's log (D-228).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receive: Option<String>,
+    /// False when a page never writes the kind's log by intent (absent:
+    /// it does, or the kind is in no log).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<bool>,
     /// The capability that checks a write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
@@ -146,6 +150,7 @@ pub fn kinds() -> Vec<KindEntry> {
                 records: s.log.map(|l| l.records.iter().map(|(k, c)| RecordEntry { kind: k.to_string(), collection: c.to_string() }).collect()).unwrap_or_default(),
                 post: s.post.map(|p| PostEntry { path: p.path.into(), op: p.op.into(), answer: p.answer.into(), echo: p.echo.iter().map(|e| e.to_string()).collect() }),
                 receive: s.log.and_then(|l| l.receive).map(Into::into),
+                intent: s.log.filter(|l| !l.intent).map(|_| false),
                 module: s.check.map(|(m, _)| m.into()),
                 validate: s.check.map(|(_, op)| op.into()),
                 merge: s.merge,

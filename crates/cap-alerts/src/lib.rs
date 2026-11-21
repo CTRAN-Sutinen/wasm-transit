@@ -245,13 +245,6 @@ fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
     serde_json::to_value(v).map_err(|e| e.to_string())
 }
 
-/// A whole document as the base of a write, and the fields this build
-/// does not know.
-fn whole<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), String> {
-    let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<cap_abi::Base<T>>(doc));
-    Ok((read.map_err(|e| e.to_string())?.0, unknown))
-}
-
 /// The documents a write runs over: each head, whether an op wrote it,
 /// and the unknown fields of the whole documents written.
 #[derive(Default)]
@@ -294,7 +287,7 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
             // An absent version reads as v1, as the library reads it.
             let older = transit_alerts::version::schema_version_of(&doc)? < transit_alerts::ALERTS_VERSION;
             let doc = if older { transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION)?.0 } else { doc };
-            let (doc, unknown) = whole::<ServiceAlerts>(doc)?;
+            let (doc, unknown) = cap_abi::read_base::<ServiceAlerts>(doc)?;
             match doc.checked() {
                 Ok(doc) => (heads.alerts, heads.wrote_alerts) = (Some(SERVICE_ALERTS.register(doc)?.0), true),
                 Err(refusals) => return refused(to_value(&refusals)?),
@@ -305,7 +298,7 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
             if from != heads.templates.clone().unwrap_or_default() {
                 return Ok(Some(transit_log::Received::moved(heads.templates.clone())));
             }
-            let (doc, unknown) = whole::<AlertTemplates>(doc)?;
+            let (doc, unknown) = cap_abi::read_base::<AlertTemplates>(doc)?;
             match doc.checked() {
                 Ok(doc) => (heads.templates, heads.wrote_templates) = (Some(ALERT_TEMPLATES.register(doc)?.0), true),
                 Err(refusals) => return refused(to_value(&refusals)?),

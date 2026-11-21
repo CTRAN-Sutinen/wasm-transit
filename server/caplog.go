@@ -2,14 +2,15 @@ package main
 
 // A log that the log capability keeps (cap-log; D-190, D-197;
 // docs/FORMATS.md, "The logs"): the host's half. The bucket holds the
-// entries and checkpoints (store/log.go); cap-log answers each write's
-// entry, the fold, and a revert, and never reads a record. Each kind's
-// capability turns the fold's records back into its document
-// (`assemble`). This host only orders and keeps the entries, and treats
-// every entry, checkpoint, record, and document as opaque bytes.
+// entries and checkpoints (store/log.go); cap-log answers the fold, a
+// revert, a closed gap, and where a key landed, and never reads a
+// record. Each log's receive op answers its writes' entries
+// (logkinds.go), and each kind's capability turns the fold's records
+// back into its document (`assemble`). This host only orders and keeps
+// the entries, and treats every entry, checkpoint, record, and document
+// as opaque bytes.
 //
-// One logFold per log: the disruptions log (disruptions.go), the stops
-// log (stopslog.go), and the plans log (planslog.go).
+// One logFold per log, each a log a receive op writes (logkinds.go).
 
 import (
 	"context"
@@ -251,100 +252,6 @@ type logOverlap struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
 	Seq  int64  `json:"seq"`
-}
-
-// writeLog runs one write through the receive path into one entry.
-// `run` answers, over the documents at the head, the next records of
-// each kind the write touches (cap-log's `next`), or a refusal. cap-log
-// composes the entry; a lost race reads the log again and runs `run`
-// again (D-190, rule 2). The answer is the entry's seq (the head's when
-// nothing changed), and landed when the write's key landed before.
-func (s *server) writeLog(f *logFold, w logWrite, run func() ([]json.RawMessage, *logRefusal, error)) (seq int64, landed bool, refusal *logRefusal, err error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	m, err := s.logModule()
-	if err != nil {
-		return 0, false, nil, fmt.Errorf("the log module: %w", err)
-	}
-	for attempt := 0; attempt < 5; attempt++ {
-		if err := s.refreshLogLocked(f); err != nil {
-			return 0, false, nil, err
-		}
-		if f.stale {
-			return 0, false, nil, errStaleHead(f)
-		}
-		if len(f.gaps) > 0 {
-			return 0, false, nil, &store.GapError{Log: f.name, Gaps: f.gaps}
-		}
-		// A key that landed answers before the write runs again: its ops
-		// may no longer pass over the head they changed.
-		if w.key != "" {
-			if seq, ok, err := s.keyLanded(f, w.key); err != nil || ok {
-				return seq, ok, nil, err
-			}
-		}
-		next, refusal, err := run()
-		if err != nil || refusal != nil {
-			return 0, false, refusal, err
-		}
-		if next == nil {
-			next = []json.RawMessage{}
-		}
-		intent := map[string]any{"op": w.op}
-		for k, v := range map[string]string{"args_hash": w.argsHash, "key": w.key, "note": w.note} {
-			if v != "" {
-				intent[k] = v
-			}
-		}
-		if w.claimedAtMs > 0 {
-			intent["claimed_at_ms"] = w.claimedAtMs
-		}
-		header := map[string]any{"log": f.name, "seq": f.seq + 1, "writer": w.writer, "at_ms": time.Now().UnixMilli(), "module": "cap-log@" + m.Hash(), "intent": intent}
-		req := map[string]any{"op": "compose", "header": header, "next": next}
-		if len(f.base) > 0 {
-			req["checkpoint"] = f.base
-		}
-		// The entries the writer did not read: a record the write
-		// changes that one of them changed is for a person to settle.
-		if w.readSeq != nil && *w.readSeq < f.seq {
-			unread, err := s.store.Entries(f.name, max(*w.readSeq, 0), f.seq)
-			if err != nil {
-				return 0, false, nil, err
-			}
-			req["unread"] = unread
-		}
-		var composed struct {
-			Entry   string      `json:"entry"`
-			Landed  *int64      `json:"landed"`
-			Overlap *logOverlap `json:"overlap"`
-		}
-		if err := s.logOp(req, &composed); err != nil {
-			return 0, false, nil, err
-		}
-		if composed.Landed != nil {
-			return *composed.Landed, true, nil, nil
-		}
-		if composed.Overlap != nil {
-			o := composed.Overlap
-			return 0, false, &logRefusal{http.StatusConflict, map[string]any{"conflict": o.Kind + " " + o.ID, "overlap": o, "seq": f.seq}}, nil
-		}
-		if composed.Entry == "" {
-			return f.seq, false, nil, nil
-		}
-		err = s.store.AppendEntry(f.name, f.seq+1, []byte(composed.Entry))
-		var ce *store.EntryConflictError
-		if errors.As(err, &ce) {
-			continue
-		}
-		if err != nil {
-			return 0, false, nil, err
-		}
-		if err := s.refreshLogLocked(f); err != nil {
-			return 0, false, nil, err
-		}
-		return f.seq, false, nil, nil
-	}
-	return 0, false, nil, fmt.Errorf("the %s log moved on every attempt", f.name)
 }
 
 // keyLanded asks cap-log whether the fold holds an idempotency key:

@@ -116,13 +116,14 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 	}
 
 	// The disruptions log is the audit: two entries, the second naming
-	// the record's hash before it, each by the module that answered it.
+	// the record's hash before it, each by the module that answered it
+	// (cap-sync's receive op).
 	log := logEntries(t, base2, 0)
 	if log.Head != 2 || len(log.Entries) != 2 || log.Entries[0].Seq != 1 || log.Entries[1].Seq != 2 {
 		t.Fatalf("the log: %+v", log)
 	}
 	second := log.Entries[1].Entry
-	if second.Kind != "log_entry" || !strings.HasPrefix(second.Module, "cap-log@sha256:") || second.Intent.Op != "POST /edits" ||
+	if second.Kind != "log_entry" || !strings.HasPrefix(second.Module, "cap-sync@sha256:") || second.Intent.Op != "POST /edits" ||
 		len(second.Changes) != 1 || second.Changes[0].ID != "e1" || !strings.HasPrefix(second.Changes[0].Before, "sha256:") {
 		t.Fatalf("entry 2: %+v", second)
 	}
@@ -368,8 +369,8 @@ func TestStoreBootsFromACheckpoint(t *testing.T) {
 	if _, _, after := httpGet(t, base2+"/edits"); after != before {
 		t.Fatal("a process booted from the checkpoint serves another document")
 	}
-	if s2.disruptions.stored != checkpointEvery {
-		t.Fatalf("the boot started from checkpoint %d", s2.disruptions.stored)
+	if s2.keptLog(disruptionsLog).fold.stored != checkpointEvery {
+		t.Fatalf("the boot started from checkpoint %d", s2.keptLog(disruptionsLog).fold.stored)
 	}
 }
 

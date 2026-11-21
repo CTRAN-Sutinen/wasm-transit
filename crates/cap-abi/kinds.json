@@ -84,6 +84,8 @@
           "collection": "records"
         }
       ],
+      "receive": "sync",
+      "intent": false,
       "module": "sync",
       "validate": "sync_edits",
       "merge": "lww",
@@ -200,6 +202,12 @@
           "collection": "stops"
         }
       ],
+      "post": {
+        "path": "/stops",
+        "op": "validate",
+        "answer": "stops_hash"
+      },
+      "receive": "stops",
       "module": "stops",
       "validate": "validate",
       "merge": "log",
@@ -252,6 +260,12 @@
           "collection": "requests"
         }
       ],
+      "post": {
+        "path": "/stop-requests",
+        "op": "validate",
+        "answer": "requests_hash"
+      },
+      "receive": "stops",
       "module": "requests",
       "validate": "validate",
       "merge": "log",
@@ -453,6 +467,8 @@
           "collection": "plans"
         }
       ],
+      "receive": "plans",
+      "intent": false,
       "module": "plans",
       "validate": "adopt",
       "merge": "log",
@@ -487,6 +503,8 @@
           "collection": "versions"
         }
       ],
+      "receive": "plans",
+      "intent": false,
       "module": "plans",
       "validate": "freeze",
       "merge": "log",
@@ -610,7 +628,7 @@
       "versions": [
         {
           "version": 1,
-          "schema": "sha256:8e8d25467771b14f15d6e7b63bd3a8d89770723807672680064061f5cd267ec8"
+          "schema": "sha256:dea34f47efafa54623f7b758967889caea929c11ec9178a7b2166d6d57e2b576"
         }
       ],
       "write": "server",

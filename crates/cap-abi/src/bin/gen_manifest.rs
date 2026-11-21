@@ -227,7 +227,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "sync",
         file: "module_sync.wasm",
-        ops: &["sync_edits", "read_edits", "compact_edits", "log_records", "log_document", "log_revert"],
+        ops: &["sync_edits", "read_edits", "compact_edits", "log_records", "log_document", "receive", "log_revert"],
         documents: &[],
         consumes: &[],
         speaks: &[("operator_edits", &[transit_sync::SCHEMA_VERSION])],
@@ -296,7 +296,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "plans",
         file: "module_plans.wasm",
-        ops: &["resolve", "validate", "timeline", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "log_document"],
+        ops: &["resolve", "validate", "timeline", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "receive", "log_document"],
         documents: &[],
         consumes: &[],
         speaks: &[("plans", &[1]), ("frozen_versions", &[1])],
@@ -308,15 +308,16 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "log_document"],
-        documents: &["stops", "network"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "receive", "log_document"],
+        documents: &["stops", "stop_requests", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
         // kernel's load_stops answers too; the date questions read it.
         // seed reads a network's stops to begin the document; add_event
-        // answers the next one. A pick only reads it (D-157).
+        // answers the next one. A pick only reads it (D-157). receive
+        // writes the stops log, which also holds the stop requests.
         consumes: &[("network", "network")],
-        speaks: &[("stops", &[transit_stops::SCHEMA_VERSION]), ("network", &[transit_network::SCHEMA_VERSION])],
+        speaks: &[("stops", &[transit_stops::SCHEMA_VERSION]), ("stop_requests", &[transit_requests::SCHEMA_VERSION]), ("network", &[transit_network::SCHEMA_VERSION])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-stops/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -3295,6 +3296,20 @@ fn example_for(
                 json!({ "ok": { "op": "log_records", "next": next } }),
             )
         }
+        ("stops", "receive") => {
+            // A planner's first request in an empty stops log: the
+            // request placed, checked, and recorded as the log's entry.
+            let request: transit_requests::StopRequest = serde_json::from_value(json!({ "stop": "6124", "job": "repair_improve", "status": "drafted" })).ok()?;
+            let next = transit_requests::StopRequests::default().put("R-1", request.clone()).checked().ok()?;
+            let records = transit_log::document_records(&serde_json::to_value(&next).ok()?, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION).ok()?;
+            let write = receive_write("stops", "planner-1", 1_792_752_000_000);
+            let mut received = transit_log::receive(&write, &records, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e)).ok()?;
+            received.heads.insert("stop_requests".into(), cap_abi::canonical_hash(&next).ok()?);
+            (
+                json!({ "op": "receive", "write": write, "by": "Rosa Ortiz", "ops": [{ "cap": "requests", "op": "put", "args": { "id": "R-1", "request": request } }] }),
+                json!({ "ok": receive_answer(&received)? }),
+            )
+        }
         ("stops", "log_document") => {
             let stops = fixture_stops().checked().ok()?;
             let (mut next, _) = fixture_log_records();
@@ -3302,7 +3317,7 @@ fn example_for(
             let held: std::collections::BTreeMap<String, transit_log::Held> = next.pop()?.records.into_iter().map(|(k, v)| (k, transit_log::Held { version: 1, value: v })).collect();
             (
                 json!({ "op": "log_document", "records": held, "document": transit_log::Held { version: 1, value: own } }),
-                json!({ "ok": { "op": "log_document", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "document": cap_abi::canonical_bytes(&stops).ok()? } }),
+                json!({ "ok": { "op": "log_document", "document_hash": cap_abi::canonical_hash(&stops).ok()?, "document": cap_abi::canonical_bytes(&stops).ok()? } }),
             )
         }
         ("requests", "log_records") => {
@@ -3320,7 +3335,7 @@ fn example_for(
             let held: std::collections::BTreeMap<String, transit_log::Held> = next.pop()?.records.into_iter().map(|(k, v)| (k, transit_log::Held { version: 1, value: v })).collect();
             (
                 json!({ "op": "log_document", "records": held, "document": transit_log::Held { version: 1, value: own } }),
-                json!({ "ok": { "op": "log_document", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "document": cap_abi::canonical_bytes(&requests).ok()? } }),
+                json!({ "ok": { "op": "log_document", "document_hash": cap_abi::canonical_hash(&requests).ok()?, "document": cap_abi::canonical_bytes(&requests).ok()? } }),
             )
         }
         ("sync", "log_records") => {
@@ -3335,6 +3350,25 @@ fn example_for(
             (
                 json!({ "op": "log_document", "records": records }),
                 json!({ "ok": { "op": "log_document", "document": cap_abi::canonical_bytes(&doc).ok()?, "document_hash": cap_abi::canonical_hash(&doc).ok()? } }),
+            )
+        }
+        ("sync", "receive") => {
+            // A client's document in an empty disruptions log: merged,
+            // its drafts submitted at the entry's clock, and recorded.
+            let client = dispatch_fixture_edits();
+            let at_ms = 1_792_752_000_000;
+            let merged = transit_sync::submit(transit_sync::merge(&transit_sync::clamp_timestamps(&client, at_ms), &[]), at_ms);
+            let doc = transit_sync::EditDocument::new(merged);
+            let records = transit_log::document_records(&value(&doc), "records", "edit_record", transit_sync::KIND, transit_sync::SCHEMA_VERSION).ok()?;
+            let mut write = receive_write("disruptions", "dispatch-1", at_ms);
+            write.header.intent.op = "POST /edits".into();
+            write.header.module = "cap-sync@sha256:…".into();
+            let mut received = transit_log::receive(&write, &records, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e)).ok()?;
+            received.heads.insert(transit_sync::KIND.into(), cap_abi::canonical_hash(&doc).ok()?);
+            received.unknown_fields = transit_sync::unknown_fields(&client);
+            (
+                json!({ "op": "receive", "write": write, "ops": [{ "cap": "sync", "op": "sync", "args": { "client": transit_sync::EditDocument::new(client) } }] }),
+                json!({ "ok": receive_answer(&received)? }),
             )
         }
         ("sync", "log_revert") => {
@@ -3626,6 +3660,29 @@ fn example_for(
             (
                 json!({ "op": "log_records", "published": published }),
                 json!({ "ok": { "op": "log_records", "next": next } }),
+            )
+        }
+        ("plans", "receive") => {
+            // A publish in an empty plans log: the network frozen as the
+            // published pick, then adopted, in one entry.
+            let net = net?;
+            let first = &fixture_plan_set()[0];
+            let purpose = "the published pick";
+            let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), first, &net.network_hash, purpose).ok()?;
+            let adopted = transit_plans::adopt(&transit_plans::PublishedPlans::empty(), &frozen, &net.network_hash, fixture_today(), None).ok()?;
+            let mut records = transit_log::document_records(&serde_json::to_value(&adopted).ok()?, "plans", "pick", "plans", 1).ok()?;
+            records.extend(transit_log::document_records(&serde_json::to_value(&frozen).ok()?, "versions", "frozen_version", "frozen_versions", 1).ok()?);
+            let mut write = receive_write("plans", "planner-1", 1_792_752_000_000);
+            write.header.intent.op = "POST /plans".into();
+            let mut received = transit_log::receive(&write, &records, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e)).ok()?;
+            received.heads.insert("plans".into(), cap_abi::content_hash(cap_abi::canonical_bytes(&adopted).ok()?.as_bytes()));
+            received.heads.insert("frozen_versions".into(), cap_abi::content_hash(cap_abi::canonical_bytes(&frozen).ok()?.as_bytes()));
+            (
+                json!({ "op": "receive", "write": write, "ops": [
+                    { "cap": "plans", "op": "freeze", "args": { "plan": first, "network_hash": net.network_hash, "purpose": purpose } },
+                    { "cap": "plans", "op": "adopt", "args": { "network_hash": net.network_hash, "today": "2026-01-01" } }
+                ] }),
+                json!({ "ok": receive_answer(&received)? }),
             )
         }
         ("plans", "log_document") => {

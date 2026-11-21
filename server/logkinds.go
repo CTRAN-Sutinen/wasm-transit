@@ -18,12 +18,25 @@ package main
 //
 //	POST /logs/<log>  body: {"key", "ops": [{"cap", "op", "args"}], "read_seq"?, "claimed_at_ms"?}
 //	                  200 {seq, <store kind>_hash for each kind, landed?}
-//	POST <a kind's own route> (the kind table's `post`): one op over the body
+//	POST <a kind's own route> (the kind table's `post`): one op of the
+//	                  kind's checking capability over the body
 //	                  200 {<answer>: the document after the write, <echo>...}
-//	                  422 {op, refusals}   409 {current, seq} | {conflict, overlap, seq}
+//	                  422 {op, refusals}   409 {current, seq} | {op, conflict} | {conflict, overlap, seq}
+//
+// A page writes by intent (D-189): it sends what the person asked for,
+// never the next document. A key that landed answers the entry that
+// holds it, so a resend lands once. `read_seq` is the log's seq whose
+// documents the page read: a record the write changes that a later
+// entry changed is a 409 for a person to settle, and a change to
+// another record does not refuse it. `claimed_at_ms` is the device's
+// clock when the person made the write, kept in the entry's intent
+// beside the server's stamp (D-222).
 //
 // The manifest pins each kind's document as `<store kind>_hash`, and
-// /blobs serves it by that hash.
+// /blobs serves it by that hash. An empty log takes its first entry from
+// its kinds' old pointers (the kind table's `pointers`; seedKept).
+// Writes the server makes itself (the feed's differences, the work
+// order system's answer) take the same path (receiveLog).
 
 import (
 	"context"
@@ -31,7 +44,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -39,6 +54,13 @@ import (
 
 	"rustwasm/server/store"
 )
+
+// logDoc is one document a log's fold holds: its hash and its canonical
+// bytes ("" when the fold holds none of its records).
+type logDoc struct {
+	hash string
+	doc  []byte
+}
 
 // keptLog is a log a receive op writes: its fold, the kinds it holds (in
 // the kind table's order), the capability whose receive op writes it,
@@ -49,14 +71,21 @@ type keptLog struct {
 	kinds   []kindEntry
 	fold    *logFold
 	docs    map[string]logDoc
+	// intent is whether a page writes the log by intent.
+	intent bool
 }
 
 // heldModule is the server's one instance of a capability, made on first
-// use.
+// use, and the kernel kinds it declares (its `about`).
 type heldModule struct {
-	mu   sync.Mutex
-	host *WasmHost
+	mu        sync.Mutex
+	host      *WasmHost
+	documents map[string]bool
 }
+
+// opAbout is the kernel's about: the capabilities a module links, each
+// with the documents it declares.
+const opAbout = 268
 
 // modulePath is where a capability's module is: the one the server was
 // started with (-<cap>-wasm), or where `just caps` writes it.
@@ -74,6 +103,11 @@ func (s *server) modulePath(capability string) string {
 // then empties it (the kernel's evict), so no document outlives the
 // request that sent it.
 func (s *server) withModule(ctx context.Context, capability string, use func(*WasmHost) error) error {
+	return s.withModuleOf(ctx, capability, func(host *WasmHost, _ map[string]bool) error { return use(host) })
+}
+
+// withModuleOf is withModule, with the kernel kinds the module declares.
+func (s *server) withModuleOf(ctx context.Context, capability string, use func(*WasmHost, map[string]bool) error) error {
 	s.modulesMu.Lock()
 	if s.modules == nil {
 		s.modules = map[string]*heldModule{}
@@ -91,9 +125,24 @@ func (s *server) withModule(ctx context.Context, capability string, use func(*Wa
 		if err != nil {
 			return fmt.Errorf("the %s module: %w", capability, err)
 		}
+		var about struct {
+			Capabilities []struct {
+				Documents []string `json:"documents"`
+			} `json:"capabilities"`
+		}
+		if err := host.InvokeBytes(ctx, opAbout, nil, &about); err != nil {
+			host.Close(ctx)
+			return fmt.Errorf("the %s module's about: %w", capability, err)
+		}
+		m.documents = map[string]bool{}
+		for _, c := range about.Capabilities {
+			for _, d := range c.Documents {
+				m.documents[d] = true
+			}
+		}
 		m.host = host
 	}
-	err := use(m.host)
+	err := use(m.host, m.documents)
 	var evicted json.RawMessage
 	if evictErr := m.host.InvokeBytes(ctx, opEvict, []byte(`{"keep":[]}`), &evicted); evictErr != nil && err == nil {
 		err = fmt.Errorf("emptying the %s module: %w", capability, evictErr)
@@ -117,13 +166,61 @@ func (s *server) keptLogs() map[string]*keptLog {
 			l := s.kept[e.Log]
 			if l == nil {
 				l = &keptLog{name: e.Log, receive: e.Receive, docs: map[string]logDoc{}}
-				l.fold = &logFold{name: e.Log, assemble: func(records map[string]json.RawMessage) error { return s.assembleKept(l, records) }}
+				l.intent = e.Intent == nil || *e.Intent
+				l.fold = &logFold{name: e.Log, assemble: func(records map[string]json.RawMessage) error { return s.assembleKept(l, records) }, documents: func() map[string]string {
+					hashes := map[string]string{}
+					for _, k := range l.kinds {
+						hashes[k.StoreKind+"_hash"] = l.docs[k.StoreKind].hash
+					}
+					// A log of one kind also names it `document`.
+					if len(l.kinds) == 1 {
+						hashes["document"] = l.docs[l.kinds[0].StoreKind].hash
+					}
+					return hashes
+				}}
 				s.kept[e.Log] = l
 			}
 			l.kinds = append(l.kinds, e)
+			// A kind whose merge is LWW writes back its own records on
+			// a revert, stamped to win the merge (D-193): its module's
+			// log_revert.
+			if e.Merge == "lww" && e.Module != "" {
+				module := e.Module
+				l.fold.revise = func(states json.RawMessage, nowMs int64) (json.RawMessage, error) {
+					var out struct {
+						Written json.RawMessage `json:"written"`
+					}
+					ctx := context.Background()
+					err := s.withModule(ctx, module, func(host *WasmHost) error {
+						return host.Invoke(ctx, map[string]any{"op": "log_revert", "states": states, "now_ms": nowMs}, &out)
+					})
+					return out.Written, err
+				}
+			}
 		}
 	})
 	return s.kept
+}
+
+// errNoLog is the error of a log the kind table does not name.
+func errNoLog(name string) error {
+	return fmt.Errorf("the kind table names no %s log (run `just caps`)", name)
+}
+
+// keptRoutesOf names the routes that write the log's kinds, from the
+// kind table.
+func (s *server) keptRoutesOf(name string) string {
+	var routes []string
+	seen := map[string]bool{}
+	if l := s.keptLog(name); l != nil {
+		for _, k := range l.kinds {
+			if k.Route != "" && !seen[k.Route] {
+				seen[k.Route] = true
+				routes = append(routes, k.Route)
+			}
+		}
+	}
+	return strings.Join(routes, "; ")
 }
 
 // keptLog is the log `name` a receive op writes, or nil.
@@ -151,12 +248,19 @@ func (s *server) assembleKept(l *keptLog, records map[string]json.RawMessage) er
 		if len(k.Records) == 0 || k.Module == "" {
 			continue
 		}
+		// A document is there when the fold holds a record of its
+		// collection, or its own record. A kind whose merge is LWW
+		// always has one: the empty log's is the empty document.
 		raw, ok := records[k.Records[0].Kind]
-		if !ok || len(raw) <= 2 {
+		own := ownRecord(records, k.StoreKind)
+		if (!ok || len(raw) <= 2) && own == nil && k.Merge != "lww" {
 			continue
 		}
+		if !ok {
+			raw = json.RawMessage("{}")
+		}
 		req := map[string]any{"op": "log_document", "kind": k.StoreKind, "records": raw}
-		if own := ownRecord(records, k.StoreKind); own != nil {
+		if own != nil {
 			req["document"] = own
 		}
 		var out struct {
@@ -234,11 +338,81 @@ func (s *server) keptPins() (pins map[string]string, seqs map[string]int64) {
 	return pins, seqs
 }
 
+// ownRecord is a document's own record in the fold's records of its
+// kind (`document`), or nil.
+func ownRecord(records map[string]json.RawMessage, kind string) json.RawMessage {
+	var byID map[string]json.RawMessage
+	if raw, ok := records[kind]; ok {
+		json.Unmarshal(raw, &byID)
+	}
+	return byID["document"]
+}
+
+// keptLogOf is the log a receive op writes that holds the store kind, or
+// nil.
+func (s *server) keptLogOf(storeKind string) *keptLog {
+	for _, l := range s.keptLogs() {
+		for _, k := range l.kinds {
+			if k.StoreKind == storeKind {
+				return l
+			}
+		}
+	}
+	return nil
+}
+
+// ruleOf is the write rule of a store kind the log holds (the kind's
+// rule; the store kind itself when the log holds no such kind).
+func (l *keptLog) ruleOf(storeKind string) string {
+	for _, k := range l.kinds {
+		if k.StoreKind == storeKind {
+			return k.rule()
+		}
+	}
+	return storeKind
+}
+
+// loadCode is the kernel's load of a store kind the log holds (0 when
+// the table names none).
+func (l *keptLog) loadCode(storeKind string) uint32 {
+	for _, k := range l.kinds {
+		if k.StoreKind == storeKind && k.Load != nil {
+			return k.Load.Code
+		}
+	}
+	return 0
+}
+
+// keptSeq is the seq of the log that holds the store kind's document in
+// force (0 when there is none): the entry a reader of the document read.
+func (s *server) keptSeq(storeKind string) int64 {
+	l := s.keptLogOf(storeKind)
+	if l == nil {
+		return 0
+	}
+	if _, err := s.refreshLog(l.fold); err != nil {
+		return 0
+	}
+	l.fold.mu.Lock()
+	defer l.fold.mu.Unlock()
+	if l.docs[storeKind].hash == "" {
+		return 0
+	}
+	return l.fold.seq
+}
+
 // received is a receive op's answer.
 type received struct {
 	Entry   string      `json:"entry"`
+	Changes int         `json:"changes"`
 	Landed  *int64      `json:"landed"`
 	Overlap *logOverlap `json:"overlap"`
+	// Conflict is the record an op names, changed since the writer read
+	// it.
+	Conflict *struct {
+		Op int    `json:"op"`
+		ID string `json:"id"`
+	} `json:"conflict"`
 	Refused *struct {
 		Op       int             `json:"op"`
 		Refusals json.RawMessage `json:"refusals"`
@@ -254,18 +428,48 @@ type received struct {
 	Heads         map[string]string `json:"heads"`
 }
 
+// receiveCall is a write's call beside its entry's header: its ops, the
+// documents the host registers in the receiving module first (a feed's
+// network), and the documents it runs over in place of the fold's (an
+// empty log's first entry, from the old pointers), by store kind. A
+// kind with a kernel load is registered, and the op gets its hash in
+// `heads`; a kind with none is given inline, in `documents`.
+type receiveCall struct {
+	ops   []json.RawMessage
+	loads []hostLoad
+	heads map[string][]byte
+}
+
+// hostLoad is a document the host registers on a kernel load.
+type hostLoad struct {
+	code uint32
+	doc  []byte
+}
+
+// loadedHash is the hash a kernel load answers: its one `<name>_hash`
+// field.
+func loadedHash(answer map[string]any) string {
+	for k, v := range answer {
+		if h, ok := v.(string); ok && strings.HasSuffix(k, "_hash") {
+			return h
+		}
+	}
+	return ""
+}
+
 // receiveLog runs one write to a log through its receive op into one
 // entry: the documents at the head registered in the receiving module,
 // one call, the write rule of each document it wrote, and the entry
 // created at the next seq, asked again over the new head when another
 // write took it (D-190, rule 2). The answer is the entry's seq (the
 // head's when nothing changed), and landed when the write's key landed
-// before.
-func (s *server) receiveLog(r *http.Request, l *keptLog, w logWrite, ops []json.RawMessage) (seq int64, landed bool, got received, refusal *logRefusal, err error) {
+// before. `r` is the person's request, or nil when the server makes the
+// write itself or the route checked its write rule already: then no
+// write rule is asked, and no name is given.
+func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w logWrite, call receiveCall) (seq int64, landed bool, got received, refusal *logRefusal, err error) {
 	f := l.fold
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	ctx := r.Context()
 	for attempt := 0; attempt < 5; attempt++ {
 		if err := s.refreshLogLocked(f); err != nil {
 			return 0, false, got, nil, err
@@ -299,21 +503,44 @@ func (s *server) receiveLog(r *http.Request, l *keptLog, w logWrite, ops []json.
 			write["unread"] = unread
 		}
 		got = received{}
-		err := s.withModule(ctx, l.receive, func(host *WasmHost) error {
+		err := s.withModuleOf(ctx, l.receive, func(host *WasmHost, declares map[string]bool) error {
 			write["header"].(map[string]any)["module"] = "cap-" + l.receive + "@" + host.Hash()
+			for _, load := range call.loads {
+				var loaded map[string]any
+				if err := host.InvokeBytes(ctx, load.code, load.doc, &loaded); err != nil {
+					return err
+				}
+			}
 			heads := map[string]string{}
+			documents := map[string]json.RawMessage{}
 			for _, k := range l.kinds {
-				held := l.docs[k.StoreKind]
-				if held.hash == "" || k.Load == nil {
+				doc := l.docs[k.StoreKind].doc
+				if call.heads != nil {
+					doc = call.heads[k.StoreKind]
+				}
+				if len(doc) == 0 {
+					continue
+				}
+				// A kind the module declares is registered on its kernel
+				// load; any other goes inline.
+				if k.Load == nil || !declares[strings.TrimPrefix(k.Load.Op, "load_")] {
+					documents[k.StoreKind] = json.RawMessage(doc)
 					continue
 				}
 				var loaded map[string]any
-				if err := host.InvokeBytes(ctx, k.Load.Code, held.doc, &loaded); err != nil {
+				if err := host.InvokeBytes(ctx, k.Load.Code, doc, &loaded); err != nil {
 					return fmt.Errorf("the %s document at the head: %w", k.StoreKind, err)
 				}
-				heads[k.StoreKind] = held.hash
+				heads[k.StoreKind] = loadedHash(loaded)
 			}
-			return host.Invoke(ctx, map[string]any{"op": "receive", "write": write, "heads": heads, "ops": ops}, &got)
+			req := map[string]any{"op": "receive", "write": write, "heads": heads, "ops": call.ops}
+			if len(documents) > 0 {
+				req["documents"] = documents
+			}
+			if r != nil {
+				req["by"] = nameOf(r, "anonymous")
+			}
+			return host.Invoke(ctx, req, &got)
 		})
 		if err != nil {
 			return 0, false, got, nil, err
@@ -327,13 +554,18 @@ func (s *server) receiveLog(r *http.Request, l *keptLog, w logWrite, ops []json.
 			return 0, false, got, &logRefusal{http.StatusUnprocessableEntity, map[string]any{"op": got.Refused.Op, "refusals": got.Refused.Refusals}}, nil
 		case got.Moved != nil:
 			return 0, false, got, &logRefusal{http.StatusConflict, map[string]any{"current": got.Moved.Current, "seq": f.seq}}, nil
+		case got.Conflict != nil:
+			return 0, false, got, &logRefusal{http.StatusConflict, map[string]any{"op": got.Conflict.Op, "conflict": got.Conflict.ID}}, nil
 		case got.Overlap != nil:
 			o := got.Overlap
 			return 0, false, got, &logRefusal{http.StatusConflict, map[string]any{"conflict": o.Kind + " " + o.ID, "overlap": o, "seq": f.seq}}, nil
 		}
 		// The write rule of each document the write's ops wrote.
 		for kind := range got.Heads {
-			if allow, reason := s.mayWrite(r, kind); !allow {
+			if r == nil {
+				break
+			}
+			if allow, reason := s.mayWrite(r, l.ruleOf(kind)); !allow {
 				return 0, false, got, &logRefusal{http.StatusForbidden, "forbidden: " + reason}, nil
 			}
 		}
@@ -384,7 +616,7 @@ func (s *server) handleKeptIntent(w http.ResponseWriter, r *http.Request, l *kep
 		return
 	}
 	write := logWrite{writer: writerOf(r, "anonymous"), op: "POST /logs/" + l.name, argsHash: store.HashOf(body), key: req.Key, readSeq: req.ReadSeq, claimedAtMs: req.ClaimedAtMs}
-	seq, landed, got, refusal, err := s.receiveLog(r, l, write, req.Ops)
+	seq, landed, got, refusal, err := s.receiveLog(r.Context(), r, l, write, receiveCall{ops: req.Ops})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusBadRequest)
 		return
@@ -430,7 +662,8 @@ func (s *server) keptRoutes() map[string]struct {
 }
 
 // handleKeptRoute serves a kind's own write route: the body as the
-// arguments of the route's op, run by its log's receive op.
+// arguments of the route's op (an op of the kind's checking capability),
+// run by its log's receive op.
 func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "this write needs the store (start with -store <url>)", http.StatusNotFound)
@@ -452,12 +685,12 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 		err = json.Unmarshal(body, &args)
 	}
 	if err != nil {
-		http.Error(w, "body: a JSON object, the arguments of "+route.log.receive+" "+post.Op, http.StatusBadRequest)
+		http.Error(w, "body: a JSON object, the arguments of "+k.Module+" "+post.Op, http.StatusBadRequest)
 		return
 	}
-	op, _ := json.Marshal(map[string]any{"cap": route.log.receive, "op": post.Op, "args": args})
+	op, _ := json.Marshal(map[string]any{"cap": k.Module, "op": post.Op, "args": args})
 	write := logWrite{writer: writerOf(r, "anonymous"), op: "POST " + post.Path, argsHash: store.HashOf(body)}
-	_, _, got, refusal, err := s.receiveLog(r, route.log, write, []json.RawMessage{op})
+	_, _, got, refusal, err := s.receiveLog(r.Context(), r, route.log, write, receiveCall{ops: []json.RawMessage{op}})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusBadRequest)
 		return
@@ -491,10 +724,91 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, answer)
 }
 
-// keptRouteRule is the write rule of a kind's own route: its store kind.
+// keptRouteRule is the write rule of a kind's own route: the kind's rule.
 func (s *server) keptRouteRule(r *http.Request) string {
 	if route, ok := s.keptRoutes()[r.URL.Path]; ok {
-		return route.kind.StoreKind
+		return route.kind.rule()
 	}
 	return strings.TrimPrefix(r.URL.Path, "/")
+}
+
+// seedFile is a file a kind's first entry may come from: its flag, and
+// its path ("" for none).
+type seedFile struct {
+	flag, path string
+}
+
+// seedKept gives each empty log a receive op writes its first entry at
+// startup: the heads of its kinds' old pointers (the kind table's
+// `pointers`), recorded by the receive op's `migrate`. A kind with no
+// pointer head takes its file in `files`, when there is one (the dev
+// store's -edits file). The writer is migrate:<the first pointer read>,
+// or migrate:-<the file's flag>, and the note names each source.
+// Nothing when no source exists. The pointers are never written again.
+func (s *server) seedKept(files map[string]seedFile) {
+	for _, name := range s.keptNames() {
+		l := s.keptLog(name)
+		head, err := s.store.LogHeadOf(name)
+		if err != nil || head.Seq > 0 || len(head.Gaps) > 0 {
+			if err != nil {
+				log.Printf("seed the %s log: %v", name, err)
+			}
+			continue
+		}
+		heads := map[string][]byte{}
+		var note, hashes []string
+		writer := ""
+		for _, k := range l.kinds {
+			for _, pointer := range k.Pointers {
+				if strings.HasSuffix(pointer, "*") {
+					continue
+				}
+				ptr, found, err := s.store.Head(pointer)
+				if err != nil || !found {
+					continue
+				}
+				doc, _, err := s.store.GetBlob(ptr.Hash)
+				if err != nil {
+					log.Printf("seed the %s log: the %s pointer's head %s: %v", name, pointer, ptr.Hash, err)
+					return
+				}
+				heads[k.StoreKind] = doc
+				note = append(note, pointer+" "+ptr.Hash)
+				hashes = append(hashes, ptr.Hash)
+				if writer == "" {
+					writer = "migrate:" + pointer
+				}
+			}
+			if f, ok := files[k.StoreKind]; ok && f.path != "" && heads[k.StoreKind] == nil {
+				doc, err := os.ReadFile(f.path)
+				if err != nil || len(doc) == 0 {
+					continue
+				}
+				heads[k.StoreKind] = doc
+				note = append(note, "-"+f.flag+" "+store.HashOf(doc))
+				hashes = append(hashes, store.HashOf(doc))
+				if writer == "" {
+					writer = "migrate:-" + f.flag
+				}
+			}
+		}
+		if len(heads) == 0 {
+			continue
+		}
+		op, _ := json.Marshal(map[string]any{"cap": l.receive, "op": "migrate"})
+		w := logWrite{writer: writer, op: "migrate", note: strings.Join(note, ", ")}
+		// One source is the write's arguments: its hash.
+		if len(hashes) == 1 {
+			w.argsHash = hashes[0]
+		}
+		seq, _, _, refusal, err := s.receiveLog(context.Background(), nil, l, w, receiveCall{ops: []json.RawMessage{op}, heads: heads})
+		if err == nil && refusal != nil {
+			err = fmt.Errorf("%v", refusal.body)
+		}
+		if err != nil {
+			log.Printf("seed the %s log: %v", name, err)
+			continue
+		}
+		log.Printf("seed the %s log: entry %d from %s", name, seq, w.note)
+	}
 }

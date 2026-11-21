@@ -264,6 +264,18 @@ What does the planner see of an import? `feed_events` answers the events that th
 
 What does the stops log hold of this document? `log_records` answers the stops document `stops_hash` as records of kind `stop`, one for each stop, by its lasting id, with its events whole and in their order (D-197). The answer is `next`: those records, and the document's own record, of kind `stops` and id `document`: the document with its collection empty (a valid document with no records), so a field outside the collection that this build does not know is kept (D-167). Each names the document's version. The log capability composes an entry from it.
 
+## receive
+
+A write to the stops log, whole: the server's one call for `POST /stops`, `POST /stop-requests`, `POST /logs/stops`, the work order system's answer, the feed's differences, and the log's first entry (D-228). The stops document and the stop requests document are one log, because one entry can change a stop and the request it carries out. So this module also registers stop requests documents (`load_stop_requests`).
+
+It takes the write (`write`: the fold's checkpoint, the entry's header, and the entries after the fold that the writer did not read), the documents at the head (`heads.stops`, `heads.stop_requests`, registered by the host first), the writer's name (`by`), and the intent's ops:
+
+- `stops`: `add_event` and `correct_event`, with the arguments of the ops of the same name and no `stops_hash`; `validate` (`{stops, from}`), a whole document; `import_events` (`{network_hash, feed, on}`), a feed's differences, over a network the host registered first. With no stops document, `import_events` records nothing.
+- `requests`: `put` and `record_work_order`, with cap-requests' arguments and no `requests_hash`; `validate` (`{requests, from}`), a whole document.
+- `migrate`, under either: the documents at the head recorded as they are. The host sends it with the old pointers' heads to give an empty log its first entry.
+
+`from` is the head the writer read, empty for none. Every survey that a written stops document adds names `by` (the header's writer when absent), whatever name the client sent (D-158). Then each written document is checked as a write is. The answer is the entry's canonical bytes, which the host stores at the header's seq, and `heads`, each document the write wrote. A whole document's unknown fields are named (`unknown_fields`). No entry comes back when the write changes nothing, when its key landed before (`landed`), when a record it changes changed in an unread entry (`overlap`), when an op is refused (`refused`), when an op does not run (`failed`), when a whole document was written over a head the writer did not read (`moved`), or when `correct_event` names an event that changed since the writer read it (`conflict`, with the op and the event's id).
+
 ## log_document
 
-What is the stops document that the stops log holds? `log_document` assembles the document from the log's `stop` records and its own record `document` (each `{version, value}`, by stop id), registers it, and answers its `stops_hash` and its canonical `document`, which a host serves under that hash. A record in another version is refused, naming both versions: an older record comes forward through the migration capability as a one-record document.
+What is the stops document that the stops log holds? `log_document` assembles the document from the log's `stop` records and its own record `document` (each `{version, value}`, by stop id), registers it, and answers its hash (`document_hash`) and its canonical `document`, which a host serves under that hash. A record in another version is refused, naming both versions: an older record comes forward through the migration capability as a one-record document.

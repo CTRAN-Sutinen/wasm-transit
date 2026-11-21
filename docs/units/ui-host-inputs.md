@@ -68,11 +68,20 @@ it.
 8. **The failure table follows the declarations.** A gate in
    `just test` fails when a UI declares an input that its failure
    table has no row for.
-9. **The docs.** `docs/architecture/generated-uis.md` (the recipe's
-   step for inputs), `docs/architecture/web.md`,
-   `docs/architecture/hosts.md` ("Where a host does not keep these
-   rules"), and each UI's failure table, with the "page knows by"
-   column naming the input's state.
+9. **The failure tables, drawn.** The docs site's architecture page
+   (`tools/docs-site.mjs`) draws each UI's inputs from the
+   declarations: where each one comes from, how often it is read, its
+   time limit, and what the page keeps and says when a read fails. So
+   a reader sees what each UI still does through an outage, and the
+   picture changes when a declaration changes. The declarations reach
+   the site as data, not as TS that the site parses. The site's test
+   fails when a declared input is not drawn.
+10. **The docs.** `docs/architecture/generated-uis.md` (the recipe's
+    step for inputs), `docs/architecture/web.md`,
+    `docs/architecture/hosts.md` ("Where a host does not keep these
+    rules"), `docs/architecture/registry.md` ("The docs site"), and
+    each UI's failure table, with the "page knows by" column naming
+    the input's state.
 
 The declarations follow `docs/CONVENTIONS.md`, "Traceable":
 - the inputs are one plain list at the top of each host;
@@ -93,4 +102,6 @@ The engine reads every logged document through one reader,
   does not say "publishes no stops yet".
 - QAF-130 and QAF-131 are deleted from `docs/QA-FINDINGS.md`.
 - The failure-table gate runs in `just test`.
+- The architecture page draws each UI's inputs, and
+  `tools/docs-site.test.mjs` checks that every declared input is drawn.
 - The host contract suite passes against the server and the browser.

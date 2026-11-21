@@ -1,6 +1,7 @@
 package main
 
-// The stops log over HTTP (D-190, D-197, D-198; stopslog.go): the
+// The stops log over HTTP (D-190, D-197, D-198; logkinds.go, cap-stops
+// receive): the
 // laws a writer relies on.
 //
 //  1. Two writers who change different stops both land (no 409); one
@@ -32,18 +33,11 @@ import (
 func newStopsLogServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, b)
-	s.stopsWasm, s.requestsWasm = stopsWasm, requestsWasm
-	t.Cleanup(func() {
-		for _, h := range []*WasmHost{s.stopsHeld, s.requestsHeld} {
-			if h != nil {
-				h.Close(context.Background())
-			}
-		}
-	})
-	s.seedStopsLog()
+	closeModules(t, s)
+	s.seedKept(nil)
 	mux := storeMux(s)
-	mux.HandleFunc("/stops", s.handleStops)
-	mux.HandleFunc("/stop-requests", s.handleStopRequests)
+	mux.HandleFunc("/stops", s.handleKeptRoute)
+	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -69,7 +63,7 @@ func addEvent(stop string, event map[string]any) map[string]any {
 // stopsDocNow is the stops document the server holds.
 func stopsDocNow(t *testing.T, s *server) (string, map[string][]map[string]any) {
 	t.Helper()
-	hash, doc, found, err := s.stopsHead()
+	hash, doc, found, err := s.keptHead("stops")
 	if err != nil || !found {
 		t.Fatalf("the stops document: %v %v", found, err)
 	}
@@ -136,7 +130,7 @@ func TestARequestCompletedAndItsEventAddedAreOneEntry(t *testing.T) {
 		t.Fatalf("completed with its event: %d %v", code, out)
 	}
 	seq := int64(out["seq"].(float64))
-	entries, _ := s.store.Entries(stopsLogName, seq-1, seq)
+	entries, _ := s.store.Entries("stops", seq-1, seq)
 	var entry struct {
 		Writer  string               `json:"writer"`
 		Intent  struct{ Key string } `json:"intent"`
@@ -167,7 +161,7 @@ func TestAKeyLandsOnceAndARefusalNamesItsOp(t *testing.T) {
 	if code != 200 || again["landed"] != true || again["seq"] != first["seq"] {
 		t.Fatalf("the outbox's resend lands once: %d %v (first %v)", code, again, first)
 	}
-	head, _ := s.store.LogHeadOf(stopsLogName)
+	head, _ := s.store.LogHeadOf("stops")
 	if float64(head.Seq) != first["seq"] {
 		t.Fatalf("no second entry: head %d, first %v", head.Seq, first["seq"])
 	}
@@ -185,11 +179,11 @@ func TestAKeyLandsOnceAndARefusalNamesItsOp(t *testing.T) {
 	if code, resent := opsPost(t, base, "phone-9/43", suspend); code != 200 || resent["landed"] != true || resent["seq"] != sent["seq"] {
 		t.Fatalf("a resend lands once before its op runs again: %d %v (sent %v)", code, resent, sent)
 	}
-	before, _ = s.store.LogHeadOf(stopsLogName)
+	before, _ = s.store.LogHeadOf("stops")
 	if code, out := opsPost(t, base, "x", map[string]any{"cap": "stops", "op": "seed"}); code != 400 {
 		t.Fatalf("an op the log does not run: %d %v", code, out)
 	}
-	if head, _ := s.store.LogHeadOf(stopsLogName); head.Seq != before.Seq {
+	if head, _ := s.store.LogHeadOf("stops"); head.Seq != before.Seq {
 		t.Fatalf("a refused write writes nothing: %d → %d", before.Seq, head.Seq)
 	}
 }
@@ -210,28 +204,28 @@ func TestTheOldPointersSeedTheStopsLog(t *testing.T) {
 	}
 	host.Close(context.Background())
 	old := store.New(bucket)
-	stopsHash, _, err := old.CAS(stopsPointer, "", []byte(checked.Document), store.Envelope{Kind: "stops", SchemaVersion: 1, ProducedBy: "cap-stops@old"}, "", "planner", 1)
+	stopsHash, _, err := old.CAS("stops", "", []byte(checked.Document), store.Envelope{Kind: "stops", SchemaVersion: 1, ProducedBy: "cap-stops@old"}, "", "planner", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	s, _ := newStopsLogServer(t, bucket)
-	hash, _, found, err := s.stopsHead()
+	hash, _, found, err := s.keptHead("stops")
 	if err != nil || !found || hash != stopsHash {
 		t.Fatalf("the log serves the pointer's document under its hash: %s vs %s (%v)", hash, stopsHash, err)
 	}
-	if w := lastLogWriter(t, s, stopsLogName); w != "migrate:stops" {
+	if w := lastLogWriter(t, s, "stops"); w != "migrate:stops" {
 		t.Fatalf("entry 1's writer: %q", w)
 	}
-	entries, _ := s.store.Entries(stopsLogName, 0, 1)
+	entries, _ := s.store.Entries("stops", 0, 1)
 	if !strings.Contains(entries[0].Text, "stops "+stopsHash) {
 		t.Fatalf("entry 1 names the head it copied: %s", entries[0].Text)
 	}
-	if ptr, _, _ := s.store.Head(stopsPointer); ptr.Seq != 1 {
+	if ptr, _, _ := s.store.Head("stops"); ptr.Seq != 1 {
 		t.Fatalf("the pointer stays as it was: %+v", ptr)
 	}
 	newStopsLogServer(t, bucket)
-	if head, _ := s.store.LogHeadOf(stopsLogName); head.Seq != 1 {
+	if head, _ := s.store.LogHeadOf("stops"); head.Seq != 1 {
 		t.Fatalf("a seeded log is not seeded again: %d", head.Seq)
 	}
 }

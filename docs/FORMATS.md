@@ -265,7 +265,7 @@ transaction. The current document is the fold of the entries, which the
 module that owns the log's kinds computes. A mistake is fixed by a new
 entry, so the truth before the mistake stays in the record.
 
-The store has four logs. cap-log keeps them all (`log_entry`,
+The store has five logs. cap-log keeps them all (`log_entry`,
 `log_checkpoint`; D-197), and never reads a record. The capability that
 owns each kind turns its document into records and back:
 
@@ -377,7 +377,7 @@ a key the fold holds writes nothing, and the answer names the entry
 that holds the key. A write that names the seq it read (`read_seq`) is
 checked against the entries after it: a record that one of them changed
 and the write changes too refuses the write, and a change to another
-record does not (cap-log `compose`, `unread`). A change's `before` is the hash of the record as
+record does not (`transit_log::receive`, `unread`). A change's `before` is the hash of the record as
 the entry that wrote it stored it, never of a migrated copy. A record
 in an older version comes forward through its kind's migration chain
 as a one-record document.
@@ -550,7 +550,8 @@ entry 1 from their heads, with writer `migrate:stops` and
   write, D-189). Each op runs over the documents at the head, in order
   (stops: `add_event`, `correct_event`; requests: `put`,
   `record_work_order`), checked as `POST /stops` and `POST
-  /stop-requests` check a write, and what they changed is one entry. It
+  /stop-requests` check a write, and what they changed is one entry
+  (cap-stops `receive`). It
   answers `200 {seq, stops_hash, stop_requests_hash, landed?}`, `400
   {op, error}`, `409 {op, conflict}` (a `correct_event` whose `saw`
   names an event changed since), `409 {conflict, overlap: {kind, id,
@@ -566,9 +567,9 @@ entry 1 from their heads, with writer `migrate:stops` and
   landed?}` for the notes log (notes `write`; the server gives `by` and
   `at`). Their capabilities' `receive` ops answer them
   (`docs/architecture/server.md`, "One path for a log").
-- The manifest names `log_seqs`: the seq of the stops, alerts, and notes
-  logs' folds whose documents it pins. A page sends it back as
-  `read_seq`.
+- The manifest names `log_seqs`: the seq of the disruptions, stops,
+  plans, alerts, and notes logs' folds whose documents it pins. A page sends it back
+  as `read_seq` with a write to that log.
 - `GET /logs/stops?since=<seq>&limit=<n>` answers `{"log", "head",
   "gaps", "checkpoint", "entries", "quarantined"}`, as the disruptions
   log's does. `POST /logs/stops/revert` and `POST
@@ -629,8 +630,15 @@ entry is one kind the store keeps, by its store kind (the envelope's
 - `receive` names the capability whose `receive` op writes the kind's
   log: it runs a write's ops over the head and answers the entry
   (D-228). Every kind of one log names the same one.
+- `intent` is `false` when a page never writes the kind's log by intent
+  (`POST /logs/<log>` answers 405), and absent when it does. Only the
+  kinds' routes write such a log: a freeze stores its network first, and
+  `POST /edits` is the edit document's protocol. Every kind of one log
+  agrees.
 - `post` is the kind's own write route, which that op answers: its
-  `path`, the `op` the request's body is the arguments of, the
+  `path`, the `op` the request's body is the arguments of (an op of
+  the kind's checking capability, `module`, as the receive op takes
+  it), the
   `answer` field that names the document after the write, and the body
   fields it repeats (`echo`).
 - `references` are the fields that name other records or things, each

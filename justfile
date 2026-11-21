@@ -64,8 +64,12 @@ caps-fast:
 # The docs site: static HTML from the registry (run `just caps` first),
 # into docs-site/ (gitignored). `just docs` builds it. `just docs serve
 # [PORT]` builds it, then serves it on http://127.0.0.1:8085/ (or PORT).
-# It has no content of its own: the registry holds the purposes, the op
-# descriptions, the examples, and the schemas.
+# Its content comes from the code: the registry holds the purposes, the
+# op descriptions, the examples, and the schemas, and the architecture
+# page draws the crates from `cargo metadata`. Only its two traces and
+# its two bucket stories are written by hand, and its test checks the code they
+# name
+# (docs/architecture/registry.md, "The docs site").
 docs mode="build" port="8085":
     #!/usr/bin/env bash
     set -e

@@ -6003,8 +6003,16 @@
           "policy_hash": {
             "type": "string"
           },
+          "edit_records_hash": {
+            "type": "string",
+            "description": "The edit document (the disruptions log's fold), store mode (D-190)."
+          },
           "plans_hash": {
             "type": "string"
+          },
+          "frozen_versions_hash": {
+            "type": "string",
+            "description": "The frozen versions (the plans log's fold), store mode (D-191)."
           },
           "stops_hash": {
             "type": "string"
@@ -6026,7 +6034,7 @@
           },
           "log_seqs": {
             "type": "object",
-            "description": "The seq of each log's fold whose documents this manifest pins, store mode: a page sends it with a write as read_seq (D-189).",
+            "description": "The seq of each log's fold whose documents this manifest pins, store mode: a page sends it with a write to that log as read_seq (D-189).",
             "properties": {
               "stops": {
                 "type": "integer"
@@ -6035,6 +6043,12 @@
                 "type": "integer"
               },
               "notes": {
+                "type": "integer"
+              },
+              "plans": {
+                "type": "integer"
+              },
+              "disruptions": {
                 "type": "integer"
               }
             },

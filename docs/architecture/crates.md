@@ -647,9 +647,10 @@ The authorization capability: may this identity perform this action on this poin
 ## cap-sync
 
 The sync capability: the converged state of an edit document, with its lifecycle facets. It is stateless.
-- `sync_edits` does the LWW merge and the submit transition. The receive path clamps client clocks to the host's (D-56). The answer carries the canonical document bytes and their hash. This is the op behind POST /edits.
+- `sync_edits` does the LWW merge and the submit transition. The receive path clamps client clocks to the host's (D-56). The answer carries the canonical document bytes and their hash. The dev store's POST /edits answers through it.
 - `read_edits` is the receive. It reads the current version only. An older version is cap-migrate's. It does a typed parse, defaults fill what age removed, and it drops and counts malformed records.
 - `compact_edits` is the D-57 tombstone-retention commit.
+- `receive` writes the disruptions log whole (D-228): `sync` (a client's document brought forward with transit-sync's own migration, read, clamped, merged, and submitted), `compact`, and `migrate`, over the head the host gives inline. This is the op behind POST /edits in store mode.
 - `log_records`, `log_document`, and `log_revert` are the edit document's half of the disruptions log, which cap-log keeps: the document as records (`edit_record`, and the document's own record), the document assembled from the fold's records, and the records a revert writes back, stamped to win the merge (D-193). The server stores the entries ([storage.md](storage.md)).
 
 Validation is not here. What a record amounts to on a network is cap-divert's reports: one question, one answer.
@@ -664,6 +665,7 @@ The plan-chain capability: which service plan governs a date? transit-plans is t
 - `publish` answers the next set's canonical bytes and hash, which the server stores as given.
 - `freeze` and `adopt` answer the next frozen versions and the next set, each with its records for the plans log (`next`).
 - `log_records` and `log_document` turn the published set and the frozen versions into the plans log's records (`pick`, `frozen_version`, and each document's own record) and back. cap-log keeps the log and never reads a record.
+- `receive` writes the plans log whole (D-228): `freeze`, `adopt`, and `retire` over the documents at the head, which the host gives inline, then the entry. A publish is a freeze and an adoption in one call. `migrate` freezes each pick of a set published before the log, and records both documents (the log's first entry).
 
 ## cap-stops
 
@@ -697,6 +699,7 @@ The stops capability: what is a stop on a date? transit-stops (with its `stop_re
 **The stops log** (D-197).
 - `log_records` gives the document as the log's records: one `stop` record for each stop, its events whole, and the document's own record (kind `stops`, id `document`).
 - `log_document` assembles the document from those records, registers it, and gives its hash and canonical bytes.
+- `receive` writes the stops log whole (D-228): a write's ops over the stops and the stop requests at the head, the surveys attributed and each written document checked, then the entry. One entry can change a stop and the request it carries out, so the module links transit-requests and registers stop requests documents. Its ops are `stops` `add_event`, `correct_event`, `validate` (a whole document), `import_events` (a feed's differences); `requests` `put`, `record_work_order`, `validate`; and `migrate` (an empty log's first entry from the old pointers).
 
 ## cap-requests
 
@@ -708,7 +711,7 @@ The stop requests capability: what work has been asked for at a stop, and where 
 - `work_order_call` answers what to send the work order system for a request: the request for an `open`, the work order it holds for a `refresh`. The host makes the call.
 - `record_work_order` records what the work order system answered, on its request.
 - `vocabulary` gives the lists that a request's answers come from, and which statuses are open work.
-- `log_records` and `log_document` turn the document into the stops log's records (a `stop_request` record for each request, and the document's own record) and back (D-197).
+- `log_records` and `log_document` turn the document into the stops log's records (a `stop_request` record for each request, and the document's own record) and back (D-197). cap-stops' `receive` writes the stops log, the requests with it.
 
 ## cap-alerts
 

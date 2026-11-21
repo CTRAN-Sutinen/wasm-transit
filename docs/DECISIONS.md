@@ -280,6 +280,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-226 | What is a capability? | decided | nothing |
 | D-227 | Does the server link an assembly, as a UI does? | decided | nothing |
 | D-228 | What may a host do with an op's answer? | decided | nothing |
+| D-235 | Where do the worked examples' fixtures live, and what may depend on them? | decided | nothing |
 
 ## The trip model
 
@@ -4887,11 +4888,12 @@ dispatch test for each rule that left a host (`pick_period_law_test.rs`,
 `requests_law_test.rs`, `disruptions_law_test.rs`, `alerts_law_test.rs`);
 `caps-smoke.mjs` (`read_pick` in an assembly and alone); the `ui-ops`
 gate; the service-change, service-design, stops, and disruptions e2e
-specs; the receive ops of the alerts log and the notes log
-(cap-alerts and cap-notes `dispatch_test.rs`, `server/logkinds.go`,
-`alerts_test.go`, `notes_test.go`, `logwrite_test.go`). The write
-sequencing of the stops, plans, and disruptions logs in Go is still
-open (`docs/units/kind-registration.md`).
+specs; the receive ops of every log the server keeps (cap-sync,
+cap-stops, cap-plans, cap-alerts, and cap-notes `dispatch_test.rs`, `server/logkinds.go`, `stopslog_test.go`,
+`stops_test.go`, `requests_test.go`, `planslog_test.go`,
+`version_test.go`, `alerts_test.go`, `notes_test.go`,
+`logwrite_test.go`, `resilience_test.go`). A pick's checks are still
+sequenced in Go (`docs/units/kind-registration.md`).
 Blocks: nothing.
 
 ### D-229 — Does the record's integrity encode the domain?
@@ -5079,3 +5081,33 @@ Options:
 - Each pick in force while the record was live.
 Blocks: the network references of undated records
 (`docs/units/kind-registration.md`, item 6).
+
+### D-235 — Where do the worked examples' fixtures live, and what may depend on them?
+State: Decided.
+Answer: 2026-11-20 — a fixtures crate of its own, in a new class. Only
+an `examples` feature or a dev-dependency may name it, and no
+assembly's closure may hold it. The arch gates learn the class and hold
+this rule. The kernel loses its optional domain dependencies. The user
+took the recommended option, and asked to plan it together with
+kind-registration's item 1 (the kernel's domain dependencies).
+Context: each capability's worked examples move into its crate,
+behind an `examples` feature (`docs/units/capability-declared-once.md`).
+The examples share fixtures: the fixture network, streets, and live
+feed, and the fixed clocks. Today they live in gen_manifest.rs, and
+cap-abi's optional dependencies for gen-manifest bring in five domain
+libraries. The arch gates allow a capability to depend on the kernel
+and on libraries only, and they refuse any crate whose name is not a
+known class. kind-registration wants the kernel to be less of a hub.
+Options:
+- A fixtures crate of its own, in a new class (recommended). Only an
+  `examples` feature or a dev-dependency may name it, and no
+  assembly's closure may hold it. The gate learns the class and holds
+  this rule. The kernel loses its optional domain dependencies.
+- The fixtures stay in cap-abi, behind its `gen-manifest` feature, and
+  a capability's `examples` feature turns that feature on. The gates
+  do not change. The kernel stays a hub for the generator.
+- Each capability builds the fixtures it needs from its own
+  libraries. No shared crate, and the fixture code is repeated.
+Pinned by: nothing yet (item 3 of
+`docs/units/capability-declared-once.md` builds it).
+Blocks: nothing.

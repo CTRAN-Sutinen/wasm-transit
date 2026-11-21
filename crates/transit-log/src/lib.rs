@@ -33,7 +33,7 @@
 
 
 pub mod receive;
-pub use receive::{receive, Failed, Moved, OpCall, Received, Refused, Write};
+pub use receive::{receive, Conflict, Failed, Moved, OpCall, Received, Refused, Write};
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;

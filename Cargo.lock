@@ -506,6 +506,7 @@ dependencies = [
  "transit-log",
  "transit-network",
  "transit-plans",
+ "transit-requests",
  "transit-stops",
  "transit-version",
  "ts-rs",

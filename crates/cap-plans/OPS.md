@@ -101,6 +101,16 @@ The plans log's records of a published plan set and of the frozen versions, as t
 
 The sync server asks this once, to seed the plans log from the plans pointer.
 
+## receive
+
+A write to the plans log, whole: the server's one call for `POST /plans`, `POST /plans/freeze`, `POST /plans/adopt`, `POST /plans/retire`, and the log's first entry (D-228). This capability holds no registry, so the host gives the documents at the head inline (`documents.plans`, `documents.frozen_versions`; absent: none). It takes the write (`write`: the fold's checkpoint, the entry's header, and the entries after the fold that the writer did not read) and the ops, each `{cap: "plans", op, args}`:
+
+- `freeze` (`{plan, network_hash, purpose}`) and `adopt` (`{network_hash, today, stops_seq}`), as the ops of the same name take them, over the documents the earlier ops left. A publish is a freeze, then an adoption, in one entry.
+- `retire` (`{id, today}`).
+- `migrate`: each pick of the published set frozen as "published before the plans log", and both documents recorded. The host sends it with the old `plans` pointer's head to give an empty log its first entry.
+
+`today` is the agency's date, which the host's clock gives. The answer is the entry's canonical bytes, which the host stores at the header's seq, and `heads`, the hash of each document the write wrote. No entry comes back when the write changes nothing, when its key landed before (`landed`), when a record it changes changed in an unread entry (`overlap`), when an op is refused (`refused`, its index and its `issues` as `refusals`), or when an op does not run (`failed`).
+
 ## log_document
 
 A document assembled from the plans log's records: `plans` from the `pick` records, or `frozen_versions` from the `frozen_version` records, with the document's own record. The answer is the canonical bytes and their hash. The picks are in (effective_from, id) order.

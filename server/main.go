@@ -102,22 +102,22 @@ func main() {
 			log.Fatalf("plans module: %v", err)
 		}
 		s.networkWasm = *f.networkWasm
-		s.stopsWasm = *f.stopsWasm
-		s.requestsWasm = *f.requestsWasm
 		s.logWasm = *f.logWasm
 		s.kindsPath = *f.kindsPath
 		s.checkWasm = map[string]string{"authz": *f.authzWasm}
 		if _, err := s.kindTable(); err != nil {
 			log.Fatalf("store mode: %v", err)
 		}
-		s.seedStore(*f.editsPath)
-		s.commitPicksForward()
-		s.seedPolicy(*f.policyFile)
-		s.maybeCompactEdits()
+		// The modules by capability, before the seeds: a log's first
+		// entry runs through its receive op (logkinds.go).
 		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm, "alerts": *f.alertsWasm, "notes": *f.notesWasm, "log": *f.logWasm}
 		if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
 			s.serverModules["authz"] = *f.authzWasm
 		}
+		s.seedStore(*f.editsPath)
+		s.commitPicksForward()
+		s.seedPolicy(*f.policyFile)
+		s.maybeCompactEdits()
 		uiDists, err := parseUIDists(*f.uiDist)
 		if err != nil {
 			log.Fatalf("%v", err)
@@ -274,8 +274,6 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
 	mux.HandleFunc("/plans/freeze", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleFreeze))
 	mux.HandleFunc("/plans/adopt", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleAdopt))
-	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
-	mux.HandleFunc("/stop-requests", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleStopRequests))
 	// Each kind's own write route (the kind table's `post`), answered by
 	// its log's receive op (logkinds.go). Its write rule is its store kind.
 	if t, err := s.kindTable(); err == nil {
@@ -287,7 +285,7 @@ func (s *server) routes() *http.ServeMux {
 	}
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
 	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
-	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleWorkOrder))
+	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return "stop_requests" }, s.handleWorkOrder))
 	mux.HandleFunc("/builds", s.protectWrite(func(r *http.Request) string { p, _ := buildsPointerOf(r); return p }, s.handleBuilds))
 	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
@@ -326,11 +324,6 @@ type server struct {
 	// and every domain decision about it (merge, submit, validation)
 	// — this host only stores and ferries it.
 	editsMu sync.Mutex
-	// Store mode: the disruptions log's fold, made on first use, and the
-	// edit document it holds (disruptions.go).
-	disruptionsOnce sync.Once
-	disruptions     *logFold
-	disruptionsDoc  logDoc
 	edits           json.RawMessage // the edit document (current version)
 	editsPath       string          // the dev store's file; empty = in memory only
 
@@ -353,31 +346,12 @@ type server struct {
 	// makes one publish one step.
 	plans       *WasmHost
 	networkWasm string
-	// The stops capability (cap-stops) behind POST /stops and each
-	// pick's refresh (stops.go); empty: no stops document, picks publish
-	// as sent.
-	stopsWasm string
-	// The held cap-stops instance (stops.go `withStops`): created on
-	// first use, emptied after every use.
-	stopsMu   sync.Mutex
-	stopsHeld *WasmHost
-	// The stop requests capability (cap-requests) behind POST
-	// /stop-requests (requests.go), held like cap-stops.
-	requestsWasm string
-	requestsMu   sync.Mutex
-	requestsHeld *WasmHost
-	// The log capability (cap-log) behind the stops log (caplog.go,
-	// stopslog.go), loaded on first use and held for the lifetime.
+	// The log capability (cap-log) behind the logs the server folds
+	// (caplog.go), loaded on first use and held for the lifetime.
 	logWasm string
 	logOnce sync.Once
 	logHost *WasmHost
 	logErr  error
-	// The stops log's fold, and the documents it holds (stopslog.go);
-	// the documents are guarded by the fold's lock.
-	stopsLogOnce sync.Once
-	stopsFold    *logFold
-	stopsDoc     logDoc
-	requestsDoc  logDoc
 	// The logs a receive op writes (logkinds.go), from the kind table;
 	// and the server's one instance of each capability they use.
 	keptOnce  sync.Once
@@ -392,12 +366,6 @@ type server struct {
 	kinds     *kindTable
 	kindsErr  error
 	checkWasm map[string]string
-	// The plans log's fold, and the documents it holds (planslog.go);
-	// the documents are guarded by the fold's lock.
-	plansLogOnce sync.Once
-	plansFold    *logFold
-	plansDoc     logDoc
-	frozenDoc    logDoc
 	// The attachments' own bucket (attachments.go, -attachments); nil:
 	// none are taken.
 	attachments store.Backend
@@ -619,16 +587,13 @@ type Manifest struct {
 	WasmHash    string  `json:"wasm_hash"`              // sha256 of the sync module this server runs
 	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
-	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans log's fold), store mode
-	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops log's fold), store mode
-	// The stop requests document (the stop_requests pointer head), store mode (D-159).
-	StopRequestsHash string `json:"stop_requests_hash,omitempty"`
 	// Each document of a log a receive op writes (logkinds.go), written
-	// as `<store kind>_hash`, store mode.
+	// as `<store kind>_hash` (stops_hash, stop_requests_hash, ...), store
+	// mode.
 	Logged map[string]string `json:"-"`
 	// The seq of each log's fold whose documents this manifest pins
-	// (the stops log, and each log a receive op writes), store mode: a
-	// page sends it with a write as read_seq (D-189; logwrite.go).
+	// (each log a receive op writes), store mode: a page sends it with a
+	// write as read_seq (D-189; logkinds.go).
 	LogSeqs     map[string]int64 `json:"log_seqs,omitempty"`
 	BuildHash   string           `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt int64            `json:"generated_at"`
@@ -771,32 +736,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("policy"); err == nil && found {
 			manifest.PolicyHash = head.Hash
 		}
-		if hash, _, found, err := s.plansHead(); err == nil && found {
-			manifest.PlansHash = hash
-		}
 		// Each log's documents and the seq of the fold they are, read
 		// under one lock: a page sends that seq with a write (read_seq),
 		// so the write is checked against the records it changes.
-		for _, l := range []struct {
-			fold func() *logFold
-			pin  func()
-		}{
-			{s.stopsLog, func() { manifest.StopsHash, manifest.StopRequestsHash = s.stopsDoc.hash, s.requestsDoc.hash }},
-		} {
-			f := l.fold()
-			if _, err := s.refreshLog(f); err != nil {
-				continue
-			}
-			f.mu.Lock()
-			l.pin()
-			if f.seq > 0 {
-				if manifest.LogSeqs == nil {
-					manifest.LogSeqs = map[string]int64{}
-				}
-				manifest.LogSeqs[f.name] = f.seq
-			}
-			f.mu.Unlock()
-		}
 		pins, seqs := s.keptPins()
 		manifest.Logged = pins
 		for name, seq := range seqs {
@@ -818,7 +760,7 @@ func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	seqs, _ := json.Marshal(m.LogSeqs)
 	sum := sha256.Sum256([]byte(strings.Join([]string{string(seqs),
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, fmt.Sprint(m.Logged), m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, fmt.Sprint(m.Logged), m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL, fmt.Sprint(m.Auth),
 	}, "|")))
 	return hex.EncodeToString(sum[:])
@@ -917,17 +859,15 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// seedStore prepares a fresh or older store at startup: the disruptions
-// log's first entry from the old edits pointer's head, else from the
-// dev store's -edits file (disruptions.go, seedDisruptions); and the
-// stops log's first entry from the old stops and stop_requests pointers'
-// heads (stopslog.go, seedStopsLog); and the plans log's first entry
-// from the old plans pointer's head (planslog.go, seedPlansLog).
+// seedStore prepares a fresh or older store at startup: each log a
+// receive op writes takes its first entry from its kinds' old pointers'
+// heads (logkinds.go, seedKept): the disruptions log from the old edits
+// pointer, else the dev store's -edits file; the stops log from the old
+// stops and stop_requests pointers; the plans log from the old plans
+// pointer.
 func (s *server) seedStore(editsPath string) {
 	s.describeStore()
-	s.seedDisruptions(editsPath)
-	s.seedStopsLog()
-	s.seedPlansLog()
+	s.seedKept(map[string]seedFile{"edit_records": {flag: "edits", path: editsPath}})
 }
 
 // describeStore writes the store's description, create only

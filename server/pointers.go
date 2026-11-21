@@ -303,12 +303,22 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			return
 		}
 		from := req.From
-		_, hash, seq, unknown, err := s.commitDisruptions(req.Client, writer, &from)
+		seq, got, refusal, err := s.writeEdits(r, req.Client, &from)
 		if err != nil {
 			editsWriteFailed(w, err)
 			return
 		}
-		flagUnknown(w, "edits", writer, unknown)
+		if refusal != nil {
+			editsRefused(w, got, refusal)
+			return
+		}
+		flagUnknown(w, "edits", writer, got.UnknownFields)
+		_, head, err := s.disruptionsNow()
+		if err != nil {
+			fail(w, err, http.StatusInternalServerError)
+			return
+		}
+		hash := head.Hash
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("ETag", `"`+hash+`"`)
 		json.NewEncoder(w).Encode(map[string]any{"name": name, "hash": hash, "seq": seq})
@@ -429,15 +439,8 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		data, env, err = s.store.GetBlob(hash)
 	}
 	if err == store.ErrNotFound {
-		// The stops log's documents, served under the hashes the manifest
-		// pins (stopslog.go).
-		kind, doc, ok := s.stopsLogDoc(hash)
-		if !ok {
-			kind, doc, ok = s.plansLogDoc(hash)
-		}
-		if !ok {
-			kind, doc, ok = s.keptDoc(hash)
-		}
+		// The logs' documents, served under the hashes the manifest pins.
+		kind, doc, ok := s.keptDoc(hash)
 		if ok {
 			version := docVersion(doc)
 			w.Header().Set("X-Document-Kind", kind)

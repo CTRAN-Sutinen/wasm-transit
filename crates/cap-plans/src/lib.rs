@@ -139,6 +139,26 @@ pub enum Request {
         #[ts(optional, as = "Option<FrozenVersions>")]
         frozen: Option<Base<FrozenVersions>>,
     },
+    /// A write to the plans log, whole (D-228): each op over the
+    /// documents at the head, given inline by store kind (`plans`,
+    /// `frozen_versions`; absent: none), then the entry that records
+    /// what changed. The ops (cap `plans`): `freeze` (`{plan,
+    /// network_hash, purpose}`), `adopt` (`{network_hash, today,
+    /// stops_seq}`), `retire` (`{id, today}`), and `migrate`: each pick
+    /// of the published set frozen as "published before the plans log",
+    /// and both documents recorded (an empty log's first entry, from the
+    /// old pointer). `today` is the agency's date, which the host's clock
+    /// gives. A refused op answers its issues, and an op that does not
+    /// run answers why (`failed`): no entry either way.
+    Receive {
+        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        write: transit_log::Write,
+        #[serde(default)]
+        #[ts(type = "Record<string, unknown>")]
+        documents: std::collections::BTreeMap<String, serde_json::Value>,
+        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        ops: Vec<transit_log::OpCall>,
+    },
     /// A document assembled from the plans log's records of its kind
     /// (`plans` from `pick` records, `frozen_versions` from
     /// `frozen_version` records), answered as its canonical bytes and
@@ -200,6 +220,9 @@ pub enum Response {
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
+    /// What the write adds to the plans log (`heads`: the documents it
+    /// wrote, by store kind).
+    Receive(transit_log::Received),
     LogDocument { document: String, document_hash: String },
 }
 
@@ -331,6 +354,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::LogRecords { next })
         }
+        Request::Receive { write, documents, ops } => receive(write, documents, ops),
         Request::LogDocument { kind, records, document } => {
             let document = match kind.as_str() {
                 PLANS_DOCUMENT => {
@@ -351,6 +375,126 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LogDocument { document, document_hash })
         }
     }
+}
+
+/// An op of a write to the plans log, as the host sends it.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum Intent {
+    Freeze {
+        plan: PlanInfo,
+        network_hash: String,
+        purpose: String,
+    },
+    Adopt {
+        network_hash: String,
+        today: String,
+        #[serde(default)]
+        stops_seq: Option<u64>,
+    },
+    Retire {
+        id: String,
+        today: String,
+    },
+    Migrate {},
+}
+
+/// What a frozen pick of a set published before the plans log is.
+const MIGRATED_PURPOSE: &str = "published before the plans log";
+
+/// The documents a write runs over, and whether an op wrote each.
+struct Heads {
+    published: Option<PublishedPlans>,
+    frozen: Option<FrozenVersions>,
+    wrote_published: bool,
+    wrote_frozen: bool,
+}
+
+/// One op over the heads: none when it ran, the issues of a refused
+/// one, or the error of an op that did not run.
+fn step(heads: &mut Heads, intent: Intent) -> Result<Option<Vec<PlanIssue>>, String> {
+    match intent {
+        Intent::Freeze { plan, network_hash, purpose } => {
+            let base = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
+            match transit_plans::freeze(&base, &plan, &network_hash, &purpose) {
+                Ok(next) => (heads.frozen, heads.wrote_frozen) = (Some(next), true),
+                Err(issues) => return Ok(Some(issues)),
+            }
+        }
+        Intent::Adopt { network_hash, today, stops_seq } => {
+            let base = heads.published.clone().unwrap_or_else(PublishedPlans::empty);
+            let frozen = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
+            match transit_plans::adopt(&base, &frozen, &network_hash, parse_date(&today)?, stops_seq) {
+                Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
+                Err(issues) => return Ok(Some(issues)),
+            }
+        }
+        Intent::Retire { id, today } => {
+            let base = heads.published.clone().ok_or("nothing is published")?;
+            match transit_plans::retire(&base, &id, parse_date(&today)?) {
+                Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
+                Err(issues) => return Ok(Some(issues)),
+            }
+        }
+        Intent::Migrate {} => {
+            let mut frozen = FrozenVersions::empty();
+            for p in heads.published.iter().flat_map(|set| set.plans.iter()) {
+                let plan = PlanInfo { id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()) };
+                match transit_plans::freeze(&frozen, &plan, &p.network_hash, MIGRATED_PURPOSE) {
+                    Ok(next) => frozen = next,
+                    Err(issues) => return Ok(Some(issues)),
+                }
+            }
+            heads.wrote_published = heads.published.is_some();
+            if heads.wrote_published {
+                (heads.frozen, heads.wrote_frozen) = (Some(frozen), true);
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// A document given inline, read as the base of a write.
+fn given<T: serde::de::DeserializeOwned + transit_version::Versioned>(documents: &std::collections::BTreeMap<String, serde_json::Value>, kind: &str) -> Result<Option<T>, String> {
+    documents.get(kind).filter(|v| !v.is_null()).map(|v| cap_abi::read_base::<T>(v.clone()).map(|(doc, _)| doc)).transpose()
+}
+
+/// A write's ops over the heads, then its entry (`Request::Receive`).
+fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<String, serde_json::Value>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+    let answer = |received| Ok(Response::Receive(received));
+    if let Some(seq) = write.landed()? {
+        return answer(transit_log::Received::landed(seq));
+    }
+    let mut heads = Heads { published: given(&documents, PLANS_DOCUMENT)?, frozen: given(&documents, FROZEN_DOCUMENT)?, wrote_published: false, wrote_frozen: false };
+    if let Some(set) = &heads.published {
+        spoken(set)?;
+    }
+    if let Some(frozen) = &heads.frozen {
+        frozen_spoken(frozen)?;
+    }
+    for (i, call) in ops.iter().enumerate() {
+        if call.cap != "plans" {
+            return answer(transit_log::Received::failed(i, format!("{} {} is not a write to the plans log (plans: freeze, adopt, retire, migrate)", call.cap, call.op)));
+        }
+        match call.request::<Intent>().and_then(|intent| step(&mut heads, intent)) {
+            Ok(None) => {}
+            Ok(Some(issues)) => return answer(transit_log::Received::refused(i, serde_json::to_value(issues).map_err(|e| e.to_string())?)),
+            Err(e) => return answer(transit_log::Received::failed(i, e)),
+        }
+    }
+    let mut next = Vec::new();
+    let mut written = std::collections::BTreeMap::new();
+    if let (true, Some(set)) = (heads.wrote_published, &heads.published) {
+        next.extend(set_records(set)?);
+        written.insert(PLANS_DOCUMENT.to_string(), cap_abi::content_hash(cap_abi::canonical_bytes(set)?.as_bytes()));
+    }
+    if let (true, Some(frozen)) = (heads.wrote_frozen, &heads.frozen) {
+        next.extend(frozen_records(frozen)?);
+        written.insert(FROZEN_DOCUMENT.to_string(), cap_abi::content_hash(cap_abi::canonical_bytes(frozen)?.as_bytes()));
+    }
+    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    received.heads = written;
+    answer(received)
 }
 
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`

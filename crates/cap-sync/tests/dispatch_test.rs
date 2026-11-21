@@ -385,3 +385,58 @@ fn a_revert_stamps_each_record_to_win_the_merge_and_retires_what_it_created() {
     let e2: EditRecord = serde_json::from_value(written[0].after.clone().unwrap()).unwrap();
     assert_eq!((e2.id.as_str(), e2.status, e2.updated_at), ("e2", EditStatus::Retired, 7_000));
 }
+
+// ---------------------------------------------------------------------
+// receive: the disruptions log's write, whole (D-228)
+// ---------------------------------------------------------------------
+
+fn receive_header(seq: u64) -> serde_json::Value {
+    serde_json::json!({ "log": "disruptions", "seq": seq, "writer": "dispatch-1", "at_ms": 5_000, "module": "cap-sync@test", "intent": { "op": "POST /edits" } })
+}
+
+fn ok(req: serde_json::Value) -> serde_json::Value {
+    let out: serde_json::Value = serde_json::from_str(&dispatch_json(&req.to_string())).unwrap();
+    out.get("ok").cloned().unwrap_or_else(|| panic!("{req}: {out}"))
+}
+
+#[test]
+fn receive_merges_a_client_document_and_answers_its_entry() {
+    // A bare array is an edit document v1: it comes forward in the op.
+    let client = serde_json::to_value(vec![record("e1", EditStatus::Draft, 1, 9_000)]).unwrap();
+    let got = ok(serde_json::json!({ "op": "receive", "write": { "header": receive_header(1) },
+        "ops": [{ "cap": "sync", "op": "sync", "args": { "client": client } }] }));
+    let entry: serde_json::Value = serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("an entry: {got}"))).unwrap();
+    let change = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "edit_record").expect("the record changes");
+    assert_eq!(change["after"]["status"], "submitted", "drafts are submitted: {change}");
+    assert_eq!(change["after"]["updated_at"], 5_000, "the client's clock is clamped to the entry's (D-56): {change}");
+    assert!(got["heads"]["edit_records"].is_string(), "{got}");
+}
+
+#[test]
+fn receive_answers_a_moved_head_and_compacts_over_the_head() {
+    let doc = transit_sync::EditDocument::new(vec![record("e1", EditStatus::Retired, 2, 1_000)]);
+    let docv = serde_json::to_value(&doc).unwrap();
+    let moved = ok(serde_json::json!({ "op": "receive", "documents": { "edit_records": docv }, "write": { "header": receive_header(1) },
+        "ops": [{ "cap": "sync", "op": "sync", "args": { "client": [], "from": "sha256:old" } }] }));
+    assert!(moved["moved"]["current"].as_str().unwrap().starts_with("sha256:"), "{moved}");
+    // The fold holds the tombstone (entry 1), then the compaction drops it.
+    let first = ok(serde_json::json!({ "op": "receive", "documents": { "edit_records": docv }, "write": { "header": receive_header(1) },
+        "ops": [{ "cap": "sync", "op": "migrate" }] }));
+    let stored = [transit_log::Stored { seq: 1, text: first["entry"].as_str().unwrap().into() }];
+    let fold = transit_log::fold(Checkpoint::empty("disruptions"), &stored, &cap_abi::record_hash).unwrap();
+    let compacted = ok(serde_json::json!({ "op": "receive", "documents": { "edit_records": docv },
+        "write": { "checkpoint": serde_json::to_value(fold.fold).unwrap(), "header": receive_header(2) },
+        "ops": [{ "cap": "sync", "op": "compact", "args": { "horizon_ms": 1_000 } }] }));
+    let entry: serde_json::Value = serde_json::from_str(compacted["entry"].as_str().unwrap_or_else(|| panic!("{compacted}"))).unwrap();
+    assert!(entry["changes"].as_array().unwrap().iter().any(|c| c["kind"] == "edit_record" && c["after"].is_null()), "the old tombstone leaves the document: {entry}");
+}
+
+#[test]
+fn receive_migrate_records_the_head_and_another_log_s_op_fails() {
+    let doc = serde_json::to_value(vec![record("e1", EditStatus::Submitted, 1, 1_000)]).unwrap();
+    let got = ok(serde_json::json!({ "op": "receive", "documents": { "edit_records": doc }, "write": { "header": receive_header(1) },
+        "ops": [{ "cap": "sync", "op": "migrate" }] }));
+    assert!(got["entry"].is_string(), "{got}");
+    let other = ok(serde_json::json!({ "op": "receive", "write": { "header": receive_header(1) }, "ops": [{ "cap": "stops", "op": "add_event" }] }));
+    assert!(other["failed"]["error"].as_str().unwrap().contains("not a write to the disruptions log"), "{other}");
+}

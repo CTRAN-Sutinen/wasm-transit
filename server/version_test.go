@@ -179,7 +179,7 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 	}
 	// The startup order: the plans log seeds from the old pointer, then
 	// the picks in use come forward.
-	s.seedPlansLog()
+	s.seedKept(nil)
 	if got := plansHash(t, s); got != oldSet {
 		t.Fatalf("the seeded log holds the pointer's set: %s, want %s", got, oldSet)
 	}
@@ -230,8 +230,8 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 			t.Errorf("pick %s: the older network stays readable under its hash: %v", p.ID, err)
 		}
 	}
-	head, _ := s.store.LogHeadOf(plansLogName)
-	last, _ := s.store.Entries(plansLogName, head.Seq-1, head.Seq)
+	head, _ := s.store.LogHeadOf("plans")
+	last, _ := s.store.Entries("plans", head.Seq-1, head.Seq)
 	var entry struct {
 		Writer string `json:"writer"`
 	}
@@ -241,7 +241,7 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 
 	// Already current: a second start commits nothing.
 	s.commitPicksForward()
-	if after, _ := s.store.LogHeadOf(plansLogName); after.Seq != head.Seq {
+	if after, _ := s.store.LogHeadOf("plans"); after.Seq != head.Seq {
 		t.Fatalf("current picks are not committed again: entry %d, want %d", after.Seq, head.Seq)
 	}
 }

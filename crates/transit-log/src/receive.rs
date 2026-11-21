@@ -71,7 +71,8 @@ impl Write {
 /// changes nothing, landed before (`landed`, its key's entry), changes a
 /// record that an unread entry changed (`overlap`, for a person), was
 /// refused by a check (`refused`), or wrote over a head the writer did
-/// not read (`moved`). `heads` are the documents after the write, by
+/// not read (`moved`), or names a record that changed since the writer
+/// read it (`conflict`). `heads` are the documents after the write, by
 /// store kind, and `unknown_fields` the fields a written document
 /// carries that this build does not know (D-167).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ts_rs::TS)]
@@ -93,6 +94,9 @@ pub struct Received {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub moved: Option<Moved>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub conflict: Option<Conflict>,
     /// An op that did not run: one the log does not take, or arguments
     /// it cannot read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -122,6 +126,12 @@ impl Received {
         Received { failed: Some(Failed { op, error }), ..Default::default() }
     }
 
+    /// The answer of an op whose record `id` changed since the writer
+    /// read it.
+    pub fn conflict(op: usize, id: String) -> Self {
+        Received { conflict: Some(Conflict { op, id }), ..Default::default() }
+    }
+
     /// The answer of a whole-document write over a head it did not read.
     pub fn moved(current: Option<String>) -> Self {
         Received { moved: Some(Moved { current: current.unwrap_or_default() }), ..Default::default() }
@@ -134,6 +144,15 @@ impl Received {
 pub struct Failed {
     pub op: usize,
     pub error: String,
+}
+
+/// The record an op names, changed since the writer read it: nothing is
+/// written, and the writer reads again.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct Conflict {
+    pub op: usize,
+    pub id: String,
 }
 
 /// The head a whole-document write did not read: the writer reads again.

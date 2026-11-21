@@ -154,7 +154,7 @@ fn the_document_and_its_log_records_round_trip() {
     let held: serde_json::Map<String, Value> =
         records["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": 1, "value": v}))).collect();
     let back = ok(json!({ "op": "log_document", "records": held, "document": {"version": 1, "value": next[1]["records"]["document"]} }));
-    assert_eq!(back["requests_hash"], v["document_hash"]);
+    assert_eq!(back["document_hash"], v["document_hash"]);
     assert_eq!(back["document"], v["document"]);
 }
 

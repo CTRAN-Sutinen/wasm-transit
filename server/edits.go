@@ -18,6 +18,7 @@ package main
 // the dev store keeps it in memory or the -edits file.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,18 +76,56 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writer := writerOf(r, "anonymous")
-		document, hash, _, unknown, err := s.commitDisruptions(json.RawMessage(body), writer, nil)
+		_, got, refusal, err := s.writeEdits(r, json.RawMessage(body), nil)
 		if err != nil {
 			editsWriteFailed(w, err)
 			return
 		}
-		flagUnknown(w, "edits", writer, unknown)
+		if refusal != nil {
+			editsRefused(w, got, refusal)
+			return
+		}
+		flagUnknown(w, "edits", writer, got.UnknownFields)
+		document, head, err := s.disruptionsNow()
+		if err != nil {
+			fail(w, err, http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"`+hash+`"`)
-		w.Write([]byte(document))
+		w.Header().Set("ETag", `"`+head.Hash+`"`)
+		w.Write(document)
 	default:
 		http.Error(w, "use GET or POST", http.StatusMethodNotAllowed)
 	}
+}
+
+// writeEdits writes a client's edit document as one entry of the
+// disruptions log, through its receive op (`sync sync`): merged with
+// the head, its clock clamped to the entry's. from, when not nil, is the
+// hash the writer last saw: a head that moved is refused, and nothing is
+// written. The route checked the write rule (`edits`).
+func (s *server) writeEdits(r *http.Request, client json.RawMessage, from *string) (int64, received, *logRefusal, error) {
+	l := s.keptLog(disruptionsLog)
+	if l == nil {
+		return 0, received{}, nil, errNoLog(disruptionsLog)
+	}
+	args := map[string]any{"client": client}
+	if from != nil {
+		args["from"] = *from
+	}
+	op, _ := json.Marshal(map[string]any{"cap": "sync", "op": "sync", "args": args})
+	seq, _, got, refusal, err := s.receiveLog(r.Context(), nil, l, logWrite{writer: writerOf(r, "anonymous"), op: "POST /edits", argsHash: store.HashOf(client)}, receiveCall{ops: []json.RawMessage{op}})
+	return seq, got, refusal, err
+}
+
+// editsRefused answers an edit write the receive op refused: a head that
+// moved is 409 {current, seq}, and a document it cannot read is 400.
+func editsRefused(w http.ResponseWriter, got received, refusal *logRefusal) {
+	if got.Failed != nil {
+		http.Error(w, got.Failed.Error, http.StatusBadRequest)
+		return
+	}
+	writeRefused(w, refusal)
 }
 
 // editsWriteFailed answers a write the disruptions log did not take: a
@@ -114,37 +153,21 @@ func editsWriteFailed(w http.ResponseWriter, err error) {
 }
 
 // maybeCompactEdits runs the D-57 tombstone-retention write at startup:
-// cap-sync's compact_edits drops the retired records older than the
-// horizon from the fold, and the drop is one entry in the disruptions
-// log (writer gc), audited like any other write. The entries before it
-// keep every record.
+// the disruptions log's receive op (`sync compact`) drops the retired
+// records older than the horizon from the fold, and the drop is one
+// entry (writer gc), audited like any other write. The entries before
+// it keep every record.
 func (s *server) maybeCompactEdits() {
-	if s.store == nil {
+	l := s.keptLog(disruptionsLog)
+	if s.store == nil || l == nil {
 		return
 	}
-	nowMs := time.Now().UnixMilli()
 	horizonMs := int64(s.retentionDays) * 24 * 3600 * 1000
-	dropped := 0
-	seq, _, _, err := s.writeLog(s.disruptionsFold(), logWrite{writer: "gc", op: "compact_edits"}, func() ([]json.RawMessage, *logRefusal, error) {
-		records, _, _, _, err := s.readEdits(s.disruptionsDoc.doc)
-		if err != nil {
-			return nil, nil, err
-		}
-		var resp struct {
-			Document string `json:"document"`
-			Dropped  int    `json:"dropped"`
-		}
-		if err := s.syncOp(map[string]any{
-			"op": "compact_edits", "records": records, "now_ms": nowMs, "horizon_ms": horizonMs,
-		}, &resp); err != nil || resp.Dropped == 0 {
-			return nil, nil, err
-		}
-		dropped = resp.Dropped
-		next, err := s.editRecords(resp.Document)
-		return next, nil, err
-	})
-	if err == nil && dropped > 0 {
-		fmt.Printf("compacted %d tombstone(s) past the %d-day horizon (disruptions entry %d)\n", dropped, s.retentionDays, seq)
+	op, _ := json.Marshal(map[string]any{"cap": "sync", "op": "compact", "args": map[string]any{"horizon_ms": horizonMs}})
+	before := l.fold.seq
+	seq, _, got, refusal, err := s.receiveLog(context.Background(), nil, l, logWrite{writer: "gc", op: "compact_edits"}, receiveCall{ops: []json.RawMessage{op}})
+	if err == nil && refusal == nil && seq > before && got.Entry != "" {
+		fmt.Printf("compacted the tombstones past the %d-day horizon (disruptions entry %d, %d change(s))\n", s.retentionDays, seq, got.Changes)
 	}
 }
 

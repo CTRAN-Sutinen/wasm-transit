@@ -16,12 +16,11 @@ notes kind is named in this plumbing (2026-11-20):
 - in the engine: `web/src/engine.ts`, as the capability in its typed op
   map.
 
-The alerts log and the notes log are written through one server path
+Every log the server keeps is written through one server path
 (`server/logkinds.go`; `docs/architecture/server.md`, "One path for a
-log"): their capabilities' `receive` ops. The stops log and the plans
-log still have Go of their own, in files of about 130 to 400 lines,
-each with `withX`, `xLog`, `assembleX`, `xHead`, and `xLogDoc`, and the
-stop requests have `withRequests` and `requestsHead`.
+log"): its capability's `receive` op. A pick's checks before the plans
+log's write are still sequenced in Go (`adoptNetwork`: cap-network's
+check, then cap-stops `read_pick`).
 `cap-abi` depends on 18 domain crates (five of them optional, for
 gen-manifest), so the kernel is a hub that every new kind edits. Runs, the work
 rules, and the policy in logs are next (`storage-model.md`), so this
@@ -55,24 +54,22 @@ writer saw, and warns about a write that the world made wrong later
    assembly links only the libraries of the kinds its capabilities
    read, changes how the kernel and the assemblies are built. A
    proposal goes to the user first, with what it costs the arch
-   gates and the module sizes.
-2. **The other logs on the one server path.** The alerts log and the
-   notes log are on it. The rest follow the same pattern: a `receive`
-   op in the log's capability (`transit_log::receive` composes the
-   entry), the log's line `.received(..)`, each kind's own route as
-   `.posted(..)`, and its Go file deleted.
-   - The stops log: cap-stops' receive op links `transit-requests`,
-     because one entry can change a stop and the request it carries out
-     (D-232, D-228). It takes `checkStops` (`attribute_surveys`, then
-     `validate`), `runStopsOps`, `POST /stops`, `POST /stop-requests`,
-     the work order calls, and the seed from the old pointers.
-     `stops.go`, `requests.go`, and the log parts of `stopslog.go` are
-     deleted.
-   - The plans log: `writePlan` (`freeze`, then `adopt` with the frozen
-     document) becomes cap-plans' receive op. The networks it stores
-     beside the entry stay the host's I/O.
-   - The edit document joins last, with its merge inside its receive
-     op.
+   gates and the module sizes. It is one proposal with the fixtures
+   crate and the generator of `capability-declared-once.md` (items 3
+   and 4; D-235), which take the five optional domain dependencies
+   that gen-manifest gives cap-abi. This item follows those items.
+2. **The last steps on the one server path.** Every log is on it: a
+   `receive` op in the log's capability (`transit_log::receive`
+   composes the entry), the log's line `.received(..)`, each kind's own
+   route as `.posted(..)`, and the seed from the kind table's `pointers`
+   (`seedKept`, the op's `migrate`).
+   - A pick's checks: `adoptNetwork` still calls cap-network (the
+     network's issues and its canonical bytes) and cap-stops
+     (`read_pick`) before the plans log's receive op. Making them one
+     op means cap-plans links transit-network's check and
+     transit-stops's `read_pick`, which adds to its module's size. A
+     proposal goes to the user first. `server/stops.go` (what a pick
+     reads of the stops) goes with it.
    - The modules' flags (`-notes-wasm` and the others) and the module
      map in `main.go` name each capability. One setting for every
      capability's module removes them, beside the old flags.
@@ -98,6 +95,11 @@ writer saw, and warns about a write that the world made wrong later
    runner, and the engine. The engine's typed op map names each
    capability, and a capability shares its kind's name (`notes`), so
    the map is generated from the manifest's capabilities first.
+
+The order with `capability-declared-once.md` is in that unit ("Order
+with kind-registration"). Item 2 comes first. Item 4 is built with
+that unit's name gate, and item 3 is one docs sweep with that unit's
+item 7.
 
 Every item follows `docs/CONVENTIONS.md`, "Traceable". Where a kind
 differs from the others, the difference is a named field in its line,
@@ -145,11 +147,9 @@ working store (`storage-model.md`, step 2).
   among them.
 - The next new kind (or a test kind added and removed in a Go and Rust
   test) lands touching only the places the gate allows.
-- `go test` and the openapi compatibility gate pass with the stops,
-  requests, and plans Go files deleted (`notes.go` and `alerts.go` are
-  gone).
-- Each log's receive op has a dispatch test (cap-notes and cap-alerts
-  have theirs), and no Go function calls more than one op for a write.
+- Each log's receive op has a dispatch test (cap-sync, cap-stops,
+  cap-plans, cap-notes, and cap-alerts have theirs), and no Go function
+  calls more than one op for a write (a pick's checks still do).
 - The kind lists in the docs point to the generated sources.
 - The laws in each owning crate: the existence check as of a seq, each reference rule and its coverage,
   and the parity law (a write the client passes as of seq s, the server

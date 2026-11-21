@@ -136,9 +136,10 @@ pub enum Response {
         next: Vec<transit_log::KindRecords>,
     },
     LogDocument {
-        requests_hash: String,
+        /// The document's hash (`requests_hash`).
+        document_hash: String,
         /// The document's canonical bytes, which a host serves under
-        /// `requests_hash`.
+        /// `document_hash`.
         document: String,
     },
 }
@@ -227,8 +228,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let template = serde_json::json!({"kind": "stop_requests", "schema_version": transit_requests::SCHEMA_VERSION});
             let requests: StopRequests = transit_log::assemble(template, document.as_ref(), "requests", &records, false)?;
             let document = cap_abi::canonical_bytes(&requests)?;
-            let (requests_hash, _) = STOP_REQUESTS.register(requests)?;
-            Ok(Response::LogDocument { requests_hash, document })
+            let (document_hash, _) = STOP_REQUESTS.register(requests)?;
+            Ok(Response::LogDocument { document_hash, document })
         }
     }
 }

@@ -27,17 +27,12 @@ func newStopsServer(t *testing.T, b store.Backend) (*server, string) {
 	s := newStoreServer(t, b)
 	s.plans = newPlansHost(t)
 	s.networkWasm = networkWasm
-	s.stopsWasm = stopsWasm
 	s.fixedToday = "2026-08-01"
-	t.Cleanup(func() {
-		if s.stopsHeld != nil {
-			s.stopsHeld.Close(context.Background())
-		}
-	})
+	closeModules(t, s)
 	mux := storeMux(s)
 	mux.HandleFunc("/plans", s.handlePlans)
 	mux.HandleFunc("/plans/retire", s.handleRetire)
-	mux.HandleFunc("/stops", s.handleStops)
+	mux.HandleFunc("/stops", s.handleKeptRoute)
 	mux.HandleFunc("/feed", s.handleFeed)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -217,7 +212,7 @@ func TestAPublishedPickReadsTheStops(t *testing.T) {
 		t.Fatalf("the pick takes A's name from the stops document: %+v", net.Stops["A"])
 	}
 	// The adoption names the stops log entry it read (D-191).
-	stopsHead, _ := s.store.LogHeadOf(stopsLogName)
+	stopsHead, _ := s.store.LogHeadOf("stops")
 	var set struct {
 		Plans []struct {
 			StopsSeq int64 `json:"stops_seq"`
@@ -253,7 +248,7 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 		req := httptest.NewRequest("POST", "/stops", strings.NewReader(string(body)))
 		req.Header.Set("X-Writer", writer)
 		w := httptest.NewRecorder()
-		s.handleStops(w, req)
+		s.handleKeptRoute(w, req)
 		var out map[string]any
 		json.Unmarshal(w.Body.Bytes(), &out)
 		return w.Code, out
@@ -363,7 +358,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if err := s.recordFeed(context.Background(), feed); err != nil {
 		t.Fatal(err)
 	}
-	head, held, _, err := s.stopsHead()
+	head, held, _, err := s.keptHead("stops")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,14 +370,14 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if last["event"] != "changed" || last["from_feed"] != feed.hash || last["name"] == nil {
 		t.Fatalf("A's difference recorded, naming the feed: %v", last)
 	}
-	if w := lastLogWriter(t, s, stopsLogName); w != "import:feed" {
+	if w := lastLogWriter(t, s, "stops"); w != "import:feed" {
 		t.Fatalf("the writer is the import: %q", w)
 	}
 	// again: nothing differs, nothing is written
 	if err := s.recordFeed(context.Background(), feed); err != nil {
 		t.Fatal(err)
 	}
-	if again, _, _, _ := s.stopsHead(); again != head {
+	if again, _, _, _ := s.keptHead("stops"); again != head {
 		t.Fatalf("a feed that differs in nothing writes nothing: %s → %s", head, again)
 	}
 }
@@ -391,7 +386,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 // current stops or stop requests document.
 func logBlob(t *testing.T, s *server, hash string) []byte {
 	t.Helper()
-	_, doc, ok := s.stopsLogDoc(hash)
+	_, doc, ok := s.keptDoc(hash)
 	if !ok {
 		t.Fatalf("the stops log holds no document %s now", hash)
 	}

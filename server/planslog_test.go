@@ -48,11 +48,11 @@ type plansEntry struct {
 
 func lastPlansEntry(t *testing.T, s *server) (int64, plansEntry) {
 	t.Helper()
-	head, err := s.store.LogHeadOf(plansLogName)
+	head, err := s.store.LogHeadOf("plans")
 	if err != nil || head.Seq == 0 {
 		t.Fatalf("the plans log: %+v %v", head, err)
 	}
-	stored, err := s.store.Entries(plansLogName, head.Seq-1, head.Seq)
+	stored, err := s.store.Entries("plans", head.Seq-1, head.Seq)
 	if err != nil || len(stored) != 1 {
 		t.Fatalf("entry %d: %v", head.Seq, err)
 	}
@@ -77,7 +77,7 @@ func TestAFreezePutsNothingInForce(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("freeze: %d %v", code, out)
 	}
-	if _, _, found, _ := s.plansHead(); found {
+	if _, _, found, _ := s.keptHead("plans"); found {
 		t.Fatal("a frozen version is not in force: nothing is published")
 	}
 	if head := mustHead(t, s, "plan.fall-2026"); head != out["network_hash"] {

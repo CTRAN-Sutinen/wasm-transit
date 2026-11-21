@@ -488,7 +488,7 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 // plansHash is the published plan set's hash: the plans log's fold.
 func plansHash(t *testing.T, s *server) string {
 	t.Helper()
-	hash, _, found, err := s.plansHead()
+	hash, _, found, err := s.keptHead("plans")
 	if err != nil || !found {
 		t.Fatalf("the plans log's set: %v %v", found, err)
 	}
@@ -498,7 +498,7 @@ func plansHash(t *testing.T, s *server) string {
 // plansSet is the published plan set's bytes.
 func plansSet(t *testing.T, s *server) []byte {
 	t.Helper()
-	_, doc, found, err := s.plansHead()
+	_, doc, found, err := s.keptHead("plans")
 	if err != nil || !found {
 		t.Fatalf("the plans log's set: %v %v", found, err)
 	}
