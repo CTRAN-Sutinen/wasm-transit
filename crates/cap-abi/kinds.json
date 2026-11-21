@@ -490,7 +490,7 @@
       "versions": [
         {
           "version": 1,
-          "schema": "sha256:6f549cf1657992ec0cf951ae85896c24afac6f88433c47b56ca8a10737c2b9bb"
+          "schema": "sha256:ddf93f12d72bb1b397bee18426b03293f9ef59ac98650fc72e19eb9717de820a"
         }
       ],
       "write": "route",
@@ -510,6 +510,10 @@
       "merge": "log",
       "read": "open",
       "references": [
+        {
+          "path": "/versions/*/from_network_hash",
+          "target": "network"
+        },
         {
           "path": "/versions/*/network_hash",
           "target": "network"

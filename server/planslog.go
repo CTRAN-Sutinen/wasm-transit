@@ -60,7 +60,7 @@ type pickWritten struct {
 // of plan.<id> before the entry, so a frozen version is always stored.
 // The routes checked the write rule, so none is asked here. An error is
 // the server's; a refusal is the writer's.
-func (s *server) writePick(ctx context.Context, body []byte, purpose string, adopt bool, writer, op string) (pickWritten, *publishRefusal, error) {
+func (s *server) writePick(ctx context.Context, body []byte, purpose, from string, adopt bool, writer, op string) (pickWritten, *publishRefusal, error) {
 	var out pickWritten
 	l := s.keptLogOf("plans")
 	if l == nil {
@@ -69,6 +69,11 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose string, ado
 	args := map[string]any{"adopt": adopt}
 	if purpose != "" {
 		args["purpose"] = purpose
+	}
+	// A migration that brings a pick forward names the version it came
+	// from, and the frozen version pins it (D-232).
+	if from != "" {
+		args["from_network_hash"] = from
 	}
 	loads := []hostLoad{{opLoadNetwork, body}}
 	if adopt {
@@ -183,7 +188,7 @@ func (s *server) handleFreeze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writer := writerOf(r, "anonymous")
-	pick, refused, err := s.writePick(r.Context(), body, purpose, false, writer, "POST /plans/freeze")
+	pick, refused, err := s.writePick(r.Context(), body, purpose, "", false, writer, "POST /plans/freeze")
 	if err != nil {
 		logWriteFailed(w, err, http.StatusInternalServerError)
 		return
@@ -225,7 +230,7 @@ func (s *server) handleAdopt(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	out, refused := s.adoptNetwork(r.Context(), body, "", writerOf(r, "anonymous"), "POST /plans/adopt")
+	out, refused := s.adoptNetwork(r.Context(), body, "", "", writerOf(r, "anonymous"), "POST /plans/adopt")
 	if refused != nil {
 		refused.write(w)
 		return

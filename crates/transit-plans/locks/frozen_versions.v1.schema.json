@@ -11,6 +11,15 @@
           "description": "\"YYYY-MM-DD\": the date the plan would take effect.",
           "type": "string"
         },
+        "from_network_hash": {
+          "description": "The frozen version this one was made from, by its network hash:\na version a migration brought forward to a newer network version\npins its source (D-232). Absent: the version was written as it is.",
+          "format": "content-hash",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-references": "network"
+        },
         "name": {
           "type": "string"
         },

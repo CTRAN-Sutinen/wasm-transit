@@ -90,8 +90,8 @@ build at a time:
    Item 1 lands with item 4: until the generator links the
    capabilities, a declaration in `capability!` would be a third copy
    beside `MODULES`. Item 5 lands with item 4 too.
-2. The proposal for items 3 and 4 here and kind-registration's item 1
-   goes to the user.
+2. The direction is decided: the fixtures crate (D-235), and the
+   kernel's loading trait (D-239).
 3. Items 3, 2, and 4 of this unit, then kind-registration's item 1.
 4. Item 6 here and kind-registration's item 4 are one gate mechanism
    (an allowlist of names in the arch gates), built together. Then

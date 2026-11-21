@@ -495,6 +495,13 @@ pub struct FrozenVersion {
     /// What the version is, in the agency's words: "proposal for public
     /// comment", "board packet".
     pub purpose: String,
+    /// The frozen version this one was made from, by its network hash:
+    /// a version a migration brought forward to a newer network version
+    /// pins its source (D-232). Absent: the version was written as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
+    pub from_network_hash: Option<String>,
     /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
@@ -533,6 +540,14 @@ impl FrozenVersions {
 /// replaces what it says it is. Refused when `purpose` is blank, or the
 /// plan is not a dated pick. The input is never mutated.
 pub fn freeze(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purpose: &str) -> Result<FrozenVersions, Vec<PlanIssue>> {
+    freeze_from(frozen, plan, network_hash, purpose, None)
+}
+
+/// [`freeze`], naming the frozen version this one was made from
+/// (`source`, its network hash): a migration that brings a version
+/// forward pins its source (D-232). Without `source`, a version already frozen
+/// keeps the source it has.
+pub fn freeze_from(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purpose: &str, source: Option<&str>) -> Result<FrozenVersions, Vec<PlanIssue>> {
     if plan.id.is_empty() {
         return Err(vec![PlanIssue::UnversionedPlan]);
     }
@@ -543,7 +558,9 @@ pub fn freeze(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purp
         return Err(vec![PlanIssue::FreezeWithoutPurpose]);
     }
     let mut next = frozen.clone();
-    let extra = frozen.versions.get(network_hash).map(|v| v.extra.clone()).unwrap_or_default();
+    let held = frozen.versions.get(network_hash);
+    let extra = held.map(|v| v.extra.clone()).unwrap_or_default();
+    let from_network_hash = source.map(str::to_string).or_else(|| held.and_then(|v| v.from_network_hash.clone()));
     next.versions.insert(
         network_hash.to_string(),
         FrozenVersion {
@@ -552,6 +569,7 @@ pub fn freeze(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purp
             name: plan.name.clone(),
             effective_from: from.clone(),
             purpose: purpose.trim().to_string(),
+            from_network_hash,
             extra,
         },
     );

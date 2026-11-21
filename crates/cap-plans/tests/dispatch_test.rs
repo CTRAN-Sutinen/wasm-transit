@@ -380,6 +380,19 @@ fn a_pick_freezes_and_adopts_and_names_the_network_to_store_first() {
     assert_eq!(got["answer"]["stop_warnings"], serde_json::json!([]));
 }
 
+/// A pick brought forward by a migration names the version it came from
+/// (D-232): its frozen version pins the source by its network hash.
+#[test]
+fn a_pick_brought_forward_pins_the_version_it_came_from() {
+    let network_hash = registered_pick(fall_2026());
+    let source = format!("sha256:{}", "ab".repeat(32));
+    let got = pick_write(serde_json::json!({"network_hash": network_hash}),
+        serde_json::json!({"purpose": "a published pick, brought forward to network v2", "from_network_hash": source, "adopt": true, "today": "2026-01-01"}));
+    let entry: serde_json::Value = serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("{got}"))).unwrap();
+    let version = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "frozen_version").expect("a frozen version");
+    assert_eq!(version["after"]["from_network_hash"], serde_json::json!(source), "{version}");
+}
+
 /// An adopted pick reads the stops document over its period (D-157): the
 /// stored network carries each stop's record on its first date, and the
 /// warnings name a stop not in service inside it. The same answer as

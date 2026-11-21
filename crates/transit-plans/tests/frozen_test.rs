@@ -9,7 +9,7 @@
 use chrono::NaiveDate;
 use proptest::prelude::*;
 use transit_plans::{
-    adopt, freeze, in_force, publish, retire, FrozenVersions, PlanInfo, PlanIssue, PublishedPlans, FROZEN_SCHEMA_VERSION,
+    adopt, freeze, freeze_from, in_force, publish, retire, FrozenVersions, PlanInfo, PlanIssue, PublishedPlans, FROZEN_SCHEMA_VERSION,
 };
 
 fn info(id: &str, from: &str) -> PlanInfo {
@@ -162,4 +162,21 @@ proptest! {
             }
         }
     }
+}
+
+/// A version a migration brought forward pins the version it came from,
+/// by its network hash (D-232): its source is a pinned reference, not
+/// only words in its purpose. A later freeze of the same network that
+/// names no source keeps the one it has; a version written as it is
+/// names none.
+#[test]
+fn a_version_brought_forward_pins_the_version_it_came_from() {
+    let fall = info("fall", "2026-09-07");
+    let frozen = freeze(&FrozenVersions::empty(), &fall, &hash(1), "board packet").unwrap();
+    assert_eq!(frozen.versions[&hash(1)].from_network_hash, None, "written as it is");
+    let forward = freeze_from(&frozen, &fall, &hash(2), "a published pick, brought forward to network v2", Some(&hash(1))).unwrap();
+    assert_eq!(forward.versions[&hash(2)].from_network_hash.as_deref(), Some(hash(1).as_str()));
+    assert_eq!(forward.versions[&hash(1)], frozen.versions[&hash(1)], "the source version stays as it was");
+    let again = freeze(&forward, &fall, &hash(2), "adopted").unwrap();
+    assert_eq!(again.versions[&hash(2)].from_network_hash.as_deref(), Some(hash(1).as_str()), "a refreeze keeps its source");
 }

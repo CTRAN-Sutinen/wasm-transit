@@ -238,6 +238,26 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 	if len(last) != 1 || json.Unmarshal([]byte(last[0].Text), &entry) != nil || entry.Writer != "migrate:"+m.Hash() {
 		t.Fatalf("the plans log's last entry names the migration module: %+v", last)
 	}
+	// Each frozen version brought forward pins the version it came from
+	// (D-232), not only words in its purpose.
+	_, frozenDoc, _, err := s.keptHead("frozen_versions")
+	var frozen struct {
+		Versions map[string]struct {
+			PlanID          string `json:"plan_id"`
+			FromNetworkHash string `json:"from_network_hash"`
+		} `json:"versions"`
+	}
+	if err != nil || json.Unmarshal(frozenDoc, &frozen) != nil {
+		t.Fatalf("the frozen versions: %v", err)
+	}
+	for _, p := range published.Plans {
+		if p.ID == "summer" {
+			continue
+		}
+		if got := frozen.Versions[p.NetworkHash].FromNetworkHash; got != oldHashes[p.ID] {
+			t.Errorf("pick %s: its frozen version pins its source %s, got %q", p.ID, oldHashes[p.ID], got)
+		}
+	}
 
 	// Already current: a second start commits nothing.
 	s.commitPicksForward()

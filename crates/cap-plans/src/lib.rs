@@ -156,12 +156,15 @@ pub enum Request {
     /// the host's clock gives. A refused op answers its issues, and an
     /// op that does not run answers why (`failed`): no entry either way.
     ///
-    /// `pick` (`{purpose?, adopt, today, stops_seq?}`, D-237) writes the
+    /// `pick` (`{purpose?, from_network_hash?, adopt, today, stops_seq?}`,
+    /// D-237) writes the
     /// network the host registered (`loaded.network_hash`) as a pick:
     /// refused with `{issues, refusals}` when it does not publish; its
     /// stop records read from the stops document on its first date
-    /// (`loaded.stops_hash`, when adopted); frozen under `purpose` and
-    /// put in force when `adopt`. The answer's `made` is the network
+    /// (`loaded.stops_hash`, when adopted); frozen under `purpose`,
+    /// naming the version it was brought forward from
+    /// (`from_network_hash`, a migration's), and put in force when
+    /// `adopt`. The answer's `made` is the network
     /// for the host to store as the head of `plan.<id>` before the
     /// entry, and its `answer` is `{plan_id, network_hash, timezone,
     /// warnings, stop_warnings}`. A plan issue is refused as
@@ -421,6 +424,10 @@ enum Intent {
     Pick {
         #[serde(default)]
         purpose: Option<String>,
+        /// The frozen version this pick was brought forward from, by its
+        /// network hash (a migration's; D-232).
+        #[serde(default)]
+        from_network_hash: Option<String>,
         #[serde(default)]
         adopt: bool,
         today: String,
@@ -454,7 +461,7 @@ struct Made {
 fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<String, String>, made: &mut Made) -> Result<Option<serde_json::Value>, String> {
     let issues = |issues: Vec<PlanIssue>| serde_json::to_value(issues).map(Some).map_err(|e| e.to_string());
     match intent {
-        Intent::Pick { purpose, adopt, today, stops_seq } => return pick(heads, loaded, made, purpose, adopt, &today, stops_seq),
+        Intent::Pick { purpose, from_network_hash, adopt, today, stops_seq } => return pick(heads, loaded, made, purpose, from_network_hash, adopt, &today, stops_seq),
         Intent::Freeze { plan, network_hash, purpose } => {
             let base = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
             match transit_plans::freeze(&base, &plan, &network_hash, &purpose) {
@@ -500,11 +507,13 @@ fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<S
 /// heads. A network that does not publish is refused with `{issues,
 /// refusals}`, as cap-network's `publishable` answers it; a plan issue
 /// with `{issues}`.
+#[allow(clippy::too_many_arguments)]
 fn pick(
     heads: &mut Heads,
     loaded: &std::collections::BTreeMap<String, String>,
     made: &mut Made,
     purpose: Option<String>,
+    from_network_hash: Option<String>,
     adopt: bool,
     today: &str,
     stops_seq: Option<u64>,
@@ -539,7 +548,7 @@ fn pick(
     let issues = |issues: Vec<PlanIssue>| Ok(Some(serde_json::json!({ "issues": issues })));
     if let Some(purpose) = purpose {
         let base = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
-        match transit_plans::freeze(&base, &plan, &document_hash, &purpose) {
+        match transit_plans::freeze_from(&base, &plan, &document_hash, &purpose, from_network_hash.as_deref()) {
             Ok(next) => (heads.frozen, heads.wrote_frozen) = (Some(next), true),
             Err(i) => return issues(i),
         }

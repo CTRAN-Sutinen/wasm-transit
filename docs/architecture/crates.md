@@ -432,8 +432,8 @@ The service-plan chain, and the published plan set. cap-plans is the seam. This 
 - A pick names the stops log entry its adoption read (`stops_seq`, optional).
 
 **The frozen versions** (store kind `frozen_versions`, `FrozenVersions`; D-191).
-- They hold every network version the agency froze, by network hash: the plan's id, name, and date, and what the version is (`purpose`).
-- `freeze` gives the next frozen versions. It refuses a blank purpose and a plan that is not a dated pick. A freeze puts nothing in force.
+- They hold every network version the agency froze, by network hash: the plan's id, name, and date, and what the version is (`purpose`). A version that a migration brought forward to a newer network version pins the version it came from (`from_network_hash`, D-232).
+- `freeze` gives the next frozen versions. `freeze_from` names the source as well; a refreeze that names none keeps the source it has. It refuses a blank purpose and a plan that is not a dated pick. A freeze puts nothing in force.
 - `adopt` puts a frozen version in force: it is `publish` under the version's own frame, naming `stops_seq`. A network that no frozen version has is refused (`NotFrozen`). So every network in a published set is a frozen version.
 
 ## transit-runs

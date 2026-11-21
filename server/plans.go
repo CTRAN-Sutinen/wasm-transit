@@ -76,7 +76,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	if purpose == "" {
 		purpose = publishPurpose
 	}
-	out, refused := s.adoptNetwork(r.Context(), body, purpose, writer, "POST /plans")
+	out, refused := s.adoptNetwork(r.Context(), body, purpose, "", writer, "POST /plans")
 	if refused != nil {
 		refused.write(w)
 		return
@@ -131,7 +131,7 @@ const publishPurpose = "published"
 // commit of a pick's network forward: the network frozen and adopted in
 // one entry of the plans log (planslog.go).
 func (s *server) publishNetwork(ctx context.Context, body []byte, writer string) (publishedPick, *publishRefusal) {
-	return s.adoptNetwork(ctx, body, publishPurpose, writer, "POST /plans")
+	return s.adoptNetwork(ctx, body, publishPurpose, "", writer, "POST /plans")
 }
 
 // adoptNetwork puts a network in force: one write of cap-plans' `pick`
@@ -139,9 +139,9 @@ func (s *server) publishNetwork(ctx context.Context, body []byte, writer string)
 // and answers the next published set over the frozen versions. With
 // purpose, the network is frozen in the same entry; without, it must be
 // frozen already. One entry of the plans log under writer.
-func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, writer, op string) (publishedPick, *publishRefusal) {
+func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, from, writer, op string) (publishedPick, *publishRefusal) {
 	var out publishedPick
-	pick, refused, err := s.writePick(ctx, body, purpose, true, writer, op)
+	pick, refused, err := s.writePick(ctx, body, purpose, from, true, writer, op)
 	if err != nil {
 		return out, refusedWith(http.StatusConflict, err)
 	}
@@ -201,7 +201,7 @@ func (s *server) commitPicksForward() {
 			continue
 		}
 		m, _ := s.migrator()
-		out, refused := s.adoptNetwork(ctx, doc, fmt.Sprintf("a published pick, brought forward to network v%d", networkVersion), "migrate:"+m.Hash(), "migrate")
+		out, refused := s.adoptNetwork(ctx, doc, fmt.Sprintf("a published pick, brought forward to network v%d", networkVersion), pick.NetworkHash, "migrate:"+m.Hash(), "migrate")
 		if refused != nil {
 			log.Printf("commit forward: pick %s stays in its version: %v", pick.ID, refused)
 			continue

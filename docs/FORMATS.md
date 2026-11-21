@@ -738,7 +738,8 @@ process creates these objects, create only, at boot:
 
 An object that exists is never written again. A schema marks each field
 that names a blob in this store with `"format": "content-hash"`: a
-pick's and a frozen version's `network_hash`, the walk table's
+pick's and a frozen version's `network_hash` (and a frozen version's
+`from_network_hash`, the version it was brought forward from), the walk table's
 `streets_hash` and `network_hash`, a build's files and modules, and a
 derivation's inputs and documents. A record's `before` in a log entry
 is not marked, because it is the hash of a record, not of a blob. A

@@ -284,6 +284,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-236 | Which modules do the test runners build? | decided; built | nothing |
 | D-237 | Where do a pick's checks run? | decided; built | nothing |
 | D-238 | On which date must an open stop request's stop not be retired? | decided | nothing |
+| D-239 | How does the kernel load a kind without naming its library? | decided | nothing |
 
 ## The trip model
 
@@ -5008,8 +5009,9 @@ Context:
   version in memory, never stored, and applies the current
   declarations.
 - The frozen version that the startup migration writes pins the frozen
-  version it came from, by its hash. Today its `purpose` text alone
-  names the source.
+  version it came from, by its hash (`from_network_hash`; built,
+  `a_version_brought_forward_pins_the_version_it_came_from` in
+  transit-plans, and `TestThePicksInUseCommitForwardAtStartup`).
 Options:
 - Declarations in the schemas, with the stages and rules above
   (encoded here).
@@ -5231,4 +5233,31 @@ cap-stops' dispatch tests (`an_open_request_on_a_stop_retired_when_read_is_refus
 retirement as its warning").
 Why: `docs/FORMATS.md`, "References"; `docs/architecture/crates.md`,
 transit-stops.
+Blocks: nothing.
+
+### D-239 — How does the kernel load a kind without naming its library?
+State: Decided.
+Answer: 2026-11-21 — each library implements a small loading trait in
+transit-version for its own kind (its kind id, load op name and code,
+parse, and the load's answer). A capability names the kind's type, and
+the kernel keeps one registry for each type without knowing the kinds.
+cap-abi then depends on no domain library, and an arch gate holds it
+to that. The user accepted the recommendation, after asking why the
+listed costs were costs: they are not. The load answers' TypeScript
+types are generated already, and each library exports its own the same
+way.
+Context: the kernel (cap-abi) names every kind and depends on 18
+domain libraries, so every new kind edits it
+(`docs/units/kind-registration.md`, item 1). A module already links
+only the loads of the kinds its capabilities read (module_authz is
+524 KB though cap-abi depends on transit-network), so the change saves
+compile time and the hub, not module size. It follows the fixtures
+crate (D-235) and the generator crate
+(`docs/units/capability-declared-once.md`, items 3, 2, and 4).
+Options:
+- A loading trait in transit-version, one registry for each type
+  (recommended; decided).
+- The kernel stays a hub, and the per-kind code is generated from the
+  kind list. cap-abi keeps its dependencies.
+Pinned by: none yet (`docs/units/kind-registration.md`, item 1).
 Blocks: nothing.

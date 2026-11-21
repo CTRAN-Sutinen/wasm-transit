@@ -47,14 +47,13 @@ writer saw, and warns about a write that the world made wrong later
    the library function that loads its kind, so a reader goes from
    the list to the code in one hop.
 
-   Whether `cap-abi` stops depending on the domain crates, and an
-   assembly links only the libraries of the kinds its capabilities
-   read, changes how the kernel and the assemblies are built. A
-   proposal goes to the user first, with what it costs the arch
-   gates and the module sizes. It is one proposal with the fixtures
-   crate and the generator of `capability-declared-once.md` (items 3
-   and 4; D-235), which take the five optional domain dependencies
-   that gen-manifest gives cap-abi. This item follows those items.
+   Each library implements a loading trait in transit-version for its
+   own kind, a capability names the kind's type, and the kernel keeps
+   one registry for each type (D-239). cap-abi then depends on no
+   domain library, and an arch gate holds it. This item follows the
+   fixtures crate and the generator of `capability-declared-once.md`
+   (items 3 and 4; D-235), which take the five optional domain
+   dependencies that gen-manifest gives cap-abi.
 3. **Generated lists in the docs.** `docs/FORMATS.md`,
    `docs/architecture/server.md`, and `storage.md` list the kinds by
    hand today. They point to the kind table and the registry's docs
@@ -98,9 +97,6 @@ never a hook.
 7. **The transitions.** An adoption warns about the live references
    it breaks (D-230). A promotion pins each loose reference, or
    is refused (rule C). A note's target pins to `(log, seq, entry hash)`.
-   The frozen version that the startup migration writes pins its
-   source by hash. Check first whether a `derivation` record already
-   names it.
 
 An attachment that a record names is a gc root. It lands with the
 working store (`storage-model.md`, step 2).
