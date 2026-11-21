@@ -50,7 +50,7 @@ A referring record in a version newer than the kind table reads (after a rollbac
 
 With `entries` (each log's stored entries, `{seq, text}`), each broken reference also names the `entry` that broke it: the later of the entry that last wrote the referring record and the entry that last changed the target. In one log the later is the higher seq; across two logs it is the later clock. A target never written names the referrer's entry. `store verify` asks it this way.
 
-With `log` and `entry` (one entry of that log, `{seq, text}`), the answer is only the broken references that entry touches: those whose referring record it wrote, and those whose target it changed, each naming that entry. The server asks it this way after each write, and answers them as the write's warnings.
+With `log` and `entry` (one entry of that log, `{seq, text}`), the answer is only the broken references that entry touches: those whose referring record it wrote, and those whose target it changed, each naming that entry. The server asks it this way after a revert, and answers them as the revert's warnings. A write's own warnings, and its refusal, come from its log's receive op (`transit_log::receive`, given the kind table's kinds and each log's records as of the seqs the writer read and now).
 
 ## naming
 

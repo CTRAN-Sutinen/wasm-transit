@@ -166,8 +166,9 @@ export const dz = $state({
 });
 
 /// The seq of each log's fold the page's documents came from (the
-/// manifest's log_seqs): a write names it, so the server checks the
-/// write against the records it changes (D-189).
+/// manifest's log_seqs): a write names them, so the server checks the
+/// write against the records it changes (D-189), and each reference it
+/// adds against what the page read (D-233).
 let logSeqs: Record<string, number> = {};
 
 let network: Doc<Network> | null = null;
@@ -944,7 +945,7 @@ async function writeAlerts(
       dz.writeError = "Not saved";
       return false;
     }
-    const outcome = await queueWrite({ log: "alerts", ops: [op], readSeq: logSeqs.alerts, label });
+    const outcome = await queueWrite({ log: "alerts", ops: [op], readSeq: logSeqs.alerts, readSeqs: logSeqs, label });
     if (!(await settled(outcome, "alerts"))) return false;
     dz.form = null;
     // The list reads the clock the write was made at.
@@ -1006,7 +1007,7 @@ export async function writeNote(target: NoteTarget, text: string, id: string | n
   dz.noteRefusals = [];
   try {
     const op = { cap: "notes", op: "write", args: { id: id ?? newId("note"), target, text } };
-    const outcome = await queueWrite({ log: "notes", ops: [op], readSeq: logSeqs.notes, label: `${id ? "Edit note" : "Note"}: ${text.trim().slice(0, 60)}` });
+    const outcome = await queueWrite({ log: "notes", ops: [op], readSeq: logSeqs.notes, readSeqs: logSeqs, label: `${id ? "Edit note" : "Note"}: ${text.trim().slice(0, 60)}` });
     if (!(await settled(outcome, "notes"))) return false;
     if (outcome.state === "sent") await afterWrite();
     else say(waitingText());
@@ -1037,7 +1038,7 @@ export function sendNow(): Promise<void> {
 export async function retryHeld(key: string): Promise<void> {
   await readDocuments();
   const w = outbox.held.find((h) => h.key === key);
-  await retryWrite(key, { readSeq: w?.log ? logSeqs[w.log] : undefined });
+  await retryWrite(key, { readSeq: w?.log ? logSeqs[w.log] : undefined, readSeqs: logSeqs });
 }
 
 /// The person drops a refused write.

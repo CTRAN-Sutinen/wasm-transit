@@ -189,7 +189,7 @@ by kind:
   revert, which is a new entry (`POST /logs/disruptions/revert`).
 - **The intent write** (`POST /logs/<log>`, D-189) is how a page writes
   the stops log, the alerts log, and the notes log. The body is what the
-  person asked for: `{key, ops, read_seq, claimed_at_ms}`. The server
+  person asked for: `{key, ops, read_seq, read_seqs, claimed_at_ms}`. The server
   runs each op over the documents at the head, in order, so the
   module's checks run on what the server holds, and writes what the
   ops changed as one entry.
@@ -202,6 +202,13 @@ by kind:
     entries after `read_seq` (`transit_log::receive`), and a record that one of them changed and
     the write changes too is a `409` that names it (`overlap`). A change
     to another record does not refuse the write.
+  - `read_seqs` are the other logs' seqs the page read, by log (the
+    manifest's `log_seqs`). The server judges each reference the write
+    adds against every log as of the seq its writer read (the write's
+    own log at `read_seq`; a log not named, now). A reference to a
+    record missing then is a `422` with `references` (and empty `refusals`): an honest page
+    names only what it saw (D-233). One that held then and is broken
+    now lands, with the reference as a warning.
   - `claimed_at_ms` is the device's clock when the person made a write
     that waited. The entry keeps it in its intent, beside the server's
     stamp, and no rule reads it as the record's time (D-222).

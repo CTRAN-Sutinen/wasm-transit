@@ -5018,11 +5018,15 @@ checked-in kind table's gate in `just caps` (`crates/cap-abi/kinds.json`).
 Blocks: nothing.
 
 ### D-233 — When does the receive path refuse a write whose reference is broken?
-State: Encoded provisionally. The existence check is built: cap-log
-`references` and `naming`, `store verify`'s and `store revert`'s
-reports, a write's warnings, and the unjudged record of a newer
-version. The rules, and the refusal as of the read seq, are planned
-(`docs/units/kind-registration.md`).
+State: Encoded provisionally. The existence check is built on both
+sides of the read: a person's write is judged in its log's receive op
+as of the seqs its writer read (`read_seq`, `read_seqs`) and refused
+for a reference added to a missing record, and warned as of now. Also
+built: cap-log `references` and `naming`, `store verify`'s and `store
+revert`'s reports, and the unjudged record of a newer version. A log
+with no entries is not judged. The rules, and the client's module for
+a rule a page runs, are planned (`docs/units/kind-registration.md`,
+item 6).
 Context:
 - A write carries the seq it read for each log it depends on. This is
   a list, not one number. D-189's outbox carries the seq it read.
@@ -5074,7 +5078,7 @@ Pinned by: the existence check's laws (`crates/transit-log/tests/references_chec
 cap-log's dispatch test; `server/cmd/store/main_test.go`
 (`TestVerifyReportsABrokenReferenceWithTheEntryThatBrokeIt`,
 `TestRevertListsTheReferencesIntoTheCommitsItDrops`);
-`server/requests_test.go` (`TestAWriteAnswersTheBrokenReferencesItLeaves`);
+`server/references_test.go` (`TestAWriteIsJudgedAsOfTheSeqItsWriterRead`);
 e2e `ui-stops` ("a write kept with a broken reference says so until
 dismissed").
 Blocks: nothing.

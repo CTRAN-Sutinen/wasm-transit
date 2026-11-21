@@ -243,7 +243,10 @@ type logRefusal struct {
 type logWrite struct {
 	writer, op, argsHash, key, note string
 	readSeq                         *int64
-	claimedAtMs                     int64
+	// readSeqs are the seqs of the other logs the writer read, by log
+	// (the manifest's log_seqs, D-233). A log not named was read now.
+	readSeqs    map[string]int64
+	claimedAtMs int64
 }
 
 // logOverlap is the 409 of a write that changes a record an entry
@@ -471,7 +474,7 @@ func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *lo
 		// fold: this log's lock is let go for it, and taken again for
 		// the deferred unlock.
 		f.mu.Unlock()
-		refs := s.writeReferences(f.name, seq, ans.Entry)
+		refs := s.revertReferences(f.name, seq, ans.Entry)
 		f.mu.Lock()
 		if len(refs) > 0 {
 			answer["references"] = refs
@@ -515,12 +518,12 @@ func (s *server) handleLogCloseGapOf(w http.ResponseWriter, r *http.Request, f *
 	writeJSON(w, http.StatusOK, map[string]any{"log": f.name, "seq": req.Seq})
 }
 
-// writeReferences are the broken references a write touches, as of now
-// (D-233): those its entry wrote broken, and those whose target it
-// changed, judged over every log's fold by cap-log's existence check.
-// They are the write's warnings, for a person: a write that landed is
-// never undone by them. A check that fails is logged and answers none.
-func (s *server) writeReferences(logName string, seq int64, entry string) []json.RawMessage {
+// revertReferences are the broken references a revert's entry touches,
+// as of now (D-233): those whose target it took out, judged over every
+// log's fold by cap-log's existence check. They are the revert's
+// warnings, for a person. (A write's come from its receive op.) A check
+// that fails is logged and answers none.
+func (s *server) revertReferences(logName string, seq int64, entry string) []json.RawMessage {
 	t, err := s.kindTable()
 	if err != nil || t.raw == nil || entry == "" {
 		return nil
@@ -555,4 +558,116 @@ func (s *server) writeReferences(logName string, seq int64, entry string) []json
 		log.Printf("references: the %s log's entry %d leaves a broken reference: %s", logName, seq, b)
 	}
 	return got.Broken
+}
+
+// foldAt is a log's records as of seq: its newest checkpoint at or
+// before seq, and the entries after it up to seq, folded by cap-log.
+// It reads the store, never another log's fold, so a write that holds
+// its own log's lock can ask it.
+func (s *server) foldAt(name string, seq int64) (json.RawMessage, error) {
+	if seq <= 0 {
+		return json.RawMessage("{}"), nil
+	}
+	cps, err := s.store.Checkpoints(name)
+	if err != nil {
+		return nil, err
+	}
+	var from int64
+	for _, c := range cps {
+		if c <= seq && c > from {
+			from = c
+		}
+	}
+	req := map[string]any{"op": "fold", "log": name}
+	if from > 0 {
+		cp, err := s.store.Checkpoint(name, from)
+		if err != nil {
+			return nil, err
+		}
+		req["checkpoint"] = json.RawMessage(cp)
+	}
+	entries, err := s.store.Entries(name, from, seq)
+	if err != nil {
+		return nil, err
+	}
+	req["entries"] = entries
+	var got struct {
+		Records json.RawMessage `json:"records"`
+	}
+	if err := s.logOp(req, &got); err != nil {
+		return nil, err
+	}
+	return got.Records, nil
+}
+
+// referenceFolds are what a write's receive op judges its references
+// over (D-233): the kind table's kinds, each log's records as of the seq
+// the writer read (only when judged: a person's write), and each log's
+// records now. A log with no entries is left out: the agency keeps no
+// records of it, so it is not judged. The write's own log is f, whose
+// lock the caller holds; the others are read from the store, never
+// from their folds, so no other lock is taken. kinds is nil when there
+// is no table to judge with, or a log cannot be read: a check that
+// cannot judge refuses nothing.
+func (s *server) referenceFolds(f *logFold, w logWrite, judged bool) (kinds json.RawMessage, read, now map[string]json.RawMessage) {
+	t, err := s.kindTable()
+	if err != nil || t.raw == nil {
+		return nil, nil, nil
+	}
+	records := func(checkpoint json.RawMessage) json.RawMessage {
+		var c struct {
+			Records json.RawMessage `json:"records"`
+		}
+		json.Unmarshal(checkpoint, &c)
+		if c.Records == nil {
+			return json.RawMessage("{}")
+		}
+		return c.Records
+	}
+	now = map[string]json.RawMessage{}
+	if judged {
+		read = map[string]json.RawMessage{}
+	}
+	for name := range s.keptLogs() {
+		head := f.seq
+		if name != f.name {
+			h, err := s.store.LogHeadOf(name)
+			if err != nil {
+				log.Printf("references: the %s log's head: %v", name, err)
+				return nil, nil, nil
+			}
+			head = h.Seq
+		}
+		if head == 0 {
+			continue
+		}
+		var headRecords json.RawMessage
+		if name == f.name {
+			headRecords = records(f.base)
+		} else if headRecords, err = s.foldAt(name, head); err != nil {
+			log.Printf("references: the %s log: %v", name, err)
+			return nil, nil, nil
+		}
+		now[name] = headRecords
+		if !judged {
+			continue
+		}
+		at, ok := w.readSeqs[name]
+		if name == f.name {
+			ok = w.readSeq != nil
+			if ok {
+				at = *w.readSeq
+			}
+		}
+		switch {
+		case !ok || at >= head:
+			read[name] = headRecords
+		case at > 0:
+			if read[name], err = s.foldAt(name, at); err != nil {
+				log.Printf("references: the %s log as of %d: %v", name, at, err)
+				return nil, nil, nil
+			}
+		}
+	}
+	return t.raw, read, now
 }

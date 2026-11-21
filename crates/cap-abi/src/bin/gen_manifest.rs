@@ -1583,7 +1583,7 @@ fn receive_write(log: &str, writer: &str, at_ms: u64) -> transit_log::Write {
         module: format!("cap-{log}@sha256:…"),
         intent: transit_log::Intent { op: format!("POST /logs/{log}"), key: Some("device-1/1".into()), ..Default::default() },
     };
-    transit_log::Write { checkpoint: None, header, unread: vec![] }
+    transit_log::Write { checkpoint: None, header, unread: vec![], references: None, read: None, now: None }
 }
 
 /// A receive op's answer, as its module writes it.

@@ -90,9 +90,10 @@ test("a held write sent again goes with its key, and the person's new read", asy
   const { box, sent } = fixture([{ status: 409, body: { conflict: "note n1" } }, { status: 200, body: {} }]);
   await box.queue({ ...note("x"), readSeq: 3 });
   const key = box.items[0].key;
-  await box.retry(key, { readSeq: 7 });
+  await box.retry(key, { readSeq: 7, readSeqs: { alerts: 4 } });
   assert.equal(sent[1].body.key, key);
   assert.equal(sent[1].body.read_seq, 7);
+  assert.deepEqual(sent[1].body.read_seqs, { alerts: 4 }, "and the other logs' seqs it read (D-233)");
   assert.equal(box.items.length, 0);
 });
 

@@ -16,7 +16,7 @@ package main
 //     entry with a conditional create, and asks again over the new head
 //     when another write took the seq.
 //
-//	POST /logs/<log>  body: {"key", "ops": [{"cap", "op", "args"}], "read_seq"?, "claimed_at_ms"?}
+//	POST /logs/<log>  body: {"key", "ops": [{"cap", "op", "args"}], "read_seq"?, "read_seqs"?, "claimed_at_ms"?}
 //	                  200 {seq, <store kind>_hash for each kind, landed?}
 //	POST <a kind's own route> (the kind table's `post`): one op of the
 //	                  kind's checking capability over the body
@@ -462,6 +462,12 @@ type received struct {
 	} `json:"failed"`
 	UnknownFields []string          `json:"unknown_fields"`
 	Heads         map[string]string `json:"heads"`
+	// Broken are the references the write adds that name a record
+	// missing from what its writer read: the write is refused (D-233).
+	Broken []json.RawMessage `json:"broken"`
+	// References are the references the entry touches that are broken
+	// now: the write's warnings.
+	References []json.RawMessage `json:"references"`
 	// Made are the documents the write made, stored before its entry
 	// (a pick's network, as the head of plan.<id>).
 	Made []madeDocument `json:"made"`
@@ -570,6 +576,15 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 			}
 			write["unread"] = unread
 		}
+		// The reference checks (D-233): each log as of the seq the writer
+		// read, for a person's write (the server's own writes are never
+		// refused for a reference), and each log now, for the warnings.
+		if kinds, read, now := s.referenceFolds(f, w, r != nil); kinds != nil {
+			write["references"], write["now"] = kinds, now
+			if read != nil {
+				write["read"] = read
+			}
+		}
 		got = received{}
 		err := s.withModuleOf(ctx, l.receive, func(host *WasmHost, declares map[string]bool) error {
 			write["header"].(map[string]any)["module"] = "cap-" + l.receive + "@" + host.Hash()
@@ -634,6 +649,8 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 			return *got.Landed, true, got, nil, nil
 		case got.Failed != nil:
 			return 0, false, got, &logRefusal{http.StatusBadRequest, map[string]any{"op": got.Failed.Op, "error": got.Failed.Error}}, nil
+		case len(got.Broken) > 0:
+			return 0, false, got, &logRefusal{http.StatusUnprocessableEntity, map[string]any{"refusals": []any{}, "references": got.Broken}}, nil
 		case got.Refused != nil:
 			return 0, false, got, &logRefusal{http.StatusUnprocessableEntity, map[string]any{"op": got.Refused.Op, "refusals": got.Refused.Refusals}}, nil
 		case got.Moved != nil:
@@ -708,16 +725,17 @@ func (s *server) handleKeptIntent(w http.ResponseWriter, r *http.Request, l *kep
 		Key         string            `json:"key"`
 		Ops         []json.RawMessage `json:"ops"`
 		ReadSeq     *int64            `json:"read_seq"`
+		ReadSeqs    map[string]int64  `json:"read_seqs"`
 		ClaimedAtMs int64             `json:"claimed_at_ms"`
 	}
 	if err == nil {
 		err = json.Unmarshal(body, &req)
 	}
 	if err != nil || len(req.Ops) == 0 {
-		http.Error(w, `body: {"key": "<idempotency key>", "ops": [{"cap": "...", "op": "...", "args": {...}}], "read_seq": N, "claimed_at_ms": T}`, http.StatusBadRequest)
+		http.Error(w, "the "+l.name+` log's write: body: {"key": "<idempotency key>", "ops": [{"cap": "...", "op": "...", "args": {...}}], "read_seq": N, "read_seqs": {"<log>": N}, "claimed_at_ms": T}`, http.StatusBadRequest)
 		return
 	}
-	write := logWrite{writer: writerOf(r, "anonymous"), op: "POST /logs/" + l.name, argsHash: store.HashOf(body), key: req.Key, readSeq: req.ReadSeq, claimedAtMs: req.ClaimedAtMs}
+	write := logWrite{writer: writerOf(r, "anonymous"), op: "POST /logs/" + l.name, argsHash: store.HashOf(body), key: req.Key, readSeq: req.ReadSeq, readSeqs: req.ReadSeqs, claimedAtMs: req.ClaimedAtMs}
 	seq, landed, got, refusal, err := s.receiveLog(r.Context(), r, l, write, receiveCall{ops: req.Ops})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusBadRequest)
@@ -736,8 +754,8 @@ func (s *server) handleKeptIntent(w http.ResponseWriter, r *http.Request, l *kep
 	l.fold.mu.Unlock()
 	if landed {
 		answer["landed"] = true
-	} else if refs := s.writeReferences(l.fold.name, seq, got.Entry); len(refs) > 0 {
-		answer["references"] = refs
+	} else if len(got.References) > 0 {
+		answer["references"] = got.References
 	}
 	writeJSON(w, http.StatusOK, answer)
 }
@@ -770,7 +788,7 @@ func (s *server) keptRoutes() map[string]struct {
 // run by its log's receive op.
 func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
-		http.Error(w, "this write needs the store (start with -store <url>)", http.StatusNotFound)
+		http.Error(w, r.URL.Path+" needs the store (start with -store <url>)", http.StatusNotFound)
 		return
 	}
 	route, ok := s.keptRoutes()[r.URL.Path]
@@ -794,7 +812,7 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	op, _ := json.Marshal(map[string]any{"cap": k.Module, "op": post.Op, "args": args})
 	write := logWrite{writer: writerOf(r, "anonymous"), op: "POST " + post.Path, argsHash: store.HashOf(body)}
-	seq, landed, got, refusal, err := s.receiveLog(r.Context(), r, route.log, write, receiveCall{ops: []json.RawMessage{op}})
+	_, landed, got, refusal, err := s.receiveLog(r.Context(), r, route.log, write, receiveCall{ops: []json.RawMessage{op}})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusBadRequest)
 		return
@@ -803,7 +821,7 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 		// The route's one op: its refusals are the route's, and an op
 		// that did not run is the request's 400.
 		if got.Failed != nil {
-			http.Error(w, "body: "+got.Failed.Error, http.StatusBadRequest)
+			http.Error(w, k.StoreKind+": body: "+got.Failed.Error, http.StatusBadRequest)
 			return
 		}
 		if body, ok := refusal.body.(map[string]any); ok {
@@ -825,10 +843,8 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 			answer[field] = v
 		}
 	}
-	if !landed {
-		if refs := s.writeReferences(route.log.fold.name, seq, got.Entry); len(refs) > 0 {
-			answer["references"] = refs
-		}
+	if !landed && len(got.References) > 0 {
+		answer["references"] = got.References
 	}
 	writeJSON(w, http.StatusOK, answer)
 }

@@ -223,3 +223,75 @@ fn naming_finds_each_reference_to_a_dropped_hash() {
         vec![transit_log::Naming { log: "plans".into(), kind: "frozen_version".into(), id: "spring".into(), field: "/network_hash".into(), target: "network".into(), names: "sha256:bb".into() }]
     );
 }
+
+/// The refusal as of the read seq (D-233): a write that adds a reference
+/// to a record missing from what its writer read is refused; one the
+/// writer saw, one the write itself creates, and one the record already
+/// had are not; a target the write takes out is missing; a target log
+/// the writer read nothing of is not judged.
+#[test]
+fn a_write_that_adds_a_reference_the_writer_could_not_have_seen_is_refused() {
+    let read: BTreeMap<String, Records> = [("stops".to_string(), records(&[
+        ("stop", json!({"A": [], "B": []})),
+        ("stop_request", json!({"OLD": {"stop": "GONE"}})),
+    ]))]
+    .into_iter()
+    .collect();
+    let before = read["stops"].clone();
+    let change = |kind: &str, id: &str, after: Option<Value>| match after {
+        Some(a) => json!({"kind": kind, "version": 1, "id": id, "after": a}),
+        None => json!({"kind": kind, "version": 1, "id": id, "before": "sha256:x"}),
+    };
+    let write = |changes: Vec<Value>| {
+        let text = json!({"kind": "log_entry", "schema_version": 1, "log": "stops", "seq": 9, "writer": "w", "at_ms": 1, "module": "m", "intent": {"op": "test"}, "changes": changes});
+        transit_log::added(&kinds(), &read, &before, "stops", &Stored { seq: 9, text: text.to_string() })
+    };
+    let ids = |found: Vec<Broken>| found.into_iter().map(|b| (b.id, b.names)).collect::<Vec<_>>();
+    assert_eq!(ids(write(vec![change("stop_request", "R-1", Some(json!({"stop": "A"})))])), vec![], "the writer saw A");
+    assert_eq!(ids(write(vec![change("stop_request", "R-2", Some(json!({"stop": "Z"})))])), vec![("R-2".to_string(), "Z".to_string())]);
+    assert_eq!(
+        ids(write(vec![change("stop", "N", Some(json!([]))), change("stop_request", "R-3", Some(json!({"stop": "N"})))])),
+        vec![],
+        "the write creates N"
+    );
+    assert_eq!(ids(write(vec![change("stop", "B", None), change("stop_request", "R-4", Some(json!({"stop": "B"})))])), vec![("R-4".to_string(), "B".to_string())], "the write takes B out");
+    assert_eq!(ids(write(vec![change("stop_request", "OLD", Some(json!({"stop": "GONE", "status": "cancelled"})))])), vec![], "OLD was broken before: it can still be cancelled");
+    let note = json!({"kind": "log_entry", "schema_version": 1, "log": "notes", "seq": 1, "writer": "w", "at_ms": 1, "module": "m", "intent": {"op": "test"},
+        "changes": [{"kind": "note", "version": 1, "id": "n1", "after": {"target": {"kind": "alert", "id": "a9"}}}]});
+    assert_eq!(transit_log::added(&kinds(), &read, &Records::new(), "notes", &Stored { seq: 1, text: note.to_string() }), vec![], "the writer read nothing of the alerts log");
+}
+
+/// The receive op judges a write's references (D-233): given the kind
+/// table and each log as of the writer's read seqs, a write that adds a
+/// reference to a record missing then is refused with `broken` and no
+/// entry; one that held then and is broken now lands, with the reference
+/// as its warning in `references`. A log not given is not judged.
+#[test]
+fn the_receive_op_refuses_as_of_the_read_and_warns_as_of_now() {
+    let header = |seq: u64| serde_json::from_value::<transit_log::Header>(json!({"log": "stops", "seq": seq, "writer": "w", "at_ms": 1, "module": "m", "intent": {"op": "test"}})).unwrap();
+    let request = |id: &str, stop: &str| transit_log::KindRecords { kind: "stop_request".into(), version: 1, records: [(id.to_string(), json!({"stop": stop}))].into_iter().collect() };
+    let stops = |ids: &[&str]| records(&[("stop", Value::Object(ids.iter().map(|i| (i.to_string(), json!([]))).collect()))]);
+    let canonical = |e: &transit_log::Entry| Ok(serde_json::to_string(e).unwrap());
+    let hash = |v: &Value| format!("{v}");
+    let write = |read: Records, now: Option<Records>| transit_log::Write {
+        checkpoint: None,
+        header: header(1),
+        unread: vec![],
+        references: Some(kinds()),
+        read: Some([("stops".to_string(), read)].into_iter().collect()),
+        now: now.map(|n| [("stops".to_string(), n)].into_iter().collect()),
+    };
+
+    let refused = transit_log::receive(&write(stops(&["A"]), None), &[request("R-1", "Z")], &hash, &canonical).unwrap();
+    assert!(refused.entry.is_none(), "no entry: {refused:?}");
+    assert_eq!(refused.broken.iter().map(|b| b.names.as_str()).collect::<Vec<_>>(), vec!["Z"]);
+
+    let warned = transit_log::receive(&write(stops(&["N"]), Some(stops(&[]))), &[request("R-2", "N")], &hash, &canonical).unwrap();
+    assert!(warned.entry.is_some() && warned.broken.is_empty(), "N was there when read: {warned:?}");
+    assert_eq!(warned.references.iter().map(|b| (b.names.as_str(), b.entry.as_ref().map(|e| e.seq))).collect::<Vec<_>>(), vec![("N", Some(1))]);
+
+    let unjudged = transit_log::Write { references: Some(kinds()), ..write(stops(&[]), None) };
+    let unjudged = transit_log::Write { read: Some(BTreeMap::new()), now: Some(BTreeMap::new()), ..unjudged };
+    let landed = transit_log::receive(&unjudged, &[request("R-3", "Z")], &hash, &canonical).unwrap();
+    assert!(landed.entry.is_some() && landed.broken.is_empty() && landed.references.is_empty(), "the stops log is not judged: {landed:?}");
+}

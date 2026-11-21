@@ -60,6 +60,14 @@ const edits = [
   },
 ];
 
+/// The edits on the server too: a note or an alert that names an edit
+/// the server does not hold is refused (D-233). The page reads them
+/// through `open`'s route, as of the spec's fixed time.
+async function seedEdits(request) {
+  const posted = await request.post("/edits", { data: { kind: "edit_records", schema_version: 2, records: edits } });
+  expect(posted.ok()).toBeTruthy();
+}
+
 async function open(page, hash = "") {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await page.route("**/edits", (route) =>
@@ -72,6 +80,7 @@ async function open(page, hash = "") {
 }
 
 test("the day's disruptions: status, a note, a stop, and dispatch", async ({ page, request }) => {
+  await seedEdits(request);
   // 2. A note about the cancel, written through the receive path.
   const note = await request.post("/notes", {
     data: { id: "n-e2e-cancel", target: { kind: "edit", id: "c-disruptions" }, text: "No operator. Next trip covered." },
@@ -132,6 +141,7 @@ test("the day's disruptions: status, a note, a stop, and dispatch", async ({ pag
 //   8. Ended, it is listed as ended, and the cancel is a gap again.
 //   9. A note is added on the detour's panel and then edited.
 test("an alert from a gap, published and ended, and a note written", async ({ page, request }) => {
+  await seedEdits(request);
   const head = await request.get("/manifest").then((r) => r.json());
   const templates = await request.post("/alert-templates", {
     data: {

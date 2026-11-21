@@ -1353,6 +1353,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  },
+                  "read_seqs": {
+                    "type": "object",
+                    "description": "The seq of each other log whose documents the writer read (the manifest's log_seqs), by log name, each an integer. A reference the write adds to a record missing from those logs as of those seqs is refused, 422 with `references` (D-233). A log not named was read now."
                   }
                 },
                 "required": [
@@ -1509,7 +1513,10 @@
                     "op": {
                       "type": "integer"
                     },
-                    "refusals": {}
+                    "refusals": {},
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
                   },
                   "required": [
                     "refusals"
@@ -1956,6 +1963,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  },
+                  "read_seqs": {
+                    "type": "object",
+                    "description": "The seq of each other log whose documents the writer read (the manifest's log_seqs), by log name, each an integer. A reference the write adds to a record missing from those logs as of those seqs is refused, 422 with `references` (D-233). A log not named was read now."
                   }
                 },
                 "required": [
@@ -2112,7 +2123,10 @@
                     "op": {
                       "type": "integer"
                     },
-                    "refusals": {}
+                    "refusals": {},
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
                   },
                   "required": [
                     "refusals"
@@ -2321,6 +2335,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  },
+                  "read_seqs": {
+                    "type": "object",
+                    "description": "The seq of each other log whose documents the writer read (the manifest's log_seqs), by log name, each an integer. A reference the write adds to a record missing from those logs as of those seqs is refused, 422 with `references` (D-233). A log not named was read now."
                   }
                 },
                 "required": [
@@ -2473,7 +2491,10 @@
                     "op": {
                       "type": "integer"
                     },
-                    "refusals": {}
+                    "refusals": {},
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
                   },
                   "required": [
                     "refusals"
@@ -5603,7 +5624,7 @@
       },
       "Refusals": {
         "type": "object",
-        "description": "The module's refusals. The write is not stored.",
+        "description": "The module's refusals. The write is not stored. A write refused for the references it adds to a record missing from what its writer read (D-233) has none, and names them in `references`.",
         "properties": {
           "refusals": {
             "type": [
@@ -5613,6 +5634,9 @@
             "items": {
               "type": "object"
             }
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [

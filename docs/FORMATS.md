@@ -693,9 +693,16 @@ it can be judged again after a release or a rollback.
 A referring record in a version newer than the kind table reads (after
 a rollback, D-186) is not judged, since the table's declarations may
 not be its fields. The check lists it as `unjudged`, a warning, and
-never as broken. A write answers the broken references its entry
-touches as `references`, beside its answer: those it wrote broken, and
-those whose target it changed. `store revert` lists the records that
+never as broken. A person's write that adds a reference to a record
+missing from every log as of the seqs its writer read (`read_seq`,
+`read_seqs`; none: now) is refused, 422 with `references` (and empty `refusals`): the log's
+receive op judges it (`transit_log::receive`), since an honest writer
+names only what it saw. A log with no entries is not judged. A reference the
+record already had is not added, so a broken record can still be
+changed or cancelled. The server's own writes are not refused. A write
+that lands answers the broken references its entry touches as
+`references`, beside its answer: those it wrote broken now, and those
+whose target it changed. `store revert` lists the records that
 name a document it drops by hash (cap-log `naming`), so an operator
 sees which records still name a document that is no longer the head.
 

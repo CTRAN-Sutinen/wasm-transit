@@ -7,8 +7,11 @@
 /// - Every write has an idempotency key, made when the person saves.
 ///   Every attempt sends the same key, so a write whose answer was lost
 ///   lands once (the log engine answers a key that landed).
-/// - A log's write is its intent: `{key, ops, read_seq}` to
-///   `logs/<log>`. The server runs the ops over the head it holds. A
+/// - A log's write is its intent: `{key, ops, read_seq, read_seqs}` to
+///   `logs/<log>`. The server runs the ops over the head it holds.
+///   `read_seqs` are the other logs' seqs the page read (the manifest's
+///   log_seqs): a reference to a record missing from what the page read
+///   is refused (D-233). A
 ///   write that waited also carries the time the person made it, as a
 ///   claim beside the server's stamp (`claimed_at_ms`, D-222).
 /// - A network failure or a 5xx (the store not answering, D-119) keeps
@@ -25,8 +28,8 @@
 /// A route's body is JSON, with the key added when `keyed` (a route
 /// that takes one), or a file sent as it is (`contentType`).
 export type Write =
-  | { log: string; ops: { cap: string; op: string; args: unknown }[]; readSeq?: number; label: string; url?: undefined; body?: undefined }
-  | { url: string; body: unknown; label: string; keyed?: boolean; contentType?: string; log?: undefined; ops?: undefined; readSeq?: undefined };
+  | { log: string; ops: { cap: string; op: string; args: unknown }[]; readSeq?: number; readSeqs?: Record<string, number>; label: string; url?: undefined; body?: undefined }
+  | { url: string; body: unknown; label: string; keyed?: boolean; contentType?: string; log?: undefined; ops?: undefined; readSeq?: undefined; readSeqs?: undefined };
 
 /// One write that waits, or that the server refused.
 export type Waiting = {
@@ -45,6 +48,7 @@ export type Waiting = {
   log?: string;
   ops?: { cap: string; op: string; args: unknown }[];
   readSeq?: number;
+  readSeqs?: Record<string, number>;
   url?: string;
   body?: unknown;
   keyed?: boolean;
@@ -99,7 +103,7 @@ export class Outbox {
   /// everything before it.
   async queue(write: Write): Promise<Outcome> {
     const item: Waiting = { key: this.#deps.newKey(), label: write.label, madeAtMs: this.#deps.now(), attempts: 0, state: "waiting" };
-    if (write.log !== undefined) Object.assign(item, { log: write.log, ops: write.ops, readSeq: write.readSeq });
+    if (write.log !== undefined) Object.assign(item, { log: write.log, ops: write.ops, readSeq: write.readSeq, readSeqs: write.readSeqs });
     else Object.assign(item, { url: write.url, body: write.body, keyed: write.keyed, contentType: write.contentType });
     this.items = [...this.items, item];
     await this.#save();
@@ -114,8 +118,9 @@ export class Outbox {
   }
 
   /// A held write sent again (after the person read the head again:
-  /// `readSeq`), with its key, at its place in the order.
-  async retry(key: string, change: { readSeq?: number } = {}): Promise<Outcome> {
+  /// `readSeq`, and the other logs' in `readSeqs`), with its key, at its
+  /// place in the order.
+  async retry(key: string, change: { readSeq?: number; readSeqs?: Record<string, number> } = {}): Promise<Outcome> {
     this.items = this.items.map((i) => (i.key === key ? { ...i, ...change, state: "waiting", status: undefined, reasons: undefined } : i));
     await this.#save();
     await this.flush();
@@ -177,6 +182,7 @@ export class Outbox {
     if (item.log === undefined) return [item.url!, item.keyed ? { ...(item.body as object), key: item.key } : item.body];
     const body: Record<string, unknown> = { key: item.key, ops: item.ops };
     if (item.readSeq !== undefined) body.read_seq = item.readSeq;
+    if (item.readSeqs !== undefined) body.read_seqs = item.readSeqs;
     if (item.attempts > 0) body.claimed_at_ms = item.madeAtMs;
     return [`logs/${item.log}`, body];
   }

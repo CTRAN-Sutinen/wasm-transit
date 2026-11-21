@@ -84,7 +84,7 @@ kind-registration also edits gen_manifest.rs, in the kernel ops and
 the document kinds. The two run in this order, in one session, one
 build at a time:
 
-1. kind-registration's other logs (its item 2) come first. A new
+1. kind-registration's logs are all on the one server path. A new
    receive op's example goes in `example_for` until item 2 here moves
    them all. The root `Cargo.toml` already takes its members by class.
    Item 1 lands with item 4: until the generator links the

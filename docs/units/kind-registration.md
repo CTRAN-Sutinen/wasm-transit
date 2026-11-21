@@ -55,25 +55,6 @@ writer saw, and warns about a write that the world made wrong later
    crate and the generator of `capability-declared-once.md` (items 3
    and 4; D-235), which take the five optional domain dependencies
    that gen-manifest gives cap-abi. This item follows those items.
-2. **The last steps on the one server path.** Every log is on it: a
-   `receive` op in the log's capability (`transit_log::receive`
-   composes the entry), the log's line `.received(..)`, each kind's own
-   route as `.posted(..)`, and the seed from the kind table's `pointers`
-   (`seedKept`, the op's `migrate`). A pick's checks run in the plans
-   log's receive op (cap-plans `pick`, D-237).
-
-   The routes and their bytes stay the same, and `server/openapi.json`
-   compares them. Each error and log line of the route names its kind.
-
-   The receive op takes the seq the write read for each log it depends
-   on. It runs the kind's check as of that seq, under the module the
-   client names, and refuses a failure. It runs the check again as of
-   now, and warns about a failure (D-233). The outbox (D-189) carries
-   one `read_seq` today, the seq of the log the write goes to, and the
-   receive op gets the entries after it as `unread`. It carries no seq
-   of another log, no client module, and nothing on a route's write. A
-   pick's adoption also names the stops log's seq it read
-   (`stops_seq`).
 3. **Generated lists in the docs.** `docs/FORMATS.md`,
    `docs/architecture/server.md`, and `storage.md` list the kinds by
    hand today. They point to the kind table and the registry's docs
@@ -89,7 +70,7 @@ writer saw, and warns about a write that the world made wrong later
    the map is generated from the manifest's capabilities first.
 
 The order with `capability-declared-once.md` is in that unit ("Order
-with kind-registration"). Item 2 comes first. Item 4 is built with
+with kind-registration"). Item 4 is built with
 that unit's name gate, and item 3 is one docs sweep with that unit's
 item 7.
 
@@ -98,8 +79,6 @@ differs from the others, the difference is a named field in its line,
 never a hook.
 
 ## The references
-
-These start when every log is on the one path (item 2).
 
 6. **A rule for each reference.** Each owning module states which
    target states each referrer state needs, with a justification for
@@ -111,6 +90,14 @@ These start when every log is on the one path (item 2).
    it an enum or give it a coverage test. The rules for notes and
    alerts land with `ui-disruptions.md`. The network references of
    undated records are Blocked: D-234.
+
+   A rule is judged as the existence check is (D-233): as of the seqs
+   the writer read (`read_seq`, `read_seqs`), a failure refused, and as
+   of now, a failure warned. A rule that a page runs too is replayed
+   under the module the client names (the build's `produced_by`), from
+   the builds the server served within a window the operator sets; a
+   module the server never served is refused. The existence check needs
+   none of this, because it runs in cap-log, which no page links.
 7. **The transitions.** An adoption warns about the live references
    it breaks (D-230). Compaction skips a retired record that a live
    reference names (D-231). A promotion pins each loose reference, or

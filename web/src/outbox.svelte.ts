@@ -119,7 +119,7 @@ export async function sendWaiting(): Promise<void> {
 
 /// A held write sent again, at its place, with the log's seq the page
 /// read since (`readSeq`).
-export async function retryWrite(key: string, change: { readSeq?: number } = {}): Promise<Outcome> {
+export async function retryWrite(key: string, change: { readSeq?: number; readSeqs?: Record<string, number> } = {}): Promise<Outcome> {
   if (!box) return { key, state: "waiting" };
   return box.retry(key, change);
 }
@@ -131,9 +131,10 @@ export async function discardWrite(key: string): Promise<void> {
 
 /// Why the server refused a held write, in words.
 export function heldReason(w: Waiting): string {
-  const body = (w.reasons ?? {}) as { refusals?: { problem?: { kind?: string } }[]; conflict?: string; error?: string };
+  const body = (w.reasons ?? {}) as { refusals?: { problem?: { kind?: string } }[]; references?: BrokenReference[]; conflict?: string; error?: string };
   if (w.status === 409) return "Someone else changed this since you read it. Check it, then send it again or discard it.";
   if (w.status === 403) return "Your sign-in can't save this.";
+  if (w.status === 422 && Array.isArray(body.references) && body.references.length) return body.references.map(referenceWarning).join(" ");
   if (w.status === 422 && Array.isArray(body.refusals) && body.refusals.length) {
     const kinds = body.refusals.map((r) => (r.problem?.kind ?? "").replaceAll("_", " ")).filter(Boolean);
     return kinds.length ? `Not saved: ${[...new Set(kinds)].join("; ")}.` : "The server refused it.";

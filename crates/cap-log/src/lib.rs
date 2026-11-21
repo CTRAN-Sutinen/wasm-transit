@@ -189,6 +189,7 @@ pub enum Response {
         #[ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string }>")]
         references: Vec<transit_log::Naming>,
     },
+
 }
 
 use cap_abi::record_hash;
@@ -217,7 +218,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let header: Header = parse("header", header)?;
             let next: Vec<KindRecords> = parse("next", next)?;
             let unread: Vec<Stored> = parse("unread", unread.unwrap_or(serde_json::Value::Array(Vec::new())))?;
-            let write = transit_log::Write { checkpoint, header, unread };
+            let write = transit_log::Write { checkpoint, header, unread, references: None, read: None, now: None };
             let received = transit_log::receive(&write, &next, &record_hash, &|e| cap_abi::canonical_bytes(e))?;
             Ok(Response::Compose { entry: received.entry, changes: received.changes, landed: received.landed, overlap: received.overlap })
         }

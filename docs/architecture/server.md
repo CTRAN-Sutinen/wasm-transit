@@ -652,15 +652,22 @@ Its HTTP surface:
     kind: `edits`, `stops`, `service_alerts`), and creates the entry. When another write took the seq, it asks again over the new
     head. Documents the op made (a pick's network, in `made`) are stored
     first.
-  - After the entry, the server asks cap-log's existence check
-    (`references`) over every log's fold, refreshed, for the broken
-    references that entry touches: those it wrote broken, and those
-    whose target it changed (D-233). `POST /logs/<log>`, each kind's own
-    route, and a revert (`POST /logs/<log>/revert`) answer them as
-    `references`, beside the answer, each with
-    the referring record, its field, the target, the id it names, and
-    the entry. They are warnings for a person: the write has landed. A
-    check that fails is logged and answers none.
+  - The receive op also judges the write's references (D-233;
+    `transit_log::receive`). The server gives it the kind table's kinds,
+    each log's records now, and, for a person's write, each log's
+    records as of the seq its writer read (`read_seq`, and `read_seqs`
+    for the other logs; a log not named, now). It folds the other logs
+    from the store (`referenceFolds`, `foldAt`), never from their folds,
+    so it takes no other log's lock. A log with no entries is left out:
+    it is not judged. A reference the write adds to a record missing
+    as of the read is `422 {refusals: [], references}` (a kind's own route answers
+    the same body), and nothing is written. The server's own writes are
+    never refused for it. A reference the entry touches that is broken
+    now is a warning: `POST /logs/<log>` and each kind's own route
+    answer it as `references`, beside the answer, with the referring
+    record, its field, the target, the id it names, and the entry. A
+    revert (`POST /logs/<log>/revert`) answers the same, through cap-log
+    `references`. A check that cannot read a log refuses nothing.
   - The writes the server makes itself take the same call with no
     write rule: the feed's differences (`stops import_events`, over the
     feed's network, which the server registers first) and the plans'
@@ -669,7 +676,7 @@ Its HTTP surface:
     table's `pointers`) at startup: the receive op's `migrate` records
     their heads as they are (writer `migrate:<log>`).
   - `POST /logs/<log>` answers 200 `{seq, <store kind>_hash, landed?, references?}`,
-    422 `{op, refusals}`, 409 `{conflict, overlap, seq}` for a record
+    422 `{op, refusals}` or `{refusals: [], references}`, 409 `{conflict, overlap, seq}` for a record
     an unread entry changed, 409 `{op, conflict}` for an event changed
     since the writer read it, and 400 for an op the log does not take. A
     key that landed answers 200 with `landed`, before the ops run.

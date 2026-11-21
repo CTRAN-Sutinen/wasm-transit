@@ -23,6 +23,24 @@ pub struct Write {
     pub header: Header,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unread: Vec<Stored>,
+    /// The kind table's kinds, for the reference checks (D-233). Absent:
+    /// no check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub references: Option<Vec<crate::KindReferences>>,
+    /// Each log's records as of the seq the writer read, by log. With
+    /// them, a reference the write adds to a record missing then refuses
+    /// the write ([`Received::broken`]). A log left out is not judged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub read: Option<BTreeMap<String, crate::Records>>,
+    /// Each log's records now, by log (absent: as `read`). The write's
+    /// own log is the fold after the entry. The references the entry
+    /// touches that are broken now are its warnings
+    /// ([`Received::references`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub now: Option<BTreeMap<String, crate::Records>>,
 }
 
 impl Write {
@@ -108,6 +126,17 @@ pub struct Received {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, String>>")]
     pub heads: BTreeMap<String, String>,
+    /// The references the write adds that name a record missing from
+    /// the world its writer read (`Write::read`, D-233): the write is
+    /// refused, and no entry comes back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<crate::Broken>>")]
+    pub broken: Vec<crate::Broken>,
+    /// The references the entry touches that are broken now
+    /// (`Write::now`): the write's warnings, for a person.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<crate::Broken>>")]
+    pub references: Vec<crate::Broken>,
     /// The documents the write made that the host stores before the
     /// entry, so the entry never names a document the store does not
     /// hold.
@@ -200,7 +229,39 @@ pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn 
     Ok(match compose(&fold, write.header.clone(), next, hash) {
         Composed::Entry(e) => match overlap(&e.changes, &unread) {
             Some(o) => Received { overlap: Some(o), ..Default::default() },
-            None => Received { changes: e.changes.len(), entry: Some(canonical(&e)?), ..Default::default() },
+            None => {
+                let mut references = Vec::new();
+                if let Some(kinds) = &write.references {
+                    let log = &write.header.log;
+                    if let Some(read) = &write.read {
+                        let broken = crate::added_in(kinds, read, &fold.records, log, &e);
+                        if !broken.is_empty() {
+                            return Ok(Received { broken, ..Default::default() });
+                        }
+                    }
+                    if let Some(mut now) = write.now.clone().or_else(|| write.read.clone()) {
+                        // The write's own log, judged when it was: as the
+                        // fold after this entry.
+                        if now.contains_key(log) {
+                            let mut after = fold.records.clone();
+                            for c in &e.changes {
+                                let records = after.entry(c.kind.clone()).or_default();
+                                match &c.after {
+                                    Some(v) => {
+                                        records.insert(c.id.clone(), crate::Held { version: c.version, value: v.clone() });
+                                    }
+                                    None => {
+                                        records.remove(&c.id);
+                                    }
+                                }
+                            }
+                            now.insert(log.clone(), after);
+                        }
+                        references = crate::touched_in(crate::broken(kinds, &now), kinds, log, &e, write.header.seq);
+                    }
+                }
+                Received { changes: e.changes.len(), entry: Some(canonical(&e)?), references, ..Default::default() }
+            }
         },
         Composed::Unchanged => Received::default(),
         Composed::Landed(seq) => Received { landed: Some(seq), ..Default::default() },

@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{read_entry, Records, Stored};
+use crate::{read_entry, Entry, Records, Stored};
 
 /// A kind as the kind table states it, with the fields the check reads.
 /// The table's other fields are ignored.
@@ -137,13 +137,20 @@ pub struct EntryRef {
 /// the references the write broke, or wrote broken. An entry that does
 /// not read touches nothing.
 pub fn touched(broken: Vec<Broken>, kinds: &[KindReferences], log: &str, entry: &Stored) -> Vec<Broken> {
-    let Ok(e) = read_entry(log, entry) else { return Vec::new() };
+    match read_entry(log, entry) {
+        Ok(e) => touched_in(broken, kinds, log, &e, entry.seq),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// [`touched`] over an entry as composed, at `seq`.
+pub fn touched_in(broken: Vec<Broken>, kinds: &[KindReferences], log: &str, e: &Entry, seq: u64) -> Vec<Broken> {
     let changed = |kind: &str, id: &str| e.changes.iter().any(|c| c.kind == kind && c.id == id);
     let target_log = |kind: &str| kinds.iter().filter(|k| k.records.iter().any(|r| r.kind == kind)).find_map(|k| k.log.clone());
     broken
         .into_iter()
         .filter(|b| (b.log == log && changed(&b.kind, &b.id)) || (target_log(&b.target).as_deref() == Some(log) && changed(&b.target, &b.names)))
-        .map(|b| Broken { entry: Some(EntryRef { log: log.to_string(), seq: entry.seq }), ..b })
+        .map(|b| Broken { entry: Some(EntryRef { log: log.to_string(), seq }), ..b })
         .collect()
 }
 
@@ -222,6 +229,73 @@ pub fn broken(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> Ve
                             continue;
                         }
                         out.push(Broken { log: log.clone(), kind: r.kind.clone(), id: id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None });
+                    }
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The references a write adds that name a record missing from the world
+/// its writer read (D-233): the receive path refuses them. `entry` is the
+/// write's entry in `log`, as composed and not yet stored. `read` are
+/// the logs' folds as of the seqs the writer read (a log not given is
+/// not judged). `before` is the write's log's fold the entry is composed
+/// over: a reference the record already had there is not added, so a
+/// person can still change or cancel a record that was broken before.
+/// A target the entry itself creates exists, and one it takes out does
+/// not. A record newer than the table reads is not judged.
+pub fn added(kinds: &[KindReferences], read: &BTreeMap<String, Records>, before: &Records, log: &str, entry: &Stored) -> Vec<Broken> {
+    match read_entry(log, entry) {
+        Ok(e) => added_in(kinds, read, before, log, &e),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// [`added`] over an entry as composed (the receive op's).
+pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, before: &Records, log: &str, e: &Entry) -> Vec<Broken> {
+    let mut target_log: BTreeMap<&str, &str> = BTreeMap::new();
+    for k in kinds {
+        if let Some(l) = &k.log {
+            for r in &k.records {
+                target_log.insert(r.kind.as_str(), l.as_str());
+            }
+        }
+    }
+    let in_entry = |kind: &str, id: &str| e.changes.iter().find(|c| c.kind == kind && c.id == id).map(|c| c.after.is_some());
+    let mut out = Vec::new();
+    for c in &e.changes {
+        let Some(after) = &c.after else { continue };
+        for k in kinds.iter().filter(|k| k.log.as_deref() == Some(log)) {
+            if k.reads().is_some_and(|reads| c.version > reads) {
+                continue;
+            }
+            for r in k.records.iter().filter(|r| r.kind == c.kind) {
+                for d in &k.references {
+                    let Some(rest) = record_path(&d.path, &r.collection) else { continue };
+                    let Some(tlog) = target_log.get(d.target.as_str()) else { continue };
+                    let had: Vec<(String, Value)> = before
+                        .get(&c.kind)
+                        .and_then(|m| m.get(&c.id))
+                        .map(|h| values_at(&h.value, &rest).into_iter().map(|(f, v)| (f, v.clone())).collect())
+                        .unwrap_or_default();
+                    for (field, value) in values_at(after, &rest) {
+                        let Value::String(names) = value else { continue };
+                        if had.iter().any(|(f, v)| f == &field && v == value) {
+                            continue;
+                        }
+                        let exists = match in_entry(&d.target, names) {
+                            Some(created) => created,
+                            None => match read.get(*tlog) {
+                                Some(fold) => fold.get(&d.target).is_some_and(|m| m.contains_key(names.as_str())),
+                                None => continue,
+                            },
+                        };
+                        if !exists {
+                            out.push(Broken { log: log.to_string(), kind: c.kind.clone(), id: c.id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None });
+                        }
                     }
                 }
             }
