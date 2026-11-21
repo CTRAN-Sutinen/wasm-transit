@@ -57,6 +57,8 @@
 //     each stop linked to its record.
 //   - a write kept with a broken reference (D-233) says so beside the
 //     sync status until the person dismisses it.
+//   - a request saved on a stop that another planner retired after the
+//     page read it lands, and its warning names the retirement (D-238).
 
 import { test, expect } from "@playwright/test";
 
@@ -549,4 +551,25 @@ test("a write kept with a broken reference says so until dismissed", async ({ pa
   await expect(warned).toContainText("Stop request STN-20261102 names stop STN, which isn't on record.");
   await page.getByTestId("sync-dismiss").click();
   await expect(warned).toHaveCount(0);
+});
+
+test("a request on a stop retired after the page read it is saved with the retirement as its warning", async ({ page, request }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  const post = async (key, op) => {
+    const resp = await request.post("/logs/stops", { data: { key, ops: [op] } });
+    expect(resp.status(), await resp.text()).toBe(200);
+  };
+  // A stop of this test's own, in service since January.
+  await post("e2e/rule-1", { cap: "stops", op: "add_event", args: { stop_id: "RULE", new: true,
+    event: { on: "2026-01-01", event: "in_service", lat: 45.64, lon: -122.6, name: "Rule test stop" } } });
+  await page.goto("/stops.html#on=2026-11-02&open=RULE");
+  await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
+  // Another planner retires it after the page read it (the server's date is 2026-08-01).
+  await post("e2e/rule-2", { cap: "stops", op: "add_event", args: { stop_id: "RULE", event: { on: "2026-07-01", event: "retired" } } });
+  await page.getByTestId("action-request").click();
+  await page.getByTestId("request-job-repair_improve").click();
+  await page.getByTestId("request-save-draft").click();
+  const warned = page.getByTestId("sync-warned");
+  await expect(warned).toContainText("Saved with a warning", { timeout: 15_000 });
+  await expect(warned).toContainText("names stop RULE, which was retired on 2026-07-01.");
 });

@@ -103,3 +103,41 @@ func TestAWriteIsJudgedAsOfTheSeqItsWriterRead(t *testing.T) {
 		t.Fatalf("the revert answers the reference it breaks: %d %s", code, resp)
 	}
 }
+
+// The stop rule of a request (D-238): a planner who retires a stop that
+// an open request names is warned with the request; a request then
+// written on that stop, read now, is refused with the rule's reason.
+func TestRetiringAStopWarnsOfTheOpenRequestThatNamesIt(t *testing.T) {
+	s, base := newStopsLogServer(t, store.NewMemory())
+	s.fixedToday = "2026-11-21"
+	if code, out := postStops(t, base, "", seededStops(t)); code != 200 {
+		t.Fatalf("the stops: %d %v", code, out)
+	}
+	if code, out := opsPost(t, base, "desk/1", map[string]any{"cap": "stops", "op": "add_event", "args": map[string]any{"stop_id": "N", "new": true,
+		"event": map[string]any{"on": "2026-01-01", "event": "in_service", "lat": 45.6, "lon": -122.6}}}); code != 200 {
+		t.Fatalf("stop N: %d %v", code, out)
+	}
+	if code, out := opsPost(t, base, "desk/2", putRequest("R-1", "N")); code != 200 {
+		t.Fatalf("an open request on N: %d %v", code, out)
+	}
+	code, out := opsPost(t, base, "planner/1", map[string]any{"cap": "stops", "op": "add_event", "args": map[string]any{"stop_id": "N",
+		"event": map[string]any{"on": "2026-11-01", "event": "retired"}}})
+	rule, _ := firstRule(out)
+	if code != 200 || len(refs(out)) != 1 || refs(out)[0] != "R-1 names N" || rule != "was retired on 2026-11-01" {
+		t.Fatalf("the retirement lands with the open request as its warning: %d %v", code, out)
+	}
+	code, out = opsPost(t, base, "desk/3", putRequest("R-2", "N"))
+	if rule, ok := firstRule(out); code != http.StatusUnprocessableEntity || !ok || rule != "was retired on 2026-11-01" {
+		t.Fatalf("a new open request on a stop retired when read is refused: %d %v", code, out)
+	}
+}
+
+// firstRule is the first reference's rule, when it has one.
+func firstRule(out map[string]any) (string, bool) {
+	list, _ := out["references"].([]any)
+	if len(list) == 0 {
+		return "", false
+	}
+	rule, ok := list[0].(map[string]any)["rule"].(string)
+	return rule, ok
+}

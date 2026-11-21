@@ -4,6 +4,10 @@
     "1": {
       "example_hash": "sha256:844ddc15bdebe324d7622c85e40c7e48f13dbfbde0b7e4cdf11edd2a1a575bfc",
       "schema_hash": "sha256:fa28bd7b17f9c59acdcfde170dfae4332f80538501704da8b55d03ff8fe748da"
+    },
+    "2": {
+      "example_hash": "sha256:c5271255dd8c0579d0a610e196acd69d854c5c565b34ae2c8488aafb8fa2359d",
+      "schema_hash": "sha256:5df033760d207e95cf9ba5b4bf129abe50a06d5e98e607e269e4b470222afcf0"
     }
   }
 }

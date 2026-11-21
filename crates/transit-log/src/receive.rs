@@ -41,6 +41,12 @@ pub struct Write {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub now: Option<BTreeMap<String, crate::Records>>,
+    /// The write's date in the agency's time zone, "YYYY-MM-DD", from the
+    /// host's clock: the date a reference rule reads a dated state on
+    /// (D-238). Absent: no rule that needs a date is judged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub today: Option<String>,
 }
 
 impl Write {

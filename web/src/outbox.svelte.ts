@@ -32,7 +32,7 @@ export const outbox = $state({
 });
 
 /// A reference a write left broken, as the server answers it.
-export type BrokenReference = { log: string; kind: string; id: string; field: string; target: string; names: string };
+export type BrokenReference = { log: string; kind: string; id: string; field: string; target: string; names: string; rule?: string };
 
 /// A write the server kept, with the references it left broken.
 export type Warned = { key: string; label: string; references: BrokenReference[] };
@@ -155,9 +155,10 @@ export function dismissWarning(key: string): void {
 }
 
 /// A broken reference in words: "Stop request R-1 names stop 6124, which
-/// isn't on record."
+/// isn't on record." A rule's reference ends with the module's words for
+/// the target's state (`rule`, D-238): "…, which was retired on 2026-10-01."
 export function referenceWarning(r: BrokenReference): string {
   const words = (kind: string) => kind.replaceAll("_", " ");
   const what = words(r.kind);
-  return `${what.charAt(0).toUpperCase()}${what.slice(1)} ${r.id} names ${words(r.target)} ${r.names}, which isn't on record.`;
+  return `${what.charAt(0).toUpperCase()}${what.slice(1)} ${r.id} names ${words(r.target)} ${r.names}, which ${r.rule ?? "isn't on record"}.`;
 }

@@ -706,6 +706,17 @@ whose target it changed. `store revert` lists the records that
 name a document it drops by hash (cap-log `naming`), so an operator
 sees which records still name a document that is no longer the head.
 
+A rule of the kinds at both ends judges a reference whose target is
+held (D-233). The owning library states which target states each
+referrer state needs, with the reason for each refusal, and a law
+covers every state. A rule reads a dated state on the write's date in
+the agency's time zone, which the host gives with the write
+(`today`). The stops log judges a request's stop: an open request needs
+a stop that is not retired on that date (transit-stops `request_rule`,
+D-238). A rule's refusal and warning have the shape of a missing
+target's, with `rule`, the end of the sentence a page shows ("… names
+stop B, which was retired on 2026-10-01").
+
 Compaction never breaks a reference (D-231). The tombstone compaction
 (D-57) skips a retired record that a held record of any log names
 (transit-log `named`), in any state of the referrer, since the
@@ -864,7 +875,7 @@ Every persisted kind, by what a version change does to it:
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
 | `work_rules` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
-| `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
+| `stop_requests` | transit-requests | authored | `kind`, `schema_version` (v2: `routes` are names the planner writes, not a reference; v1 comes forward unchanged) |
 | `service_alerts` | transit-alerts | authored | `kind`, `schema_version` (v2: `explains` names a trip instance; v1 comes forward unchanged) |
 | `alert_templates` | transit-alerts | authored | `kind`, `schema_version` |
 | `notes` | transit-notes | authored | `kind`, `schema_version` |

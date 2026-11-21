@@ -13,7 +13,7 @@ fn kinds() -> Vec<KindReferences> {
         {"store_kind": "stops", "log": "stops", "records": [{"kind": "stop", "collection": "stops"}],
          "references": [{"path": "/stops/*/*/replaces/*", "target": "stop"}]},
         {"store_kind": "stop_requests", "log": "stops", "records": [{"kind": "stop_request", "collection": "requests"}],
-         "references": [{"path": "/requests/*/stop", "target": "stop"}, {"path": "/requests/*/routes/*", "target": "network.route"}]},
+         "references": [{"path": "/requests/*/stop", "target": "stop"}, {"path": "/requests/*/served_by", "target": "network.route"}]},
         {"store_kind": "service_alerts", "log": "alerts", "records": [{"kind": "service_alert", "collection": "alerts"}], "references": []},
         {"store_kind": "notes", "log": "notes", "records": [{"kind": "note", "collection": "notes"}],
          "references": [{"path": "/notes/*/target[kind=alert]/id", "target": "service_alert"},
@@ -39,7 +39,7 @@ fn stops_fold() -> Records {
             "C": [{"on": "2026-02-01", "event": "planned", "replaces": ["B", "Z"]}]
         })),
         ("stop_request", json!({
-            "R-1": {"stop": "A", "routes": ["99"]},
+            "R-1": {"stop": "A", "served_by": "99"},
             "R-2": {"stop": "B"},
             "R-3": {"stop": "GONE"}
         })),
@@ -52,7 +52,7 @@ fn broken_of(folds: &[(&str, Records)]) -> Vec<Broken> {
 }
 
 fn b(log: &str, kind: &str, id: &str, field: &str, target: &str, names: &str) -> Broken {
-    Broken { log: log.into(), kind: kind.into(), id: id.into(), field: field.into(), target: target.into(), names: names.into(), entry: None }
+    Broken { log: log.into(), kind: kind.into(), id: id.into(), field: field.into(), target: target.into(), names: names.into(), entry: None, rule: None }
 }
 
 #[test]
@@ -280,6 +280,7 @@ fn the_receive_op_refuses_as_of_the_read_and_warns_as_of_now() {
         references: Some(kinds()),
         read: Some([("stops".to_string(), read)].into_iter().collect()),
         now: now.map(|n| [("stops".to_string(), n)].into_iter().collect()),
+        today: None,
     };
 
     let refused = transit_log::receive(&write(stops(&["A"]), None), &[request("R-1", "Z")], &hash, &canonical).unwrap();

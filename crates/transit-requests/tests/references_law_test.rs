@@ -13,7 +13,6 @@ fn every_reference_field_is_declared() {
         references(&schema),
         vec![
             Reference::new("/requests/*/attachments/*/hash", "attachment"),
-            Reference::new("/requests/*/routes/*", "network.route"),
             Reference::new("/requests/*/stop", "stop"),
             Reference::new("/requests/*/work_order/id", "external.work_order"),
         ]

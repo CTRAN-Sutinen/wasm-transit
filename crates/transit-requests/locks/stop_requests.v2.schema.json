@@ -1,0 +1,318 @@
+{
+  "$defs": {
+    "Attachment": {
+      "additionalProperties": true,
+      "description": "A photo or drawing a record carries (D-162): named by its content\nhash, never a URL — the deployment names the bucket, the server hands\nout the link, and only a signed-in person may read it.",
+      "properties": {
+        "caption": {
+          "description": "What it shows, in a few words (\"approaching\", \"the cross street\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hash": {
+          "description": "\"sha256:\" and the 64 hex digits of the file's bytes.",
+          "type": "string",
+          "x-references": "attachment"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "taken_on": {
+          "description": "The day it was taken.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its media type (\"image/jpeg\", \"application/pdf\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Locate": {
+      "additionalProperties": true,
+      "description": "A utility locate: its ticket, the day it was called in and by whom,\nand the utilities the locator calls.",
+      "properties": {
+        "called_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "called_on": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ticket": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "utilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "StopRequest": {
+      "additionalProperties": true,
+      "description": "One request for work at a stop: the worksheet, and the work order it\ntracks. Every field but the stop, the job, and the status is\noptional.",
+      "properties": {
+        "attachments": {
+          "description": "Its photos and the site drawing (D-162).",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          },
+          "type": "array"
+        },
+        "city": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completed_on": {
+          "description": "When the work was done, and by whom.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "county": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cross_street": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "direction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job": {
+          "description": "One of [`JOBS`].",
+          "type": "string"
+        },
+        "locate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Locate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The utility locate called in before digging."
+        },
+        "marked_by": {
+          "description": "How the spot is marked (one of [`MARKINGS`]), and a word on it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "marked_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offset_ft": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "parcel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "range": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested_by": {
+          "description": "Who asked for the work (a person, a team, a city), as written.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested_on": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "routes": {
+          "description": "The routes meant to serve the stop, and the direction of travel\n(one of [`DIRECTIONS`]) — a new stop's intent: no schedule\nserves it yet. The routes are names the planner writes, not a\nreference into the network: a route can be one no pick runs yet\n(D-234).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "section": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "side": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "One of [`STATUSES`].",
+          "type": "string"
+        },
+        "stop": {
+          "description": "The stop, by the stops document's lasting id.",
+          "type": "string",
+          "x-references": "stop"
+        },
+        "street": {
+          "description": "Where the work is: the street, the cross street (or address) the\noffset is measured from the center of, the offset in feet, and\nthe side of the street (one of [`SIDES`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "township": {
+          "description": "The public land survey: township, range, section; and the parcel\nnumber.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "work_order": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkOrder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The work order the work order system opened for it."
+        }
+      },
+      "required": [
+        "stop",
+        "job",
+        "status"
+      ],
+      "type": "object"
+    },
+    "StopRequestsKind": {
+      "const": "stop_requests"
+    },
+    "WorkOrder": {
+      "additionalProperties": true,
+      "description": "The work order a request tracks, as the work order system says:\nwhich system, its id there (the worksheet's Control #), a link, and\nits status as last read, and when — shown as given.",
+      "properties": {
+        "id": {
+          "default": "",
+          "type": "string",
+          "x-references": "external.work_order"
+        },
+        "read_on": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Every request, by its id.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/StopRequestsKind",
+      "default": "stop_requests",
+      "description": "The kind tag and version (D-115). A copy without a version reads\nas v2, since every v1 document is a v2 document; a tagged v1 is\nbrought forward by cap-migrate ([`version`])."
+    },
+    "requests": {
+      "additionalProperties": {
+        "$ref": "#/$defs/StopRequest"
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 2
+    }
+  },
+  "required": [
+    "requests"
+  ],
+  "title": "StopRequests",
+  "type": "object"
+}

@@ -31,8 +31,8 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The version this build reads and writes.
-pub const SCHEMA_VERSION: u32 = 1;
+pub mod version;
+pub use version::SCHEMA_VERSION;
 
 transit_version::kind_tag!(
     /// The stop requests document's kind tag: always `"stop_requests"`.
@@ -70,14 +70,15 @@ pub const MARKINGS: [&str; 4] = ["hub", "curb_mark", "stake", "other"];
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopRequests {
-    /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1.
+    /// The kind tag and version (D-115). A copy without a version reads
+    /// as v2, since every v1 document is a v2 document; a tagged v1 is
+    /// brought forward by cap-migrate ([`version`]).
     #[serde(default)]
     #[ts(type = "\"stop_requests\"")]
     pub kind: StopRequestsKind,
     #[serde(default)]
     #[ts(type = "number")]
-    pub schema_version: transit_version::Version<1>,
+    pub schema_version: transit_version::Version<2>,
     pub requests: BTreeMap<String, StopRequest>,
     /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
@@ -107,10 +108,11 @@ pub struct StopRequest {
     pub requested_on: Option<String>,
     /// The routes meant to serve the stop, and the direction of travel
     /// (one of [`DIRECTIONS`]) — a new stop's intent: no schedule
-    /// serves it yet.
+    /// serves it yet. The routes are names the planner writes, not a
+    /// reference into the network: a route can be one no pick runs yet
+    /// (D-234).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
-    #[schemars(extend("x-references" = "network.route"))]
     pub routes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

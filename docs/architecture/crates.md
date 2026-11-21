@@ -464,7 +464,9 @@ The runs cut itself is open work (`docs/units/runs-layer.md`). The crate is pure
 
 ## transit-stops
 
-The stops document, beside the plans (D-147, D-153). It depends on transit-network, for the join in `stop_record`. cap-stops is the seam. A stop's life is its own, managed apart from the picks, which only read it (D-157).
+The stops document, beside the plans (D-147, D-153). It depends on transit-network, for the join in `stop_record`, and on transit-requests, for `request_rule`. cap-stops is the seam. A stop's life is its own, managed apart from the picks, which only read it (D-157).
+
+**The rule of a request's reference to its stop** (`request_rule`; D-233, D-238). An open request (drafted, submitted, ordered) needs a stop that is not retired on the write's date. A completed or cancelled request accepts any state. The request that a stop's `retired` event names is exempt, since the retirement is its outcome. `allows` names every state of the stop, so a new state does not compile until the rule judges it, and a law covers every request status. cap-stops' `receive` judges it: refused as of what the writer read, warned as of now.
 
 **A pick reads the stops document** (`stop_record`; D-157, D-228). The join of a network and the stops document is in this crate, because it depends on the network.
 - `pick_period` is the period a pick governs: from its own date until the next published pick that is not retired (transit-plans `period_in`). `read_pick` is `read_records` on the pick's first date and `visit_warnings` over that period. `read_records` takes each stop's record as the document has it on a date.
@@ -532,7 +534,7 @@ The stop requests document (D-159). It holds the planning team's requests for wo
 - the status: drafted, submitted, ordered (the work order opened), completed, or cancelled (the tombstone);
 - the worksheet's fields:
   - who asked and when;
-  - the intended routes and direction;
+  - the intended routes and direction (the routes are names the planner writes, not a reference into the network: a new stop can be for a route that no pick runs yet);
   - the street;
   - the cross street that the offset is measured from, the offset, and the side;
   - city, county, township, range, section, and parcel;
@@ -551,9 +553,9 @@ The stop requests document (D-159). It holds the planning team's requests for wo
 - `list` gives the work across every stop, at the statuses and of the jobs asked.
 - `counts` gives every request by status.
 
-The document is canonical as it stands (requests by id). The crate keeps what it does not know.
+The document is canonical as it stands (requests by id). The crate keeps what it does not know. It is version 2 (D-234). The chain from version 1 lives here (`version`): every v1 document is a v2 document. `version::record_forward` brings a stored log record forward.
 
-A stop's event names the request that it carries out (transit-stops `request`). Nothing checks this across the two documents. Both are kept in the stops log, so completing a request and adding its stop's event can be one entry (D-197).
+A stop's event names the request that it carries out (transit-stops `request`), and a request names its stop. The existence check judges both references ([FORMATS.md](../FORMATS.md), "References"). Both documents are kept in the stops log, so completing a request and adding its stop's event can be one entry (D-197).
 
 ## transit-notes
 

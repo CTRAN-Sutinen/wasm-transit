@@ -30,11 +30,14 @@
 //!
 //! The stops document sits beside the plans: every plan refers to a
 //! stop by its id, and a fork never copies it (D-147). This crate
-//! depends on transit-network only for [`stop_record`], the join of a
+//! depends on transit-requests only for [`request_rule`], the rule of a
+//! request's reference to its stop, and on transit-network only for
+//! [`stop_record`], the join of a
 //! network and this document. The network does not depend on this crate.
 
 #![forbid(unsafe_code)]
 
+pub mod request_rule;
 pub mod stop_record;
 
 use std::collections::{BTreeMap, BTreeSet};

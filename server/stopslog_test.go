@@ -307,3 +307,22 @@ func TestAGapInTheStopsLogStopsWritesUntilItsCauseIsNamed(t *testing.T) {
 		t.Fatalf("writes go on: %d %v", code, out)
 	}
 }
+
+// A store whose old stop_requests pointer holds a v1 document seeds the
+// stops log with it brought forward: the head the log serves is v2,
+// and the request reads as it was written (D-234).
+func TestAnOldV1RequestsPointerSeedsTheLogAtTheCurrentVersion(t *testing.T) {
+	bucket := store.NewMemory()
+	v1 := []byte(`{"kind":"stop_requests","schema_version":1,"requests":{"R-1":{"stop":"6124","job":"repair_improve","status":"submitted","routes":["37"]}}}`)
+	if _, _, err := store.New(bucket).CAS("stop_requests", "", v1, store.Envelope{Kind: "stop_requests", SchemaVersion: 1, ProducedBy: "cap-requests@old"}, "", "planner", 1); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := newStopsLogServer(t, bucket)
+	_, body, found, err := s.keptHead("stop_requests")
+	if err != nil || !found {
+		t.Fatalf("the log serves a stop requests head: %v %v", found, err)
+	}
+	if !strings.Contains(string(body), `"schema_version":2`) || !strings.Contains(string(body), `"routes":["37"]`) {
+		t.Fatalf("the head is the v1 document brought forward: %s", body)
+	}
+}

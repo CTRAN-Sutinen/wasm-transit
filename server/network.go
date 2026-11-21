@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rustwasm/server/store"
@@ -198,6 +199,9 @@ type feedSource struct {
 
 	mu   sync.Mutex
 	feed *loadedFeed
+	// zone is the time zone of the feed last loaded, read without the
+	// lock: a write that Load's onImport makes reads it (writeDate).
+	zone atomic.Value
 }
 
 // fileFeed is a feed read from a local file (dev, tests).
@@ -250,6 +254,7 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 		boundaryHash: store.HashOf(parts.Boundary),
 		timezone:     parts.Timezone,
 	}
+	f.zone.Store(parts.Timezone)
 	how := "imported"
 	if stored {
 		how = "read from the store"

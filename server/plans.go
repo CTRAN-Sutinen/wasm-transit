@@ -230,6 +230,33 @@ func (s *server) today() string {
 	return now.Format("2006-01-02")
 }
 
+// writeDate is the date a log write carries for its reference rules
+// (D-238): today() in the zone of the feed already loaded, else of the
+// last published pick. It never loads the feed, because the feed's own
+// import writes the stops log while Load holds its lock.
+func (s *server) writeDate() string {
+	if s.fixedToday != "" {
+		return s.fixedToday
+	}
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	zone := ""
+	if s.feeder != nil {
+		zone, _ = s.feeder.zone.Load().(string)
+	}
+	if zone == "" {
+		s.zoneMu.Lock()
+		zone = s.zone
+		s.zoneMu.Unlock()
+	}
+	if loc, err := time.LoadLocation(zone); zone != "" && err == nil {
+		now = now.In(loc)
+	}
+	return now.Format("2006-01-02")
+}
+
 // agencyZone is the zone today() counts in: the published feed's, else
 // the last published pick's; nil when neither is known or the name is
 // not a zone the host's tz database has.

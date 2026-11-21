@@ -191,7 +191,7 @@ fn the_stops_keep_what_they_do_not_know() {
 
 #[test]
 fn the_stop_requests_keep_what_they_do_not_know() {
-    let doc: transit_requests::StopRequests = typed(json!({"kind": "stop_requests", "schema_version": 1, "requests": {
+    let doc: transit_requests::StopRequests = typed(json!({"kind": "stop_requests", "schema_version": 2, "requests": {
         "R-1": {"stop": "7001", "job": "new", "status": "ordered", "requested_by": "Planning", "requested_on": "2027-01-04",
             "locate": {"ticket": "26123456", "called_on": "2027-01-06", "utilities": ["NW Natural"]},
             "work_order": {"system": "Maintenance", "id": "WO-1", "status": "open", "read_on": "2027-01-07"}}}}));

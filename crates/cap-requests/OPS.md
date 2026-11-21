@@ -125,4 +125,4 @@ What does the stops log hold of this document? `log_records` answers the stop re
 
 ## log_document
 
-What is the stop requests document that the stops log holds? `log_document` assembles the document from the log's `stop_request` records and its own record `document` (each `{version, value}`, by request id), registers it, and answers its hash (`document_hash`) and its canonical `document`, which a host serves under that hash. A record in another version is refused, naming both versions.
+What is the stop requests document that the stops log holds? `log_document` assembles the document from the log's `stop_request` records and its own record `document` (each `{version, value}`, by request id), registers it, and answers its hash (`document_hash`) and its canonical `document`, which a host serves under that hash. The log keeps each record in the version it was written in, so an older record comes forward first. A record newer than this build is refused, naming both versions.

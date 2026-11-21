@@ -564,6 +564,9 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 			intent["claimed_at_ms"] = w.claimedAtMs
 		}
 		write := map[string]any{"header": map[string]any{"log": f.name, "seq": f.seq + 1, "writer": w.writer, "at_ms": time.Now().UnixMilli(), "intent": intent}}
+		// The write's date in the agency's zone: the date a reference
+		// rule reads a dated state on (D-238).
+		write["today"] = s.writeDate()
 		if len(f.base) > 0 {
 			write["checkpoint"] = f.base
 		}
@@ -919,6 +922,14 @@ func (s *server) seedKept(files map[string]seedFile) {
 		}
 		if len(heads) == 0 {
 			continue
+		}
+		// An older head comes forward through cap-migrate before its
+		// load, which reads the current version only. A kind with no
+		// migration chain is kept as it is: its load answers for it.
+		for kind, doc := range heads {
+			if fwd, migrated, err := s.forward(kind, doc); err == nil && migrated {
+				heads[kind] = fwd
+			}
 		}
 		op, _ := json.Marshal(map[string]any{"cap": l.receive, "op": "migrate"})
 		w := logWrite{writer: writer, op: "migrate", note: strings.Join(note, ", ")}

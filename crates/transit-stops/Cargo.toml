@@ -11,6 +11,8 @@ transit-version = { path = "../transit-version" }
 transit-network = { path = "../transit-network" }
 # The pick's period: which picks bound it.
 transit-plans = { path = "../transit-plans" }
+# The rule of a stop request's reference to its stop (request_rule).
+transit-requests = { path = "../transit-requests" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ts-rs = { workspace = true }

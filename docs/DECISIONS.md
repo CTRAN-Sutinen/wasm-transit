@@ -283,7 +283,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-235 | Where do the worked examples' fixtures live, and what may depend on them? | decided | nothing |
 | D-236 | Which modules do the test runners build? | decided; built | nothing |
 | D-237 | Where do a pick's checks run? | decided; built | nothing |
-| D-238 | On which date must an open stop request's stop not be retired? | unanswered | kind-registration item 6 |
+| D-238 | On which date must an open stop request's stop not be retired? | decided | nothing |
 
 ## The trip model
 
@@ -5034,8 +5034,10 @@ as of the seqs its writer read (`read_seq`, `read_seqs`) and refused
 for a reference added to a missing record, and warned as of now. Also
 built: cap-log `references` and `naming`, `store verify`'s and `store
 revert`'s reports, and the unjudged record of a newer version. A log
-with no entries is not judged. The rules, and the client's module for
-a rule a page runs, are planned (`docs/units/kind-registration.md`,
+with no entries is not judged. The first rule is built: a stop
+request's stop, judged in the stops log's receive op on the write's
+date (D-238). The other kinds' rules, and the client's module for a
+rule a page runs, are planned (`docs/units/kind-registration.md`,
 item 6).
 Context:
 - A write carries the seq it read for each log it depends on. This is
@@ -5094,7 +5096,16 @@ dismissed").
 Blocks: nothing.
 
 ### D-234 — Over which service dates does an undated record's reference resolve?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-21 — no undated record names the network, so the
+question does not arise. The user, asked why a stop request names a
+network at all, agreed that it should not: a request's `routes` are
+names the planner writes from the worksheet, the intent for a stop
+that no schedule serves yet, and can name a route no pick runs yet.
+They stop being a reference (stop requests v2, a step that changes no
+byte). A note's network target is a trip instance, which carries its
+own service date. A report of open requests whose routes the next
+pick drops can be added on the stops page later; it is not a check.
 Context: a network reference resolves in the pick in force on the
 referrer's service dates (D-232). A stop request's `routes` and a
 note have no service dates, so they need a rule.
@@ -5104,8 +5115,13 @@ Options:
   what a planner needs to hear.
 - The pick in force today only.
 - Each pick in force while the record was live.
-Blocks: the network references of undated records
-(`docs/units/kind-registration.md`, item 6).
+Pinned by: `crates/transit-requests/tests/references_law_test.rs`
+(no `routes` declaration), `requests_law_test.rs`
+(`a_v1_document_is_a_v2_document`), cap-requests'
+`the_document_and_its_log_records_round_trip`, and
+`server/stopslog_test.go`
+(`TestAnOldV1RequestsPointerSeedsTheLogAtTheCurrentVersion`).
+Blocks: nothing.
 
 ### D-235 — Where do the worked examples' fixtures live, and what may depend on them?
 State: Decided.
@@ -5179,7 +5195,12 @@ laws); the server's plans tests (`just test`).
 Blocks: nothing.
 
 ### D-238 — On which date must an open stop request's stop not be retired?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-21 — the stop's status on the write's date, from the
+entry's clock in the agency's time zone. The user took the
+recommended option ("A"). Completed and cancelled requests accept a
+stop in any state, and the request that the stop's `retired` event
+names is exempt.
 Context: the first reference rule (kind-registration item 6) is stop
 request to stop. A retired stop's life has ended: the stops document
 refuses every event after `retired`, so no work can be done at it. The
@@ -5199,4 +5220,15 @@ Options:
   next write touches the request.
 - Any `retired` event, whatever its date. A request on a stop with a
   retirement planned for next year is refused today.
-Blocks: kind-registration item 6 (`docs/units/kind-registration.md`).
+Pinned by: `crates/transit-stops/tests/request_rule_law_test.rs`;
+cap-stops' dispatch tests (`an_open_request_on_a_stop_retired_when_read_is_refused`,
+`a_stop_retired_after_the_writer_read_it_lands_with_a_warning`,
+`retiring_a_stop_that_an_open_request_names_warns_the_planner`,
+`a_request_already_broken_can_still_be_changed_or_cancelled`);
+`server/references_test.go`
+(`TestRetiringAStopWarnsOfTheOpenRequestThatNamesIt`); e2e `ui-stops`
+("a request on a stop retired after the page read it is saved with the
+retirement as its warning").
+Why: `docs/FORMATS.md`, "References"; `docs/architecture/crates.md`,
+transit-stops.
+Blocks: nothing.

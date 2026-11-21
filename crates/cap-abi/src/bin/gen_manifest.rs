@@ -405,12 +405,14 @@ const MODULES: &[ModuleSpec] = &[
             ("operator_edits", &[1, transit_sync::SCHEMA_VERSION]),
             ("watchlist", &[1, 2]),
             ("service_alerts", &[1, transit_alerts::ALERTS_VERSION]),
+            ("stop_requests", &[1, transit_requests::SCHEMA_VERSION]),
         ],
         migrates: &[
             ("network", &[(1, 2)]),
             ("operator_edits", &[(1, 2)]),
             ("watchlist", &[(1, 2)]),
             ("service_alerts", &[(1, 2)]),
+            ("stop_requests", &[(1, 2)]),
         ],
         // Its purpose and per-op agent context: crates/cap-migrate/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -904,6 +906,12 @@ fn migrate_alerts(doc: serde_json::Value, _from: u32) -> Result<serde_json::Valu
     transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION).map(|(doc, _)| doc)
 }
 
+/// Bring a stop requests document of an older version forward
+/// (transit-requests' chain).
+fn migrate_requests(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_requests::version::migrate_to(doc, transit_requests::SCHEMA_VERSION)
+}
+
 /// Bring an edit document of an older version forward (transit-sync's chain).
 fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_sync::version::migrate_to(doc, transit_sync::SCHEMA_VERSION).map(|(doc, _)| doc)
@@ -976,7 +984,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             None,
         ),
         kind::<transit_stops::Stops>(Some(value(&fixture_stops())), None),
-        kind::<transit_requests::StopRequests>(Some(value(&fixture_requests())), None),
+        kind::<transit_requests::StopRequests>(Some(value(&fixture_requests())), Some(migrate_requests)),
         kind::<transit_alerts::ServiceAlerts>(Some(value(&fixture_alerts())), Some(migrate_alerts)),
         kind::<transit_alerts::AlertTemplates>(Some(value(&fixture_templates())), None),
         kind::<transit_notes::Notes>(Some(value(&fixture_notes())), None),
@@ -1583,7 +1591,7 @@ fn receive_write(log: &str, writer: &str, at_ms: u64) -> transit_log::Write {
         module: format!("cap-{log}@sha256:…"),
         intent: transit_log::Intent { op: format!("POST /logs/{log}"), key: Some("device-1/1".into()), ..Default::default() },
     };
-    transit_log::Write { checkpoint: None, header, unread: vec![], references: None, read: None, now: None }
+    transit_log::Write { checkpoint: None, header, unread: vec![], references: None, read: None, now: None, today: None }
 }
 
 /// A receive op's answer, as its module writes it.
@@ -1638,7 +1646,7 @@ fn fixture_templates() -> transit_alerts::AlertTemplates {
 /// a repair at 6124 drafted.
 fn fixture_requests() -> transit_requests::StopRequests {
     serde_json::from_value(serde_json::json!({
-        "kind": "stop_requests", "schema_version": 1,
+        "kind": "stop_requests", "schema_version": 2,
         "requests": {
             "R-2027-014": {
                 "stop": "7001", "job": "new", "status": "ordered",

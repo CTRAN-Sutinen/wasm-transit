@@ -315,3 +315,26 @@ fn the_work_order_call_says_what_to_send_for_a_request() {
     assert!(held.work_order_call("r9", "open").is_err());
     assert!(held.work_order_call("r1", "close").is_err());
 }
+
+/// v1 → v2 (D-234): every v1 document is a v2 document, so the step
+/// changes only the version; a stored v1 record comes forward unchanged;
+/// nothing comes back from a version newer than this build.
+#[test]
+fn a_v1_document_is_a_v2_document() {
+    use transit_requests::version;
+    let v1 = serde_json::json!({"kind": "stop_requests", "schema_version": 1, "requests": {"R-1": {"stop": "A", "job": "new", "status": "drafted", "routes": ["99"]}}});
+    let v2 = version::forward(v1.clone()).unwrap();
+    let mut want = v1.clone();
+    want["schema_version"] = 2.into();
+    assert_eq!(v2, want);
+    let unversioned = serde_json::json!({"requests": {}});
+    assert_eq!(version::schema_version_of(&unversioned), Ok(1), "a copy without a version is v1");
+    assert_eq!(version::forward(v2.clone()).unwrap(), v2, "the current version is as it is");
+    let doc: transit_requests::StopRequests = serde_json::from_value(v2).unwrap();
+    assert_eq!(doc.requests["R-1"].routes, vec!["99".to_string()]);
+    let record = v1["requests"]["R-1"].clone();
+    assert_eq!(version::record_forward("stop_request", record.clone(), 1), Ok(record.clone()));
+    assert_eq!(version::record_forward("stop_requests", serde_json::json!({"kind": "stop_requests", "schema_version": 1}), 1),
+        Ok(serde_json::json!({"kind": "stop_requests", "schema_version": 2})));
+    assert!(version::record_forward("stop_request", record, 3).is_err());
+}

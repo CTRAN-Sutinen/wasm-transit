@@ -383,6 +383,7 @@ dependencies = [
  "serde_json",
  "transit-alerts",
  "transit-network",
+ "transit-requests",
  "transit-rider",
  "transit-sync",
  "ts-rs",
@@ -2256,6 +2257,7 @@ dependencies = [
  "sha2",
  "transit-network",
  "transit-plans",
+ "transit-requests",
  "transit-version",
  "ts-rs",
 ]

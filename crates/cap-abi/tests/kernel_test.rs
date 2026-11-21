@@ -160,9 +160,25 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     }));
     law::<transit_runs::WorkRules>(serde_json::json!({"schema_version": 1}));
     law::<transit_stops::Stops>(serde_json::json!({"stops": {}}));
-    law::<transit_requests::StopRequests>(serde_json::json!({"requests": {}}));
     law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
+}
+
+/// Stop requests are v2 (D-234): a tagged v1 is refused at the load,
+/// naming the migration; v2 reads, and so does an untagged copy, since
+/// every v1 document is a v2 document; a newer copy is refused naming
+/// both.
+#[test]
+fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
+    use transit_requests::StopRequests;
+    let err = cap_abi::parse_versioned::<StopRequests>(br#"{"kind":"stop_requests","schema_version":1,"requests":{}}"#).unwrap_err();
+    assert!(err.contains("stop_requests v1") && err.contains("migrate"), "{err}");
+    let untagged: StopRequests = cap_abi::parse_versioned(br#"{"requests":{}}"#).unwrap();
+    assert_eq!(serde_json::to_value(&untagged).unwrap()["schema_version"], 2);
+    let read: StopRequests = cap_abi::parse_versioned(br#"{"kind":"stop_requests","schema_version":2,"requests":{}}"#).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
+    let err = cap_abi::parse_versioned::<StopRequests>(br#"{"kind":"stop_requests","schema_version":3,"requests":{}}"#).unwrap_err();
+    assert!(err.contains("stop_requests v3") && err.contains("reads v2"), "{err}");
 }
 
 /// The watchlist gained its tags at v2 (docs/FORMATS.md, "Versions"): a

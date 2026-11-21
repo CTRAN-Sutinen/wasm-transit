@@ -494,7 +494,7 @@ fn header(seq: u64, key: Option<&str>) -> Value {
 }
 
 fn requests_sample() -> Value {
-    json!({ "kind": "stop_requests", "schema_version": 1, "requests": {
+    json!({ "kind": "stop_requests", "schema_version": 2, "requests": {
         "R-1": { "stop": "6124", "job": "repair_improve", "status": "submitted" }
     } })
 }
@@ -599,4 +599,105 @@ fn receive_migrate_records_the_heads_as_they_are_and_a_feed_needs_a_stops_docume
     let nothing = ok(json!({ "op": "receive", "write": { "header": header(1, None) },
         "ops": [{"cap": "stops", "op": "import_events", "args": {"network_hash": net, "feed": "sha256:feed"}}] }));
     assert!(nothing.get("entry").is_none() && nothing.get("failed").is_none(), "{nothing}");
+}
+
+// ---------------------------------------------------------------------
+// the stop rule of a request (D-233, D-238)
+// ---------------------------------------------------------------------
+
+/// A stops document with stop B, in service, and retired on `retired`
+/// when given.
+fn stops_with_b(retired: Option<&str>) -> Value {
+    let mut b = vec![json!({"on": "2020-01-01", "event": "in_service", "lat": 45.6, "lon": -122.6, "name": "B"})];
+    if let Some(on) = retired {
+        b.push(json!({"on": on, "event": "retired"}));
+    }
+    let mut doc = sample();
+    doc["stops"]["B"] = Value::Array(b);
+    doc
+}
+
+/// The stops log's records of a stops document, as a fold holds them.
+fn stop_records(stops: &Value) -> Value {
+    let hash = ok(json!({"op": "load_stops", "stops": stops}))["stops_hash"].clone();
+    let next = ok(json!({"op": "log_records", "stops_hash": hash}))["next"].clone();
+    let mut out = serde_json::Map::new();
+    for k in next.as_array().unwrap() {
+        let by_id: serde_json::Map<String, Value> =
+            k["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": k["version"], "value": v}))).collect();
+        out.insert(k["kind"].as_str().unwrap().into(), Value::Object(by_id));
+    }
+    Value::Object(out)
+}
+
+fn put(id: &str, stop: &str, status: &str) -> Value {
+    json!({"cap": "requests", "op": "put", "args": {"id": id, "request": {"stop": stop, "job": "repair_improve", "status": status}}})
+}
+
+/// A write as of the stops its writer read, on 2026-11-21, over the heads
+/// `stops` and `requests`.
+fn rule_write(read: &Value, stops: &Value, requests: &Value, ops: Value) -> Value {
+    let stops = ok(json!({"op": "load_stops", "stops": stops}))["stops_hash"].clone();
+    let requests = ok(json!({"op": "load_stop_requests", "requests": requests}))["requests_hash"].clone();
+    let mut h = header(1, None);
+    h["at_ms"] = json!(1_795_000_000_000u64);
+    ok(json!({ "op": "receive", "heads": {"stops": stops, "stop_requests": requests},
+        "write": { "header": h, "read": {"stops": stop_records(read)}, "today": "2026-11-21" }, "ops": ops }))
+}
+
+fn rules(list: &Value) -> Vec<(String, String)> {
+    list.as_array().map(|l| l.iter().filter(|b| b["rule"].is_string()).map(|b| (b["id"].as_str().unwrap().into(), b["names"].as_str().unwrap().into())).collect()).unwrap_or_default()
+}
+
+#[test]
+fn an_open_request_on_a_stop_retired_when_read_is_refused() {
+    let retired = stops_with_b(Some("2026-10-01"));
+    let got = rule_write(&retired, &retired, &requests_sample(), json!([put("R-9", "B", "submitted")]));
+    assert!(got["entry"].is_null(), "refused: {got}");
+    assert_eq!(rules(&got["broken"]), vec![("R-9".to_string(), "B".to_string())], "{got}");
+    assert!(got["broken"][0]["rule"].as_str().unwrap().contains("was retired on 2026-10-01"), "{got}");
+    // Completed work on a retired stop is history.
+    let done = json!({"cap": "requests", "op": "put", "args": {"id": "R-9", "request": {"stop": "B", "job": "repair_improve", "status": "cancelled"}}});
+    assert!(rule_write(&retired, &retired, &requests_sample(), json!([done]))["entry"].is_string());
+    // A retirement dated after the write's date breaks nothing yet.
+    let later = stops_with_b(Some("2027-01-01"));
+    let got = rule_write(&later, &later, &requests_sample(), json!([put("R-9", "B", "submitted")]));
+    assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "{got}");
+}
+
+#[test]
+fn a_stop_retired_after_the_writer_read_it_lands_with_a_warning() {
+    let got = rule_write(&stops_with_b(None), &stops_with_b(Some("2026-10-01")), &requests_sample(), json!([put("R-9", "B", "submitted")]));
+    assert!(got["entry"].is_string(), "the writer saw B in service: {got}");
+    assert_eq!(rules(&got["references"]), vec![("R-9".to_string(), "B".to_string())], "{got}");
+    assert_eq!(got["references"][0]["entry"]["seq"], 1, "{got}");
+}
+
+#[test]
+fn retiring_a_stop_that_an_open_request_names_warns_the_planner() {
+    // R-1 (requests_sample) is a submitted request on 6124.
+    let retire = json!({"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": {"on": "2026-11-01", "event": "retired"}}});
+    let mut stops = sample();
+    stops["stops"]["6124"] = json!([{"on": "2004-09-01", "event": "in_service", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99"}]);
+    let got = rule_write(&stops, &stops, &requests_sample(), json!([retire]));
+    assert!(got["entry"].is_string(), "a retirement is never refused for a request: {got}");
+    assert_eq!(rules(&got["references"]), vec![("R-1".to_string(), "6124".to_string())], "{got}");
+    // The request the retirement names is its outcome: no warning.
+    let by_r1 = json!({"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": {"on": "2026-11-01", "event": "retired", "request": "R-1"}}});
+    let got = rule_write(&stops, &stops, &requests_sample(), json!([by_r1]));
+    assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "{got}");
+}
+
+#[test]
+fn a_request_already_broken_can_still_be_changed_or_cancelled() {
+    let retired = stops_with_b(Some("2026-10-01"));
+    let mut held = requests_sample();
+    held["requests"]["R-OLD"] = json!({"stop": "B", "job": "repair_improve", "status": "submitted"});
+    let mut noted = put("R-OLD", "B", "submitted");
+    noted["args"]["request"]["note"] = json!("still waiting");
+    let got = rule_write(&retired, &retired, &held, json!([noted]));
+    assert!(got["entry"].is_string(), "R-OLD was broken before the write: {got}");
+    assert_eq!(rules(&got["references"]), vec![("R-OLD".to_string(), "B".to_string())], "still warned: {got}");
+    let got = rule_write(&retired, &retired, &held, json!([put("R-OLD", "B", "cancelled")]));
+    assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "cancelled: {got}");
 }

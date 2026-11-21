@@ -6485,7 +6485,7 @@
       },
       "BrokenReferences": {
         "type": "array",
-        "description": "The broken references the write leaves, as of now (D-233): those it wrote broken, and those whose target it changed. Each names the referring record, its field (a JSON pointer inside the record), the declared target, the id it names, and the entry. A warning for a person: the write landed. Absent when there are none.",
+        "description": "The broken references the write leaves, as of now (D-233): those it wrote broken, and those whose target it changed. Each names the referring record, its field (a JSON pointer inside the record), the declared target, the id it names, and the entry. A reference whose target is held, but in a state a rule does not accept, says why in `rule` (D-238). A warning for a person: the write landed. Absent when there are none.",
         "items": {
           "type": "object",
           "properties": {
@@ -6506,6 +6506,10 @@
             },
             "names": {
               "type": "string"
+            },
+            "rule": {
+              "type": "string",
+              "description": "Why the target's state breaks a rule of the kinds at both ends, as the end of a sentence: \"which \" + this (\"was retired on 2026-10-01\"). Absent: the target is missing."
             },
             "entry": {
               "type": "object",

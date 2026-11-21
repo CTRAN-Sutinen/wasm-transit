@@ -671,6 +671,14 @@ Its HTTP surface:
     record, its field, the target, the id it names, and the entry. A
     revert (`POST /logs/<log>/revert`) answers the same, through cap-log
     `references`. A check that cannot read a log refuses nothing.
+  - Each write also carries its date in the agency's time zone
+    (`write.today`, `writeDate`), for the rules that read a dated state
+    (D-238): the stops log's receive op judges each request's stop by
+    its status on that date. `writeDate` reads the zone of the feed
+    already loaded and never loads the feed, because the feed's own
+    import writes the stops log while the feed's lock is held. A rule's
+    refusal and its warning have the same shape as a missing target's,
+    with `rule`, the reason in words.
   - The writes the server makes itself take the same call with no
     write rule: the feed's differences (`stops import_events`, over the
     feed's network, which the server registers first) and the plans'

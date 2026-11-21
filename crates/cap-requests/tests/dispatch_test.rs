@@ -19,7 +19,7 @@ fn ok(request: Value) -> Value {
 
 fn sample() -> Value {
     json!({
-        "kind": "stop_requests", "schema_version": 1,
+        "kind": "stop_requests", "schema_version": 2,
         "requests": {
             "R-1": { "stop": "N1", "job": "new", "status": "submitted", "requested_on": "2027-01-04", "routes": ["37"], "direction": "eastbound" },
             "R-2": { "stop": "6124", "job": "repair_improve", "status": "drafted" }
@@ -151,11 +151,19 @@ fn the_document_and_its_log_records_round_trip() {
     assert_eq!(records["kind"], "stop_request");
     assert_eq!(records["records"].as_object().unwrap().len(), 2);
     assert_eq!(next[1]["kind"], "stop_requests");
-    let held: serde_json::Map<String, Value> =
-        records["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": 1, "value": v}))).collect();
-    let back = ok(json!({ "op": "log_document", "records": held, "document": {"version": 1, "value": next[1]["records"]["document"]} }));
+    let held = |version: u64| -> serde_json::Map<String, Value> {
+        records["records"].as_object().unwrap().iter().map(|(id, v)| (id.clone(), json!({"version": version, "value": v}))).collect()
+    };
+    let own = next[1]["records"]["document"].clone();
+    let back = ok(json!({ "op": "log_document", "records": held(2), "document": {"version": 2, "value": own} }));
     assert_eq!(back["document_hash"], v["document_hash"]);
     assert_eq!(back["document"], v["document"]);
+    // A log written before v2 keeps its records at v1: they come forward
+    // to the same document.
+    let mut own_v1 = own.clone();
+    own_v1["schema_version"] = json!(1);
+    let old = ok(json!({ "op": "log_document", "records": held(1), "document": {"version": 1, "value": own_v1} }));
+    assert_eq!(old["document_hash"], v["document_hash"]);
 }
 
 /// The call to the work order system is an op's answer (D-228): the

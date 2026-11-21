@@ -120,6 +120,13 @@ pub struct Broken {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub entry: Option<EntryRef>,
+    /// Why, when the target is held but a rule of the kinds at both ends
+    /// does not accept its state (D-233): the end of the sentence a page
+    /// shows, "… names stop B, which " + this ("was retired on
+    /// 2026-10-01"). Absent: the target is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rule: Option<String>,
 }
 
 /// An entry of a log, by its seq.
@@ -228,7 +235,7 @@ pub fn broken(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> Ve
                         if held.is_some_and(|h| h.contains_key(names.as_str())) {
                             continue;
                         }
-                        out.push(Broken { log: log.clone(), kind: r.kind.clone(), id: id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None });
+                        out.push(Broken { log: log.clone(), kind: r.kind.clone(), id: id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None, rule: None });
                     }
                 }
             }
@@ -294,7 +301,7 @@ pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, befo
                             },
                         };
                         if !exists {
-                            out.push(Broken { log: log.to_string(), kind: c.kind.clone(), id: c.id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None });
+                            out.push(Broken { log: log.to_string(), kind: c.kind.clone(), id: c.id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None, rule: None });
                         }
                     }
                 }

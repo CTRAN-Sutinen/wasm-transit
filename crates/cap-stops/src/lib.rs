@@ -743,7 +743,9 @@ fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result
             if from != heads.requests.clone().unwrap_or_default() {
                 return Ok(Some(transit_log::Received::moved(heads.requests.clone())));
             }
-            let (doc, unknown) = cap_abi::read_base::<StopRequests>(requests)?;
+            // An older document comes forward first (transit-requests'
+            // chain), as the library reads it.
+            let (doc, unknown) = cap_abi::read_base::<StopRequests>(transit_requests::version::forward(requests)?)?;
             heads.unknown_fields.extend(unknown);
             doc
         }
@@ -812,12 +814,105 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         next.extend(transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)?);
         written.insert("stop_requests".to_string(), now);
     }
+    // The rule of each request's reference to its stop (D-233, D-238):
+    // refused as of what the writer read, warned as of now.
+    let after_stops = written.get("stops").cloned().or_else(|| heads.stops.clone());
+    let rules = judge_requests(&write, given.get("stops"), given.get("stop_requests"), after_stops.as_ref(), heads.requests.as_ref())?;
+    if !rules.refused.is_empty() {
+        return answer(transit_log::Received { broken: rules.refused, ..Default::default() });
+    }
     let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    if received.entry.is_some() {
+        received.references.extend(rules.warned);
+        received.references.sort();
+    }
     received.heads = written;
     heads.unknown_fields.sort();
     heads.unknown_fields.dedup();
     received.unknown_fields = heads.unknown_fields;
     answer(received)
+}
+
+/// The requests a write breaks the stop rule for
+/// (`transit_stops::request_rule`): refused, and warned.
+#[derive(Default)]
+struct Judged {
+    refused: Vec<transit_log::Broken>,
+    warned: Vec<transit_log::Broken>,
+}
+
+/// The stop rule over a write (D-233, D-238), on the write's date
+/// (`write.today`; absent: not judged). Judged as of the read: each
+/// request the write changes, against the stops the writer read
+/// (`write.read`) with the write's own stop changes, refused unless it
+/// was already broken before the write, so a person can still change or
+/// cancel it. Judged as of now: each request the write changes and each
+/// request on a stop the write changes, against the heads after the
+/// write, warned.
+fn judge_requests(
+    write: &transit_log::Write,
+    stops_before: Option<&String>,
+    requests_before: Option<&String>,
+    stops_after: Option<&String>,
+    requests_after: Option<&String>,
+) -> Result<Judged, String> {
+    use transit_stops::request_rule::{request_rule, RuleBreak};
+    let mut out = Judged::default();
+    let (Some(on), Some(requests_after)) = (write.today.as_deref().and_then(|d| parse_date(d).ok()), requests_after) else { return Ok(out) };
+    let requests_after = STOP_REQUESTS.require(requests_after)?;
+    let requests_before = requests_before.map(|h| STOP_REQUESTS.require(h)).transpose()?;
+    let stops_before = stops_before.map(|h| STOPS.require(h)).transpose()?;
+    let stops_after = match stops_after {
+        Some(h) => Some(STOPS.require(h)?),
+        None => stops_before.clone(),
+    };
+    let empty = Stops::default();
+    let before = stops_before.as_deref().unwrap_or(&empty);
+    let after = stops_after.as_deref().unwrap_or(&empty);
+    let changed_stops: std::collections::BTreeSet<&String> = after.stops.iter().filter(|(id, events)| before.stops.get(*id) != Some(events)).map(|(id, _)| id).collect();
+    let held = |id: &str| requests_before.as_ref().and_then(|b| b.requests.get(id));
+    let changed: Vec<(&String, &StopRequest)> = requests_after.requests.iter().filter(|(id, r)| held(id) != Some(*r)).collect();
+    let broken = |b: RuleBreak, entry: Option<transit_log::EntryRef>| transit_log::Broken {
+        log: "stops".into(),
+        kind: "stop_request".into(),
+        id: b.request.clone(),
+        field: "/stop".into(),
+        target: "stop".into(),
+        names: b.stop.clone(),
+        entry,
+        rule: Some(b.reason()),
+    };
+    if let Some(mut seen) = write.read.as_ref().and_then(|r| r.get("stops")).and_then(stops_of) {
+        for id in &changed_stops {
+            seen.stops.insert((*id).clone(), after.stops[*id].clone());
+        }
+        for (id, r) in &changed {
+            if let Some(b) = request_rule(&seen, id, r, on) {
+                if !held(id).is_some_and(|old| request_rule(&seen, id, old, on).is_some()) {
+                    out.refused.push(broken(b, None));
+                }
+            }
+        }
+    }
+    let entry = transit_log::EntryRef { log: write.header.log.clone(), seq: write.header.seq };
+    for (id, r) in &requests_after.requests {
+        if changed.iter().any(|(c, _)| *c == id) || changed_stops.contains(&r.stop) {
+            if let Some(b) = request_rule(after, id, r, on) {
+                out.warned.push(broken(b, Some(entry.clone())));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The stops document from the stops log's records as a fold holds
+/// them. None when they do not make one in this build's version: a
+/// check that cannot judge refuses nothing.
+fn stops_of(records: &transit_log::Records) -> Option<Stops> {
+    let stops = records.get("stop").cloned().unwrap_or_default();
+    let own = records.get("stops").and_then(|m| m.get("document")).cloned();
+    let template = serde_json::json!({"kind": "stops", "schema_version": transit_stops::SCHEMA_VERSION});
+    transit_log::assemble(template, own.as_ref(), "stops", &stops, false).ok()
 }
 
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`

@@ -82,24 +82,19 @@ never a hook.
 
 6. **A rule for each reference.** Each owning module states which
    target states each referrer state needs, with a justification for
-   each refusal. Start with stop request to stop. A law checks that
-   every state of a target kind is covered by each rule that names the
-   kind. A rule over a lifecycle that is a Rust enum is a `match` with
-   no wildcard arm, so the compiler holds that law. The stop request's
-   `status` is a string so that a newer build's status still reads (a
-   write refuses one it does not know), so the rule gets a coverage
-   test over `STATUSES`. The rule's date is Blocked: D-238. The rules
-   for notes and
-   alerts land with `ui-disruptions.md`. The network references of
-   undated records are Blocked: D-234.
+   each refusal, and a law covers every state. The stop request's rule
+   for its stop is built (transit-stops `request_rule`, D-238). Its
+   pattern holds for the next: a `match` with no wildcard over the
+   target's states, a coverage law over a string lifecycle, the date in
+   `write.today`, and the reason in `rule`. The rules for notes and
+   alerts land with `ui-disruptions.md`.
 
    A rule is judged as the existence check is (D-233): as of the seqs
-   the writer read (`read_seq`, `read_seqs`), a failure refused, and as
-   of now, a failure warned. A rule that a page runs too is replayed
-   under the module the client names (the build's `produced_by`), from
-   the builds the server served within a window the operator sets; a
-   module the server never served is refused. The existence check needs
-   none of this, because it runs in cap-log, which no page links.
+   the writer read, a failure refused, and as of now, a failure warned.
+   A rule that a page runs too is replayed under the module the client
+   names (the build's `produced_by`), from the builds the server served
+   within a window the operator sets; a module the server never served
+   is refused. No page runs a rule yet.
 7. **The transitions.** An adoption warns about the live references
    it breaks (D-230). A promotion pins each loose reference, or
    is refused (rule C). A note's target pins to `(log, seq, entry hash)`.
@@ -126,7 +121,5 @@ working store (`storage-model.md`, step 2).
 - A Go round trip: a write that fails as of its read seq is refused, a
   write that fails only as of now is accepted with its warning, and
   `store verify` reports the broken reference with its entry.
-- The stops page shows the warning on a stop request whose stop was
-  retired after the planner read it, in an e2e spec.
 - A dogfood session on C-TRAN data: a planner retires a stop that an
   open request names, and the person who wrote the request sees it.

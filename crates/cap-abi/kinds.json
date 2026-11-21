@@ -246,6 +246,10 @@
         {
           "version": 1,
           "schema": "sha256:d29ab744bc183b11658f47008590e435da418f5fb373cda8d3ba43fd9ba66054"
+        },
+        {
+          "version": 2,
+          "schema": "sha256:6599c78d559cf2d2a64fcd44c5c1c5c004a1d4d4e99b7e4f5478ddc0afb6e1ae"
         }
       ],
       "write": "route",
@@ -278,10 +282,6 @@
         {
           "path": "/requests/*/attachments/*/hash",
           "target": "attachment"
-        },
-        {
-          "path": "/requests/*/routes/*",
-          "target": "network.route"
         },
         {
           "path": "/requests/*/stop",

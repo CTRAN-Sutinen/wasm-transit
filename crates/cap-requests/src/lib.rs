@@ -86,8 +86,8 @@ pub enum Request {
     LogRecords { requests_hash: String },
     /// The stop requests document assembled from the stops log's
     /// `stop_request` records, registered and answered as its canonical
-    /// bytes and hash. A record in another version is refused, naming
-    /// both.
+    /// bytes and hash. An older record comes forward (transit-requests'
+    /// `version::record_forward`); a newer one is refused, naming both.
     LogDocument {
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
         records: std::collections::BTreeMap<String, transit_log::Held>,
@@ -225,7 +225,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LogRecords { next: transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)? })
         }
         Request::LogDocument { records, document } => {
-            let template = serde_json::json!({"kind": "stop_requests", "schema_version": transit_requests::SCHEMA_VERSION});
+            // The stops log keeps each record in the version it was
+            // written in: bring each one forward.
+            let version = transit_requests::SCHEMA_VERSION;
+            let forward = |kind: &str, held: &transit_log::Held| -> Result<transit_log::Held, String> {
+                Ok(transit_log::Held { version, value: transit_requests::version::record_forward(kind, held.value.clone(), held.version)? })
+            };
+            let records = records.iter().map(|(id, held)| Ok((id.clone(), forward("stop_request", held)?))).collect::<Result<_, String>>()?;
+            let document = document.as_ref().map(|held| forward("stop_requests", held)).transpose()?;
+            let template = serde_json::json!({"kind": "stop_requests", "schema_version": version});
             let requests: StopRequests = transit_log::assemble(template, document.as_ref(), "requests", &records, false)?;
             let document = cap_abi::canonical_bytes(&requests)?;
             let (document_hash, _) = STOP_REQUESTS.register(requests)?;

@@ -10,7 +10,7 @@ Migration never destroys. The answer is a new document under its own hash, and t
 
 ## migrate
 
-Bring a document of a given kind to version `to`, through every step between. The kinds are `network`, `edit_records`, `watchlist`, and `service_alerts`. When `to` is omitted, it is the version this build reads.
+Bring a document of a given kind to version `to`, through every step between. The kinds are `network`, `edit_records`, `watchlist`, `service_alerts`, and `stop_requests`. When `to` is omitted, it is the version this build reads.
 
 The answer holds these parts:
 
