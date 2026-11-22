@@ -467,6 +467,11 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: an alerts or templates document registers on the kernel's load_service_alerts or load_alert_templates") }).to_string()
 }
 
+/// The worked examples, which the generator runs (no module build turns
+/// the feature on).
+#[cfg(feature = "examples")]
+pub mod examples;
+
 cap_abi::capability! {
     id: "alerts",
     json: dispatch_json,

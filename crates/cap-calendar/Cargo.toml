@@ -14,6 +14,13 @@ transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
 cap-abi = { path = "../cap-abi" }
+# The worked examples' fixtures, for the `examples` feature only (D-235).
+fixtures = { path = "../fixtures", optional = true }
+
+[features]
+# The worked examples (`examples::examples`), which the generator runs.
+# No module build turns it on.
+examples = ["dep:fixtures"]
 
 [dev-dependencies]
 sha2 = { workspace = true }

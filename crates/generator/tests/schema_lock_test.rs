@@ -8,7 +8,7 @@
 //! type for it, with the same Rust name, so a schema differs only where
 //! the shape differs.
 
-#[path = "../src/bin/common/schema_lock.rs"]
+#[path = "../src/schema_lock.rs"]
 mod schema_lock;
 
 use schema_lock::{freeze, kind, read_lock, write_lock, Drift, Kind, Lock};

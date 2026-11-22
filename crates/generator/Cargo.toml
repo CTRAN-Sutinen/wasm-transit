@@ -1,0 +1,66 @@
+[package]
+name = "generator"
+description = "The generator: the capability manifest, the local registry, the documents' schema lock, and the kind table, written from the capabilities and the kind list. No module links it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The generator's own class (crates/cap-abi/src/bin/common/gates.rs):
+# it may read the kernel and every library, and nothing depends on it.
+[dependencies]
+cap-abi = { path = "../cap-abi" }
+fixtures = { path = "../fixtures" }
+# The capabilities whose worked examples the generator runs through
+# their own dispatch (capability-declared-once, item 2).
+cap-notes = { path = "../cap-notes", features = ["examples"] }
+cap-stops = { path = "../cap-stops", features = ["examples"] }
+cap-analysis = { path = "../cap-analysis", features = ["examples"] }
+cap-plans = { path = "../cap-plans", features = ["examples"] }
+cap-directory = { path = "../cap-directory", features = ["examples"] }
+cap-alerts = { path = "../cap-alerts", features = ["examples"] }
+cap-requests = { path = "../cap-requests", features = ["examples"] }
+cap-sync = { path = "../cap-sync", features = ["examples"] }
+cap-runcut = { path = "../cap-runcut", features = ["examples"] }
+cap-network = { path = "../cap-network", features = ["examples"] }
+cap-log = { path = "../cap-log", features = ["examples"] }
+cap-rt = { path = "../cap-rt", features = ["examples"] }
+cap-divert = { path = "../cap-divert", features = ["examples"] }
+cap-streets = { path = "../cap-streets", features = ["examples"] }
+cap-router = { path = "../cap-router", features = ["examples"] }
+cap-board = { path = "../cap-board", features = ["examples"] }
+cap-author = { path = "../cap-author", features = ["examples"] }
+cap-authz = { path = "../cap-authz", features = ["examples"] }
+cap-disruptions = { path = "../cap-disruptions", features = ["examples"] }
+cap-migrate = { path = "../cap-migrate", features = ["examples"] }
+cap-calendar = { path = "../cap-calendar", features = ["examples"] }
+cap-gtfs = { path = "../cap-gtfs", features = ["examples"] }
+transit-version = { path = "../transit-version" }
+transit-network = { path = "../transit-network" }
+transit-codec = { path = "../transit-codec" }
+transit-analysis = { path = "../transit-analysis" }
+transit-rt = { path = "../transit-rt" }
+transit-live = { path = "../transit-live" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+transit-rider = { path = "../transit-rider" }
+transit-runs = { path = "../transit-runs" }
+transit-stops = { path = "../transit-stops" }
+transit-requests = { path = "../transit-requests" }
+transit-alerts = { path = "../transit-alerts" }
+transit-notes = { path = "../transit-notes" }
+transit-router = { path = "../transit-router" }
+transit-disruptions = { path = "../transit-disruptions" }
+transit-streets = { path = "../transit-streets" }
+transit-plans = { path = "../transit-plans" }
+transit-authz = { path = "../transit-authz" }
+transit-log = { path = "../transit-log" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+schemars = { workspace = true }
+ts-rs = { workspace = true }
+
+[[bin]]
+name = "gen-manifest"
+path = "src/main.rs"

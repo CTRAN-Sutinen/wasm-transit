@@ -110,8 +110,9 @@ what you changed. Say in your report what you updated.
    - The capability's purpose and op descriptions, in its
      `crates/cap-<id>/OPS.md`. The generator refuses a file whose `##`
      sections are not exactly the capability's ops.
-   - The worked examples in `crates/cap-abi/src/bin/gen_manifest.rs`.
-     They are computed. Generate the manifest again.
+   - The worked examples in each capability's `src/examples.rs` (its
+     `examples` feature). The generator runs them through the
+     capability's dispatch. Generate the manifest again.
    - The justfile: the comment above each recipe that the change
      touches, and the gate comments.
    - The TS bindings (`just types`).
@@ -262,8 +263,12 @@ enforces them:
 crates/transit-*   the domain libraries, in plain Rust. transit-network is the core
                    model. transit-codec reads and writes GTFS at the boundary.
 crates/cap-abi     the kernel and the seam: the kind list, the registries, the macros
-                   that make a module, the manifest, the generators, and the arch gates
+                   that make a module, the manifest's types, gen-assemblies, and the
+                   arch gates
 crates/cap-*       the capabilities: each one registers ops over its library
+crates/generator   gen-manifest: writes the manifest, the registry, the schema lock,
+                   and the kind table. No module links it.
+crates/fixtures    the worked examples' fixtures (D-235). No module links it.
 assemblies/        generated and gitignored: the module crates that `just caps` builds
 server/            the Go and wazero host. It is scaffolding and makes no domain
                    decision.

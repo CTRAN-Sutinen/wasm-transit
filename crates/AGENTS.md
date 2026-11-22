@@ -165,8 +165,10 @@ Always use the extraction pattern, in this order:
    purpose and each op's description in the crate's `OPS.md`. The file
    has a `#` heading that names the capability, then one `##` section
    for each op, in the order of its `ops`. gen-manifest refuses any
-   other shape. Compute the op's worked example in gen-manifest's
-   `example_for`.
+   other shape. Give the op's worked example in the crate's
+   `src/examples.rs` (its `examples` feature): the documents to load,
+   and the request. The generator runs it through the crate's own
+   dispatch and records the answer.
 
 A new domain op is a library and a capability, never host code.
 

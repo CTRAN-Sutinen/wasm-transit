@@ -35,10 +35,11 @@ the tree alone. A change moves only the modules it touches.
   closure holds that crate. The kernel requires only the libraries its
   own code names. These are its registries' kinds: the network, codec,
   rt, live, dispatch, runs, streets, sync and analysis libraries, and
-  transit-version. What gen-manifest needs besides (transit-router,
-  transit-plans, transit-authz) is optional. It sits behind its
-  `gen-manifest` feature. `arch-gates` enforces it (gate 4,
-  `crates/cap-abi/src/bin/common/gates.rs`).
+  transit-version. The generator (gen-manifest) is a crate of its own,
+  `crates/generator`, in a class that nothing depends on, and so are
+  its fixtures (`crates/fixtures`), so what they need besides is in no
+  module's closure. `arch-gates` enforces both
+  (gates 1 and 4, `crates/cap-abi/src/bin/common/gates.rs`).
 - **Every build is kept (D-80).** In store mode the server commits the
   release in `-dist` to the store's `build` pointer. Every file is a
   blob. A build document names the files and the modules the server

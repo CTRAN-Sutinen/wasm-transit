@@ -339,6 +339,11 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the board has no bulk op of its own")))
 }
 
+/// The worked examples, which the generator runs (no module build turns
+/// the feature on).
+#[cfg(feature = "examples")]
+pub mod examples;
+
 cap_abi::capability! {
     id: "board",
     json: dispatch_json,

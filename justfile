@@ -44,7 +44,7 @@ caps:
     # own entries change), so the --locked build below finds it.
     cargo update --workspace --offline --quiet
     just _modules target "$profile"
-    CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
+    CAPS_PROFILE="$profile" cargo run --quiet -p generator --bin gen-manifest
     mkdir -p web/pkg
     # The server's modules: its own (server/logkinds.go,
     # serverCapabilities, and cap-authz), and every capability the kind
@@ -694,12 +694,16 @@ _host-tests:
     # crates/cap-abi/tests/arch_gates_test.rs.
     cargo run --quiet -p cap-abi --bin arch-gates
     # Law 1b: the whole-feed write (transit_codec::export) is the
-    # codec's publish path — sanctioned only in the codec's homes. A
-    # hit anywhere else is the monolith rebuilt with new clothes.
+    # codec's publish path — sanctioned only in the codec's homes and in
+    # the generator and its fixtures, which compute the export's worked
+    # example. A hit
+    # anywhere else is the monolith rebuilt with new clothes.
     violations=$(grep -rlE "transit_codec::export|codec::\{[^}]*\bexport\b" crates --include="*.rs" \
         | grep -v "crates/transit-codec/" \
         | grep -v "crates/cap-network/" \
-        | grep -v "crates/cap-abi/" || true)
+        | grep -v "crates/cap-abi/" \
+        | grep -v "crates/generator/" \
+        | grep -v "crates/fixtures/" || true)
     if [ -n "$violations" ]; then
         echo "ARCH FAIL: transit_codec::export outside the codec's homes (Law 2 — no whole-feed writes in capabilities):"
         echo "$violations"
@@ -709,9 +713,10 @@ _host-tests:
     # clock, randomness, or environment in any crate's library code;
     # hosts pass time in (`now_ms`, dates, seconds since midnight), so
     # an answer is a function of its inputs and the engine's journal
-    # key is sound. Binaries (src/bin/) and build scripts are hosts.
+    # key is sound. Binaries (src/bin/, and the generator, which no
+    # module links) and build scripts are hosts.
     violations=$(grep -rnE 'SystemTime|Instant::now|Utc::now|Local::now|std::env::|env::var|thread_rng|rand::|getrandom|OsRng' crates/*/src --include='*.rs' \
-        | grep -v '/src/bin/' || true)
+        | grep -v '/src/bin/' | grep -v '^crates/generator/' || true)
     if [ -n "$violations" ]; then
         echo "ARCH FAIL: a clock, randomness, or the environment inside a module (hosts pass time in):"
         echo "$violations"
@@ -834,7 +839,7 @@ http-lock:
 # differs from its lock, or the table from the list. It needs no
 # module build.
 schema-lock:
-    cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest -- --lock
+    cargo run --quiet -p generator --bin gen-manifest -- --lock
 
 # Browser e2e (Chromium via Playwright, against the Go server), over
 # the wasm-fast modules (`caps-fast`), the pages, and the UIs the specs

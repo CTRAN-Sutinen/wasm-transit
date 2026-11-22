@@ -302,6 +302,11 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: the log is JSON (compose, fold)") }).to_string()
 }
 
+/// The worked examples, which the generator runs (no module build turns
+/// the feature on).
+#[cfg(feature = "examples")]
+pub mod examples;
+
 cap_abi::capability! {
     id: "log",
     json: dispatch_json,

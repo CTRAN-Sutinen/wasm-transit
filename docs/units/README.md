@@ -51,6 +51,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
+| [log-boundaries.md](log-boundaries.md) | a log's boundary moved: kinds split, logs merged, a kind moved, each by a seal and a start entry, and undone by another move |
 | [storage-model.md](storage-model.md) | the work rules and the policy in logs; a working store for drafts; permissions per change |
 
 ### Stops and streets

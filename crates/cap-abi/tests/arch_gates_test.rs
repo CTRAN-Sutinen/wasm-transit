@@ -12,7 +12,7 @@ use gates::{dependency_violations, kernel_closure_violations, state_violations, 
 
 fn package(name: &str, deps: &[&str]) -> Package {
     let deps: Vec<String> = deps.iter().map(|d| d.to_string()).collect();
-    Package { name: name.into(), required: deps.clone(), deps }
+    Package { name: name.into(), required: deps.clone(), deps, examples: vec![] }
 }
 
 /// A workspace that keeps the rule: capabilities over the kernel and
@@ -33,6 +33,35 @@ fn lawful() -> Vec<Package> {
 #[test]
 fn the_lawful_workspace_passes() {
     assert_eq!(dependency_violations(&lawful()), Vec::<String>::new());
+}
+
+/// The generator and its fixtures (D-235): the generator reads the
+/// kernel, the libraries, the capabilities, and the fixtures; the
+/// fixtures read the kernel and the libraries; a capability names the
+/// fixtures only through its `examples` feature; nothing depends on the
+/// generator, so no module's closure holds either.
+#[test]
+fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
+    let mut ws = lawful();
+    ws.push(package("fixtures", &["cap-abi", "transit-network"]));
+    ws.push(package("generator", &["cap-abi", "fixtures", "transit-codec"]));
+    assert_eq!(dependency_violations(&ws), Vec::<String>::new());
+    // A capability names the fixtures only as an optional dependency its
+    // `examples` feature turns on.
+    let mut examples = ws.clone();
+    examples.retain(|p| p.name != "cap-board");
+    examples.push(Package { name: "cap-board".into(), deps: vec!["cap-abi".into(), "fixtures".into()], required: vec!["cap-abi".into()], examples: vec!["fixtures".into()] });
+    assert_eq!(dependency_violations(&examples), Vec::<String>::new());
+    let mut other_feature = examples.clone();
+    other_feature.last_mut().unwrap().examples.clear();
+    assert!(dependency_violations(&other_feature).iter().any(|v| v.starts_with("cap-board")), "an optional dependency another feature turns on");
+    for (name, deps) in [("cap-board", &["cap-abi", "fixtures"][..]), ("module-board", &["cap-board", "generator"][..]), ("fixtures", &["cap-board"][..])] {
+        let mut bad = ws.clone();
+        bad.retain(|p| p.name != name);
+        bad.push(package(name, deps));
+        let found = dependency_violations(&bad);
+        assert!(found.iter().any(|v| v.starts_with(name)), "{name} -> {deps:?}: {found:?}");
+    }
 }
 
 #[test]

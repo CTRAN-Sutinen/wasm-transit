@@ -23,6 +23,9 @@ pub struct Package {
     pub name: String,
     pub deps: Vec<String>,
     pub required: Vec<String>,
+    /// The optional dependencies its `examples` feature turns on (the
+    /// worked examples, D-235): only these may name the fixtures.
+    pub examples: Vec<String>,
 }
 
 /// What a workspace package is, by name — deny by default: a package
@@ -37,6 +40,12 @@ pub enum Class {
     Library,
     /// `module-*`: a generated assembly.
     Assembly,
+    /// `generator`: writes the manifest, the registry, the schema lock,
+    /// and the kind table. No module links it.
+    Generator,
+    /// `fixtures`: the worked examples' fixtures (D-235). No module
+    /// links it.
+    Fixtures,
 }
 
 pub fn class(name: &str) -> Option<Class> {
@@ -48,6 +57,10 @@ pub fn class(name: &str) -> Option<Class> {
         Some(Class::Library)
     } else if name.starts_with("module-") {
         Some(Class::Assembly)
+    } else if name == "generator" {
+        Some(Class::Generator)
+    } else if name == "fixtures" {
+        Some(Class::Fixtures)
     } else {
         None
     }
@@ -56,9 +69,10 @@ pub fn class(name: &str) -> Option<Class> {
 /// The boundary's homes: the packages that may read the GTFS layer
 /// (transit-codec) in production code — Law 1a. The codec itself, the
 /// boundary capabilities, rt (its updates number stops as the
-/// published feed does), and the kernel (it registers feeds and
-/// boundaries, and gen-manifest computes the codec's examples).
-pub const CODEC_HOMES: &[&str] = &["transit-codec", "cap-gtfs", "cap-network", "cap-rt", "transit-rt", "cap-abi"];
+/// published feed does), the kernel (it registers feeds and
+/// boundaries), and the generator and its fixtures (they compute the
+/// codec's examples).
+pub const CODEC_HOMES: &[&str] = &["transit-codec", "cap-gtfs", "cap-network", "cap-rt", "transit-rt", "cap-abi", "generator", "fixtures"];
 
 /// Gate 1: the dependency graph, deny by default. A capability depends
 /// only on the kernel and libraries; a library on libraries; the kernel
@@ -70,7 +84,7 @@ pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
     let classes: BTreeMap<&str, Option<Class>> = packages.iter().map(|p| (p.name.as_str(), class(&p.name))).collect();
     for package in packages {
         let Some(own) = class(&package.name) else {
-            out.push(format!("{}: not a kernel, capability, library or assembly — the gate denies by default", package.name));
+            out.push(format!("{}: not a kernel, capability, library, assembly, generator, or fixtures — the gate denies by default", package.name));
             continue;
         };
         for dep in &package.deps {
@@ -81,6 +95,15 @@ pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
                 (Class::Assembly, Class::Capability | Class::Kernel) => true,
                 (Class::Capability, Class::Kernel | Class::Library) => true,
                 (Class::Kernel | Class::Library, Class::Library) => true,
+                // The generator reads the kernel and the libraries; nothing
+                // depends on it, so no module's closure holds it.
+                // The generator runs each capability's worked examples
+                // through its own dispatch.
+                (Class::Generator, Class::Kernel | Class::Library | Class::Capability | Class::Fixtures) => true,
+                (Class::Fixtures, Class::Kernel | Class::Library) => true,
+                // A capability names the fixtures only through its
+                // `examples` feature, which no module build turns on.
+                (Class::Capability, Class::Fixtures) => !package.required.contains(dep) && package.examples.contains(dep),
                 _ => false,
             };
             if !allowed {
@@ -104,10 +127,12 @@ pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
 
 fn rule(class: Class) -> &'static str {
     match class {
-        Class::Capability => "a capability depends only on cap-abi and libraries — capabilities never call capabilities",
+        Class::Capability => "a capability depends only on cap-abi and libraries — capabilities never call capabilities — and on the fixtures only through its `examples` feature",
         Class::Library => "a library depends only on libraries",
         Class::Kernel => "the kernel depends only on libraries",
         Class::Assembly => "an assembly links capabilities over the kernel",
+        Class::Generator => "the generator reads the kernel, the libraries, the capabilities, and the fixtures",
+        Class::Fixtures => "the fixtures read the kernel and libraries",
     }
 }
 
@@ -130,10 +155,18 @@ pub fn packages_from_metadata(metadata: &serde_json::Value) -> Vec<Package> {
                 .filter(|d| d["name"].as_str().is_some_and(|n| names.iter().any(|w| w == n)))
                 .collect();
             let name = |d: &&serde_json::Value| d["name"].as_str().unwrap_or_default().to_string();
+            let examples = p["features"]["examples"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f.as_str())
+                .map(|f| f.strip_prefix("dep:").unwrap_or(f).to_string())
+                .collect();
             Package {
                 name: p["name"].as_str().unwrap_or_default().to_string(),
                 deps: normal.iter().map(name).collect(),
                 required: normal.iter().filter(|d| d["optional"].as_bool() != Some(true)).map(name).collect(),
+                examples,
             }
         })
         .collect()

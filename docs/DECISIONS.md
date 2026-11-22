@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-229**.
+- IDs are never reused; the next new decision is **D-243**.
 
 ## Summary
 
@@ -285,6 +285,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-237 | Where do a pick's checks run? | decided; built | nothing |
 | D-238 | On which date must an open stop request's stop not be retired? | decided | nothing |
 | D-239 | How does the kernel load a kind without naming its library? | decided | nothing |
+| D-240 | While a log's boundary moves, do writes to its kinds pause? | unanswered | `log-boundaries.md` items 2 and 3 |
+| D-241 | What must hold before a split runs? | unanswered | `log-boundaries.md` item 3 (the split) |
+| D-242 | What runs a move of a log's boundary, and when? | unanswered | `log-boundaries.md` item 3 |
 
 ## The trip model
 
@@ -3409,7 +3412,7 @@ Options (each encoded):
 Pinned by: `crates/transit-authz/tests/validate_test.rs`;
 `crates/cap-authz/tests/dispatch_test.rs`; `server/kinds_test.go`.
 Blocks: nothing. A change rewrites `server/kinds.go` and
-`crates/cap-abi/src/bin/common/kind_table.rs`.
+`crates/generator/src/kind_table.rs`.
 
 ### D-201 — How does the server serve freezing and adopting?
 State: Encoded provisionally.
@@ -5151,8 +5154,12 @@ Options:
   do not change. The kernel stays a hub for the generator.
 - Each capability builds the fixtures it needs from its own
   libraries. No shared crate, and the fixture code is repeated.
-Pinned by: nothing yet (item 3 of
-`docs/units/capability-declared-once.md` builds it).
+Pinned by: `crates/fixtures` and the arch gates' fixtures class
+(`crates/cap-abi/src/bin/common/gates.rs`;
+`only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator`
+in `crates/cap-abi/tests/arch_gates_test.rs`). A capability's
+`examples` feature names it with item 2 of
+`docs/units/capability-declared-once.md`.
 Blocks: nothing.
 
 ### D-236 — Which modules do the test runners build?
@@ -5267,3 +5274,77 @@ Options:
   kind list. cap-abi keeps its dependencies.
 Pinned by: none yet (`docs/units/kind-registration.md`, item 1).
 Blocks: nothing.
+
+### D-240 — While a log's boundary moves, do writes to its kinds pause?
+State: Unanswered.
+Context: a move seals the source log, then writes the first entry of
+the log that continues it (`docs/units/log-boundaries.md`). Between
+the two steps, no log takes writes of the moving kinds. A process
+that finds a seal with no target log finishes the move, so the gap
+ends even after a crash. The staff pages keep a write that the server
+does not take on the device, and send it again (D-189). A refusal for
+a seal must be one that the outbox keeps: the unit checks this. How
+long a move takes on a C-TRAN-sized store is not measured.
+Options:
+- Pause (recommended). The sealed log refuses writes, and the answer
+  names the log that continues it. The outbox sends each write again
+  once the start entry lands. Cost: the writes of the moving kinds
+  wait for the length of the move.
+- Forward. The sealed log takes writes for a window, and the move
+  copies them to the log that continues it. Cost: a second write path,
+  two logs that take one kind at the same time, and a copy step that
+  must be exact. The conditional create no longer orders every write
+  of a kind.
+Pinned by: none yet.
+Blocks: `docs/units/log-boundaries.md`, items 2 and 3.
+
+### D-241 — What must hold before a split runs?
+State: Unanswered.
+Context: one log is the only atomic unit (D-190, D-232). A split puts
+kinds that shared a log into two logs, and two things can cross the
+new boundary:
+- an op that writes kinds on both sides in one entry, such as
+  completing a stop request and adding the stop's event;
+- a reference cycle. A cycle across logs is a design error (D-232).
+  The one cycle today, a stop event's `request` and a request's
+  `stop`, is in the stops log.
+A reference that crosses the boundary needs nothing new, because the
+receive path judges it as of the seqs the writer read (D-233). A merge
+makes more writes atomic, so a merge needs no check.
+Options:
+- Refuse (recommended). A split runs only when no op writes kinds on
+  both sides and no reference cycle crosses. To split such kinds, a
+  new kind version first changes the op or breaks the cycle. So a
+  split never makes a guarantee weaker without a change that says so.
+- Allow, with each crossing op named in the move. Each named op
+  becomes two entries in two logs, and a second entry that fails is
+  flagged for a person. Cost: an op that people take to be atomic is
+  not, and only the move's arguments record that the guarantee is
+  weaker.
+Pinned by: none yet.
+Blocks: `docs/units/log-boundaries.md`, item 3 (the split).
+
+### D-242 — What runs a move of a log's boundary, and when?
+State: Unanswered.
+Context: the startup migrations already write a log's first entry
+when the store has an old pointer and no log (`migrate:stops`,
+`migrate:plans`; `docs/FORMATS.md`, "The logs"). The kind table is one
+for each build, and it names each kind's log (D-202). So a build whose
+kind table puts a kind in another log does not match the store until
+the move runs. A build without the seal reader cannot read a moved
+store, so the seal reader ships in a release before any move
+(`docs/units/log-boundaries.md`, item 1).
+Options:
+- At startup, by the build whose kind table moves the kind, as the
+  startup migrations do (recommended). The first process to boot
+  writes the seal. The conditional create lets only one seal land.
+  Any process that finds a seal with no target log finishes the move.
+  The operator picks the time by deploying the build. Cost: a move
+  happens at a deploy, so its pause comes with the deploy.
+- By the store tool (`just store move`), which the operator runs with
+  its own credentials, as `revert` and `gc` are run. The operator picks
+  the time apart from a release. Cost: between the release and the
+  move, the build's kind table and the store do not match, and the
+  server must serve both placements.
+Pinned by: none yet.
+Blocks: `docs/units/log-boundaries.md`, item 3.

@@ -23,6 +23,8 @@ after the step before it runs on real data.
 A new kind joins a log only if it must change atomically with that
 log's kinds. Otherwise it gets a log of its own. Logs name each other
 by `(log, seq)`. The logs are immutable, so those names never break.
+A log's boundary moves by a seal and a start entry
+([log-boundaries.md](log-boundaries.md)).
 
 The entry, the checkpoint, the commit, and the six rules are built:
 cap-log keeps the disruptions log and the stops log (`docs/FORMATS.md`,

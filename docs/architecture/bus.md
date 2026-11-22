@@ -44,10 +44,14 @@ before it writes it.
 **gen-manifest.** gen-manifest writes the capability set as code. It
 reads each capability's agent context from that capability's `OPS.md`.
 A change to the manifest is the change a reviewer reads for an
-assembly. gen-manifest computes each worked example. The examples for
-cap-author `apply` include one for each edit kind, applied to the
-fixture in order. The build fails if an edit kind has no example, or if
-an example stops applying.
+assembly. Each capability gives its worked examples in its own crate
+(`src/examples.rs`, behind its `examples` feature): the documents to
+load and the request. gen-manifest runs each through the capability's
+own dispatch and records the answer, so an example cannot differ from
+what the module answers. cap-author's example of `apply` also gives one
+value of each edit kind (`kinds`), applied to the fixture in order. The
+build fails if an edit kind has no example, or if an example stops
+applying.
 
 **The kind list.** `kinds.rs` lists every kind of document, one line
 for each: its name and tag, its library type and the crate that keeps
@@ -484,8 +488,11 @@ fixture.
 
 1. The dependency graph. `arch-gates` reads `cargo metadata` and denies
    by default. A capability depends only on cap-abi and libraries. Only
-   the generated assemblies depend on capabilities. Only the codec's
-   homes read transit-codec. The test is
+   the generated assemblies depend on capabilities. The generator
+   (`crates/generator`) reads the kernel, the libraries, and the
+   fixtures (`crates/fixtures`, D-235), and nothing depends on either,
+   so no module's closure holds them. Only the codec's homes read
+   transit-codec. The test is
    `crates/cap-abi/tests/arch_gates_test.rs`.
 2. The kernel's private registry constructor, checked by the
    `compile_fail` doctests on `cap_abi::registry::Registry`. A

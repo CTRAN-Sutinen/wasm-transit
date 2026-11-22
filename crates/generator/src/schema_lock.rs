@@ -11,7 +11,7 @@
 //! [`check`] compares a build with its lock. [`freeze`] writes what a
 //! build adds: a new version, or an added optional field (D-167). It
 //! refuses every other change. gen-manifest runs both, and its test is
-//! `crates/cap-abi/tests/schema_lock_test.rs`.
+//! `crates/generator/tests/schema_lock_test.rs`.
 
 #![allow(dead_code)]
 

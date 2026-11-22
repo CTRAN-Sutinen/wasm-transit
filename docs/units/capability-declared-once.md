@@ -1,29 +1,21 @@
 # A capability, declared once
 
 A capability is its crate: the `Request` enum, the dispatch, `OPS.md`,
-and the worked examples. gen-manifest holds a second copy of each
-capability. Measured on 2026-11-20:
+and its worked examples (`src/examples.rs`, behind its `examples`
+feature). The generator (`crates/generator`) runs each example through
+the capability's own dispatch and records the answer. Copies are left:
 
-- `MODULES` in `crates/cap-abi/src/bin/gen_manifest.rs` repeats each
+- `MODULES` in `crates/generator/src/main.rs` repeats each
   capability's ops, the documents it reads, and the kinds it consumes,
   speaks, and migrates. `capability!` already declares the documents,
   and caps-smoke checks that the two agree.
-- `example_for`, about 2,000 lines with 168 arms, computes every op's
-  worked example with library calls. `real_output_test.rs` then runs
-  each example's request through dispatch to check the same answer.
-- Of the last 223 commits, 96 changed gen_manifest.rs. Most of them
-  changed `MODULES` and `example_for` together.
+- The generator names each capability by hand: a dependency in its
+  `Cargo.toml`, and an arm in `run_examples`.
 - `crates/cap-abi/Cargo.toml` lists each capability as a
-  dev-dependency. The root `Cargo.toml` takes its members by class
-  (`crates/cap-*`, `crates/transit-*`) and names none.
+  dev-dependency, for `real_output_test.rs` and `real_data_soak.rs`.
 
 The goal: a new op changes only its capability's crate. A new
 capability is a new crate directory, and nothing else names it.
-
-Every capability depends on cap-abi. So gen-manifest, a binary inside
-cap-abi, cannot link a capability, and `MODULES` is the copy that this
-cycle forces. The generator moves to a crate that links every
-capability.
 
 ## Scope
 
@@ -34,34 +26,17 @@ capability.
    it adds no dependency (`fewer-dependencies.md`, the allowlist).
    caps-smoke's check of a module's `about` stays. It now compares one
    declaration with its build.
-2. **The examples, in their crates.** Each capability gives its
-   examples behind an `examples` feature. An example is the documents
-   to load and the request. The generator runs the request through the
-   capability's own dispatch and records the answer. So an example
-   cannot differ from what dispatch answers, and the check in
-   `real_output_test.rs` becomes part of the generator. The per-kind
-   examples (`kinds_for`, author `apply`) move the same way. An example
-   that is not "documents, then a request" gets a hook in its own
-   crate. No module build turns the feature on.
-3. **The fixtures.** The example contexts (`NetworkExampleContext`,
-   `StreetsExampleContext`, `RtExampleContext`), the `fixture_*`
-   functions, and the fixed clocks move out of gen_manifest.rs to a
-   place that a capability's `examples` feature reaches: a fixtures
-   crate of its own, in a new class (D-235). Only an `examples` feature
-   or a dev-dependency may name it, no assembly's closure may hold it,
-   and the arch gates hold both. cap-abi's optional domain
-   dependencies for gen-manifest go with it. One proposal to the user
-   covers this crate and kind-registration's item 1 (the kernel's
-   domain dependencies), with what it costs the gates and the module
-   sizes.
-4. **The generator.** gen-assemblies writes the generator crate from
-   the capability directories, as it writes each `module-<cap>`. The
-   crate links cap-abi and every capability with `examples`. The
-   manifest, registry, and kind-table code stays a library in cap-abi,
-   and the generator's `main` only names the capabilities. The kernel
-   ops' examples and the document kinds' examples stay with the kernel
-   and the kind list (`kind-registration.md`). The arch gates learn
-   the generator's class.
+4. **The generator.** `crates/generator` becomes a library that
+   takes the capabilities as data: each one's declaration, examples,
+   and lanes. gen-assemblies writes the binary, as it writes each
+   `module-<cap>`: a crate in `assemblies/` that links every capability
+   with `examples` and calls the library. So the generator's code names
+   no capability, and a fresh clone builds, because nothing hand-written
+   depends on a generated crate. The manifest, registry, and kind-table
+   code stays in the generator library, not in cap-abi: it reads every
+   kind's schema, and the kernel depends on no domain library (D-239).
+   The kernel ops' examples and the document kinds' examples stay with
+   the kernel and the kind list (`kind-registration.md`).
 5. **The lists.** The two cap-abi tests that run a capability
    (`real_output_test.rs`, every capability; `real_data_soak.rs`,
    cap-network and cap-plans) move to the generator crate (item 4),
@@ -80,20 +55,13 @@ capability.
 
 ## Order with kind-registration
 
-kind-registration also edits gen_manifest.rs, in the kernel ops and
-the document kinds. The two run in this order, in one session, one
+kind-registration also edits the generator, in the kernel ops and the
+document kinds. The two run in this order, in one session, one
 build at a time:
 
-1. kind-registration's logs are all on the one server path. A new
-   receive op's example goes in `example_for` until item 2 here moves
-   them all. The root `Cargo.toml` already takes its members by class.
-   Item 1 lands with item 4: until the generator links the
-   capabilities, a declaration in `capability!` would be a third copy
-   beside `MODULES`. Item 5 lands with item 4 too.
-2. The direction is decided: the fixtures crate (D-235), and the
-   kernel's loading trait (D-239).
-3. Items 3, 2, and 4 of this unit, then kind-registration's item 1.
-4. Item 6 here and kind-registration's item 4 are one gate mechanism
+1. Items 1, 4, and 5 here, together, then kind-registration's item 1
+   (D-239).
+2. Item 6 here and kind-registration's item 4 are one gate mechanism
    (an allowlist of names in the arch gates), built together. Then
    item 7 here and kind-registration's item 3 are one docs sweep.
 

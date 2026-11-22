@@ -24,8 +24,8 @@ fn main() {
     let packages = gates::packages_from_metadata(&metadata);
     let mut violations = gates::dependency_violations(&packages);
 
-    // The kernel's closure: its library's source (the generators' bins
-    // are not in any module).
+    // The kernel's closure: its library's source (its bins, gen-assemblies
+    // and the arch gates, are not in any module).
     let kernel = packages.iter().find(|p| p.name == "cap-abi").expect("the kernel is a workspace package");
     let mut kernel_source = String::new();
     let mut stack = vec![root.join("crates/cap-abi/src")];

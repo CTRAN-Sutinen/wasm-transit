@@ -13,3 +13,10 @@ serde_json = { workspace = true }
 ts-rs = { workspace = true }
 transit-requests = { path = "../transit-requests" }
 cap-abi = { path = "../cap-abi" }
+# The worked examples' fixtures, for the `examples` feature only (D-235).
+fixtures = { path = "../fixtures", optional = true }
+
+[features]
+# The worked examples (`examples::examples`), which the generator runs.
+# No module build turns it on.
+examples = ["dep:fixtures"]

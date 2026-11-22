@@ -25,7 +25,7 @@
 //!   Context lives IN the manifest so it versions with the capability
 //!   and its diff is reviewable like any other contract change.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -108,19 +108,19 @@ pub struct Capability {
     #[serde(default)]
     pub documents: Vec<String>,
     /// Registry edges: document kind -> producing capability id.
-    pub consumes: HashMap<String, String>,
+    pub consumes: BTreeMap<String, String>,
     /// Document kinds -> versions the module understands directly.
-    pub speaks: HashMap<String, Vec<u32>>,
+    pub speaks: BTreeMap<String, Vec<u32>>,
     /// Document kinds -> version steps the module can bridge. Each
     /// step is a pure, deterministic op over document bytes: the old
     /// copy stays addressable (migrations are immutable; rollback is
     /// moving the current pointer back along `produced_by`).
-    pub migrates: HashMap<String, Vec<MigrationSpec>>,
+    pub migrates: BTreeMap<String, Vec<MigrationSpec>>,
     /// Agent context, versioned with the capability: what this
     /// module is for and when to assemble it.
     pub purpose: String,
     /// Per-op agent context: description plus a worked example.
-    pub op_docs: HashMap<String, OpDoc>,
+    pub op_docs: BTreeMap<String, OpDoc>,
 }
 
 /// One migration step a module can perform.
@@ -158,6 +158,23 @@ pub struct KindExample {
 }
 
 /// A worked request→response pair.
+/// A capability's worked example of one op, as its crate gives it
+/// (its `examples` feature): the kernel loads to run first, each a JSON
+/// load request, and the op's request. The generator runs both through
+/// the capability's own `invoke` and records what it answers, so an
+/// example cannot differ from dispatch. An op on the bulk lane gives its
+/// code and bytes (`bytes`): the generator runs `invoke_bytes`, and
+/// `request` describes the bytes for a reader. An op whose argument is a
+/// tagged vocabulary gives one value of each tag (`kinds`).
+#[derive(Debug, Clone)]
+pub struct Example {
+    pub bytes: Option<(u32, Vec<u8>)>,
+    pub kinds: Vec<KindExample>,
+    pub op: &'static str,
+    pub loads: Vec<serde_json::Value>,
+    pub request: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct OpExample {

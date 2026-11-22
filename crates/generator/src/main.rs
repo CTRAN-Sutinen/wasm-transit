@@ -1,0 +1,1408 @@
+//! gen-manifest: assemble the capability manifest after the wasm
+//! builds (`just caps`) and PUBLISH the registry (`just registry`).
+//! Reads each capability module, pins it by content hash, serves it
+//! under that hash, and writes both surfaces hosts and agents read:
+//!
+//! * `web/public/caps/` — the browser's manifest + hash-addressed
+//!   module files (the assembly the bus worker loads);
+//! * `registry/` — the REGISTRY: immutable blobs, one evidence record
+//!   per capability (contracts + agent context + which gates ran when
+//!   these exact bytes were published), and a registry pointer. An
+//!   agent (or a human dogfooding `caps run`) pulls compute from
+//!   here and verifies the bytes against the record. Beside them, the
+//!   DOCUMENTS: every document kind's JSON Schema, generated from its
+//!   serde type, and a worked example computed from the fixtures
+//!   (`registry/documents.json` indexes them by kind, store kind and
+//!   schema version) — what lets a reader with no Rust or wasm read a
+//!   stored blob (docs/FORMATS.md).
+//!
+//! Before writing, the manifest is run through the compose-time
+//! validator (cap_abi::validate): a manifest this crate assembles
+//! must be provably coherent, and the generation is the first
+//! consumer of that proof.
+
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+
+use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, MigrationSpec, OpDoc, OpExample};
+
+// The assemblies' list is shared with gen-assemblies, which stays in
+// the kernel's crate (it writes the module crates before any build).
+#[path = "../../cap-abi/src/bin/common/assemblies.rs"]
+mod common;
+mod schema_lock;
+mod kind_table;
+// The worked examples' fixtures (D-235).
+use fixtures::*;
+use cap_abi::validate::validate_assembly;
+use sha2::{Digest as _, Sha256};
+
+/// The gates `just registry` runs before publishing (it says so with
+/// `CAPS_PUBLISH_GATED=1`; a plain `just caps` publishes ungated and
+/// the record says that instead). The recipe is the authority; the
+/// record is the honest report of it.
+const PUBLISH_GATES: &[&str] = &[
+    "cargo test (workspace, includes the capability law suites)",
+    "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)",
+    "just reproducible (two clean builds of the tree, byte for byte)",
+];
+
+/// The document-kernel version this build speaks.
+const KERNEL: u32 = 1;
+
+/// The capability set this deployment assembles, mirroring the crates:
+/// what each reads and in which versions (`speaks`, the versions the
+/// owning crates read), and the version steps it carries (`migrates`:
+/// cap-migrate's alone). When a crate's Request enum
+/// changes, this changes — and the manifest diff is the reviewable
+/// assembly change.
+struct ModuleSpec {
+    id: &'static str,
+    file: &'static str,
+    ops: &'static [&'static str],
+    /// The kernel document kinds it reads (`capability! { documents }`):
+    /// their loads are kernel ops in every module that links it. The
+    /// smoke checks this against the module's own `about`.
+    documents: &'static [&'static str],
+    consumes: &'static [(&'static str, &'static str)],
+    speaks: &'static [(&'static str, &'static [u32])],
+    migrates: &'static [(&'static str, &'static [(u32, u32)])],
+    /// Agent context, from the capability's OPS.md: what it is FOR
+    /// (under the `#` heading), and one `##` section per op — the
+    /// op's description. Its worked example is the capability's own
+    /// (its `examples` feature), run through its dispatch
+    /// (`run_examples`).
+    docs: &'static str,
+}
+
+const MODULES: &[ModuleSpec] = &[
+    ModuleSpec {
+        id: "gtfs",
+        file: "module_gtfs.wasm",
+        ops: &["feed_info"],
+        documents: &["feed"],
+        consumes: &[],
+        speaks: &[("feed", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-gtfs/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-gtfs/OPS.md"),
+    },
+    ModuleSpec {
+        id: "router",
+        file: "module_router.wasm",
+        ops: &["plan", "plan_arrive_by", "plan_compare", "itinerary_paths"],
+        documents: &["network", "edits", "live", "walks"],
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("live", &[1]), ("walks", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-router/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-router/OPS.md"),
+    },
+    ModuleSpec {
+        id: "network",
+        file: "module_network.wasm",
+        ops: &["import", "validate", "export", "document", "publishable", "stored_plans"],
+        documents: &["feed", "network", "boundary"],
+        consumes: &[],
+        speaks: &[("feed", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-network/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-network/OPS.md"),
+    },
+    ModuleSpec {
+        id: "rt",
+        file: "module_rt.wasm",
+        ops: &["decode", "trip_progress", "late_trips", "live", "encode_alerts", "read_alerts"],
+        documents: &["network", "boundary", "rt", "live", "service_alerts"],
+        consumes: &[("network", "network")],
+        // The gtfs-rt payload: an ephemeral document (polled every
+        // few seconds), versioned by the protobuf schema it speaks;
+        // it joins against the NETWORK (an rt trip id is a model trip
+        // id), with the import's boundary for the published
+        // stop_sequence numbering when there is one.
+        // THE LIVE DOCUMENT is minted here and read by the board —
+        // optional edges both: neither module needs the other to
+        // answer its own questions, so they are spoken, not consumed.
+        // encode_alerts writes the service alerts document as an Alerts
+        // feed: GTFS-rt is its serialization.
+        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1]), ("service_alerts", &[transit_alerts::ALERTS_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-rt/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-rt/OPS.md"),
+    },
+    ModuleSpec {
+        id: "analysis",
+        file: "module_analysis.wasm",
+        ops: &["network_stats", "service_types_overview", "service_groups", "service_type_detail", "service_type_compare", "stop_gaps", "hourly_trips", "schedule_texture", "route_overlap", "timed_transfers", "hub_connections", "missed_connections", "longest_waits", "day_types", "plan_compare", "network_findings", "route_frequency", "type_coverage", "unserved_points", "coverage_compare"],
+        documents: &["network", "layer"],
+        // The network document is produced by the network capability —
+        // the extraction this module's own docs once called "future".
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-analysis/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-analysis/OPS.md"),
+    },
+    ModuleSpec {
+        id: "board",
+        file: "module_board.wasm",
+        ops: &["stop_board", "grouped_board", "alert_reach", "watchlist_board"],
+        documents: &["network", "edits", "live", "watchlist"],
+        // The network document is produced by the network capability;
+        // the operator edit document is host-owned (wholesale-replaced
+        // — the sync contract); the watchlist is the PERSONAL document
+        // it reads in the current version (cap-migrate migrates it).
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[transit_rider::watchlist::SCHEMA_VERSION]), ("live", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-board/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-board/OPS.md"),
+    },
+    ModuleSpec {
+        id: "runcut",
+        file: "module_runcut.wasm",
+        ops: &["blocks", "fleet_summary", "block_trips", "trip_stops", "trip_path", "recovery", "suggest_blocks"],
+        documents: &["network", "edits", "live", "work_rules"],
+        // The network document is produced by the network capability;
+        // the operator edit document is host-owned (wholesale-replaced
+        // — the sync contract); the live document is the rt
+        // capability's, which the chain's ripple reads; the work rules
+        // are host-owned (transit-runs), read by the recovery view and
+        // the suggested blocking.
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("live", &[1]), ("work_rules", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-runcut/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-runcut/OPS.md"),
+    },
+    ModuleSpec {
+        id: "calendar",
+        file: "module_calendar.wasm",
+        ops: &["active_services", "service_dates"],
+        documents: &["network", "edits"],
+        // The network document is produced by the network capability;
+        // the operator edit document is host-owned (wholesale-replaced
+        // — the sync contract).
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-calendar/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-calendar/OPS.md"),
+    },
+    ModuleSpec {
+        id: "directory",
+        file: "module_directory.wasm",
+        ops: &["about", "stops", "stops_near", "stops_by_ids", "routes", "route_stop_sequence", "focus", "route_lines", "service_keys", "entities", "route_detail", "stop_detail", "timetable"],
+        documents: &["network"],
+        // The network document is produced by the network capability.
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-directory/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-directory/OPS.md"),
+    },
+    ModuleSpec {
+        id: "streets",
+        file: "module_streets.wasm",
+        ops: &["import", "walks", "access", "snap", "route"],
+        documents: &["streets", "network"],
+        // The streets document is the HOST's (read from a street
+        // layer by import, answered with its hash); every query
+        // addresses that hash. The walk table reads the network's
+        // stops.
+        consumes: &[("network", "network")],
+        speaks: &[("streets", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("walks", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-streets/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-streets/OPS.md"),
+    },
+    ModuleSpec {
+        id: "sync",
+        file: "module_sync.wasm",
+        ops: &["sync_edits", "read_edits", "compact_edits", "log_records", "log_document", "receive", "log_revert"],
+        documents: &[],
+        consumes: &[],
+        speaks: &[("operator_edits", &[transit_sync::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-sync/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-sync/OPS.md"),
+    },
+    ModuleSpec {
+        id: "log",
+        file: "module_log.wasm",
+        ops: &["compose", "fold", "revert", "close_gap", "references", "naming"],
+        documents: &[],
+        // The log is the host's to store (D-190, D-197): compose answers
+        // each write's entry, fold the records and a checkpoint. It never
+        // reads a record: each kind's capability turns its document into
+        // records and back (log_records, log_document).
+        consumes: &[],
+        speaks: &[("log_entry", &[transit_log::ENTRY_VERSION]), ("log_checkpoint", &[transit_log::CHECKPOINT_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-log/OPS.md.
+        docs: include_str!("../../cap-log/OPS.md"),
+    },
+    ModuleSpec {
+        id: "authz",
+        file: "module_authz.wasm",
+        ops: &["authorize", "effective", "validate"],
+        documents: &[],
+        consumes: &[],
+        speaks: &[("policy", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-authz/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-authz/OPS.md"),
+    },
+    ModuleSpec {
+        id: "author",
+        file: "module_author.wasm",
+        ops: &["apply", "stamp_pick"],
+        documents: &["network", "work_rules"],
+        // Authoring reads and MINTS network documents — the same
+        // identity the codec's import produces and every model-side
+        // capability consumes.
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("work_rules", &[1])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-author/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-author/OPS.md"),
+    },
+    ModuleSpec {
+        id: "divert",
+        file: "module_divert.wasm",
+        ops: &["draft", "list", "reports", "propose", "cancel", "retire", "restore"],
+        documents: &["network"],
+        // A draft is answered over the network the codec's import
+        // produces; the answers are next states of the host-owned
+        // operator edit document.
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-divert/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-divert/OPS.md"),
+    },
+    ModuleSpec {
+        id: "plans",
+        file: "module_plans.wasm",
+        ops: &["resolve", "validate", "timeline", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "receive", "log_document"],
+        // A pick it writes is checked as a network and reads the stops
+        // document (D-237): both register on the kernel's loads.
+        documents: &["network", "stops"],
+        consumes: &[("network", "network")],
+        speaks: &[("plans", &[1]), ("frozen_versions", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("stops", &[transit_stops::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-plans/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-plans/OPS.md"),
+    },
+    ModuleSpec {
+        id: "stops",
+        file: "module_stops.wasm",
+        ops: &["validate", "stops_on", "stops_near", "stop", "request_warnings", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "receive", "log_document"],
+        documents: &["stops", "stop_requests", "network"],
+        // The stops document is the host's (beside the plans, D-147):
+        // validate answers its canonical bytes and hash, which the
+        // kernel's load_stops answers too; the date questions read it.
+        // seed reads a network's stops to begin the document; add_event
+        // answers the next one. A pick only reads it (D-157). receive
+        // writes the stops log, which also holds the stop requests.
+        consumes: &[("network", "network")],
+        speaks: &[("stops", &[transit_stops::SCHEMA_VERSION]), ("stop_requests", &[transit_requests::SCHEMA_VERSION]), ("network", &[transit_network::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-stops/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-stops/OPS.md"),
+    },
+    ModuleSpec {
+        id: "requests",
+        file: "module_requests.wasm",
+        ops: &["validate", "requests_for", "list", "put", "work_order_call", "record_work_order", "vocabulary", "log_records", "log_document"],
+        documents: &["stop_requests"],
+        // The stop requests document is the host's (D-159): validate
+        // answers its canonical bytes and hash, which the kernel's
+        // load_stop_requests answers too; put answers the next one.
+        consumes: &[],
+        speaks: &[("stop_requests", &[transit_requests::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-requests/OPS.md.
+        docs: include_str!("../../cap-requests/OPS.md"),
+    },
+    ModuleSpec {
+        id: "alerts",
+        file: "module_alerts.wasm",
+        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "templates", "fill", "receive", "log_records", "log_document"],
+        documents: &["service_alerts", "alert_templates", "network"],
+        // The service alerts and alert templates documents are the
+        // host's (D-206, D-210): validate answers their canonical bytes
+        // and hash, which the kernel's loads answer too; put, end, and
+        // put_template answer the next one. flags and fill read the
+        // network's names.
+        consumes: &[],
+        speaks: &[
+            ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+            ("alert_templates", &[transit_alerts::TEMPLATES_VERSION]),
+            ("network", &[transit_network::SCHEMA_VERSION]),
+        ],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-alerts/OPS.md.
+        docs: include_str!("../../cap-alerts/OPS.md"),
+    },
+    ModuleSpec {
+        id: "notes",
+        file: "module_notes.wasm",
+        ops: &["validate", "write", "on", "between", "receive", "log_records", "log_document"],
+        documents: &["notes"],
+        // The notes document is the host's (D-214): validate answers its
+        // canonical bytes and hash, which the kernel's load_notes answers
+        // too; write answers the next one.
+        consumes: &[],
+        speaks: &[("notes", &[transit_notes::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-notes/OPS.md.
+        docs: include_str!("../../cap-notes/OPS.md"),
+    },
+    ModuleSpec {
+        id: "disruptions",
+        file: "module_disruptions.wasm",
+        ops: &["today", "gaps", "start_alert"],
+        documents: &["network", "edits", "live", "stops", "service_alerts", "notes"],
+        // What is disrupted on a day, and whether an alert explains it
+        // (D-218): it reads every document a disruption, its alert, or
+        // its note lives in, and writes none.
+        consumes: &[],
+        speaks: &[
+            ("network", &[transit_network::SCHEMA_VERSION]),
+            ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+            ("live", &[2]),
+            ("stops", &[transit_stops::SCHEMA_VERSION]),
+            ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+            ("notes", &[transit_notes::SCHEMA_VERSION]),
+        ],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-disruptions/OPS.md.
+        docs: include_str!("../../cap-disruptions/OPS.md"),
+    },
+    ModuleSpec {
+        id: "migrate",
+        file: "module_migrate.wasm",
+        ops: &["migrate", "version"],
+        documents: &[],
+        consumes: &[],
+        speaks: &[
+            ("network", &[1, transit_network::SCHEMA_VERSION]),
+            ("operator_edits", &[1, transit_sync::SCHEMA_VERSION]),
+            ("watchlist", &[1, 2]),
+            ("service_alerts", &[1, transit_alerts::ALERTS_VERSION]),
+            ("stop_requests", &[1, transit_requests::SCHEMA_VERSION]),
+        ],
+        migrates: &[
+            ("network", &[(1, 2)]),
+            ("operator_edits", &[(1, 2)]),
+            ("watchlist", &[(1, 2)]),
+            ("service_alerts", &[(1, 2)]),
+            ("stop_requests", &[(1, 2)]),
+        ],
+        // Its purpose and per-op agent context: crates/cap-migrate/OPS.md
+        // (a `#` heading, the purpose, then one `##` section per op).
+        docs: include_str!("../../cap-migrate/OPS.md"),
+    },
+];
+
+/// The kernel ops, documented once for every module. The registry
+/// ops' examples are COMPUTED: two registries (one durable, one
+/// keep-last-N) answer them through the same kernel the macro wires
+/// into every module.
+/// The kernel ops — the same in every module that answers them: each
+/// document kind's load (in every module whose capabilities read the
+/// kind), the registry ops and `about` (in every module).
+fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
+    use cap_abi::kernel::{self, Cap, NETWORK, RT};
+    use cap_abi::registry::{OP_EVICT, OP_HELD};
+    // The registry ops' examples run the REAL kernel over an example
+    // capability reading networks and rt snapshots.
+    static EXAMPLE: Cap = Cap { id: "board", json: |_| String::new(), bytes: |_, _| String::new(), documents: &[&NETWORK, &RT] };
+    let answer = |text: String| serde_json::from_str::<serde_json::Value>(&text).expect("the kernel answers JSON");
+    let rt_bytes = fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-rt.pb")).expect("rt fixture");
+    if let Some(ctx) = net {
+        NETWORK.register(ctx.network.clone()).expect("the fixture network registers");
+    }
+    let (rt_hash, _) = RT.register_bytes(&rt_bytes).expect("the rt fixture decodes");
+    let held = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_HELD, b""));
+    let keep = serde_json::json!({ "keep": [rt_hash] });
+    let evicted = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_EVICT, keep.to_string().as_bytes()));
+    let about = answer(kernel::invoke_bytes(&[&EXAMPLE], kernel::OP_ABOUT, b""));
+
+    // A load's kind and code are its line's in the kind list.
+    let load = |code: u32, name: &str, description: &str| {
+        let line = cap_abi::kinds::KINDS.iter().find_map(|k| k.load.filter(|l| l.op == name));
+        let line = line.unwrap_or_else(|| panic!("the kernel load {name} has no line in crates/cap-abi/src/kinds.rs"));
+        assert_eq!(line.code, code, "{name}: the kind list's code");
+        KernelOp {
+            code,
+            name: name.into(),
+            kind: Some(line.id.into()),
+            description: description.into(),
+            example: kernel_example(name, net),
+        }
+    };
+    vec![
+        load(cap_abi::OP_LOAD_NETWORK, "load_network", "Register the NETWORK document under its content hash (idempotent) — one identity in every module that reads networks, registered once per instance however many of its capabilities read it. JSON: {\"op\": \"load_network\", \"network\": …}. Bulk: the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module) — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped."),
+        load(kernel::OP_LOAD_EDITS, "load_edits", "Register the OPERATOR EDIT document ({\"kind\": \"edit_records\", \"schema_version\", \"records\"} — wholesale-replaced by the host: push the whole document on every change) under its canonical hash, which the day views address. Only the version this module reads registers: an older document is refused naming the migration capability, a newer one naming both versions. A record the network cannot answer simply patches nothing — what each record amounts to on a network is the divert capability's reports. JSON: {\"op\": \"load_edits\", \"edits\": {…}}; bulk: the document's JSON."),
+        load(kernel::OP_LOAD_LIVE, "load_live", "Register a LIVE document (the rt capability's live answer) under its canonical hash — the same identity rt answered (in a module linking rt, its live answer is registered already). Ephemeral: the last 4 stay. JSON: {\"op\": \"load_live\", \"live\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_BOUNDARY, "load_boundary", "Register an imported network's BOUNDARY (the network capability's import answer) under its canonical hash: the stop_sequence numbering the published feed — and so its rt updates — use. A network published from its own export needs none (1..n). JSON: {\"op\": \"load_boundary\", \"boundary\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_WALKS, "load_walks", "Register a WALK TABLE (the streets capability's walks answer: every walk between the network's stops along the streets) under its canonical hash — the same identity streets answered. A plan naming it by walks_hash walks its transfers along the streets; a table derived for another network is refused there. JSON: {\"op\": \"load_walks\", \"walks\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_STREETS, "load_streets", "Register a STREETS document the host holds (an import's answer, stored) under its hash — the same hash its import answered — with its size (ways, segments, distinct points). Refused unless canonical (ways of two or more points, sorted, none twice, two-ways in canonical direction). JSON: {\"op\": \"load_streets\", \"streets\": …}; bulk: the bare document's JSON bytes."),
+        load(kernel::OP_LOAD_WATCHLIST, "load_watchlist", "Register a WATCHLIST document (the personal saved set, version-tagged) under its canonical hash, answering its version. JSON: {\"op\": \"load_watchlist\", \"document\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_LAYER, "load_layer", "Register a GeoJSON WEIGHTED LAYER — Point, Polygon and MultiPolygon features (people, jobs, households: any weighted geography; other geometries are skipped) — under the content hash of its bytes. The answer is the import handle — features, points, polygons, and the weights it can be read by (each property that is a JSON number, with its total) — so the layer's owner never parses a second copy. Which field is the weight, and what it means, are the coverage op's (`field`, `label`): one file read two ways is one layer. Bulk: the GeoJSON bytes; JSON: {\"op\": \"load_layer\", \"bytes\": [..]}."),
+        load(kernel::OP_LOAD_FEED, "load_feed", "Register a GTFS zip under the content hash of its bytes (idempotent), answering the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk: the raw zip."),
+        load(kernel::OP_LOAD_WORK_RULES, "load_work_rules", "Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional, D-50) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_STOPS, "load_stops", "Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired; D-153, D-157) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_STOP_REQUESTS, "load_stop_requests", "Register a STOP REQUESTS document (transit-requests: the planning team's requests for work at a stop — new, reinstall, relocate/remove, repair/improve, temporary — each tracking the work order the work order system opens for it; D-159) under its canonical hash — the same hash the requests capability's validate answers — with how many requests it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stop_requests\", \"requests\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_SERVICE_ALERTS, "load_service_alerts", "Register a SERVICE ALERTS document (transit-alerts: the agency's alerts in the network's ids, each with its cause, effect, severity, texts in each language, periods, and informed entities; D-206) under its canonical hash, the same hash the alerts capability's validate answers, with how many alerts it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_service_alerts\", \"alerts\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_ALERT_TEMPLATES, "load_alert_templates", "Register an ALERT TEMPLATES document (transit-alerts: the agency's standard language for alerts, with blanks; D-210) under its canonical hash, the same hash the alerts capability's validate_templates answers, with how many templates it holds. Refused unless validate_templates would pass it, every refusal named. JSON: {\"op\": \"load_alert_templates\", \"templates\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_NOTES, "load_notes", "Register a NOTES document (transit-notes: the agency's internal notes, each about a trip instance, an edit record, a service alert, or a stop, with who wrote it and when; D-214) under its canonical hash, the same hash the notes capability's validate answers, with how many notes it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_notes\", \"notes\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_RT, "load_rt", "Register a GTFS-rt protobuf payload (a snapshot) under the content hash of its bytes, answering the hash only (the rt capability's decode answers the overview too). Ephemeral: the last 8 stay. Bulk: the raw payload."),
+        KernelOp {
+            code: OP_EVICT,
+            name: "evict".into(),
+            kind: None,
+            description: "EVERY module. Drop everything the keep-set does not name, answering what dropped and what is held after. The bytes are {\"keep\": [hash, …]}: a document stays when its hash is kept; a derived entry (a held day, the router's graph, a street graph) stays only while every document it was computed from is kept. The host names what survives — it owns the documents; the module enforces — it is the hash authority. Asking for an evicted document is the unknown-hash error (`unknown <kind> <hash>: <load op> first`), never a wrong answer: register it again. Ephemeral kinds also bound themselves with no host steering — rt snapshots keep their last 8, live documents their last 4 — and so does each derivation (held days 4, router graphs 8, street and walking graphs 4).".into(),
+            example: Some(OpExample { request: keep, response: evicted }),
+        },
+        KernelOp {
+            code: OP_HELD,
+            name: "held".into(),
+            kind: None,
+            description: "EVERY module. What the module holds, per registry (each document kind its capabilities read, then the derived entries), oldest first (the bytes are ignored) — the inspection a memory gate reads.".into(),
+            example: Some(OpExample { request: serde_json::json!(null), response: held }),
+        },
+        KernelOp {
+            code: kernel::OP_ABOUT,
+            name: "about".into(),
+            kind: None,
+            description: "EVERY module. What the module is: the capabilities it links in index order (an assembly's capability bulk op carries its index in the high 16 bits; a JSON request names its capability as \"cap\" when the module links more than one), each with the document kinds it reads (the bytes are ignored).".into(),
+            example: Some(OpExample { request: serde_json::json!(null), response: about }),
+        },
+    ]
+}
+
+/// A capability's OPS.md, read: the purpose (the text under the `# <id>`
+/// heading) and each op's description (the text under its `## <op>`
+/// heading), in the file's order. The file is the docs' one home; the
+/// generator refuses one whose heading is not the capability's id, or
+/// whose ops are not exactly the capability's `ops`, in order.
+struct CapDocs {
+    purpose: String,
+    ops: Vec<(String, String)>,
+}
+
+fn read_docs(module: &ModuleSpec) -> CapDocs {
+    let text = module.docs;
+    let place = format!("crates/cap-{}/OPS.md", module.id);
+    let mut sections: Vec<(String, Vec<&str>)> = Vec::new();
+    for line in text.lines() {
+        if let Some(h) = line.strip_prefix("## ") {
+            sections.push((h.trim().to_string(), Vec::new()));
+        } else if let Some(h) = line.strip_prefix("# ") {
+            assert!(sections.is_empty(), "{place}: one `#` heading, first");
+            assert_eq!(h.trim(), module.id, "{place}: the `#` heading names the capability");
+            sections.push((String::new(), Vec::new()));
+        } else {
+            sections.last_mut().unwrap_or_else(|| panic!("{place}: starts with `# {}`", module.id)).1.push(line);
+        }
+    }
+    let body = |lines: &[&str]| lines.join("\n").trim_matches('\n').to_string();
+    let mut it = sections.into_iter();
+    let (head, purpose) = it.next().unwrap_or_else(|| panic!("{place}: empty"));
+    assert!(head.is_empty(), "{place}: starts with `# {}`", module.id);
+    let ops: Vec<(String, String)> = it.map(|(op, lines)| (op, body(&lines))).collect();
+    let names: Vec<&str> = ops.iter().map(|(op, _)| op.as_str()).collect();
+    assert_eq!(names, module.ops, "{place}: one `## <op>` section per op, in `ops`' order");
+    for (op, d) in &ops {
+        assert!(!d.is_empty(), "{place}: `## {op}` says nothing");
+    }
+    CapDocs { purpose: body(&purpose), ops }
+}
+
+fn main() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+    // The cargo profile the modules were built under (`just caps`:
+    // release; `just caps-fast`: wasm-fast, the iteration loop's).
+    let profile = std::env::var("CAPS_PROFILE").unwrap_or_else(|_| "release".into());
+    let target = root.join("target/wasm32-unknown-unknown").join(&profile);
+    let dist = root.join("web/public/caps");
+
+    // The demo feed: the e2e fixture, served statically so dev and
+    // e2e run the identical demo.
+    let fixture = root.join("web/e2e/fixtures/sample-gtfs.zip");
+    let feed_bytes = fixtures::feed_bytes();
+
+    // The network capability's worked examples are computed from the
+    // REAL fixture: import derives the document, export produces the
+    // zip — both through the shared transit-codec library, so the
+    // examples are exactly what the module returns and cannot drift.
+    let net_ctx = network_example_context(&feed_bytes);
+    // The kernel's examples first: its registry ops answer what the
+    // process holds, and each capability's examples run through its
+    // dispatch in this process after.
+    let kernel_ops = kernel_ops(net_ctx.as_ref());
+
+    // The schema lock (docs/FORMATS.md, "The schema lock"), before
+    // anything is written: `--lock` (`just schema-lock`) records what
+    // this build adds and stops; a plain run fails on any drift.
+    let documents = document_kinds(net_ctx.as_ref());
+    let locking = std::env::args().any(|a| a == "--lock");
+    let locks = lock_documents(root, &documents, locking);
+    let (table, table_schemas) = kind_table(root, &documents, &locks);
+    lock_kind_table(root, &table, locking);
+    if locking {
+        return;
+    }
+
+    // Hash-addressed files: the filename carries the content hash, so
+    // the HTTP cache holds each capability build forever.
+    let _ = fs::remove_dir_all(&dist);
+    fs::create_dir_all(&dist).expect("create caps dir");
+    fs::copy(&fixture, dist.join("sample-gtfs.zip")).expect("copy demo feed");
+
+    // The day-view runner gates' document: the load_network request
+    // for the REAL fixture-derived network (the same bytes the
+    // examples and the smoke use — the document cannot drift from
+    // the module that owns it). Every JSON-document capability's
+    // gate (board, runcut, calendar) chains from it.
+    if let Some(ctx) = net_ctx.as_ref() {
+        let request = serde_json::json!({ "op": "load_network", "network": ctx.derived });
+        let json = serde_json::to_string_pretty(&request).expect("request serializes");
+        fs::write(dist.join("sample-network-load.json"), json + "\n")
+            .expect("write the dispatch sample document");
+    }
+
+    let mut capabilities = Vec::with_capacity(MODULES.len());
+    for module in MODULES {
+        let docs = read_docs(module);
+        let bytes = fs::read(target.join(module.file)).expect("wasm module (run the build first)");
+        let hex = format!("{:x}", Sha256::digest(&bytes));
+        fs::write(dist.join(format!("{}-{hex}.wasm", module.id)), &bytes).expect("write module");
+        capabilities.push(Capability {
+            id: module.id.into(),
+            hash: format!("sha256:{hex}"),
+            url: format!("caps/{}-{hex}.wasm", module.id),
+            bytes: bytes.len() as u64,
+            ops: module.ops.iter().map(|s| s.to_string()).collect(),
+            documents: module.documents.iter().map(|s| s.to_string()).collect(),
+            consumes: module
+                .consumes
+                .iter()
+                .map(|(kind, id)| ((*kind).to_string(), (*id).to_string()))
+                .collect(),
+            speaks: module
+                .speaks
+                .iter()
+                .map(|(kind, versions)| {
+                    ((*kind).to_string(), versions.iter().copied().collect::<Vec<_>>())
+                })
+                .collect(),
+            migrates: module
+                .migrates
+                .iter()
+                .map(|(kind, steps)| {
+                    (
+                        (*kind).to_string(),
+                        steps
+                            .iter()
+                            .map(|&(from, to)| MigrationSpec { from, to })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect(),
+            purpose: docs.purpose.clone(),
+            op_docs: docs
+                .ops
+                .iter()
+                .map(|(op, description)| {
+                    // Each capability's own example, run through its own
+                    // dispatch (its crate's `examples` feature).
+                    let (example, kinds) = match run_examples(module.id, op) {
+                        Some((example, kinds)) => (Some(example), kinds),
+                        None => (None, Vec::new()),
+                    };
+                    (
+                        op.clone(),
+                        OpDoc { description: description.clone(), example, kinds },
+                    )
+                })
+                .collect(),
+        });
+        println!("cap {}: sha256:{hex} ({:.1} KiB)", module.id, bytes.len() as f64 / 1024.0);
+    }
+
+    // The linked assemblies: one module per generated UI.
+    let mut assemblies = Vec::new();
+    for assembly in common::assemblies(root).into_iter().filter(|a| a.ui.is_some()) {
+        let ui = assembly.ui.clone().expect("a UI assembly");
+        let file = format!("{}.wasm", assembly.name.replace('-', "_"));
+        let bytes = fs::read(target.join(&file)).expect("assembly module (run the build first)");
+        let hex = format!("{:x}", Sha256::digest(&bytes));
+        fs::write(dist.join(format!("ui-{ui}-{hex}.wasm")), &bytes).expect("write assembly");
+        println!("assembly {ui}: sha256:{hex} ({:.1} KiB: {})", bytes.len() as f64 / 1024.0, assembly.caps.join(", "));
+        assemblies.push(LinkedAssembly {
+            ui: ui.clone(),
+            hash: format!("sha256:{hex}"),
+            url: format!("caps/ui-{ui}-{hex}.wasm"),
+            bytes: bytes.len() as u64,
+            capabilities: assembly.caps,
+        });
+    }
+
+    let manifest = CapManifest { kernel: KERNEL, kernel_ops, capabilities, assemblies };
+
+    // The compose-time proof, applied to our own assembly before it
+    // is written: generation is the validator's first consumer.
+    if let Err(issues) = validate_assembly(&manifest) {
+        eprintln!("generated assembly is NOT valid:");
+        for issue in issues {
+            eprintln!("  [{}] {}: {}", issue.capability, issue.check, issue.detail);
+        }
+        std::process::exit(1);
+    }
+
+    let json = serde_json::to_string_pretty(&manifest).expect("manifest serializes");
+    fs::write(dist.join("manifest.json"), json + "\n").expect("write manifest");
+
+    // The local registry follows every build, fast ones too (caps-run
+    // reads it, so the loop runs the code it just changed); its
+    // evidence names the profile, and only `just registry` — gated,
+    // release — is a publish.
+    publish_registry(root, &manifest, &documents, &locks, &profile);
+    publish_kind_table(root, &table, &table_schemas);
+
+    println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
+}
+
+/// The pinned toolchain's channel, from rust-toolchain.toml.
+fn toolchain_pin(root: &Path) -> String {
+    let text = fs::read_to_string(root.join("rust-toolchain.toml")).expect("rust-toolchain.toml (the toolchain pin)");
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("channel").map(|v| v.trim().trim_start_matches('=').trim().trim_matches('"').to_string()))
+        .expect("rust-toolchain.toml names a channel")
+}
+
+/// Publish the REGISTRY: immutable blobs, one evidence record per
+/// capability, and the pointer. The record says what these exact
+/// bytes are, what they answer, what they speak — and WHICH GATES
+/// the publish recipe ran against them, at which commit. That
+/// record is what makes "known good" a checkable claim for an agent
+/// (or a human dogfooding `caps run`) rather than a marketing one.
+fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], locks: &[schema_lock::Lock], profile: &str) {
+    let registry = root.join("registry");
+    let blobs = registry.join("blobs");
+    let caps_dir = registry.join("capabilities");
+    let _ = fs::remove_dir_all(&registry);
+    fs::create_dir_all(&blobs).expect("create registry blobs");
+    fs::create_dir_all(&caps_dir).expect("create registry records");
+
+    // Provenance-style evidence: what built these bytes, from where.
+    let run = |args: &[&str]| {
+        Command::new(args[0])
+            .args(&args[1..])
+            .current_dir(root)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    };
+    let commit = run(&["git", "rev-parse", "HEAD"]);
+    let dirty = !run(&["git", "status", "--porcelain"]).is_empty();
+    let rustc = run(&["rustc", "--version"]);
+    let gated = std::env::var("CAPS_PUBLISH_GATED").is_ok_and(|v| v == "1");
+    assert!(!gated || profile == "release", "a gated publish takes release modules, not {profile} (unset CAPS_PROFILE)");
+    // The toolchain the bytes came from: the pin (rust-toolchain.toml),
+    // the compiler that ran (its release, commit, and LLVM), and cargo.
+    // A gated publish refuses a compiler other than the pin — the
+    // published hashes are the pinned toolchain's, rebuildable from the
+    // tree alone.
+    let verbose = run(&["rustc", "-vV"]);
+    let field = |name: &str| {
+        verbose
+            .lines()
+            .find_map(|l| l.strip_prefix(name).map(|v| v.trim().to_string()))
+            .unwrap_or_default()
+    };
+    let pinned = toolchain_pin(root);
+    let release = field("release:");
+    if gated {
+        assert_eq!(
+            release, pinned,
+            "rustc {release} is not the pinned toolchain {pinned} (rust-toolchain.toml)"
+        );
+    }
+    let toolchain = serde_json::json!({
+        "pinned": pinned,
+        "rustc": release,
+        "rustc_commit": field("commit-hash:"),
+        "llvm": field("LLVM version:"),
+        "cargo": run(&["cargo", "--version"]),
+        "locked": true,
+        "remapped_paths": ["/cargo", "/src"],
+    });
+    let evidence = serde_json::json!({
+        "gates": if gated { PUBLISH_GATES } else { &[] },
+        "recipe": if gated { "just registry" } else if profile == "release" { "just caps" } else { "just caps-fast" },
+        // The cargo profile of the modules: release (whole-program LTO,
+        // the published bytes) or wasm-fast (the iteration loop's).
+        "profile": profile,
+        "source_commit": commit,
+        "dirty_tree": dirty,
+        "source_digest": source_digest(root),
+        "rustc": rustc,
+        "toolchain": toolchain,
+    });
+
+    for cap in &manifest.capabilities {
+        let bytes = fs::read(root.join("web/public/caps").join(Path::new(&cap.url).file_name().unwrap()))
+            .expect("module bytes (the manifest step wrote them)");
+        let hex = cap.hash.strip_prefix("sha256:").expect("hash format");
+        fs::write(blobs.join(format!("{hex}.wasm")), &bytes).expect("write blob");
+
+        let record = serde_json::json!({
+            "id": cap.id,
+            "hash": cap.hash,
+            "bytes": cap.bytes,
+            "kernel": manifest.kernel,
+            "ops": cap.ops,
+            "documents": cap.documents,
+            "consumes": cap.consumes,
+            "speaks": cap.speaks,
+            "migrates": cap.migrates,
+            "purpose": cap.purpose,
+            "op_docs": cap.op_docs,
+            "blob": format!("blobs/{hex}.wasm"),
+            "evidence": evidence,
+        });
+        let json = serde_json::to_string_pretty(&record).expect("record serializes");
+        fs::write(caps_dir.join(format!("{}.json", cap.id)), json + "\n")
+            .expect("write record");
+    }
+
+    // The pointer: which capabilities (at which hashes) this registry
+    // currently names. Blobs are immutable; this file moves.
+    let pointer = serde_json::json!({
+        "kernel": manifest.kernel,
+        // The kernel ops every module answers for the kinds its
+        // capabilities read (the loads) and always (evict, held,
+        // about) — what `caps-run --load <kind>:FILE` resolves.
+        "kernel_ops": manifest.kernel_ops,
+        "capabilities": manifest
+            .capabilities
+            .iter()
+            .map(|c| serde_json::json!({ "id": c.id, "hash": c.hash }))
+            .collect::<Vec<_>>(),
+        "evidence": evidence,
+    });
+    let json = serde_json::to_string_pretty(&pointer).expect("pointer serializes");
+    fs::write(registry.join("registry.json"), json + "\n").expect("write pointer");
+
+    publish_documents(&registry, documents, locks, &evidence);
+
+    println!(
+        "registry: {} capabilities published (blobs + records + pointer)",
+        manifest.capabilities.len()
+    );
+}
+
+/// One document kind the registry describes: its line in the kind list
+/// (`cap_abi::kinds::KINDS`: its name, store kind, and the crate that
+/// keeps its lock), and the kind as the schema lock reads it: its tag,
+/// the version this build writes, the JSON Schema generated from its
+/// serde type, a worked example computed from the fixtures through the
+/// owning library (so the example is exactly a document the modules
+/// make), and its migration chain.
+struct DocumentKind {
+    line: &'static cap_abi::kinds::Declaration,
+    spec: schema_lock::Kind,
+}
+
+impl DocumentKind {
+    fn store_kind(&self) -> Option<&'static str> {
+        self.line.store.map(|s| s.kind)
+    }
+}
+
+/// A locked kind: its tag and version are the type's own
+/// (`transit_version::Versioned`), and the rest is its line in the kind
+/// list. A type whose tag has no line stops the run.
+fn kind<T>(example: Option<serde_json::Value>, migrate: Option<schema_lock::Migrate>) -> DocumentKind
+where
+    T: transit_version::Versioned + schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
+{
+    let line = cap_abi::kinds::by_tag(T::KIND)
+        .unwrap_or_else(|| panic!("the tag {:?} has no line in crates/cap-abi/src/kinds.rs: a kind exists only if it has one", T::KIND));
+    DocumentKind { line, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
+}
+
+/// Check every locked kind against its lock, or (`locking`) write what
+/// this build adds. Any drift ends the run with every drift named.
+fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec<schema_lock::Lock> {
+    let mut drifts = Vec::new();
+    let mut locks = Vec::new();
+    for doc in documents {
+        let owner = doc.line.owner;
+        let dir = root.join("crates").join(owner).join("locks");
+        let lock = schema_lock::read_lock(&dir, doc.spec.tag).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
+        if !locking {
+            drifts.extend(schema_lock::check(&doc.spec, &lock));
+            locks.push(lock);
+            continue;
+        }
+        match schema_lock::freeze(&doc.spec, &lock) {
+            Ok(next) if next == lock => locks.push(lock),
+            Ok(next) => {
+                schema_lock::write_lock(&dir, &next).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
+                println!("schema lock: crates/{owner}/locks/ records {} v{}", doc.spec.tag, doc.spec.current);
+                locks.push(next);
+            }
+            Err(refused) => {
+                drifts.extend(refused);
+                locks.push(lock);
+            }
+        }
+    }
+    if !drifts.is_empty() {
+        eprintln!("schema lock: the code differs from what the documents promise (docs/FORMATS.md, \"The schema lock\"):");
+        for drift in &drifts {
+            eprintln!("  - {drift}");
+        }
+        std::process::exit(1);
+    }
+    locks
+}
+
+/// Bring a network of an older version forward (transit-network's chain).
+fn migrate_network(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_network::migrate_to(doc, transit_network::SCHEMA_VERSION).map(|(doc, _)| doc)
+}
+
+/// Bring a watchlist of an older version forward (transit-rider's chain).
+fn migrate_watchlist(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_rider::watchlist::migrate_to(doc, transit_rider::watchlist::SCHEMA_VERSION).map(|(doc, _)| doc)
+}
+
+/// Bring a service alerts document of an older version forward
+/// (transit-alerts' chain).
+fn migrate_alerts(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION).map(|(doc, _)| doc)
+}
+
+/// Bring a stop requests document of an older version forward
+/// (transit-requests' chain).
+fn migrate_requests(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_requests::version::migrate_to(doc, transit_requests::SCHEMA_VERSION)
+}
+
+/// Bring an edit document of an older version forward (transit-sync's chain).
+fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_sync::version::migrate_to(doc, transit_sync::SCHEMA_VERSION).map(|(doc, _)| doc)
+}
+
+/// Every JSON document kind on the bus and in the store. Not here: the
+/// feed (a GTFS zip) and the rt snapshot (protobuf) are bytes with
+/// their own specs; the manifest is the Go host's own document
+/// (docs/FORMATS.md pins it).
+fn document_kinds(net: Option<&NetworkExampleContext>) -> Vec<DocumentKind> {
+    let plans_example = net.and_then(|n| {
+        let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
+            transit_plans::publish(&set, plan, &n.network_hash, fixture_today()).unwrap_or(set)
+        });
+        serde_json::to_value(set).ok()
+    });
+    // The walk table's example is the streets capability's `walks`
+    // answer, as its dispatch gives it.
+    let walks_example = run_examples("streets", "walks").and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
+    vec![
+        kind::<transit_network::Network>(net.map(|n| n.derived.clone()), Some(migrate_network)),
+        kind::<transit_codec::Boundary>(net.map(|n| n.boundary.clone()), None),
+        kind::<transit_sync::EditDocument>(Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
+            Some(migrate_edits),
+        ),
+        kind::<transit_log::Entry>(Some(value(&fixture_stops_log().1[1])), None),
+        kind::<transit_log::Checkpoint>(Some(value(&fixture_stops_log().0)), None),
+        kind::<transit_network::PlanSet>(net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
+            None,
+        ),
+        kind::<transit_rider::watchlist::Watchlist>(Some(value(&fixture_watchlist())),
+            Some(migrate_watchlist),
+        ),
+        kind::<transit_plans::PublishedPlans>(plans_example, None),
+        kind::<transit_plans::FrozenVersions>(net.and_then(|n| {
+                let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), &fixture_plan_set()[0], &n.network_hash, "proposal for public comment").ok()?;
+                serde_json::to_value(frozen).ok()
+            }),
+            None,
+        ),
+        kind::<transit_rider::device::RecentPlaces>(Some(serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
+                {"id": "A", "name": "Main St & 1st Ave", "lat": 45.5, "lon": -73.5},
+                {"id": "STN", "name": "Central Station"}
+            ]})),
+            None,
+        ),
+        kind::<transit_rider::device::LiveFeeds>(Some(serde_json::json!({"kind": "live_feeds", "schema_version": 1,
+                "trips": "https://agency.example/gtfs-rt/trip-updates.pb", "vehicles": "", "alerts": ""})),
+            None,
+        ),
+        kind::<transit_authz::Policy>(Some(value(&transit_authz::Policy::current(vec![transit_authz::Rule {
+                name: "ops-write-edits".into(),
+                roles: vec!["dispatcher".into()],
+                pointers: vec!["edits".into()],
+                actions: vec!["write".into()],
+                extra: Default::default(),
+            }]))),
+            None,
+        ),
+        kind::<transit_streets::Streets>(streets_example_context().map(|c| value(&c.streets)), None),
+        kind::<transit_streets::walking::WalkTable>(walks_example, None),
+        kind::<transit_runs::WorkRules>(Some(value(&fixture_work_rules())), None),
+        kind::<kind_table::KindTable>(// The governance alone: the versions are the published
+            // schemas', and would move the example with every schema.
+            Some(value(&kind_table::KindTable {
+                kind: kind_table::KindTableKind,
+                schema_version: kind_table::SCHEMA_VERSION,
+                kinds: kind_table::kinds(),
+                extra: Default::default(),
+            })),
+            None,
+        ),
+        kind::<transit_stops::Stops>(Some(value(&fixture_stops())), None),
+        kind::<transit_requests::StopRequests>(Some(value(&fixture_requests())), Some(migrate_requests)),
+        kind::<transit_alerts::ServiceAlerts>(Some(value(&fixture_alerts())), Some(migrate_alerts)),
+        kind::<transit_alerts::AlertTemplates>(Some(value(&fixture_templates())), None),
+        kind::<transit_notes::Notes>(Some(value(&fixture_notes())), None),
+        kind::<transit_live::LiveDay>(live_example().map(|(live, _)| value(&live)), None),
+    ]
+}
+
+/// A worked example as a JSON value.
+fn value<T: serde::Serialize>(example: &T) -> serde_json::Value {
+    serde_json::to_value(example).expect("example serializes")
+}
+
+/// The schemas every deployment serves at `/schemas/`
+/// (web/public/schemas/, copied into every page build): the index
+/// `documents.json`, with each entry's paths relative to it, and each
+/// version's schema and example beside it. A reader holding only a
+/// document finds its schema by the tag and version inside it. The
+/// files ride in the build, so a rollback serves the schemas of the
+/// build it moves to.
+///
+/// The index also holds the `Link` header each blob's response sends
+/// (`links`): by a stored blob's envelope (`stored`, "<store kind>
+/// v<N>"), and by a published document's tag (`published`, the version
+/// this build writes). The server copies the value and decides nothing.
+fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
+    let web = registry.parent().expect("the registry is in the tree").join("web/public/schemas");
+    let _ = fs::remove_dir_all(&web);
+    fs::create_dir_all(&web).expect("create web/public/schemas");
+    let mut served = Vec::new();
+    let (mut stored, mut published) = (serde_json::Map::new(), serde_json::Map::new());
+    for entry in index {
+        let mut entry = entry.clone();
+        for (field, suffix) in [("schema", ".schema.json"), ("example", ".example.json")] {
+            let Some(path) = entry[field].as_str().map(str::to_string) else { continue };
+            let file = format!("{}.v{}{suffix}", entry["tag"].as_str().expect("an entry has its tag"), entry["schema_version"]);
+            fs::copy(registry.join(&path), web.join(&file)).expect("copy a schema file");
+            entry[field] = file.into();
+        }
+        let link = format!("</schemas/{}>; rel=\"describedby\"; type=\"application/schema+json\"", entry["schema"].as_str().expect("a schema"));
+        if let Some(store_kind) = entry["store_kind"].as_str() {
+            stored.insert(format!("{store_kind} v{}", entry["schema_version"]), link.clone().into());
+        }
+        if entry["written"] == true {
+            published.insert(entry["tag"].as_str().expect("a tag").to_string(), link.into());
+        }
+        served.push(entry);
+    }
+    let links = serde_json::json!({ "stored": stored, "published": published });
+    let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": served, "links": links })).expect("the served index serializes");
+    fs::write(web.join("documents.json"), json + "\n").expect("write the served index");
+}
+
+/// The Go host's document kinds with a hand-written schema, by tag and
+/// version (server/schemas/).
+const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1), ("store_layout", 1)];
+
+/// Publish the documents: for each locked version of each kind, its
+/// schema `schemas/<tag>.v<N>.schema.json` and its example
+/// `examples/<tag>.v<N>.json`, copied from the lock; and the index
+/// `documents.json`. Each entry names its files and their hashes, and
+/// says whether this build writes that version or reads it only through
+/// a migration (`written`). Files are named by the tag a document
+/// carries inside it, so a reader holding only a document finds its
+/// schema. Each schema's `$id` names no host. `go test ./server/...`
+/// validates every example against its schema with no Rust
+/// (docs/FORMATS.md).
+fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) {
+    let schemas = registry.join("schemas");
+    let examples = registry.join("examples");
+    fs::create_dir_all(&schemas).expect("create registry schemas");
+    fs::create_dir_all(&examples).expect("create registry examples");
+    let mut index = Vec::new();
+    for (doc, lock) in documents.iter().zip(locks) {
+        let tag = doc.spec.tag;
+        for (&version, locked) in &lock.versions {
+            let text = &locked.example;
+            let stem = format!("{tag}.v{version}");
+            let schema = published_schema(tag, version, &locked.schema);
+            let schema_path = format!("schemas/{stem}.schema.json");
+            fs::write(registry.join(&schema_path), &schema).expect("write schema");
+            let mut entry = serde_json::json!({
+                "kind": doc.line.name,
+                "tag": tag,
+                "store_kind": doc.store_kind(),
+                "owner": doc.line.owner,
+                "schema_version": version,
+                "written": version == doc.spec.current,
+                "schema": schema_path,
+                "schema_hash": cap_abi::content_hash(schema.as_bytes()),
+            });
+            let example_path = format!("examples/{stem}.json");
+            fs::write(registry.join(&example_path), text).expect("write example");
+            entry["example"] = example_path.into();
+            entry["example_hash"] = cap_abi::content_hash(text.as_bytes()).into();
+            index.push(entry);
+        }
+    }
+    // The host-owned kinds: no Rust type generates them, so their
+    // schemas are written by hand and locked in server/schemas/ beside a
+    // frozen example (server/schema_test.go holds them). The manifest's
+    // schema is the HTTP contract's (server/openapi.json).
+    for &(tag, version) in HOST_OWNED {
+        let stem = format!("{tag}.v{version}");
+        let dir = registry.parent().expect("the registry is in the tree").join("server/schemas");
+        let read = |file: String| fs::read_to_string(dir.join(&file)).unwrap_or_else(|e| panic!("server/schemas/{file}: {e}"));
+        let schema = published_schema(tag, version, &host_owned_schema(registry.parent().expect("the registry is in the tree"), tag, version));
+        let example = read(format!("{stem}.example.json"));
+        let (schema_path, example_path) = (format!("schemas/{stem}.schema.json"), format!("examples/{stem}.json"));
+        fs::write(registry.join(&schema_path), &schema).expect("write schema");
+        fs::write(registry.join(&example_path), &example).expect("write example");
+        index.push(serde_json::json!({
+            "kind": tag,
+            "tag": tag,
+            "store_kind": tag,
+            "owner": "server",
+            "schema_version": version,
+            "written": true,
+            "schema": schema_path,
+            "schema_hash": cap_abi::content_hash(schema.as_bytes()),
+            "example": example_path,
+            "example_hash": cap_abi::content_hash(example.as_bytes()),
+        }));
+    }
+    let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": index, "evidence": evidence }))
+        .expect("documents index serializes");
+    fs::write(registry.join("documents.json"), json + "\n").expect("write documents index");
+    publish_web_schemas(registry, &index);
+    println!("registry: {} document versions published (schemas + worked examples)", index.len());
+}
+
+/// The kind table (`kind_table.rs`): each stored kind's line in the
+/// kind list, with the versions its locked schemas give it and the
+/// references its current schema declares (D-232). It is a function of
+/// the list and the locks alone, so the checked-in copy
+/// (`crates/cap-abi/kinds.json`) needs no module build. Each schema it
+/// names is answered beside it, by hash, as published.
+fn kind_table(root: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock]) -> (kind_table::KindTable, Vec<(String, String)>) {
+    let mut kinds = kind_table::kinds();
+    let mut schemas = Vec::new();
+    let mut versions = |tag: &str, version: u32, schema: &serde_json::Value| -> Option<kind_table::VersionEntry> {
+        let text = published_schema(tag, version, schema);
+        let hash = cap_abi::content_hash(text.as_bytes());
+        schemas.push((hash.clone(), text));
+        Some(kind_table::VersionEntry { version, schema: hash })
+    };
+    for (doc, lock) in documents.iter().zip(locks) {
+        let Some(entry) = kinds.iter_mut().find(|k| k.tag == doc.spec.tag) else { continue };
+        for (&version, locked) in &lock.versions {
+            entry.versions.extend(versions(doc.spec.tag, version, &locked.schema));
+        }
+        if let Some(current) = lock.versions.get(&doc.spec.current) {
+            entry.references = transit_version::references(&current.schema);
+        }
+    }
+    for &(tag, version) in HOST_OWNED {
+        let entry = kinds.iter_mut().find(|k| k.tag == tag).unwrap_or_else(|| panic!("the host-owned {tag} has no line in the kind list"));
+        let schema = host_owned_schema(root, tag, version);
+        entry.versions.extend(versions(tag, version, &schema));
+    }
+    let table = kind_table::KindTable { kind: kind_table::KindTableKind, schema_version: kind_table::SCHEMA_VERSION, kinds, extra: Default::default() };
+    (table, schemas)
+}
+
+/// The checked-in kind table, beside the list it is generated from.
+const KIND_TABLE: &str = "crates/cap-abi/kinds.json";
+
+/// Hold the checked-in kind table to the list and the locks, or
+/// (`locking`, `just schema-lock`) write it. A plain run stops while it
+/// differs, so a new kind, a changed route, or a new reference shows in a
+/// review's diff.
+fn lock_kind_table(root: &Path, table: &kind_table::KindTable, locking: bool) {
+    let text = serde_json::to_string_pretty(table).expect("the kind table serializes") + "\n";
+    let path = root.join(KIND_TABLE);
+    if locking {
+        if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+            fs::write(&path, &text).expect("write the kind table");
+            println!("kind table: {KIND_TABLE} records the kind list");
+        }
+        return;
+    }
+    if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+        eprintln!(
+            "kind table: {KIND_TABLE} differs from the kind list (crates/cap-abi/src/kinds.rs) and the locked schemas. \
+             Run `just schema-lock` to write it again, and review its diff."
+        );
+        std::process::exit(1);
+    }
+}
+
+/// The kind table written beside the server's modules as
+/// `web/pkg/kinds.json` (its canonical bytes), and each schema it names
+/// as `web/pkg/schemas/<hex>.json` (the server keeps them in the store,
+/// D-202).
+fn publish_kind_table(root: &Path, table: &kind_table::KindTable, schemas: &[(String, String)]) {
+    let pkg = root.join("web/pkg");
+    let dir = pkg.join("schemas");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create web/pkg/schemas");
+    for (hash, text) in schemas {
+        fs::write(dir.join(format!("{}.json", hash.trim_start_matches("sha256:"))), text).expect("write the schema");
+    }
+    let json = cap_abi::canonical_bytes(table).expect("the kind table serializes");
+    fs::write(pkg.join("kinds.json"), json).expect("write web/pkg/kinds.json");
+    println!("kind table: {} kinds, {} schemas (web/pkg/kinds.json)", table.kinds.len(), fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0));
+}
+
+/// A schema as the registry publishes it: its `$id` names no host, in
+/// pretty JSON with a final newline.
+fn published_schema(tag: &str, version: u32, schema: &serde_json::Value) -> String {
+    let mut schema = schema.clone();
+    schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
+    serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n"
+}
+
+/// A host-owned kind's schema, as `server/schemas/` keeps it.
+fn host_owned_schema(root: &Path, tag: &str, version: u32) -> serde_json::Value {
+    let file = root.join(format!("server/schemas/{tag}.v{version}.schema.json"));
+    let text = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    serde_json::from_str(&text).expect("a host-owned schema is JSON")
+}
+
+/// The digest of the source the modules are built from — every file
+/// git sees (tracked or not, ignored ones excluded) under `crates/`
+/// plus the workspace `Cargo.toml` and `Cargo.lock`: sha256 over
+/// `"{path}\n{sha256 hex of its bytes}\n"` per file, in path order.
+/// `caps-run` recomputes it the same way and says when the registry
+/// was published from another tree (QAF-77). `None` without git.
+fn source_digest(root: &Path) -> Option<String> {
+    let listing = Command::new("git")
+        .args(["ls-files", "-co", "--exclude-standard", "-z", "--", "crates", "Cargo.toml", "Cargo.lock"])
+        .current_dir(root)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let mut paths: Vec<&str> =
+        std::str::from_utf8(&listing.stdout).ok()?.split('\0').filter(|p| !p.is_empty()).collect();
+    paths.sort_unstable();
+    paths.dedup();
+    let mut digest = Sha256::new();
+    for path in paths {
+        let Ok(bytes) = fs::read(root.join(path)) else { continue };
+        digest.update(format!("{path}\n{:x}\n", Sha256::digest(&bytes)).as_bytes());
+    }
+    Some(format!("sha256:{:x}", digest.finalize()))
+}
+
+
+
+/// A capability's own worked example of `op`, run through its own
+/// `invoke` (its crate's `examples` feature): the loads, then the
+/// request, and the answer as dispatch gives it, with the op's example
+/// of each kind of its tagged argument. None when the capability gives
+/// none for the op.
+fn run_examples(capability: &str, op: &str) -> Option<(OpExample, Vec<cap_abi::manifest::KindExample>)> {
+    let (examples, invoke, invoke_bytes): (fn() -> Vec<cap_abi::manifest::Example>, fn(&str) -> String, fn(u32, &[u8]) -> String) = match capability {
+        "notes" => (cap_notes::examples::examples, cap_notes::invoke, cap_notes::invoke_bytes),
+        "stops" => (cap_stops::examples::examples, cap_stops::invoke, cap_stops::invoke_bytes),
+        "analysis" => (cap_analysis::examples::examples, cap_analysis::invoke, cap_analysis::invoke_bytes),
+        "plans" => (cap_plans::examples::examples, cap_plans::invoke, cap_plans::invoke_bytes),
+        "directory" => (cap_directory::examples::examples, cap_directory::invoke, cap_directory::invoke_bytes),
+        "alerts" => (cap_alerts::examples::examples, cap_alerts::invoke, cap_alerts::invoke_bytes),
+        "requests" => (cap_requests::examples::examples, cap_requests::invoke, cap_requests::invoke_bytes),
+        "sync" => (cap_sync::examples::examples, cap_sync::invoke, cap_sync::invoke_bytes),
+        "runcut" => (cap_runcut::examples::examples, cap_runcut::invoke, cap_runcut::invoke_bytes),
+        "network" => (cap_network::examples::examples, cap_network::invoke, cap_network::invoke_bytes),
+        "log" => (cap_log::examples::examples, cap_log::invoke, cap_log::invoke_bytes),
+        "rt" => (cap_rt::examples::examples, cap_rt::invoke, cap_rt::invoke_bytes),
+        "divert" => (cap_divert::examples::examples, cap_divert::invoke, cap_divert::invoke_bytes),
+        "streets" => (cap_streets::examples::examples, cap_streets::invoke, cap_streets::invoke_bytes),
+        "router" => (cap_router::examples::examples, cap_router::invoke, cap_router::invoke_bytes),
+        "board" => (cap_board::examples::examples, cap_board::invoke, cap_board::invoke_bytes),
+        "author" => (cap_author::examples::examples, cap_author::invoke, cap_author::invoke_bytes),
+        "authz" => (cap_authz::examples::examples, cap_authz::invoke, cap_authz::invoke_bytes),
+        "disruptions" => (cap_disruptions::examples::examples, cap_disruptions::invoke, cap_disruptions::invoke_bytes),
+        "migrate" => (cap_migrate::examples::examples, cap_migrate::invoke, cap_migrate::invoke_bytes),
+        "calendar" => (cap_calendar::examples::examples, cap_calendar::invoke, cap_calendar::invoke_bytes),
+        "gtfs" => (cap_gtfs::examples::examples, cap_gtfs::invoke, cap_gtfs::invoke_bytes),
+        _ => return None,
+    };
+    let example = examples().into_iter().find(|e| e.op == op)?;
+    for load in &example.loads {
+        let answer: serde_json::Value = serde_json::from_str(&invoke(&load.to_string())).expect("a load answers JSON");
+        assert!(answer.get("ok").is_some(), "{capability}.{op}: a load of its example failed: {answer}");
+    }
+    let answer = match &example.bytes {
+        Some((code, bytes)) => invoke_bytes(*code, bytes),
+        None => invoke(&example.request.to_string()),
+    };
+    let response: serde_json::Value = serde_json::from_str(&answer).expect("an op answers JSON");
+    assert!(response.get("ok").is_some(), "{capability}.{op}: its example failed: {response}");
+    Some((OpExample { request: example.request, response }, example.kinds))
+}
+
+/// A kernel op's worked example: each document kind's load, computed
+/// over the fixtures. The kernel's examples stay with the kernel and the
+/// kind list; each capability gives its own (`run_examples`).
+fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExample> {
+    use serde_json::json;
+    let (request, response) = match ("kernel", op) {
+        ("kernel", "load_walks") => {
+            // A two-walk table over the fixture's station bays.
+            let net = net?;
+            let walk = |from: &str, to: &str| transit_streets::walking::Walk { from: from.into(), to: to.into(), walk_secs: 95 };
+            let table = transit_streets::walking::WalkTable { kind: Default::default(), schema_version: Default::default(),
+                streets_hash: "sha256:…".into(),
+                network_hash: net.network_hash.clone(),
+                speed_mps: transit_streets::walking::WALK_SPEED_MPS,
+                max_walk_secs: transit_streets::walking::MAX_WALK_SECS,
+                walks: vec![walk("SA", "SB"), walk("SB", "SA")],
+            };
+            let walks_hash = cap_abi::canonical_hash(&table).ok()?;
+            (
+                json!({ "op": "load_walks", "walks": table }),
+                json!({ "ok": { "op": "load_walks", "walks_hash": walks_hash } }),
+            )
+        }
+        ("kernel", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        // The rt join examples compute REAL answers over the fixture
+        // pair (sample-gtfs.zip + sample-rt.pb): t10 +120 s at A /
+        // +180 s at B, one vehicle on t10 — the joined board and the
+        // ranked view through the same shared library the module
+        // dispatches through.
+        ("kernel", "load_boundary") => {
+            let ctx = rt_example_context()?;
+            (
+                json!({ "op": "load_boundary", "boundary": ctx.boundary }),
+                json!({ "ok": { "op": "load_boundary", "boundary_hash": ctx.boundary_hash } }),
+            )
+        }
+        ("kernel", "load_edits") => {
+            let edits = transit_sync::EditDocument::new(dispatch_fixture_edits());
+            let edits_hash = cap_abi::canonical_hash(&edits).ok()?;
+            (
+                json!({ "op": "load_edits", "edits": edits }),
+                json!({ "ok": { "op": "load_edits", "edits_hash": edits_hash } }),
+            )
+        }
+        ("kernel", "load_live") => {
+            let (live, live_hash) = live_example()?;
+            (
+                json!({ "op": "load_live", "live": live }),
+                json!({ "ok": { "op": "load_live", "live_hash": live_hash } }),
+            )
+        }
+        ("kernel", "load_stops") => {
+            let stops = fixture_stops().checked().ok()?;
+            (
+                json!({ "op": "load_stops", "stops": stops }),
+                json!({ "ok": { "op": "load_stops", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stops": stops.stops.len() } }),
+            )
+        }
+        ("kernel", "load_stop_requests") => {
+            let requests = fixture_requests().checked().ok()?;
+            (
+                json!({ "op": "load_stop_requests", "requests": requests }),
+                json!({ "ok": { "op": "load_stop_requests", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "requests": requests.requests.len() } }),
+            )
+        }
+        ("kernel", "load_service_alerts") => {
+            let alerts = fixture_alerts().checked().ok()?;
+            (
+                json!({ "op": "load_service_alerts", "alerts": alerts }),
+                json!({ "ok": { "op": "load_service_alerts", "alerts_hash": cap_abi::canonical_hash(&alerts).ok()?, "alerts": alerts.alerts.len() } }),
+            )
+        }
+        ("kernel", "load_alert_templates") => {
+            let templates = fixture_templates().checked().ok()?;
+            (
+                json!({ "op": "load_alert_templates", "templates": templates }),
+                json!({ "ok": { "op": "load_alert_templates", "templates_hash": cap_abi::canonical_hash(&templates).ok()?, "templates": templates.templates.len() } }),
+            )
+        }
+        ("kernel", "load_notes") => {
+            let notes = fixture_notes().checked().ok()?;
+            (
+                json!({ "op": "load_notes", "notes": notes }),
+                json!({ "ok": { "op": "load_notes", "notes_hash": cap_abi::canonical_hash(&notes).ok()?, "notes": notes.notes.len() } }),
+            )
+        }
+        ("kernel", "load_work_rules") => {
+            let rules = fixture_work_rules().checked().ok()?;
+            let work_rules_hash = cap_abi::canonical_hash(&rules).ok()?;
+            (
+                json!({ "op": "load_work_rules", "work_rules": fixture_work_rules() }),
+                json!({ "ok": { "op": "load_work_rules", "work_rules_hash": work_rules_hash, "version": rules.schema_version.0 } }),
+            )
+        }
+        ("kernel", "load_watchlist") => {
+            let watchlist = fixture_watchlist();
+            let watchlist_hash = cap_abi::canonical_hash(&watchlist).ok()?;
+            (
+                json!({ "op": "load_watchlist", "document": watchlist }),
+                json!({ "ok": { "op": "load_watchlist", "watchlist_hash": watchlist_hash, "version": 2 } }),
+            )
+        }
+        ("kernel", "load_streets") => {
+            let ctx = streets_example_context()?;
+            (
+                json!({ "op": "load_streets", "streets": ctx.streets }),
+                json!({ "ok": { "op": "load_streets", "streets_hash": ctx.streets_hash,
+                    "ways": ctx.streets.ways.len(), "segments": ctx.segments, "nodes": ctx.nodes } }),
+            )
+        }
+        // Bulk-bytes ops have no JSON request example (the payload is
+        // the raw zip/protobuf); the description carries the contract.
+        ("kernel", "load_feed") => return None,
+        ("kernel", "load_layer") => return None,
+        ("kernel", "load_rt") => return None,
+        _ => return None,
+    };
+    Some(OpExample { request, response })
+}
+

@@ -10,7 +10,7 @@
 //!   assembly is caught, by name (the check an agent or a reviewer
 //!   acts on). A blind spot here is a lie the validator tells.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use proptest::prelude::*;
 
@@ -47,7 +47,7 @@ fn valid_manifest() -> CapManifest {
                 })
                 .collect(),
             purpose: String::new(),
-            op_docs: HashMap::new(),
+            op_docs: BTreeMap::new(),
         }
     };
     let hex = |n: u8| format!("{}{:0>63}", n, "");
@@ -132,11 +132,11 @@ proptest! {
                 bytes: 0,
                 ops: ops.get(i).cloned().unwrap_or_default(),
                 documents: vec![],
-                consumes: HashMap::new(),
-                speaks: HashMap::from([("feed".to_string(), speaks.get(i).cloned().unwrap_or_default())]),
-                migrates: HashMap::new(),
+                consumes: BTreeMap::new(),
+                speaks: BTreeMap::from([("feed".to_string(), speaks.get(i).cloned().unwrap_or_default())]),
+                migrates: BTreeMap::new(),
                 purpose: String::new(),
-                op_docs: HashMap::new(),
+                op_docs: BTreeMap::new(),
             })
             .collect();
         let manifest = CapManifest { kernel, kernel_ops: vec![], capabilities, assemblies: vec![] };

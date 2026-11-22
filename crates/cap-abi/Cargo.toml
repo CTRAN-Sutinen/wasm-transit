@@ -14,60 +14,27 @@ ryu-js = { workspace = true }
 itoa = { workspace = true }
 flate2 = { workspace = true }
 ts-rs = { workspace = true }
-# gen-manifest computes the network capability's worked examples from
-# the REAL fixture (import → document, export → zip): examples that
-# cannot drift from the code.
+chrono = { workspace = true }
+schemars = { workspace = true }
+# The kernel's registries name each kind's type (src/kernel.rs, one
+# static for each kind), and its derivations name theirs (the day,
+# transit-dispatch), so the kernel depends on each one's library.
+# Each library is in every module's closure (the arch gates' kernel
+# closure). D-239 moves each kind's load into its own library.
 transit-network = { path = "../transit-network" }
 transit-codec = { path = "../transit-codec" }
-# …and the analysis capability's examples compute REAL answers over
-# the fixture-derived document through the same library the module
-# dispatches through.
 transit-analysis = { path = "../transit-analysis" }
-chrono = { workspace = true }
-# …and the rt capability's example decodes the real e2e payload.
 transit-rt = { path = "../transit-rt" }
-# …and the live document (the rt → board edge) is computed the same way.
 transit-live = { path = "../transit-live" }
-# …and the dispatch capability's examples compute REAL answers over
-# the fixture-derived document (boards, chains, edit reports)
-# through the same shared library the module dispatches through.
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
 transit-rider = { path = "../transit-rider" }
-# …and the work-rule document kind and the runcut's recovery and
-# suggested-blocking examples (the runs layer, beside the network).
 transit-runs = { path = "../transit-runs" }
-# …and the stops document kind (each stop a list of dated events,
-# beside the plans; D-153).
 transit-stops = { path = "../transit-stops" }
-# …and the stop requests kind (D-159).
 transit-requests = { path = "../transit-requests" }
-# …and the service alerts and alert templates kinds (D-206..D-210).
 transit-alerts = { path = "../transit-alerts" }
-# …and the notes kind (D-214).
 transit-notes = { path = "../transit-notes" }
-# …and the router's examples compute REAL itineraries over the same
-# composition (materialize, patch, build, query) the module runs.
-transit-router = { path = "../transit-router", optional = true }
-# …and the disruptions' examples compute the day (D-218).
-transit-disruptions = { path = "../transit-disruptions", optional = true }
-# …and the street capability's examples compute REAL snap/route
-# answers over the e2e street fixture through the same library.
 transit-streets = { path = "../transit-streets" }
-# …and the sync and plan-chain capabilities' examples compute REAL
-# answers (merge + submit; resolve/validate/periods) through the
-# same libraries the modules dispatch through.
-transit-plans = { path = "../transit-plans", optional = true }
-# …and the authorization capability's example computes a REAL
-# fail-closed decision through the same library the module dispatches
-# through.
-transit-authz = { path = "../transit-authz", optional = true }
-# …and the log capability's examples compute REAL entries and folds
-# through the same library the module dispatches through.
-transit-log = { path = "../transit-log", optional = true }
-# …and the registry publishes every document kind's JSON Schema,
-# generated from those libraries' serde types (never hand-written).
-schemars = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
@@ -100,19 +67,6 @@ cap-runcut = { path = "../cap-runcut" }
 cap-stops = { path = "../cap-stops" }
 cap-streets = { path = "../cap-streets" }
 cap-sync = { path = "../cap-sync" }
-
-# The generator's libraries: gen-manifest computes the router's, the
-# plan chain's and authorization's worked examples through them, but the
-# kernel never names them, and every module links the kernel — so they
-# are optional, outside every module's closure (arch-gates, the kernel's
-# closure; docs/architecture/release-artifacts.md).
-[features]
-gen-manifest = ["dep:transit-disruptions", "dep:transit-router", "dep:transit-plans", "dep:transit-authz", "dep:transit-log"]
-
-[[bin]]
-name = "gen-manifest"
-path = "src/bin/gen_manifest.rs"
-required-features = ["gen-manifest"]
 
 [[bin]]
 name = "gen-assemblies"

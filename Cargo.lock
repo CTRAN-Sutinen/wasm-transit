@@ -196,9 +196,7 @@ dependencies = [
  "transit-authz",
  "transit-codec",
  "transit-dispatch",
- "transit-disruptions",
  "transit-live",
- "transit-log",
  "transit-network",
  "transit-notes",
  "transit-plans",
@@ -219,6 +217,7 @@ name = "cap-alerts"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-alerts",
@@ -233,6 +232,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "proptest",
  "serde",
  "serde_json",
@@ -250,6 +250,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -263,6 +264,7 @@ name = "cap-authz"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-authz",
@@ -275,6 +277,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "proptest",
  "serde",
  "serde_json",
@@ -296,6 +299,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -311,6 +315,7 @@ name = "cap-directory"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "proptest",
  "serde",
  "serde_json",
@@ -326,6 +331,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-alerts",
@@ -342,6 +348,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -356,6 +363,7 @@ name = "cap-gtfs"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -368,6 +376,7 @@ name = "cap-log"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-log",
@@ -379,6 +388,7 @@ name = "cap-migrate"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-alerts",
@@ -395,6 +405,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -408,6 +419,7 @@ name = "cap-notes"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-log",
@@ -422,6 +434,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-log",
@@ -437,6 +450,7 @@ name = "cap-requests"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-log",
@@ -451,6 +465,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -469,6 +484,7 @@ name = "cap-rt"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "prost",
  "serde",
  "serde_json",
@@ -486,6 +502,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "sha2",
@@ -504,6 +521,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-log",
@@ -520,6 +538,7 @@ name = "cap-streets"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-network",
@@ -533,6 +552,7 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "chrono",
+ "fixtures",
  "serde",
  "serde_json",
  "transit-log",
@@ -736,6 +756,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
+name = "fixtures"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-alerts",
+ "transit-codec",
+ "transit-dispatch",
+ "transit-live",
+ "transit-log",
+ "transit-network",
+ "transit-notes",
+ "transit-plans",
+ "transit-requests",
+ "transit-rider",
+ "transit-rt",
+ "transit-runs",
+ "transit-stops",
+ "transit-streets",
+ "transit-sync",
+ "transit-version",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -794,6 +841,62 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "generator"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-alerts",
+ "cap-analysis",
+ "cap-author",
+ "cap-authz",
+ "cap-board",
+ "cap-calendar",
+ "cap-directory",
+ "cap-disruptions",
+ "cap-divert",
+ "cap-gtfs",
+ "cap-log",
+ "cap-migrate",
+ "cap-network",
+ "cap-notes",
+ "cap-plans",
+ "cap-requests",
+ "cap-router",
+ "cap-rt",
+ "cap-runcut",
+ "cap-stops",
+ "cap-streets",
+ "cap-sync",
+ "chrono",
+ "fixtures",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-alerts",
+ "transit-analysis",
+ "transit-authz",
+ "transit-codec",
+ "transit-dispatch",
+ "transit-disruptions",
+ "transit-live",
+ "transit-log",
+ "transit-network",
+ "transit-notes",
+ "transit-plans",
+ "transit-requests",
+ "transit-rider",
+ "transit-router",
+ "transit-rt",
+ "transit-runs",
+ "transit-stops",
+ "transit-streets",
+ "transit-sync",
+ "transit-version",
+ "ts-rs",
 ]
 
 [[package]]

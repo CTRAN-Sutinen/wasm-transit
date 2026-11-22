@@ -6,6 +6,11 @@ members = [
     # new directory, and nothing here names it.
     "crates/cap-*",
     "crates/transit-*",
+    # The generator: the manifest, the registry, the schema lock, and the
+    # kind table (a class of its own; no module links it).
+    "crates/generator",
+    # The worked examples' fixtures (D-235; a class of its own).
+    "crates/fixtures",
     # The assembly crates (gen-assemblies, `just caps` — generated and
     # gitignored, assemblies/.gitkeep keeps the directory): the modules —
     # each capability alone, and each generated UI's capabilities linked.

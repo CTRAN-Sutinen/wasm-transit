@@ -892,7 +892,7 @@ Every persisted kind, by what a version change does to it:
 | `build`, `build_file` | the Go server | host-owned | `kind`, `schema_version` in a build (a hand-written schema, "Builds", below); a build file is its exact bytes |
 | `derivation` (what a module made from which inputs) | the Go server | host-owned | `kind`, `schema_version` (a hand-written schema, "Derivations", above) |
 | `store_layout` (the store's layout object) | the Go server | host-owned | `kind`, `schema_version` (a hand-written schema, "The store describes itself", above) |
-| `kind_table` (a build's kind table) | cap-abi (gen-manifest) | derived | `kind`, `schema_version` ("The kind table", above) |
+| `kind_table` (a build's kind table) | generator (gen-manifest) | derived | `kind`, `schema_version` ("The kind table", above) |
 
 - A person writes *authored* kinds, and the system cannot re-derive
   them. Their chains are kept forever (D-66). Every record of an

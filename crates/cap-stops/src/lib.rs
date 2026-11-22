@@ -966,6 +966,11 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: a stops document registers on the kernel's load_stops") }).to_string()
 }
 
+/// The worked examples, which the generator runs (no module build turns
+/// the feature on).
+#[cfg(feature = "examples")]
+pub mod examples;
+
 cap_abi::capability! {
     id: "stops",
     json: dispatch_json,

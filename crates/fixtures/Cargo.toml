@@ -1,0 +1,32 @@
+[package]
+name = "fixtures"
+description = "The worked examples' fixtures: the fixture network, streets, and live feed, the fixture documents of each kind, and the fixed clocks. No module links it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A class of its own (crates/cap-abi/src/bin/common/gates.rs): it reads
+# the kernel and the libraries, and only the generator, an `examples`
+# feature, or a dev-dependency names it.
+[dependencies]
+cap-abi = { path = "../cap-abi" }
+transit-version = { path = "../transit-version" }
+transit-network = { path = "../transit-network" }
+transit-codec = { path = "../transit-codec" }
+transit-rt = { path = "../transit-rt" }
+transit-live = { path = "../transit-live" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+transit-rider = { path = "../transit-rider" }
+transit-runs = { path = "../transit-runs" }
+transit-stops = { path = "../transit-stops" }
+transit-requests = { path = "../transit-requests" }
+transit-alerts = { path = "../transit-alerts" }
+transit-notes = { path = "../transit-notes" }
+transit-streets = { path = "../transit-streets" }
+transit-plans = { path = "../transit-plans" }
+transit-log = { path = "../transit-log" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }

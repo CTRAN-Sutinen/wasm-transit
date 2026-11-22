@@ -262,6 +262,11 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     })
 }
 
+/// The worked examples, which the generator runs (no module build turns
+/// the feature on).
+#[cfg(feature = "examples")]
+pub mod examples;
+
 cap_abi::capability! {
     id: "streets",
     json: dispatch_json,

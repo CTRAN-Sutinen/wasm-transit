@@ -9,7 +9,7 @@ library, its capability, the crates that read it, and its page, the
 notes kind is named in this plumbing (2026-11-20):
 
 - in the kernel: `crates/cap-abi/src/kernel.rs` (its registry and
-  load) and `src/bin/gen_manifest.rs` (its schema's example and its
+  load) and `crates/generator/src/main.rs` (its schema's example and its
   load's description);
 - in the server: `server/flags.go` (`-notes-wasm`, an older flag kept
   beside the `-modules` folder);
@@ -52,8 +52,9 @@ writer saw, and warns about a write that the world made wrong later
    one registry for each type (D-239). cap-abi then depends on no
    domain library, and an arch gate holds it. This item follows the
    fixtures crate and the generator of `capability-declared-once.md`
-   (items 3 and 4; D-235), which take the five optional domain
-   dependencies that gen-manifest gives cap-abi.
+   (items 3 and 4; D-235). The generator is a crate of its own
+   already, so cap-abi's remaining domain dependencies are its
+   registries' kinds.
 3. **Generated lists in the docs.** `docs/FORMATS.md`,
    `docs/architecture/server.md`, and `storage.md` list the kinds by
    hand today. They point to the kind table and the registry's docs

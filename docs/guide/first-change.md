@@ -37,7 +37,7 @@ called `records`, and used it in the app.
 | 2. Write the library function | `crates/transit-stops/src/stop_record.rs` | You write the logic |
 | 3. Add the op to the capability | `crates/cap-stops/src/lib.rs` | Routine: about 10 lines |
 | 4. Describe the op | `crates/cap-stops/OPS.md` | Routine; the build checks it is there |
-| 5. Add a worked example | `crates/cap-abi/src/bin/gen_manifest.rs` | Routine; the build runs it |
+| 5. Add a worked example | `crates/cap-stops/src/examples.rs` | Routine; the build runs it |
 | 6. Test the op | `crates/cap-stops/tests/dispatch_test.rs` | Routine |
 | 7. Add the op to the app's list | `web/src/uis/service-change/ui.json` | One line |
 | 8. Rebuild | `just caps-fast` | The build generates the rest |
@@ -118,9 +118,10 @@ the manifest publishes it. The build fails if an op has no section.
 ## 5. Add a worked example
 
 Each op has one worked example: a request and its answer. You write the
-request. The build computes the answer by running the op, so the
-example cannot go out of date. Add the op's name to the capability's
-list in `gen_manifest.rs`, and add the example beside the others.
+request, and the documents it needs, in the capability's
+`src/examples.rs`, beside the others. The build computes the answer by
+running the op, so the example cannot go out of date. Also add the op's
+name to the capability's list in `crates/generator/src/main.rs`.
 
 The build also runs every example inside each app's module. If the
 answer differs there, the build fails.

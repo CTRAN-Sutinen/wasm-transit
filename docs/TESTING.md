@@ -143,9 +143,11 @@ and before a release.
    Add it in the module's `tests/dispatch_test.rs`. Add a flow in
    `crates/cap-abi/caps-smoke.mjs` and a chained runner gate in the
    justfile. `just test` runs both. `just test` and `just e2e` build
-   `caps` first. The manifest is generated with real computed examples.
-   Extend `gen_manifest`'s `example_for`, so an op's docs cannot drift
-   from the module.
+   `caps` first. The manifest records each op's worked example as the
+   module answers it: add the example to the capability's
+   `src/examples.rs` (its `examples` feature), the documents to load and
+   the request. The generator runs it through the capability's own
+   dispatch, so an op's docs cannot drift from the module.
    A new document kind starts as a line in the kind list
    (`crates/cap-abi/src/kinds.rs`), and `just schema-lock` writes the
    checked-in kind table. A kind a module reads also lands in

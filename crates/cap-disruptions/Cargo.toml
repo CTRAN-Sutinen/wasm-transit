@@ -16,3 +16,10 @@ transit-live = { path = "../transit-live" }
 transit-notes = { path = "../transit-notes" }
 transit-sync = { path = "../transit-sync" }
 cap-abi = { path = "../cap-abi" }
+# The worked examples' fixtures, for the `examples` feature only (D-235).
+fixtures = { path = "../fixtures", optional = true }
+
+[features]
+# The worked examples (`examples::examples`), which the generator runs.
+# No module build turns it on.
+examples = ["dep:fixtures"]
