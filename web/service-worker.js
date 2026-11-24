@@ -58,6 +58,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  console.log("DBGSW activate " + BUILD);
   event.waitUntil(
     (async () => {
       const meta = await caches.open(BUILDS);
@@ -73,12 +74,16 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "apply") self.skipWaiting();
+  if (event.data?.type === "apply") { console.log("DBGSW apply " + BUILD); self.skipWaiting().then(() => console.log("DBGSW skipped " + BUILD)); }
   if (event.data?.type === "build") event.ports[0]?.postMessage(BUILD);
 });
 
+let __n = 0;
 self.addEventListener("fetch", (event) => {
   const request = event.request;
+  const __rw = event.respondWith.bind(event);
+  const __id = ++__n;
+  event.respondWith = (p) => { console.log("DBGSW start " + BUILD + " " + __id + " " + request.url); __rw(Promise.resolve(p).then((r) => { console.log("DBGSW done " + BUILD + " " + __id + " " + r.status); if (!r.body) { console.log("DBGSW body " + BUILD + " " + __id); return r; } const t = new TransformStream({ flush() { console.log("DBGSW body " + BUILD + " " + __id); } }); return new Response(r.body.pipeThrough(t), { status: r.status, statusText: r.statusText, headers: r.headers }); }, (e) => { console.log("DBGSW fail " + BUILD + " " + __id + " " + e); throw e; })); };
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;

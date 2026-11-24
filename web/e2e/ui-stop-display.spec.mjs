@@ -1,5 +1,5 @@
 // The stop display (src/uis/stop-display) — a generated UI for the
-// screen at a stop (docs/architecture/generated-uis.md), in three full-screen layouts over one answer.
+// screen at a stop (docs/architecture/generated-uis/stop-display.md), in three full-screen layouts over one answer.
 //
 // Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
 // Montreal; the browser in UTC, which never decides), the fixture feed,

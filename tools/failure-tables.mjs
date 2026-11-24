@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // The failure tables and the inputs (docs/architecture/generated-uis.md,
-// "Built for the outage"; web/src/uis/inputs.ts).
+// the procedure's step 5; each UI's file in docs/architecture/generated-uis/;
+// web/src/uis/inputs.ts).
 //
 // Each generated UI declares its inputs in its ui.json (`inputs`). Each
 // input names the rows of the UI's failure table that say what the page
 // does while its reads fail (`fails_as`). This file reads both as data:
 //
-// - `failureTables(markdown)`: each UI's failure table in
-//   generated-uis.md, by its id. A row's name is its first cell, to the
-//   colon. A UI whose section says "Its failure table is <other>'s" has
-//   the other UI's rows.
+// - `uiDocs(root)`: generated-uis.md, then each UI's file under
+//   generated-uis/, as one text.
+// - `failureTables(markdown)`: each UI's failure table in that text, by
+//   its id. A row's name is its first cell, to the colon. A UI whose
+//   section says "Its failure table is <other>'s" has the other UI's
+//   rows.
 // - `declaredInputs(root)`: each UI's declared inputs, by its id.
 // - `check(root)`: the gate. It lists each declared input whose
 //   `fails_as` names no row of its UI's table, and each UI that
@@ -68,6 +71,17 @@ export function failureTables(markdown) {
   return tables;
 }
 
+/// The UI docs as one text: generated-uis.md, then each UI's file in
+/// generated-uis/, in name order.
+export function uiDocs(root) {
+  const main = path.join(root, "docs/architecture/generated-uis.md");
+  const dir = path.join(root, "docs/architecture/generated-uis");
+  const files = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort().map((f) => path.join(dir, f))
+    : [];
+  return [main, ...files].map((f) => fs.readFileSync(f, "utf8")).join("\n");
+}
+
 /// Each UI's declared inputs: { [id]: InputDeclaration[] }.
 export function declaredInputs(root) {
   const uis = path.join(root, "web/src/uis");
@@ -83,7 +97,7 @@ export function declaredInputs(root) {
 
 /// The gate's findings, one sentence each.
 export function check(root) {
-  const tables = failureTables(fs.readFileSync(path.join(root, "docs/architecture/generated-uis.md"), "utf8"));
+  const tables = failureTables(uiDocs(root));
   const findings = [];
   for (const [ui, inputs] of Object.entries(declaredInputs(root))) {
     const table = tables[ui];
@@ -108,6 +122,6 @@ export function check(root) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const findings = check(root);
-  for (const f of findings) console.error(`FAILURE-TABLE GATE FAIL: ${f} (docs/architecture/generated-uis.md)`);
+  for (const f of findings) console.error(`FAILURE-TABLE GATE FAIL: ${f} (docs/architecture/generated-uis/)`);
   process.exit(findings.length ? 1 : 0);
 }

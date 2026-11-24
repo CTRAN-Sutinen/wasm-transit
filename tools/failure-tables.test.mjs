@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { check, failureTables, rowName } from "./failure-tables.mjs";
+import { check, failureTables, rowName, uiDocs } from "./failure-tables.mjs";
 
 const doc = `
 \`alpha\` (\`src/uis/alpha/\`) is a page.
@@ -58,4 +58,26 @@ test("the gate finds an input whose row is missing, and one that names none", ()
 
 test("the gate finds a UI that declares inputs and has no table", () => {
   assert.match(check(tree([{ id: "edits", fails_as: ["The server"] }], "gamma"))[0], /gamma declares inputs and has no failure table/);
+});
+
+test("a UI's table in its own file under generated-uis/ is read, and may share the main file's", () => {
+  const root = tree([{ id: "edits", fails_as: ["The cache"] }], "gamma");
+  fs.mkdirSync(path.join(root, "docs/architecture/generated-uis"));
+  fs.writeFileSync(path.join(root, "docs/architecture/generated-uis/gamma.md"), `# gamma
+
+\`gamma\` (\`src/uis/gamma/\`) is a page in its own file.
+
+| Input, and how it fails | The page knows by | Still shows |
+|---|---|---|
+| The cache: gone | a miss | nothing |
+`);
+  fs.writeFileSync(path.join(root, "docs/architecture/generated-uis/delta.md"), `# delta
+
+\`delta\` (\`src/uis/delta/\`) is another page.
+
+Its failure table is alpha's.
+`);
+  assert.deepEqual(check(root), []);
+  const t = failureTables(uiDocs(root));
+  assert.deepEqual(t.delta.rows.map((r) => r.name), ["The server", "The bucket"]);
 });

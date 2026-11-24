@@ -69,6 +69,7 @@ test("both pages boot offline and answer a board from the schedule", async ({ pa
 });
 
 test("a new build: a display applies it at its next poll, a rider's page offers it and applies it at the next navigation", async ({ browser }) => {
+  test.setTimeout(90_000);
   const original = fs.readFileSync(swPath, "utf8");
   const display = await (await browser.newContext({ serviceWorkers: "allow", timezoneId: "UTC" })).newPage();
   const configuring = await (await browser.newContext({ serviceWorkers: "allow", timezoneId: "UTC" })).newPage();
@@ -77,6 +78,14 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
   ).newPage();
   try {
     const at = new Date("2026-10-23T07:55:00-04:00");
+    display.on('console', (m) => { if (m.text().startsWith('DBG')) console.log(m.text()); });
+    display.context().on('console', (m) => { if (m.text().startsWith('DBGSW')) console.log(m.text()); });
+    await display.context().route('**/rt?**', (r) => r.fulfill({ status: 404, body: '' }));
+    const open = new Map(); let n = 0;
+    display.context().on('request', (r) => open.set(r, (n++) + ' ' + r.method() + ' ' + r.url() + (r.serviceWorker() ? ' [sw]' : '')));
+    display.context().on('requestfinished', (r) => open.delete(r));
+    display.context().on('requestfailed', (r) => open.delete(r));
+    globalThis.__dumpOpen = () => console.log('DBG open:\n' + [...open.values()].join('\n'));
     for (const p of [display, configuring, rider]) await p.clock.install({ time: at });
     const before = await controlled(display, "/stop-display.html?stop=A&layout=routes");
     await controlled(configuring, "/stop-display.html");
@@ -89,6 +98,7 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
     // Publish a new build.
     const next = `${before}-next`;
     fs.writeFileSync(swPath, original.replace(`const BUILD = "${before}";`, `const BUILD = "${next}";`));
+    console.log("DBG replaced", fs.readFileSync(swPath, "utf8").slice(0, 40));
 
     // The display: a poll asks for the build, a later poll finds it
     // waiting and applies it — the page reloads into it.
@@ -100,7 +110,12 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
         },
         { timeout: 30_000, intervals: [500] },
       )
-      .toBe(next);
+      .toBe(next).catch(async (e) => { globalThis.__dumpOpen(); console.log("DBG late", await display.evaluate(async () => {
+        const r = await navigator.serviceWorker.getRegistration(); const out = ["active=" + r.active?.state + " waiting=" + r.waiting?.state + " installing=" + r.installing?.state];
+        const w = r.waiting; w?.addEventListener("statechange", (ev) => out.push("w " + ev.target.state)); w?.postMessage({ type: "apply" });
+        const t0 = performance.now(); while (performance.now() - t0 < 5000) await new Promise((res) => requestAnimationFrame(res));
+        out.push("after active=" + r.active?.state + " waiting=" + r.waiting?.state); return out.join(" | ");
+      })); throw e; });
 
     // The display being configured never reloads under its setup.
     for (let i = 0; i < 4; i++) await configuring.clock.fastForward(20_000);

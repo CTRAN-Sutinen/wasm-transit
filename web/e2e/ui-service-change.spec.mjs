@@ -1,5 +1,5 @@
 // The service-change UI (src/uis/service-change) — a service change
-// in the stages the work takes (docs/architecture/generated-uis.md):
+// in the stages the work takes (docs/architecture/generated-uis/service-change.md):
 //
 //   1. Plan & calendar: a feed imports as a draft pick on its first
 //      service date (D-140); a plan forked from it picks on a date; its

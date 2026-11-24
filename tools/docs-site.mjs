@@ -14,7 +14,7 @@
 // The
 // inputs section draws each UI's declared inputs (its ui.json's
 // `inputs`) beside the rows of its failure table they fail as
-// (docs/architecture/generated-uis.md), read as data through
+// (each UI's file in docs/architecture/generated-uis/), read as data through
 // tools/failure-tables.mjs. The only
 // hand-written content is the two traces (`TRACES`) and the bucket
 // stories (`BUCKET_STORIES`), and the test checks the code each of
@@ -29,7 +29,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { declaredInputs, failureTables } from "./failure-tables.mjs";
+import { declaredInputs, failureTables, uiDocs } from "./failure-tables.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REGISTRY = join(ROOT, "registry");
@@ -730,11 +730,11 @@ function uiTable() {
 
 // What each UI reads, and what it does through an outage: each UI's
 // declared inputs (its ui.json's `inputs`), and, for each, the rows of
-// its failure table (docs/architecture/generated-uis.md) that say what
+// its failure table (docs/architecture/generated-uis/<id>.md) that say what
 // the page still shows and how it catches up. Drawn from the
 // declarations, so the picture changes when a declaration does.
 function inputsSection() {
-  const tables = failureTables(readFileSync(join(ROOT, "docs/architecture/generated-uis.md"), "utf8"));
+  const tables = failureTables(uiDocs(ROOT));
   const every = (s) => (s == null ? "once, at boot" : `every ${s} s`);
   const keeps = (k) => (k === "none" ? "nothing (it never shows an old answer as live)" : "its last copy, labelled with its age");
   return Object.entries(declaredInputs(ROOT))

@@ -1,6 +1,6 @@
 // The ride-now UI (src/uis/ride-now) — a generated UI for someone
 // taking a trip today: a map with a panel over it
-// (docs/architecture/generated-uis.md).
+// (docs/architecture/generated-uis/ride-now.md).
 //
 // Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
 // Montreal; the browser in UTC, which never decides), the fixture feed,
