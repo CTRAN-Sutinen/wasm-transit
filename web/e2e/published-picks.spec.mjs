@@ -113,7 +113,11 @@ test("a planner publishes a fork from service design", async ({ page, request })
   expect(set.plans.map((p) => p.name)).toContain("Holiday 2026");
 
   // A fork dated before the server's today is refused, with its reason.
+  // It forks the base, whose calendar runs all year: a fork of the open
+  // pick inherits a calendar from 2026-11-23, so it would also run no
+  // service in its period, and that refusal comes first.
   await page.keyboard.press("1");
+  await page.getByTestId("plan-list").locator("tr", { hasText: "the base every fork copies" }).getByRole("button", { name: "Open" }).click();
   await page.getByTestId("fork-name").fill("Too late");
   await page.getByTestId("fork-date").fill("2026-07-01");
   await page.getByRole("button", { name: "Fork" }).click();

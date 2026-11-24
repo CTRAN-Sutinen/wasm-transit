@@ -457,11 +457,14 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
 /// reloads a working display into an empty one: the manifest's last
 /// read answered, and not from a working copy), and never while the
 /// setup is open (someone is configuring the screen). True when it
-/// applies.
+/// applies. The page then reads nothing more: the old build's worker
+/// hands over only when no request is in flight, and the page reloads
+/// into the new build.
 function applyWaitingBuild(): boolean {
   const m = display.inputs.manifest;
   const answers = m?.kind === "answered" && m.asOfMs == null;
   if (display.setup || !answers || !buildWaiting()) return false;
+  inputs.stop();
   applyBuild();
   return true;
 }

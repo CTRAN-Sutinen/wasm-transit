@@ -232,8 +232,11 @@ test("service change: it boots offline from the worker, on its plans, and a publ
   await controlled(page, "/service-change.html");
   await page.getByRole("button", { name: /Plan & calendar/ }).click();
   await expect(page.getByTestId("plan-select")).toHaveValue(/./, { timeout: 20_000 });
+  // It forks the pick the page opens on ("Winter offline", the service
+  // design test's, whose calendar starts 2026-11-23), so it picks after
+  // that day: a pick with no service in its period is refused.
   await page.getByTestId("fork-name").fill("Spring offline");
-  await page.getByTestId("fork-date").fill("2026-11-02");
+  await page.getByTestId("fork-date").fill("2026-12-07");
   await page.getByRole("button", { name: "Fork" }).click();
   await expect(page.getByTestId("status")).toContainText('Started "Spring offline"');
 

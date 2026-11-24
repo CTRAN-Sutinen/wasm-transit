@@ -67,7 +67,12 @@ test("build A, then B, rolled back to A: the display runs A's bytes again", asyn
     expect(await pinned(request)).toBe(a);
     expect(await (await request.get("/sw.js")).text(), "the server serves A's bytes").toBe(original);
     await displayRuns(display, buildA);
-    await expect(display.locator('[data-testid="display-group"][data-route="10"]').first()).toBeVisible();
+    // Each fast-forward above is 20 s in half a second, so it can cut
+    // off the reloaded page's first reads at their time limits. A failed
+    // read is read again within its interval and half of it: one
+    // fast-forward past that, then the board answers in real time.
+    await display.clock.fastForward(30_000);
+    await expect(display.locator('[data-testid="display-group"][data-route="10"]').first()).toBeVisible({ timeout: 15_000 });
 
     // B is still in -dist, and stays retired: the log holds it, so only
     // a pointer move brings it back.

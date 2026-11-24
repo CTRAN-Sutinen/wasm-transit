@@ -23,22 +23,11 @@ gates.
 
 ## Scope
 
-3. **The browser gate.** `just e2e` runs every spec. These specs fail
-   on the rewritten hosts:
-   - `deploy-builds` "a new build: a display applies it at its next
-     poll…" and `deploy-rollback`: the stop display does not apply a
-     new build at its poll.
-   - `deploy-builds` "a staff page refused for its version…": the
-     disruptions page, booted through its worker, shows its clock in
-     the device's zone, not the agency's.
-   - `published-network` "a network that does not register under the
-     pinned hash is refused": ride now says "Schedule could not be
-     read" and not the refusal's own reason.
-
-   `offline-staff` "service change: it boots offline…" and
-   `published-picks` "a planner publishes a fork…" also fail. They fork
-   picks on fixed dates that are now in the past, so the cause is
-   likely the date, not the hosts. Check this before you change a spec.
+3. **The browser gate.** `just e2e` passed 148 of 150 in its last full
+   run. The two failures, `ui-disruptions` "an alert from a gap…" and
+   `ui-stops` "a stop's life…", hit the 20 s test timeout while the
+   machine was loaded, and each passed alone earlier. Run the full gate
+   once more on a quiet machine.
 4. **The findings.** Delete QAF-130 and QAF-131 from
    `docs/QA-FINDINGS.md`, with the pins in item 3. QAF-133 is answered
    in part: after a write is sent, a staff page reads the manifest at

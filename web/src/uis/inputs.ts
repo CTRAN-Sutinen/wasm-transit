@@ -50,7 +50,7 @@ export type InputDeclaration = {
   /// they adopted.
   after?: string[];
   /// The rows of the UI's failure table (docs/architecture/
-  /// generated-uis.md) that say what the page does while this input's
+  /// generated-uis/<id>.md) that say what the page does while this input's
   /// reads fail, by each row's name (its first cell, to the colon). A
   /// gate in `just test` matches each name to a row.
   fails_as: string[];
@@ -96,8 +96,10 @@ export type InputState =
   /// The last read answered that the upstream keeps none.
   | { kind: "none"; input: string; name: string; atMs: number }
   /// The reads fail, since `sinceMs`. `held`: the page still holds a
-  /// document (keeps: "last"), confirmed at `asOfMs`.
-  | { kind: "failed"; input: string; name: string; sinceMs: number; message: string; held: boolean; asOfMs: number | null; old: boolean };
+  /// document (keeps: "last"), confirmed at `asOfMs`. `refused`: the
+  /// upstream answered and the page refused the answer (a module's
+  /// refusal, not a ReadFailed), so `message` is the reason.
+  | { kind: "failed"; input: string; name: string; sinceMs: number; message: string; held: boolean; asOfMs: number | null; old: boolean; refused: boolean };
 
 /// What the runner needs from its host: the record of input states (a
 /// `$state` object, so the shell redraws), the answer graph's request,
@@ -120,6 +122,10 @@ export type Inputs = {
   /// Read these inputs now (a write moved their head), and answer what
   /// changed.
   read: (...ids: string[]) => Promise<void>;
+  /// Read nothing more. A page that applies a new build stops its reads
+  /// before it reloads: the old build's worker hands over only when it
+  /// has no request in flight.
+  stop: () => void;
 };
 
 /// How often a boot-only input that failed is read again, in seconds.
@@ -219,7 +225,7 @@ export function inputs(declared: InputDeclaration[], readers: Record<string, Rea
       const kept = held.get(d.id) ?? null;
       const sinceMs = before.kind === "failed" ? before.sinceMs : startedMs;
       const asOfMs = kept ? kept.confirmedMs : null;
-      host.states[d.id] = { kind: "failed", input: d.id, name: d.name, sinceMs, message: messageOf(failure), held: !!kept, asOfMs, old: kept ? oldAt(d, kept.confirmedMs) : false };
+      host.states[d.id] = { kind: "failed", input: d.id, name: d.name, sinceMs, message: messageOf(failure), held: !!kept, asOfMs, old: kept ? oldAt(d, kept.confirmedMs) : false, refused: !(failure instanceof ReadFailed) };
     }
     // The graph answers again when what the page holds changed, or the
     // state's kind did: a node that requires the input says why.
@@ -241,12 +247,13 @@ export function inputs(declared: InputDeclaration[], readers: Record<string, Rea
 
   let timer: (() => void) | null = null;
   let ticking = false;
+  let stopped = false;
 
   /// One poll: read the inputs that are due, then wait for the next.
   async function tick(): Promise<void> {
     timer?.();
     timer = null;
-    if (!host.isVisible() || ticking) return;
+    if (stopped || !host.isVisible() || ticking) return;
     ticking = true;
     try {
       const now = host.now();
@@ -260,6 +267,8 @@ export function inputs(declared: InputDeclaration[], readers: Record<string, Rea
 
   function schedule(): void {
     timer?.();
+    timer = null;
+    if (stopped) return;
     const next = Math.min(...declared.map((d) => dueAt.get(d.id) ?? Infinity));
     if (Number.isFinite(next)) timer = host.after(Math.max(0, next - host.now()), tick);
   }
@@ -271,8 +280,14 @@ export function inputs(declared: InputDeclaration[], readers: Record<string, Rea
       schedule();
     },
     read: async (...wanted: string[]) => {
+      if (stopped) return;
       await readAll(declared.filter((d) => wanted.includes(d.id)));
       schedule();
+    },
+    stop: () => {
+      stopped = true;
+      timer?.();
+      timer = null;
     },
   };
 }
@@ -286,7 +301,8 @@ export function capital(name: string): string {
 /// What the page says of an input, in the server's words
 /// (docs/architecture/hosts.md, "The rules every host keeps"): its age
 /// when the answer is a working copy or old, and since when its reads
-/// fail. "" when it is current, not read yet, or kept by none. `clock`
+/// fail, or the reason the page refused what it read. "" when it is
+/// current, not read yet, or kept by none. `clock`
 /// names an instant on the agency's clock ("4:05 PM").
 export function labelOf(state: InputState | undefined, clock: (ms: number) => string): string {
   if (!state) return "";
@@ -298,6 +314,9 @@ export function labelOf(state: InputState | undefined, clock: (ms: number) => st
     return "";
   }
   if (state.kind === "failed") {
+    const reason = state.message.replace(/\.$/, "");
+    if (state.refused && state.held && state.asOfMs != null) return `${what} as of ${clock(state.asOfMs)}: ${reason}.`;
+    if (state.refused) return `${what} could not be read: ${reason}.`;
     if (state.held && state.asOfMs != null) return `${what} as of ${clock(state.asOfMs)}: no answer since ${clock(state.sinceMs)}.`;
     return `${what} could not be read: no answer since ${clock(state.sinceMs)}.`;
   }

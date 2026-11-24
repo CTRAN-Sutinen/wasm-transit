@@ -678,7 +678,11 @@ const readers: Record<string, Reader<any>> = {
       // write names them (D-189, D-233).
       logSeqs = m?.log_seqs ?? {};
       setAgencyZone(m?.timezone);
+      // A zone learned or changed: the clock reads it now, not at the
+      // next tick (the first tick ran before the first read).
+      const moved = m?.timezone != null && m.timezone !== dz.zone;
       dz.zone = m?.timezone;
+      if (moved) tickClock();
     },
   },
   "live-feeds": {

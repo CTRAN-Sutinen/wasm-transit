@@ -6,7 +6,7 @@
 /// op's answer, adopted as-is.
 ///
 /// The UI follows the stages a service change takes, as dogfood
-/// sessions on C-TRAN worked them (docs/architecture/generated-uis.md):
+/// sessions on C-TRAN worked them (docs/architecture/generated-uis/service-change.md):
 /// the plan and its calendar (the service keys, edited), a scan of the
 /// network hour by hour, the stops (each one shared by every route that
 /// visits it, read on its own card), one route's day changed in place

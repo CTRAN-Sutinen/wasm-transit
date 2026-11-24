@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { inputs, ReadFailed } from "./inputs.ts";
+import { inputs, labelOf, ReadFailed } from "./inputs.ts";
 
 /// A host with a clock the test moves. `after` keeps the timers;
 /// `advance` runs the ones that are due, in order.
@@ -308,6 +308,19 @@ test("read now: a write's new head is read at once, and the poll keeps its inter
   assert.equal(r.reads, 3);
 });
 
+test("a stopped runner reads nothing more: not at its interval, not when the page shows, not on read now", async () => {
+  const h = host();
+  const r = reader();
+  const run = inputs([declared("edits")], { edits: r }, h);
+  await run.start();
+  run.stop();
+  await h.advance(300_000);
+  await h.show();
+  await run.read("edits");
+  await settle();
+  assert.equal(r.reads, 1);
+});
+
 test("an adopt that throws fails its input, and the poll goes on", async () => {
   const h = host();
   const r = reader();
@@ -324,6 +337,21 @@ test("an adopt that throws fails its input, and the poll goes on", async () => {
   await h.advance(30_000);
   assert.deepEqual(r.adopted, ["v1"]);
   assert.equal(h.states.edits.kind, "answered");
+});
+
+test("a refusal is said with its reason; only a read with no answer says no answer", async () => {
+  const h = host();
+  const refused = reader();
+  refused.next = new Error("the served network registers as sha256:1, the server pins sha256:0");
+  const silent = reader();
+  silent.next = new ReadFailed("no answer");
+  const run = inputs([declared("network"), declared("edits")], { network: refused, edits: silent }, h);
+  await run.start();
+  const clock = () => "7:55 AM";
+  assert.equal(h.states.network.refused, true);
+  assert.equal(h.states.edits.refused, false);
+  assert.equal(labelOf(h.states.network, clock), "Network could not be read: the served network registers as sha256:1, the server pins sha256:0.");
+  assert.equal(labelOf(h.states.edits, clock), "Edits could not be read: no answer since 7:55 AM.");
 });
 
 test("a declaration and its reader match, one for one", () => {

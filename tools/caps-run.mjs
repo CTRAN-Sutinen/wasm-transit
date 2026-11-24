@@ -75,7 +75,7 @@
 // REF is a result reference (below), or a JSON value whose references
 // resolve inside it (`'{"id":"fall-2026"}'`), POSTed as JSON.
 // `--post http://127.0.0.1:8080/plans '$apply.network'` publishes the
-// pick an `apply` answered (docs/FORMATS.md, POST /plans); a refusal
+// pick an `apply` answered (server/openapi.json, POST /plans); a refusal
 // (4xx) is the step's error, carrying the server's answer.
 //
 // A session spans capabilities: --cap ID switches the capability
