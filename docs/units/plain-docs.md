@@ -42,7 +42,7 @@ dashes.
 | `AGENTS.md` | 20.6 | 16 |
 | `crates/AGENTS.md` | 18.1 | 5 |
 | `docs/architecture/bus.md` | 20.6 | 15 |
-| `docs/architecture/crates.md` | 14.6 | 101 |
+| `docs/architecture/crates.md` (one file, before the split into `crates/`) | 14.6 | 101 |
 | `docs/architecture/server.md` | 10.8 | 44 |
 | `docs/CONVENTIONS.md` | 19.1 | 2 |
 | `docs/TESTING.md` | 13.8 | 3 |

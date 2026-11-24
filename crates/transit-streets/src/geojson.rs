@@ -6,7 +6,7 @@
 //! (TIGER's CFCC — the agency's Trapeze export spells it so — TIGER's
 //! MTFCC, OSM's `highway`), the name (`FULLNAME`, `name`, `NAME`), and
 //! the one-way conventions (TIGER `OneWay`, OSM `oneway`). Which lines
-//! are streets and what class each is: D-30 (docs/DECISIONS.md).
+//! are streets and what class each is: D-30 (docs/decisions/D-30.md).
 
 use serde_json::Value;
 

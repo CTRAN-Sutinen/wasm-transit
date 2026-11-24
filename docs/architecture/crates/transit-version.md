@@ -1,0 +1,13 @@
+# transit-version
+
+What every persisted document says about itself (D-115).
+- `kind_tag!` declares a kind's tag. A writer always writes it. A reader reads an absent tag as the kind and refuses another kind.
+- `Version<N>` is a version field whose absence reads as N.
+- `Versioned` is what a reader needs to refuse another version, naming both versions (`parse_versioned` at every kernel load, through each kind's `Load::parse`, and `cap_abi::Current` on a request field).
+- For one release, a kind may also read the next version (`AHEAD`, D-79, D-186). The owning crate keeps the step down (`step_down`). The change is lossless, and the build writes over the copy as usual, or read-only, and the build refuses to write over it, naming both versions. `reads` answers how a version reads. `refused` and `write_refused` are the two refusals, and the pages read their text (`web/src/versions.ts`).
+- The base of a write reads through `cap_abi::Base` (a request field) or `Kind::require_writable` (a held document). Both refuse a copy read ahead read-only. A copy read ahead is held under the hash it is stored with. The rules are in docs/FORMATS.md, "Rolling a version back".
+- Each owning library declares its kind's tag. The kinds and their versions are in docs/FORMATS.md's "Versions".
+- `references` reads the references a schema declares (`x-references`, D-232): each field that names another record or thing, with its target. The kind table carries them, the schema lock compares them, and a law in each owning crate lists them (`docs/FORMATS.md`, "References").
+- `document` is a document's identity and its read: `content_hash`, `canonical_hash` (RFC 8785, streamed into the digest; `jcs` writes the canonical bytes), and `parse_versioned` (JSON or gzipped JSON, decoded as it parses, in this build's version or one ahead). The kernel re-exports them (`cap_abi::canonical_hash`).
+- `Load` is how the kernel loads a kind (D-239). Each kind's library implements it in its `src/load.rs`: the registry's id and name, the load op and code, the form (JSON under a field, or bytes), the retention, `parse`, `canonical`, and the load's answer.
+- `Extra` is a record's fields that this build does not know (D-167). Every record of an authored kind flattens one in, so a read and a write keep them. A value (a point, a stop's two times, a set of weekdays) is not a record and carries none. `noting_unknown` runs a read and names the unknown fields it met. Every kernel load answers them (`unknown_fields`), and so does each receive op (`validate` for stops and stop requests, `sync_edits` for the client's records).

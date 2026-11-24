@@ -65,7 +65,7 @@ you updated.
 |---|---|
 | The three architecture laws | `crates/AGENTS.md` (arch gates in `just test` enforce them) |
 | Architecture, one file for each topic | `docs/architecture/` (its README indexes them) |
-| A library | its `//!` crate comment, and `docs/architecture/crates.md` |
+| A library | its `//!` crate comment, and `docs/architecture/crates/<crate>.md` (indexed in `crates.md`) |
 | A capability | `crates/cap-<id>/OPS.md` (`node tools/caps-run.mjs tools <id>` prints it) |
 | cap-abi, the modules, the assemblies | `docs/architecture/bus.md`, `docs/architecture/registry.md` |
 | The document kinds and formats at rest | `crates/cap-abi/src/kinds.rs`, `docs/FORMATS.md` |

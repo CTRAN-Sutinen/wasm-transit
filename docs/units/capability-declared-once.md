@@ -20,7 +20,7 @@ left is the gate that holds this, and the last docs.
 7. **The docs.** The remaining places that tell a reader to list a
    capability or an op by hand: the justfile's comments, the header of
    `tools/caps-run.mjs`, `docs/architecture/storage.md`, and
-   `docs/FORMATS.md`. The AGENTS.md sweep, `crates/AGENTS.md`,
+   `docs/FORMATS.md`. The documentation sweep (`docs/CONVENTIONS.md`), `crates/AGENTS.md`,
    `docs/guide/first-change.md`, `docs/TESTING.md`,
    `docs/architecture/bus.md`, `registry.md`, and
    `release-artifacts.md` describe the built state.

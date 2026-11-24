@@ -1,7 +1,7 @@
 //! Trips from any point: a plan's ends are stops or PLACES.
 //!
-//! The intent (docs/architecture/crates.md, transit-streets, "trips from any
-//! point"; D-33, encoded provisionally): a place is somewhere off the
+//! The intent (docs/architecture/crates/transit-streets.md, "a trip from
+//! anywhere"; D-33, encoded provisionally): a place is somewhere off the
 //! network — a tapped spot, the rider's location — named by its walks
 //! to the stops near it (cap-streets `access` answers them along the
 //! streets). A trip from a place is a walk to one of those stops, a
