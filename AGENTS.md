@@ -227,6 +227,8 @@ qa/, LRP/          the standing QA tests and the dogfood material
   of the work continues while the question is decided.
 - **Git is the user's.** Never commit, push, stash, or move refs in any
   other way. Do the work, leave the tree, and report what changed.
+  The deny list in `.claude/settings.json` enforces this for Claude
+  Code, and also blocks hand edits to the generated TS bindings.
 - **The TS bindings are generated and gitignored** (`just types`).
   Never edit or commit them. Rust is the source of truth. The
   manifest's computed examples are the readable wire contract.

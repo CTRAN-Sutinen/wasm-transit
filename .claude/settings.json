@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git stash *)",
+      "Bash(git reset *)",
+      "Bash(git rebase *)",
+      "Bash(git merge *)",
+      "Bash(git pull *)",
+      "Bash(git cherry-pick *)",
+      "Bash(git revert *)",
+      "Bash(git am *)",
+      "Bash(git tag *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git switch *)",
+      "Bash(git update-ref *)",
+      "Edit(web/src/types/**)",
+      "Edit(crates/*/bindings/**)"
+    ]
+  }
+}

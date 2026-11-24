@@ -1378,6 +1378,11 @@ mutants:
 # Needs Java 11+ (current tla2tools) and tla2tools.jar from
 # github.com/tlaplus/tlaplus/releases (the user's install; TLA_JAR or
 # ~/bin/tla2tools.jar). Deliberately NOT part of `just test`.
+# On an immutable desktop (Fedora Atomic), do not layer Java onto the
+# base with rpm-ostree. Use a Temurin tarball under ~/.local, symlinked
+# into ~/.local/bin, or a toolbox (`sudo dnf install java-21-openjdk`
+# inside it; toolbox shares $HOME, so the jar is already there) and run
+# `toolbx run -c <name> bash -lc 'just spec'`.
 # Bounds: store.cfg (small, pinned) by default; the exhaustive tier is
 # SPEC_CFG=server/store/store-exhaustive.cfg just spec (hash and
 # process symmetry, bigger bounds, still exhaustive; ~5 min).
