@@ -201,7 +201,8 @@ the `web/` folder.
   schedule.
 
 Then update the documents that describe what you changed.
-[AGENTS.md](../../AGENTS.md), "Finishing work", lists them.
+[CONVENTIONS.md](../CONVENTIONS.md), "The documentation sweep", lists
+them.
 
 ## Parts you used but did not change
 

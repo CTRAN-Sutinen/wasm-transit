@@ -3,7 +3,7 @@
 Git is the user's (see the root AGENTS.md). Frontend shape and file
 ownership are in `docs/architecture/web.md`. This file holds the
 gotchas, for Rust, wasm, ops, and the frontend, the writing rules,
-and the rules that keep code traceable.
+the rules that keep code traceable, and the documentation sweep.
 
 - **serde_json must keep the `float_roundtrip` feature** (root
   Cargo.toml workspace dep). The default parser is 1 ULP off on some
@@ -172,6 +172,60 @@ visible.
   code is not clearer. Each rule keeps one connection open to search.
 - **Rejected:** repetition kept for explicitness. A gate that counts
   the copies holds the line, and a reader still cannot see them.
+
+## The documentation sweep
+
+Work is not done, and you do not report it as done, until its
+documentation is done. Before you tell the user that work is
+finished, sweep every place that describes what you changed. Say in
+your report what you updated.
+
+1. **The docs.**
+   - `AGENTS.md`: the rules, and the map when a top-level part is
+     added, renamed, or removed.
+   - `README.md`: what the project is and how to start it.
+   - `crates/AGENTS.md`.
+   - Every file under `docs/` whose topic the change touches. Write in
+     the present tense, with one home for each topic.
+   - `docs/guide/`, when the change alters something it describes:
+     what an app does (a new UI gets a short entry in
+     `docs/guide/apps.md`), a step in its walkthrough, a design choice
+     or its cost, or a term in its glossary. The guide is written for
+     people to ISO 24495-1 (plain language). Use short sentences and
+     everyday words, and put every remaining term in its glossary. Use
+     no decision numbers, finding numbers, or code names in its prose,
+     unless the reader needs them to act.
+2. **The open-work records.**
+   - Edit a unit down to what is left, or delete it with its pin.
+   - Add every decision you had to encode to `docs/DECISIONS.md`, as
+     provisional, with its pins. Mark the ones the user settled as
+     Decided, with their answer.
+   - When a decided entry is built, its reasoning moves into the Why of
+     its topic (`docs/architecture/<topic>.md`), and the entry keeps
+     the record. A decision is a durable record. Never delete one.
+   - Delete fixed findings in `docs/QA-FINDINGS.md`. Reword the ones
+     the change answers in part. Update the reference hashes that a
+     dogfood session measured again.
+3. **The contract an agent reads.**
+   - The capability's purpose and op descriptions, in its
+     `crates/cap-<id>/OPS.md`. The generator refuses a file whose `##`
+     sections are not exactly the capability's ops.
+   - The worked examples in each capability's `src/examples.rs` (its
+     `examples` feature). The generator runs them through the
+     capability's dispatch. Generate the manifest again.
+   - The justfile: the comment above each recipe that the change
+     touches, and the gate comments.
+   - The TS bindings (`just types`).
+4. **The comments.** Module and crate doc comments, the API notes in
+   law-test headers, and the web glue's comments. A comment that
+   describes a retired type, op, field, or address misleads the next
+   reader as much as a stale doc does.
+5. **The retired names.** Search the whole tree (`*.md`, `*.rs`, `*.ts`,
+   `*.svelte`, `*.mjs`, and the justfile) for every name the change
+   removed or renamed: crates, types, ops, fields, decision ids, and
+   unit files. Also search for phrases that describe the old design.
+   The search must find nothing, except code that reads old documents
+   on purpose.
 
 ## Frontend
 
