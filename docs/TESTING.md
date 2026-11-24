@@ -356,7 +356,8 @@ these rules:
   A fix is then re-checked in seconds: a page edit needs no build, and
   a Rust edit needs only `just caps-fast` and a reload. Walk every
   control on every stage, on a forked plan, then the paths between
-  stages. Pin each control that you fix in the UI's spec.
+  stages. Pin each control that you fix in the UI's spec. The
+  `ui-dogfood` skill (`.claude/skills/ui-dogfood/`) runs these steps.
 - **The standing end-to-end test** is `qa/route-99/`
   (`qa/route-99/run.sh`; its README has the steps). It runs one new
   route in the UI on `just qa`, from the stops app through service

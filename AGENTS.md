@@ -56,7 +56,8 @@ this file.
 **Finishing work.** Work is not done, and you do not report it as
 done, until its documentation is done. Before you report, run the
 documentation sweep in `docs/CONVENTIONS.md`, "The documentation
-sweep", and say in your report what you updated.
+sweep" (the `doc-sweep` skill runs it), and say in your report what
+you updated.
 
 ## Where the detail lives
 
