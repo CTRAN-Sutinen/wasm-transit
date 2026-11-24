@@ -29,18 +29,28 @@ is described by its `OPS.md` (`node tools/caps-run.mjs tools <id>`).
 
 ## The capabilities with a file
 
-- [cap-authz](crates/cap-authz.md)
-- [cap-sync](crates/cap-sync.md)
-- [cap-plans](crates/cap-plans.md)
-- [cap-stops](crates/cap-stops.md)
-- [cap-requests](crates/cap-requests.md)
 - [cap-alerts](crates/cap-alerts.md)
-- [cap-notes](crates/cap-notes.md)
-- [cap-disruptions](crates/cap-disruptions.md)
-- [cap-log](crates/cap-log.md)
+- [cap-analysis](crates/cap-analysis.md)
 - [cap-author](crates/cap-author.md)
+- [cap-authz](crates/cap-authz.md)
+- [cap-board](crates/cap-board.md)
+- [cap-calendar](crates/cap-calendar.md)
+- [cap-directory](crates/cap-directory.md)
+- [cap-disruptions](crates/cap-disruptions.md)
 - [cap-divert](crates/cap-divert.md)
+- [cap-gtfs](crates/cap-gtfs.md)
+- [cap-log](crates/cap-log.md)
 - [cap-migrate](crates/cap-migrate.md)
+- [cap-network](crates/cap-network.md)
+- [cap-notes](crates/cap-notes.md)
+- [cap-plans](crates/cap-plans.md)
+- [cap-requests](crates/cap-requests.md)
+- [cap-router](crates/cap-router.md)
+- [cap-rt](crates/cap-rt.md)
+- [cap-runcut](crates/cap-runcut.md)
+- [cap-stops](crates/cap-stops.md)
+- [cap-streets](crates/cap-streets.md)
+- [cap-sync](crates/cap-sync.md)
 
 ## Every module
 
