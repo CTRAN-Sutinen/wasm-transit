@@ -44,10 +44,9 @@ Shared by every generated UI:
 - `src/uis/kit.ts` (host layer only):
   - The clock: `today()` and `nowSecs()` read the instant in the
     agency's zone, never the device's. They read it through
-    `src/clock.ts`. The zone is the manifest's `timezone`. The page
-    reads it once at boot with `readAgencyZone()`, before the page
-    picks its network. A loaded zip's zone is set by
-    `setAgencyZone()`. `today()` gives the agency's date. `nowSecs()`
+    `src/clock.ts`. The zone is the manifest's `timezone`. The host's
+    manifest input sets it with `setAgencyZone()` before the page
+    reads its network. A loaded zip's zone is set the same way. `today()` gives the agency's date. `nowSecs()`
     gives the seconds from noon minus 12 h on that date. This is the
     GTFS anchor: it is midnight except on a clock-change day, and the
     fall-back hour before it clamps to 0.
@@ -55,21 +54,59 @@ Shared by every generated UI:
     and that date's length. A board takes it as `previous` (the
     previous date's after-midnight trips, and the fall-back hour read
     truly).
-  - `deploymentFeeds()` and `fetchFeed()` read the live feeds that
-    `live-feeds.json` names. They read them directly, or through the
-    dev relay that its `proxy` names (`/rt`, D-67).
-  - `installApp()`, `buildWaiting()`, `applyBuild()`, and
-    `serverAnswers()` are the build lifecycle
-    ([updates-offline.md](updates-offline.md)).
-  - `whileVisible()` is every page's poll. A hidden page makes no
-    requests and re-reads on its return.
+  - The readers an input uses: `readHead()` (a head the server
+    serves with no hash, `GET edits`, with the server's age),
+    `readHeadKept()` (the same, kept on the device for a staff page
+    that boots offline), `readLiveFeeds()` (the live feeds that
+    `live-feeds.json` names), and `readFeed()` (one live feed, read
+    directly or through the dev relay that the config's `proxy`
+    names, `/rt`, D-67). The engine reads the manifest and the
+    documents it pins (`readManifest`, `servedNetwork`, `served`).
+  - `askOracle()` asks an oracle the manifest lists (the geocoder) on a
+    person's action, with a time limit.
+  - `installApp()`, `buildWaiting()`, and `applyBuild()` are the build
+    lifecycle ([updates-offline.md](updates-offline.md)).
+  - `clockEvery()` moves the clock while the page is visible: the
+    answers that read the time, and the outbox's sends. It reads
+    nothing. A page's reads are its inputs.
+  - The inputs (`src/uis/inputs.ts`, through kit's `inputGraph`) read
+    each host's documents and feeds. A UI declares its inputs in its
+    `ui.json` (`inputs`), as data, so the gates and the docs site read
+    them. Each declaration names:
+    - `id` and `name`: the reader's id, and the words a label uses
+      ("the detours");
+    - `from`: where it comes from;
+    - `every_s`: how often it is read (null: once, at boot);
+    - `limit_s`: the time limit of one read;
+    - `keeps`: what the page keeps when a read fails (`last`, or
+      `none` for a live feed: an old prediction is never shown as
+      live);
+    - `old_after_s`: the age past which the input is old;
+    - `feeds`: the answer graph's inputs it changes;
+    - `after`: the inputs read before it in the same poll;
+    - `fails_as`: the rows of the UI's failure table that say what the
+      page does while its reads fail.
+
+    The host gives each input a reader at the top of its file: `read`
+    answers the document, null for none, or throws `ReadFailed`;
+    `adopt` writes it into the host's state. The kit reads every input
+    with one poll while the page is visible. It stops a read at its
+    time limit. A read has one of three outcomes: a document, none
+    kept, or failed since a time. A failed read waits its interval, or
+    the upstream's `Retry-After`, and a random part of the interval, so
+    the open pages do not all read again at the same moment. Each
+    input's state is in the host's `inputs` record. `inputLabel()`
+    says it in the server's words: an answer from a working copy says
+    its age, and a failed read says since when. A changed document
+    changes the input's `feeds` in one request for each poll. The laws
+    are `src/uis/inputs.test.mjs`.
   - The answer graph (`src/uis/answers.ts`, through kit's
     `answerGraph`) runs each host's flows. A UI's flows are code, not
     data (D-176). A host declares its answers as `AnswerNode`s: the
     inputs each reads, the frame that renders it, when that frame is
     on screen, the capabilities its ops ask (`caps`), a document it
-    cannot answer without (`requires`), and what it clears
-    (`clear`). `answerGraph` answers the nodes downstream of a
+    cannot answer without (`requires`), the inputs it cannot answer
+    without (`inputs`), and what it clears (`clear`). `answerGraph` answers the nodes downstream of a
     changed input in declared order. It yields between nodes, so each
     frame paints as its answer lands. A request made mid-pass
     supersedes the pass. A hidden frame's node waits until the frame
@@ -79,7 +116,9 @@ Shared by every generated UI:
     record. A frame that answered has none. Otherwise it is
     unassembled (a capability in `caps` did not assemble, and the
     node does not run), starved (`requires` names a missing document,
-    and the node does not run), or failed (the node threw). Each of
+    and the node does not run), unread (an input in `inputs` fails and
+    the page holds nothing of it, and the node does not run), or
+    failed (the node threw). Each of
     them runs the node's `clear`, except a failure of a node that
     keeps its last answer (`keepOnFailure`, the stop display's board).
     The next answer clears the state. `request.retry()` runs each
@@ -343,11 +382,21 @@ any code. Delete it when the UI lands.
    needs an op is a finding. When the UI lands, its table moves into
    its description below, and the unit keeps the rows that are still
    open.
+
+   Then declare the inputs in `ui.json` (`inputs`; kit's "The
+   inputs", above). Each document or feed that the table's nodes read
+   from outside the page is one input. Give it its interval, its time
+   limit, what the page keeps when a read fails, and the rows of the
+   failure table it fails as (`fails_as`). A gate in `just test`
+   (`tools/failure-tables.mjs`) fails when an input names a row that
+   the table does not have.
 6. **Write the host from the table.** `host.svelte.ts` declares the
    table's nodes as `AnswerNode`s. It requests inputs from event
    handlers. The host `ask`s the engine for every op that a node runs,
    over the `Doc`s the host holds. A host may do only these things:
-   - read and write I/O (files, fetch, IndexedDB)
+   - read its declared inputs, through a reader for each, and write
+     I/O (files, IndexedDB, the outbox). A gate in `just test` finds
+     no `fetch(` and no hand-made poll in a host.
    - read the clock and pass it as an op argument
    - hold the selection (including repairing a selection that the
      new answer no longer holds)
@@ -460,7 +509,7 @@ Its failure table. Service change has the same table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error; the worker's last copy of the manifest | the plans kept on the device, and every view and change, which run in the page. It boots offline from the worker, and says "Offline · data as of" the time the server last answered. A page never opened online says "Load a GTFS feed to begin." (QAF-131) | — | a publish waits on the device (the outbox), counted on the page | the outbox sends it when the server answers, against the plan set as it is then | e2e `offline-staff` "service design: a publish made offline…", "service change: it boots offline…" |
+| The server, or the device's network: no answer | a fetch error, or no answer within the read's time limit; the worker's last copy of the manifest | the plans kept on the device, and every view and change, which run in the page. It boots offline from the worker, and says "Offline · data as of" the time the server last answered. A page never opened online says that the published network could not be read. | — | a publish waits on the device (the outbox), counted on the page | the outbox sends it when the server answers, against the plan set as it is then | e2e `offline-staff` "service design: a publish made offline…", "service change: it boots offline…" |
 | A publish refused when it is sent (a pick now dated in the past, a plan that no longer validates) | `422` | everything | the publish, held with the server's reasons | — | the person sends it again or discards it | e2e `offline-staff` "service design…", "service change…" |
 | The bucket: no answer (the server answers) | `503` on a publish | the same | — | the publish waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side); `outbox.test.mjs` "a 503 keeps the write waiting" |
 | Sign-in: none, or expired | `401` | everything | — | the publish waits: "Sign in to send" | the outbox sends it once the person signs in | `outbox.test.mjs` "no valid sign-in holds the outbox…" |
@@ -577,8 +626,8 @@ authoring path (fork, apply, undo, export, publish) is service-design's,
 copied. A UI never imports another's files.
 
 Its failure table is service design's. Service change also shows the
-published picks. With no answer from the server, it shows none
-(QAF-131).
+published picks. When they cannot be read and the page holds none, it
+says so beside the plans.
 
 `ride-now` (`src/uis/ride-now/`) is a full-bleed map with a panel over
 it. The panel is a card at the left on a wide screen, and a sheet over
@@ -641,7 +690,7 @@ Its failure table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error. The worker answers the manifest and the network from its last copy. | the schedule it holds. It boots offline from the worker, and its boards say they are the schedule. | address search. A detour that the page has not read yet is missing with no word (QAF-130). | — | the next poll reads the manifest and the edit document. A new network re-pins with no reload. | e2e `deploy-builds` "both pages boot offline…", `static-deploy` "ride now boots offline…" |
+| The server, or the device's network: no answer | a fetch error, or no answer within the read's time limit. The worker answers the manifest and the network from its last copy. | the schedule it holds. It boots offline from the worker, and its boards say they are the schedule. Detours it holds, labelled "Detours as of …: no answer since …". With none held: "Detours could not be read". | address search | — | the next poll reads the manifest and the edit document, each failed read after a random part of its interval. A new network re-pins with no reload. | e2e `deploy-builds` "both pages boot offline…", `static-deploy` "ride now boots offline…" |
 | The bucket: no answer (the server answers) | `X-Store-Stale` | detours, labelled "Detours as of …" | nothing (it writes nothing) | — | the next poll | e2e `ui-ride-now` "says how old detours are…" |
 | A live feed: no answer | a fetch error, or a status other than 200 | the schedule, and the feed's error in the live feeds panel | live predictions and buses | — | the next poll | none |
 | A live feed: frozen | not detected (QAF-129) | old buses and predictions as live | nothing | — | — | none |
@@ -678,7 +727,7 @@ Its failure table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error. The worker answers the manifest and the network from its last copy. | the schedule it holds. It boots offline from the worker, and its board says it is the schedule. | a new build: it applies one only while the server answers (`serverAnswers`). A detour that the page has not read yet is missing with no word (QAF-130). | — | the next poll. A new network re-pins with no reload. | e2e `deploy-builds` "both pages boot offline…", `static-deploy` "the stop display boots offline…" |
+| The server, or the device's network: no answer | a fetch error, or no answer within the read's time limit. The worker answers the manifest and the network from its last copy. | the schedule it holds. It boots offline from the worker, and its board says it is the schedule. Detours it holds, labelled "Detours as of …: no answer since …". With none held: "Detours could not be read". | a new build: it applies one only while the server answers (the manifest's last read answered, not from a working copy) | — | the next poll, each failed read after a random part of its interval. A new network re-pins with no reload. | e2e `deploy-builds` "both pages boot offline…", `static-deploy` "the stop display boots offline…", `ui-stop-display` "a server that never answers the edit document turns the label to stale within the read's time limit" |
 | The bucket: no answer (the server answers) | `X-Store-Stale` | detours, with their age | nothing (it writes nothing) | — | the next poll | e2e `ui-stop-display` "a detour served while the server's store is not answering says its age" |
 | A live feed: no answer | a fetch error, or a status other than 200 | the schedule | live predictions | — | the next poll | e2e `ui-stop-display` "a live feed that stops answering turns the board to the schedule…" |
 | A live feed: frozen | not detected (QAF-129) | old predictions as live | nothing | — | — | none |
@@ -735,9 +784,9 @@ Its failure table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error; the worker's last copy of the manifest | the documents last read. A reload boots from the worker on them. "Offline · data as of" the time the server last answered, and the detours and cancels labelled with the time the page read them. A page never opened online says "The deployment publishes no network." (QAF-131) | — | a note or an alert saved meanwhile waits on the device (the outbox), counted on the page | the outbox sends each once, in order, when the server answers | e2e `offline-staff` "the disruptions page through an outage…" |
+| The server, or the device's network: no answer | a fetch error, or no answer within the read's time limit; the worker's last copy of the manifest | the documents last read. A reload boots from the worker on them. "Offline · data as of" the time the server last answered, and the detours and cancels labelled with the time the server last confirmed them. A page never opened online says that the network could not be read. | — | a note or an alert saved meanwhile waits on the device (the outbox), counted on the page | the outbox sends each once, in order, when the server answers | e2e `offline-staff` "the disruptions page through an outage…" |
 | A write refused when it is sent (another dispatcher changed the same note or alert since the page read it, a change the module refuses) | `409`, `422` | everything | the write, held with the server's reasons | — | the person sends it again (over what the page reads then) or discards it | e2e `offline-staff` "the disruptions page: a note edit refused at send time…" |
-| The bucket: no answer (the server answers) | `X-Store-Stale` on the edit document; `503` on a save | detours and cancels, labelled with their age. The stops, alerts, and notes carry no label. | — | a save waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
+| The bucket: no answer (the server answers) | `X-Store-Stale` on the edit document; `503` on a save | detours and cancels, labelled with their age. The stops, alerts, and notes are held by hash, so they are never old: the manifest that pins them carries the age. | — | a save waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
 | A live feed: no answer | a fetch error, or a status other than 200 | the schedule's day. The live state shows the feed's error. | the buses on the map, and lateness | — | the next poll | none |
 | A live feed: frozen | not detected (QAF-129) | old buses and lateness as live | nothing | — | — | none |
 | Sign-in: none, or expired | `401` | everything | — | a save waits: "Saved on this device. Sign in to send it." | the outbox sends it once the person signs in | `outbox.test.mjs` "no valid sign-in holds the outbox…" |
@@ -904,7 +953,7 @@ Its failure table.
 
 | Input, and how it fails | The page knows by | Still shows | Refuses | Instead | Catches up | Pin |
 |---|---|---|---|---|---|---|
-| The server, or the device's network: no answer | a fetch error; the worker's last copy of the manifest | the stops and requests last read. A reload boots from the worker on them, with "Offline · data as of" the time the server last answered. A survey half filled stays on the device. A page never opened online says "The deployment publishes no stops yet." (QAF-131) | — | a change, a request, a work order request, or a photo saved meanwhile waits on the device (the outbox), in order, a photo before the survey that names it | the outbox sends each when the server answers; the server runs each change again over the stops it holds | e2e `offline-staff` "the stops page: a queued change runs over a moved head…" |
+| The server, or the device's network: no answer | a fetch error, or no answer within the read's time limit; the worker's last copy of the manifest | the stops and requests last read. A reload boots from the worker on them, with "Offline · data as of" the time the server last answered. A survey half filled stays on the device. A stops document that cannot be read and is not held says "Stops could not be read", never that the deployment publishes none. | — | a change, a request, a work order request, or a photo saved meanwhile waits on the device (the outbox), in order, a photo before the survey that names it | the outbox sends each when the server answers; the server runs each change again over the stops it holds | e2e `offline-staff` "the stops page: a queued change runs over a moved head…", `ui-stops` "a stops document whose read fails says so…" |
 | A change refused when it is sent (another writer changed the same stop since the page read it, a change the module refuses) | `409`, `422` | everything | the change, held with the server's reasons | — | the person sends it again (over what the page reads then) or discards it | e2e `offline-staff` "the stops page…" |
 | The bucket: no answer (the server answers) | `503` on a save | the same | — | the save waits on the device | the outbox sends it again | Go `TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites` (the server's side) |
 | The network: unreadable | the read fails | the stop's record | the Routes card says the routes cannot be read, never that no route stops there | — | the next read | e2e `ui-stops` "a stop whose routes cannot be read says so…" |

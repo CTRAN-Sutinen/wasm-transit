@@ -20,9 +20,9 @@
 //! A capability's own bulk ops number 0–255 (an assembly of several
 //! carries the capability's index in the high 16 bits); kernel ops
 //! number from 256 and mean the same thing in every module: the loads
-//! ([`OP_LOAD_NETWORK`] and [`kernel`]'s `OP_LOAD_*`) for the kinds its
-//! capabilities read, and the registry ops [`registry::OP_EVICT`]
-//! (257) and [`registry::OP_HELD`] (258).
+//! for the kinds its capabilities read (each kind's code is its
+//! library's, `transit_version::Load::CODE`), and the registry ops
+//! [`registry::OP_EVICT`] (257) and [`registry::OP_HELD`] (258).
 //!
 //! A capability crate REGISTERS — it never exports:
 //!
@@ -32,7 +32,8 @@
 //!     id: "board",
 //!     json: dispatch_json,
 //!     bytes: dispatch_bytes,
-//!     documents: [NETWORK, EDITS, LIVE, WATCHLIST],
+//!     documents: [Network, EditDocument, LiveDay, Watchlist],
+//!     request: Request,
 //! }
 //! ```
 //!
@@ -53,20 +54,52 @@
 ///
 /// `json` is `fn(&str) -> String`; `bytes` is `fn(u32, &[u8]) ->
 /// String` (the op code is the capability's own, 0–255, advertised in
-/// the manifest). `documents` names the kernel kinds it reads
-/// ([`kernel::NETWORK`], [`kernel::EDITS`], …; `[]` for a stateless
-/// capability): their loads are kernel ops in every module that links
-/// it, and the registry ops answer over them.
+/// the manifest). `documents` names the types of the kinds it reads
+/// (each one's library implements `transit_version::Load`; `[]` for a
+/// stateless capability): their loads are kernel ops in every module
+/// that links it, and the registry ops answer over them.
+///
+/// The rest is what the manifest records ([`kernel::Declared`]):
+/// `request` is the capability's `Request` enum, whose op tags are its
+/// ops; `consumes`, `speaks`, and `migrates` (each `&[]` when left out)
+/// are the kinds it reads as another capability's answer, the versions
+/// it reads, and the version steps it carries. Its `OPS.md` is read from
+/// the crate's root.
 #[macro_export]
 macro_rules! capability {
-    (id: $id:literal, json: $json:path, bytes: $bytes:path, documents: [$($kind:ident),* $(,)?] $(,)?) => {
+    (
+        id: $id:literal,
+        json: $json:path,
+        bytes: $bytes:path,
+        documents: [$($kind:ty),* $(,)?],
+        request: $request:ty
+        $(, consumes: $consumes:expr)?
+        $(, speaks: $speaks:expr)?
+        $(, migrates: $migrates:expr)?
+        $(,)?
+    ) => {
         /// This capability, as an assembly links it.
         pub static CAPABILITY: $crate::kernel::Cap = $crate::kernel::Cap {
             id: $id,
             json: $json,
             bytes: $bytes,
-            documents: &[$(&$crate::kernel::$kind),*],
+            documents: &[$($crate::kernel::loader::<$kind>),*],
         };
+
+        /// This capability's declaration, as the generator reads it.
+        pub fn declaration() -> $crate::kernel::Declared {
+            $crate::kernel::Declared {
+                id: $id,
+                invoke,
+                invoke_bytes,
+                ops: $crate::kernel::op_names::<$request>(),
+                documents: CAPABILITY.documents.iter().map(|k| k().id()).collect(),
+                consumes: $crate::__or!([$($consumes)?] &[]),
+                speaks: $crate::__or!([$($speaks)?] &[]),
+                migrates: $crate::__or!([$($migrates)?] &[]),
+                docs: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/OPS.md")),
+            }
+        }
 
         /// The JSON lane of this capability's one-capability module.
         pub fn invoke(text: &str) -> String {
@@ -82,6 +115,19 @@ macro_rules! capability {
         pub fn registries() -> Vec<&'static dyn $crate::registry::Held> {
             $crate::kernel::registries(&[&CAPABILITY])
         }
+    };
+}
+
+/// The given expression, or the default when none is given
+/// (`capability!`'s optional fields).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __or {
+    ([] $default:expr) => {
+        $default
+    };
+    ([$given:expr] $default:expr) => {
+        $given
     };
 }
 
@@ -156,56 +202,22 @@ macro_rules! assembly {
     };
 }
 
-/// Kernel bulk op: register the network document from its JSON bytes,
-/// or those bytes gzipped (a published network crosses compressed —
-/// [`parse_document`]), in every module whose capabilities read
-/// networks — the same answer and the same hash as the JSON op
-/// `load_network`.
-///
-/// The bytes are the bare document (no request envelope), parsed
-/// straight into the typed model; the JSON lane's envelope is peeled
-/// with the document left raw ([`kernel`]), so registration never
-/// buffers the input into a generic tree (~8× the document on a real
-/// network, and wasm memory never shrinks back from a peak).
-pub const OP_LOAD_NETWORK: u32 = 256;
 
-/// "sha256:<hex>" of bytes — the content-hash formula every module
-/// and host shares.
-pub fn content_hash(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    format!("sha256:{:x}", Sha256::digest(bytes))
-}
+// A document's identity and its versioned read live in transit-version,
+// so each kind's library reads and hashes its own kind (D-239). The
+// kernel and every capability reach them here, as before.
+pub use transit_version::document::{
+    canonical_bytes, canonical_hash, content_hash, is_gzip, noting_read, parse_document, parse_versioned, read_versioned,
+    versioned, ReadAhead,
+};
+use transit_version::document::read_value;
+pub use transit_version::jcs;
 
 /// A record's identity in a log (D-190): the canonical hash of the
 /// record as stored. A record that does not serialize gets a name that
 /// never equals a hash. cap-log and every receive op name records by it.
 pub fn record_hash(value: &serde_json::Value) -> String {
     canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
-}
-
-/// A document's identity: the content hash of its canonical bytes,
-/// RFC 8785 (D-169, [`jcs`]). Streamed into the digest, so hashing never
-/// holds a copy of the document — byte-identical to hashing
-/// [`canonical_bytes`].
-pub fn canonical_hash<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
-
-    struct Digesting(Sha256);
-    impl jcs::Sink for Digesting {
-        fn put(&mut self, bytes: &[u8]) {
-            self.0.update(bytes);
-        }
-    }
-
-    let mut digest = Digesting(Sha256::new());
-    jcs::write(value, &mut digest).map_err(|e| format!("document does not serialize: {e}"))?;
-    Ok(format!("sha256:{:x}", digest.0.finalize()))
-}
-
-/// A document's canonical bytes (RFC 8785, D-169): what a host stores
-/// and serves under [`canonical_hash`].
-pub fn canonical_bytes<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, String> {
-    jcs::to_string(value).map_err(|e| format!("document does not serialize: {e}"))
 }
 
 /// A document carried inside an op's answer as its canonical bytes,
@@ -236,124 +248,6 @@ impl<T> std::ops::Deref for Canonical<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.0
-    }
-}
-
-/// Whether bulk bytes are a gzip stream (its magic bytes — no JSON
-/// document starts with 0x1f).
-pub fn is_gzip(bytes: &[u8]) -> bool {
-    bytes.starts_with(&[0x1f, 0x8b])
-}
-
-/// Parse a kernel document from bulk bytes, straight into its type:
-/// the document's JSON, or that JSON gzipped. A gzipped document is
-/// decoded AS IT PARSES — its text never exists whole in the module,
-/// so registration's peak is the parsed document plus the compressed
-/// input, not the text beside it (wasm memory never shrinks back from
-/// a peak). The identity is the parsed document's canonical hash
-/// either way, so both forms register the same document.
-pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
-    let source: Box<dyn std::io::Read + '_> = if is_gzip(bytes) { Box::new(flate2::read::GzDecoder::new(bytes)) } else { Box::new(bytes) };
-    serde_json::from_reader(std::io::BufReader::with_capacity(64 * 1024, source)).map_err(|e| format!("invalid document: {e}"))
-}
-
-/// Parse a document of a versioned kind from bulk bytes (JSON or
-/// gzipped JSON), in the version this build reads, or the next one
-/// where the kind reads one version ahead (`Versioned::AHEAD`, D-186).
-/// Any other version is refused, naming both: an older document with
-/// the op that brings it forward, a newer one as written by a newer
-/// build. It is never parsed and re-emitted (docs/FORMATS.md,
-/// "Versions"). A copy with no version field is the kind's untagged
-/// version. A copy read ahead is noted for the kernel ([`noting_read`]).
-pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, String>
-where
-    T: serde::de::DeserializeOwned + transit_version::Versioned,
-{
-    let (document, read) = read_versioned::<T>(bytes)?;
-    if let Some(read) = read {
-        NOTED_READ.with(|noted| noted.set(Some(read)));
-    }
-    Ok(document)
-}
-
-/// A copy read one version ahead: how it was read, its version, and the
-/// canonical hash of the copy as stored (its identity on the bus).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReadAhead {
-    pub how: transit_version::Ahead,
-    pub found: u32,
-    pub hash: String,
-}
-
-/// [`parse_versioned`], answering beside the document how it was read:
-/// `None` in this build's version, else the copy read ahead.
-pub fn read_versioned<T>(bytes: &[u8]) -> Result<(T, Option<ReadAhead>), String>
-where
-    T: serde::de::DeserializeOwned + transit_version::Versioned,
-{
-    use transit_version::ReadAs;
-    match parse_document::<T>(bytes) {
-        Ok(document) => match transit_version::reads::<T>(document.schema_version())? {
-            ReadAs::Current => Ok((document, None)),
-            ReadAs::Ahead(how) => ahead(parse_document(bytes)?, how),
-        },
-        // The typed read failed: an older or newer shape says so by its
-        // version; a document in this version is just malformed.
-        Err(typed) => match parse_document::<serde_json::Value>(bytes) {
-            Ok(value) => match transit_version::reads::<T>(version_in::<T>(&value))? {
-                ReadAs::Current => Err(typed),
-                ReadAs::Ahead(how) => ahead(value, how),
-            },
-            Err(_) => Err(typed),
-        },
-    }
-}
-
-/// A copy in the next version, read through its kind's step down.
-fn ahead<T>(value: serde_json::Value, how: transit_version::Ahead) -> Result<(T, Option<ReadAhead>), String>
-where
-    T: serde::de::DeserializeOwned + transit_version::Versioned,
-{
-    let found = version_in::<T>(&value);
-    let hash = canonical_hash(&value)?;
-    let down = T::step_down(value)?;
-    let document = serde_json::from_value(down).map_err(|e| format!("invalid document after the step down from v{found}: {e}"))?;
-    Ok((document, Some(ReadAhead { how, found, hash })))
-}
-
-thread_local! {
-    /// The copy [`parse_versioned`] read ahead while [`noting_read`]
-    /// runs.
-    static NOTED_READ: std::cell::Cell<Option<ReadAhead>> = const { std::cell::Cell::new(None) };
-}
-
-/// Run `read` and answer, beside its answer, the copy it read one
-/// version ahead, if any. The kernel's load uses it: a copy read ahead
-/// is held under its stored identity, and one read through a read-only
-/// step refuses a write ([`Kind::require_writable`](kernel::Kind::require_writable)).
-pub fn noting_read<R>(read: impl FnOnce() -> R) -> (R, Option<ReadAhead>) {
-    NOTED_READ.with(|noted| noted.set(None));
-    let answer = read();
-    (answer, NOTED_READ.with(|noted| noted.take()))
-}
-
-/// [`parse_versioned`] over a value already parsed (a request field).
-pub fn versioned<T>(value: serde_json::Value) -> Result<T, String>
-where
-    T: serde::de::DeserializeOwned + transit_version::Versioned,
-{
-    read_value::<T>(value).map(|(document, _)| document)
-}
-
-fn read_value<T>(value: serde_json::Value) -> Result<(T, Option<ReadAhead>), String>
-where
-    T: serde::de::DeserializeOwned + transit_version::Versioned,
-{
-    match transit_version::reads::<T>(version_in::<T>(&value))? {
-        transit_version::ReadAs::Current => {
-            serde_json::from_value(value).map(|document| (document, None)).map_err(|e| format!("invalid document: {e}"))
-        }
-        transit_version::ReadAs::Ahead(how) => ahead(value, how),
     }
 }
 
@@ -419,16 +313,6 @@ impl<T> std::ops::Deref for Base<T> {
     }
 }
 
-/// The version a copy of `T`'s kind carries in its version field.
-fn version_in<T: transit_version::Versioned>(value: &serde_json::Value) -> u32 {
-    T::version_in(value)
-}
-
-/// Parse a network document from bulk bytes ([`parse_versioned`]).
-pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
-    parse_versioned(bytes)
-}
-
 /// The version check every versioned kind's load makes: the document's
 /// version is the one this build reads, or the load is refused naming
 /// both — an older one with the capability op that migrates it, a
@@ -491,7 +375,6 @@ pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
     serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
 }
 
-pub mod jcs;
 pub mod kernel;
 pub mod kinds;
 pub mod manifest;

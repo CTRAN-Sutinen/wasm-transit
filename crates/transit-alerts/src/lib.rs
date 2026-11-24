@@ -35,6 +35,7 @@ use ts_rs::TS;
 
 
 pub mod version;
+pub mod load;
 
 pub use version::{ALERTS_VERSION, TEMPLATES_VERSION};
 

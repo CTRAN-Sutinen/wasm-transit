@@ -5,7 +5,7 @@
 //! binary: the registries are process-global, and eviction would race
 //! the dispatch tests.
 
-use cap_abi::kernel::{derived_len, GRAPH, NETWORK};
+use cap_abi::kernel::{kind, derived_len, GRAPH};
 use cap_abi::registry::OP_EVICT;
 use cap_router::{dispatch, invoke_bytes, Request, Response};
 
@@ -29,7 +29,7 @@ fn plan(network_hash: &str, date: &str) -> Result<Response, String> {
 #[test]
 fn graphs_are_bounded_and_follow_their_documents_out() {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).unwrap();
-    let (network_hash, _) = NETWORK.register(transit_codec::import(&feed).network).unwrap();
+    let (network_hash, _) = kind::<transit_network::Network>().register(transit_codec::import(&feed).network).unwrap();
 
     // A session that asks across a month of dates: one graph a day,
     // never more than eight held.
@@ -45,7 +45,7 @@ fn graphs_are_bounded_and_follow_their_documents_out() {
     invoke_bytes(OP_EVICT, keep.as_bytes());
     assert_eq!(derived_len(&GRAPH), 8);
     invoke_bytes(OP_EVICT, br#"{"keep":[]}"#);
-    assert!(derived_len(&GRAPH) == 0 && NETWORK.is_empty());
+    assert!(derived_len(&GRAPH) == 0 && kind::<transit_network::Network>().is_empty());
 
     // Evicted-then-asked is the unknown-hash error, never a stale graph.
     assert_eq!(

@@ -1,8 +1,6 @@
 /// The stop display's host layer — the ONLY file of this UI that calls
-/// the capability bus. It owns I/O (the published network, the agency's
-/// live feeds (kit's fetchFeed), the sync server's edit
-/// document, the page's URL), the clock, and the selection (the stop
-/// and the layout); every group, time, status, and alert it writes
+/// the capability bus. It owns I/O, the clock, and the selection (the
+/// stop and the layout); every group, time, status, and alert it writes
 /// into `display` is an op's answer, adopted as-is.
 ///
 /// The questions it answers (its ui.json): which
@@ -11,13 +9,38 @@
 /// routes have stopped for the day, and the alerts and detours here.
 ///
 /// It asks every question through the engine (src/engine.ts) and holds
-/// documents, never modules or hashes. The answer graph keeps why a
-/// frame has no answer (`display.frames`; src/uis/answers.ts): a
-/// capability the bus cannot assemble turns its frames off, and they
-/// say so. Nothing here answers in its place.
+/// documents, never modules or hashes. Its inputs are declared in its
+/// ui.json and read by the kit (src/uis/inputs.ts): the deployment's
+/// manifest, the network it pins, the edit document, and the live
+/// feeds. Each input's state (`display.inputs`) says what the page
+/// holds of it. The answer graph keeps why a frame has no answer
+/// (`display.frames`; src/uis/answers.ts): a capability the bus cannot
+/// assemble turns its frames off, and they say so. Nothing here
+/// answers in its place.
 
-import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, together, Doc } from "../../engine";
-import { answerGraph, applyBuild, type FrameState, buildWaiting, clockLabel, deploymentFeeds, deploymentManifest, installApp, previousDay, serverAnswers, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
+import { ask, assemble, available, keep, load, produced, readManifest, servedNetwork, servedNetworkPin, together, Doc, type DeploymentManifest } from "../../engine";
+import {
+  answerGraph,
+  applyBuild,
+  buildWaiting,
+  clockEvery,
+  inputGraph,
+  inputLabel,
+  installApp,
+  nowSecs,
+  previousDay,
+  readFeed,
+  readHead,
+  readLiveFeeds,
+  setAgencyZone,
+  today,
+  type FrameState,
+  type InputDeclaration,
+  type InputState,
+  type LiveUrls,
+  type Reader,
+} from "../kit";
+import descriptor from "./ui.json";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -35,24 +58,28 @@ export type Layout = "center" | "route" | "routes";
 export type Place = { id: string; name: string };
 
 const LAYOUTS: Layout[] = ["center", "route", "routes"];
-/// How often the host re-reads the live feeds, the edit document, and
-/// the clock (one timer, kit's whileVisible).
-const POLL_MS = 20_000;
+/// How often the board answers again on the clock, and the header's
+/// clock moves.
+const BOARD_MS = 20_000;
+const FACE_MS = 5_000;
 const FOUND = 25;
 /// How long a board whose op threw stays on screen (marked) before the
 /// error replaces it: its waits were counted from the moment it was
 /// answered, so it is right only briefly.
-const STALE_BOARD_MS = 2 * POLL_MS;
+const STALE_BOARD_MS = 2 * BOARD_MS;
+/// The modules that read the network, in order: its pin is checked in
+/// the first that assembles.
+const NETWORK_READERS = ["directory", "board", "rt"] as const;
 
 export const display = $state({
-  status: "Loading the agency's feed…",
-  /// The edit document's age while the sync server serves it from its
-  /// cache (D-119; kit's staleLabel), else "".
-  editsStale: "",
+  /// A message that replaces the page's answers (a failed boot step).
+  status: "",
   busy: true,
   feed: "",
   /// Each frame that shows no answer, and why (the answer graph's).
   frames: {} as Record<string, FrameState>,
+  /// What the page holds of each input (the kit's).
+  inputs: {} as Record<string, InputState>,
   layout: "routes" as Layout,
   /// The stop on screen, as the directory names it; null shows the
   /// setup.
@@ -64,30 +91,31 @@ export const display = $state({
   /// An answer that failed after the board was up: shown beside the
   /// board, never instead of it.
   problem: "",
-  /// Whether the live document answered (the header's live mark).
-  live: false,
-  liveAt: "",
-  liveError: "",
   /// The agency's clock, seconds into the service day, for the header.
   nowSecs: nowSecs(),
 });
 
 // ---------------------------------------------------------------------
-// documents — the network (imported once), the edit document (the sync
-// server's), the live snapshots (decoded per poll)
+// documents — the manifest, the network it pins (or a zip loaded by
+// hand), the edit document, the live snapshots
 // ---------------------------------------------------------------------
 
+type Served = { network: Doc<Network>; boundary: Doc<Boundary>; pin: string };
+
+let manifest: DeploymentManifest | null = null;
 let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
+/// A network loaded from a zip by hand: the page stops following the
+/// deployment.
+let byHand: Served | null = null;
 /// The edit document over the network — null when empty (schedule
 /// only, the day views' contract).
 let edits: Doc<EditDocument> | null = null;
-let editsText = "[]";
 /// THE live document (rt's answer over the snapshots), by which every
 /// board reads the live feeds.
 let live: Doc<LiveDay> | null = null;
-let urls: LiveUrls = { trips: "", vehicles: "", alerts: "" };
-/// The decoded live feeds, one document per poll's bytes.
+let urls: Partial<LiveUrls> = {};
+/// The decoded live feeds, one document per read's bytes.
 const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
 /// The stop asked for, by id (the URL's), until the directory names it.
 let stopId: string | null = null;
@@ -96,9 +124,6 @@ let query = "";
 /// When the board last answered (ms), for STALE_BOARD_MS.
 let boardAt = 0;
 
-/// A failed answer. Before the network is up it is the page's status;
-/// after, it sits beside the board — a display never blanks over one
-/// failed answer.
 /// Whether a frame's capability did not assemble: its component says so.
 export function off(frame: string): boolean {
   return display.frames[frame]?.kind === "unassembled";
@@ -110,6 +135,25 @@ export function failure(frame: string): string {
   return state?.kind === "failed" ? state.message : "";
 }
 
+/// What the page says of an input ("" when it is current).
+export function label(input: string): string {
+  return inputLabel(display.inputs[input]);
+}
+
+/// The page's status line: a failed step, else what it holds of the
+/// schedule. "" when the schedule is current.
+export function status(): string {
+  if (display.status) return display.status;
+  const state = display.inputs.network;
+  if (!state || state.kind === "reading") return network ? "" : "Loading the agency's network…";
+  if (state.kind === "none" && !network) return "This server publishes no network — load the agency's GTFS zip to begin.";
+  if (state.kind === "failed" && !state.held && !network) return `${inputLabel(state)} This screen will try again.`;
+  return "";
+}
+
+/// A failed answer. Before the network is up it is the page's status;
+/// after, it sits beside the board — a display never blanks over one
+/// failed answer.
 function fail(e: unknown): void {
   const message = `Something went wrong: ${(e as Error)?.message ?? e}`;
   if (network) display.problem = message;
@@ -120,9 +164,9 @@ function fail(e: unknown): void {
 // ---------------------------------------------------------------------
 // This UI's answer graph (src/uis/kit.ts, "the answer graph").
 // Inputs: "network",
-// "edits" (the sync server's edit document), "snapshot" (the decoded
-// live feeds), "clock" (the poll's tick), "query" / "stop" (the
-// selection), "setup" (whether the setup is on screen).
+// "edits" (the edit document), "snapshot" (the decoded live feeds),
+// "clock" (the board's tick), "query" / "stop" (the selection),
+// "setup" (whether the setup is on screen).
 // ---------------------------------------------------------------------
 
 const request = answerGraph(
@@ -180,15 +224,11 @@ const request = answerGraph(
       frame: "Live",
       needs: ["network", "snapshot"],
       caps: ["rt"],
-      clear: () => {
-        live = null;
-        display.live = false;
-      },
+      clear: () => (live = null),
       run: async () => {
         const { trips, vehicles, alerts } = snapshots;
         if (!network || !boundary || (!trips && !vehicles && !alerts)) {
           live = null;
-          display.live = false;
           return;
         }
         // The display never reads the live document: linked beside rt,
@@ -204,7 +244,6 @@ const request = answerGraph(
         };
         const answer = await ask("rt", "live", args);
         live = produced("live", answer.live ?? undefined, "rt", answer.live_hash, { remint: { op: "live", args } });
-        display.live = true;
       },
     },
     {
@@ -248,147 +287,13 @@ const request = answerGraph(
   ],
   display.frames,
   fail,
+  display.inputs,
 );
 
 // ---------------------------------------------------------------------
-// boot, the feed, and the poll
+// The inputs (its ui.json's `inputs`, read by the kit): each reader
+// answers its document, null for none, or throws when the read fails.
 // ---------------------------------------------------------------------
-
-export async function boot(): Promise<void> {
-  // The app's build: a build that waited for this load applies now.
-  void installApp();
-  readUrl();
-  // The agency's zone before anything reads the date: the pick in
-  // force is the agency's today's.
-  await Promise.all([restoreUrls(), readAgencyZone()]);
-  await adoptNetwork("the agency's network", obtainServed);
-  // A hidden display makes no requests; it re-reads on return.
-  whileVisible(POLL_MS, () => void poll());
-  // The header's clock reads the agency's clock between polls.
-  whileVisible(5_000, () => (display.nowSecs = nowSecs()));
-}
-
-/// A GTFS zip loaded here becomes the network document (and its
-/// boundary, the stop_sequence numbering the live feeds name).
-export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
-  // A zip loaded by hand is this page's own: it stops following the
-  // deployment.
-  followsServer = false;
-  return adoptNetwork(label, async () => {
-    // The import is the network module's: the only time this page
-    // assembles it.
-    if (!(await available("network"))) {
-      display.status = "The network capability is unavailable — a GTFS zip cannot be imported without it.";
-      return null;
-    }
-    const feed = new Doc("feed", { bytes });
-    const imported = await ask("network", "import", { feed_hash: feed });
-    setAgencyZone(imported.timezone);
-    return {
-      network: produced("network", imported.network, "network", imported.network_hash),
-      boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
-    };
-  });
-}
-
-/// Adopt the network (and boundary) `obtain` answers, then answer
-/// everything over it.
-async function adoptNetwork(
-  label: string,
-  obtain: () => Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null>,
-  { quiet = false } = {},
-): Promise<void> {
-  display.busy = true;
-  // A re-pin keeps the page on screen while the next network loads.
-  if (!quiet) display.status = `Loading ${label}…`;
-  await new Promise((r) => setTimeout(r, 20));
-  try {
-    const got = await obtain();
-    if (!got) return;
-    network = got.network;
-    boundary = got.boundary;
-    // The zone may have just become known (a loaded zip's).
-    display.nowSecs = nowSecs();
-    edits = null;
-    editsText = "[]";
-    // The heading: the network's name, which the directory answers
-    // (a published network is bytes this page never parsed).
-    const about = (await available("directory")) ? await ask("directory", "about", { network_hash: network }) : null;
-    display.feed = about?.name || network.value?.name || label;
-    display.status = "";
-    await Promise.all([syncEdits(), fetchLive()]);
-    await release();
-    await request("network", "edits", "snapshot", "clock", "query", "stop", "setup");
-  } catch (e) {
-    fail(e);
-  } finally {
-    display.busy = false;
-  }
-}
-
-/// Whether the page reads the deployment's network (not a zip loaded
-/// by hand): it follows the deployment as it moves.
-let followsServer = false;
-
-/// The deployment names the agency's GTFS URL (D-132) and the last read
-/// of it failed: the next poll reads it again.
-let retryFeed = false;
-
-/// The deployment's network: the pick in force today when it publishes
-/// picks, else its import. Its pin is checked in a module this page
-/// reads it with (the directory answers the first question; the board
-/// and rt when the directory did not assemble): none holds a copy only
-/// to check it.
-async function obtainServed() {
-  const served = await servedNetwork(today(), "directory", "board", "rt");
-  // A deployment that names its GTFS URL: the zip's zone (D-132).
-  setAgencyZone(served?.timezone);
-  followsServer = !!served;
-  retryFeed = false;
-  if (served) return served;
-  // A feed URL that did not answer is not a missing network. Nobody at
-  // a display can load a zip: say so, and read the URL on the next poll.
-  const manifest = await deploymentManifest<{ feed_url?: string }>();
-  if (manifest?.feed_url) {
-    retryFeed = true;
-    display.status = "The agency's schedule could not be read. This screen will try again.";
-  } else {
-    display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
-  }
-  return null;
-}
-
-/// The deployment moved past the network this page holds — a
-/// republish, a new pick in force, or today crossing a pick's
-/// effective date (D-63): adopt the network it serves now, without a
-/// reload. The old network leaves every module through `release`'s
-/// keep-set. True when it re-pinned.
-async function followDeployment(): Promise<boolean> {
-  if (!followsServer || !network) return false;
-  const pin = await servedNetworkPin(today()).catch(() => null);
-  if (!pin || pin === network.pin) return false;
-  await adoptNetwork(
-    "the agency's network",
-    async () => {
-      const served = await servedNetwork(today(), "directory", "board", "rt");
-      setAgencyZone(served?.timezone);
-      return served;
-    },
-    { quiet: true },
-  );
-  return true;
-}
-
-/// A new build waits (D-63): nobody is at a display to tap, so it
-/// applies itself here — only while the server answers (an outage
-/// never reloads a working display into an empty one), and never while
-/// the setup is open (someone is configuring the screen). True when it
-/// applies.
-async function applyWaitingBuild(): Promise<boolean> {
-  if (!buildWaiting() || display.setup || !(await serverAnswers())) return false;
-  applyBuild();
-  return true;
-}
 
 /// Name what the modules keep: the documents this page holds now —
 /// everything else (a replaced network, a superseded edit document)
@@ -398,82 +303,167 @@ function release(): Promise<void> {
   return keep([network, boundary, edits, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
 }
 
-/// One tick: the edit document, the live feeds, and the clock.
-export async function poll(): Promise<void> {
-  if (!network && retryFeed && !display.busy) await adoptNetwork("the agency's network", obtainServed, { quiet: true });
-  if (!network || display.busy) return;
-  if (await followDeployment()) return;
-  if (await applyWaitingBuild()) return;
-  display.nowSecs = nowSecs();
-  const changed = ["clock"];
-  const [e, l] = await Promise.all([syncEdits(), fetchLive()]);
-  if (e) {
-    changed.push("edits");
-    await release();
-  }
-  if (l) changed.push("snapshot");
-  await request(...changed);
-}
-
-/// The sync server's edit document (detours), read-only. No sync
-/// server, or an unreadable answer, keeps the last good document.
-/// True when it changed.
-async function syncEdits(): Promise<boolean> {
-  if (!network) return false;
-  try {
-    const resp = await fetch("edits");
-    if (!resp.ok) return false;
-    display.editsStale = staleLabel(resp, "Detours");
-    const text = await resp.text();
-    // The edit document, as the server keeps it (it brings an older
-    // one forward); the modules refuse any version they do not read.
-    const document = JSON.parse(text) as EditDocument;
-    if (text === editsText) return false;
-    editsText = text;
-    edits = document?.records?.length > 0 ? new Doc("edits", { value: document }, { over: network }) : null;
-    return true;
-  } catch (e) {
-    console.warn("edit sync failed:", e);
-    return false;
-  }
-}
-
-/// Fetch each configured live feed (kit's fetchFeed) and decode it (cap-rt registers the snapshot). A feed that does not
-/// answer drops its snapshot: the board reads the schedule and says so
-/// — a display never shows a stale prediction as live. True when any
-/// snapshot changed.
-async function fetchLive(): Promise<boolean> {
-  const kinds = (["trips", "vehicles", "alerts"] as const).filter((k) => urls[k]);
-  if (kinds.length === 0) return false;
-  if (!(await available("rt"))) return false;
-  let changed = false;
-  const errors: string[] = [];
-  for (const kind of kinds) {
-    try {
-      const resp = await fetchFeed(urls[kind]);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const snapshot = new Doc("rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
+/// One live feed: its bytes decoded into a snapshot (cap-rt registers
+/// it), keyed by its hash. None when the deployment names no such feed
+/// or rt did not assemble.
+function liveFeed(kind: keyof typeof snapshots): Reader<Doc> {
+  return {
+    read: async ({ signal }) => {
+      const url = urls[kind];
+      if (!url || !(await available("rt"))) return null;
+      const snapshot = new Doc("rt", { bytes: await readFeed(url, signal) });
       const { hash } = await load("rt", snapshot);
-      if (hash !== snapshots[kind]?.hash) {
-        changed = true;
-        snapshots[kind] = snapshot;
-      }
-    } catch (e) {
-      errors.push(`${kind}: ${(e as Error).message}`);
-      if (snapshots[kind]) {
-        snapshots[kind] = null;
-        changed = true;
-      }
-    }
-  }
-  display.liveError = errors.join("; ");
-  if (errors.length < kinds.length) display.liveAt = clockLabel();
-  return changed;
+      return { value: snapshot, key: hash };
+    },
+    adopt: (snapshot) => void (snapshots[kind] = snapshot),
+  };
 }
 
-/// The deployment's live feeds (live-feeds.json beside the page).
-async function restoreUrls(): Promise<void> {
-  urls = { ...urls, ...(await deploymentFeeds()) };
+const readers: Record<string, Reader<any>> = {
+  manifest: {
+    read: async ({ signal }) => {
+      const read = await readManifest(signal);
+      return { value: read.manifest, key: JSON.stringify(read.manifest), asOfMs: read.asOfMs ?? undefined, why: read.why ?? undefined };
+    },
+    adopt: (m: DeploymentManifest | null) => {
+      manifest = m;
+      // The agency's zone, before the network in force on its date is
+      // picked.
+      setAgencyZone(m?.timezone);
+    },
+  },
+  "live-feeds": {
+    read: ({ signal }) => readLiveFeeds(signal),
+    adopt: (u: Partial<LiveUrls> | null) => void (urls = u ?? {}),
+  },
+  network: {
+    // The deployment's network: the pick in force today, else its
+    // import. It follows the deployment as it moves (a republish, a new
+    // pick, today crossing a pick's date; D-63): the pin is checked on
+    // each read, and only a moved pin reads the network again.
+    read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
+      if (byHand) return { value: byHand, key: byHand.pin };
+      if (!manifest) throw new Error("the deployment's manifest is not read");
+      const pin = await servedNetworkPin(today(), { manifest, signal });
+      if (!pin) return null;
+      if (held?.pin === pin) return { value: held, key: pin };
+      const served = await servedNetwork(today(), [...NETWORK_READERS], { manifest, signal });
+      if (!served) return null;
+      // A deployment that names its GTFS URL: the zip's zone (D-132).
+      setAgencyZone(served.timezone);
+      // The pin of an imported zip is the network the page now holds.
+      const now = (await servedNetworkPin(today(), { manifest, signal })) ?? pin;
+      return { value: { network: served.network, boundary: served.boundary, pin: now }, key: now };
+    },
+    adopt: async (got: Served | null) => {
+      network = got?.network ?? null;
+      boundary = got?.boundary ?? null;
+      // The zone may have just become known (a loaded zip's).
+      display.nowSecs = nowSecs();
+      // The heading: the network's name, which the directory answers
+      // (a published network is bytes this page never parsed).
+      const about = network && (await available("directory")) ? await ask("directory", "about", { network_hash: network }).catch(() => null) : null;
+      display.feed = network ? about?.name || network.value?.name || "the agency's network" : "";
+      display.status = "";
+      await release();
+    },
+  },
+  edits: {
+    // The edit document (detours), read-only, over the network the page
+    // holds: a new network reads it again. The modules refuse any
+    // version they do not read. No sync server keeps none (404).
+    read: async ({ signal }) => {
+      if (!network) return null;
+      const got = await readHead("edits", signal, [404]);
+      if (!got) return null;
+      let document: EditDocument;
+      try {
+        document = JSON.parse(got.value) as EditDocument;
+      } catch {
+        throw new Error("the edit document is not JSON");
+      }
+      return { ...got, value: { document, over: network }, key: `${network.hash ?? network.pin}:${got.key}` };
+    },
+    adopt: async (got: { document: EditDocument; over: Doc<Network> } | null) => {
+      edits = got && got.document?.records?.length > 0 ? new Doc("edits", { value: got.document }, { over: got.over }) : null;
+      await release();
+    },
+  },
+  trips: liveFeed("trips"),
+  vehicles: liveFeed("vehicles"),
+  alerts: liveFeed("alerts"),
+};
+
+const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, display.inputs, request);
+
+// ---------------------------------------------------------------------
+// boot, and the clock
+// ---------------------------------------------------------------------
+
+export async function boot(): Promise<void> {
+  // The app's build: a build that waited for this load applies now.
+  void installApp();
+  readUrl();
+  try {
+    await inputs.start();
+    await request("clock", "query", "stop", "setup");
+  } catch (e) {
+    fail(e);
+  } finally {
+    display.busy = false;
+  }
+  // The board answers again on the clock; the header's clock moves
+  // between.
+  clockEvery(BOARD_MS, () => {
+    display.nowSecs = nowSecs();
+    if (applyWaitingBuild()) return;
+    void request("clock");
+  });
+  clockEvery(FACE_MS, () => (display.nowSecs = nowSecs()));
+}
+
+/// A GTFS zip loaded here becomes the network document (and its
+/// boundary, the stop_sequence numbering the live feeds name). The
+/// page stops following the deployment.
+export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
+  display.busy = true;
+  display.status = `Loading ${label}…`;
+  try {
+    // The import is the network module's: the only time this page
+    // assembles it.
+    if (!(await available("network"))) {
+      display.status = "The network capability is unavailable — a GTFS zip cannot be imported without it.";
+      return;
+    }
+    const feed = new Doc("feed", { bytes });
+    const imported = await ask("network", "import", { feed_hash: feed });
+    setAgencyZone(imported.timezone);
+    byHand = {
+      network: produced("network", imported.network, "network", imported.network_hash),
+      boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
+      pin: `zip:${imported.network_hash}`,
+    };
+    display.status = "";
+    await inputs.read("network", "edits");
+  } catch (e) {
+    fail(e);
+  } finally {
+    display.busy = false;
+  }
+}
+
+/// A new build waits (D-63): nobody is at a display to tap, so it
+/// applies itself — only while the server answers (an outage never
+/// reloads a working display into an empty one: the manifest's last
+/// read answered, and not from a working copy), and never while the
+/// setup is open (someone is configuring the screen). True when it
+/// applies.
+function applyWaitingBuild(): boolean {
+  const m = display.inputs.manifest;
+  const answers = m?.kind === "answered" && m.asOfMs == null;
+  if (display.setup || !answers || !buildWaiting()) return false;
+  applyBuild();
+  return true;
 }
 
 // ---------------------------------------------------------------------

@@ -21,7 +21,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::STOP_REQUESTS;
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -164,13 +164,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })
         }
         Request::RequestsFor { requests_hash, stop } => {
-            let held = STOP_REQUESTS.require(&requests_hash)?;
+            let held = kind::<transit_requests::StopRequests>().require(&requests_hash)?;
             Ok(Response::RequestsFor {
                 requests: held.for_stop(&stop).into_iter().map(|(id, r)| IdRequest { id: id.to_string(), request: r.clone() }).collect(),
             })
         }
         Request::List { requests_hash, statuses, jobs } => {
-            let held = STOP_REQUESTS.require(&requests_hash)?;
+            let held = kind::<transit_requests::StopRequests>().require(&requests_hash)?;
             Ok(Response::List {
                 requests: held
                     .list(statuses.as_deref(), jobs.as_deref())
@@ -182,7 +182,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Put { requests_hash, id, request, new } => {
             let held = match requests_hash {
-                Some(h) => (*STOP_REQUESTS.require_writable(&h)?).clone(),
+                Some(h) => (*kind::<transit_requests::StopRequests>().require_writable(&h)?).clone(),
                 None => StopRequests::default(),
             };
             if let Some(taken) = new.unwrap_or(false).then(|| held.refuse_taken(&id)).flatten() {
@@ -191,21 +191,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let next = held.put(&id, request);
             Ok(match next.checked() {
                 Ok(next) => {
-                    let (requests_hash, held) = STOP_REQUESTS.register(next)?;
+                    let (requests_hash, held) = kind::<transit_requests::StopRequests>().register(next)?;
                     Response::Put { refusals: vec![], requests_hash: Some(requests_hash), requests: Some((*held).clone()) }
                 }
                 Err(refusals) => Response::Put { refusals, requests_hash: None, requests: None },
             })
         }
         Request::WorkOrderCall { requests_hash, id, action } => {
-            let call = STOP_REQUESTS.require(&requests_hash)?.work_order_call(&id, &action)?;
+            let call = kind::<transit_requests::StopRequests>().require(&requests_hash)?.work_order_call(&id, &action)?;
             Ok(Response::WorkOrderCall { call })
         }
         Request::RecordWorkOrder { requests_hash, id, work_order } => {
-            let next = STOP_REQUESTS.require_writable(&requests_hash)?.record_work_order(&id, work_order).ok_or_else(|| format!("no request {id:?} in the document"))?;
+            let next = kind::<transit_requests::StopRequests>().require_writable(&requests_hash)?.record_work_order(&id, work_order).ok_or_else(|| format!("no request {id:?} in the document"))?;
             Ok(match next.checked() {
                 Ok(next) => {
-                    let (requests_hash, held) = STOP_REQUESTS.register(next)?;
+                    let (requests_hash, held) = kind::<transit_requests::StopRequests>().register(next)?;
                     Response::RecordWorkOrder { refusals: vec![], requests_hash: Some(requests_hash), requests: Some((*held).clone()) }
                 }
                 Err(refusals) => Response::RecordWorkOrder { refusals, requests_hash: None, requests: None },
@@ -220,7 +220,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             markings: strings(&transit_requests::MARKINGS),
         }),
         Request::LogRecords { requests_hash } => {
-            let held = STOP_REQUESTS.require(&requests_hash)?;
+            let held = kind::<transit_requests::StopRequests>().require(&requests_hash)?;
             let doc = serde_json::to_value(&*held).map_err(|e| e.to_string())?;
             Ok(Response::LogRecords { next: transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)? })
         }
@@ -236,7 +236,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let template = serde_json::json!({"kind": "stop_requests", "schema_version": version});
             let requests: StopRequests = transit_log::assemble(template, document.as_ref(), "requests", &records, false)?;
             let document = cap_abi::canonical_bytes(&requests)?;
-            let (document_hash, _) = STOP_REQUESTS.register(requests)?;
+            let (document_hash, _) = kind::<transit_requests::StopRequests>().register(requests)?;
             Ok(Response::LogDocument { document_hash, document })
         }
     }
@@ -263,5 +263,7 @@ cap_abi::capability! {
     id: "requests",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [STOP_REQUESTS],
+    documents: [transit_requests::StopRequests],
+    request: Request,
+    speaks: &[("stop_requests", &[transit_requests::SCHEMA_VERSION])],
 }

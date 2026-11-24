@@ -1,13 +1,15 @@
 <script lang="ts">
   /// A frame with no answer, said plainly: what it would show, why it
   /// cannot (an op the bus does not have yet, a decision it waits on,
-  /// a capability that did not load, a document that is not there, or
-  /// an op that refused), and — for a failure — a retry. The rest of
+  /// a capability that did not load, a document that is not there, an
+  /// input whose reads fail, or an op that refused), and — for a
+  /// failure — a retry. The rest of
   /// the view keeps answering around it. `state` is the frame's state
   /// as the answer graph keeps it (src/uis/answers.ts).
   type FrameState =
     | { kind: "unassembled"; cap: string }
     | { kind: "starved"; missing: string }
+    | { kind: "unread"; name: string; sinceMs: number }
     | { kind: "failed"; message: string };
   let {
     title,
@@ -26,7 +28,13 @@
   } = $props();
   const failure = $derived(state?.kind === "failed" ? state.message : error);
   const said = $derived(
-    state?.kind === "unassembled" ? "This part of the app did not load." : state?.kind === "starved" ? `Waiting for ${state.missing}.` : reason,
+    state?.kind === "unassembled"
+      ? "This part of the app did not load."
+      : state?.kind === "starved"
+        ? `Waiting for ${state.missing}.`
+        : state?.kind === "unread"
+          ? `${state.name.replace(/^the /, "").replace(/^./, (c) => c.toUpperCase())} could not be read. The page will try again.`
+          : reason,
   );
   const retry = $derived(state && state.kind !== "failed" ? undefined : onretry);
 </script>

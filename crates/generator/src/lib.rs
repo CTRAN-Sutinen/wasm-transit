@@ -1,5 +1,10 @@
-//! gen-manifest: assemble the capability manifest after the wasm
+//! The generator: assemble the capability manifest after the wasm
 //! builds (`just caps`) and PUBLISH the registry (`just registry`).
+//! It takes the capabilities as data ([`Linked`]: each one's
+//! declaration and worked examples) and names none. Its binary,
+//! gen-manifest, is generated (gen-assemblies writes
+//! `assemblies/gen-manifest/`): it links every capability with its
+//! `examples` feature and calls [`main`].
 //! Reads each capability module, pins it by content hash, serves it
 //! under that hash, and writes both surfaces hosts and agents read:
 //!
@@ -33,6 +38,8 @@ use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, Migra
 mod common;
 mod schema_lock;
 mod kind_table;
+pub mod checks;
+pub mod doc_check;
 // The worked examples' fixtures (D-235).
 use fixtures::*;
 use cap_abi::validate::validate_assembly;
@@ -51,377 +58,13 @@ const PUBLISH_GATES: &[&str] = &[
 /// The document-kernel version this build speaks.
 const KERNEL: u32 = 1;
 
-/// The capability set this deployment assembles, mirroring the crates:
-/// what each reads and in which versions (`speaks`, the versions the
-/// owning crates read), and the version steps it carries (`migrates`:
-/// cap-migrate's alone). When a crate's Request enum
-/// changes, this changes — and the manifest diff is the reviewable
-/// assembly change.
-struct ModuleSpec {
-    id: &'static str,
-    file: &'static str,
-    ops: &'static [&'static str],
-    /// The kernel document kinds it reads (`capability! { documents }`):
-    /// their loads are kernel ops in every module that links it. The
-    /// smoke checks this against the module's own `about`.
-    documents: &'static [&'static str],
-    consumes: &'static [(&'static str, &'static str)],
-    speaks: &'static [(&'static str, &'static [u32])],
-    migrates: &'static [(&'static str, &'static [(u32, u32)])],
-    /// Agent context, from the capability's OPS.md: what it is FOR
-    /// (under the `#` heading), and one `##` section per op — the
-    /// op's description. Its worked example is the capability's own
-    /// (its `examples` feature), run through its dispatch
-    /// (`run_examples`).
-    docs: &'static str,
+/// One capability as the generator reads it: its declaration
+/// (`capability!`), and its worked examples (its `examples` feature).
+/// The generated gen-manifest lists them, in id order.
+pub struct Linked {
+    pub declared: cap_abi::kernel::Declared,
+    pub examples: fn() -> Vec<cap_abi::manifest::Example>,
 }
-
-const MODULES: &[ModuleSpec] = &[
-    ModuleSpec {
-        id: "gtfs",
-        file: "module_gtfs.wasm",
-        ops: &["feed_info"],
-        documents: &["feed"],
-        consumes: &[],
-        speaks: &[("feed", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-gtfs/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-gtfs/OPS.md"),
-    },
-    ModuleSpec {
-        id: "router",
-        file: "module_router.wasm",
-        ops: &["plan", "plan_arrive_by", "plan_compare", "itinerary_paths"],
-        documents: &["network", "edits", "live", "walks"],
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("live", &[1]), ("walks", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-router/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-router/OPS.md"),
-    },
-    ModuleSpec {
-        id: "network",
-        file: "module_network.wasm",
-        ops: &["import", "validate", "export", "document", "publishable", "stored_plans"],
-        documents: &["feed", "network", "boundary"],
-        consumes: &[],
-        speaks: &[("feed", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-network/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-network/OPS.md"),
-    },
-    ModuleSpec {
-        id: "rt",
-        file: "module_rt.wasm",
-        ops: &["decode", "trip_progress", "late_trips", "live", "encode_alerts", "read_alerts"],
-        documents: &["network", "boundary", "rt", "live", "service_alerts"],
-        consumes: &[("network", "network")],
-        // The gtfs-rt payload: an ephemeral document (polled every
-        // few seconds), versioned by the protobuf schema it speaks;
-        // it joins against the NETWORK (an rt trip id is a model trip
-        // id), with the import's boundary for the published
-        // stop_sequence numbering when there is one.
-        // THE LIVE DOCUMENT is minted here and read by the board —
-        // optional edges both: neither module needs the other to
-        // answer its own questions, so they are spoken, not consumed.
-        // encode_alerts writes the service alerts document as an Alerts
-        // feed: GTFS-rt is its serialization.
-        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1]), ("service_alerts", &[transit_alerts::ALERTS_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-rt/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-rt/OPS.md"),
-    },
-    ModuleSpec {
-        id: "analysis",
-        file: "module_analysis.wasm",
-        ops: &["network_stats", "service_types_overview", "service_groups", "service_type_detail", "service_type_compare", "stop_gaps", "hourly_trips", "schedule_texture", "route_overlap", "timed_transfers", "hub_connections", "missed_connections", "longest_waits", "day_types", "plan_compare", "network_findings", "route_frequency", "type_coverage", "unserved_points", "coverage_compare"],
-        documents: &["network", "layer"],
-        // The network document is produced by the network capability —
-        // the extraction this module's own docs once called "future".
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-analysis/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-analysis/OPS.md"),
-    },
-    ModuleSpec {
-        id: "board",
-        file: "module_board.wasm",
-        ops: &["stop_board", "grouped_board", "alert_reach", "watchlist_board"],
-        documents: &["network", "edits", "live", "watchlist"],
-        // The network document is produced by the network capability;
-        // the operator edit document is host-owned (wholesale-replaced
-        // — the sync contract); the watchlist is the PERSONAL document
-        // it reads in the current version (cap-migrate migrates it).
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[transit_rider::watchlist::SCHEMA_VERSION]), ("live", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-board/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-board/OPS.md"),
-    },
-    ModuleSpec {
-        id: "runcut",
-        file: "module_runcut.wasm",
-        ops: &["blocks", "fleet_summary", "block_trips", "trip_stops", "trip_path", "recovery", "suggest_blocks"],
-        documents: &["network", "edits", "live", "work_rules"],
-        // The network document is produced by the network capability;
-        // the operator edit document is host-owned (wholesale-replaced
-        // — the sync contract); the live document is the rt
-        // capability's, which the chain's ripple reads; the work rules
-        // are host-owned (transit-runs), read by the recovery view and
-        // the suggested blocking.
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("live", &[1]), ("work_rules", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-runcut/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-runcut/OPS.md"),
-    },
-    ModuleSpec {
-        id: "calendar",
-        file: "module_calendar.wasm",
-        ops: &["active_services", "service_dates"],
-        documents: &["network", "edits"],
-        // The network document is produced by the network capability;
-        // the operator edit document is host-owned (wholesale-replaced
-        // — the sync contract).
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-calendar/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-calendar/OPS.md"),
-    },
-    ModuleSpec {
-        id: "directory",
-        file: "module_directory.wasm",
-        ops: &["about", "stops", "stops_near", "stops_by_ids", "routes", "route_stop_sequence", "focus", "route_lines", "service_keys", "entities", "route_detail", "stop_detail", "timetable"],
-        documents: &["network"],
-        // The network document is produced by the network capability.
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-directory/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-directory/OPS.md"),
-    },
-    ModuleSpec {
-        id: "streets",
-        file: "module_streets.wasm",
-        ops: &["import", "walks", "access", "snap", "route"],
-        documents: &["streets", "network"],
-        // The streets document is the HOST's (read from a street
-        // layer by import, answered with its hash); every query
-        // addresses that hash. The walk table reads the network's
-        // stops.
-        consumes: &[("network", "network")],
-        speaks: &[("streets", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("walks", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-streets/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-streets/OPS.md"),
-    },
-    ModuleSpec {
-        id: "sync",
-        file: "module_sync.wasm",
-        ops: &["sync_edits", "read_edits", "compact_edits", "log_records", "log_document", "receive", "log_revert"],
-        documents: &[],
-        consumes: &[],
-        speaks: &[("operator_edits", &[transit_sync::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-sync/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-sync/OPS.md"),
-    },
-    ModuleSpec {
-        id: "log",
-        file: "module_log.wasm",
-        ops: &["compose", "fold", "revert", "close_gap", "references", "naming"],
-        documents: &[],
-        // The log is the host's to store (D-190, D-197): compose answers
-        // each write's entry, fold the records and a checkpoint. It never
-        // reads a record: each kind's capability turns its document into
-        // records and back (log_records, log_document).
-        consumes: &[],
-        speaks: &[("log_entry", &[transit_log::ENTRY_VERSION]), ("log_checkpoint", &[transit_log::CHECKPOINT_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-log/OPS.md.
-        docs: include_str!("../../cap-log/OPS.md"),
-    },
-    ModuleSpec {
-        id: "authz",
-        file: "module_authz.wasm",
-        ops: &["authorize", "effective", "validate"],
-        documents: &[],
-        consumes: &[],
-        speaks: &[("policy", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-authz/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-authz/OPS.md"),
-    },
-    ModuleSpec {
-        id: "author",
-        file: "module_author.wasm",
-        ops: &["apply", "stamp_pick"],
-        documents: &["network", "work_rules"],
-        // Authoring reads and MINTS network documents — the same
-        // identity the codec's import produces and every model-side
-        // capability consumes.
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("work_rules", &[1])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-author/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-author/OPS.md"),
-    },
-    ModuleSpec {
-        id: "divert",
-        file: "module_divert.wasm",
-        ops: &["draft", "list", "reports", "propose", "cancel", "retire", "restore"],
-        documents: &["network"],
-        // A draft is answered over the network the codec's import
-        // produces; the answers are next states of the host-owned
-        // operator edit document.
-        consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-divert/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-divert/OPS.md"),
-    },
-    ModuleSpec {
-        id: "plans",
-        file: "module_plans.wasm",
-        ops: &["resolve", "validate", "timeline", "periods", "publish", "in_force", "in_use", "retire", "freeze", "adopt", "log_records", "receive", "log_document"],
-        // A pick it writes is checked as a network and reads the stops
-        // document (D-237): both register on the kernel's loads.
-        documents: &["network", "stops"],
-        consumes: &[("network", "network")],
-        speaks: &[("plans", &[1]), ("frozen_versions", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("stops", &[transit_stops::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-plans/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-plans/OPS.md"),
-    },
-    ModuleSpec {
-        id: "stops",
-        file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "request_warnings", "seed", "add_event", "correct_event", "vocabulary", "read_records", "records", "take_stops", "read_pick", "visit_warnings", "export_versions", "export_pick", "import_events", "questions", "attribute_surveys", "feed_events", "log_records", "receive", "log_document"],
-        documents: &["stops", "stop_requests", "network"],
-        // The stops document is the host's (beside the plans, D-147):
-        // validate answers its canonical bytes and hash, which the
-        // kernel's load_stops answers too; the date questions read it.
-        // seed reads a network's stops to begin the document; add_event
-        // answers the next one. A pick only reads it (D-157). receive
-        // writes the stops log, which also holds the stop requests.
-        consumes: &[("network", "network")],
-        speaks: &[("stops", &[transit_stops::SCHEMA_VERSION]), ("stop_requests", &[transit_requests::SCHEMA_VERSION]), ("network", &[transit_network::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-stops/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-stops/OPS.md"),
-    },
-    ModuleSpec {
-        id: "requests",
-        file: "module_requests.wasm",
-        ops: &["validate", "requests_for", "list", "put", "work_order_call", "record_work_order", "vocabulary", "log_records", "log_document"],
-        documents: &["stop_requests"],
-        // The stop requests document is the host's (D-159): validate
-        // answers its canonical bytes and hash, which the kernel's
-        // load_stop_requests answers too; put answers the next one.
-        consumes: &[],
-        speaks: &[("stop_requests", &[transit_requests::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-requests/OPS.md.
-        docs: include_str!("../../cap-requests/OPS.md"),
-    },
-    ModuleSpec {
-        id: "alerts",
-        file: "module_alerts.wasm",
-        ops: &["validate", "put", "end", "list", "flags", "validate_templates", "put_template", "templates", "fill", "receive", "log_records", "log_document"],
-        documents: &["service_alerts", "alert_templates", "network"],
-        // The service alerts and alert templates documents are the
-        // host's (D-206, D-210): validate answers their canonical bytes
-        // and hash, which the kernel's loads answer too; put, end, and
-        // put_template answer the next one. flags and fill read the
-        // network's names.
-        consumes: &[],
-        speaks: &[
-            ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
-            ("alert_templates", &[transit_alerts::TEMPLATES_VERSION]),
-            ("network", &[transit_network::SCHEMA_VERSION]),
-        ],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-alerts/OPS.md.
-        docs: include_str!("../../cap-alerts/OPS.md"),
-    },
-    ModuleSpec {
-        id: "notes",
-        file: "module_notes.wasm",
-        ops: &["validate", "write", "on", "between", "receive", "log_records", "log_document"],
-        documents: &["notes"],
-        // The notes document is the host's (D-214): validate answers its
-        // canonical bytes and hash, which the kernel's load_notes answers
-        // too; write answers the next one.
-        consumes: &[],
-        speaks: &[("notes", &[transit_notes::SCHEMA_VERSION])],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-notes/OPS.md.
-        docs: include_str!("../../cap-notes/OPS.md"),
-    },
-    ModuleSpec {
-        id: "disruptions",
-        file: "module_disruptions.wasm",
-        ops: &["today", "gaps", "start_alert"],
-        documents: &["network", "edits", "live", "stops", "service_alerts", "notes"],
-        // What is disrupted on a day, and whether an alert explains it
-        // (D-218): it reads every document a disruption, its alert, or
-        // its note lives in, and writes none.
-        consumes: &[],
-        speaks: &[
-            ("network", &[transit_network::SCHEMA_VERSION]),
-            ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
-            ("live", &[2]),
-            ("stops", &[transit_stops::SCHEMA_VERSION]),
-            ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
-            ("notes", &[transit_notes::SCHEMA_VERSION]),
-        ],
-        migrates: &[],
-        // Its purpose and per-op agent context: crates/cap-disruptions/OPS.md.
-        docs: include_str!("../../cap-disruptions/OPS.md"),
-    },
-    ModuleSpec {
-        id: "migrate",
-        file: "module_migrate.wasm",
-        ops: &["migrate", "version"],
-        documents: &[],
-        consumes: &[],
-        speaks: &[
-            ("network", &[1, transit_network::SCHEMA_VERSION]),
-            ("operator_edits", &[1, transit_sync::SCHEMA_VERSION]),
-            ("watchlist", &[1, 2]),
-            ("service_alerts", &[1, transit_alerts::ALERTS_VERSION]),
-            ("stop_requests", &[1, transit_requests::SCHEMA_VERSION]),
-        ],
-        migrates: &[
-            ("network", &[(1, 2)]),
-            ("operator_edits", &[(1, 2)]),
-            ("watchlist", &[(1, 2)]),
-            ("service_alerts", &[(1, 2)]),
-            ("stop_requests", &[(1, 2)]),
-        ],
-        // Its purpose and per-op agent context: crates/cap-migrate/OPS.md
-        // (a `#` heading, the purpose, then one `##` section per op).
-        docs: include_str!("../../cap-migrate/OPS.md"),
-    },
-];
 
 /// The kernel ops, documented once for every module. The registry
 /// ops' examples are COMPUTED: two registries (one durable, one
@@ -431,52 +74,68 @@ const MODULES: &[ModuleSpec] = &[
 /// document kind's load (in every module whose capabilities read the
 /// kind), the registry ops and `about` (in every module).
 fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
-    use cap_abi::kernel::{self, Cap, NETWORK, RT};
+    use cap_abi::kernel::{self, kind, loader, Cap};
     use cap_abi::registry::{OP_EVICT, OP_HELD};
     // The registry ops' examples run the REAL kernel over an example
     // capability reading networks and rt snapshots.
-    static EXAMPLE: Cap = Cap { id: "board", json: |_| String::new(), bytes: |_, _| String::new(), documents: &[&NETWORK, &RT] };
+    static EXAMPLE: Cap = Cap {
+        id: "board",
+        json: |_| String::new(),
+        bytes: |_, _| String::new(),
+        documents: &[loader::<transit_network::Network>, loader::<transit_rt::RtOverview>],
+    };
     let answer = |text: String| serde_json::from_str::<serde_json::Value>(&text).expect("the kernel answers JSON");
     let rt_bytes = fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-rt.pb")).expect("rt fixture");
     if let Some(ctx) = net {
-        NETWORK.register(ctx.network.clone()).expect("the fixture network registers");
+        kind::<transit_network::Network>().register(ctx.network.clone()).expect("the fixture network registers");
     }
-    let (rt_hash, _) = RT.register_bytes(&rt_bytes).expect("the rt fixture decodes");
+    let (rt_hash, _) = kind::<transit_rt::RtOverview>().register_bytes(&rt_bytes).expect("the rt fixture decodes");
     let held = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_HELD, b""));
     let keep = serde_json::json!({ "keep": [rt_hash] });
     let evicted = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_EVICT, keep.to_string().as_bytes()));
     let about = answer(kernel::invoke_bytes(&[&EXAMPLE], kernel::OP_ABOUT, b""));
 
-    // A load's kind and code are its line's in the kind list.
-    let load = |code: u32, name: &str, description: &str| {
-        let line = cap_abi::kinds::KINDS.iter().find_map(|k| k.load.filter(|l| l.op == name));
-        let line = line.unwrap_or_else(|| panic!("the kernel load {name} has no line in crates/cap-abi/src/kinds.rs"));
-        assert_eq!(line.code, code, "{name}: the kind list's code");
+    // A load's id, op, and code are its type's (`transit_version::Load`,
+    // D-239), and its line in the kind list names that type with the
+    // same id, op, and code.
+    fn load<T: cap_abi::kernel::Load>(description: &str, net: Option<&NetworkExampleContext>) -> KernelOp {
+        let line = cap_abi::kinds::by_load(T::ID)
+            .unwrap_or_else(|| panic!("the kernel load {} has no line in crates/cap-abi/src/kinds.rs", T::LOAD_OP));
+        let listed = line.load.expect("by_load finds a load");
+        assert_eq!((listed.op, listed.code), (T::LOAD_OP, T::CODE), "{}: the kind list's op and code are its type's", T::ID);
+        let ty = std::any::type_name::<T>();
+        let (krate, name) = (ty.split("::").next().unwrap(), ty.rsplit("::").next().unwrap());
+        assert!(
+            line.library.starts_with(&format!("{krate}::")) && line.library.ends_with(&format!("::{name}")),
+            "{}: the line names {}, and the load is {ty}'s",
+            T::ID,
+            line.library
+        );
         KernelOp {
-            code,
-            name: name.into(),
-            kind: Some(line.id.into()),
+            code: T::CODE,
+            name: T::LOAD_OP.into(),
+            kind: Some(T::ID.into()),
             description: description.into(),
-            example: kernel_example(name, net),
+            example: kernel_example(T::LOAD_OP, net),
         }
-    };
-    vec![
-        load(cap_abi::OP_LOAD_NETWORK, "load_network", "Register the NETWORK document under its content hash (idempotent) — one identity in every module that reads networks, registered once per instance however many of its capabilities read it. JSON: {\"op\": \"load_network\", \"network\": …}. Bulk: the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module) — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped."),
-        load(kernel::OP_LOAD_EDITS, "load_edits", "Register the OPERATOR EDIT document ({\"kind\": \"edit_records\", \"schema_version\", \"records\"} — wholesale-replaced by the host: push the whole document on every change) under its canonical hash, which the day views address. Only the version this module reads registers: an older document is refused naming the migration capability, a newer one naming both versions. A record the network cannot answer simply patches nothing — what each record amounts to on a network is the divert capability's reports. JSON: {\"op\": \"load_edits\", \"edits\": {…}}; bulk: the document's JSON."),
-        load(kernel::OP_LOAD_LIVE, "load_live", "Register a LIVE document (the rt capability's live answer) under its canonical hash — the same identity rt answered (in a module linking rt, its live answer is registered already). Ephemeral: the last 4 stay. JSON: {\"op\": \"load_live\", \"live\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_BOUNDARY, "load_boundary", "Register an imported network's BOUNDARY (the network capability's import answer) under its canonical hash: the stop_sequence numbering the published feed — and so its rt updates — use. A network published from its own export needs none (1..n). JSON: {\"op\": \"load_boundary\", \"boundary\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_WALKS, "load_walks", "Register a WALK TABLE (the streets capability's walks answer: every walk between the network's stops along the streets) under its canonical hash — the same identity streets answered. A plan naming it by walks_hash walks its transfers along the streets; a table derived for another network is refused there. JSON: {\"op\": \"load_walks\", \"walks\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_STREETS, "load_streets", "Register a STREETS document the host holds (an import's answer, stored) under its hash — the same hash its import answered — with its size (ways, segments, distinct points). Refused unless canonical (ways of two or more points, sorted, none twice, two-ways in canonical direction). JSON: {\"op\": \"load_streets\", \"streets\": …}; bulk: the bare document's JSON bytes."),
-        load(kernel::OP_LOAD_WATCHLIST, "load_watchlist", "Register a WATCHLIST document (the personal saved set, version-tagged) under its canonical hash, answering its version. JSON: {\"op\": \"load_watchlist\", \"document\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_LAYER, "load_layer", "Register a GeoJSON WEIGHTED LAYER — Point, Polygon and MultiPolygon features (people, jobs, households: any weighted geography; other geometries are skipped) — under the content hash of its bytes. The answer is the import handle — features, points, polygons, and the weights it can be read by (each property that is a JSON number, with its total) — so the layer's owner never parses a second copy. Which field is the weight, and what it means, are the coverage op's (`field`, `label`): one file read two ways is one layer. Bulk: the GeoJSON bytes; JSON: {\"op\": \"load_layer\", \"bytes\": [..]}."),
-        load(kernel::OP_LOAD_FEED, "load_feed", "Register a GTFS zip under the content hash of its bytes (idempotent), answering the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk: the raw zip."),
-        load(kernel::OP_LOAD_WORK_RULES, "load_work_rules", "Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional, D-50) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_STOPS, "load_stops", "Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired; D-153, D-157) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_STOP_REQUESTS, "load_stop_requests", "Register a STOP REQUESTS document (transit-requests: the planning team's requests for work at a stop — new, reinstall, relocate/remove, repair/improve, temporary — each tracking the work order the work order system opens for it; D-159) under its canonical hash — the same hash the requests capability's validate answers — with how many requests it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stop_requests\", \"requests\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_SERVICE_ALERTS, "load_service_alerts", "Register a SERVICE ALERTS document (transit-alerts: the agency's alerts in the network's ids, each with its cause, effect, severity, texts in each language, periods, and informed entities; D-206) under its canonical hash, the same hash the alerts capability's validate answers, with how many alerts it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_service_alerts\", \"alerts\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_ALERT_TEMPLATES, "load_alert_templates", "Register an ALERT TEMPLATES document (transit-alerts: the agency's standard language for alerts, with blanks; D-210) under its canonical hash, the same hash the alerts capability's validate_templates answers, with how many templates it holds. Refused unless validate_templates would pass it, every refusal named. JSON: {\"op\": \"load_alert_templates\", \"templates\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_NOTES, "load_notes", "Register a NOTES document (transit-notes: the agency's internal notes, each about a trip instance, an edit record, a service alert, or a stop, with who wrote it and when; D-214) under its canonical hash, the same hash the notes capability's validate answers, with how many notes it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_notes\", \"notes\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_RT, "load_rt", "Register a GTFS-rt protobuf payload (a snapshot) under the content hash of its bytes, answering the hash only (the rt capability's decode answers the overview too). Ephemeral: the last 8 stay. Bulk: the raw payload."),
+    }
+    let ops = vec![
+        load::<transit_network::Network>("Register the NETWORK document under its content hash (idempotent) — one identity in every module that reads networks, registered once per instance however many of its capabilities read it. JSON: {\"op\": \"load_network\", \"network\": …}. Bulk: the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module) — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped.", net),
+        load::<transit_sync::EditDocument>("Register the OPERATOR EDIT document ({\"kind\": \"edit_records\", \"schema_version\", \"records\"} — wholesale-replaced by the host: push the whole document on every change) under its canonical hash, which the day views address. Only the version this module reads registers: an older document is refused naming the migration capability, a newer one naming both versions. A record the network cannot answer simply patches nothing — what each record amounts to on a network is the divert capability's reports. JSON: {\"op\": \"load_edits\", \"edits\": {…}}; bulk: the document's JSON.", net),
+        load::<transit_live::LiveDay>("Register a LIVE document (the rt capability's live answer) under its canonical hash — the same identity rt answered (in a module linking rt, its live answer is registered already). Ephemeral: the last 4 stay. JSON: {\"op\": \"load_live\", \"live\": …}; bulk: its JSON.", net),
+        load::<transit_codec::Boundary>("Register an imported network's BOUNDARY (the network capability's import answer) under its canonical hash: the stop_sequence numbering the published feed — and so its rt updates — use. A network published from its own export needs none (1..n). JSON: {\"op\": \"load_boundary\", \"boundary\": …}; bulk: its JSON.", net),
+        load::<transit_streets::walking::WalkTable>("Register a WALK TABLE (the streets capability's walks answer: every walk between the network's stops along the streets) under its canonical hash — the same identity streets answered. A plan naming it by walks_hash walks its transfers along the streets; a table derived for another network is refused there. JSON: {\"op\": \"load_walks\", \"walks\": …}; bulk: its JSON.", net),
+        load::<transit_streets::Streets>("Register a STREETS document the host holds (an import's answer, stored) under its hash — the same hash its import answered — with its size (ways, segments, distinct points). Refused unless canonical (ways of two or more points, sorted, none twice, two-ways in canonical direction). JSON: {\"op\": \"load_streets\", \"streets\": …}; bulk: the bare document's JSON bytes.", net),
+        load::<transit_rider::watchlist::Watchlist>("Register a WATCHLIST document (the personal saved set, version-tagged) under its canonical hash, answering its version. JSON: {\"op\": \"load_watchlist\", \"document\": …}; bulk: its JSON.", net),
+        load::<transit_analysis::WeightedLayer>("Register a GeoJSON WEIGHTED LAYER — Point, Polygon and MultiPolygon features (people, jobs, households: any weighted geography; other geometries are skipped) — under the content hash of its bytes. The answer is the import handle — features, points, polygons, and the weights it can be read by (each property that is a JSON number, with its total) — so the layer's owner never parses a second copy. Which field is the weight, and what it means, are the coverage op's (`field`, `label`): one file read two ways is one layer. Bulk: the GeoJSON bytes; JSON: {\"op\": \"load_layer\", \"bytes\": [..]}.", net),
+        load::<transit_codec::Feed>("Register a GTFS zip under the content hash of its bytes (idempotent), answering the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk: the raw zip.", net),
+        load::<transit_runs::WorkRules>("Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional, D-50) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON.", net),
+        load::<transit_stops::Stops>("Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired; D-153, D-157) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON.", net),
+        load::<transit_requests::StopRequests>("Register a STOP REQUESTS document (transit-requests: the planning team's requests for work at a stop — new, reinstall, relocate/remove, repair/improve, temporary — each tracking the work order the work order system opens for it; D-159) under its canonical hash — the same hash the requests capability's validate answers — with how many requests it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stop_requests\", \"requests\": …}; bulk: its JSON.", net),
+        load::<transit_alerts::ServiceAlerts>("Register a SERVICE ALERTS document (transit-alerts: the agency's alerts in the network's ids, each with its cause, effect, severity, texts in each language, periods, and informed entities; D-206) under its canonical hash, the same hash the alerts capability's validate answers, with how many alerts it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_service_alerts\", \"alerts\": …}; bulk: its JSON.", net),
+        load::<transit_alerts::AlertTemplates>("Register an ALERT TEMPLATES document (transit-alerts: the agency's standard language for alerts, with blanks; D-210) under its canonical hash, the same hash the alerts capability's validate_templates answers, with how many templates it holds. Refused unless validate_templates would pass it, every refusal named. JSON: {\"op\": \"load_alert_templates\", \"templates\": …}; bulk: its JSON.", net),
+        load::<transit_notes::Notes>("Register a NOTES document (transit-notes: the agency's internal notes, each about a trip instance, an edit record, a service alert, or a stop, with who wrote it and when; D-214) under its canonical hash, the same hash the notes capability's validate answers, with how many notes it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_notes\", \"notes\": …}; bulk: its JSON.", net),
+        load::<transit_rt::RtOverview>("Register a GTFS-rt protobuf payload (a snapshot) under the content hash of its bytes, answering the hash only (the rt capability's decode answers the overview too). Ephemeral: the last 8 stay. Bulk: the raw payload.", net),
         KernelOp {
             code: OP_EVICT,
             name: "evict".into(),
@@ -498,20 +157,26 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
             description: "EVERY module. What the module is: the capabilities it links in index order (an assembly's capability bulk op carries its index in the high 16 bits; a JSON request names its capability as \"cap\" when the module links more than one), each with the document kinds it reads (the bytes are ignored).".into(),
             example: Some(OpExample { request: serde_json::json!(null), response: about }),
         },
-    ]
+    ];
+    // Each line of the kind list with a load is a load here.
+    let listed: std::collections::BTreeSet<&str> = cap_abi::kinds::KINDS.iter().filter_map(|k| k.load.map(|l| l.id)).collect();
+    let loaded: std::collections::BTreeSet<&str> = ops.iter().filter_map(|op| op.kind.as_deref()).collect();
+    assert_eq!(listed, loaded, "each line of crates/cap-abi/src/kinds.rs with a load is a kernel load");
+    ops
 }
 
 /// A capability's OPS.md, read: the purpose (the text under the `# <id>`
 /// heading) and each op's description (the text under its `## <op>`
 /// heading), in the file's order. The file is the docs' one home; the
 /// generator refuses one whose heading is not the capability's id, or
-/// whose ops are not exactly the capability's `ops`, in order.
+/// whose ops are not exactly its `Request` enum's. The manifest lists
+/// the ops in the file's order.
 struct CapDocs {
     purpose: String,
     ops: Vec<(String, String)>,
 }
 
-fn read_docs(module: &ModuleSpec) -> CapDocs {
+fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
     let text = module.docs;
     let place = format!("crates/cap-{}/OPS.md", module.id);
     let mut sections: Vec<(String, Vec<&str>)> = Vec::new();
@@ -532,14 +197,23 @@ fn read_docs(module: &ModuleSpec) -> CapDocs {
     assert!(head.is_empty(), "{place}: starts with `# {}`", module.id);
     let ops: Vec<(String, String)> = it.map(|(op, lines)| (op, body(&lines))).collect();
     let names: Vec<&str> = ops.iter().map(|(op, _)| op.as_str()).collect();
-    assert_eq!(names, module.ops, "{place}: one `## <op>` section per op, in `ops`' order");
+    // The enum says which ops exist; the file says the order a reader
+    // meets them in.
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    let mut ops_sorted: Vec<&str> = module.ops.iter().map(String::as_str).collect();
+    ops_sorted.sort_unstable();
+    assert_eq!(sorted, ops_sorted, "{place}: one `## <op>` section for each op of its `Request` enum, and no other");
     for (op, d) in &ops {
         assert!(!d.is_empty(), "{place}: `## {op}` says nothing");
     }
     CapDocs { purpose: body(&purpose), ops }
 }
 
-fn main() {
+/// Write the manifest, the registry, the schema lock, and the kind
+/// table for `capabilities` (gen-manifest's `main`).
+pub fn main(capabilities: &[Linked]) {
+    let caps = capabilities;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
     // The cargo profile the modules were built under (`just caps`:
     // release; `just caps-fast`: wasm-fast, the iteration loop's).
@@ -565,7 +239,7 @@ fn main() {
     // The schema lock (docs/FORMATS.md, "The schema lock"), before
     // anything is written: `--lock` (`just schema-lock`) records what
     // this build adds and stops; a plain run fails on any drift.
-    let documents = document_kinds(net_ctx.as_ref());
+    let documents = document_kinds(net_ctx.as_ref(), caps);
     let locking = std::env::args().any(|a| a == "--lock");
     let locks = lock_documents(root, &documents, locking);
     let (table, table_schemas) = kind_table(root, &documents, &locks);
@@ -592,10 +266,12 @@ fn main() {
             .expect("write the dispatch sample document");
     }
 
-    let mut capabilities = Vec::with_capacity(MODULES.len());
-    for module in MODULES {
+    let mut capabilities = Vec::with_capacity(caps.len());
+    for linked in caps {
+        let module = &linked.declared;
         let docs = read_docs(module);
-        let bytes = fs::read(target.join(module.file)).expect("wasm module (run the build first)");
+        let file = format!("module_{}.wasm", module.id);
+        let bytes = fs::read(target.join(&file)).expect("wasm module (run the build first)");
         let hex = format!("{:x}", Sha256::digest(&bytes));
         fs::write(dist.join(format!("{}-{hex}.wasm", module.id)), &bytes).expect("write module");
         capabilities.push(Capability {
@@ -603,7 +279,7 @@ fn main() {
             hash: format!("sha256:{hex}"),
             url: format!("caps/{}-{hex}.wasm", module.id),
             bytes: bytes.len() as u64,
-            ops: module.ops.iter().map(|s| s.to_string()).collect(),
+            ops: docs.ops.iter().map(|(op, _)| op.clone()).collect(),
             documents: module.documents.iter().map(|s| s.to_string()).collect(),
             consumes: module
                 .consumes
@@ -637,7 +313,7 @@ fn main() {
                 .map(|(op, description)| {
                     // Each capability's own example, run through its own
                     // dispatch (its crate's `examples` feature).
-                    let (example, kinds) = match run_examples(module.id, op) {
+                    let (example, kinds) = match run_examples(caps, module.id, op) {
                         Some((example, kinds)) => (Some(example), kinds),
                         None => (None, Vec::new()),
                     };
@@ -691,7 +367,7 @@ fn main() {
     publish_registry(root, &manifest, &documents, &locks, &profile);
     publish_kind_table(root, &table, &table_schemas);
 
-    println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
+    println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", caps.len());
 }
 
 /// The pinned toolchain's channel, from rust-toolchain.toml.
@@ -922,7 +598,7 @@ fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value
 /// feed (a GTFS zip) and the rt snapshot (protobuf) are bytes with
 /// their own specs; the manifest is the Go host's own document
 /// (docs/FORMATS.md pins it).
-fn document_kinds(net: Option<&NetworkExampleContext>) -> Vec<DocumentKind> {
+fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<DocumentKind> {
     let plans_example = net.and_then(|n| {
         let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
             transit_plans::publish(&set, plan, &n.network_hash, fixture_today()).unwrap_or(set)
@@ -931,7 +607,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>) -> Vec<DocumentKind> {
     });
     // The walk table's example is the streets capability's `walks`
     // answer, as its dispatch gives it.
-    let walks_example = run_examples("streets", "walks").and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
+    let walks_example = run_examples(caps, "streets", "walks").and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
         kind::<transit_network::Network>(net.map(|n| n.derived.clone()), Some(migrate_network)),
         kind::<transit_codec::Boundary>(net.map(|n| n.boundary.clone()), None),
@@ -1240,32 +916,9 @@ fn source_digest(root: &Path) -> Option<String> {
 /// request, and the answer as dispatch gives it, with the op's example
 /// of each kind of its tagged argument. None when the capability gives
 /// none for the op.
-fn run_examples(capability: &str, op: &str) -> Option<(OpExample, Vec<cap_abi::manifest::KindExample>)> {
-    let (examples, invoke, invoke_bytes): (fn() -> Vec<cap_abi::manifest::Example>, fn(&str) -> String, fn(u32, &[u8]) -> String) = match capability {
-        "notes" => (cap_notes::examples::examples, cap_notes::invoke, cap_notes::invoke_bytes),
-        "stops" => (cap_stops::examples::examples, cap_stops::invoke, cap_stops::invoke_bytes),
-        "analysis" => (cap_analysis::examples::examples, cap_analysis::invoke, cap_analysis::invoke_bytes),
-        "plans" => (cap_plans::examples::examples, cap_plans::invoke, cap_plans::invoke_bytes),
-        "directory" => (cap_directory::examples::examples, cap_directory::invoke, cap_directory::invoke_bytes),
-        "alerts" => (cap_alerts::examples::examples, cap_alerts::invoke, cap_alerts::invoke_bytes),
-        "requests" => (cap_requests::examples::examples, cap_requests::invoke, cap_requests::invoke_bytes),
-        "sync" => (cap_sync::examples::examples, cap_sync::invoke, cap_sync::invoke_bytes),
-        "runcut" => (cap_runcut::examples::examples, cap_runcut::invoke, cap_runcut::invoke_bytes),
-        "network" => (cap_network::examples::examples, cap_network::invoke, cap_network::invoke_bytes),
-        "log" => (cap_log::examples::examples, cap_log::invoke, cap_log::invoke_bytes),
-        "rt" => (cap_rt::examples::examples, cap_rt::invoke, cap_rt::invoke_bytes),
-        "divert" => (cap_divert::examples::examples, cap_divert::invoke, cap_divert::invoke_bytes),
-        "streets" => (cap_streets::examples::examples, cap_streets::invoke, cap_streets::invoke_bytes),
-        "router" => (cap_router::examples::examples, cap_router::invoke, cap_router::invoke_bytes),
-        "board" => (cap_board::examples::examples, cap_board::invoke, cap_board::invoke_bytes),
-        "author" => (cap_author::examples::examples, cap_author::invoke, cap_author::invoke_bytes),
-        "authz" => (cap_authz::examples::examples, cap_authz::invoke, cap_authz::invoke_bytes),
-        "disruptions" => (cap_disruptions::examples::examples, cap_disruptions::invoke, cap_disruptions::invoke_bytes),
-        "migrate" => (cap_migrate::examples::examples, cap_migrate::invoke, cap_migrate::invoke_bytes),
-        "calendar" => (cap_calendar::examples::examples, cap_calendar::invoke, cap_calendar::invoke_bytes),
-        "gtfs" => (cap_gtfs::examples::examples, cap_gtfs::invoke, cap_gtfs::invoke_bytes),
-        _ => return None,
-    };
+fn run_examples(caps: &[Linked], capability: &str, op: &str) -> Option<(OpExample, Vec<cap_abi::manifest::KindExample>)> {
+    let linked = caps.iter().find(|c| c.declared.id == capability)?;
+    let (examples, invoke, invoke_bytes) = (linked.examples, linked.declared.invoke, linked.declared.invoke_bytes);
     let example = examples().into_iter().find(|e| e.op == op)?;
     for load in &example.loads {
         let answer: serde_json::Value = serde_json::from_str(&invoke(&load.to_string())).expect("a load answers JSON");

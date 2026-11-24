@@ -39,6 +39,7 @@
 
 pub mod request_rule;
 pub mod stop_record;
+pub mod load;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

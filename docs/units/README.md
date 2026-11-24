@@ -88,9 +88,9 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [server-assembly.md](server-assembly.md) | the server links one assembly, as a UI does, with authz and each import in instances of their own |
-| [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit, like its answers and writes: one poll, a time limit on every read, "none kept" told apart from "failed", and the failure table checked against them and drawn |
-| [kind-registration.md](kind-registration.md) | a document kind declared once: the kernel names no kind, a pick's checks on the one server path, and a gate on where a kind's name appears; the references between records checked, as of what the writer read |
-| [capability-declared-once.md](capability-declared-once.md) | a capability declared once, in its crate: its ops, its kinds, and its worked examples; gen-manifest names no capability |
+| [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are six failing `just e2e` specs, the findings it closes, and the release gates |
+| [kind-registration.md](kind-registration.md) | a document kind declared once: a gate on where a kind's name appears, the server's and the engine's plumbing, and the kind lists in the docs generated; the references between records checked, as of what the writer read |
+| [capability-declared-once.md](capability-declared-once.md) | a capability declared once, in its crate: the gate that holds it, and the last docs |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
 
 ### The documents

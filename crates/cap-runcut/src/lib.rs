@@ -13,7 +13,7 @@
 //!
 //! Every answer is one MATERIALIZED DAY — `materialize(net,
 //! date)`, patched with the edits in force on that date: the kernel's
-//! held day (`cap_abi::kernel::day`); no GTFS expansion. The domain
+//! held day (this crate's `day`: `transit_dispatch::day_of`, held under `cap_abi::kernel::DAY`); no GTFS expansion. The domain
 //! code lives in the shared transit-dispatch library; this module is
 //! the seam.
 //!
@@ -35,7 +35,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{LIVE, NETWORK, WORK_RULES};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{BlockChainTrip, DayBlock};
@@ -172,22 +172,22 @@ pub enum Response {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Blocks { network_hash, edits_hash, date } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::Blocks { blocks: transit_dispatch::day_blocks(&network, &day.trips) })
         }
         Request::FleetSummary { network_hash, edits_hash, date } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::FleetSummary {
                 summary: transit_dispatch::fleet_summary(&network, &day.trips),
             })
         }
         Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs, live_hash } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             // The date's live instances only (LiveDay::on).
-            let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?.map(|l| l.on(&date, &date));
+            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?.map(|l| l.on(&date, &date));
             Ok(Response::BlockTrips {
                 trips: transit_dispatch::block_chain(
                     &network,
@@ -200,29 +200,29 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })
         }
         Request::TripStops { network_hash, edits_hash, trip, start_secs, date } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::TripStops {
                 stops: transit_dispatch::trip_stops(&network, &day.trips, &trip, start_secs),
             })
         }
         Request::Recovery { network_hash, edits_hash, date, work_rules_hash } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
-            let rules = work_rules_hash.as_deref().map(|h| WORK_RULES.require(h)).transpose()?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
             Ok(Response::Recovery { recovery: transit_runs::recovery(&network, &day.trips, rules.as_deref()) })
         }
         Request::SuggestBlocks { network_hash, edits_hash, date, work_rules_hash } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
-            let rules = work_rules_hash.as_deref().map(|h| WORK_RULES.require(h)).transpose()?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
             Ok(Response::SuggestBlocks {
                 suggestion: transit_runs::suggest_blocks(&network, &day.trips, rules.as_deref()),
             })
         }
         Request::TripPath { network_hash, edits_hash, trip, start_secs, date } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let diversions = day.edits.as_ref().map(|e| e.diversions.as_slice()).unwrap_or(&[]);
             Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day.trips, diversions, &trip, start_secs) })
         }
@@ -251,5 +251,27 @@ cap_abi::capability! {
     id: "runcut",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, EDITS, LIVE, WORK_RULES],
+    documents: [transit_network::Network, transit_sync::EditDocument, transit_live::LiveDay, transit_runs::WorkRules],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+        ("live", &[1]),
+        ("work_rules", &[1]),
+    ],
+}
+
+/// The day for (network, edits, date), held in the kernel's derived
+/// registry under `transit_dispatch::day_key`: the effective trips and,
+/// when edits are in force, what they took away. The date is read first,
+/// so a date that does not parse is the caller's error.
+fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
+    let on = transit_dispatch::day_date(date)?;
+    let network = kind::<transit_network::Network>().require(network_hash)?;
+    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
+    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
+    let key = transit_dispatch::day_key(network_hash, edits_hash, date);
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
 }

@@ -4,7 +4,7 @@
 //! kinds. Its own test binary: the registries are process-global, and
 //! eviction would race the dispatch tests' registrations.
 
-use cap_abi::kernel::{BOUNDARY, RT as SNAPSHOTS};
+use cap_abi::kernel::kind;
 use cap_abi::registry::{OP_EVICT, OP_HELD};
 // The module's seam, as a host calls it: the kernel's ops answer there.
 use cap_rt::{dispatch, invoke_bytes as dispatch_bytes, Request, OP_DECODE};
@@ -46,17 +46,17 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     let mut last = String::new();
     for poll in 0..300 {
         last = decoded_hash(&snapshot(poll));
-        assert!(SNAPSHOTS.len() <= 8, "poll {poll}: {} snapshots held", SNAPSHOTS.len());
+        assert!(kind::<transit_rt::RtOverview>().len() <= 8, "poll {poll}: {} snapshots held", kind::<transit_rt::RtOverview>().len());
     }
-    assert!(SNAPSHOTS.get(&last).is_some(), "the newest snapshot is held");
+    assert!(kind::<transit_rt::RtOverview>().get(&last).is_some(), "the newest snapshot is held");
 
     // A durable kind stays until the host names its keep-set.
     let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
     let imported = transit_codec::import(&feed);
     let doc = serde_json::to_vec(&imported.network).unwrap();
-    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(cap_abi::OP_LOAD_NETWORK, &doc)).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, &doc)).unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().unwrap().to_string();
-    let (boundary_hash, _) = BOUNDARY.register(imported.boundary).unwrap();
+    let (boundary_hash, _) = kind::<transit_codec::Boundary>().register(imported.boundary).unwrap();
     let before = held(&dispatch_bytes(OP_HELD, b""));
     assert!(before.contains(&("network".into(), network_hash.clone())));
     assert!(before.contains(&("boundary".into(), boundary_hash.clone())));
@@ -80,6 +80,6 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
         with_document: None,
     });
     assert_eq!(asked.unwrap_err(), format!("unknown boundary {boundary_hash}: load_boundary first"));
-    let (again, _) = BOUNDARY.register(transit_codec::import(&feed).boundary).unwrap();
+    let (again, _) = kind::<transit_codec::Boundary>().register(transit_codec::import(&feed).boundary).unwrap();
     assert_eq!(again, boundary_hash);
 }

@@ -16,7 +16,7 @@
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
     setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
-    fromHere, chooseOnMap, rememberFramed, applyUpdate, off, failure, type Place,
+    fromHere, chooseOnMap, rememberFramed, applyUpdate, off, failure, label, status, liveAt, liveError, type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -91,7 +91,7 @@
   /// the answer on screen (the rows, the stops, the trip). It changes
   /// only when the answer does.
   const announcement = $derived.by(() => {
-    if (ride.status) return ride.status;
+    if (status()) return status();
     const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
     if (ride.view === "home" && ride.nearby) return `${n(ride.nearby.length, "stop")} near you`;
     if (ride.view === "stop" && ride.board) return `${n(ride.board.rows.length, "departure")}`;
@@ -159,7 +159,7 @@
         <span aria-hidden="true">⚠</span> {alerts.length} alert{alerts.length === 1 ? "" : "s"}
       </button>
     {/if}
-    <LiveFeeds urls={ride.urls} summary={ride.live?.summary ?? null} at={ride.liveAt} error={ride.liveError || failure("LiveFeeds")} off={off("LiveFeeds")} onurls={setLiveUrls} />
+    <LiveFeeds urls={ride.urls} summary={ride.live?.summary ?? null} at={liveAt()} error={liveError() || failure("LiveFeeds")} off={off("LiveFeeds")} onurls={setLiveUrls} />
   </header>
 
   <main class="panel" class:down={narrow && !sheetUp} bind:this={panel}>
@@ -337,11 +337,11 @@
         {/if}
       {/if}
 
-      {#if ride.editsStale}
-        <p class="status" data-testid="ride-stale">{ride.editsStale}</p>
+      {#if label("edits")}
+        <p class="status" data-testid="ride-stale">{label("edits")}</p>
       {/if}
-      {#if ride.status}
-        <p class="status" data-testid="ride-status">{ride.status}</p>
+      {#if status()}
+        <p class="status" data-testid="ride-status">{status()}</p>
       {/if}
     </div>
   </main>

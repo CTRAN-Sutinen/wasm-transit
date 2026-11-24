@@ -10,7 +10,7 @@
 //!
 //! Every answer is one MATERIALIZED DAY — `materialize(net,
 //! date)`, patched with the edits in force on that date: the kernel's
-//! held day (`cap_abi::kernel::day`), a pure function of the network,
+//! held day (this crate's `day`: `transit_dispatch::day_of`, held under `cap_abi::kernel::DAY`), a pure function of the network,
 //! the edits, and the date — no GTFS expansion, one materialization
 //! per (network, edits, date) however many boards ask. The domain code
 //! lives in the shared transit-dispatch library; this module is the
@@ -32,7 +32,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{LIVE, NETWORK, WATCHLIST};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use std::sync::Arc;
@@ -213,15 +213,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::StopBoard { network_hash, edits_hash, stop_id, date, from_secs, limit, live_hash, previous } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
-            let network = NETWORK.require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
             Ok(Response::StopBoard {
                 board: transit_dispatch::stop_board_at(&network, &days.at(&date, from_secs), &stop_id, limit as usize, live.as_deref()),
             })
         }
         Request::AlertReach { network_hash, edits_hash, date, alert } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, None)?;
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let mut all = Vec::new();
             let entities = alert
                 .informed
@@ -240,8 +240,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::GroupedBoard { network_hash, edits_hash, stop_id, date, from_secs, per_group, live_hash, previous } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
-            let network = NETWORK.require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
             let mut board = transit_dispatch::grouped_board_at(
                 &network,
                 &days.at(&date, from_secs),
@@ -255,7 +255,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             // day every other op reads. Asked only while a stopped
             // group has no answer; never the live document.
             if board.groups.iter().any(|g| g.departures.is_empty()) {
-                let records = edits_hash.as_deref().map(|h| cap_abi::kernel::EDITS.require(h)).transpose()?;
+                let records = edits_hash.as_deref().map(|h| cap_abi::kernel::kind::<transit_sync::EditDocument>().require(h)).transpose()?;
                 let records = records.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
                 let date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))?;
                 transit_dispatch::with_next_service(&network, &mut board, &stop_id, date, from_secs, |on| {
@@ -267,11 +267,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::GroupedBoard { board })
         }
         Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit, live_hash, previous } => {
-            let watchlist = WATCHLIST.require(&watchlist_hash)?;
+            let watchlist = kind::<transit_rider::watchlist::Watchlist>().require(&watchlist_hash)?;
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
             let at = days.at(&date, from_secs);
-            let network = NETWORK.require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
             let stops = watchlist
                 .stop_ids()
                 .into_iter()
@@ -296,7 +296,7 @@ struct Days {
 
 impl Days {
     fn read(network_hash: &str, edits_hash: Option<&str>, date: &str, previous: Option<Previous>) -> Result<Days, String> {
-        let today = cap_abi::kernel::day(network_hash, edits_hash, date)?;
+        let today = day(network_hash, edits_hash, date)?;
         let previous = match previous {
             Some(p) => {
                 let on = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
@@ -305,7 +305,7 @@ impl Days {
                     .ok_or_else(|| format!("invalid date {date:?}"))?
                     .format("%Y-%m-%d")
                     .to_string();
-                let day = cap_abi::kernel::day(network_hash, edits_hash, &on)?;
+                let day = day(network_hash, edits_hash, &on)?;
                 Some((on, day, p))
             }
             None => None,
@@ -348,5 +348,31 @@ cap_abi::capability! {
     id: "board",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, EDITS, LIVE, WATCHLIST],
+    documents: [transit_network::Network, transit_sync::EditDocument, transit_live::LiveDay, transit_rider::watchlist::Watchlist],
+    request: Request,
+    // The network capability makes the network document. The host owns
+    // the operator edit document and replaces it whole (the sync
+    // contract). The watchlist is the personal document, read in the
+    // current version (cap-migrate migrates it).
+    consumes: &[("network", "network")],
+    speaks: &[
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+        ("watchlist", &[transit_rider::watchlist::SCHEMA_VERSION]),
+        ("live", &[1]),
+    ],
+}
+
+/// The day for (network, edits, date), held in the kernel's derived
+/// registry under `transit_dispatch::day_key`: the effective trips and,
+/// when edits are in force, what they took away. The date is read first,
+/// so a date that does not parse is the caller's error.
+fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
+    let on = transit_dispatch::day_date(date)?;
+    let network = kind::<transit_network::Network>().require(network_hash)?;
+    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
+    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
+    let key = transit_dispatch::day_key(network_hash, edits_hash, date);
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
 }

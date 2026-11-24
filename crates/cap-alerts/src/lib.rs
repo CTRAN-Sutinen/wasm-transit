@@ -22,7 +22,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{ALERT_TEMPLATES, NETWORK, SERVICE_ALERTS};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -209,7 +209,7 @@ pub enum Response {
 fn registered(next: ServiceAlerts) -> Result<(Vec<AlertRefusal>, Option<String>, Option<ServiceAlerts>), String> {
     Ok(match next.checked() {
         Ok(next) => {
-            let (hash, held) = SERVICE_ALERTS.register(next)?;
+            let (hash, held) = kind::<transit_alerts::ServiceAlerts>().register(next)?;
             (vec![], Some(hash), Some((*held).clone()))
         }
         Err(refusals) => (refusals, None, None),
@@ -289,7 +289,7 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
             let doc = if older { transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION)?.0 } else { doc };
             let (doc, unknown) = cap_abi::read_base::<ServiceAlerts>(doc)?;
             match doc.checked() {
-                Ok(doc) => (heads.alerts, heads.wrote_alerts) = (Some(SERVICE_ALERTS.register(doc)?.0), true),
+                Ok(doc) => (heads.alerts, heads.wrote_alerts) = (Some(kind::<transit_alerts::ServiceAlerts>().register(doc)?.0), true),
                 Err(refusals) => return refused(to_value(&refusals)?),
             }
             heads.unknown_fields.extend(unknown);
@@ -300,7 +300,7 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
             }
             let (doc, unknown) = cap_abi::read_base::<AlertTemplates>(doc)?;
             match doc.checked() {
-                Ok(doc) => (heads.templates, heads.wrote_templates) = (Some(ALERT_TEMPLATES.register(doc)?.0), true),
+                Ok(doc) => (heads.templates, heads.wrote_templates) = (Some(kind::<transit_alerts::AlertTemplates>().register(doc)?.0), true),
                 Err(refusals) => return refused(to_value(&refusals)?),
             }
             heads.unknown_fields.extend(unknown);
@@ -342,7 +342,7 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
 
 fn held_alerts(hash: Option<&str>) -> Result<std::sync::Arc<ServiceAlerts>, String> {
     match hash {
-        Some(h) => SERVICE_ALERTS.require(h),
+        Some(h) => kind::<transit_alerts::ServiceAlerts>().require(h),
         None => Ok(std::sync::Arc::new(ServiceAlerts::default())),
     }
 }
@@ -361,21 +361,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }),
         Request::Put { alerts_hash, id, alert } => {
             let next = match alerts_hash {
-                Some(h) => SERVICE_ALERTS.require_writable(&h)?.put(&id, alert),
+                Some(h) => kind::<transit_alerts::ServiceAlerts>().require_writable(&h)?.put(&id, alert),
                 None => ServiceAlerts::default().put(&id, alert),
             };
             let (refusals, alerts_hash, alerts) = registered(next)?;
             Ok(Response::Put { refusals, alerts_hash, alerts })
         }
         Request::End { alerts_hash, id, at } => {
-            let next = SERVICE_ALERTS.require_writable(&alerts_hash)?.end(&id, at).ok_or_else(|| format!("no alert {id:?} in the document"))?;
+            let next = kind::<transit_alerts::ServiceAlerts>().require_writable(&alerts_hash)?.end(&id, at).ok_or_else(|| format!("no alert {id:?} in the document"))?;
             let (refusals, alerts_hash, alerts) = registered(next)?;
             Ok(Response::End { refusals, alerts_hash, alerts })
         }
         Request::List { alerts_hash, now } => Ok(Response::List { list: held_alerts(alerts_hash.as_deref())?.list(now) }),
         Request::Flags { alerts_hash, network_hash, languages } => {
-            let alerts = SERVICE_ALERTS.require(&alerts_hash)?;
-            let network = NETWORK.require(&network_hash)?;
+            let alerts = kind::<transit_alerts::ServiceAlerts>().require(&alerts_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::Flags { flags: alerts.flags(&network, languages.as_deref().unwrap_or_default()) })
         }
         Request::ValidateTemplates { templates } => Ok(match templates.0.checked() {
@@ -388,12 +388,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }),
         Request::PutTemplate { templates_hash, id, template } => {
             let next = match templates_hash {
-                Some(h) => ALERT_TEMPLATES.require_writable(&h)?.put(&id, template),
+                Some(h) => kind::<transit_alerts::AlertTemplates>().require_writable(&h)?.put(&id, template),
                 None => AlertTemplates::default().put(&id, template),
             };
             Ok(match next.checked() {
                 Ok(next) => {
-                    let (hash, held) = ALERT_TEMPLATES.register(next)?;
+                    let (hash, held) = kind::<transit_alerts::AlertTemplates>().register(next)?;
                     Response::PutTemplate { refusals: vec![], templates_hash: Some(hash), templates: Some((*held).clone()) }
                 }
                 Err(refusals) => Response::PutTemplate { refusals, templates_hash: None, templates: None },
@@ -401,24 +401,24 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Templates { templates_hash } => Ok(Response::Templates {
             templates: match templates_hash {
-                Some(h) => ALERT_TEMPLATES.require(&h)?.offered(),
+                Some(h) => kind::<transit_alerts::AlertTemplates>().require(&h)?.offered(),
                 None => Vec::new(),
             },
         }),
         Request::Fill { templates_hash, template, network_hash, input } => {
-            let templates = ALERT_TEMPLATES.require(&templates_hash)?;
+            let templates = kind::<transit_alerts::AlertTemplates>().require(&templates_hash)?;
             let t = templates.templates.get(&template).ok_or_else(|| format!("no template {template:?} in the document"))?;
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::Fill { filled: transit_alerts::fill(t, &network, &input) })
         }
         Request::LogRecords { alerts_hash, templates_hash } => {
             let mut next = Vec::new();
             if let Some(h) = alerts_hash {
-                let doc = serde_json::to_value(&*SERVICE_ALERTS.require(&h)?).map_err(|e| e.to_string())?;
+                let doc = serde_json::to_value(&*kind::<transit_alerts::ServiceAlerts>().require(&h)?).map_err(|e| e.to_string())?;
                 next.extend(transit_log::document_records(&doc, "alerts", "service_alert", "service_alerts", transit_alerts::ALERTS_VERSION)?);
             }
             if let Some(h) = templates_hash {
-                let doc = serde_json::to_value(&*ALERT_TEMPLATES.require(&h)?).map_err(|e| e.to_string())?;
+                let doc = serde_json::to_value(&*kind::<transit_alerts::AlertTemplates>().require(&h)?).map_err(|e| e.to_string())?;
                 next.extend(transit_log::document_records(&doc, "templates", "alert_template", "alert_templates", transit_alerts::TEMPLATES_VERSION)?);
             }
             Ok(Response::LogRecords { next })
@@ -439,13 +439,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     let template = serde_json::json!({"kind": kind, "schema_version": version});
                     let alerts: ServiceAlerts = transit_log::assemble(template, document.as_ref(), "alerts", &records, false)?;
                     let bytes = cap_abi::canonical_bytes(&alerts)?;
-                    (SERVICE_ALERTS.register(alerts)?.0, bytes)
+                    (cap_abi::kernel::kind::<transit_alerts::ServiceAlerts>().register(alerts)?.0, bytes)
                 }
                 "alert_templates" => {
                     let template = serde_json::json!({"kind": kind, "schema_version": transit_alerts::TEMPLATES_VERSION});
                     let templates: AlertTemplates = transit_log::assemble(template, document.as_ref(), "templates", &records, false)?;
                     let bytes = cap_abi::canonical_bytes(&templates)?;
-                    (ALERT_TEMPLATES.register(templates)?.0, bytes)
+                    (cap_abi::kernel::kind::<transit_alerts::AlertTemplates>().register(templates)?.0, bytes)
                 }
                 other => return Err(format!("log_document: {other:?} is not service_alerts or alert_templates")),
             };
@@ -476,5 +476,11 @@ cap_abi::capability! {
     id: "alerts",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [SERVICE_ALERTS, ALERT_TEMPLATES, NETWORK],
+    documents: [transit_alerts::ServiceAlerts, transit_alerts::AlertTemplates, transit_network::Network],
+    request: Request,
+    speaks: &[
+        ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+        ("alert_templates", &[transit_alerts::TEMPLATES_VERSION]),
+        ("network", &[transit_network::SCHEMA_VERSION]),
+    ],
 }

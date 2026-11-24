@@ -4,25 +4,22 @@ A kind is one type of document the agency keeps, such as stops,
 alerts, or notes. Each kind has one line in the kind list
 (`crates/cap-abi/src/kinds.rs`), and the kind table, the registry's
 kernel loads, caps-run's `--load`, and the engine's loads and
-`served(kind)` read it. Adding a kind still costs too much. Outside its
-library, its capability, the crates that read it, and its page, the
-notes kind is named in this plumbing (2026-11-20):
+`served(kind)` read it. The kernel names no kind: each library loads
+its own kind (`transit_version::Load`, D-239), and cap-abi depends on
+transit-version alone. The generator names each kind's type for its
+schema's example and its load's description. Outside its library, its
+capability, the crates that read it, the generator, and its page, the
+notes kind is still named in this plumbing:
 
-- in the kernel: `crates/cap-abi/src/kernel.rs` (its registry and
-  load) and `crates/generator/src/main.rs` (its schema's example and its
-  load's description);
-- in the server: `server/flags.go` (`-notes-wasm`, an older flag kept
-  beside the `-modules` folder);
+- in the server: `server/flags.go` and `server/config.go`
+  (`-notes-wasm`, an older flag kept beside the `-modules` folder);
 - in the engine: `web/src/engine.ts`, as the capability in its typed op
   map.
 
 Every log the server keeps is written through one server path
 (`server/logkinds.go`; `docs/architecture/server.md`, "One path for a
-log"): its capability's `receive` op, one op for each write.
-`cap-abi` depends on 18 domain crates (five of them optional, for
-gen-manifest), so the kernel is a hub that every new kind edits. Runs, the work
-rules, and the policy in logs are next (`storage-model.md`), so this
-cost limits each of them.
+log"): its capability's `receive` op, one op for each write. Runs, the
+work rules, and the policy in logs are next (`storage-model.md`).
 
 The goal: a new kind touches its declaration, its library, its
 capability, and its UI. Nothing else names it.
@@ -41,38 +38,27 @@ writer saw, and warns about a write that the world made wrong later
 
 ## Scope
 
-1. **The kernel takes its kinds from the list.** Each kind's load
-   lives in its owning library. The kernel reads the list, not one
-   hand-written function for each kind. Each line of the list names
-   the library function that loads its kind, so a reader goes from
-   the list to the code in one hop.
-
-   Each library implements a loading trait in transit-version for its
-   own kind, a capability names the kind's type, and the kernel keeps
-   one registry for each type (D-239). cap-abi then depends on no
-   domain library, and an arch gate holds it. This item follows the
-   fixtures crate and the generator of `capability-declared-once.md`
-   (items 3 and 4; D-235). The generator is a crate of its own
-   already, so cap-abi's remaining domain dependencies are its
-   registries' kinds.
 3. **Generated lists in the docs.** `docs/FORMATS.md`,
    `docs/architecture/server.md`, and `storage.md` list the kinds by
    hand today. They point to the kind table and the registry's docs
    site instead.
-4. **The line holds.** A gate in `just test` fails when a kind's name
+4. **The line holds.** Blocked: D-244 (what the gate matches, and the
+   module flags). A gate in `just test` fails when a kind's name
    appears outside its declaration, its library, its capability, a
    capability or library that reads it, its UI, and their tests. A
    capability reads a kind when its `capability! { documents: [...] }`
    names it (cap-disruptions and transit-disruptions read notes). The
    gate refuses only the plumbing: the kernel, the server, the
-   runner, and the engine. The engine's typed op map names each
+   runner, and the engine. The server's per-capability module flags
+   (`-notes-wasm` and the others in `server/flags.go`) give way to the
+   `-modules` folder, and the stop requests' work order path
+   (`server/workorders.go`) is read from the kind table, or the gate
+   names them. The engine's typed op map names each
    capability, and a capability shares its kind's name (`notes`), so
    the map is generated from the manifest's capabilities first.
 
-The order with `capability-declared-once.md` is in that unit ("Order
-with kind-registration"). Item 4 is built with
-that unit's name gate, and item 3 is one docs sweep with that unit's
-item 7.
+Item 4 is built with `capability-declared-once.md`'s name gate (its
+item 6), and item 3 is one docs sweep with that unit's item 7.
 
 Every item follows `docs/CONVENTIONS.md`, "Traceable". Where a kind
 differs from the others, the difference is a named field in its line,

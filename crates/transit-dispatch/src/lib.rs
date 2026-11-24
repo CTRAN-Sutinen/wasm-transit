@@ -492,6 +492,19 @@ pub fn day_key(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Stri
     format!("{network_hash}|{}|{date}", edits_hash.unwrap_or("-"))
 }
 
+/// A day request's date. A capability reads it before any document, so a
+/// date that does not parse is the caller's error, not a missing document.
+pub fn day_date(date: &str) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))
+}
+
+/// [`day`], with the refusal a capability answers. Every capability that
+/// holds a day computes it here, under [`day_key`], so one assembly holds
+/// one copy whichever capability asked first.
+pub fn day_of(network: &Network, records: &[EditRecord], date: NaiveDate) -> Result<Day, String> {
+    day(network, date, records).map_err(|e| format!("the network does not materialize: {e}"))
+}
+
 /// Live delays never reach back further than this when looking for
 /// late buses still to come (a 3-hour delay is a data fault).
 const MAX_LOOKBACK_SECS: u32 = 3 * 3600;

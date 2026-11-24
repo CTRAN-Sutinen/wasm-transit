@@ -330,6 +330,42 @@ test("a detour served while the server's store is not answering says its age", a
   await expect(page.getByTestId("display-stale")).toHaveCount(0);
 });
 
+// The inputs (src/uis/inputs.ts): a read that never answers is stopped
+// at its time limit and counted as failed. The display keeps the detour
+// it holds on the board and says how old it is, from the time the
+// server last answered; the label goes when the server answers again.
+test("a server that never answers the edit document turns the label to stale within the read's time limit", async ({ page }) => {
+  let silent = false;
+  const held = [];
+  await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
+  await page.route("**/edits", (route) => {
+    if (silent) return void held.push(route);
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: detour }) });
+  });
+  await page.route(/\/rt\?url=/, (route) =>
+    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+  );
+  await page.goto("/stop-display.html?stop=A&layout=routes");
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("display-stale")).toHaveCount(0);
+
+  silent = true;
+  // The next poll's read hangs; its time limit (ui.json: 10 s) ends it.
+  await page.clock.fastForward(20_000);
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect(page.getByTestId("display-stale")).toHaveCount(0);
+  await page.clock.fastForward(10_000);
+  await expect(page.getByTestId("display-stale")).toContainText("Detours as of 7:55", { timeout: 10_000 });
+  await expect(page.getByTestId("display-stale")).toContainText("no answer since");
+  await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toBeVisible();
+
+  silent = false;
+  for (const route of held.splice(0)) await route.abort().catch(() => {});
+  await page.clock.fastForward(40_000);
+  await expect(page.getByTestId("display-stale")).toHaveCount(0, { timeout: 10_000 });
+});
+
 // D-67: a deployment's config names no relay, and the page fetches the
 // agency's feeds directly (HTTPS with CORS) — /rt is a dev convenience.
 // The test swaps live-feeds.json on the client, but the server writes

@@ -43,6 +43,7 @@ pub mod signs;
 pub mod timetable_edit;
 pub mod validate;
 pub mod version;
+pub mod load;
 
 pub use edit::{apply_edits, apply_edits_reporting, Applied, CreatedEntity, Day, EditError, NetworkEdit, Redraw, TouchedEntity};
 pub use error::{NetworkError, NetworkWarning, RecoverySource};

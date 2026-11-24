@@ -228,4 +228,19 @@ cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
     documents: [],
+    request: Request,
+    speaks: &[
+        ("network", &[1, transit_network::SCHEMA_VERSION]),
+        ("operator_edits", &[1, transit_sync::SCHEMA_VERSION]),
+        ("watchlist", &[1, 2]),
+        ("service_alerts", &[1, transit_alerts::ALERTS_VERSION]),
+        ("stop_requests", &[1, transit_requests::SCHEMA_VERSION]),
+    ],
+    migrates: &[
+        ("network", &[(1, 2)]),
+        ("operator_edits", &[(1, 2)]),
+        ("watchlist", &[(1, 2)]),
+        ("service_alerts", &[(1, 2)]),
+        ("stop_requests", &[(1, 2)]),
+    ],
 }

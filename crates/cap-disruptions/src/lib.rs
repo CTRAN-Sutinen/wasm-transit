@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{EDITS, LIVE, NETWORK, NOTES, SERVICE_ALERTS, STOPS};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -113,10 +113,10 @@ pub enum Response {
 
 /// The documents, held: every hash the request names is required.
 struct Held {
-    network: Arc<cap_abi::kernel::Network>,
+    network: Arc<transit_network::Network>,
     edits: Vec<transit_sync::EditRecord>,
     live: Option<Arc<transit_live::LiveDay>>,
-    stops: Arc<cap_abi::kernel::Stops>,
+    stops: Arc<transit_stops::Stops>,
     alerts: Arc<transit_alerts::ServiceAlerts>,
     notes: Arc<transit_notes::Notes>,
     date: chrono::NaiveDate,
@@ -126,22 +126,22 @@ struct Held {
 impl Held {
     fn of(d: &Documents) -> Result<Held, String> {
         Ok(Held {
-            network: NETWORK.require(&d.network_hash)?,
+            network: kind::<transit_network::Network>().require(&d.network_hash)?,
             edits: match &d.edits_hash {
-                Some(h) => EDITS.require(h)?.records.clone(),
+                Some(h) => kind::<transit_sync::EditDocument>().require(h)?.records.clone(),
                 None => Vec::new(),
             },
-            live: d.live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?,
+            live: d.live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?,
             stops: match &d.stops_hash {
-                Some(h) => STOPS.require(h)?,
-                None => Arc::new(cap_abi::kernel::Stops::empty()),
+                Some(h) => kind::<transit_stops::Stops>().require(h)?,
+                None => Arc::new(transit_stops::Stops::empty()),
             },
             alerts: match &d.alerts_hash {
-                Some(h) => SERVICE_ALERTS.require(h)?,
+                Some(h) => kind::<transit_alerts::ServiceAlerts>().require(h)?,
                 None => Arc::new(Default::default()),
             },
             notes: match &d.notes_hash {
-                Some(h) => NOTES.require(h)?,
+                Some(h) => kind::<transit_notes::Notes>().require(h)?,
                 None => Arc::new(Default::default()),
             },
             date: chrono::NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").map_err(|e| format!("invalid date {:?}: {e}", d.date))?,
@@ -203,5 +203,14 @@ cap_abi::capability! {
     id: "disruptions",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, EDITS, LIVE, STOPS, SERVICE_ALERTS, NOTES],
+    documents: [transit_network::Network, transit_sync::EditDocument, transit_live::LiveDay, transit_stops::Stops, transit_alerts::ServiceAlerts, transit_notes::Notes],
+    request: Request,
+    speaks: &[
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+        ("live", &[2]),
+        ("stops", &[transit_stops::SCHEMA_VERSION]),
+        ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+        ("notes", &[transit_notes::SCHEMA_VERSION]),
+    ],
 }

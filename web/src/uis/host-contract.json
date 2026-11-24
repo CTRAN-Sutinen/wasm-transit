@@ -1,0 +1,41 @@
+{
+  "about": "The host contract suite (docs/architecture/hosts.md, \"The rules every host keeps\"). One set of scenarios, run against the server (server/hostcontract_test.go, its upstream the bucket) and the browser (web/src/uis/host-contract.test.mjs, its upstream the server). Each step sets what the upstream does, and names what the host must say of the head it serves. `answers` with `head`: the upstream answers, and its head is that document. `silent`: the upstream does not answer. `slow`: the upstream answers after the host's time limit. `expect.state`: `current` (an answer the upstream confirmed now), `stale` (the host's copy, labelled with its age), or `failed` (the host holds no copy, and says the read failed). `expect.as_of`: `last-answer` — the age is when the upstream last answered, never the time of the host's own read.",
+  "scenarios": [
+    {
+      "name": "the upstream does not answer",
+      "steps": [
+        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
+        { "upstream": "silent", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } }
+      ]
+    },
+    {
+      "name": "the upstream answers slowly",
+      "steps": [
+        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
+        { "upstream": "slow", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } }
+      ]
+    },
+    {
+      "name": "the upstream answers again",
+      "steps": [
+        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
+        { "upstream": "silent", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } },
+        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } }
+      ]
+    },
+    {
+      "name": "a head moves while the host holds a copy",
+      "steps": [
+        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
+        { "upstream": "silent", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } },
+        { "upstream": "answers", "head": "B", "expect": { "state": "current", "head": "B" } }
+      ]
+    },
+    {
+      "name": "the host holds no copy",
+      "steps": [
+        { "upstream": "silent", "expect": { "state": "failed" } }
+      ]
+    }
+  ]
+}

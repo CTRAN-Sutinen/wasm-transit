@@ -13,9 +13,9 @@ fn load_fixture() -> (String, String) {
     let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
     let imported = transit_codec::import(&feed);
     let doc = serde_json::to_vec(&imported.network).unwrap();
-    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(cap_abi::OP_LOAD_NETWORK, &doc)).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, &doc)).unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().unwrap_or_else(|| panic!("{loaded}")).to_string();
-    let (boundary_hash, _) = cap_abi::kernel::BOUNDARY.register(imported.boundary).unwrap();
+    let (boundary_hash, _) = cap_abi::kernel::kind::<transit_codec::Boundary>().register(imported.boundary).unwrap();
     (network_hash, boundary_hash)
 }
 
@@ -397,7 +397,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     let cap_rt::Response::Live { live_hash: same, live: none, summary: again } = bare else { panic!("live") };
     assert_eq!((same.as_str(), none.is_none()), (live_hash.as_str(), true));
     assert_eq!(again.counts.late, 1);
-    assert_eq!(*cap_abi::kernel::LIVE.require(&live_hash).unwrap(), day, "registered under its hash");
+    assert_eq!(*cap_abi::kernel::kind::<transit_live::LiveDay>().require(&live_hash).unwrap(), day, "registered under its hash");
 
     // No snapshot at all is a request error; an unknown boundary is a
     // missing-document error.

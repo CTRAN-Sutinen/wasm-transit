@@ -20,6 +20,9 @@ export type FrameState =
   | { kind: "unassembled"; cap: string }
   /// A document its node reads is not there.
   | { kind: "starved"; missing: string }
+  /// An input its node requires (src/uis/inputs.ts) has failed since
+  /// `sinceMs`, and the page holds nothing of it.
+  | { kind: "unread"; input: string; name: string; sinceMs: number }
   /// Its node's op refused, or the node threw. `retry` asks again.
   | { kind: "failed"; message: string };
 
@@ -49,6 +52,11 @@ export type AnswerNode = {
   /// Name only a document that can be absent once the page has loaded,
   /// never the one the page boots with.
   requires?: () => string | null;
+  /// The inputs (src/uis/inputs.ts) it cannot answer without. While
+  /// one's reads fail and the page holds nothing of it, the node is
+  /// unread, and it is not run. A held copy, or an input that keeps
+  /// none, runs it: the shell labels the copy's age.
+  inputs?: string[];
   /// Clear what it wrote: when it is hidden, unassembled, starved, or
   /// failed.
   clear?: () => void;
@@ -68,7 +76,13 @@ export type AnswerHost = {
   frames: Record<string, FrameState>;
   onerror: (e: unknown) => void;
   available: (cap: string) => Promise<boolean>;
+  /// The inputs' states (src/uis/inputs.ts, `InputState`), by id.
+  inputs?: Record<string, InputSeen>;
 };
+
+/// What the graph reads of an input's state. The full type is in
+/// inputs.ts; this file imports nothing.
+type InputSeen = { kind: string; input: string; name: string; sinceMs?: number; held?: boolean };
 
 /// `request(...inputs)` marks inputs changed and answers every node
 /// downstream of them. `request.retry()` answers again each node that
@@ -114,6 +128,10 @@ export function answers(nodes: AnswerNode[], host: AnswerHost): Request {
   async function blocked(node: AnswerNode): Promise<FrameState | null> {
     for (const cap of node.caps ?? []) {
       if (!(await host.available(cap))) return { kind: "unassembled", cap };
+    }
+    for (const id of node.inputs ?? []) {
+      const seen = host.inputs?.[id];
+      if (seen?.kind === "failed" && !seen.held) return { kind: "unread", input: id, name: seen.name, sinceMs: seen.sinceMs ?? 0 };
     }
     const missing = node.requires?.() ?? null;
     return missing ? { kind: "starved", missing } : null;

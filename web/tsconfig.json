@@ -15,7 +15,9 @@
     "types": [
       "vite/client"
     ],
-    "useUnknownInCatchVariables": false
+    "useUnknownInCatchVariables": false,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src"

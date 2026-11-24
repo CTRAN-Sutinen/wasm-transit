@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{LAYER, NETWORK};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_analysis::{
@@ -320,13 +320,13 @@ fn with_network<T>(
     network_hash: &str,
     f: impl FnOnce(&Network) -> Result<T, String>,
 ) -> Result<T, String> {
-    f(&*NETWORK.require(network_hash)?)
+    f(&*kind::<transit_network::Network>().require(network_hash)?)
 }
 
 /// The registered document itself (for ops that compose across
 /// registries).
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORK.require(network_hash)
+    kind::<transit_network::Network>().require(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -382,7 +382,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::TypeCoverage { network_hash, layer_hash, members, field, label, radius_m, frequent_secs, min_departures, window } => {
             let network_arc = network_arc(&network_hash)?;
-            let layer_arc = LAYER.require(&layer_hash)?;
+            let layer_arc = kind::<transit_analysis::WeightedLayer>().require(&layer_hash)?;
             let weights = layer_arc.weights(field.as_deref(), label.as_deref())?;
             Ok(Response::TypeCoverage {
                 // Members that never run together answer null, as the
@@ -472,7 +472,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::UnservedPoints { network_hash, layer_hash, field, label, radius_m, members } => {
             let network_arc = network_arc(&network_hash)?;
-            let layer_arc = LAYER.require(&layer_hash)?;
+            let layer_arc = kind::<transit_analysis::WeightedLayer>().require(&layer_hash)?;
             let weights = layer_arc.weights(field.as_deref(), label.as_deref())?;
             Ok(Response::UnservedPoints {
                 unserved: transit_analysis::unserved_points(&network_arc, &weights, &members, radius_m),
@@ -494,7 +494,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         } => {
             let base = network_arc(&base_hash)?;
             let proposal = network_arc(&network_hash)?;
-            let layer_arc = LAYER.require(&layer_hash)?;
+            let layer_arc = kind::<transit_analysis::WeightedLayer>().require(&layer_hash)?;
             let weights = layer_arc.weights(field.as_deref(), label.as_deref())?;
             Ok(Response::CoverageCompare {
                 comparison: coverage_compare(
@@ -537,5 +537,8 @@ cap_abi::capability! {
     id: "analysis",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, LAYER],
+    documents: [transit_network::Network, transit_analysis::WeightedLayer],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
 }

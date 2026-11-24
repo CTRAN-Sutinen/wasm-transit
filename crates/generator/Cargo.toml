@@ -6,34 +6,12 @@ edition.workspace = true
 license.workspace = true
 
 # The generator's own class (crates/cap-abi/src/bin/common/gates.rs):
-# it may read the kernel and every library, and nothing depends on it.
+# it may read the kernel, the libraries, and the fixtures, and only the
+# generated gen-manifest depends on it. It names no capability: the
+# capabilities reach it as data (`Linked`).
 [dependencies]
 cap-abi = { path = "../cap-abi" }
 fixtures = { path = "../fixtures" }
-# The capabilities whose worked examples the generator runs through
-# their own dispatch (capability-declared-once, item 2).
-cap-notes = { path = "../cap-notes", features = ["examples"] }
-cap-stops = { path = "../cap-stops", features = ["examples"] }
-cap-analysis = { path = "../cap-analysis", features = ["examples"] }
-cap-plans = { path = "../cap-plans", features = ["examples"] }
-cap-directory = { path = "../cap-directory", features = ["examples"] }
-cap-alerts = { path = "../cap-alerts", features = ["examples"] }
-cap-requests = { path = "../cap-requests", features = ["examples"] }
-cap-sync = { path = "../cap-sync", features = ["examples"] }
-cap-runcut = { path = "../cap-runcut", features = ["examples"] }
-cap-network = { path = "../cap-network", features = ["examples"] }
-cap-log = { path = "../cap-log", features = ["examples"] }
-cap-rt = { path = "../cap-rt", features = ["examples"] }
-cap-divert = { path = "../cap-divert", features = ["examples"] }
-cap-streets = { path = "../cap-streets", features = ["examples"] }
-cap-router = { path = "../cap-router", features = ["examples"] }
-cap-board = { path = "../cap-board", features = ["examples"] }
-cap-author = { path = "../cap-author", features = ["examples"] }
-cap-authz = { path = "../cap-authz", features = ["examples"] }
-cap-disruptions = { path = "../cap-disruptions", features = ["examples"] }
-cap-migrate = { path = "../cap-migrate", features = ["examples"] }
-cap-calendar = { path = "../cap-calendar", features = ["examples"] }
-cap-gtfs = { path = "../cap-gtfs", features = ["examples"] }
 transit-version = { path = "../transit-version" }
 transit-network = { path = "../transit-network" }
 transit-codec = { path = "../transit-codec" }
@@ -60,7 +38,6 @@ sha2 = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
 ts-rs = { workspace = true }
+# The real-output check (src/doc_check.rs) compiles the locked schemas.
+jsonschema = { version = "=0.26.1", default-features = false }
 
-[[bin]]
-name = "gen-manifest"
-path = "src/main.rs"

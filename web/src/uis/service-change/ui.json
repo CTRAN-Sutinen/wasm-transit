@@ -77,6 +77,68 @@
     "TripList",
     "SyncStatus"
   ],
+  "inputs": [
+    {
+      "id": "manifest",
+      "name": "the deployment",
+      "from": "GET manifest: the server, or the service worker's last copy",
+      "every_s": 30,
+      "limit_s": 10,
+      "keeps": "last",
+      "feeds": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "plans",
+      "name": "the published plans",
+      "from": "the published plan set the manifest pins (blobs/<hash>)",
+      "every_s": 30,
+      "limit_s": 30,
+      "keeps": "last",
+      "feeds": [
+        "published"
+      ],
+      "after": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "stops",
+      "name": "the stops",
+      "from": "the stops document the manifest pins (blobs/<hash>.gz)",
+      "every_s": 30,
+      "limit_s": 30,
+      "keeps": "last",
+      "feeds": [
+        "stops-doc"
+      ],
+      "after": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "network",
+      "name": "the published network",
+      "from": "GET /network: the server's import, read only while the device holds no plan",
+      "every_s": null,
+      "limit_s": 60,
+      "keeps": "last",
+      "feeds": [],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    }
+  ],
   "session": "2026-11-11 on C-TRAN (testdata/ctran-gtfs.zip): three proposals through caps-run — 065 midday every 15 min (+24 trips, +5.9 platform h, peak 77), a spring calendar (Memorial Day on Sunday service, route 899's alternate Tuesdays continued), 071 evenings every 15 min (13 trips, times rewritten) — whose stages the UI follows; findings QAF-103..106, QAF-90 re-confirmed; D-137 a trial 2026-11-20 on C-TRAN (testdata/ctran-gtfs.zip), in the built page under the service worker, on a store-mode server over SeaweedFS, through a real outage (the server stopped, then started on the same store): a fork \"Winter outage\" (picks on 2026-12-14) kept across an offline reload, the page said \"Offline · data as of 8:45 AM\", a Publish made offline waited (\"1 change waiting to send\") through a second reload, and was sent when the server answered (\"A publish that waited on this device was sent.\"; the published plan set held it). Found: QAF-132, QAF-133.",
   "offline": true,
   "precache_assembly": false,

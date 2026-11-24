@@ -21,7 +21,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{NETWORK, STOPS};
+use cap_abi::kernel::kind;
 use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -521,7 +521,7 @@ fn pick(
     let network_hash = loaded.get("network_hash").ok_or("a pick writes the network the host registered (load_network), and none was")?;
     // The pick is stored: a network read one version ahead is written in
     // this build's version, and a read-only one is refused (D-186).
-    let network = NETWORK.require_writable(network_hash)?;
+    let network = kind::<transit_network::Network>().require_writable(network_hash)?;
     let check = transit_network::publish_check(&network);
     if !check.publishes() {
         return Ok(Some(serde_json::json!({ "issues": check.issues, "refusals": check.refusals })));
@@ -532,7 +532,7 @@ fn pick(
     let mut stop_warnings = Vec::new();
     let mut read = None;
     if let (true, Some(stops_hash)) = (adopt, loaded.get("stops_hash")) {
-        let stops = STOPS.require(stops_hash)?;
+        let stops = kind::<transit_stops::Stops>().require(stops_hash)?;
         if let Some(r) = transit_stops::stop_record::read_pick(&network, &stops, heads.published.as_ref()) {
             stop_warnings = r.warnings;
             read = Some(r.network);
@@ -541,7 +541,7 @@ fn pick(
     let network = read.as_ref().unwrap_or(&*network);
     let document = cap_abi::canonical_bytes(network)?;
     let document_hash = cap_abi::content_hash(document.as_bytes());
-    if read.is_none() && &document_hash != network_hash && NETWORK.read_ahead(network_hash).is_none() {
+    if read.is_none() && &document_hash != network_hash && kind::<transit_network::Network>().read_ahead(network_hash).is_none() {
         return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
     }
     let plan: PlanInfo = serde_json::to_value(&network.plan).and_then(serde_json::from_value).map_err(|e| format!("the pick's plan frame: {e}"))?;
@@ -653,5 +653,13 @@ cap_abi::capability! {
     id: "plans",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, STOPS],
+    documents: [transit_network::Network, transit_stops::Stops],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[
+        ("plans", &[1]),
+        ("frozen_versions", &[1]),
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("stops", &[transit_stops::SCHEMA_VERSION]),
+    ],
 }

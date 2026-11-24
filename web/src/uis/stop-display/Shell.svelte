@@ -8,13 +8,13 @@
   import DisplayGroup from "../../components/DisplayGroup.svelte";
   import DisplayHeader from "../../components/DisplayHeader.svelte";
   import DisplaySetup from "../../components/DisplaySetup.svelte";
-  import { closeSetup, display, failure, loadFeedBytes, off, openSetup, pickStop, setLayout, typed } from "./host.svelte";
+  import { closeSetup, display, failure, label, loadFeedBytes, off, openSetup, pickStop, setLayout, status, typed } from "./host.svelte";
 </script>
 
 {#if !display.feed && !display.busy}
   <main>
     <label class="feed">
-      <span role="status">{display.status || "Load the agency's GTFS feed to begin"}</span>
+      <span role="status">{status() || "Load the agency's GTFS feed to begin"}</span>
       <input type="file" accept=".zip" aria-label="Agency GTFS zip" onchange={async (e) => {
         const f = e.currentTarget.files?.[0];
         if (f) await loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name);
@@ -34,7 +34,7 @@
     onpick={pickStop}
     onclose={closeSetup}
   />
-  {#if display.status}<p class="status" data-testid="display-status">{display.status}</p>{/if}
+  {#if status()}<p class="status" data-testid="display-status">{status()}</p>{/if}
   </main>
 {:else}
   <main class="screen {display.layout}" data-testid="display" data-layout={display.layout}>
@@ -46,16 +46,16 @@
       onsetup={openSetup}
     />
     <div class="groups">
-      {#if display.editsStale}
-        <p class="note" data-testid="display-stale">{display.editsStale}</p>
+      {#if label("edits")}
+        <p class="note" data-testid="display-stale">{label("edits")}</p>
       {/if}
       {#if display.board && (failure("DisplayGroup") || display.problem)}
         <p class="note" data-testid="display-note">
           {failure("DisplayGroup") ? `Departures could not be updated: ${failure("DisplayGroup")}` : display.problem}
         </p>
       {/if}
-      {#if display.status}
-        <p class="status" data-testid="display-status">{display.status}</p>
+      {#if status()}
+        <p class="status" data-testid="display-status">{status()}</p>
       {:else if off("DisplayGroup")}
         <p class="status">Departures are unavailable — the board capability could not be assembled.</p>
       {:else if failure("DisplayGroup") && !display.board}

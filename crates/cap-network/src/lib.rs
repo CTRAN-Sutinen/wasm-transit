@@ -31,7 +31,7 @@
 #![forbid(unsafe_code)]
 
 use cap_abi::content_hash;
-use cap_abi::kernel::{BOUNDARY, FEED, NETWORK};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_codec::{Boundary, FeedSummary, ImportNote, ImportOutcome};
@@ -135,13 +135,13 @@ pub enum Response {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Import { feed_hash } => {
-            let feed = FEED.require(&feed_hash)?;
+            let feed = kind::<transit_codec::Feed>().require(&feed_hash)?;
             let ImportOutcome { network, boundary, notes } = transit_codec::import(&feed);
             // The documents register themselves: import's answer is
             // immediately addressable for validate and export (and,
             // in an assembly, for every capability that reads them).
-            let (network_hash, _) = NETWORK.register(network.clone())?;
-            let (boundary_hash, _) = BOUNDARY.register(boundary.clone())?;
+            let (network_hash, _) = kind::<transit_network::Network>().register(network.clone())?;
+            let (boundary_hash, _) = kind::<transit_codec::Boundary>().register(boundary.clone())?;
             let timezone = network.timezone().map(str::to_string);
             let first_service_date = transit_network::first_service_date(&network).map(|d| d.to_string());
             Ok(Response::Import {
@@ -155,32 +155,32 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })
         }
         Request::Validate { network_hash } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::Validate {
                 issues: transit_network::validation_issues(&network),
                 warnings: transit_network::validation_warnings(&network),
             })
         }
         Request::Export { network_hash, boundary_hash } => {
-            let network = NETWORK.require(&network_hash)?;
-            let boundary = boundary_hash.as_deref().map(|h| BOUNDARY.require(h)).transpose()?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let boundary = boundary_hash.as_deref().map(|h| kind::<transit_codec::Boundary>().require(h)).transpose()?;
             let feed = transit_codec::export(&network, boundary.as_deref().unwrap_or(&Boundary::default()))?;
             let counts = feed.summary();
             let bytes = feed.to_zip_bytes();
             // The produced feed registers under its own bytes' hash:
             // the exported artifact is a first-class feed document,
             // importable here and loadable in any other module.
-            let (feed_hash, _) = FEED.register_bytes(&bytes)?;
+            let (feed_hash, _) = kind::<transit_codec::Feed>().register_bytes(&bytes)?;
             Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_codec::base64_encode(&bytes) })
         }
         Request::Document { network_hash } => {
             // The document a host stores: a write. A network read one
             // version ahead answers its bytes in this build's version, and
             // a read-only one is refused (D-186).
-            let network = NETWORK.require_writable(&network_hash)?;
+            let network = kind::<transit_network::Network>().require_writable(&network_hash)?;
             let document = cap_abi::canonical_bytes(&*network)?;
             let document_hash = content_hash(document.as_bytes());
-            if document_hash != network_hash && NETWORK.read_ahead(&network_hash).is_none() {
+            if document_hash != network_hash && kind::<transit_network::Network>().read_ahead(&network_hash).is_none() {
                 return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
             }
             Ok(Response::Document {
@@ -191,7 +191,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })
         }
         Request::Publishable { network_hash } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let transit_network::PublishCheck { issues, refusals, warnings } = transit_network::publish_check(&network);
             Ok(Response::Publishable { issues, refusals, warnings })
         }
@@ -222,5 +222,7 @@ cap_abi::capability! {
     id: "network",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [FEED, NETWORK, BOUNDARY],
+    documents: [transit_codec::Feed, transit_network::Network, transit_codec::Boundary],
+    request: Request,
+    speaks: &[("feed", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1])],
 }

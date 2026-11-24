@@ -22,6 +22,16 @@ var (
 	createTimeout = 2 * time.Minute
 )
 
+// SetCallTimeouts shortens the time limits of the backend calls, for a
+// test in another package (the host contract suite,
+// server/hostcontract_test.go). It answers the function that puts them
+// back.
+func SetCallTimeouts(call, create time.Duration) (restore func()) {
+	oldCall, oldCreate := callTimeout, createTimeout
+	callTimeout, createTimeout = call, create
+	return func() { callTimeout, createTimeout = oldCall, oldCreate }
+}
+
 // guarded classifies a backend's failures: ErrNotFound, ErrExists and a
 // serving store's refusal pass through; anything else is unavailable.
 type guarded struct{ b Backend }

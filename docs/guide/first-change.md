@@ -106,8 +106,9 @@ Request::Records { stops_hash, stop_ids, on } => {
 }
 ```
 
-`STOPS.require(&stops_hash)` asks the kernel for the stops document by
-its content hash. A capability never keeps documents of its own.
+`kind::<Stops>().require(&stops_hash)` asks the kernel for the stops
+document by its content hash. A capability never keeps documents of its
+own.
 
 ## 4. Describe the op
 
@@ -120,8 +121,9 @@ the manifest publishes it. The build fails if an op has no section.
 Each op has one worked example: a request and its answer. You write the
 request, and the documents it needs, in the capability's
 `src/examples.rs`, beside the others. The build computes the answer by
-running the op, so the example cannot go out of date. Also add the op's
-name to the capability's list in `crates/generator/src/main.rs`.
+running the op, so the example cannot go out of date. You do not list
+the op anywhere else: the build reads the ops from the capability's
+`Request` enum.
 
 The build also runs every example inside each app's module. If the
 answer differs there, the build fails.
@@ -207,13 +209,14 @@ Then update the documents that describe what you changed.
   `ask()`. It sends the request to the module and returns the answer.
   You do not change it to add an op.
 - **The kernel** (`crates/cap-abi/src/kernel.rs`). It held the stops
-  document for your op. `STOPS.require` in step 3 asked it for the
-  document. You change the kernel only to add a new kind of document.
-  A new kind also gets one line in the list of kinds
-  (`crates/cap-abi/src/kinds.rs`).
-  Step 5 edited `gen_manifest.rs`, which is in the same crate,
-  `cap-abi`. That file builds the manifest. It is not part of the
-  kernel.
+  document for your op. `kind::<Stops>().require` in step 3 asked it
+  for the document. You do not change the kernel, even to add a new
+  kind of document. A new kind gets one line in the list of kinds
+  (`crates/cap-abi/src/kinds.rs`), and its library says how the kernel
+  loads it.
+- **The generator** (`crates/generator`). It builds the manifest from
+  every capability's declaration and worked examples. It names no
+  capability, so you do not change it to add an op or a capability.
 
 ## Files the build wrote for you
 

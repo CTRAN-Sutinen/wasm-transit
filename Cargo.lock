@@ -159,51 +159,20 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 name = "cap-abi"
 version = "0.1.0"
 dependencies = [
- "cap-alerts",
- "cap-analysis",
- "cap-author",
- "cap-authz",
- "cap-board",
- "cap-calendar",
- "cap-directory",
- "cap-disruptions",
- "cap-divert",
- "cap-gtfs",
- "cap-log",
- "cap-migrate",
- "cap-network",
- "cap-notes",
- "cap-plans",
- "cap-requests",
- "cap-router",
- "cap-rt",
- "cap-runcut",
- "cap-stops",
- "cap-streets",
- "cap-sync",
- "chrono",
  "flate2",
- "itoa",
- "jsonschema",
  "proptest",
  "ryu-js",
  "schemars",
  "serde",
  "serde_json",
  "sha2",
- "transit-alerts",
- "transit-analysis",
  "transit-authz",
  "transit-codec",
- "transit-dispatch",
  "transit-live",
  "transit-network",
- "transit-notes",
  "transit-plans",
  "transit-requests",
  "transit-rider",
- "transit-router",
- "transit-rt",
  "transit-runs",
  "transit-stops",
  "transit-streets",
@@ -222,6 +191,7 @@ dependencies = [
  "serde_json",
  "transit-alerts",
  "transit-log",
+ "transit-network",
  "transit-version",
  "ts-rs",
 ]
@@ -337,7 +307,9 @@ dependencies = [
  "transit-alerts",
  "transit-disruptions",
  "transit-live",
+ "transit-network",
  "transit-notes",
+ "transit-stops",
  "transit-sync",
  "ts-rs",
 ]
@@ -489,6 +461,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-alerts",
  "transit-codec",
  "transit-live",
  "transit-network",
@@ -844,10 +817,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "generator"
+name = "gen-manifest"
 version = "0.1.0"
 dependencies = [
- "cap-abi",
  "cap-alerts",
  "cap-analysis",
  "cap-author",
@@ -870,8 +842,17 @@ dependencies = [
  "cap-stops",
  "cap-streets",
  "cap-sync",
+ "generator",
+]
+
+[[package]]
+name = "generator"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
  "chrono",
  "fixtures",
+ "jsonschema",
  "schemars",
  "serde",
  "serde_json",
@@ -2138,6 +2119,7 @@ dependencies = [
  "serde_json",
  "transit-codec",
  "transit-network",
+ "transit-version",
  "ts-rs",
  "zip",
 ]
@@ -2330,6 +2312,7 @@ dependencies = [
  "transit-codec",
  "transit-live",
  "transit-network",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -2395,9 +2378,13 @@ dependencies = [
 name = "transit-version"
 version = "0.1.0"
 dependencies = [
+ "flate2",
+ "itoa",
+ "ryu-js",
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

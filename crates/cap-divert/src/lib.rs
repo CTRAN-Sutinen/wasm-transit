@@ -34,7 +34,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::NETWORK;
+use cap_abi::kernel::kind;
 use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -131,7 +131,7 @@ pub enum Response {
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORK.require(network_hash)
+    kind::<transit_network::Network>().require(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -210,5 +210,11 @@ cap_abi::capability! {
     id: "divert",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK],
+    documents: [transit_network::Network],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+    ],
 }

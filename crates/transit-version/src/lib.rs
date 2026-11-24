@@ -9,16 +9,25 @@
 //! - [`Version<N>`] is a version field whose absence reads as `N` —
 //!   for a kind whose untagged copies are that version.
 //! - [`Versioned`] is what a reader needs to refuse another version
-//!   at its load, naming both (`cap_abi::parse_versioned`), and to read
+//!   at its load, naming both ([`parse_versioned`]), and to read
 //!   one version ahead for one release ([`Ahead`], D-79, D-186).
 //! - [`Extra`] is a record's fields that this build does not know,
 //!   kept as written (D-167).
 //! - [`references`] reads the references a kind's schema declares
 //!   (`x-references`, D-232).
+//! - [`Load`] is how the kernel loads a kind: each library implements it
+//!   for its own kind (D-239).
+//! - [`document`] is a document's identity (the canonical hash, RFC 8785)
+//!   and its versioned read, which each kind's load uses.
 
 #![forbid(unsafe_code)]
 
+pub mod document;
+pub mod jcs;
+pub mod load;
 pub mod references;
+pub use document::{canonical_hash, parse_versioned};
+pub use load::{Form, Load, Retain};
 pub use references::{references, Reference};
 
 #[doc(hidden)]

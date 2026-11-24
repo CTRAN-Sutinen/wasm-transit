@@ -30,7 +30,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{BOUNDARY, LIVE, NETWORK, RT, SERVICE_ALERTS};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use transit_codec::Boundary;
 use transit_live::{LiveDay, LiveSummary, OnTimeWindow};
@@ -151,7 +151,7 @@ pub enum Response {
     EncodeAlerts { rt_hash: String, feed_b64: String, skipped: Vec<transit_rt::SkippedEntity> },
     ReadAlerts {
         alerts_hash: String,
-        alerts: cap_abi::kernel::ServiceAlerts,
+        alerts: transit_alerts::ServiceAlerts,
         skipped: Vec<transit_rt::SkippedEntity>,
         dropped: Vec<transit_rt::DroppedAlert>,
     },
@@ -161,17 +161,17 @@ pub enum Response {
 /// 1..n numbering.
 fn boundary_arc(hash: Option<&str>) -> Result<Arc<Boundary>, String> {
     match hash {
-        Some(hash) => BOUNDARY.require(hash),
+        Some(hash) => kind::<transit_codec::Boundary>().require(hash),
         None => Ok(Arc::new(Boundary::default())),
     }
 }
 
 fn snapshot_arc(rt_hash: &str) -> Result<Arc<RtOverview>, String> {
-    RT.require(rt_hash)
+    kind::<transit_rt::RtOverview>().require(rt_hash)
 }
 
 fn decode(bytes: &[u8]) -> Result<Response, String> {
-    let (rt_hash, overview) = RT.register_bytes(bytes)?;
+    let (rt_hash, overview) = kind::<transit_rt::RtOverview>().register_bytes(bytes)?;
     Ok(Response::Decode { overview: (*overview).clone(), rt_hash })
 }
 
@@ -182,13 +182,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Decode { bytes } => decode(&bytes),
         Request::TripProgress { network_hash, boundary_hash, rt_hash, trip_id } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let boundary = boundary_arc(boundary_hash.as_deref())?;
             let snapshot = snapshot_arc(&rt_hash)?;
             Ok(Response::TripProgress { progress: transit_rt::trip_progress(&network, &boundary, &snapshot, &trip_id) })
         }
         Request::LateTrips { network_hash, rt_hash, vp_hash, min_delay_secs } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let snapshot = snapshot_arc(&rt_hash)?;
             let positions = vp_hash.as_deref().map(snapshot_arc).transpose()?;
             Ok(Response::LateTrips {
@@ -201,7 +201,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     "live needs a snapshot: rt_hash (trip updates), vp_hash (vehicle positions), and/or alerts_hash (service alerts)".into(),
                 );
             }
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let boundary = boundary_arc(boundary_hash.as_deref())?;
             let delays = rt_hash.as_deref().map(snapshot_arc).transpose()?;
             let positions = vp_hash.as_deref().map(snapshot_arc).transpose()?;
@@ -217,21 +217,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let summary = transit_live::summarize(&live, late_limit.unwrap_or(15) as usize);
             // The live document registers where it was minted: in an
             // assembly, the board and the router read it by hash.
-            let (live_hash, live) = LIVE.register(live)?;
+            let (live_hash, live) = kind::<transit_live::LiveDay>().register(live)?;
             let live = with_document.unwrap_or(true).then(|| (*live).clone());
             Ok(Response::Live { live_hash, live, summary })
         }
         Request::EncodeAlerts { network_hash, alerts_hash, timestamp } => {
-            let network = NETWORK.require(&network_hash)?;
-            let alerts = SERVICE_ALERTS.require(&alerts_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let alerts = kind::<transit_alerts::ServiceAlerts>().require(&alerts_hash)?;
             let encoded = transit_rt::encode_alerts(&network, &alerts, timestamp);
-            let (rt_hash, _) = RT.register_bytes(&encoded.bytes)?;
+            let (rt_hash, _) = kind::<transit_rt::RtOverview>().register_bytes(&encoded.bytes)?;
             Ok(Response::EncodeAlerts { rt_hash, feed_b64: transit_codec::base64_encode(&encoded.bytes), skipped: encoded.skipped })
         }
         Request::ReadAlerts { network_hash, bytes } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let read = transit_rt::read_alerts(&network, &bytes).map_err(|e| e.to_string())?;
-            let (alerts_hash, alerts) = SERVICE_ALERTS.register(read.alerts)?;
+            let (alerts_hash, alerts) = kind::<transit_alerts::ServiceAlerts>().register(read.alerts)?;
             Ok(Response::ReadAlerts { alerts_hash, alerts: (*alerts).clone(), skipped: read.skipped, dropped: read.dropped })
         }
     }
@@ -261,5 +261,22 @@ cap_abi::capability! {
     id: "rt",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, BOUNDARY, RT, LIVE, SERVICE_ALERTS],
+    documents: [transit_network::Network, transit_codec::Boundary, transit_rt::RtOverview, transit_live::LiveDay, transit_alerts::ServiceAlerts],
+    request: Request,
+    consumes: &[("network", "network")],
+    // The GTFS-rt payload is a short-lived document, polled every few
+    // seconds, and versioned by the protobuf schema it speaks. It joins
+    // against the network (an rt trip id is a model trip id), with the
+    // import's boundary for the published stop_sequence numbering when
+    // there is one. The live document is made here, and the board reads
+    // it. Neither module needs the other to answer its own ops, so live
+    // is spoken, not consumed. encode_alerts writes the service alerts
+    // document as an Alerts feed: GTFS-rt is its serialization.
+    speaks: &[
+        ("gtfs_rt", &[1]),
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("boundary", &[1]),
+        ("live", &[1]),
+        ("service_alerts", &[transit_alerts::ALERTS_VERSION]),
+    ],
 }

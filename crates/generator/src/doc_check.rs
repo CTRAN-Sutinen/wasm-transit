@@ -1,4 +1,5 @@
-//! The check the real-output gate and the real-data soak share: every
+//! The check the real-output gate and the real-data soak share
+//! ([`crate::checks`]): every
 //! document inside an answer matches the locked schema of its tag and
 //! version (docs/FORMATS.md, "The schema lock"). The schemas are the
 //! locks in the tree (`crates/<owner>/locks/`), so the check needs no
@@ -9,8 +10,6 @@
 //! set's networks) is checked on its own too, and so is a document an
 //! op answers as its exact bytes (a string holding a JSON object, such as
 //! `plans.publish`'s `document`).
-
-#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 use std::path::Path;

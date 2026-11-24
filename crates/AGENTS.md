@@ -66,7 +66,7 @@ the day. Patch the day, never the calendar. Operator edits patch the
 materialized stop times. `transit_dispatch::day` is the effective day
 and what the edits took away, in one materialization. The kernel holds
 it for each (network, edits, date) as a derived entry
-(`cap_abi::kernel::day`). The entry is bounded, and it goes when its
+(`cap_abi::kernel::DAY`, under `transit_dispatch::day_key`). The entry is bounded, and it goes when its
 documents go. So every capability that reads the day finds the same
 day.
 
@@ -164,8 +164,10 @@ Always use the extraction pattern, in this order:
 2. **Capability second.** Write a thin module over the library. Put its
    purpose and each op's description in the crate's `OPS.md`. The file
    has a `#` heading that names the capability, then one `##` section
-   for each op, in the order of its `ops`. gen-manifest refuses any
-   other shape. Give the op's worked example in the crate's
+   for each op of its `Request` enum. The generator refuses any other
+   shape. The rest of its declaration is its `capability!`: the kinds
+   it reads, consumes, speaks, and migrates. Nothing outside the crate
+   names a capability. Give the op's worked example in the crate's
    `src/examples.rs` (its `examples` feature): the documents to load,
    and the request. The generator runs it through the crate's own
    dispatch and records the answer.
@@ -182,10 +184,11 @@ rule (`docs/architecture/hosts.md`; D-226, D-228).
 
 A capability declares no state.
 
-- The documents it reads are the kernel's kinds, named in its
+- The documents it reads are the kernel's kinds, named by type in its
   `capability! { documents: [...] }`. A new kind is a line in the kind
-  list (`cap_abi::kinds`), and goes into `cap_abi::kernel` with its
-  bound and its load.
+  list (`cap_abi::kinds`), and its library implements
+  `transit_version::Load` (its `src/load.rs`): its bound, its load, and
+  its answer. The kernel does not change (D-239).
 - What it derives from documents is a library's pure function and its
   key. The kernel holds it through `cap_abi::kernel::derive`, under a
   `Derivation`. A derived entry is a cache, never a dependency.
@@ -202,12 +205,15 @@ rule:
 - `arch-gates` reads the dependency graph (`cargo metadata`) and denies
   by default:
   - a capability depends only on cap-abi and libraries;
-  - only assemblies depend on capabilities;
+  - only assemblies, and the generator's generated binary, depend on
+    capabilities;
   - only the codec's homes read transit-codec;
-  - the kernel requires only the libraries its own code names. Every
-    module carries the kernel's closure, so a generator's extra library
-    is an optional dependency behind its feature
-    (`docs/architecture/release-artifacts.md`).
+  - the kernel depends on transit-version alone. Each kind's library
+    loads its own kind (D-239), and every module carries the kernel's
+    closure (`docs/architecture/release-artifacts.md`).
+- `arch-gates` also reads the generator, the kernel, and their
+  manifests. None of them names a capability: a capability is its
+  crate, and the generator takes it as data.
 - `arch-gates` also reads the source of every capability crate. It
   requires `#![forbid(unsafe_code)]`, and no static or `thread_local`
   of the crate's own.

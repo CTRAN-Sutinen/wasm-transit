@@ -45,6 +45,9 @@
     retryHeld,
     discardHeld,
     applyUpdate,
+    status,
+    offline,
+    asOf,
   } from "./host.svelte";
   import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
@@ -136,15 +139,15 @@
     </div>
     <button type="button" class="new" disabled={st.busy || task === "new"} onclick={() => { void openStop("").then(() => startTask("new")); }} data-testid="new-stop-start">New stop</button>
     <SignInControl available={signin.available} name={signin.name} error={signin.error} onsignin={signIn} onsignout={signOut} />
-    <p class="status" class:alert={st.alert} role="status" data-testid="status">{st.busy ? "… " : ""}{st.status}</p>
+    <p class="status" class:alert={st.alert} role="status" data-testid="status">{st.busy ? "… " : ""}{status()}</p>
     <div class="sync-slot">
       <SyncStatus
         waiting={outbox.waiting}
         held={heldWrites()}
         warned={warnedWrites()}
         ondismiss={dismissWarning}
-        offline={st.offline || outbox.offline}
-        asOf={st.asOf}
+        offline={offline() || outbox.offline}
+        asOf={asOf()}
         needsSignIn={outbox.needsSignIn}
         updateReady={st.updateReady}
         canUpdate={!task && !st.busy}

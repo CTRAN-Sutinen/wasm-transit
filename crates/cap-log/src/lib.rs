@@ -312,4 +312,9 @@ cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
     documents: [],
+    request: Request,
+    speaks: &[
+        ("log_entry", &[transit_log::ENTRY_VERSION]),
+        ("log_checkpoint", &[transit_log::CHECKPOINT_VERSION]),
+    ],
 }

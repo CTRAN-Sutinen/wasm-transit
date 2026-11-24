@@ -43,7 +43,7 @@ fn an_untagged_network_comes_forward_under_the_kernels_identity() {
     // canonical bytes (RFC 8785, D-169): keys sorted, the tags among them
     assert!(canonical.contains("\"kind\":\"network\"") && canonical.contains("\"schema_version\":2"), "{canonical}");
     assert_eq!(canonical, cap_abi::canonical_bytes(&serde_json::from_str::<serde_json::Value>(canonical).unwrap()).unwrap(), "the bytes are canonical");
-    let loaded = cap_abi::parse_network(canonical.as_bytes()).expect("the kernel reads what migrate answers");
+    let loaded = cap_abi::parse_versioned::<transit_network::Network>(canonical.as_bytes()).expect("the kernel reads what migrate answers");
     assert_eq!(answer["document_hash"].as_str().unwrap(), cap_abi::canonical_hash(&loaded).unwrap());
     assert_eq!(loaded.stops.keys().map(|k| k.as_str()).collect::<Vec<_>>(), ["s1"], "ids survive");
 }

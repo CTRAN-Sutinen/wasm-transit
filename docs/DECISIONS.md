@@ -284,10 +284,16 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-236 | Which modules do the test runners build? | decided; built | nothing |
 | D-237 | Where do a pick's checks run? | decided; built | nothing |
 | D-238 | On which date must an open stop request's stop not be retired? | decided | nothing |
-| D-239 | How does the kernel load a kind without naming its library? | decided | nothing |
+| D-239 | How does the kernel load a kind without naming its library? | decided; built | nothing |
 | D-240 | While a log's boundary moves, do writes to its kinds pause? | unanswered | `log-boundaries.md` items 2 and 3 |
 | D-241 | What must hold before a split runs? | unanswered | `log-boundaries.md` item 3 (the split) |
 | D-242 | What runs a move of a log's boundary, and when? | unanswered | `log-boundaries.md` item 3 |
+| D-243 | In which order does the manifest list the capabilities and their ops? | encoded | nothing |
+| D-244 | What does the kind-name gate match, and do the per-capability module flags retire? | unanswered | `kind-registration.md` item 4 |
+| D-245 | Does a failed input stop the answers that read it? | encoded | nothing |
+| D-246 | When does a page read a failed input again? | encoded | nothing |
+| D-247 | Do the staff pages follow the deployment's network as it moves? | encoded | nothing |
+| D-248 | D-239 costs each module 2 to 5 percent: keep it? | unanswered | `kind-registration.md` (the release gate at the unit's end) |
 
 ## The trip model
 
@@ -5272,7 +5278,12 @@ Options:
   (recommended; decided).
 - The kernel stays a hub, and the per-kind code is generated from the
   kind list. cap-abi keeps its dependencies.
-Pinned by: none yet (`docs/units/kind-registration.md`, item 1).
+Pinned by: each library's `src/load.rs` (`transit_version::Load`);
+the arch gate's `a_kernel_that_depends_on_a_domain_library_fails`
+(`crates/cap-abi/tests/arch_gates_test.rs`); the generator's
+`kernel_ops`, which holds each load to its line in the kind list. The
+reasoning is in `docs/architecture/bus.md` ("Each library loads its own
+kind").
 Blocks: nothing.
 
 ### D-240 — While a log's boundary moves, do writes to its kinds pause?
@@ -5348,3 +5359,141 @@ Options:
   server must serve both placements.
 Pinned by: none yet.
 Blocks: `docs/units/log-boundaries.md`, item 3.
+
+### D-243 — In which order does the manifest list the capabilities and their ops?
+State: Encoded provisionally.
+Context: the capabilities and their ops have one source each: a
+capability's crate directory, and its `Request` enum
+(`docs/units/capability-declared-once.md`). The list `MODULES` that
+kept a hand-chosen order is gone. Serde ignores the order of an enum's
+variants, and several `Request` enums list their ops in another order
+than their `OPS.md`.
+Options:
+- The capabilities in id order, as gen-assemblies lists the crate
+  directories, and each capability's ops in its `OPS.md`'s order, the
+  order a reader meets them in. The generator checks that the file's
+  sections are exactly the enum's ops (encoded). Cost: the manifest's
+  capability order changed once; no reader depends on it.
+- Each `Request` enum's order. Cost: about 40 enum variants move so
+  that the manifest stays the same, for no other gain.
+Pinned by: the generator's `read_docs` (`crates/generator/src/lib.rs`)
+and the generated gen-manifest's id order
+(`crates/cap-abi/src/bin/common/assemblies.rs`, `generator_files`).
+Blocks: nothing.
+
+### D-244 — What does the kind-name gate match, and do the per-capability module flags retire?
+State: Unanswered.
+Context: `docs/units/kind-registration.md`, item 4, asks for a gate
+that fails when a kind's name appears in the plumbing: the kernel, the
+server, the runner, and the engine. The kernel names no kind now
+(D-239). Many kind names are common words: `stops`, `network`, `live`,
+`feed`, `notes`. The server says "stops" in prose and serves `/stops`,
+the kind's own route, which the kind table names. A plain word match
+fails on all of it. The server also keeps one flag for each capability
+it hosts (`-notes-wasm`, `-stops-wasm`, `-alerts-wasm`, and eight more;
+`server/flags.go`), beside the `-modules` folder, where each module is
+`cap_<id>.wasm` already. `docs/architecture/server.md` names them;
+the operator's guide does not.
+Options:
+- The gate matches a kind's identifiers, not its words: its load op
+  (`load_notes`), its hash field (`notes_hash`), and its name as a
+  string literal in code (`"notes"`), with comments aside. The module
+  flags retire: one release reads them and logs that `-modules` replaces
+  them, and the next drops them (recommended). Cost: an operator who set
+  one flag moves the file into the `-modules` folder.
+- The gate matches identifiers as above, and the flags stay, on an
+  allowlist in the gate. Cost: eleven flags that a new hosted capability
+  copies, and an allowlist that grows with them.
+- No gate for the server and the engine; the kind table and the
+  generated op map are the line. Cost: nothing fails when a kind's name
+  creeps into the plumbing.
+Pinned by: none yet.
+Blocks: `docs/units/kind-registration.md`, item 4.
+
+### D-245 — Does a failed input stop the answers that read it?
+State: Encoded provisionally. A node names the inputs it cannot
+answer without (`AnswerNode.inputs`). While one of them fails and the
+page holds nothing of it, the node is unread: it does not run, and its
+frame says the input could not be read. A held copy, or an input that
+keeps none, runs the node, and the shell labels the copy's age.
+Context: the unit (`docs/units/ui-host-inputs.md`, item 3) asks that
+a frame that reads a failed input says so, as a starved frame does.
+A stop display's board must keep showing the schedule when only the
+detours fail, so a failed input cannot block every node that reads it.
+Options:
+- Block only the nodes that name the input as required; label the
+  others (encoded).
+- Block every node that reads a failed input. Cost: one failed feed
+  blanks a board that the schedule alone still answers.
+- Block none, and label every frame. Cost: a frame answers from
+  nothing ("no routes stop here") when its input failed.
+Pinned by: `web/src/uis/answers.test.mjs` (the three "unread" laws).
+Blocks: nothing.
+
+### D-246 — When does a page read a failed input again?
+State: Encoded provisionally. After a failed read, the next read of
+that input waits its interval, or the upstream's `Retry-After` when it
+is longer, plus a random part of up to half the interval. An input
+read once at boot that fails is read again every 60 s until it
+answers. The time limits are 10 s for a head or a live feed, 20 to
+30 s for a document pinned by hash, and 60 s for a network (each UI's
+`ui.json`).
+Context: the unit (item 4) asks that reads come back gently after an
+outage, so the open pages do not all read at the same moment. The
+values are this repo's choice; the agency may want others.
+Options:
+- The interval plus up to half of it at random (encoded).
+- An exponential back-off. Cost: a page reads a recovered server late,
+  and the labels stay stale longer.
+Pinned by: `web/src/uis/inputs.test.mjs` ("after a failure the next
+read waits…", "Retry-After holds the next read until then").
+Blocks: nothing.
+
+### D-247 — Do the staff pages follow the deployment's network as it moves?
+State: Encoded provisionally. Yes. The disruptions page reads its
+network as an input, as the rider pages do, so a republish, a new pick,
+or today crossing a pick's date re-pins it with no reload. The stops
+page reads the network in force on the page's date as an input, and
+today's network only while the deployment keeps no stops document (the
+seed).
+Context: before the inputs, the disruptions page read its network once
+at boot and never again, and the stops page read a network inside a
+node on each stop opened. The inputs read every document the same way.
+Options:
+- Follow the deployment, as the rider pages do (encoded).
+- Read the network once at boot. Cost: a page left open across a
+  pick's date shows the old schedule's day.
+Pinned by: e2e `ui-disruptions`, `ui-stops` (the existing specs, over
+the inputs).
+Blocks: nothing.
+
+### D-248 — D-239 costs each module 2 to 5 percent: keep it?
+State: Unanswered.
+Context: D-239 is built: each library loads its own kind
+(`transit_version::Load`), and the kernel depends on transit-version
+alone. Its context expected no change in module size. Measured
+(2026-11-21, release, stripped, against the same modules built from
+the tree before the change): module-disruptions 5,673,397 to 5,951,452
+bytes (+278 KB, +4.9%), module-ui-ride-now 13,013,920 to 13,280,347
+bytes (+266 KB, +2.0%). The answers are the same bytes: the manifest
+equals the one before, apart from module hashes and the capability
+order (D-243). The cause: stable Rust compiles a generic function in
+each crate that uses it. serde_json's reader and the canonical writer
+over a JSON value were compiled once, in the kernel. Now each library
+whose kind a module loads compiles its own copy, about 45 KB for each
+library. `-Zshare-generics` would merge them, but it needs a nightly
+toolchain. A type-erased reader would merge them, but it slows the
+registration of a document, the hot path on every page.
+Options:
+- Keep D-239 as built, and take the 2 to 5 percent (recommended, if the
+  size is acceptable). The kernel stays free of every kind, and a new
+  kind edits no kernel file. Cost: about 45 KB for each library a
+  module loads a kind from, before gzip.
+- Keep the trait for each kind's names, codes, checks, and answer, and
+  generate the kernel's per-kind loads from the kind list again
+  (D-239's second option). cap-abi depends on each kind's library
+  again, so each kind's reader is compiled once, in the kernel. Cost:
+  the kernel is a hub again, and a kind's library change moves every
+  module.
+Pinned by: none yet.
+Blocks: deleting `docs/units/kind-registration.md` (its release gate).

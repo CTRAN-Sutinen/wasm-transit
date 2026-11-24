@@ -19,7 +19,7 @@ fn network() -> Network {
 }
 
 fn load(network: Network) -> String {
-    cap_abi::kernel::NETWORK.register(network).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>().register(network).unwrap().0
 }
 
 fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, String> {
@@ -195,10 +195,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_author::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_author::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_author::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_author::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_author::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 

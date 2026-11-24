@@ -12,6 +12,8 @@ import { onNewerBuild } from "../versions";
 import { previousClock, serviceClock } from "../clock";
 import { available, readJournal, startJournal, type CapId } from "../engine";
 import { answers, type AnswerNode, type FrameState, type Request } from "./answers";
+import { capital, inputs as runInputs, labelOf, ReadFailed, type Answered, type InputDeclaration, type InputState, type Inputs, type Reader } from "./inputs";
+import { headAnswer, retryAfterMs } from "./heads";
 
 // The journal, on request. `?journal` in the page's URL starts the
 // engine's journal before the host's first ask, and
@@ -28,24 +30,10 @@ if (typeof location !== "undefined" && new URLSearchParams(location.search).has(
 // AGENCY's zone (src/clock.ts), never the device's.
 // ---------------------------------------------------------------------
 
-/// The agency's zone: the manifest's `timezone` (readAgencyZone, at
-/// boot, before the page picks the network in force on its date), or a
-/// loaded zip's (setAgencyZone). Unknown, the clock reads the device's.
+/// The agency's zone: the manifest's `timezone` (each host's manifest
+/// input sets it, before the page reads the network in force on its
+/// date), or a loaded zip's. Unknown, the clock reads the device's.
 let agencyZone: string | undefined;
-
-/// The deployment's manifest, read once per page.
-let manifestRead: Promise<Record<string, unknown> | null> | null = null;
-export function deploymentManifest<T>(): Promise<T | null> {
-  manifestRead ??= fetch("manifest")
-    .then((r) => (r.ok ? r.json() : null))
-    .catch(() => null);
-  return manifestRead as Promise<T | null>;
-}
-
-export async function readAgencyZone(): Promise<void> {
-  const manifest = await deploymentManifest<{ timezone?: string }>();
-  if (manifest?.timezone) agencyZone = manifest.timezone;
-}
 
 export function setAgencyZone(zone: string | null | undefined): void {
   if (zone) agencyZone = zone;
@@ -89,7 +77,7 @@ export function clockLabelAt(ms: number): string {
 /// Run `tick` every `ms` while the page is visible: a hidden page makes
 /// no requests, and on its return it ticks at once, re-reading what it
 /// missed.
-export function whileVisible(ms: number, tick: () => void): void {
+function whileVisible(ms: number, tick: () => void): void {
   setInterval(() => {
     if (!document.hidden) tick();
   }, ms);
@@ -114,11 +102,93 @@ export function reason(state: FrameState | undefined): string {
   if (!state) return "";
   if (state.kind === "failed") return state.message;
   if (state.kind === "unassembled") return "This part of the app did not load.";
+  if (state.kind === "unread") return `${capital(state.name)} could not be read: no answer since ${clockLabelAt(state.sinceMs)}.`;
   return `Waiting for ${state.missing}.`;
 }
 
-export function answerGraph(nodes: AnswerNode[], frames: Record<string, FrameState>, onerror: (e: unknown) => void): Request {
-  return answers(nodes, { frames, onerror, available: (cap) => available(cap as CapId) });
+export function answerGraph(nodes: AnswerNode[], frames: Record<string, FrameState>, onerror: (e: unknown) => void, inputs?: Record<string, InputState>): Request {
+  return answers(nodes, { frames, onerror, available: (cap) => available(cap as CapId), inputs });
+}
+
+// ---------------------------------------------------------------------
+// The inputs (src/uis/inputs.ts): a host's declared inputs, read by one
+// poll while the page is visible. Here they get the browser's clock,
+// timers, and visibility.
+// ---------------------------------------------------------------------
+
+export { ReadFailed } from "./inputs";
+export type { Answered, InputDeclaration, InputState, Inputs, Reader } from "./inputs";
+
+/// The host's inputs. `declared` is its ui.json's `inputs`; `readers`
+/// reads and adopts each; `states` is the host's `$state` record of
+/// input states (the same record its answer graph reads); `request` is
+/// its answer graph.
+export function inputGraph(declared: InputDeclaration[], readers: Record<string, Reader<any>>, states: Record<string, InputState>, request: Request): Inputs {
+  return runInputs(declared, readers, {
+    states,
+    request,
+    now: () => Date.now(),
+    random: () => Math.random(),
+    after: (ms, fn) => {
+      const t = setTimeout(() => void fn(), ms);
+      return () => clearTimeout(t);
+    },
+    isVisible: () => !document.hidden,
+    onVisible: (fn) =>
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) void fn();
+      }),
+  });
+}
+
+/// What the page says of an input (inputs.ts `labelOf`), on the
+/// agency's clock: its age when the answer is a working copy or old,
+/// and since when its reads fail. "" when it is current.
+export function inputLabel(state: InputState | undefined): string {
+  return labelOf(state, clockLabelAt);
+}
+
+/// A head the server serves with no hash to pin it (GET edits): its
+/// text, keyed by itself, with the server's age when it answers from
+/// its cache (`X-Store-Stale`, `X-Store-As-Of`; D-119). Throws
+/// ReadFailed when the server does not answer. `absent` statuses
+/// answer null: the server keeps none.
+export async function readHead(url: string, signal: AbortSignal, absent: number[] = []): Promise<Answered<string> | null> {
+  const resp = await fetchOrFail(url, signal);
+  const text = resp.ok ? await resp.text() : "";
+  return headAnswer({ status: resp.status, header: (name) => resp.headers.get(name), text }, absent, Date.now());
+}
+
+/// A head as `readHead` reads it, kept on the device as this page's
+/// working copy (a staff page boots offline, D-189). While the server
+/// does not answer, the read answers the device's copy with the time
+/// it was confirmed: an old answer that says its age. It throws only
+/// when the device keeps no copy either.
+export async function readHeadKept(ui: string, url: string, signal: AbortSignal, absent: number[] = []): Promise<Answered<string> | null> {
+  const key = `held/${ui}/${url}`;
+  try {
+    const got = await readHead(url, signal, absent);
+    if (got) void idbSet(key, { text: got.value, atMs: got.asOfMs ?? Date.now() }).catch(() => {});
+    return got;
+  } catch (e) {
+    const held = (await idbGet(key).catch(() => undefined)) as { text: string; atMs: number } | undefined;
+    if (!held) throw e;
+    return { value: held.text, key: held.text, asOfMs: held.atMs, why: "the server is not answering" };
+  }
+}
+
+async function fetchOrFail(url: string, signal: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(url, { signal, cache: "no-cache" });
+  } catch {
+    throw new ReadFailed(signal.aborted ? "no answer in time" : "no answer");
+  }
+}
+
+/// A status other than 2xx, as a failed read with the upstream's
+/// Retry-After.
+function failedOf(resp: Response): ReadFailed {
+  return new ReadFailed(`HTTP ${resp.status}`, { retryAfterMs: retryAfterMs(resp.headers.get("Retry-After"), Date.now()) });
 }
 
 // ---------------------------------------------------------------------
@@ -202,49 +272,6 @@ export function applyBuild(): void {
   }
 }
 
-/// Whether the deployment's server answers now (not the worker's last
-/// copy) — a display applies a build only then, so an outage never
-/// reloads a working display into an empty one.
-export async function serverAnswers(): Promise<boolean> {
-  const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
-  return !!resp?.ok && resp.headers.get("X-Served-From") !== "last-copy";
-}
-
-// ---------------------------------------------------------------------
-// working offline (D-189): what the server last confirmed. A staff page
-// works from its last good documents while the server is away, and
-// says how old they are. A page never shows an old answer as current.
-// ---------------------------------------------------------------------
-
-/// The deployment's manifest now: `answered` when the server answered
-/// (not the worker's last copy), and `asOfMs`, when the server last
-/// confirmed it (the answer's Date header). The manifest is null when
-/// neither the server nor the worker has one.
-export async function manifestNow<T>(): Promise<{ manifest: T | null; answered: boolean; asOfMs: number }> {
-  const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
-  if (!resp?.ok) return { manifest: null, answered: false, asOfMs: 0 };
-  const answered = resp.headers.get("X-Served-From") !== "last-copy";
-  const date = Date.parse(resp.headers.get("Date") ?? "");
-  return { manifest: (await resp.json().catch(() => null)) as T | null, answered, asOfMs: Number.isFinite(date) ? date : answered ? Date.now() : 0 };
-}
-
-/// A read the worker does not keep (a document with no hash, as GET
-/// /edits serves it): the server's answer, kept on the device as this
-/// page's last good copy; when the server does not answer, that copy,
-/// with the time it was read. `asOfMs` is 0 for an answer read now.
-export async function lastGoodText(ui: string, url: string): Promise<{ resp: Response | null; text: string; asOfMs: number } | null> {
-  const key = `held/${ui}/${url}`;
-  const resp = await fetch(url).catch(() => null);
-  if (resp?.ok) {
-    const text = await resp.text();
-    void idbSet(key, { text, atMs: Date.now() }).catch(() => {});
-    return { resp, text, asOfMs: 0 };
-  }
-  if (resp && resp.status < 500) return null;
-  const held = (await idbGet(key).catch(() => undefined)) as { text: string; atMs: number } | undefined;
-  return held ? { resp: null, text: held.text, asOfMs: held.atMs } : null;
-}
-
 /// The build this page runs, as its worker names it (inspection: the
 /// page's `data-build`).
 async function readBuild(): Promise<void> {
@@ -271,34 +298,65 @@ export type LiveUrls = { trips: string; vehicles: string; alerts: string };
 /// directly.
 let feedProxy: string | null = null;
 
-/// The deployment's feed URLs (and whether a dev relay fetches them);
-/// {} when the page has no config.
-export async function deploymentFeeds(): Promise<Partial<LiveUrls>> {
+/// Fetch one live feed: directly, or through the dev relay when the
+/// config names one.
+function fetchFeed(url: string, signal?: AbortSignal): Promise<Response> {
+  return fetch(feedProxy ? `${feedProxy}?url=${encodeURIComponent(url)}` : url, { signal });
+}
+
+/// Ask an oracle the manifest lists (the geocoder; docs/architecture/
+/// web.md, "External services") at `url`: its JSON answer, or null when
+/// it does not answer. It is asked on a person's action, never polled,
+/// so it is not an input.
+export async function askOracle<T>(url: string): Promise<T | null> {
   try {
-    const resp = await fetch("live-feeds.json");
-    if (!resp.ok) return {};
-    const config = (await resp.json()) as Partial<LiveUrls> & { proxy?: string };
-    feedProxy = typeof config.proxy === "string" && config.proxy ? config.proxy : null;
-    const urls: Partial<LiveUrls> = {};
-    for (const k of ["trips", "vehicles", "alerts"] as const) if (typeof config[k] === "string") urls[k] = config[k];
-    return urls;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(ORACLE_LIMIT_MS) });
+    return resp.ok ? ((await resp.json()) as T) : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
-/// Fetch one live feed: directly, or through the dev relay when the
-/// config names one.
-export function fetchFeed(url: string): Promise<Response> {
-  return fetch(feedProxy ? `${feedProxy}?url=${encodeURIComponent(url)}` : url);
+/// The time limit of an oracle's answer.
+const ORACLE_LIMIT_MS = 10_000;
+
+/// The deployment's feed URLs, as an input reads them
+/// (live-feeds.json beside the page): null when the page has none
+/// (404). Throws ReadFailed when the read fails.
+export async function readLiveFeeds(signal: AbortSignal): Promise<Answered<Partial<LiveUrls>> | null> {
+  const resp = await fetchOrFail("live-feeds.json", signal);
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw failedOf(resp);
+  let config: Partial<LiveUrls> & { proxy?: string };
+  try {
+    config = (await resp.json()) as Partial<LiveUrls> & { proxy?: string };
+  } catch {
+    throw new ReadFailed("live-feeds.json is not JSON");
+  }
+  feedProxy = typeof config.proxy === "string" && config.proxy ? config.proxy : null;
+  const urls: Partial<LiveUrls> = {};
+  for (const k of ["trips", "vehicles", "alerts"] as const) if (typeof config[k] === "string") urls[k] = config[k];
+  return { value: urls, key: JSON.stringify(urls) };
 }
 
-/// A sync-server answer served from its cache while its store does not
-/// answer (D-119) carries X-Store-Stale and X-Store-As-Of: the label a
-/// page shows for it — "Detours as of 4:05 PM …" — else "".
-export function staleLabel(resp: Response, what: string): string {
-  if (resp.headers.get("X-Store-Stale") !== "true") return "";
-  const asOf = Number(resp.headers.get("X-Store-As-Of"));
-  const when = Number.isFinite(asOf) && asOf > 0 ? ` as of ${clockLabelAt(asOf)}` : "";
-  return `${what}${when} — the server's store is not answering.`;
+/// One live feed's bytes, as an input reads them (directly, or through
+/// the dev relay). Throws ReadFailed when the feed does not answer, or
+/// answers a status other than 2xx.
+export async function readFeed(url: string, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  let resp: Response;
+  try {
+    resp = await fetchFeed(url, signal);
+  } catch {
+    throw new ReadFailed(signal.aborted ? "no answer in time" : "no answer");
+  }
+  if (!resp.ok) throw failedOf(resp);
+  return new Uint8Array(await resp.arrayBuffer());
 }
+
+/// Run `tick` every `ms` while the page is visible, and at once when it
+/// shows again. The clock only: it reads nothing. A host's reads are
+/// its declared inputs.
+export function clockEvery(ms: number, tick: () => void): void {
+  whileVisible(ms, tick);
+}
+

@@ -30,6 +30,7 @@
 mod recovery;
 mod rules;
 mod suggest;
+pub mod load;
 
 pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
 pub use rules::{required, MealBreak, Pay, RecoveryRule, RoutePair, RunRules, WorkRules, WorkRulesKind, SCHEMA_VERSION};

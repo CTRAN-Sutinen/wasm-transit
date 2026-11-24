@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub mod version;
+pub mod load;
 pub use version::SCHEMA_VERSION;
 
 transit_version::kind_tag!(

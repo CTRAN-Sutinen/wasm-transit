@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{NETWORK, STREETS, STREET_GRAPH, WALK_GRAPH};
+use cap_abi::kernel::{kind, STREET_GRAPH, WALK_GRAPH};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_streets::walking::{DirectWalk, PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
@@ -141,7 +141,7 @@ pub enum Response {
 /// The street graph (snap, route) over a registered streets document,
 /// built on first use and held as a derived entry.
 fn graph(streets_hash: &str) -> Result<Arc<StreetNetwork>, String> {
-    let streets = STREETS.require(streets_hash)?;
+    let streets = kind::<transit_streets::Streets>().require(streets_hash)?;
     cap_abi::kernel::derive(&STREET_GRAPH, streets_hash, &[streets_hash], || Ok(StreetNetwork::build(&streets)))
 }
 
@@ -149,7 +149,7 @@ fn graph(streets_hash: &str) -> Result<Arc<StreetNetwork>, String> {
 /// first use and held as a derived entry — a host that only walks
 /// never builds the street graph.
 fn walking(streets_hash: &str) -> Result<Arc<WalkGraph>, String> {
-    let streets = STREETS.require(streets_hash)?;
+    let streets = kind::<transit_streets::Streets>().require(streets_hash)?;
     cap_abi::kernel::derive(&WALK_GRAPH, streets_hash, &[streets_hash], || Ok(WalkGraph::new(&streets)))
 }
 
@@ -168,7 +168,7 @@ fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32)
 
 /// A registered network's stops (id, lat, lon) — all a walk reads of it.
 fn network_stops(network_hash: &str) -> Result<Vec<(String, f64, f64)>, String> {
-    Ok(NETWORK.require(network_hash)?.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect())
+    Ok(kind::<transit_network::Network>().require(network_hash)?.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect())
 }
 
 fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, String> {
@@ -215,7 +215,7 @@ fn import(bytes: &[u8]) -> Result<Response, String> {
     // The document registers where it was minted: every query (and,
     // in an assembly, every capability) addresses it by hash.
     let (ways, segments, nodes) = streets.counts();
-    let (streets_hash, streets) = STREETS.register(streets)?;
+    let (streets_hash, streets) = kind::<transit_streets::Streets>().register(streets)?;
     Ok(Response::Import { streets_hash, streets: cap_abi::Canonical((*streets).clone()), ways, segments, nodes })
 }
 
@@ -271,5 +271,8 @@ cap_abi::capability! {
     id: "streets",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [STREETS, NETWORK],
+    documents: [transit_streets::Streets, transit_network::Network],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[("streets", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("walks", &[1])],
 }

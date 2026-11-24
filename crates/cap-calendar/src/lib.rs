@@ -11,7 +11,7 @@
 //!
 //! The day is `materialize(net, date)`, patched with the edits in
 //! force on that date — the kernel's held day
-//! (`cap_abi::kernel::day`); no GTFS expansion. The domain code lives
+//! (this crate's `day`: `transit_dispatch::day_of`, held under `cap_abi::kernel::DAY`); no GTFS expansion. The domain code lives
 //! in the shared transit-dispatch library; this module is the seam.
 //!
 //! The documents it reads are the kernel's, registered by its loads
@@ -25,7 +25,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{EDITS, NETWORK};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -76,8 +76,8 @@ fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::ActiveServices { network_hash, edits_hash, date } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::ActiveServices {
                 services: transit_dispatch::active_services(&network, &day.trips),
             })
@@ -88,9 +88,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             // missing-document error.
             let from = parse_date(&from)?;
             let to = parse_date(&to)?;
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let records = match edits_hash.as_deref() {
-                Some(hash) => EDITS.require(hash)?,
+                Some(hash) => kind::<transit_sync::EditDocument>().require(hash)?,
                 None => Arc::new(Default::default()),
             };
             let dates = transit_dispatch::service_dates(&network, &records.records, &service_type, from, to)
@@ -124,5 +124,25 @@ cap_abi::capability! {
     id: "calendar",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, EDITS],
+    documents: [transit_network::Network, transit_sync::EditDocument],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[
+        ("network", &[transit_network::SCHEMA_VERSION]),
+        ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
+    ],
+}
+
+/// The day for (network, edits, date), held in the kernel's derived
+/// registry under `transit_dispatch::day_key`: the effective trips and,
+/// when edits are in force, what they took away. The date is read first,
+/// so a date that does not parse is the caller's error.
+fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
+    let on = transit_dispatch::day_date(date)?;
+    let network = kind::<transit_network::Network>().require(network_hash)?;
+    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
+    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
+    let key = transit_dispatch::day_key(network_hash, edits_hash, date);
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
 }

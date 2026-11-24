@@ -86,7 +86,7 @@ directory.
   and only `"`, `\`, and control characters escaped. So
   `sha256(canonical bytes)` is the document's identity on every host,
   and any implementation of the standard, in any language, computes the
-  same identity for the same content (`cap_abi::jcs`).
+  same identity for the same content (`transit_version::jcs`).
 - A number in a document is an IEEE double, as RFC 8785 reads it. A
   whole number above 2^53 loses its exact value in another tool. The
   documents hold none: times are seconds, counts are small, and ids are
@@ -1075,12 +1075,12 @@ Two more gates hold the schemas to the bytes the code really writes,
 where `schemars` and serde can disagree (`skip_serializing_if`,
 `untagged`, `flatten`). Both check with the locks in the tree:
 
-- The real-output gate (cap-abi `tests/real_output_test.rs`, in
-  `cargo test`) runs every capability's worked examples through its own
+- The real-output gate (`generator::checks::real_output`, which the
+  generated gen-manifest crate's tests run in `cargo test`) runs every capability's worked examples through its own
   dispatch over the fixtures. Every document an answer holds must match
   its locked schema, and every kind a worked example's recorded answer
   holds must be checked from a real answer.
-- The real-data soak (`just soak`, cap-abi `tests/real_data_soak.rs`)
+- The real-data soak (`just soak`, `generator::checks::soak`)
   runs the agency's feed through the ops a server runs on it (import,
   publish). A mismatch is a QA finding.
 

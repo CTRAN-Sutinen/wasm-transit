@@ -32,13 +32,13 @@ the tree alone. A change moves only the modules it touches.
   library the kernel requires is in every module's closure. A code
   change moves only the modules whose linked code it changes. A
   dependency or feature change in a crate moves every module whose
-  closure holds that crate. The kernel requires only the libraries its
-  own code names. These are its registries' kinds: the network, codec,
-  rt, live, dispatch, runs, streets, sync and analysis libraries, and
-  transit-version. The generator (gen-manifest) is a crate of its own,
-  `crates/generator`, in a class that nothing depends on, and so are
-  its fixtures (`crates/fixtures`), so what they need besides is in no
-  module's closure. `arch-gates` enforces both
+  closure holds that crate. The kernel requires one library,
+  transit-version: each kind's library loads its own kind (D-239), so a
+  change to a kind's library moves only the modules whose capabilities
+  read that kind. The generator is a crate of its own,
+  `crates/generator`, that only its generated binary (gen-manifest)
+  depends on, and so are its fixtures (`crates/fixtures`), so what they
+  need besides is in no module's closure. `arch-gates` enforces both
   (gates 1 and 4, `crates/cap-abi/src/bin/common/gates.rs`).
 - **Every build is kept (D-80).** In store mode the server commits the
   release in `-dist` to the store's `build` pointer. Every file is a

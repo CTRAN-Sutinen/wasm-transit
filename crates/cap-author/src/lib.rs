@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{NETWORK, WORK_RULES};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::{Network, NetworkEdit, NetworkError, NetworkWarning};
@@ -84,7 +84,7 @@ pub enum Response {
 /// The network an edit applies to: the base of a write, so a network
 /// read one version ahead through a read-only step is refused (D-186).
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORK.require_writable(network_hash)
+    kind::<transit_network::Network>().require_writable(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -92,7 +92,7 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Apply { network_hash, edits, work_rules_hash } => {
-            let rules = work_rules_hash.as_deref().map(|h| WORK_RULES.require(h)).transpose()?;
+            let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
             let current = network_arc(&network_hash)?;
             let transit_network::Applied { network: next, created, touched } =
                 transit_network::apply_edits_reporting(&current, &edits).map_err(|e| e.to_string())?;
@@ -100,7 +100,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let warnings = transit_network::validation_warnings(&next);
             // The next document registers where it was minted: the next
             // change (and, in an assembly, every reader) chains on its hash.
-            let (network_hash, next) = NETWORK.register(next)?;
+            let (network_hash, next) = kind::<transit_network::Network>().register(next)?;
             Ok(Response::Apply { network_hash, network: (*next).clone(), issues, warnings, created, touched })
         }
         Request::StampPick { network_hash, name, id } => {
@@ -110,7 +110,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let next = transit_network::apply_edits(&current, &edits).map_err(|e| e.to_string())?;
             let issues = transit_network::validation_issues_under(&next, &transit_runs::required(None));
             let warnings = transit_network::validation_warnings(&next);
-            let (network_hash, next) = NETWORK.register(next)?;
+            let (network_hash, next) = kind::<transit_network::Network>().register(next)?;
             Ok(Response::StampPick { network_hash, network: (*next).clone(), issues, warnings, stamped })
         }
     }
@@ -137,5 +137,8 @@ cap_abi::capability! {
     id: "author",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, WORK_RULES],
+    documents: [transit_network::Network, transit_runs::WorkRules],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("work_rules", &[1])],
 }

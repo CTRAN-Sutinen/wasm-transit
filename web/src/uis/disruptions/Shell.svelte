@@ -38,6 +38,12 @@
     retryHeld,
     discardHeld,
     applyUpdate,
+    label,
+    status,
+    offline,
+    asOf,
+    liveAt,
+    liveError,
     type View,
   } from "./host.svelte";
   import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
@@ -74,19 +80,19 @@
         <button type="button" class:on={dz.view === v.id && !dz.open && !dz.form} aria-current={dz.view === v.id ? "page" : undefined} onclick={() => (dz.open ? openDisruption(null) : null, dz.form ? closeForm() : null, setView(v.id))}>{v.label}</button>
       {/each}
     </nav>
-    <span class="live" class:off={!dz.live} class:partial={!!dz.liveError} data-testid="live-state" title={dz.liveError}>{dz.live ? `Live · ${dz.liveAt}` : "No live feed"}{dz.liveError ? " · A feed is not answering" : ""}</span>
+    <span class="live" class:off={!dz.live} class:partial={!!liveError()} data-testid="live-state" title={liveError()}>{dz.live ? `Live · ${liveAt()}` : "No live feed"}{liveError() ? " · A feed is not answering" : ""}</span>
     <SignInControl available={signin.available} name={signin.name} error={signin.error} onsignin={signIn} onsignout={signOut} />
   </header>
-  {#if dz.status || dz.editsStale}
-    <p class="status" class:alert={dz.alert} role="status">{dz.status || dz.editsStale}</p>
+  {#if status() || label("edits")}
+    <p class="status" class:alert={dz.alert} role="status">{status() || label("edits")}</p>
   {/if}
   <SyncStatus
     waiting={outbox.waiting}
     held={heldWrites()}
     warned={warnedWrites()}
     ondismiss={dismissWarning}
-    offline={dz.offline || outbox.offline}
-    asOf={dz.asOf}
+    offline={offline() || outbox.offline}
+    asOf={asOf()}
     needsSignIn={outbox.needsSignIn}
     updateReady={dz.updateReady}
     canUpdate={!dz.form && !dz.busy}

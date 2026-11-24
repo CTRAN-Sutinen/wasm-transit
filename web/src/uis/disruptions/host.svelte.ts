@@ -1,7 +1,9 @@
 /// The disruptions UI's host layer: the ONLY file of this UI that asks
-/// the capability bus. It owns I/O (the deployment's network, the edit
-/// document from GET /edits, the service alerts and notes by the
-/// manifest's hashes, and the agency's live feeds), the clock, the
+/// the capability bus. It owns I/O (its inputs, declared in its ui.json
+/// and read by the kit: the deployment's manifest, the network, the
+/// edit document from GET /edits, the stops, service alerts, templates,
+/// and notes by the manifest's hashes, and the agency's live feeds),
+/// the clock, the
 /// selection, and the outbox (D-189): each alert and note is written as
 /// its intent (POST /logs/alerts, /logs/notes), which waits on the
 /// device while the server does not answer. The page installs and
@@ -21,12 +23,13 @@
 ///
 /// The map is always on screen: the live buses by status, the cancelled
 /// trips at their first stops, the closed stops, and the stops a detour
-/// skips. The page polls the edit document, the alerts and notes, the
-/// live feeds, and the clock while it is visible. The view, the search,
+/// skips. The kit reads its inputs with one poll while the page is
+/// visible. The view, the search,
 /// and the open disruption live in the URL hash.
 
-import { ask, assemble, available, keep, load, produced, served, servedNetwork, Doc } from "../../engine";
-import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabel, clockLabelAt, installApp, lastGoodText, manifestNow, nowSecs, previousDay, deploymentFeeds, deploymentManifest, fetchFeed, readAgencyZone, reason, staleLabel, today, whileVisible, type FrameState, type LiveUrls } from "../kit";
+import { ask, assemble, available, keep, load, produced, readManifest, served, servedNetwork, servedNetworkPin, Doc, type DeploymentManifest } from "../../engine";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabel, clockLabelAt, inputGraph, inputLabel, installApp, nowSecs, previousDay, readFeed, readHeadKept, readLiveFeeds, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type LiveUrls, type Reader } from "../kit";
+import descriptor from "./ui.json";
 import { resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
 import type { AlertFlag } from "../../types/AlertFlag";
@@ -68,8 +71,8 @@ const VIEWS: View[] = ["status", "alerts", "dispatch"];
 /// is stamped then.
 export type AlertForm = { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[]; startsNow: boolean };
 
-/// How often the page reads the documents, the live feeds, and the
-/// clock again (one timer, kit's whileVisible).
+/// How often the answers on the clock are asked again, and the writes
+/// that wait are sent. The inputs' intervals are in its ui.json.
 const POLL_MS = 30_000;
 /// How many search results of each kind the box shows.
 const FOUND = 8;
@@ -79,7 +82,9 @@ const FOUND = 8;
 export type Pick = { kind: "route" | "stop"; id: string; label: string };
 
 export const dz = $state({
-  status: "Reading the network…",
+  /// A message the last step left. What the page holds of the network
+  /// is `status()`.
+  status: "",
   alert: false,
   /// The agency's date and wall clock, as of the last poll.
   date: "",
@@ -100,9 +105,6 @@ export const dz = $state({
   /// trips late now (rt `late_trips`).
   live: null as LiveDay | null,
   late: [] as LateTrip[],
-  liveAt: "",
-  liveError: "",
-  editsStale: "",
   /// Today's notes, newest first (notes `between`).
   notes: [] as NoteRow[],
   /// The disruption open, by its source; its notes, oldest first
@@ -156,13 +158,11 @@ export const dz = $state({
   busy: false,
   writeError: "",
   noteRefusals: [] as NoteRefusal[],
-  /// The server did not answer the last read: the page works from its
-  /// last documents, confirmed at `asOf` ("4:05 PM").
-  offline: false,
-  asOf: "",
   /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
   frames: {} as Record<string, FrameState>,
+  /// What the page holds of each input (the kit's).
+  inputs: {} as Record<string, InputState>,
 });
 
 /// The seq of each log's fold the page's documents came from (the
@@ -174,7 +174,6 @@ let logSeqs: Record<string, number> = {};
 let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
 let edits: Doc<EditDocument> | null = null;
-let editsText = "";
 let stops: Doc | null = null;
 let alerts: Doc | null = null;
 let notes: Doc | null = null;
@@ -520,6 +519,7 @@ const request = answerGraph(
   ],
   dz.frames,
   (e) => say(`Error: ${message(e)}`, true),
+  dz.inputs,
 );
 
 /// The open disruption held from the day: the first with its source
@@ -611,130 +611,213 @@ addEventListener("hashchange", followHash);
 addEventListener("popstate", followHash);
 
 // ---------------------------------------------------------------------
-// boot and the poll
+// The inputs (its ui.json's `inputs`, read by the kit): each reader
+// answers its document, null for none, or throws when the read fails.
 // ---------------------------------------------------------------------
 
-export async function boot(): Promise<void> {
-  void installApp();
-  onBuildReady(() => (dz.updateReady = true));
-  await Promise.all([readAgencyZone(), resumeSignIn()]);
-  await openOutbox("disruptions", () => void afterWrite());
-  dz.zone = (await deploymentManifest<{ timezone?: string }>())?.timezone;
-  dz.date = today();
-  dz.clock = clockLabel();
-  dz.now = nowUnix();
-  readHash();
-  try {
-    const served = await servedNetwork(dz.date, "disruptions", "rt", "directory", "runcut");
-    if (!served) return say("The deployment publishes no network.", true);
-    network = served.network;
-    boundary = served.boundary;
-  } catch (e) {
-    return say(`The network could not be read: ${message(e)}`, true);
-  }
-  urls = await deploymentFeeds();
-  await Promise.all([readEdits(), readDocuments(), fetchLive()]);
-  await release();
-  say("");
-  writeHash(true);
-  await request("network", "docs", "snapshot", "clock", "view", "query", "pick", "open", "form", "preview-stop");
-  whileVisible(POLL_MS, () => void poll());
-}
+type Served = { network: Doc<Network>; boundary: Doc<Boundary>; pin: string };
+type Manifest = DeploymentManifest & { log_seqs?: Record<string, number> };
 
-let polling = false;
+/// The modules that read the network, in order: its pin is checked in
+/// the first that assembles.
+const NETWORK_READERS = ["disruptions", "rt", "directory", "runcut"] as const;
 
-/// One tick: the documents, the live feeds, and the clock.
-export async function poll(): Promise<void> {
-  if (!network || polling) return;
-  polling = true;
-  try {
-    const date = today();
-    const changed = ["clock"];
-    if (date !== dz.date) dz.date = date;
-    dz.clock = clockLabel();
-    dz.now = nowUnix();
-    await sendWaiting();
-    dz.updateReady = buildWaiting();
-    const [e, d, l] = await Promise.all([readEdits(), readDocuments(), fetchLive()]);
-    if (e || d) changed.push("docs");
-    if (l) changed.push("snapshot");
-    if (e || d) await release();
-    await request(...changed);
-  } finally {
-    polling = false;
-  }
-}
+let manifest: Manifest | null = null;
 
 /// Name what the modules keep: the documents this page holds now.
 function release(): Promise<void> {
   return keep([network, boundary, edits, stops, alerts, notes, templates, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
 }
 
-/// The sync server's edit document (detours and cancels). An
-/// unreadable answer keeps the last good document. True when it
-/// changed.
-async function readEdits(): Promise<boolean> {
-  if (!network) return false;
-  try {
-    const read = await lastGoodText("disruptions", "edits");
-    if (!read) return false;
-    dz.editsStale = read.resp ? staleLabel(read.resp, "Detours and cancels") : `Detours and cancels as of ${clockLabelAt(read.asOfMs)} — the server is not answering.`;
-    const text = read.text;
-    if (text === editsText) return false;
-    editsText = text;
-    const document = JSON.parse(text) as EditDocument;
-    edits = document?.records?.length > 0 ? new Doc("edits", { value: document }, { over: network }) : null;
-    return true;
-  } catch (e) {
-    console.warn("edit sync failed:", e);
-    return false;
-  }
+/// One of the deployment's logged documents, by the hash the manifest
+/// pins: read again only when the pin moved. None while the deployment
+/// keeps none.
+function logged(kind: string, adopt: (doc: Doc | null) => void): Reader<Doc> {
+  return {
+    read: async ({ signal, held }) => {
+      if (!manifest) throw new Error("the deployment's manifest is not read");
+      const pin = manifest[`${kind}_hash`];
+      if (typeof pin !== "string") return null;
+      if (held?.pin === pin) return { value: held, key: pin };
+      const doc = await served(kind, { manifest, signal });
+      return doc ? { value: doc, key: pin } : null;
+    },
+    adopt: async (doc) => {
+      adopt(doc);
+      await release();
+    },
+  };
 }
 
-/// The stops, the service alerts, and the notes, by the manifest's
-/// hashes: each read again only when its hash moved. True when any
-/// changed.
-async function readDocuments(): Promise<boolean> {
-  const now = await manifestNow<{ stops_hash?: string; service_alerts_hash?: string; alert_templates_hash?: string; notes_hash?: string; log_seqs?: Record<string, number> }>();
-  dz.offline = !now.answered;
-  dz.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
-  const manifest = now.manifest;
-  if (!manifest) return false;
-  logSeqs = manifest.log_seqs ?? {};
-  let changed = false;
-  if ((manifest.stops_hash ?? null) !== (stops?.pin ?? null)) ((stops = await served("stops")), (changed = true));
-  if ((manifest.service_alerts_hash ?? null) !== (alerts?.pin ?? null)) ((alerts = await served("service_alerts")), (changed = true));
-  if ((manifest.notes_hash ?? null) !== (notes?.pin ?? null)) ((notes = await served("notes")), (changed = true));
-  if ((manifest.alert_templates_hash ?? null) !== (templates?.pin ?? null)) ((templates = await served("alert_templates")), (changed = true));
-  return changed;
+/// One live feed the deployment names: its bytes decoded into a
+/// snapshot (cap-rt registers it). A feed that does not answer drops
+/// its snapshot (it keeps none): the page shows the schedule's day,
+/// never a stale bus as live.
+function liveFeed(kind: keyof typeof snapshots): Reader<Doc> {
+  return {
+    read: async ({ signal }) => {
+      const url = urls[kind];
+      if (!url || !(await available("rt"))) return null;
+      const snapshot = new Doc("rt", { bytes: await readFeed(url, signal) });
+      const { hash } = await load("rt", snapshot);
+      return { value: snapshot, key: hash };
+    },
+    adopt: (snapshot) => void (snapshots[kind] = snapshot),
+  };
 }
 
-/// Fetch each live feed the deployment names, and decode it (cap-rt
-/// registers the snapshot). A feed that does not answer drops its
-/// snapshot: the page shows the schedule's day, never a stale bus as
-/// live. True when any snapshot changed.
-async function fetchLive(): Promise<boolean> {
-  const kinds = (["trips", "vehicles", "alerts"] as const).filter((k) => urls[k]);
-  if (!kinds.length || !(await available("rt"))) return false;
-  const errors: string[] = [];
-  let changed = false;
-  await Promise.all(
-    kinds.map(async (kind) => {
+const readers: Record<string, Reader<any>> = {
+  manifest: {
+    read: async ({ signal }) => {
+      const read = await readManifest(signal);
+      return { value: read.manifest, key: JSON.stringify(read.manifest), asOfMs: read.asOfMs ?? undefined, why: read.why ?? undefined };
+    },
+    adopt: (m: Manifest | null) => {
+      manifest = m;
+      // The seq of each log's fold the page's documents came from: a
+      // write names them (D-189, D-233).
+      logSeqs = m?.log_seqs ?? {};
+      setAgencyZone(m?.timezone);
+      dz.zone = m?.timezone;
+    },
+  },
+  "live-feeds": {
+    read: ({ signal }) => readLiveFeeds(signal),
+    adopt: (u: Partial<LiveUrls> | null) => void (urls = u ?? {}),
+  },
+  network: {
+    // The deployment's network on today's date: the pick in force, else
+    // its import. It follows the deployment as it moves (D-63): only a
+    // moved pin reads the network again.
+    read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
+      if (!manifest) throw new Error("the deployment's manifest is not read");
+      const pin = await servedNetworkPin(today(), { manifest, signal });
+      if (!pin) return null;
+      if (held?.pin === pin) return { value: held, key: pin };
+      const got = await servedNetwork(today(), [...NETWORK_READERS], { manifest, signal });
+      if (!got) return null;
+      return { value: { network: got.network, boundary: got.boundary, pin }, key: pin };
+    },
+    adopt: async (got: Served | null) => {
+      network = got?.network ?? null;
+      boundary = got?.boundary ?? null;
+      await release();
+    },
+  },
+  edits: {
+    // The edit document (detours and cancels), over the network the
+    // page holds, kept on the device: the page boots offline on it.
+    read: async ({ signal }) => {
+      if (!network) return null;
+      const got = await readHeadKept("disruptions", "edits", signal);
+      if (!got) return null;
+      let document: EditDocument;
       try {
-        const resp = await fetchFeed(urls[kind]!);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const snapshot = new Doc("rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
-        const { hash } = await load("rt", snapshot);
-        if (hash !== snapshots[kind]?.hash) ((snapshots[kind] = snapshot), (changed = true));
-      } catch (e) {
-        errors.push(`${kind}: ${message(e)}`);
-        if (snapshots[kind]) ((snapshots[kind] = null), (changed = true));
+        document = JSON.parse(got.value) as EditDocument;
+      } catch {
+        throw new Error("the edit document is not JSON");
       }
-    }),
-  );
-  dz.liveError = errors.join("; ");
-  if (errors.length < kinds.length) dz.liveAt = clockLabel();
-  return changed;
+      return { ...got, value: { document, over: network }, key: `${network.pin}:${got.key}` };
+    },
+    adopt: async (got: { document: EditDocument; over: Doc<Network> } | null) => {
+      edits = got && got.document?.records?.length > 0 ? new Doc("edits", { value: got.document }, { over: got.over }) : null;
+      await release();
+    },
+  },
+  stops: logged("stops", (doc) => (stops = doc)),
+  service_alerts: logged("service_alerts", (doc) => (alerts = doc)),
+  notes: logged("notes", (doc) => (notes = doc)),
+  alert_templates: logged("alert_templates", (doc) => (templates = doc)),
+  trips: liveFeed("trips"),
+  vehicles: liveFeed("vehicles"),
+  alerts: liveFeed("alerts"),
+};
+
+const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, dz.inputs, request);
+
+/// The inputs a write moves: the manifest, and what it pins.
+const WRITTEN = ["manifest", "edits", "stops", "service_alerts", "notes", "alert_templates"];
+
+/// What the page says of an input ("" when it is current).
+export function label(input: string): string {
+  return inputLabel(dz.inputs[input]);
+}
+
+/// The page's status line: a message the last step left, else what it
+/// holds of the network.
+export function status(): string {
+  if (dz.status) return dz.status;
+  const state = dz.inputs.network;
+  if (!state || state.kind === "reading") return network ? "" : "Reading the network…";
+  if (state.kind === "none" && !network) return "The deployment publishes no network.";
+  if (state.kind === "failed" && !state.held && !network) return inputLabel(state);
+  return "";
+}
+
+/// Whether the server did not answer the last read of the manifest:
+/// the page works from its last documents.
+export function offline(): boolean {
+  const m = dz.inputs.manifest;
+  return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
+}
+
+/// When the server last confirmed the documents the page works from
+/// ("4:05 PM"), while it is offline; else "".
+export function asOf(): string {
+  const m = dz.inputs.manifest;
+  if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
+  return clockLabelAt(m.asOfMs);
+}
+
+const FEEDS = ["trips", "vehicles", "alerts"] as const;
+
+/// When the live feeds last answered, on the agency's clock ("" when
+/// none has).
+export function liveAt(): string {
+  const at = Math.max(0, ...FEEDS.map((k) => dz.inputs[k]).map((s) => (s?.kind === "answered" ? s.atMs : 0)));
+  return at ? clockLabelAt(at) : "";
+}
+
+/// The feeds whose last read failed, and why ("" when none).
+export function liveError(): string {
+  return FEEDS.map((k) => dz.inputs[k])
+    .filter((s): s is Extract<InputState, { kind: "failed" }> => s?.kind === "failed")
+    .map((s) => `${s.input}: ${s.message}`)
+    .join("; ");
+}
+
+// ---------------------------------------------------------------------
+// boot, and the clock
+// ---------------------------------------------------------------------
+
+export async function boot(): Promise<void> {
+  void installApp();
+  onBuildReady(() => (dz.updateReady = true));
+  await resumeSignIn();
+  await openOutbox("disruptions", () => void afterWrite());
+  tickClock();
+  readHash();
+  try {
+    await inputs.start();
+    writeHash(true);
+    await request("clock", "view", "query", "pick", "open", "form", "preview-stop");
+  } catch (e) {
+    say(`Error: ${message(e)}`, true);
+  }
+  // The answers on the clock, and the writes that wait on the device.
+  clockEvery(POLL_MS, () => {
+    tickClock();
+    void sendWaiting();
+    dz.updateReady = buildWaiting();
+    void request("clock");
+  });
+}
+
+/// The agency's date, wall clock, and Unix time, now.
+function tickClock(): void {
+  dz.date = today();
+  dz.clock = clockLabel();
+  dz.now = nowUnix();
 }
 
 // ---------------------------------------------------------------------
@@ -969,9 +1052,7 @@ function waitingText(): string {
 
 /// A write the server kept: the documents read again.
 async function afterWrite(): Promise<void> {
-  await readDocuments();
-  await release();
-  await request("docs");
+  await inputs.read(...WRITTEN);
 }
 
 /// The outcome of a write the person just saved. A write the server
@@ -1036,7 +1117,7 @@ export function sendNow(): Promise<void> {
 
 /// A refused write sent again, over the documents the page reads now.
 export async function retryHeld(key: string): Promise<void> {
-  await readDocuments();
+  await inputs.read(...WRITTEN);
   const w = outbox.held.find((h) => h.key === key);
   await retryWrite(key, { readSeq: w?.log ? logSeqs[w.log] : undefined, readSeqs: logSeqs });
 }

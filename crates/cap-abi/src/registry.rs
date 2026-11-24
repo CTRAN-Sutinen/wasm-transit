@@ -355,7 +355,7 @@ mod tests {
         B.insert("e1".into(), 3);
         let registries: &[&dyn Held] = &[&A, &B];
         assert!(kernel(0, b"", registries).is_none());
-        assert!(kernel(crate::OP_LOAD_NETWORK, b"", registries).is_none());
+        assert!(kernel(256, b"", registries).is_none());
         let held = kernel(OP_HELD, b"", registries).unwrap();
         assert_eq!(held, r#"{"ok":{"held":[{"kind":"network","key":"n1"},{"kind":"network","key":"n2"},{"kind":"edits","key":"e1"}]}}"#);
         let evicted = kernel(OP_EVICT, br#"{"keep":["n2"]}"#, registries).unwrap();

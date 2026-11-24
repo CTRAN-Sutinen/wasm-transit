@@ -20,8 +20,9 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, served, servedNetworkValue, stopWarnings, withStopVersions, Doc } from "../../engine";
-import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, readAgencyZone, today, whileVisible } from "../kit";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, readManifest, served, servedNetworkValue, stopWarnings, withStopVersions, Doc, type DeploymentManifest } from "../../engine";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabelAt, inputGraph, inputLabel, installApp, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type Reader } from "../kit";
+import descriptor from "./ui.json";
 
 import { resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting } from "../../outbox.svelte";
@@ -30,6 +31,7 @@ assemble("service-change");
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
 import type { FeedInfo } from "../../types/FeedInfo";
+import type { Boundary } from "../../types/Boundary";
 import type { Network } from "../../types/Network";
 import type { NetworkEdit } from "../../types/NetworkEdit";
 import type { NetworkError } from "../../types/NetworkError";
@@ -73,11 +75,6 @@ export type PlanRow = { key: string; id: string; name: string; effectiveFrom: st
 export type HourWindow = { from: number; to: number };
 
 export const sc = $state({
-  /// The server did not answer the last read: the page works from its
-  /// last documents, confirmed at `asOf` ("4:05 PM"), and a publish
-  /// waits on the device (D-189).
-  offline: false,
-  asOf: "",
   /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
   status: "Load a GTFS feed to begin.",
@@ -137,6 +134,8 @@ export const sc = $state({
   /// Each frame that shows no answer, and why (the answer graph's,
   /// and an action's failure: export, publish).
   frames: {} as Record<string, FrameState>,
+  /// What the page holds of each input (the kit's).
+  inputs: {} as Record<string, InputState>,
   /// The new-route task is open on the Route stage, and what
   /// it offers: every stop the plan can visit — its own, and the stops
   /// document's in service or planned by the pick date (D-173) — and
@@ -615,7 +614,7 @@ const request = answerGraph(
     {
       id: "network.validate",
       frame: "Readiness",
-      needs: ["document.active"],
+      needs: ["document.active", "published", "stops-doc"],
       caps: ["network"],
       clear: () => ((sc.issues = []), (sc.warnings = [])),
       run: async () => {
@@ -625,7 +624,7 @@ const request = answerGraph(
         sc.issues = issues;
         // and the stops it visits that are not in service over its
         // period, as the stops document records them (D-157)
-        sc.warnings = [...warnings, ...(await stopWarnings(docOf(doc), sc.pickSet))];
+        sc.warnings = [...warnings, ...(await stopWarnings(docOf(doc), sc.pickSet, heldStops))];
       },
     },
   ],
@@ -634,6 +633,7 @@ const request = answerGraph(
     say(`Error: ${message(e)}`, true);
     console.error(e);
   },
+  sc.inputs,
 );
 
 async function step<T>(label: string, run: () => Promise<T>): Promise<T | undefined> {
@@ -738,6 +738,94 @@ addEventListener("popstate", () => {
 });
 
 // ---------------------------------------------------------------------
+// The inputs (its ui.json's `inputs`, read by the kit): each reader
+// answers its document, null for none, or throws when the read fails.
+// ---------------------------------------------------------------------
+
+type Manifest = DeploymentManifest;
+
+let manifest: Manifest | null = null;
+/// The documents the inputs hold: the published plan set, the stops
+/// document a plan reads (D-157), and the published network a first
+/// plan forks (read only while no plan is open).
+let heldPlans: PublishedPlans | null = null;
+let heldStops: Doc | null = null;
+let servedBase: { network: Doc<Network>; boundary: Doc<Boundary> } | null = null;
+
+const readers: Record<string, Reader<any>> = {
+  manifest: {
+    read: async ({ signal }) => {
+      const read = await readManifest(signal);
+      return { value: read.manifest, key: JSON.stringify(read.manifest), asOfMs: read.asOfMs ?? undefined, why: read.why ?? undefined };
+    },
+    adopt: (m: Manifest | null) => {
+      manifest = m;
+      setAgencyZone(m?.timezone);
+    },
+  },
+  plans: {
+    read: async ({ signal, held }) => {
+      if (!manifest) throw new Error("the deployment's manifest is not read");
+      const pin = manifest.plans_hash;
+      if (!pin) return null;
+      if (held && heldPlansPin === pin) return { value: held, key: pin };
+      const set = await publishedPlanSet({ manifest, signal });
+      heldPlansPin = set ? pin : null;
+      return set ? { value: set, key: pin } : null;
+    },
+    adopt: async (set: PublishedPlans | null) => {
+      heldPlans = set;
+      // Published now: on the timeline as picks, read-only (D-139).
+      sc.pickSet = set;
+      await syncPlanRows();
+    },
+  },
+  stops: {
+    read: async ({ signal, held }) => {
+      if (!manifest) throw new Error("the deployment's manifest is not read");
+      const pin = manifest.stops_hash;
+      if (typeof pin !== "string") return null;
+      if (held?.pin === pin) return { value: held, key: pin };
+      const doc = await served("stops", { manifest, signal });
+      return doc ? { value: doc, key: pin } : null;
+    },
+    adopt: (doc: Doc | null) => void (heldStops = doc),
+  },
+  network: {
+    // The published network (GET /network), the base a first plan
+    // forks: read only while the device holds no plan.
+    read: async ({ signal }) => {
+      if (Object.keys(getAllPlans()).length) return null;
+      const got = await servedNetworkValue(signal);
+      return got ? { value: got, key: got.network.pin ?? "" } : null;
+    },
+    adopt: (got) => void (servedBase = got),
+  },
+};
+/// The pin of the plan set the page holds.
+let heldPlansPin: string | null = null;
+
+const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, sc.inputs, request);
+
+/// The inputs a publish moves: the manifest, and what it pins.
+const WRITTEN = ["manifest", "plans", "stops"];
+
+/// Whether the server did not answer the last read of the manifest:
+/// the page works from its last documents.
+export function offline(): boolean {
+  const m = sc.inputs.manifest;
+  return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
+}
+
+/// When the server last confirmed the documents the page works from
+/// ("4:05 PM"), while it is offline; else "".
+export function asOf(): string {
+  const m = sc.inputs.manifest;
+  if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
+  return clockLabelAt(m.asOfMs);
+}
+
+// ---------------------------------------------------------------------
 // boot and loaders
 // ---------------------------------------------------------------------
 
@@ -748,12 +836,16 @@ addEventListener("popstate", () => {
 export async function boot(): Promise<void> {
   void installApp();
   onBuildReady(() => (sc.updateReady = true));
-  await Promise.all([restorePlans(readStoredSet), readAgencyZone(), resumeSignIn()]);
+  await Promise.all([restorePlans(readStoredSet), resumeSignIn()]);
   await openOutbox("service-change", () => void published());
-  whileVisible(POLL_MS, () => void poll());
-  void poll();
-  sc.pickSet = await publishedPlanSet().catch(() => null);
-  await syncPlanRows();
+  // The inputs: the manifest, the published picks, the stops, and the
+  // deployment's feed for a device that holds no plan.
+  await inputs.start();
+  // The writes that wait on the device, and a new build.
+  clockEvery(POLL_MS, () => {
+    void sendWaiting();
+    sc.updateReady = buildWaiting();
+  });
   sc.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : "";
   readHash();
   if (sc.activeKey) {
@@ -770,7 +862,9 @@ export async function boot(): Promise<void> {
     }
   }
   const key = await step("Loading the deployment's feed…", async () => {
-    const served = await servedNetworkValue();
+    const base = sc.inputs.network;
+    if (base?.kind === "failed") throw new Error(inputLabel(base));
+    const served = servedBase;
     if (!served?.network.value) return null;
     docs.set(served.network.value, served.network);
     const network = await stampAsPick(served.network.value, served.network.value.name || "The deployment's feed");
@@ -1019,7 +1113,7 @@ async function readNewRouteOptions(): Promise<void> {
   ]);
   const held = new Set(own.stops.map((x) => x.stop_id));
   const stops: NewRouteStop[] = own.stops.map((x) => ({ value: x.stop_id, label: x.name || x.stop_id, sub: x.stop_id, fromStops: false }));
-  const record = await served("stops");
+  const record = heldStops;
   if (record) {
     const theirs = await ask("stops", "stops_on", {
       stops_hash: record,
@@ -1053,7 +1147,7 @@ export async function createRoute(spec: NewRouteSpec): Promise<void> {
     { edit: "upsert_route", id: spec.id, route: { name: spec.name, mode: "bus", ...(spec.longName ? { long_name: spec.longName } : {}) } },
     ...spec.directions.map((d) => ({ edit: "set_direction" as const, route: spec.id, id: d.id, name: d.name })),
   ];
-  const record = await served("stops");
+  const record = heldStops;
   if (record) {
     try {
       const take = await ask("stops", "take_stops", {
@@ -1294,8 +1388,7 @@ export async function publishPlan(): Promise<void> {
     if (outcome.state === "sent") {
       sc.published = outcome.body as { plans_hash: string };
       // Published now: on the timeline as a pick, read-only (D-139).
-      sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
-      await syncPlanRows();
+      await inputs.read(...WRITTEN);
       await select("plans");
       say(`Published "${doc.plan?.name}": it takes effect ${doc.plan?.effective_from}. It no longer changes; fork it to change it.`);
       return;
@@ -1316,7 +1409,7 @@ export async function exportPlan(): Promise<void> {
   if (!doc) return;
   await act("Export", () => (sc.exported = ""), async () => {
     // the export carries the stops' history over the plan's period (D-151, D-157)
-    const out = await ask("network", "export", { network_hash: await withStopVersions(docOf(doc), sc.pickSet) });
+    const out = await ask("network", "export", { network_hash: await withStopVersions(docOf(doc), sc.pickSet, heldStops) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
@@ -1331,31 +1424,21 @@ export async function exportPlan(): Promise<void> {
 // the outbox and the build, as the page shows them (D-189)
 // ---------------------------------------------------------------------
 
-/// How often the page sends what waits, looks for a new build, and
-/// reads whether the server answers.
+/// How often the page sends what waits and looks for a new build. The
+/// inputs' intervals are in its ui.json.
 const POLL_MS = 30_000;
-
-let polling = false;
-
-async function poll(): Promise<void> {
-  if (polling) return;
-  polling = true;
-  try {
-    await sendWaiting();
-    sc.updateReady = buildWaiting();
-    const now = await manifestNow();
-    sc.offline = !now.answered;
-    sc.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
-  } finally {
-    polling = false;
-  }
-}
 
 /// A publish that waited was kept: the published plans read again.
 async function published(): Promise<void> {
-  sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
-  await syncPlanRows();
+  await inputs.read(...WRITTEN);
   say("A publish that waited on this device was sent.");
+}
+
+/// What the page says of an input ("" when it is current): the
+/// published picks that could not be read are said, never shown as
+/// none.
+export function label(input: string): string {
+  return inputLabel(sc.inputs[input]);
 }
 
 /// The writes the server refused, each with its reasons in words.

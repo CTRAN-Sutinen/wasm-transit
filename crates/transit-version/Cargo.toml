@@ -9,3 +9,10 @@ license.workspace = true
 serde = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
+# A document's identity and its read (src/document.rs, src/jcs.rs): the
+# canonical hash streams into sha256; numbers are written as ECMAScript
+# writes them; a gzipped document is decoded as it parses.
+sha2 = { workspace = true }
+ryu-js = { workspace = true }
+itoa = { workspace = true }
+flate2 = { workspace = true }

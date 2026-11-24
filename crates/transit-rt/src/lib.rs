@@ -24,6 +24,7 @@ pub mod overview;
 pub mod progress;
 pub mod live;
 pub mod encode;
+pub mod load;
 
 pub use overview::{
     AlertView, InformedView,

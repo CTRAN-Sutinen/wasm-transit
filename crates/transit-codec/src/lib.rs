@@ -42,6 +42,7 @@ pub mod feed;
 pub use feed::{base64_encode, Feed, FeedError, FeedInfo, FeedSummary};
 mod extras;
 mod values;
+pub mod load;
 
 use values::*;
 

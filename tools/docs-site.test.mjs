@@ -123,6 +123,16 @@ test("the UI table marks each capability that each UI links", () => {
   }
 });
 
+test("the inputs section draws every input each UI declares", async () => {
+  const { declaredInputs } = await import("./failure-tables.mjs");
+  const html = page("architecture.html");
+  for (const [ui, inputs] of Object.entries(declaredInputs(ROOT))) {
+    for (const input of inputs) {
+      assert.ok(html.includes(`data-ui="${ui}" data-input="${input.id}"`), `${ui} draws its input ${input.id}`);
+    }
+  }
+});
+
 test("each trace step names a file and a text in it that exist, so a rename breaks the trace", () => {
   const html = page("architecture.html");
   const unescape = (t) => t.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");

@@ -151,6 +151,13 @@ seconds:
    published a new schedule, the display switches to it without
    reloading the page.
 
+Each of these reads has a time limit. If the server does not answer
+in time, the display keeps what it has and says how old it is, for
+example "Detours as of 7:40 AM: no answer since 7:45 AM". If it has
+nothing, it says that the detours could not be read. A live feed that
+does not answer is dropped, and the board shows the schedule and says
+so.
+
 ### 6. The board capability answers
 
 The display asks the **board** capability one question, with

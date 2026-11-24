@@ -7,7 +7,6 @@
 //! date questions answer over a registered document, and garbage is an
 //! honest error, never a panic.
 
-use cap_abi::kernel::OP_LOAD_STOPS;
 use serde_json::{json, Value};
 
 fn run(request: Value) -> Value {
@@ -56,7 +55,7 @@ fn validate_and_the_load_agree_on_one_identity() {
     let loaded = ok(json!({"op": "load_stops", "stops": answered}));
     assert_eq!(loaded, json!({"op": "load_stops", "stops_hash": hash, "stops": 2}));
     // the bulk lane: the document's bytes, no envelope — the same answer
-    let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(OP_LOAD_STOPS, document.as_bytes())).unwrap();
+    let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(<transit_stops::Stops as cap_abi::kernel::Load>::CODE, document.as_bytes())).unwrap();
     assert_eq!(bulk["ok"], loaded);
     // a writer's key order is not part of the identity
     let reordered: Value = serde_json::from_str(r#"{"stops":{"7001":[{"name":"NE 104th St","lon":-122.66,"lat":45.70,"event":"planned","on":"2027-01-10"},{"event":"permitted","on":"2027-05-03"}],"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99","code":"6124","wheelchair":true},{"on":"2025-05-12","event":"changed","amenities":{"bin":true,"bench":true,"shelter":true}},{"note":"water main","until":"2027-07-01","event":"suspended","on":"2027-03-03"},{"on":"2027-09-01","event":"moved","lat":45.6936,"lon":-122.6509}]},"schema_version":1,"kind":"stops"}"#).unwrap();

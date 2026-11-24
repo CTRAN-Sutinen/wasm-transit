@@ -138,10 +138,10 @@ proptest! {
         }
         let net = network(&weekday_trips);
 
-        let network_hash = cap_abi::kernel::NETWORK.register(net.clone()).expect("load").0;
+        let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net.clone()).expect("load").0;
 
         // Idempotence: the same logical document is one registry entry.
-        let same = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+        let same = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
         prop_assert_eq!(&network_hash, &same);
         prop_assert!(network_hash.starts_with("sha256:"));
 
@@ -165,7 +165,7 @@ proptest! {
         trips in proptest::collection::vec(gen_trip(), 1..=14),
     ) {
         let net = network(&trips);
-        let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+        let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
         let layer = load_layer(layer_geojson());
         let layer_hash = layer["layer_hash"].as_str().expect("layer_hash").to_string();
         prop_assert_eq!(layer["points"].as_u64(), Some(6));
@@ -230,7 +230,7 @@ proptest! {
         id in "[a-zA-Z][a-zA-Z0-9_]{0,7}",
     ) {
         let net = network(&trips);
-        let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+        let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
         // The generator's service keys are "0" and "1", so any
         // alphabetic id is unknown to the document, and no set holding
         // it runs together on a date.
@@ -279,7 +279,7 @@ fn unknown_hashes_are_errors_not_panics() {
 #[test]
 fn a_network_compares_against_itself_as_unchanged() {
     let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let hash = cap_abi::kernel::NETWORK.register(net).unwrap().0;
+    let hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).unwrap().0;
     let same = cap_analysis::Request::ServiceTypeCompare { base_hash: hash.clone(), network_hash: hash.clone(), members: vec!["0".into()] };
     match cap_analysis::dispatch(same).unwrap() {
         cap_analysis::Response::ServiceTypeCompare { comparison } => {
@@ -335,7 +335,7 @@ fn stop_gaps_answer_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 0, service: 0, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let gaps = cap_analysis::dispatch(cap_analysis::Request::StopGaps {
         network_hash: network_hash.clone(),
@@ -409,7 +409,7 @@ fn hourly_trips_answer_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 0, service: 1, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let hours = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
         network_hash: network_hash.clone(),
@@ -428,7 +428,7 @@ fn hourly_trips_answer_through_the_seam() {
     // A day nothing runs answers empty, never an error: a weekend-only
     // document asked on a Monday.
     let weekend_only = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let network_hash = cap_abi::kernel::NETWORK.register(weekend_only).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(weekend_only).expect("load").0;
     let quiet = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
         network_hash,
         date: "2026-01-05".into(),
@@ -450,7 +450,7 @@ fn schedule_texture_answers_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 15, stops: vec![0, 1], leg_min: 5 }, // 9000 s
         GenTrip { route: 0, service: 0, block: None, start_slot: 18, stops: vec![0, 1], leg_min: 5 }, // 10800 s
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let texture = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
         network_hash: network_hash.clone(),
@@ -492,7 +492,7 @@ fn route_overlap_answers_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 1, service: 0, block: None, start_slot: 12, stops: vec![0, 2], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let overlaps = cap_analysis::dispatch(cap_analysis::Request::RouteOverlap {
         network_hash: network_hash.clone(),
@@ -532,7 +532,7 @@ fn timed_transfers_answer_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![0, 2], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let transfers = cap_analysis::dispatch(cap_analysis::Request::TimedTransfers {
         network_hash: network_hash.clone(),
@@ -584,7 +584,7 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![1, 2], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let pairs = cap_analysis::dispatch(cap_analysis::Request::HubConnections {
         network_hash: network_hash.clone(),
@@ -634,7 +634,7 @@ fn include_flags_shape_the_stats_response() {
     let net = network(&[GenTrip {
         route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5,
     }]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let shaped = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
         network_hash: network_hash.clone(),
@@ -681,10 +681,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_analysis::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_analysis::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_analysis::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_analysis::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_analysis::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -699,7 +699,7 @@ fn unserved_points_answer_the_where() {
     // far away — only the far point is unserved, and the answer
     // names its nearest served stop.
     let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let layer = load_layer(
         br#"{"type":"FeatureCollection","features":[
@@ -745,9 +745,9 @@ fn unserved_points_answer_the_where() {
     // a copy with nothing in it. The empty proposal loses the point at
     // s0 and gains nothing; the Saturday type against itself runs
     // nothing on either side.
-    let mut empty = cap_abi::kernel::NETWORK.require(&network_hash).expect("held").as_ref().clone();
+    let mut empty = cap_abi::kernel::kind::<transit_network::Network>().require(&network_hash).expect("held").as_ref().clone();
     empty.pattern_trips.clear();
-    let empty_hash = cap_abi::kernel::NETWORK.register(empty).expect("load").0;
+    let empty_hash = cap_abi::kernel::kind::<transit_network::Network>().register(empty).expect("load").0;
     let compared = cap_analysis::dispatch(cap_analysis::Request::CoverageCompare {
         base_hash: network_hash,
         network_hash: empty_hash,
@@ -783,7 +783,7 @@ fn service_groups_answer_the_combinations() {
         GenTrip { route: 0, service: 3, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 0, service: 2, block: None, start_slot: 12, stops: vec![0, 1], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let groups = cap_analysis::dispatch(cap_analysis::Request::ServiceGroups {
         network_hash: network_hash.clone(),
@@ -826,7 +826,7 @@ fn missed_connections_and_longest_waits_answer_through_the_seam() {
         GenTrip { route: 0, service: 0, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![1, 2], leg_min: 5 },
     ]);
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let missed = cap_analysis::dispatch(cap_analysis::Request::MissedConnections {
         network_hash: network_hash.clone(),
@@ -864,7 +864,7 @@ fn day_types_plan_compare_and_findings_answer_through_the_seam() {
     let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };
     let slots: Vec<u16> = (6..=12).chain(16..=24).collect();
     let net = network(&slots.iter().map(|&s| trip(s)).collect::<Vec<_>>());
-    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
     let types = cap_analysis::dispatch(cap_analysis::Request::DayTypes {
         network_hash: network_hash.clone(),

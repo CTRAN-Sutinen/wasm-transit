@@ -82,7 +82,9 @@ makes the call, and an op records the answer (D-228).
    - the server: `X-Store-Stale` and `X-Store-As-Of`;
    - the service worker: `X-Served-From: last-copy`, with the copy's
      own `Date` header as its age;
-   - the kit: `staleLabel` and `lastGoodText`.
+   - the kit: each input's state (`src/uis/inputs.ts`), said by
+     `inputLabel`. A staff page keeps a head on the device
+     (`readHeadKept`) and boots on it, labelled with its age.
 4. **The age passes down the chain.** A page that reads a stale answer
    from the server shows the server's as-of time. It does not show the
    time it read the answer.
@@ -107,16 +109,17 @@ The hosts differ in three ways. Each difference is a design decision.
 
 ## Where a host does not keep these rules
 
-- The server stops a bucket call at its time limit (20 s; 2 min for a
-  create) and counts it as no answer. A read in the browser has no
-  time limit. A read that never answers holds the page's poll, and the
-  page keeps its last answers with no label.
-- The engine's served reads (`served(kind)`, `servedNetwork`, and the
-  others) answer null both when the server keeps no document and when
-  the read failed (QAF-131). A failed read of the edit document shows
-  no label (QAF-130).
 - The rules are written here, and implemented twice: in Go and in
-  TypeScript. No suite runs them against each host.
+  TypeScript. The host contract suite runs the same scenarios against
+  both (`web/src/uis/host-contract.json`): the upstream does not
+  answer, answers slowly, answers again, and moves its head while the
+  host holds a copy. The server runs them over its bucket
+  (`server/hostcontract_test.go`), and the browser over the server
+  (`web/src/uis/host-contract.test.mjs`). Each must give the same
+  state: current, stale with the upstream's age, or failed.
+- A live feed that answers with old data is not detected (QAF-129).
+  An input can name the age past which it is old (`old_after_s`), and
+  no live feed names one yet.
 - The browser hosts apply no domain rule, and a gate holds it: no host
   tests a record's status. Each rule is one op, asked the same way by
   the server, the engine, and caps-run: a pick's period and what it

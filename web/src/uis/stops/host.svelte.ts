@@ -1,6 +1,8 @@
 /// The stops UI's host layer — the ONLY file of this UI that calls the
-/// capability bus. It owns I/O (the stops and stop requests documents
-/// read through the manifest, their writes as intents through POST
+/// capability bus. It owns I/O (its inputs, declared in its ui.json and
+/// read by the kit: the manifest, the stops and stop requests
+/// documents it pins, and the networks a stop is read beside; their
+/// writes as intents through POST
 /// /logs/stops, the work order adapter, attachments, the device's
 /// location, the URL hash), the selection, and the outbox (D-189): a
 /// write, a work order, or a photo made while the server does not
@@ -27,14 +29,16 @@
 /// and the filters live in the URL hash, so the browser's Back leaves a
 /// task as a phone user expects.
 
-import { ask, assemble, available, produced, served, servedFeed, servedNetwork, Doc } from "../../engine";
-import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockLabelAt, installApp, manifestNow, reason, type FrameState, deploymentManifest, readAgencyZone, today, whileVisible } from "../kit";
+import { ask, assemble, available, produced, readManifest, served, servedFeed, servedNetwork, servedNetworkPin, Doc, type DeploymentManifest } from "../../engine";
+import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabelAt, inputGraph, inputLabel, installApp, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type Reader } from "../kit";
+import descriptor from "./ui.json";
 import { readFetch, resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
 
 // This page's capabilities answer inside its linked assembly (D-77).
 assemble("stops");
 import type { Event } from "../../types/Event";
+import type { Network } from "../../types/Network";
 import type { Refusal } from "../../types/Refusal";
 import type { Status } from "../../types/Status";
 import type { StatusCount } from "../../types/StatusCount";
@@ -57,6 +61,8 @@ export type Mode = "map" | "table";
 const VIEWS: View[] = ["stops", "work", "feed"];
 
 export const st = $state({
+  /// A message the last step left (the stops counted, a write's
+  /// outcome). A stops read that failed is `status()`.
   status: "Reading the stops…",
   alert: false,
   busy: false,
@@ -71,10 +77,6 @@ export const st = $state({
   /// shows the stops of the network running today, and the first change
   /// saves them.
   held: false,
-  /// The server did not answer the last read: the page works from its
-  /// last documents, confirmed at `asOf` ("4:05 PM").
-  offline: false,
-  asOf: "",
   /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
   /// Every stop on the date (the search box's options), and those the
@@ -144,6 +146,8 @@ export const st = $state({
   /// Each frame that shows no answer, and why (the answer graph's,
   /// and an action's failure: export, publish).
   frames: {} as Record<string, FrameState>,
+  /// What the page holds of each input (the kit's).
+  inputs: {} as Record<string, InputState>,
 });
 
 /// The date read.
@@ -188,18 +192,16 @@ const request = answerGraph(
     {
       id: "document.stops",
       frame: "",
-      needs: ["stops-doc"],
+      needs: ["stops-doc", "seed-network"],
       run: async () => {
-        await readConnection();
         if (!(await available("stops"))) return void (stopsDoc = null);
-        const held = await served("stops").catch(() => null);
-        st.held = !!held;
-        if (held) return void (stopsDoc = held);
-        // No stops document yet: the stops of the network running today,
-        // not saved until the first change.
-        const network = await servedNetwork(today(), "stops").catch(() => null);
-        if (!network) return void (stopsDoc = null);
-        const seeded = await ask("stops", "seed", { network_hash: network.network });
+        st.held = !!heldStops;
+        if (heldStops) return void (stopsDoc = heldStops);
+        // No stops document yet (the deployment keeps none, not a read
+        // that failed): the stops of the network running today, not
+        // saved until the first change.
+        if (st.inputs.stops?.kind !== "none" || !seedNetwork) return void (stopsDoc = null);
+        const seeded = await ask("stops", "seed", { network_hash: seedNetwork });
         stopsDoc = produced("stops", seeded.stops, "stops", seeded.stops_hash);
       },
     },
@@ -208,7 +210,7 @@ const request = answerGraph(
       frame: "",
       needs: ["requests-doc"],
       run: async () => {
-        requestsDoc = (await available("requests")) ? await served("stop_requests").catch(() => null) : null;
+        requestsDoc = (await available("requests")) ? heldRequests : null;
       },
     },
     {
@@ -248,14 +250,12 @@ const request = answerGraph(
       // What the agency's feed did to the stops record (D-150).
       id: "stops.feed_events",
       frame: "Feed",
-      needs: ["document.stops"],
+      needs: ["document.stops", "feed"],
       caps: ["stops"],
       clear: () => (st.feed = null),
       run: async () => {
         st.feed = null;
-        if (!stopsDoc || !st.held) return;
-        const feed = await servedFeed("stops");
-        if (!feed) return;
+        if (!stopsDoc || !st.held || !feed) return;
         const recorded = (await ask("stops", "feed_events", { stops_hash: stopsDoc, feed: feed.id })).events;
         const now = await ask("stops", "import_events", { stops_hash: stopsDoc, network_hash: feed.network });
         if (!recorded.length && !now.unlisted.length && !now.unapplied.length) return;
@@ -321,19 +321,21 @@ const request = answerGraph(
       // date: read only, the planners' (D-157).
       id: "directory.stop_detail",
       frame: "Served",
-      needs: ["date", "open"],
+      needs: ["network", "open"],
       caps: ["directory"],
+      // A network that could not be read is said, never "no route
+      // stops here".
+      inputs: ["network"],
       clear: () => (st.served = null),
       run: async () => {
-        if (!st.open) return void (st.served = null);
-        const network = await servedNetwork(readDate(), "directory");
-        if (!network) return void (st.served = null);
-        st.served = (await ask("directory", "stop_detail", { network_hash: network.network, stop_id: st.open })).detail;
+        if (!st.open || !datedNetwork) return void (st.served = null);
+        st.served = (await ask("directory", "stop_detail", { network_hash: datedNetwork.network, stop_id: st.open })).detail;
       },
     },
   ],
   st.frames,
   (e) => say(`Error: ${message(e)}`, true),
+  st.inputs,
 );
 
 // ---------------------------------------------------------------------
@@ -407,11 +409,128 @@ function followHash(): void {
 addEventListener("hashchange", followHash);
 addEventListener("popstate", followHash);
 
+// ---------------------------------------------------------------------
+// The inputs (its ui.json's `inputs`, read by the kit): each reader
+// answers its document, null for none, or throws when the read fails.
+// ---------------------------------------------------------------------
+
+type Manifest = DeploymentManifest & { log_seqs?: Record<string, number>; services?: Record<string, { path: string }> };
+type Dated = { network: Doc<Network>; pin: string };
+
+let manifest: Manifest | null = null;
+/// The documents the inputs hold: the stops and stop requests the
+/// deployment keeps, the network running today (read only while it
+/// keeps no stops document, to seed them), the network in force on the
+/// page's date, and the agency's feed as the server imported it.
+let heldStops: Doc | null = null;
+let heldRequests: Doc | null = null;
+let seedNetwork: Doc<Network> | null = null;
+let datedNetwork: Dated | null = null;
+let feed: { network: Doc<Network>; id: string } | null = null;
+
+/// One of the deployment's logged documents, by the hash the manifest
+/// pins: read again only when the pin moved.
+function logged(kind: string, adopt: (doc: Doc | null) => void): Reader<Doc> {
+  return {
+    read: async ({ signal, held }) => {
+      if (!manifest) throw new Error("the deployment's manifest is not read");
+      const pin = manifest[`${kind}_hash`];
+      if (typeof pin !== "string") return null;
+      if (held?.pin === pin) return { value: held, key: pin };
+      const doc = await served(kind, { manifest, signal });
+      return doc ? { value: doc, key: pin } : null;
+    },
+    adopt,
+  };
+}
+
+/// The network in force on `date`, by its pin: read again only when
+/// the pin moved.
+async function networkOn(date: string, signal: AbortSignal, held: Dated | null, readers: ("stops" | "directory")[]) {
+  if (!manifest) throw new Error("the deployment's manifest is not read");
+  const pin = await servedNetworkPin(date, { manifest, signal });
+  if (!pin) return null;
+  if (held?.pin === pin) return { value: held, key: pin };
+  const got = await servedNetwork(date, readers, { manifest, signal });
+  return got ? { value: { network: got.network, pin }, key: pin } : null;
+}
+
+const readers: Record<string, Reader<any>> = {
+  manifest: {
+    read: async ({ signal }) => {
+      const read = await readManifest(signal);
+      return { value: read.manifest, key: JSON.stringify(read.manifest), asOfMs: read.asOfMs ?? undefined, why: read.why ?? undefined };
+    },
+    adopt: (m: Manifest | null) => {
+      manifest = m;
+      setAgencyZone(m?.timezone);
+      // The seq of the stops log's fold the page's documents came from:
+      // a write names it (D-189).
+      stopsSeq = m?.log_seqs?.stops;
+      st.workOrders = m?.services?.work_orders?.path ?? null;
+      st.attachments = m?.services?.attachments?.path ?? null;
+    },
+  },
+  stops: logged("stops", (doc) => (heldStops = doc)),
+  stop_requests: logged("stop_requests", (doc) => (heldRequests = doc)),
+  "seed-network": {
+    read: async ({ signal, held }: { signal: AbortSignal; held: Dated | null }) => {
+      if (!manifest || manifest.stops_hash || !(await available("stops"))) return null;
+      return networkOn(today(), signal, held, ["stops"]);
+    },
+    adopt: (got: Dated | null) => void (seedNetwork = got?.network ?? null),
+  },
+  network: {
+    read: async ({ signal, held }: { signal: AbortSignal; held: Dated | null }) => {
+      if (!(await available("directory"))) return null;
+      return networkOn(readDate(), signal, held, ["directory"]);
+    },
+    adopt: (got: Dated | null) => void (datedNetwork = got),
+  },
+  feed: {
+    read: async ({ signal, held }) => {
+      if (!manifest?.network_hash || !manifest.feed_hash || !(await available("stops"))) return null;
+      if (held?.id === manifest.feed_hash && held.network.pin === manifest.network_hash) return { value: held, key: `${manifest.feed_hash}:${manifest.network_hash}` };
+      const got = await servedFeed(["stops"], { manifest, signal });
+      return got ? { value: got, key: `${got.id}:${got.network.pin}` } : null;
+    },
+    adopt: (got) => void (feed = got),
+  },
+};
+
+const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, st.inputs, request);
+
+/// The inputs a write moves: the manifest, and what it pins.
+const WRITTEN = ["manifest", "stops", "stop_requests", "seed-network", "feed"];
+
+/// The page's status line. A stops read that failed with nothing held
+/// is said first: an outage is never "no stops yet".
+export function status(): string {
+  const s = st.inputs.stops;
+  if (s?.kind === "failed" && !s.held) return inputLabel(s);
+  return st.status;
+}
+
+/// Whether the server did not answer the last read of the manifest:
+/// the page works from its last documents.
+export function offline(): boolean {
+  const m = st.inputs.manifest;
+  return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
+}
+
+/// When the server last confirmed the documents the page works from
+/// ("4:05 PM"), while it is offline; else "".
+export function asOf(): string {
+  const m = st.inputs.manifest;
+  if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
+  return clockLabelAt(m.asOfMs);
+}
+
 export async function boot(): Promise<void> {
   void installApp();
   onBuildReady(() => (st.updateReady = true));
-  await Promise.all([readAgencyZone(), resumeSignIn()]);
-  await openOutbox("stops", () => void request("stops-doc", "requests-doc", "open"));
+  await resumeSignIn();
+  await openOutbox("stops", () => void inputs.read(...WRITTEN).then(() => request("open")));
   // The vocabularies come first: the address names statuses from them.
   if (await available("requests")) {
     const v = await ask("requests", "vocabulary", {});
@@ -426,55 +545,34 @@ export async function boot(): Promise<void> {
     const q = await ask("stops", "questions", {});
     st.questions = { site: q.site, amenities: q.amenities };
   }
-  const manifest = await deploymentManifest<{ services?: Record<string, { path: string }> }>().catch(() => null);
-  st.workOrders = manifest?.services?.work_orders?.path ?? null;
-  st.attachments = manifest?.services?.attachments?.path ?? null;
   writeHash(true);
-  await request("stops-doc", "requests-doc", "date", "show", "open", "work");
+  await inputs.start();
+  await request("date", "show", "open", "work");
+  const s = st.inputs.stops;
   say(
-    !stopsDoc
-      ? "The deployment publishes no stops yet."
-      : st.held
-        ? `${st.all.length} stops on ${readDate()}.`
-        : `${st.all.length} stops from the schedule running today. The first change you save keeps them as the stops record.`,
+    s?.kind === "failed" && !s.held
+      ? ""
+      : !stopsDoc
+        ? "The deployment publishes no stops yet."
+        : st.held
+          ? `${st.all.length} stops on ${readDate()}.`
+          : `${st.all.length} stops from the schedule running today. The first change you save keeps them as the stops record.`,
   );
-  whileVisible(POLL_MS, () => void poll());
+  // The writes that wait on the device, and a new build.
+  clockEvery(POLL_MS, () => {
+    void sendWaiting();
+    st.updateReady = buildWaiting();
+  });
 }
 
-/// How often the page sends what waits, looks for a new build, and
-/// reads the stops again when the log moved.
+/// How often the page sends what waits and looks for a new build. The
+/// inputs' intervals are in its ui.json.
 const POLL_MS = 30_000;
 
 /// The seq of the stops log's fold the page's documents came from (the
 /// manifest's log_seqs): a write names it, so the server checks it
 /// against the records it changes (D-189).
 let stopsSeq: number | undefined;
-
-/// Whether the server answers, the time it last confirmed the page's
-/// documents, and the stops log's seq. True when the seq moved.
-async function readConnection(): Promise<boolean> {
-  const now = await manifestNow<{ log_seqs?: Record<string, number> }>();
-  st.offline = !now.answered;
-  st.asOf = now.asOfMs ? clockLabelAt(now.asOfMs) : "";
-  const seq = now.manifest?.log_seqs?.stops;
-  if (!now.manifest || seq === stopsSeq) return false;
-  stopsSeq = seq;
-  return true;
-}
-
-let polling = false;
-
-async function poll(): Promise<void> {
-  if (polling) return;
-  polling = true;
-  try {
-    await sendWaiting();
-    st.updateReady = buildWaiting();
-    if (await readConnection()) await request("stops-doc", "requests-doc");
-  } finally {
-    polling = false;
-  }
-}
 
 // ---------------------------------------------------------------------
 // the selection
@@ -486,8 +584,10 @@ export function setView(view: View): Promise<void> {
   return select();
 }
 
-export function setDate(date: string): Promise<void> {
+export async function setDate(date: string): Promise<void> {
   st.date = /^\d{4}-\d{2}-\d{2}$/.test(date) && date !== today() ? date : "";
+  // The network in force on the new date.
+  await inputs.read("network");
   return select("date");
 }
 
@@ -932,7 +1032,7 @@ export function sendNow(): Promise<void> {
 
 /// A refused write sent again, over the stops the page reads now.
 export async function retryHeld(key: string): Promise<void> {
-  await readConnection();
+  await inputs.read(...WRITTEN);
   await retryWrite(key, { readSeq: stopsSeq });
 }
 

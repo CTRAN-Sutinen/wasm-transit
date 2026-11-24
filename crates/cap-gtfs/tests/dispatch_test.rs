@@ -28,7 +28,7 @@ fn dispatch(request: cap_gtfs::Request) -> cap_gtfs::Response {
 /// The module's seam, as a host calls it: the kernel's load_feed on
 /// its bulk op, the outcome parsed.
 fn load_feed(bytes: &[u8]) -> serde_json::Value {
-    serde_json::from_str(&cap_gtfs::invoke_bytes(cap_abi::kernel::OP_LOAD_FEED, bytes)).unwrap()
+    serde_json::from_str(&cap_gtfs::invoke_bytes(<transit_codec::Feed as cap_abi::kernel::Load>::CODE, bytes)).unwrap()
 }
 
 #[test]

@@ -20,7 +20,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::NOTES;
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -146,7 +146,7 @@ pub enum Response {
 
 fn held(hash: Option<&str>) -> Result<std::sync::Arc<Notes>, String> {
     match hash {
-        Some(h) => NOTES.require(h),
+        Some(h) => kind::<transit_notes::Notes>().require(h),
         None => Ok(std::sync::Arc::new(Notes::default())),
     }
 }
@@ -165,12 +165,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }),
         Request::Write { notes_hash, id, target, text, by, at } => {
             let base = match notes_hash {
-                Some(h) => NOTES.require_writable(&h)?,
+                Some(h) => kind::<transit_notes::Notes>().require_writable(&h)?,
                 None => std::sync::Arc::new(Notes::default()),
             };
             Ok(match base.write(&id, target, &text, &by, at) {
                 Ok(next) => {
-                    let (hash, held) = NOTES.register(next)?;
+                    let (hash, held) = kind::<transit_notes::Notes>().register(next)?;
                     Response::Write { refusals: vec![], notes_hash: Some(hash), notes: Some((*held).clone()) }
                 }
                 Err(refusals) => Response::Write { refusals, notes_hash: None, notes: None },
@@ -181,7 +181,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::LogRecords { notes_hash } => {
             let mut next = Vec::new();
             if let Some(h) = notes_hash {
-                let doc = serde_json::to_value(&*NOTES.require(&h)?).map_err(|e| e.to_string())?;
+                let doc = serde_json::to_value(&*kind::<transit_notes::Notes>().require(&h)?).map_err(|e| e.to_string())?;
                 next.extend(transit_log::document_records(&doc, "notes", "note", "notes", transit_notes::SCHEMA_VERSION)?);
             }
             Ok(Response::LogRecords { next })
@@ -191,7 +191,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let template = serde_json::json!({"kind": "notes", "schema_version": transit_notes::SCHEMA_VERSION});
             let notes: Notes = transit_log::assemble(template, document.as_ref(), "notes", &records, false)?;
             let bytes = cap_abi::canonical_bytes(&notes)?;
-            let (document_hash, _) = NOTES.register(notes)?;
+            let (document_hash, _) = kind::<transit_notes::Notes>().register(notes)?;
             Ok(Response::LogDocument { document_hash, document: bytes })
         }
     }
@@ -261,5 +261,7 @@ cap_abi::capability! {
     id: "notes",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NOTES],
+    documents: [transit_notes::Notes],
+    request: Request,
+    speaks: &[("notes", &[transit_notes::SCHEMA_VERSION])],
 }

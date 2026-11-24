@@ -42,7 +42,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
 }
 
 /// The fixture's diversion: route 10 keeps A→B, skips C, +N s.
@@ -71,7 +71,7 @@ fn record(added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0
+    cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0
 }
 
 #[test]
@@ -304,10 +304,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_router::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_router::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_router::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_router::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_router::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -334,7 +334,7 @@ fn live_t10(delay: i32) -> transit_live::LiveDay {
 }
 
 fn load_live(live: transit_live::LiveDay) -> String {
-    cap_abi::kernel::LIVE.register(live).expect("load_live").0
+    cap_abi::kernel::kind::<transit_live::LiveDay>().register(live).expect("load_live").0
 }
 
 fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::Itinerary {
@@ -555,7 +555,7 @@ fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<tr
 
 fn load_walks(table: transit_streets::walking::WalkTable) -> String {
     let want = cap_abi::canonical_hash(&table).unwrap();
-    let walks_hash = cap_abi::kernel::WALKS.register(table).unwrap().0;
+    let walks_hash = cap_abi::kernel::kind::<transit_streets::walking::WalkTable>().register(table).unwrap().0;
     assert_eq!(walks_hash, want, "the walk table's identity is its canonical hash");
     walks_hash
 }

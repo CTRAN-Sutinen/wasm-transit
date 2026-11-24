@@ -17,6 +17,7 @@ transit-network = { path = "../transit-network" }
 # numbering rt updates name.
 transit-codec = { path = "../transit-codec" }
 transit-live = { path = "../transit-live" }
+transit-alerts = { path = "../transit-alerts" }
 cap-abi = { path = "../cap-abi" }
 # The worked examples' fixtures, for the `examples` feature only (D-235).
 fixtures = { path = "../fixtures", optional = true }

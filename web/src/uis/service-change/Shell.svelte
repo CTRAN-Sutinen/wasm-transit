@@ -59,6 +59,9 @@
     retryHeld,
     discardHeld,
     applyUpdate,
+    offline,
+    asOf,
+    label,
   } from "./host.svelte";
   import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
@@ -149,8 +152,8 @@
         held={heldWrites()}
         warned={warnedWrites()}
         ondismiss={dismissWarning}
-        offline={sc.offline || outbox.offline}
-        asOf={sc.asOf}
+        offline={offline() || outbox.offline}
+        asOf={asOf()}
         needsSignIn={outbox.needsSignIn}
         updateReady={sc.updateReady}
         canUpdate={!sc.busy}
@@ -186,6 +189,7 @@
           issues={sc.chain.issues} today={today()} activeId={sc.plans.find((p) => p.key === sc.activeKey)?.id ?? ""} />
       {/if}
       <div class="stack">
+        {#if label("plans")}<p class="muted" role="status" data-testid="picks-label">{label("plans")}</p>{/if}
         <PickList plans={sc.plans} activeKey={sc.activeKey} inForceId={runsToday()} onopen={openPlan} onfork={fork}
           onrename={renamePlan} ondate={setPickDates} ondelete={deletePlan}
           onfeed={async (f) => loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name)} />

@@ -8,7 +8,7 @@
 #[path = "../src/bin/common/gates.rs"]
 mod gates;
 
-use gates::{dependency_violations, kernel_closure_violations, state_violations, unsafe_violation, Package};
+use gates::{capability_name_violations, dependency_violations, kernel_closure_violations, state_violations, unsafe_violation, Package};
 
 fn package(name: &str, deps: &[&str]) -> Package {
     let deps: Vec<String> = deps.iter().map(|d| d.to_string()).collect();
@@ -19,8 +19,9 @@ fn package(name: &str, deps: &[&str]) -> Package {
 /// libraries, assemblies over capabilities.
 fn lawful() -> Vec<Package> {
     vec![
-        package("cap-abi", &["transit-network", "transit-codec"]),
-        package("transit-network", &[]),
+        package("cap-abi", &["transit-version"]),
+        package("transit-version", &[]),
+        package("transit-network", &["transit-version"]),
         package("transit-codec", &["transit-network"]),
         package("transit-dispatch", &["transit-network"]),
         package("cap-board", &["cap-abi", "transit-dispatch"]),
@@ -36,15 +37,17 @@ fn the_lawful_workspace_passes() {
 }
 
 /// The generator and its fixtures (D-235): the generator reads the
-/// kernel, the libraries, the capabilities, and the fixtures; the
-/// fixtures read the kernel and the libraries; a capability names the
-/// fixtures only through its `examples` feature; nothing depends on the
+/// kernel, the libraries, and the fixtures, and names no capability;
+/// its generated binary links it and the capabilities; the fixtures read
+/// the kernel and the libraries; a capability names the fixtures only
+/// through its `examples` feature; only the binary depends on the
 /// generator, so no module's closure holds either.
 #[test]
 fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     let mut ws = lawful();
     ws.push(package("fixtures", &["cap-abi", "transit-network"]));
     ws.push(package("generator", &["cap-abi", "fixtures", "transit-codec"]));
+    ws.push(package("gen-manifest", &["generator", "cap-board"]));
     assert_eq!(dependency_violations(&ws), Vec::<String>::new());
     // A capability names the fixtures only as an optional dependency its
     // `examples` feature turns on.
@@ -55,13 +58,30 @@ fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     let mut other_feature = examples.clone();
     other_feature.last_mut().unwrap().examples.clear();
     assert!(dependency_violations(&other_feature).iter().any(|v| v.starts_with("cap-board")), "an optional dependency another feature turns on");
-    for (name, deps) in [("cap-board", &["cap-abi", "fixtures"][..]), ("module-board", &["cap-board", "generator"][..]), ("fixtures", &["cap-board"][..])] {
+    for (name, deps) in [
+        ("cap-board", &["cap-abi", "fixtures"][..]),
+        ("module-board", &["cap-board", "generator"][..]),
+        ("fixtures", &["cap-board"][..]),
+        ("generator", &["cap-abi", "cap-board"][..]),
+        ("gen-manifest", &["generator", "fixtures"][..]),
+    ] {
         let mut bad = ws.clone();
         bad.retain(|p| p.name != name);
         bad.push(package(name, deps));
         let found = dependency_violations(&bad);
         assert!(found.iter().any(|v| v.starts_with(name)), "{name} -> {deps:?}: {found:?}");
     }
+}
+
+/// The kernel knows no kind (D-239): each kind's library loads its own
+/// kind, so the kernel depends on transit-version alone.
+#[test]
+fn a_kernel_that_depends_on_a_domain_library_fails() {
+    let mut ws = lawful();
+    ws.retain(|p| p.name != "cap-abi");
+    ws.push(package("cap-abi", &["transit-version", "transit-network"]));
+    let found = dependency_violations(&ws);
+    assert!(found.iter().any(|v| v.starts_with("cap-abi") && v.contains("transit-network")), "{found:?}");
 }
 
 #[test]
@@ -162,8 +182,7 @@ fn a_capability_that_declares_state_fails() {
 // links the kernel, so a library the kernel depends on is in every
 // module's closure — a dependency or feature change in it moves every
 // module's hash. The kernel requires only the libraries its own code
-// names; what its generator (gen-manifest) needs besides is optional,
-// behind the generator's feature.
+// names (and gate 1 holds that set to transit-version).
 
 #[test]
 fn the_kernel_requires_only_the_libraries_its_code_names() {
@@ -193,4 +212,19 @@ fn the_gate_reads_which_dependencies_are_optional() {
     let packages = gates::packages_from_metadata(&metadata);
     assert_eq!(packages[0].deps, vec!["transit-network".to_string(), "transit-router".to_string()], "the graph rule reads optional deps too");
     assert_eq!(packages[0].required, vec!["transit-network".to_string()], "the closure rule reads only the required ones");
+}
+
+/// No hand-written list names a capability (D-243): the generator and
+/// the kernel take them as data.
+#[test]
+fn a_list_that_names_a_capability_fails() {
+    let ids = vec!["board".to_string(), "rt".to_string()];
+    let clean = "fn f(caps: &[Linked]) {}\n// cap-board in prose\nlet s = \"module_{id}.wasm\";\nuse cap_abi::kernel;";
+    assert_eq!(capability_name_violations("crates/generator/src/lib.rs", clean, &ids), Vec::<String>::new());
+    let found = capability_name_violations("crates/generator/src/lib.rs", "match id { \"x\" => cap_board::invoke, _ => cap_rt::invoke }", &ids);
+    assert_eq!(found.len(), 2, "{found:?}");
+    let toml = "[dependencies]\ncap-board = { path = \"../cap-board\" }\n# cap-rt in prose";
+    let found = capability_name_violations("crates/cap-abi/Cargo.toml", toml, &ids);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("cap-board"), "{found:?}");
 }

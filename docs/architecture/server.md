@@ -153,8 +153,8 @@ has the bucket and the same configuration serves the same manifest.
 While the bucket does not answer (D-119), the server serves the heads
 and blobs it holds (a byte-bounded blob cache; blobs are immutable). It
 labels each such read `X-Store-Stale` / `X-Store-As-Of`. It refuses
-every write with 503 and `Retry-After`. The rider pages show the edit
-document's age (kit's `staleLabel`). A bucket call that takes longer
+every write with 503 and `Retry-After`. The pages show the edit
+document's age (each page's edit document input; kit's `inputLabel`). A bucket call that takes longer
 than its timeout (20 s, 2 min for a create) is a bucket that does not
 answer (`store/degraded.go`).
 

@@ -85,6 +85,68 @@
     "Readiness",
     "SyncStatus"
   ],
+  "inputs": [
+    {
+      "id": "manifest",
+      "name": "the deployment",
+      "from": "GET manifest: the server, or the service worker's last copy",
+      "every_s": 30,
+      "limit_s": 10,
+      "keeps": "last",
+      "feeds": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "plans",
+      "name": "the published plans",
+      "from": "the published plan set the manifest pins (blobs/<hash>)",
+      "every_s": 30,
+      "limit_s": 30,
+      "keeps": "last",
+      "feeds": [
+        "published"
+      ],
+      "after": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "stops",
+      "name": "the stops",
+      "from": "the stops document the manifest pins (blobs/<hash>.gz)",
+      "every_s": 30,
+      "limit_s": 30,
+      "keeps": "last",
+      "feeds": [
+        "stops-doc"
+      ],
+      "after": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "network",
+      "name": "the published network",
+      "from": "GET /network: the server's import, read only while the device holds no plan",
+      "every_s": null,
+      "limit_s": 60,
+      "keeps": "last",
+      "feeds": [],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    }
+  ],
   "session": "2026-11-10 on C-TRAN (feed sha256:aa8dbc62…): a toy proposal — a fork with its period end, an evening span, a running-time band, one trip moved, a stop dropped — built through caps-run and again in the browser, the two agreeing on every number (docs/units/ui-service-design.md); open findings QAF-90, QAF-101, QAF-102, decisions D-51–D-55",
   "offline": true,
   "precache_assembly": false,

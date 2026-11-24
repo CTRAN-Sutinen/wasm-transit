@@ -21,6 +21,7 @@ use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
 pub mod version;
+pub mod load;
 pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
 
 /// One vertex of a drawn detour polyline.

@@ -18,7 +18,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::FEED;
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_codec::FeedInfo;
@@ -45,7 +45,7 @@ pub enum Response {
 /// wraps it in JSON). Failures are `{"error": ...}`, never panics.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::FeedInfo { feed_hash } => Ok(Response::FeedInfo { info: FEED.require(&feed_hash)?.info() }),
+        Request::FeedInfo { feed_hash } => Ok(Response::FeedInfo { info: kind::<transit_codec::Feed>().require(&feed_hash)?.info() }),
     }
 }
 
@@ -71,5 +71,7 @@ cap_abi::capability! {
     id: "gtfs",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [FEED],
+    documents: [transit_codec::Feed],
+    request: Request,
+    speaks: &[("feed", &[1])],
 }

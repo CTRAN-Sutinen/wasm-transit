@@ -29,6 +29,121 @@
     "DisplayAlerts",
     "AlertList"
   ],
+  "inputs": [
+    {
+      "id": "manifest",
+      "name": "the deployment",
+      "from": "GET manifest: the server, or the service worker's last copy",
+      "every_s": 20,
+      "limit_s": 10,
+      "keeps": "last",
+      "feeds": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "live-feeds",
+      "name": "the live feeds' addresses",
+      "from": "live-feeds.json beside the page",
+      "every_s": null,
+      "limit_s": 10,
+      "keeps": "last",
+      "feeds": [],
+      "fails_as": [
+        "The server, or the device's network"
+      ]
+    },
+    {
+      "id": "network",
+      "name": "the schedule",
+      "from": "the network the manifest pins (blobs/<hash>.gz): the pick in force, the server's import, or the agency's GTFS URL",
+      "every_s": 20,
+      "limit_s": 60,
+      "keeps": "last",
+      "feeds": [
+        "network"
+      ],
+      "after": [
+        "manifest"
+      ],
+      "fails_as": [
+        "The server, or the device's network",
+        "The agency's GTFS URL, in a static deployment that follows it"
+      ]
+    },
+    {
+      "id": "edits",
+      "name": "the detours",
+      "from": "GET edits: the server's edit document",
+      "every_s": 20,
+      "limit_s": 10,
+      "keeps": "last",
+      "feeds": [
+        "edits"
+      ],
+      "after": [
+        "network"
+      ],
+      "fails_as": [
+        "The server, or the device's network",
+        "The bucket"
+      ]
+    },
+    {
+      "id": "trips",
+      "name": "the live trip updates",
+      "from": "the agency's GTFS-rt trip updates (live-feeds.json)",
+      "every_s": 20,
+      "limit_s": 10,
+      "keeps": "none",
+      "feeds": [
+        "snapshot"
+      ],
+      "after": [
+        "live-feeds"
+      ],
+      "fails_as": [
+        "A live feed"
+      ]
+    },
+    {
+      "id": "vehicles",
+      "name": "the live vehicle positions",
+      "from": "the agency's GTFS-rt vehicle positions (live-feeds.json)",
+      "every_s": 20,
+      "limit_s": 10,
+      "keeps": "none",
+      "feeds": [
+        "snapshot"
+      ],
+      "after": [
+        "live-feeds"
+      ],
+      "fails_as": [
+        "A live feed"
+      ]
+    },
+    {
+      "id": "alerts",
+      "name": "the live service alerts",
+      "from": "the agency's GTFS-rt service alerts (live-feeds.json)",
+      "every_s": 20,
+      "limit_s": 10,
+      "keeps": "none",
+      "feeds": [
+        "snapshot"
+      ],
+      "after": [
+        "live-feeds"
+      ],
+      "fails_as": [
+        "A live feed"
+      ]
+    }
+  ],
   "session": "2026-10-29 08:53 PDT on C-TRAN (feed sha256:aa8dbc62…, import 2beddcb3…) with the live trip updates (160 trips, live bfb2259d…): caps-run grouped_board at Fisher's Landing TC (106, 10 groups pooled over its bays), Andresen & Van Mall Dr (2676, one route) and Van Mall Dr & 94th Ave (701, five routes) equals the browser's display in the center, route, and routes layouts at the same clock and snapshot. 2026-11-06 13:38 PST in the browser on C-TRAN (network c6847464…) with the live trip updates and service alerts (https://gtfs-rt.c-tran.com/Alerts, 15 alerts): Saint Johns 7900 Block (2095) shows its no-service alert for routes 025 and 078, 99th Street TC (110) route 19's construction delays, Van Mall TC (6137) route 72's detour; at 99th Street TC the 105X to Portland, done for the day, reads \"Next: Monday 5:27 am\" (its afternoon trips end there) and a Fisher's Landing TC (106) group \"Next: Monday 7:16 am\".",
   "offline": true,
   "spec": "web/e2e/ui-stop-display.spec.mjs",

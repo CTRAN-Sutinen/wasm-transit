@@ -44,7 +44,9 @@ caps:
     # own entries change), so the --locked build below finds it.
     cargo update --workspace --offline --quiet
     just _modules target "$profile"
-    CAPS_PROFILE="$profile" cargo run --quiet -p generator --bin gen-manifest
+    # gen-manifest: the generator's binary, which gen-assemblies wrote
+    # beside the modules (every capability, with its worked examples).
+    CAPS_PROFILE="$profile" cargo run --quiet -p gen-manifest
     mkdir -p web/pkg
     # The server's modules: its own (server/logkinds.go,
     # serverCapabilities, and cap-authz), and every capability the kind
@@ -111,7 +113,8 @@ _modules target_dir="target" profile="release":
     # across every package one build selects, so building them together
     # lets a feature one capability asks for move every module's bytes.
     # Apart, a module's bytes are a function of its own closure.
-    for crate in $(ls assemblies); do
+    # gen-manifest, the generator's binary, is no module.
+    for crate in $(cd assemblies && ls -d module-*); do
         cargo build --quiet --locked --profile "{{profile}}" -p "$crate" --target wasm32-unknown-unknown
     done
 
@@ -146,14 +149,14 @@ reproducible:
     ln -s "${CARGO_HOME:-$HOME/.cargo}/registry" "$work/cargo/registry"
     (cd "$work/tree" && CARGO_HOME="$work/cargo" just _modules "$work/target")
     differ=0
-    for crate in $(ls assemblies); do
+    for crate in $(cd assemblies && ls -d module-*); do
         m="${crate//-/_}.wasm"
         if ! cmp -s "target/wasm32-unknown-unknown/release/$m" "$work/target/wasm32-unknown-unknown/release/$m"; then
             echo "not reproducible: $m" >&2; differ=1
         fi
     done
     test "$differ" = 0
-    echo "reproducible: $(ls assemblies | wc -l) modules, byte for byte"
+    echo "reproducible: $(cd assemblies && ls -d module-* | wc -l) modules, byte for byte"
 
 # Build everything the server serves: artifact + frontend (web/dist).
 # Regenerates the TS bindings, then type-checks — the TS layer is
@@ -206,8 +209,9 @@ _host-tests:
     set -e
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     # `cargo test` includes THE SCHEMAS DESCRIBE THE REAL BYTES
-    # (cap-abi tests/real_output_test.rs; docs/FORMATS.md, "The schema
-    # lock"): every capability's worked examples, run through its own
+    # (gen-manifest's tests, generator::checks::real_output;
+    # docs/FORMATS.md, "The schema lock"): every capability's worked
+    # examples, run through its own
     # dispatch over the fixtures, answer documents that match their
     # locked schemas. It reads the manifest `just caps` just wrote.
     cargo test
@@ -227,6 +231,23 @@ _host-tests:
     # The answer graph (web/src/uis/answers.ts): each node's state, and
     # a failure belonging to its frame alone.
     node --test web/src/uis/answers.test.mjs
+    # The inputs (web/src/uis/inputs.ts): one poll, a time limit on
+    # every read, three outcomes (a document, none kept, failed since),
+    # what the page keeps, an input's age, and Retry-After with a
+    # random spread.
+    node --test web/src/uis/inputs.test.mjs
+    # The host contract suite, the browser's side
+    # (web/src/uis/host-contract.json; docs/architecture/hosts.md): the
+    # upstream does not answer, answers slowly, answers again, and moves
+    # its head while the host holds a copy. The server runs the same
+    # scenarios (server/hostcontract_test.go, in `go test` below).
+    node --test web/src/uis/host-contract.test.mjs
+    # FAILURE TABLES (tools/failure-tables.mjs): every input a UI
+    # declares in its ui.json names rows that its failure table in
+    # docs/architecture/generated-uis.md has. The broken fixtures run
+    # first.
+    node --test tools/failure-tables.test.mjs
+    node tools/failure-tables.mjs
     # A refusal of a document another build wrote (web/src/versions.ts):
     # the two texts transit-version writes, and nothing else, ask for
     # the deployment's build (D-79, D-186).
@@ -784,6 +805,14 @@ _host-tests:
         "" \
         "$(grep -rlE 'status\)? *[!=]==? *"(retired|published)"|"(retired|published)" *[!=]==? *[A-Za-z_.]*status' web/src/uis/*/host.svelte.ts | sort | tr '\n' ' ')" \
         "tests a lifecycle status; ask the op that owns the rule"
+    # W0f: a host's reads are its declared inputs (web/src/uis/inputs.ts;
+    # docs/architecture/generated-uis.md, the recipe's inputs step): no
+    # host fetches or polls by hand. The kit reads each input with one
+    # poll and a time limit.
+    ratchet reads-outside-inputs \
+        "" \
+        "$(grep -lE 'fetch\(|whileVisible' web/src/uis/*/host.svelte.ts | sort | tr '\n' ' ')" \
+        "fetches or polls by hand; declare the read as an input in the UI's ui.json"
     # GENERATED UIs (docs/architecture/generated-uis.md): each
     # src/uis/<id>/ carries its descriptor, its page, and its e2e spec,
     # and owns its host layer: nothing reaches into another UI's
@@ -837,9 +866,14 @@ http-lock:
 # (crates/cap-abi/kinds.json) from the kind list (crates/cap-abi/src/
 # kinds.rs). `just caps` (and so `just test`) fails while a kind
 # differs from its lock, or the table from the list. It needs no
-# module build.
+# module build: it writes the generator's binary (gen-assemblies) and
+# runs it.
 schema-lock:
-    cargo run --quiet -p generator --bin gen-manifest -- --lock
+    #!/usr/bin/env bash
+    set -e
+    cargo run --quiet -p cap-abi --bin gen-assemblies
+    cargo update --workspace --offline --quiet
+    cargo run --quiet -p gen-manifest -- --lock
 
 # Browser e2e (Chromium via Playwright, against the Go server), over
 # the wasm-fast modules (`caps-fast`), the pages, and the UIs the specs
@@ -890,7 +924,8 @@ perf *args:
 #   COUNTY_GEOJSON at the file (e.g. the CTRAN Trapeze roads geojson
 #   from the open data portal).
 # - The schemas against the agency's feed (docs/FORMATS.md, "The
-#   schema lock"; cap-abi tests/real_data_soak.rs): SOAK_FEED, else
+#   schema lock"; generator::checks::soak, run by gen-manifest's
+#   tests): SOAK_FEED, else
 #   testdata/ctran-gtfs.zip, through the ops a server runs on it. Every
 #   document they answer matches its locked schema. A mismatch is a QA
 #   finding.
@@ -902,7 +937,7 @@ soak:
         exit 1
     fi
     cargo test --release -p transit-streets --test county_data -- --nocapture
-    SOAK_FEED="$(realpath "${SOAK_FEED:-testdata/ctran-gtfs.zip}")" cargo test --release -p cap-abi --test real_data_soak -- --nocapture
+    SOAK_FEED="$(realpath "${SOAK_FEED:-testdata/ctran-gtfs.zip}")" cargo test --release -p gen-manifest --test schemas the_agencys_feed -- --nocapture
 
 # Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
 fixtures:

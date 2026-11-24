@@ -31,7 +31,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
 }
 
 /// The schedule id of route 10's pattern in the fixture-derived
@@ -77,7 +77,7 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0
+    cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn the_block_chain_ripples_under_a_live_prediction() {
         alerts: vec![],
         unmatched_alerts: 0,
     };
-    let live_hash = cap_abi::kernel::LIVE.register(live).unwrap().0;
+    let live_hash = cap_abi::kernel::kind::<transit_live::LiveDay>().register(live).unwrap().0;
     let rippled = chain(Some(live_hash));
     assert_eq!(rippled[0].live_end_delay_secs, Some(370));
     assert_eq!(rippled[0].layover_remaining_secs, Some(230));
@@ -481,10 +481,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_runcut::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_runcut::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_runcut::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_runcut::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_runcut::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -547,7 +547,7 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
 fn a_suggestion_adopts_into_the_fleet_it_names() {
     let mut cleared = derived_network();
     cleared.blocks.clear();
-    let network_hash = cap_abi::kernel::NETWORK.register(cleared.clone()).unwrap().0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(cleared.clone()).unwrap().0;
     let suggestion = match dispatch(Request::SuggestBlocks {
         network_hash,
         edits_hash: None,
@@ -566,7 +566,7 @@ fn a_suggestion_adopts_into_the_fleet_it_names() {
     assert_eq!(suggestion.authored_peak_vehicles, 0);
     let adopted = transit_network::apply_edits(&cleared, &suggestion.edits).unwrap();
     assert_eq!(transit_network::validation_issues(&adopted), vec![]);
-    let adopted_hash = cap_abi::kernel::NETWORK.register(adopted).unwrap().0;
+    let adopted_hash = cap_abi::kernel::kind::<transit_network::Network>().register(adopted).unwrap().0;
     let fleet = match dispatch(Request::FleetSummary { network_hash: adopted_hash, edits_hash: None, date: DATE.into() })
         .unwrap()
     {

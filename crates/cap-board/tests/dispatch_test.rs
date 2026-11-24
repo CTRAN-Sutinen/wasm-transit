@@ -33,7 +33,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
 }
 
 /// The fixture's diversion: route 10 keeps A→B, skips C, +N s.
@@ -62,7 +62,7 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0
+    cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0
 }
 
 fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, from_secs: u32, live_hash: Option<String>) -> transit_dispatch::StopBoard {
@@ -225,7 +225,7 @@ fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_disp
         alerts: vec![],
         unmatched_alerts: 0,
     };
-    let live_hash = cap_abi::kernel::LIVE.register(live.clone()).unwrap().0;
+    let live_hash = cap_abi::kernel::kind::<transit_live::LiveDay>().register(live.clone()).unwrap().0;
     (live_hash, live, row)
 }
 
@@ -460,10 +460,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_board::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_board::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_board::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_board::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_board::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 

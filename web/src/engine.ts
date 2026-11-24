@@ -42,6 +42,7 @@
 /// domain: if a departure, a trip, or a stop appears here, it leaked.
 
 import { noteRefusal } from "./versions";
+import { ReadFailed } from "./uis/inputs";
 import { call, type Assembly, type Route } from "./bus";
 import type { Capability } from "./types/cap_abi/Capability";
 import type { Evicted } from "./types/cap_abi/Evicted";
@@ -378,7 +379,7 @@ function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
     if (code === undefined) throw new Error(`the manifest has no kernel load for a ${doc.kind} document`);
     const answer = (await invoke(cap, { op: code, bytes: doc.bytes() }, true)) as Record<string, unknown>;
     // A load answers the document's identity in one `<name>_hash` field
-    // (cap_abi::kernel's Loaded), beside what it reports.
+    // (its library's `transit_version::Load::answer`), beside what it reports.
     const hashes = Object.keys(answer).filter((field) => field.endsWith("_hash"));
     const hash = hashes.length === 1 ? answer[hashes[0]] : undefined;
     if (typeof hash !== "string") throw new Error(`${cap} answered no one hash for a ${doc.kind} document`);
@@ -543,7 +544,7 @@ export type Inspection = typeof inspection;
 /// the page). Paths are relative to the page, so a deployment may live
 /// under a prefix. Every pin is the manifest's, never a response
 /// header's.
-type DeploymentManifest = {
+export type DeploymentManifest = {
   network_hash?: string;
   boundary_hash?: string;
   plans_hash?: string;
@@ -559,7 +560,81 @@ type DeploymentManifest = {
   walks_hash?: string;
   /// A serverless deployment that follows the agency's GTFS URL (D-132).
   feed_url?: string;
+  /// The agency's time zone (IANA), the zone every host's clock reads.
+  timezone?: string;
 };
+
+// ---------------------------------------------------------------------
+// reads of the deployment — each one answers a document, null when the
+// deployment keeps none, or throws ReadFailed when the read failed
+// (QAF-131). A page's inputs (src/uis/inputs.ts) read through these:
+// each takes the input's `signal` (its time limit) and the manifest the
+// page holds, so one manifest read names every pin of one poll.
+// ---------------------------------------------------------------------
+
+/// What a read takes: the input's signal (the runner aborts it at the
+/// time limit), and the manifest the page holds (read now when absent).
+export type ReadOptions = { signal?: AbortSignal; manifest?: DeploymentManifest };
+
+/// The upstream's Retry-After, in ms (seconds or an HTTP date), else
+/// null.
+function retryAfterOf(resp: Response): number | null {
+  const v = resp.headers.get("Retry-After");
+  if (!v) return null;
+  const secs = Number(v);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const at = Date.parse(v);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : null;
+}
+
+/// GET a URL that must answer: the response, or ReadFailed — no answer,
+/// or a status other than 2xx. An `absent` status answers null: the
+/// upstream keeps none.
+async function getOk(url: string, signal: AbortSignal | undefined, { absent = [] as number[], cache }: { absent?: number[]; cache?: RequestCache } = {}): Promise<Response | null> {
+  let resp: Response;
+  try {
+    resp = await fetch(url, { signal, cache });
+  } catch {
+    throw new ReadFailed(signal?.aborted ? "no answer in time" : "no answer");
+  }
+  if (resp.ok) return resp;
+  if (absent.includes(resp.status)) return null;
+  throw new ReadFailed(`HTTP ${resp.status}`, { retryAfterMs: retryAfterOf(resp) });
+}
+
+/// The deployment's manifest as it stands now, revalidated, with its
+/// age. `asOfMs` is when the upstream last confirmed it, when the
+/// answer is a working copy: the server's (`X-Store-Stale`,
+/// `X-Store-As-Of`), or the service worker's last copy
+/// (`X-Served-From: last-copy`, its `Date`). It is null when the answer
+/// is current. `answered`: the server answered, not the worker. Throws
+/// ReadFailed when neither answers.
+export async function readManifest(signal?: AbortSignal): Promise<{ manifest: DeploymentManifest; asOfMs: number | null; why: string | null; answered: boolean }> {
+  const resp = (await getOk("manifest", signal, { cache: "no-cache" }))!;
+  let manifest: DeploymentManifest;
+  try {
+    manifest = (await resp.json()) as DeploymentManifest;
+  } catch {
+    throw new ReadFailed("the manifest is not JSON");
+  }
+  const lastCopy = resp.headers.get("X-Served-From") === "last-copy";
+  let asOfMs: number | null = null;
+  if (lastCopy) {
+    const date = Date.parse(resp.headers.get("Date") ?? "");
+    asOfMs = Number.isFinite(date) ? date : 0;
+  } else if (resp.headers.get("X-Store-Stale") === "true") {
+    const asOf = Number(resp.headers.get("X-Store-As-Of"));
+    asOfMs = Number.isFinite(asOf) && asOf > 0 ? asOf : 0;
+  }
+  const why = lastCopy ? "the server is not answering" : asOfMs != null ? "the server's store is not answering" : null;
+  return { manifest, asOfMs, why, answered: !lastCopy };
+}
+
+/// The manifest a read names its pins by: the one the page holds, else
+/// read now.
+async function manifestOf(opts: ReadOptions): Promise<DeploymentManifest> {
+  return opts.manifest ?? (await readManifest(opts.signal)).manifest;
+}
 
 // ---------------------------------------------------------------------
 // a deployment that names its GTFS URL (D-132): with no server to
@@ -586,38 +661,46 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 }
 
 /// The zip at `url` — fetched (`fresh`), and kept as the last copy;
-/// when the URL does not answer, the last copy this device kept; null
-/// when neither.
-async function feedZip(url: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; fresh: boolean } | null> {
+/// when the URL does not answer, the last copy this device kept.
+/// Throws ReadFailed when neither.
+async function feedZip(url: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array<ArrayBuffer>; fresh: boolean }> {
   const kept = typeof caches === "undefined" ? null : await caches.open(FEED_CACHE).catch(() => null);
+  let failure = "no answer";
   try {
-    const resp = await fetch(url, { cache: "no-cache" });
+    const resp = await fetch(url, { cache: "no-cache", signal });
     if (resp.ok) {
       await kept?.put(url, resp.clone()).catch(() => {});
       return { bytes: new Uint8Array(await resp.arrayBuffer()), fresh: true };
     }
+    failure = `HTTP ${resp.status}`;
   } catch {
     // unreachable: the last copy below
   }
   const hit = await kept?.match(url).catch(() => undefined);
-  return hit ? { bytes: new Uint8Array(await hit.arrayBuffer()), fresh: false } : null;
+  if (hit) return { bytes: new Uint8Array(await hit.arrayBuffer()), fresh: false };
+  throw new ReadFailed(`the agency's GTFS URL: ${failure}`);
 }
 
 /// Check the URL (at most once a day): the hash of the network the
 /// page should hold — the one it imported, while the zip is unchanged;
 /// for a changed zip, a pin no network holds (`feed:<zip hash>`), so the
-/// page adopts `servedNetwork`'s import of it. Null when the URL does
-/// not answer and nothing was imported yet.
-async function followedPin(url: string): Promise<string | null> {
+/// page adopts `servedNetwork`'s import of it. Throws ReadFailed when
+/// the URL does not answer and nothing was imported yet.
+async function followedPin(url: string, signal?: AbortSignal): Promise<string> {
   const now = Date.now();
-  if (followed?.url === url && now - followed.checkedAt < FEED_CHECK_MS) return followed.networkHash;
-  const got = await feedZip(url);
-  // The URL did not answer: check again in an hour, not a day.
-  const checkedAt = got?.fresh ? now : now - FEED_CHECK_MS + FEED_RETRY_MS;
-  if (!got) {
-    if (followed?.url === url) followed.checkedAt = checkedAt;
-    return followed?.url === url ? followed.networkHash : null;
+  if (followed?.url === url && followed.networkHash && now - followed.checkedAt < FEED_CHECK_MS) return followed.networkHash;
+  let got: { bytes: Uint8Array<ArrayBuffer>; fresh: boolean };
+  try {
+    got = await feedZip(url, signal);
+  } catch (e) {
+    // The URL did not answer: check again in an hour, not a day.
+    if (followed?.url === url && followed.networkHash) {
+      followed.checkedAt = now - FEED_CHECK_MS + FEED_RETRY_MS;
+      return followed.networkHash;
+    }
+    throw e;
   }
+  const checkedAt = got.fresh ? now : now - FEED_CHECK_MS + FEED_RETRY_MS;
   const zipHash = await sha256Hex(got.bytes);
   const same = followed?.url === url && followed.zipHash === zipHash;
   followed = { url, checkedAt, zipHash, networkHash: same ? followed!.networkHash : null, pending: same ? null : got.bytes };
@@ -627,11 +710,10 @@ async function followedPin(url: string): Promise<string | null> {
 /// Import the deployment's GTFS: the zip the last check fetched, else
 /// fetched now. The import is the network module's; its network is
 /// registered where it was made (`produced`).
-async function importFollowed(url: string): Promise<{ network: Doc<Network>; boundary: Doc<Boundary>; timezone?: string } | null> {
+async function importFollowed(url: string, signal?: AbortSignal): Promise<{ network: Doc<Network>; boundary: Doc<Boundary>; timezone?: string }> {
   let bytes = followed?.url === url ? followed.pending : null;
   if (!bytes) {
-    const got = await feedZip(url);
-    if (!got) return null;
+    const got = await feedZip(url, signal);
     bytes = got.bytes;
     const checkedAt = got.fresh ? Date.now() : Date.now() - FEED_CHECK_MS + FEED_RETRY_MS;
     followed = { url, checkedAt, zipHash: await sha256Hex(bytes), networkHash: null, pending: bytes };
@@ -646,9 +728,17 @@ async function importFollowed(url: string): Promise<{ network: Doc<Network>; bou
   };
 }
 
-/// A published document's bytes, gzipped, by its hash.
-function blobGz(hash: string): Promise<Response | null> {
-  return fetch(`blobs/${hash}.gz`).catch(() => null);
+/// A published document's bytes, gzipped, by its hash. A hash the
+/// manifest pins is there: any other answer is a failed read.
+async function blobGz(hash: string, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const resp = (await getOk(`blobs/${hash}.gz`, signal))!;
+  return new Uint8Array(await resp.arrayBuffer());
+}
+
+/// A published document's JSON, by its hash.
+async function blobJson<T>(hash: string, signal?: AbortSignal): Promise<T> {
+  const resp = (await getOk(`blobs/${hash}`, signal))!;
+  return (await resp.json()) as T;
 }
 
 /// The published pick in force on `date`: the manifest's `plans_hash`
@@ -657,37 +747,27 @@ function blobGz(hash: string): Promise<Response | null> {
 /// Null when the deployment publishes no picks or none has taken
 /// effect yet; throws Unavailable when it publishes picks and the plans
 /// module does not assemble — a page never guesses which schedule runs.
-async function pickInForce(date: string, manifest?: DeploymentManifest | null): Promise<PublishedPlan | null> {
-  manifest ??= await deploymentManifestNow();
-  const plansHash = manifest?.plans_hash;
+/// Throws ReadFailed when the plan set does not answer.
+async function pickInForce(date: string, manifest: DeploymentManifest, signal?: AbortSignal): Promise<PublishedPlan | null> {
+  const plansHash = manifest.plans_hash;
   if (!plansHash) return null;
   if (!(await available("plans"))) throw new Unavailable("plans");
-  const set = await fetch(`blobs/${plansHash}`).catch(() => null);
-  if (!set?.ok) return null;
-  const published = (await set.json()) as PublishedPlans;
+  const published = await blobJson<PublishedPlans>(plansHash, signal);
   return (await ask("plans", "in_force", { published, date })).plan;
-}
-
-/// The deployment's manifest as it stands now — revalidated on every
-/// read. Null when the deployment does not answer.
-async function deploymentManifestNow(): Promise<DeploymentManifest | null> {
-  const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
-  return resp?.ok ? ((await resp.json()) as DeploymentManifest) : null;
 }
 
 /// The hash of the network the deployment serves on `date` — the pick
 /// in force, else its import: what `servedNetwork` would load now. An
 /// open page compares it with the network it holds on each poll and
 /// re-pins when it moved (a republish, a new pick, or the date crossing
-/// a pick's effective date — D-63). Null when the deployment does not
-/// answer or publishes none: the page keeps what it holds.
-export async function servedNetworkPin(date: string): Promise<string | null> {
-  const manifest = await deploymentManifestNow();
-  if (!manifest) return null;
-  const pick = await pickInForce(date, manifest);
+/// a pick's effective date — D-63). Null when the deployment publishes
+/// none.
+export async function servedNetworkPin(date: string, opts: ReadOptions = {}): Promise<string | null> {
+  const manifest = await manifestOf(opts);
+  const pick = await pickInForce(date, manifest, opts.signal);
   if (pick) return pick.network_hash;
   if (manifest.network_hash) return manifest.network_hash;
-  return manifest.feed_url ? followedPin(manifest.feed_url) : null;
+  return manifest.feed_url ? followedPin(manifest.feed_url, opts.signal) : null;
 }
 
 /// The deployment's published network on `date`, for a page that READS
@@ -710,32 +790,30 @@ export async function servedNetworkPin(date: string): Promise<string | null> {
 /// the first that assembles — registering it in a module the page never
 /// asks would hold a whole copy only to check it. The network's name is
 /// a question for the directory (`about`). Throws Unavailable when none
-/// assembles; null when the deployment publishes none.
+/// assembles; null when the deployment publishes none; throws
+/// ReadFailed when a read fails.
 export async function servedNetwork(
   date: string,
-  ...readers: CapId[]
+  readers: CapId[],
+  opts: ReadOptions = {},
 ): Promise<{ network: Doc<Network>; boundary: Doc<Boundary>; timezone?: string } | null> {
   const candidates: CapId[] = readers.length ? readers : ["network"];
   let cap: CapId | null = null;
   for (const c of candidates) if (!cap && (await available(c))) cap = c;
   if (!cap) throw new Unavailable(candidates[0]);
-  const manifest = await deploymentManifestNow();
-  const pick = await pickInForce(date, manifest);
+  const manifest = await manifestOf(opts);
+  const pick = await pickInForce(date, manifest, opts.signal);
   // No network published, but the agency's GTFS URL named: the page
   // imports it (D-132; its `timezone` is the hosts' to adopt).
-  if (!pick && !manifest?.network_hash && manifest?.feed_url) return importFollowed(manifest.feed_url);
-  const pin = pick?.network_hash ?? manifest?.network_hash;
+  if (!pick && !manifest.network_hash && manifest.feed_url) return importFollowed(manifest.feed_url, opts.signal);
+  const pin = pick?.network_hash ?? manifest.network_hash;
   if (!pin) return null;
   let boundaryValue: Boundary = { kind: "boundary", schema_version: 1 };
   if (!pick) {
-    if (!manifest?.boundary_hash) return null;
-    const bnd = await fetch(`blobs/${manifest.boundary_hash}`).catch(() => null);
-    if (!bnd?.ok) return null;
-    boundaryValue = (await bnd.json()) as Boundary;
+    if (!manifest.boundary_hash) throw new ReadFailed("the manifest names a network and no boundary");
+    boundaryValue = await blobJson<Boundary>(manifest.boundary_hash, opts.signal);
   }
-  const doc = await blobGz(pin);
-  if (!doc?.ok) return null;
-  const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin });
+  const network = new Doc<Network>("network", { bytes: await blobGz(pin, opts.signal) }, { pin });
   const boundary = new Doc<Boundary>("boundary", { value: boundaryValue });
   await load(cap, network);
   return { network, boundary };
@@ -744,8 +822,8 @@ export async function servedNetwork(
 /// How a page signs in to write to this deployment (D-58: writes need a
 /// token, reads stay public), from the manifest — null when sign-in is
 /// off or the pages have no client of their own (src/signin.svelte.ts).
-export async function deploymentAuth(): Promise<{ issuer: string; client_id: string; scope: string } | null> {
-  return (await deploymentManifestNow())?.auth ?? null;
+export async function deploymentAuth(opts: ReadOptions = {}): Promise<{ issuer: string; client_id: string; scope: string } | null> {
+  return (await manifestOf(opts)).auth ?? null;
 }
 
 /// The agency's own feed as the deployment imported it (the manifest's
@@ -753,17 +831,15 @@ export async function deploymentAuth(): Promise<{ issuer: string; client_id: str
 /// first of `readers` that assembles, with the feed's id (its zip's hash,
 /// `feed_hash`) — what a stops page compares the stops record with and
 /// names an import's events by (D-150). Null when the deployment imports
-/// none.
-export async function servedFeed(...readers: CapId[]): Promise<{ network: Doc<Network>; id: string } | null> {
+/// none, or no reader assembles.
+export async function servedFeed(readers: CapId[], opts: ReadOptions = {}): Promise<{ network: Doc<Network>; id: string } | null> {
   let cap: CapId | null = null;
   for (const c of readers.length ? readers : (["network"] as CapId[])) if (!cap && (await available(c))) cap = c;
   if (!cap) return null;
-  const manifest = await deploymentManifestNow();
-  const pin = manifest?.network_hash;
-  if (!pin || !manifest?.feed_hash) return null;
-  const doc = await blobGz(pin);
-  if (!doc?.ok) return null;
-  const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin });
+  const manifest = await manifestOf(opts);
+  const pin = manifest.network_hash;
+  if (!pin || !manifest.feed_hash) return null;
+  const network = new Doc<Network>("network", { bytes: await blobGz(pin, opts.signal) }, { pin });
   await load(cap, network);
   return { network, id: manifest.feed_hash };
 }
@@ -772,13 +848,13 @@ export async function servedFeed(...readers: CapId[]): Promise<{ network: Doc<Ne
 /// edits it (the planner forks it into a plan; JS owns the documents
 /// it authors): `GET /network`, the import's whole answer, registered
 /// in the network module under the pin it serves. Null when the server
-/// publishes none.
-export async function servedNetworkValue(): Promise<{
+/// publishes none (404).
+export async function servedNetworkValue(signal?: AbortSignal): Promise<{
   network: Doc<Network>;
   boundary: Doc<Boundary>;
 } | null> {
-  const resp = await fetch("/network").catch(() => null);
-  if (!resp?.ok) return null;
+  const resp = await getOk("/network", signal, { absent: [404] });
+  if (!resp) return null;
   const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string };
   const network = new Doc<Network>("network", { value: served.network }, { pin: served.network_hash });
   await load("network", network);
@@ -791,11 +867,9 @@ export async function servedNetworkValue(): Promise<{
 /// The published plan set (the manifest's `plans_hash`): every pick
 /// the deployment publishes, earlier, in force, and later alike — a
 /// planner's timeline (D-139). Null when it publishes none.
-export async function publishedPlanSet(): Promise<PublishedPlans | null> {
-  const plansHash = (await deploymentManifestNow())?.plans_hash;
-  if (!plansHash) return null;
-  const set = await fetch(`blobs/${plansHash}`).catch(() => null);
-  return set?.ok ? ((await set.json()) as PublishedPlans) : null;
+export async function publishedPlanSet(opts: ReadOptions = {}): Promise<PublishedPlans | null> {
+  const plansHash = (await manifestOf(opts)).plans_hash;
+  return plansHash ? blobJson<PublishedPlans>(plansHash, opts.signal) : null;
 }
 
 /// One published pick's network as a VALUE, for a page that forks it
@@ -803,9 +877,9 @@ export async function publishedPlanSet(): Promise<PublishedPlans | null> {
 /// fetched gzipped (a fraction of its size) and decompressed here — a
 /// value is parsed either way —, then registered in the network module
 /// under that pin, so one that does not answer it is refused.
-export async function publishedPickValue(pick: PublishedPlan): Promise<Doc<Network> | null> {
-  const resp = await blobGz(pick.network_hash);
-  if (!resp?.ok || !resp.body) return null;
+export async function publishedPickValue(pick: PublishedPlan, signal?: AbortSignal): Promise<Doc<Network>> {
+  const resp = (await getOk(`blobs/${pick.network_hash}.gz`, signal))!;
+  if (!resp.body) throw new ReadFailed("the pick's network is empty");
   const text = await new Response(resp.body.pipeThrough(new DecompressionStream("gzip"))).text();
   const network = new Doc<Network>("network", { value: JSON.parse(text) as Network }, { pin: pick.network_hash });
   await load("network", network);
@@ -815,34 +889,28 @@ export async function publishedPickValue(pick: PublishedPlan): Promise<Doc<Netwo
 /// One of the deployment's documents, by the hash its manifest pins
 /// (`<kind>_hash`): bytes the page never parses, refused unless they
 /// answer the pin. Null when the deployment keeps none yet.
-export async function served(kind: Kind): Promise<Doc | null> {
-  const pin = (await deploymentManifestNow())?.[`${kind}_hash`];
+export async function served(kind: Kind, opts: ReadOptions = {}): Promise<Doc | null> {
+  const pin = (await manifestOf(opts))[`${kind}_hash`];
   if (typeof pin !== "string") return null;
-  const resp = await blobGz(pin);
-  if (!resp?.ok) return null;
-  return new Doc(kind, { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
+  return new Doc(kind, { bytes: await blobGz(pin, opts.signal) }, { pin });
 }
 
 /// What a plan reads of the deployment's stops document (D-157: a pick
 /// only reads it): the warnings of the stops its patterns visit that are
 /// not in service over its period. cap-stops `read_pick` derives the
 /// period from the published set. Empty with no stops document, and for
-/// a plan with no id or pick date.
-export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null): Promise<NetworkWarning[]> {
-  if (!(await available("stops"))) return [];
-  const stops = await served("stops");
-  if (!stops) return [];
+/// a plan with no id or pick date. `stops` is the page's input.
+export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null, stops: Doc | null): Promise<NetworkWarning[]> {
+  if (!stops || !(await available("stops"))) return [];
   return (await ask("stops", "read_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined })).warnings;
 }
 
 /// What an export carries of the deployment's stops document (D-151,
 /// D-157): the plan with the stops' history over its period (cap-stops
 /// `export_pick`), as the server's GET /feed exports a pick. The plan
-/// itself when there is no stops document.
-export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null): Promise<Doc<Network>> {
-  if (!(await available("stops"))) return network;
-  const stops = await served("stops");
-  if (!stops) return network;
+/// itself when there is no stops document. `stops` is the page's input.
+export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null, stops: Doc | null): Promise<Doc<Network>> {
+  if (!stops || !(await available("stops"))) return network;
   const out = await ask("stops", "export_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined });
   return out.network_hash === network.hash ? network : produced("network", out.network, "stops", out.network_hash);
 }
@@ -851,8 +919,8 @@ export async function withStopVersions(network: Doc<Network>, published: Publish
 /// the server's import of its street layer — bytes the page never
 /// parses, registered in cap-streets and refused unless they answer
 /// the pin. Null when the deployment publishes none.
-export async function servedStreets(): Promise<Doc | null> {
-  const doc = await served("streets");
+export async function servedStreets(opts: ReadOptions = {}): Promise<Doc | null> {
+  const doc = await served("streets", opts);
   if (doc) await load("streets", doc);
   return doc;
 }
@@ -860,12 +928,10 @@ export async function servedStreets(): Promise<Doc | null> {
 /// The deployment's walk table: the manifest's `walks_hash`, derived
 /// from its streets and network, registered in the router and refused
 /// unless it answers the pin. Null when the deployment publishes none.
-export async function servedWalks(): Promise<Doc<WalkTable> | null> {
-  const pin = (await deploymentManifestNow())?.walks_hash;
+export async function servedWalks(opts: ReadOptions = {}): Promise<Doc<WalkTable> | null> {
+  const pin = (await manifestOf(opts)).walks_hash;
   if (!pin) return null;
-  const resp = await fetch(`blobs/${pin}`).catch(() => null);
-  if (!resp?.ok) return null;
-  const doc = new Doc<WalkTable>("walks", { value: (await resp.json()) as WalkTable }, { pin });
+  const doc = new Doc<WalkTable>("walks", { value: await blobJson<WalkTable>(pin, opts.signal) }, { pin });
   await load("router", doc);
   return doc;
 }

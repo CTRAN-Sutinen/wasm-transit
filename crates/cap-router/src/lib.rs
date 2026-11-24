@@ -25,7 +25,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::{GRAPH, LIVE, NETWORK, WALKS};
+use cap_abi::kernel::{kind, GRAPH};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -171,7 +171,7 @@ pub enum Response {
 /// A registered walk table, refused when it was derived for another
 /// network: its stops would be another network's.
 fn walks_arc(walks_hash: &str, network_hash: &str) -> Result<Arc<WalkTable>, String> {
-    let table = WALKS.require(walks_hash)?;
+    let table = kind::<transit_streets::walking::WalkTable>().require(walks_hash)?;
     if table.network_hash != network_hash {
         return Err(format!(
             "walk table {walks_hash} walks network {}, not {network_hash}",
@@ -200,8 +200,8 @@ fn graph(
     // The request's own fields validate before any registry lookup —
     // a garbage date is a caller error, not a missing-document error.
     let date = parse_date(date_str)?;
-    let network = NETWORK.require(network_hash)?;
-    let live = live_hash.map(|h| LIVE.require(h)).transpose()?;
+    let network = kind::<transit_network::Network>().require(network_hash)?;
+    let live = live_hash.map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
     let walks = walks_hash.map(|h| walks_arc(h, network_hash)).transpose()?;
     // Live documents are ephemeral (one per rt moment): only the
     // newest live document's graphs stay held, or every snapshot
@@ -220,7 +220,7 @@ fn graph(
     );
     let inputs: Vec<&str> = [Some(network_hash), edits_hash, live_hash, walks_hash].into_iter().flatten().collect();
     cap_abi::kernel::derive(&GRAPH, &key, &inputs, || {
-        let day = cap_abi::kernel::day(network_hash, edits_hash, date_str)?;
+        let day = day(network_hash, edits_hash, date_str)?;
         // The date's live instances only (an instance stating no date
         // is the planned date's — LiveDay::on).
         let live = live.map(|l| l.on(date_str, date_str));
@@ -257,8 +257,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Plan { itinerary })
         }
         Request::ItineraryPaths { network_hash, edits_hash, date, itinerary, from, to, direct } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = NETWORK.require(&network_hash)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let diversions = day.edits.as_ref().map(|e| e.diversions.as_slice()).unwrap_or(&[]);
             let paths = itinerary
                 .legs
@@ -300,12 +300,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let direct_secs = direct.map(|d| d.walk_secs);
             let active = transit_router::earliest_arrival_between(&net, &from, &to, direct_secs, depart_secs, legs)
                 .map_err(|e| e.to_string())?;
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             // The baseline is the unpatched materialization — one
             // materialization apart, never a second document — read
             // at the same predictions; the diverted trips are the
             // instances the patch moved.
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
             let (baseline, diverted) = match &day.edits {
                 Some(edits) => {
                     let base = graph(&network_hash, None, live_hash.as_deref(), walks_hash.as_deref(), &date)?;
@@ -351,5 +351,22 @@ cap_abi::capability! {
     id: "router",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, EDITS, LIVE, WALKS],
+    documents: [transit_network::Network, transit_sync::EditDocument, transit_live::LiveDay, transit_streets::walking::WalkTable],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("live", &[1]), ("walks", &[1])],
+}
+
+/// The day for (network, edits, date), held in the kernel's derived
+/// registry under `transit_dispatch::day_key`: the effective trips and,
+/// when edits are in force, what they took away. The date is read first,
+/// so a date that does not parse is the caller's error.
+fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
+    let on = transit_dispatch::day_date(date)?;
+    let network = kind::<transit_network::Network>().require(network_hash)?;
+    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
+    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
+    let key = transit_dispatch::day_key(network_hash, edits_hash, date);
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
 }

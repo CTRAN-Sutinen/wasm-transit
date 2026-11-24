@@ -60,6 +60,31 @@ fn main() {
         }
     }
 
+    // No hand-written list names a capability: the generator, the
+    // kernel (its gates' own allowlists aside), and the manifests that
+    // build them.
+    let ids: Vec<String> = packages
+        .iter()
+        .filter(|p| gates::class(&p.name) == Some(gates::Class::Capability))
+        .map(|p| p.name.trim_start_matches("cap-").to_string())
+        .collect();
+    let mut files = vec![root.join("Cargo.toml"), root.join("crates/cap-abi/Cargo.toml"), root.join("crates/generator/Cargo.toml")];
+    let mut stack = vec![root.join("crates/generator/src"), root.join("crates/cap-abi/src")];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("read src").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("bin/common/gates.rs") {
+                files.push(path);
+            }
+        }
+    }
+    for path in files {
+        let file = path.strip_prefix(root).unwrap_or(&path).display().to_string();
+        violations.extend(gates::capability_name_violations(&file, &fs::read_to_string(&path).expect("read source"), &ids));
+    }
+
     if !violations.is_empty() {
         for v in &violations {
             eprintln!("ARCH FAIL: {v}");
@@ -67,5 +92,5 @@ fn main() {
         eprintln!("(crates/AGENTS.md — capabilities never call capabilities; the gates are the rule, never widen them)");
         std::process::exit(1);
     }
-    println!("arch gates: {} packages, dependency graph, kernel closure, state and unsafe — clean", packages.len());
+    println!("arch gates: {} packages, dependency graph, kernel closure, state and unsafe, capability names — clean", packages.len());
 }

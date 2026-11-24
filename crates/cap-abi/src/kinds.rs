@@ -45,7 +45,10 @@ pub struct Declaration {
     pub store: Option<Store>,
 }
 
-/// A kind's kernel load: the registry it fills, and its two ops.
+/// A kind's kernel load: the registry it fills, and its two ops. The
+/// load itself is the line's library type's `transit_version::Load`
+/// impl (D-239). The generator checks that the impl's constants are the
+/// line's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KernelLoad {
     /// The registry's id, as `capability! { documents: [...] }` and the
@@ -361,50 +364,6 @@ mod tests {
                 assert!(seen.insert(("store", s.kind.to_string())), "two lines store {}", s.kind);
             }
         }
-    }
-
-    /// A kernel kind and its line agree: its ops, its code, and its
-    /// library type (by crate and name; a type is defined in a module of
-    /// its crate). Answers the registry's id.
-    fn agrees<T: Send + Sync + 'static>(kind: &crate::kernel::Kind<T>) -> &'static str {
-        let line = by_load(kind.id).unwrap_or_else(|| panic!("the kernel's {} has no line in KINDS", kind.id));
-        let load = line.load.expect("by_load finds a load");
-        assert_eq!((load.op, load.code), (kind.load_op, kind.op), "{}", kind.id);
-        let ty = std::any::type_name::<T>();
-        let (krate, name) = (ty.split("::").next().unwrap(), ty.rsplit("::").next().unwrap());
-        assert!(
-            line.library.starts_with(&format!("{krate}::")) && line.library.ends_with(&format!("::{name}")),
-            "{}: the line names {}, the kernel holds {ty}",
-            kind.id,
-            line.library
-        );
-        kind.id
-    }
-
-    #[test]
-    fn every_kernel_kind_is_its_line() {
-        use crate::kernel::*;
-        let held: BTreeSet<&str> = [
-            agrees(&NETWORK),
-            agrees(&EDITS),
-            agrees(&LIVE),
-            agrees(&BOUNDARY),
-            agrees(&WALKS),
-            agrees(&STREETS),
-            agrees(&WATCHLIST),
-            agrees(&WORK_RULES),
-            agrees(&STOPS),
-            agrees(&STOP_REQUESTS),
-            agrees(&SERVICE_ALERTS),
-            agrees(&ALERT_TEMPLATES),
-            agrees(&NOTES),
-            agrees(&LAYER),
-            agrees(&FEED),
-            agrees(&RT),
-        ]
-        .into();
-        let listed: BTreeSet<&str> = KINDS.iter().filter_map(|k| k.load.map(|l| l.id)).collect();
-        assert_eq!(held, listed, "each line with a load is a kernel kind");
     }
 
     #[test]

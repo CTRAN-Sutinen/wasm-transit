@@ -6,14 +6,17 @@ is such a page: the rider pages (ride-now, the stop display) and the
 staff pages (service design, service change, stops, disruptions; D-189).
 They share one lifecycle (D-63, D-65):
 
-- **Data re-pins without a reload.** On every poll, the host asks the
-  engine which network the deployment serves today. The engine answers
-  with `servedNetworkPin`. It reads the manifest, revalidated by its
-  ETag, and the pick in force on the agency's date. A republish moves
-  the pin. So does a new pick, or the date crossing a pick's effective
-  date. The host adopts the new network quietly, and the page stays on
-  screen. The host names its keep-set, so the old network leaves every
-  module. A zip loaded by hand stops the page following.
+- **Data re-pins without a reload.** The page's network is one of its
+  inputs ([generated-uis.md](generated-uis.md), kit's "The inputs"),
+  read after the manifest input on every poll. Its reader asks the
+  engine which network the deployment serves today
+  (`servedNetworkPin`), over the manifest the page holds (revalidated
+  by its ETag) and the pick in force on the agency's date. A republish
+  moves the pin. So does a new pick, or the date crossing a pick's
+  effective date. Only a moved pin reads the network again. The host
+  adopts the new network quietly, and the page stays on screen. The
+  host names its keep-set, so the old network leaves every module. A
+  zip loaded by hand stops the page following.
 - **A build waits, then applies.** The build writes the service worker
   (`web/service-worker.js` → `dist/sw.js`, by `vite.config.js`'s plugin).
   The worker carries the build's identity, a hash over its shell. It
@@ -70,13 +73,16 @@ They share one lifecycle (D-63, D-65):
   cached. Offline, a board is the schedule, and it says so. `network`
   (the planner pages' `GET /network`) is kept as the last copy too.
 
-  A staff page says when the server last confirmed its documents. Kit's
-  `manifestNow` reads the manifest and tells the page whether the server
-  answered, and the time of its answer (the `Date` the worker kept). The
-  page shows "Offline · data as of 4:05 PM" while it works from the last
-  copy. The disruptions page keeps its own last good edit document
-  (kit's `lastGoodText`, in IndexedDB), and labels it with the time it
-  read it. A page never shows an old answer as current.
+  A staff page says when the server last confirmed its documents. The
+  engine's `readManifest` tells the manifest input whether the server
+  answered, and the time of its answer (the `Date` the worker kept).
+  The page shows "Offline · data as of 4:05 PM" while it works from the
+  last copy. After a write is sent, the page reads the manifest and the
+  documents it pins at once, so the banner follows the server's
+  answer. The disruptions page keeps its own last good edit document
+  (kit's `readHeadKept`, in IndexedDB), and labels it with the time the
+  server last confirmed it. A page never shows an old answer as
+  current.
 - **The outbox (D-189).** A staff page's write that cannot reach the
   server waits on the device, in order, and is sent when the server
   answers. The server stays the authority on writes.

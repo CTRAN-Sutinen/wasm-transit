@@ -34,7 +34,7 @@
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{NETWORK, STOPS, STOP_REQUESTS};
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -419,7 +419,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::AttributeSurveys { stops_hash, stops, by } => {
             let stops = match stops_hash {
-                Some(h) => STOPS.require(&h)?.attribute_surveys(stops, &by),
+                Some(h) => kind::<transit_stops::Stops>().require(&h)?.attribute_surveys(stops, &by),
                 None => Stops::default().attribute_surveys(stops, &by),
             };
             Ok(Response::AttributeSurveys { stops })
@@ -441,7 +441,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::StopsOn { stops_hash, date, stop_ids, statuses } => {
             let date = parse_date(&date)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let listed = match stop_ids {
                 None => stops.on_date(date),
                 Some(ids) => {
@@ -464,13 +464,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             if radius_m.is_some_and(|r| !(r >= 0.0)) {
                 return Err("radius_m must not be negative".into());
             }
-            let stops = STOPS.require(&stops_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             Ok(Response::StopsNear { stops: stops.near(date, lat, lon, limit.unwrap_or(10) as usize, radius_m, statuses.as_deref()) })
         }
         Request::RequestWarnings { stops_hash, requests_hash, date, stop } => {
             let date = parse_date(&date)?;
-            let stops = STOPS.require(&stops_hash)?;
-            let requests = STOP_REQUESTS.require(&requests_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
+            let requests = kind::<transit_requests::StopRequests>().require(&requests_hash)?;
             let warnings = requests
                 .requests
                 .iter()
@@ -482,37 +482,37 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Stop { stops_hash, stop_id, date } => {
             let date = parse_date(&date)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let events = stops.stops.get(&stop_id).ok_or_else(|| format!("no stop {stop_id:?} in the stops document"))?;
             let next = stops.next_events(&stop_id, date).iter().map(|k| k.as_str().to_string()).collect();
             Ok(Response::Stop { stop: stops.stop_on(&stop_id, date), events: events.clone(), next })
         }
         Request::Seed { network_hash } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let seeded = transit_stops::stop_record::seed(&network).identified().checked().map_err(|refusals| {
                 let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
                 format!("the network's stops do not make a stops document: {}", reasons.join("; "))
             })?;
-            let (stops_hash, held) = STOPS.register(seeded)?;
+            let (stops_hash, held) = kind::<transit_stops::Stops>().register(seeded)?;
             Ok(Response::Seed { stops_hash, stops: (*held).clone() })
         }
         Request::Vocabulary {} => Ok(Response::Vocabulary { statuses: Status::ALL.iter().map(|s| s.as_str().to_string()).collect() }),
         Request::AddEvent { stops_hash, stop_id, event, new } => {
-            let held = STOPS.require_writable(&stops_hash)?;
+            let held = kind::<transit_stops::Stops>().require_writable(&stops_hash)?;
             if let Some(taken) = new.unwrap_or(false).then(|| held.refuse_taken(&stop_id)).flatten() {
                 return Ok(Response::AddEvent { refusals: vec![taken], stops_hash: None, stops: None });
             }
             let next = held.add_event(&stop_id, event);
             Ok(match next.identified().checked() {
                 Ok(next) => {
-                    let (stops_hash, next) = STOPS.register(next)?;
+                    let (stops_hash, next) = kind::<transit_stops::Stops>().register(next)?;
                     Response::AddEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()) }
                 }
                 Err(refusals) => Response::AddEvent { refusals, stops_hash: None, stops: None },
             })
         }
         Request::CorrectEvent { stops_hash, stop_id, event_id, event, saw } => {
-            let held = STOPS.require_writable(&stops_hash)?;
+            let held = kind::<transit_stops::Stops>().require_writable(&stops_hash)?;
             if let Some(saw) = saw {
                 let now = held
                     .stops
@@ -529,14 +529,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .ok_or_else(|| format!("no event {event_id:?} of stop {stop_id:?} in the stops document"))?;
             Ok(match next.identified().checked() {
                 Ok(next) => {
-                    let (stops_hash, next) = STOPS.register(next)?;
+                    let (stops_hash, next) = kind::<transit_stops::Stops>().register(next)?;
                     Response::CorrectEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()), conflict: None }
                 }
                 Err(refusals) => Response::CorrectEvent { refusals, stops_hash: None, stops: None, conflict: None },
             })
         }
         Request::LogRecords { stops_hash } => {
-            let held = STOPS.require(&stops_hash)?;
+            let held = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let doc = serde_json::to_value(&*held).map_err(|e| e.to_string())?;
             Ok(Response::LogRecords { next: transit_log::document_records(&doc, "stops", "stop", "stops", transit_stops::SCHEMA_VERSION)? })
         }
@@ -544,45 +544,45 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let template = serde_json::json!({"kind": "stops", "schema_version": transit_stops::SCHEMA_VERSION});
             let stops: Stops = transit_log::assemble(template, document.as_ref(), "stops", &records, false)?;
             let document = cap_abi::canonical_bytes(&stops)?;
-            let (document_hash, _) = STOPS.register(stops)?;
+            let (document_hash, _) = kind::<transit_stops::Stops>().register(stops)?;
             Ok(Response::LogDocument { document_hash, document })
         }
         Request::Receive { write, heads, ops, by } => receive(write, heads, ops, by),
         Request::ReadRecords { network_hash, stops_hash, on } => {
             let on = parse_date(&on)?;
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let read = transit_stops::stop_record::read_records(&network, &stops, on);
-            let (network_hash, read) = NETWORK.register(read)?;
+            let (network_hash, read) = kind::<transit_network::Network>().register(read)?;
             Ok(Response::ReadRecords { network_hash, network: cap_abi::Canonical((*read).clone()) })
         }
         Request::ReadPick { network_hash, stops_hash, published } => {
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             match transit_stops::stop_record::read_pick(&network, &stops, published.as_ref()) {
                 Some(read) => {
-                    let (network_hash, network) = NETWORK.register(read.network)?;
+                    let (network_hash, network) = kind::<transit_network::Network>().register(read.network)?;
                     Ok(Response::ReadPick { period: Some(read.period), network_hash, network: cap_abi::Canonical((*network).clone()), warnings: read.warnings })
                 }
                 None => Ok(Response::ReadPick { period: None, network_hash, network: cap_abi::Canonical((*network).clone()), warnings: Vec::new() }),
             }
         }
         Request::ExportPick { network_hash, stops_hash, published } => {
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let exported = transit_stops::stop_record::export_pick(&network, &stops, published.as_ref()).unwrap_or_else(|| (*network).clone());
-            let (network_hash, exported) = NETWORK.register(exported)?;
+            let (network_hash, exported) = kind::<transit_network::Network>().register(exported)?;
             Ok(Response::ExportPick { network_hash, network: cap_abi::Canonical((*exported).clone()) })
         }
         Request::Records { stops_hash, stop_ids, on } => {
             let on = parse_date(&on)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             Ok(Response::Records { records: transit_stops::stop_record::records(&stops, &stop_ids, on) })
         }
         Request::TakeStops { network_hash, stops_hash, stop_ids, on } => {
             let on = parse_date(&on)?;
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             match transit_stops::stop_record::take_stops(&network, &stops, &stop_ids, on) {
                 Ok(edits) => Ok(Response::TakeStops { edits }),
                 Err(missing) => Err(format!("not in the stops record on {on}: {}", missing.join(", ")).into()),
@@ -594,8 +594,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             if until.is_some_and(|u| u <= from) {
                 return Err("until must come after from".into());
             }
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             Ok(Response::VisitWarnings { warnings: transit_stops::stop_record::visit_warnings(&network, &stops, from, until) })
         }
         Request::ExportVersions { network_hash, stops_hash, from, until } => {
@@ -604,28 +604,28 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             if until.is_some_and(|u| u <= from) {
                 return Err("until must come after from".into());
             }
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let exported = transit_stops::stop_record::export_versions(&network, &stops, from, until);
-            let (network_hash, exported) = NETWORK.register(exported)?;
+            let (network_hash, exported) = kind::<transit_network::Network>().register(exported)?;
             Ok(Response::ExportVersions { network_hash, network: cap_abi::Canonical((*exported).clone()) })
         }
         Request::FeedEvents { stops_hash, feed } => {
-            let stops = STOPS.require(&stops_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             Ok(Response::FeedEvents { events: transit_stops::stop_record::feed_events(&stops, &feed) })
         }
         Request::ImportEvents { stops_hash, network_hash, on, feed } => {
-            let network = NETWORK.require(&network_hash)?;
+            let network = kind::<transit_network::Network>().require(&network_hash)?;
             let on = match on {
                 Some(on) => parse_date(&on)?,
                 None => transit_network::first_service_date(&network).ok_or("the feed runs no service, so it has no first service date: name `on`")?,
             };
-            let stops = STOPS.require(&stops_hash)?;
+            let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let imported = match feed {
                 Some(feed) => transit_stops::stop_record::import_feed(&stops, &network, on, &feed),
                 None => transit_stops::stop_record::import_events(&stops, &network, on),
             };
-            let (stops_hash, next) = STOPS.register(imported.stops)?;
+            let (stops_hash, next) = kind::<transit_stops::Stops>().register(imported.stops)?;
             Ok(Response::ImportEvents {
                 stops_hash,
                 stops: (*next).clone(),
@@ -740,7 +740,7 @@ fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Optio
                 return Ok(Some(transit_log::Received::moved(heads.stops.clone())));
             }
             let (doc, unknown) = cap_abi::read_base::<Stops>(stops)?;
-            (heads.stops, heads.wrote_stops) = (Some(STOPS.register(doc)?.0), Some(op));
+            (heads.stops, heads.wrote_stops) = (Some(kind::<transit_stops::Stops>().register(doc)?.0), Some(op));
             heads.unknown_fields.extend(unknown);
         }
         StopsIntent::ImportEvents { network_hash, on, feed } => {
@@ -764,7 +764,7 @@ fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result
     let refused = |refusals: &[RequestRefusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
     let held = |hash: &Option<String>| -> Result<StopRequests, String> {
         Ok(match hash {
-            Some(h) => (*STOP_REQUESTS.require_writable(h)?).clone(),
+            Some(h) => (*kind::<transit_requests::StopRequests>().require_writable(h)?).clone(),
             None => StopRequests::default(),
         })
     };
@@ -790,7 +790,7 @@ fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result
         RequestsIntent::Migrate {} => return Ok(migrate(heads, op)),
     };
     match next.checked() {
-        Ok(next) => (heads.requests, heads.wrote_requests) = (Some(STOP_REQUESTS.register(next)?.0), Some(op)),
+        Ok(next) => (heads.requests, heads.wrote_requests) = (Some(kind::<transit_requests::StopRequests>().register(next)?.0), Some(op)),
         Err(refusals) => return refused(&refusals),
     }
     Ok(None)
@@ -834,13 +834,13 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         // held document does not hold names them, whatever name the
         // client sent. Then the document is checked as a write is.
         let by = by.as_deref().unwrap_or(&write.header.writer);
-        let now = (*STOPS.require(&now)?).clone();
+        let now = (*kind::<transit_stops::Stops>().require(&now)?).clone();
         let attributed = match &heads.held_stops {
-            Some(h) => STOPS.require(h)?.attribute_surveys(now, by),
+            Some(h) => kind::<transit_stops::Stops>().require(h)?.attribute_surveys(now, by),
             None => Stops::default().attribute_surveys(now, by),
         };
         let checked = match attributed.identified().checked() {
-            Ok(checked) => STOPS.register(checked)?.0,
+            Ok(checked) => kind::<transit_stops::Stops>().register(checked)?.0,
             Err(refusals) => return answer(transit_log::Received::refused(op, to_value(&refusals)?)),
         };
         let Response::LogRecords { next: records } = dispatch(Request::LogRecords { stops_hash: checked.clone() })? else { unreachable!("log_records answers log_records") };
@@ -848,7 +848,7 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         written.insert("stops".to_string(), checked);
     }
     if let (Some(_), Some(now)) = (heads.wrote_requests, heads.requests.clone()) {
-        let doc = to_value(&*STOP_REQUESTS.require(&now)?)?;
+        let doc = to_value(&*kind::<transit_requests::StopRequests>().require(&now)?)?;
         next.extend(transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)?);
         written.insert("stop_requests".to_string(), now);
     }
@@ -897,11 +897,11 @@ fn judge_requests(
     use transit_stops::request_rule::{request_rule, RuleBreak};
     let mut out = Judged::default();
     let (Some(on), Some(requests_after)) = (write.today.as_deref().and_then(|d| parse_date(d).ok()), requests_after) else { return Ok(out) };
-    let requests_after = STOP_REQUESTS.require(requests_after)?;
-    let requests_before = requests_before.map(|h| STOP_REQUESTS.require(h)).transpose()?;
-    let stops_before = stops_before.map(|h| STOPS.require(h)).transpose()?;
+    let requests_after = kind::<transit_requests::StopRequests>().require(requests_after)?;
+    let requests_before = requests_before.map(|h| kind::<transit_requests::StopRequests>().require(h)).transpose()?;
+    let stops_before = stops_before.map(|h| kind::<transit_stops::Stops>().require(h)).transpose()?;
     let stops_after = match stops_after {
-        Some(h) => Some(STOPS.require(h)?),
+        Some(h) => Some(kind::<transit_stops::Stops>().require(h)?),
         None => stops_before.clone(),
     };
     let empty = Stops::default();
@@ -975,5 +975,12 @@ cap_abi::capability! {
     id: "stops",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [STOPS, STOP_REQUESTS, NETWORK],
+    documents: [transit_stops::Stops, transit_requests::StopRequests, transit_network::Network],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[
+        ("stops", &[transit_stops::SCHEMA_VERSION]),
+        ("stop_requests", &[transit_requests::SCHEMA_VERSION]),
+        ("network", &[transit_network::SCHEMA_VERSION]),
+    ],
 }

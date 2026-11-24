@@ -28,7 +28,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
 }
 
 fn active_services(network_hash: &str, edits_hash: Option<String>, date: &str) -> Vec<String> {
@@ -137,7 +137,7 @@ fn edits_can_take_a_key_off_the_board() {
         updated_at: 1,
         extra: Default::default(),
     }];
-    let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0;
+    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0;
     // WK still runs (route 10 carries it); the answer is unchanged —
     // the mechanism is pinned by construction: the answer derives
     // from the patched day, and a key only leaves when its every
@@ -235,7 +235,7 @@ fn the_reverse_read_comes_from_the_effective_day() {
         updated_at: 1,
         extra: Default::default(),
     }];
-    let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0;
+    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0;
     assert_eq!(
         service_dates(&network_hash, Some(edits_hash), "WK", "2026-10-23", "2026-10-26"),
         vec!["2026-10-23".to_string(), "2026-10-26".to_string()],
@@ -272,7 +272,7 @@ fn an_invalid_edit_record_moves_nothing() {
         extra: Default::default(),
     };
     broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
-    let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(vec![broken])).unwrap().0;
+    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(vec![broken])).unwrap().0;
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()],
@@ -308,9 +308,9 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_calendar::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_calendar::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_calendar::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_calendar::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_calendar::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }

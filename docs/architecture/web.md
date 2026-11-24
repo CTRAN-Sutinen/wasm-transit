@@ -449,7 +449,7 @@ true. Change it only with the user, after you read **Because**.
 - **Rejected:** a gazetteer document on the bus; leaving external answers to each host's judgment.
 - **Decided:** D-27, D-36, D-38. **Pinned:** `server/geocode_test.go`, `web/e2e/published-network.spec.mjs` ("ride now searches addresses through the geocoder"), the `--ask` runner gate.
 
-### Live feeds are named in a static file (`live-feeds.json`, `deploymentFeeds`)
+### Live feeds are named in a static file (`live-feeds.json`, kit's `readLiveFeeds`)
 - **Holds:** a deployment's GTFS-rt feeds are named in `live-feeds.json` beside the page, not in the manifest's `services`.
 - **Because:** the rider pages must run as plain static files with no sync server ([static-deployment.md](static-deployment.md)). So their default feeds cannot depend on a server-built document.
 - **Rejected:** `services.live` in the server's manifest.
@@ -468,10 +468,16 @@ true. Change it only with the user, after you read **Because**.
 - **Decided:** D-176.
 
 ### A failure belongs to its frame (`FrameState`, each host's `frames`)
-- **Holds:** the answer graph keeps why each frame has no answer: unassembled, starved, or failed. A host declares a node's capabilities and what it clears, and keeps no failure state of its own. Every other frame answers.
+- **Holds:** the answer graph keeps why each frame has no answer: unassembled, starved, unread (an input it requires fails, and the page holds nothing of it), or failed. A host declares a node's capabilities, its inputs, and what it clears, and keeps no failure state of its own. Every other frame answers.
 - **Because:** each host kept failures by hand, two ways: a `framed` wrapper and `failed[frame]` in the planner hosts, and per-capability `off` flags and error fields in the rider hosts. Each node repeated the same checks. A capability that did not load silently emptied some frames and failed others.
 - **Rejected:** one failure box for every UI. The rider components say an outage in their own words (`off`, `error`), so the rider shells map the state onto those props.
 - **Pinned:** `web/src/uis/answers.test.mjs`.
+
+### A UI's inputs are declared as data, and read by the kit (`src/uis/inputs.ts`, each `ui.json`'s `inputs`)
+- **Holds:** a UI declares each document and feed it reads from outside the page in its `ui.json`: where it comes from, how often it is read, its time limit, what the page keeps when a read fails, its age, and the failure-table rows it fails as. The host gives each a reader. The kit reads them all with one poll while the page is visible. It stops a read at its time limit, and a read answers a document, none kept, or a failure since a time.
+- **Because:** every row of a failure table is an input that fails, so the inputs are where a page's resilience is decided. Each host wrote its own readers and poll, and chose for itself what to keep and what to say. A read had no time limit, and the engine answered null both for none kept and for a failed read (QAF-131), so an outage looked like an empty deployment. A declaration holds only values, with no expression, so it is data, unlike a flow (D-176). As data, the failure-table gate and the docs site read it, and the picture of what a UI does through an outage follows the declarations.
+- **Rejected:** a time limit and a label written into each host's readers; the declarations as TypeScript that the docs site parses.
+- **Pinned:** `web/src/uis/inputs.test.mjs`, `web/src/uis/host-contract.test.mjs`, `tools/failure-tables.test.mjs`, the `reads-outside-inputs` web gate, e2e `ui-stop-display` "a server that never answers the edit document turns the label to stale within the read's time limit", e2e `ui-stops` "a stops document whose read fails says so…".
 
 ### The basemap's labels are served locally when installed (`just basemap-assets`, `pickStyle`)
 - **Holds:** the glyphs and sprites are fetched once into `web/public/basemap-assets/` (gitignored). They are read from there when present, else from protomaps.github.io.

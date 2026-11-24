@@ -11,7 +11,11 @@
 // architecture page also reads the workspace's crates and their
 // dependencies from `cargo metadata` (no build), and the kind table
 // (crates/cap-abi/kinds.json) to name each kind a capability loads.
-// The only
+// The
+// inputs section draws each UI's declared inputs (its ui.json's
+// `inputs`) beside the rows of its failure table they fail as
+// (docs/architecture/generated-uis.md), read as data through
+// tools/failure-tables.mjs. The only
 // hand-written content is the two traces (`TRACES`) and the bucket
 // stories (`BUCKET_STORIES`), and the test checks the code each of
 // their steps names. To change a description, edit the
@@ -25,6 +29,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { declaredInputs, failureTables } from "./failure-tables.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REGISTRY = join(ROOT, "registry");
@@ -723,6 +728,39 @@ function uiTable() {
   return `<div class="scroll"><table><tr><th>Capability</th>${head}</tr>\n${rows}\n<tr><th>Linked</th>${totals}</tr></table></div>`;
 }
 
+// What each UI reads, and what it does through an outage: each UI's
+// declared inputs (its ui.json's `inputs`), and, for each, the rows of
+// its failure table (docs/architecture/generated-uis.md) that say what
+// the page still shows and how it catches up. Drawn from the
+// declarations, so the picture changes when a declaration does.
+function inputsSection() {
+  const tables = failureTables(readFileSync(join(ROOT, "docs/architecture/generated-uis.md"), "utf8"));
+  const every = (s) => (s == null ? "once, at boot" : `every ${s} s`);
+  const keeps = (k) => (k === "none" ? "nothing (it never shows an old answer as live)" : "its last copy, labelled with its age");
+  return Object.entries(declaredInputs(ROOT))
+    .map(([ui, inputs]) => {
+      const rows = new Map((tables[ui]?.rows ?? []).map((r) => [r.name, r]));
+      const body = inputs
+        .map((i) => {
+          const fails = (i.fails_as ?? [])
+            .map((name) => {
+              const row = rows.get(name);
+              const shows = row ? inline(row.cells[2] ?? "") : "";
+              const catches = row ? inline(row.cells[5] ?? "") : "";
+              return `<li><strong>${esc(name)}</strong>${shows ? `: still shows ${shows}` : ""}${catches ? `; catches up: ${catches}` : ""}</li>`;
+            })
+            .join("");
+          return `<tr data-ui="${esc(ui)}" data-input="${esc(i.id)}"><td><strong>${esc(i.name)}</strong><br><span class="muted">${inline(i.from)}</span></td><td>${every(i.every_s)}</td><td>${esc(String(i.limit_s))} s</td><td>${keeps(i.keeps)}${i.old_after_s ? `; old after ${esc(String(i.old_after_s))} s` : ""}</td><td><ul>${fails}</ul></td></tr>`;
+        })
+        .join("\n");
+      return `<h3 id="inputs-${esc(ui)}">${esc(ui)}</h3>
+<div class="scroll"><table><tr><th>Input</th><th>Read</th><th>Time limit</th><th>When a read fails, the page keeps</th><th>Its failure table's rows</th></tr>
+${body}
+</table></div>`;
+    })
+    .join("\n");
+}
+
 // Two traces, written by hand: one request and one write, as sequence
 // diagrams. They are the only hand-written content on the site, so
 // each step names the code it describes (`at`: a file and a text in
@@ -743,7 +781,7 @@ const TRACES = [
       { from: 1, to: 2, title: "Off the render thread", text: "The request goes to the page's one bus worker as JSON text. The worker checked the module's bytes against their pinned hash, and runs it with no imports: the module cannot reach the network, the clock, or the page.", at: [["web/src/bus.worker.ts", "self.onmessage"], ["web/src/bus.worker.ts", "WebAssembly.instantiate(module, {})"]] },
       { from: 2, to: 3, title: "Into the module", text: "Every module has the same flat exports. The worker writes the text into the module's memory and calls transit_invoke.", at: [["crates/cap-abi/src/lib.rs", 'pub unsafe extern "C" fn transit_invoke(']] },
       { from: 3, to: 4, title: "The kernel routes", text: "A load registers a document. Any other request names its capability, and the kernel hands it to that capability in this assembly.", at: [["crates/cap-abi/src/kernel.rs", "pub fn invoke(caps: &[&Cap], text: &str)"]] },
-      { from: 4, self: true, title: "Documents by hash", text: "The request carries only hashes. The capability looks up the network, the edits, and the live day by those hashes, among the documents the engine sent the module before. A hash the module does not hold is an error, never a guess.", at: [["crates/cap-board/src/lib.rs", "NETWORK.require(&network_hash)"]] },
+      { from: 4, self: true, title: "Documents by hash", text: "The request carries only hashes. The capability looks up the network, the edits, and the live day by those hashes, among the documents the engine sent the module before. A hash the module does not hold is an error, never a guess.", at: [["crates/cap-board/src/lib.rs", "kind::<transit_network::Network>().require(&network_hash)"]] },
       { from: 4, to: 5, title: "The library answers", text: "transit-dispatch answers the question: the day's trips at that stop, patched by today's edits and the live feed, grouped by where they go.", at: [["crates/transit-dispatch/src/lib.rs", "pub fn grouped_board_at("]] },
       { from: 5, to: 0, back: true, title: "The answer comes back", text: "The answer goes back as JSON through the same steps. The page shows it as given. It computes nothing of its own.", at: [["web/src/uis/stop-display/host.svelte.ts", "display.board = board;"]] },
     ],
@@ -1155,6 +1193,10 @@ ${TRACES.map(traceSection).join("\n")}
 <p class="lede">The agency's record is one bucket in object storage. A file in it is written once and never changed. A kind is kept as a log when it is a collection of records that people change one at a time, such as stops, alerts, or notes. It is kept whole, in a pointer history, when it is replaced whole and rarely, such as the network or a build. The map shows where each kind lives, drawn from the kind table. The stories below it follow one of each into the bucket, and then a network a planner authors, which uses both.</p>
 ${bucketMap()}
 ${BUCKET_STORIES.map(bucketStory).join("\n")}
+
+<h2 id="inputs">What each UI reads, and what it does through an outage</h2>
+<p class="lede">Each UI declares the documents and feeds it reads from outside the page. One poll reads each of them while the page is visible, and stops a read at its time limit. A read answers a document, none kept, or a failure since a time. Each row below is drawn from the UI's declarations, beside the rows of its failure table that say what the page still shows while the input fails.</p>
+${inputsSection()}
 
 <h2 id="uis">What each UI links</h2>
 <p class="lede">Each generated UI is its own product. Its page runs one module, linked from the capabilities it needs.</p>

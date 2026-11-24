@@ -22,7 +22,9 @@ build time only. A user does not choose capabilities (D-176).
 The assembly crates are in `assemblies/`. `gen-assemblies` generates
 them from the capability crates and from the `ops` list in each
 `web/src/uis/<id>/ui.json`. `just caps` writes them, and `just test`
-checks that they are current.
+checks that they are current. gen-assemblies also writes
+`assemblies/gen-manifest/`, the generator's binary ("gen-manifest",
+below). It is no module.
 
 ## The kernel and the seam: cap-abi
 
@@ -33,6 +35,16 @@ interface. Every module has the same four exports, written once in each
 assembly crate. A capability crate only registers itself with
 `capability!`, and it forbids `unsafe`.
 
+**The declaration.** `capability!` is a capability's whole declaration:
+its id, its two lanes, the kinds it reads (`documents`, by type), its
+`Request` enum, and the kinds it consumes, speaks, and migrates. Its
+`OPS.md` is read from the crate's root. The macro writes `CAPABILITY`
+(what an assembly links) and `declaration()` (what the generator reads).
+No module calls `declaration()`, so no module carries the docs' text.
+The ops are the `Request` enum's tags: serde's refusal of an unknown tag
+names every tag, so the list cannot differ from what the dispatch
+decodes.
+
 **The manifest contract and the validator.** `cap-abi` defines the
 capability manifest contract: what a capability speaks, migrates, and
 consumes, and its agent context. It also holds the assembly validator.
@@ -41,14 +53,24 @@ coherence, and that a migration path can be reached. The validator is
 total and has property tests. gen-manifest validates its own output
 before it writes it.
 
-**gen-manifest.** gen-manifest writes the capability set as code. It
-reads each capability's agent context from that capability's `OPS.md`.
-A change to the manifest is the change a reviewer reads for an
-assembly. Each capability gives its worked examples in its own crate
-(`src/examples.rs`, behind its `examples` feature): the documents to
-load and the request. gen-manifest runs each through the capability's
-own dispatch and records the answer, so an example cannot differ from
-what the module answers. cap-author's example of `apply` also gives one
+**gen-manifest.** The generator (`crates/generator`) is a library that
+takes the capabilities as data (`Linked`: each one's declaration and
+worked examples) and names none. Its binary, gen-manifest, is generated:
+gen-assemblies writes `assemblies/gen-manifest/`, which links every
+capability with its `examples` feature, in id order, and calls the
+library. A new capability is a new crate directory, and nothing
+hand-written names it. A fresh clone builds, because nothing
+hand-written depends on the generated crate. The generator reads each
+capability's agent context from its `OPS.md`, and refuses a file whose
+`##` sections are not its `Request` enum's ops; the manifest lists the
+ops in the file's order. A change to the manifest is the change a
+reviewer reads for an assembly. Each capability gives its worked
+examples in its own crate (`src/examples.rs`, behind its `examples`
+feature): the documents to load and the request. gen-manifest runs each
+through the capability's own dispatch and records the answer, so an
+example cannot differ from what the module answers. gen-manifest's tests
+run the two checks that run every capability over the locked schemas
+(`generator::checks`: the real-output gate and the real-data soak). cap-author's example of `apply` also gives one
 value of each edit kind (`kinds`), applied to the fixture in order. The
 build fails if an edit kind has no example, or if an example stops
 applying.
@@ -60,18 +82,41 @@ only if it has a line. The list is data: no module reads it, so a kind
 costs a module nothing until a capability names it. gen-manifest
 generates the kind table from it (`docs/FORMATS.md`, "The kind table"),
 and gives each load in the registry's kernel ops its kind, which
-caps-run's `--load KIND:FILE` and the pages' engine read. A test holds
-each kernel kind to its line.
+caps-run's `--load KIND:FILE` and the pages' engine read. The generator
+holds each load to its line: the line names the library type, and the
+type's id, op, and code are the line's.
 
-**The registries.** The kernel (`kernel.rs`) owns one registry for each
-kind with a kernel load in the list. It also owns one derived registry. Each registry is a `Registry` (`registry.rs`). Its
-constructor is private to cap-abi, so a capability cannot declare
-shared state.
+**Each library loads its own kind (D-239).** A kind's library
+implements `transit_version::Load` for its type: the registry's id and
+name, the load op and its code, its form (JSON under a named field, or
+bytes), how many documents an instance keeps on its own, `parse`, and
+the load's answer. The impl lives in the library's `src/load.rs`. So
+cap-abi depends on no domain library, and an arch gate holds it to that.
+
+A document's identity and its versioned read are in transit-version
+(`transit_version::document`, and `jcs` for RFC 8785): the canonical
+hash, and the read of JSON or gzipped JSON in this build's version, or
+one version ahead. The kernel re-exports them (`cap_abi::canonical_hash`
+and the others).
+
+Why the read is in the library: a reader and a canonical writer are
+generic code, compiled where they are called. If the kernel called them
+for each kind, every capability crate that names a kind would compile
+its own copy of that kind's reader, and a UI assembly that links seven
+capabilities over the network would carry seven. A library's `parse`
+and `canonical` are plain functions, so each kind's reader is compiled
+once, in its library.
+
+**The registries.** The kernel (`kernel.rs`) keeps one registry for
+each kind type, made the first time a capability or the routing asks
+(`kind::<T>()`). It knows no kind. It also owns one derived registry.
+Each registry is a `Registry` (`registry.rs`). Its constructor is
+private to cap-abi, so a capability cannot declare shared state.
 
 **Loads.** Each kind's load is a kernel op. The load comes in two forms:
 
-- A bulk op over the document's bytes, with the code its line in the
-  list gives it (256 for the network). A code is never reused. The
+- A bulk op over the document's bytes, with its library's code (256
+  for the network), which its line in the list repeats. A code is never reused. The
   pages register every kind this way.
 - The same op in JSON, for example
   `{"op": "load_network", "network": …}`. The kernel removes it from the
@@ -88,9 +133,10 @@ document carries that this build does not know (`unknown_fields`,
 D-167), and answers nothing more when there are none.
 
 **Reading and minting documents.** A capability declares the kinds it
-reads (`capability! { documents: [...] }`). It reads them through the
-kind, for example `NETWORK.require`. An op that mints a document
-registers it where it mints it, for example `NETWORK.register`. These
+reads by their types (`capability! { documents: [Network, ...] }`). It
+reads them through the kind's registry, for example
+`kind::<Network>().require`. An op that mints a document registers it
+where it mints it, for example `kind::<Network>().register`. These
 ops mint documents:
 
 - an import, which mints a network and its boundary;
@@ -101,8 +147,10 @@ ops mint documents:
 its key, held under a `Derivation`. Each derivation has its own bound
 (`derive`). The derived entries are:
 
-- the day (`kernel::day`): transit-dispatch's `day`, which is the
-  effective trips and what the edits took away, as one materialization;
+- the day (`DAY`): transit-dispatch's `day_of` under its `day_key`,
+  which is the effective trips and what the edits took away, as one
+  materialization. Each capability that reads the day holds it through
+  the same key, so one assembly holds one copy;
 - the router's graph;
 - the street graph and the walking graph.
 
@@ -624,7 +672,7 @@ rules whose reasons are not clear from the rules alone.
   - a strict canonical parser kept in step with serde.
 - **Decided:** D-71.
 
-### The canonical form is RFC 8785 (`cap_abi::jcs`, `canonical_hash`, `Canonical`)
+### The canonical form is RFC 8785 (`transit_version::jcs`, `canonical_hash`, `Canonical`)
 - **Holds:** a document's canonical bytes are RFC 8785's: keys sorted
   by UTF-16 code units, no whitespace, numbers as ECMAScript writes
   them. Its identity is their sha256.

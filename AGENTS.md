@@ -266,10 +266,12 @@ crates/cap-abi     the kernel and the seam: the kind list, the registries, the m
                    that make a module, the manifest's types, gen-assemblies, and the
                    arch gates
 crates/cap-*       the capabilities: each one registers ops over its library
-crates/generator   gen-manifest: writes the manifest, the registry, the schema lock,
-                   and the kind table. No module links it.
+crates/generator   the generator: writes the manifest, the registry, the schema lock,
+                   and the kind table. It names no capability; its binary,
+                   gen-manifest, is generated. No module links it.
 crates/fixtures    the worked examples' fixtures (D-235). No module links it.
-assemblies/        generated and gitignored: the module crates that `just caps` builds
+assemblies/        generated and gitignored: the module crates that `just caps` builds,
+                   and gen-manifest
 server/            the Go and wazero host. It is scaffolding and makes no domain
                    decision.
 web/               the Svelte 5 and Vite frontend: one page for each generated UI

@@ -10,7 +10,6 @@
 //! ordered file. A document that is not canonical is refused, never
 //! registered under a second hash.
 
-use cap_abi::kernel::OP_LOAD_STREETS;
 // The module's seam, as a host calls it: the kernel's loads answer there.
 use cap_streets::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response, OP_IMPORT};
 use serde_json::{json, Value};
@@ -178,7 +177,7 @@ fn the_document_handed_back_is_the_same_hash() {
     let streets = imported["streets"].clone();
     let by_json = ok(dispatch_json(&json!({ "op": "load_streets", "streets": streets }).to_string()));
     assert_eq!(by_json["streets_hash"], hash.as_str());
-    let by_bytes = ok(dispatch_bytes(OP_LOAD_STREETS, streets.to_string().as_bytes()));
+    let by_bytes = ok(dispatch_bytes(<transit_streets::Streets as cap_abi::kernel::Load>::CODE, streets.to_string().as_bytes()));
     assert_eq!(by_bytes["streets_hash"], hash.as_str());
     assert_eq!(by_bytes["segments"], imported["segments"]);
     assert_eq!(by_bytes["nodes"], imported["nodes"]);
@@ -216,8 +215,8 @@ fn what_is_not_canonical_or_not_streets_is_an_error() {
         { "points": [[45601000, -122600000], [45601000, -122599000]], "class": "local" },
         { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
     ]});
-    assert!(err(dispatch_bytes(OP_LOAD_STREETS, unsorted.to_string().as_bytes())).contains("streets document"));
-    assert!(err(dispatch_bytes(OP_LOAD_STREETS, b"\xff\xfe")).contains("streets document"));
+    assert!(err(dispatch_bytes(<transit_streets::Streets as cap_abi::kernel::Load>::CODE, unsorted.to_string().as_bytes())).contains("streets document"));
+    assert!(err(dispatch_bytes(<transit_streets::Streets as cap_abi::kernel::Load>::CODE, b"\xff\xfe")).contains("streets document"));
     assert!(err(dispatch_bytes(OP_IMPORT, b"\xff\xfe")).contains("street layer"));
     let rails = json!({ "type": "FeatureCollection", "features": [
         { "type": "Feature", "properties": { "CFCC": "B10" },
@@ -237,7 +236,7 @@ const NETWORK_LOAD: &str = include_str!("../../../web/public/caps/sample-network
 
 fn load_network() -> String {
     let network: Value = serde_json::from_str::<Value>(NETWORK_LOAD).unwrap()["network"].clone();
-    let by_bytes = ok(dispatch_bytes(cap_abi::OP_LOAD_NETWORK, network.to_string().as_bytes()));
+    let by_bytes = ok(dispatch_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, network.to_string().as_bytes()));
     let by_json = ok(dispatch_json(&json!({ "op": "load_network", "network": network }).to_string()));
     assert_eq!(by_bytes["network_hash"], by_json["network_hash"], "either lane, one identity");
     by_bytes["network_hash"].as_str().unwrap().to_string()

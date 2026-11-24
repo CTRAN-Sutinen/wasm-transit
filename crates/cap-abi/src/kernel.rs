@@ -2,15 +2,20 @@
 //! fill them, and the routing an assembly's four exports run.
 //!
 //! **One registry per document kind, owned here.** A capability names
-//! the kinds it reads (`capability! { documents: [NETWORK, EDITS] }`)
-//! and reads them through the kind ([`Kind::require`]); it cannot
-//! declare a registry of its own (the constructor is private to this
-//! crate). Linked into one assembly, every capability reads the same
-//! `Arc`: a document registers once per instance, however many
-//! capabilities read it (D-77).
+//! the kinds it reads by their types
+//! (`capability! { documents: [Network, EditDocument] }`) and reads them
+//! through [`kind`] ([`Kind::require`]); it cannot declare a registry of
+//! its own (the constructor is private to this crate). Linked into one
+//! assembly, every capability reads the same `Arc`: a document registers
+//! once per instance, however many capabilities read it (D-77).
+//!
+//! **The kernel knows no kind (D-239).** Each kind's library implements
+//! `transit_version::Load`: the kind's id, its load op and code, how it
+//! reads the bytes, and what the load answers. The kernel keeps one
+//! registry for each type, and depends on no domain library.
 //!
 //! **Registration is the kernel's.** Each kind's load is a kernel op —
-//! a bulk op from 259 (the network's is 256), and the same JSON op
+//! a bulk op from 256, and the same JSON op
 //! (`{"op": "load_network", "network": …}`) on the JSON lane, peeled
 //! before any capability decodes the request. A load answers the
 //! document's identity (`<kind>_hash`, the module is the hash
@@ -40,61 +45,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use ts_rs::TS;
 
-use crate::registry::{Held, Registry, Retain, OP_EVICT, OP_HELD};
+pub use transit_version::{Form, Load};
 
-pub use transit_analysis::WeightedLayer;
-pub use transit_codec::{Boundary, Feed, FeedSummary};
-pub use transit_live::LiveDay;
-pub use transit_network::Network;
-pub use transit_rt::RtOverview;
-pub use transit_streets::Streets;
-pub use transit_streets::walking::WalkTable;
-pub use transit_sync::{EditDocument, EditRecord};
-pub use transit_rider::watchlist::Watchlist;
-pub use transit_runs::WorkRules;
-pub use transit_requests::StopRequests;
-pub use transit_stops::Stops;
-pub use transit_alerts::{AlertTemplates, ServiceAlerts};
-pub use transit_notes::Notes;
+use crate::registry::{Held, Registry, Retain, OP_EVICT, OP_HELD};
 
 // ---------------------------------------------------------------------
 // the kernel ops
 // ---------------------------------------------------------------------
 
-/// The load ops' bulk codes. The network's is 256 ([`crate::OP_LOAD_NETWORK`]);
-/// the registry ops are 257 and 258.
-pub const OP_LOAD_EDITS: u32 = 259;
-pub const OP_LOAD_LIVE: u32 = 260;
-pub const OP_LOAD_BOUNDARY: u32 = 261;
-pub const OP_LOAD_WALKS: u32 = 262;
-pub const OP_LOAD_STREETS: u32 = 263;
-pub const OP_LOAD_WATCHLIST: u32 = 264;
-pub const OP_LOAD_LAYER: u32 = 265;
-pub const OP_LOAD_FEED: u32 = 266;
-pub const OP_LOAD_RT: u32 = 267;
-
 /// Kernel bulk op: what the module is — the capabilities it links, in
 /// index order, each with the document kinds it reads (the bytes are
-/// ignored). The answer is [`About`].
+/// ignored). The answer is [`About`]. The kinds' loads take their codes
+/// from their libraries (`transit_version::Load::CODE`), 256 and up.
 pub const OP_ABOUT: u32 = 268;
-
-/// The work rules' load (after [`OP_ABOUT`], which took 268).
-pub const OP_LOAD_WORK_RULES: u32 = 269;
-
-/// The stops document's load.
-pub const OP_LOAD_STOPS: u32 = 270;
-
-/// The stop requests document's load.
-pub const OP_LOAD_STOP_REQUESTS: u32 = 271;
-
-/// The service alerts document's load.
-pub const OP_LOAD_SERVICE_ALERTS: u32 = 272;
-
-/// The alert templates document's load.
-pub const OP_LOAD_ALERT_TEMPLATES: u32 = 273;
-
-/// The notes document's load.
-pub const OP_LOAD_NOTES: u32 = 274;
 
 /// [`OP_ABOUT`]'s answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -114,159 +77,81 @@ pub struct AboutCap {
 /// A capability's own bulk ops number below this; the kernel's from it.
 pub const KERNEL_OPS: u32 = 256;
 
-/// A load's whole answer: what the kind answers ([`Loaded`]), and the
-/// names of the fields the document carries that this build does not
-/// know (D-167). They are kept in the document; a receive path flags
-/// them for a person. Absent when every field is known.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
-pub struct LoadAnswer {
+/// A load's whole answer: the op, what the kind answers
+/// (`transit_version::Load::answer`: its hash under the kind's field, and
+/// what the host shows about it), and the names of the fields the
+/// document carries that this build does not know (D-167). They are kept
+/// in the document; a receive path flags them for a person. Absent when
+/// every field is known.
+#[derive(Serialize)]
+struct LoadAnswer<A> {
+    op: &'static str,
     #[serde(flatten)]
-    #[ts(flatten)]
-    pub loaded: Loaded,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
-    pub unknown_fields: Vec<String>,
+    loaded: A,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unknown_fields: Vec<String>,
 }
 
-/// What a load answers: the document's identity under its kind's
-/// field, and what the host shows about it. Tagged like every op's
-/// answer.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub enum Loaded {
-    /// The network's zone (its operator's time zone), when it names
-    /// one: a host reads its clock there to give a date in the
-    /// network's own day (a pick's "today", D-237).
-    LoadNetwork {
-        network_hash: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        timezone: Option<String>,
-    },
-    LoadEdits { edits_hash: String },
-    LoadLive { live_hash: String },
-    LoadBoundary { boundary_hash: String },
-    LoadWalks { walks_hash: String },
-    /// The document's size as its graph will be: its streets, their
-    /// segments, and their distinct points.
-    LoadStreets { streets_hash: String, ways: u32, segments: u32, nodes: u32 },
-    LoadWatchlist { watchlist_hash: String, version: u32 },
-    /// What the layer holds and the weights it can be read by (each
-    /// numeric property, with its total) — the whole answer the
-    /// layer's import shows; a coverage op names the field.
-    LoadLayer {
-        layer_hash: String,
-        #[ts(type = "number")]
-        features: u64,
-        #[ts(type = "number")]
-        points: u64,
-        #[ts(type = "number")]
-        polygons: u64,
-        fields: Vec<transit_analysis::LayerField>,
-    },
-    LoadFeed { feed_hash: String, summary: FeedSummary },
-    LoadRt { rt_hash: String },
-    /// The version the rules speak.
-    LoadWorkRules { work_rules_hash: String, version: u32 },
-    /// How many stops the document holds.
-    LoadStops { stops_hash: String, stops: u32 },
-    /// How many requests the document holds.
-    LoadStopRequests { requests_hash: String, requests: u32 },
-    /// How many alerts the document holds.
-    LoadServiceAlerts { alerts_hash: String, alerts: u32 },
-    /// How many templates the document holds.
-    LoadAlertTemplates { templates_hash: String, templates: u32 },
-    /// How many notes the document holds.
-    LoadNotes { notes_hash: String, notes: u32 },
-}
-
-/// The JSON lane's envelope: the op, the capability it names, and the
-/// fields a load reads — each left as raw JSON until a load asks for
-/// it, so a request that is not a load costs one scan.
+/// The JSON lane's envelope: the op and the capability it names. Every
+/// other field is skipped, so a request that is not a load costs one
+/// scan. A load reads its document's field from the request again
+/// ([`Loader::load_json`]), left as raw JSON.
 #[derive(Deserialize)]
 pub struct Envelope<'a> {
     #[serde(borrow)]
     op: Cow<'a, str>,
     #[serde(borrow, default)]
     cap: Option<Cow<'a, str>>,
-    #[serde(borrow, default)]
-    network: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    edits: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    live: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    boundary: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    walks: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    streets: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    document: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    work_rules: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    stops: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    requests: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    alerts: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    templates: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    notes: Option<&'a RawValue>,
-    #[serde(borrow, default)]
-    bytes: Option<&'a RawValue>,
 }
 
-impl<'a> Envelope<'a> {
-    /// A field the load needs, or the request error naming it.
-    fn field(&self, value: Option<&'a RawValue>, name: &str) -> Result<&'a [u8], String> {
-        value.map(|raw| raw.get().as_bytes()).ok_or_else(|| format!("invalid request: missing field `{name}`"))
-    }
-
-    /// A byte document sent on the JSON lane (an array of numbers).
-    fn byte_field(&self) -> Result<Vec<u8>, String> {
-        serde_json::from_slice(self.field(self.bytes, "bytes")?).map_err(|e| format!("invalid request: bytes: {e}"))
-    }
+/// The field a load needs from the request, left as raw JSON, or the
+/// request error naming it.
+fn field<'a>(text: &'a str, name: &str) -> Result<&'a RawValue, String> {
+    let fields: std::collections::HashMap<Cow<'a, str>, &'a RawValue> =
+        serde_json::from_str(text).map_err(|e| format!("invalid request: {e}"))?;
+    fields.get(name).copied().ok_or_else(|| format!("invalid request: missing field `{name}`"))
 }
 
 // ---------------------------------------------------------------------
 // the kinds
 // ---------------------------------------------------------------------
 
-/// How a kind's identity is derived.
-enum Identity<T> {
-    /// The canonical hash of the parsed document (RFC 8785, D-169):
-    /// byte variants of one document are one document.
-    Canonical(fn(&T) -> Result<String, String>),
-    /// The content hash of the bytes as they crossed (a zip, a
-    /// protobuf, a GeoJSON layer — the bytes ARE the document).
-    Bytes,
-}
-
-/// One document kind: its registry and its load.
+/// One document kind's registry. Its library says what the kind is and
+/// how it loads (`transit_version::Load`, D-239); the kernel keeps one
+/// registry for each type ([`kind`]) and knows no kind.
 pub struct Kind<T: 'static> {
-    /// The kind's id, as the manifest's `documents` names it.
-    pub id: &'static str,
-    /// The registry's kind, as `held` and the unknown-hash error name it.
-    pub name: &'static str,
-    /// The JSON op that registers it.
-    pub load_op: &'static str,
-    /// The bulk op that registers it.
-    pub op: u32,
-    identity: Identity<T>,
     registry: Registry<T>,
-    /// The document from bulk bytes.
-    parse: fn(&[u8]) -> Result<T, String>,
-    /// The document's bytes from the JSON lane's envelope.
-    json: for<'a> fn(&Envelope<'a>) -> Result<Cow<'a, [u8]>, String>,
-    answer: fn(String, &T) -> Loaded,
 }
 
-impl<T: Send + Sync + 'static> Kind<T> {
+/// The registry of kind `T`: one for each type in an instance, made the
+/// first time a capability or the routing asks. Every capability linked
+/// into one assembly reads the same registry, so a document registers
+/// once per instance, however many capabilities read it (D-77).
+pub fn kind<T: Load>() -> &'static Kind<T> {
+    use std::any::{Any, TypeId};
+    use std::sync::Mutex;
+    static KINDS: Mutex<Vec<(TypeId, &'static (dyn Any + Send + Sync))>> = Mutex::new(Vec::new());
+    let mut kinds = KINDS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let id = TypeId::of::<T>();
+    if let Some((_, held)) = kinds.iter().find(|(t, _)| *t == id) {
+        return held.downcast_ref::<Kind<T>>().expect("a registry is held under its own type");
+    }
+    let retain = match T::RETAIN {
+        transit_version::Retain::Host => Retain::Host,
+        transit_version::Retain::Last(n) => Retain::Last(n),
+    };
+    let made: &'static Kind<T> = Box::leak(Box::new(Kind { registry: Registry::documents(T::NAME, T::LOAD_OP, retain) }));
+    kinds.push((id, made));
+    made
+}
+
+/// The registry of kind `T`, as the routing sees it: what
+/// `capability! { documents: [...] }` lists.
+pub fn loader<T: Load>() -> &'static dyn Loader {
+    kind::<T>()
+}
+
+impl<T: Load> Kind<T> {
     /// The document under `hash`, or the unknown-hash error every
     /// module speaks (`unknown <kind> <hash>: <load op> first`).
     pub fn require(&self, hash: &str) -> Result<Arc<T>, String> {
@@ -319,7 +204,7 @@ impl<T: Send + Sync + 'static> Kind<T> {
         if let Some(held) = self.registry.get(&hash) {
             return Ok((hash, held));
         }
-        let held = self.registry.insert(hash.clone(), (self.parse)(bytes)?);
+        let held = self.registry.insert(hash.clone(), T::parse(bytes)?);
         Ok((hash, held))
     }
 
@@ -332,347 +217,80 @@ impl<T: Send + Sync + 'static> Kind<T> {
         self.registry.is_empty()
     }
 
-    fn load(&self, bytes: &[u8]) -> Result<LoadAnswer, String> {
-        let (hash, held, unknown_fields) = match self.identity {
-            Identity::Canonical(identity) => {
+    /// The load: the document's identity, the document held under it,
+    /// and the fields it carries that this build does not know.
+    fn load(&self, bytes: &[u8]) -> Result<(String, Arc<T>, Vec<String>), String> {
+        match T::FORM {
+            Form::Json { .. } => {
                 let ((document, unknown_fields), ahead) =
-                    crate::noting_read(|| transit_version::noting_unknown(|| (self.parse)(bytes)));
+                    crate::noting_read(|| transit_version::noting_unknown(|| T::parse(bytes)));
                 let document = document?;
                 // A copy read one version ahead keeps the identity it is
                 // stored under (D-186). A read-only one refuses a write.
                 let hash = match &ahead {
                     Some(read) => read.hash.clone(),
-                    None => identity(&document)?,
+                    None => document.canonical().unwrap_or_else(|| Err(format!("{}: a JSON kind answers its canonical hash", T::ID)))?,
                 };
                 if let Some(read) = ahead {
                     self.registry.mark_ahead(&hash, read.found, read.how);
                 }
-                (hash.clone(), self.registry.insert(hash, document), unknown_fields)
+                Ok((hash.clone(), self.registry.insert(hash, document), unknown_fields))
             }
-            Identity::Bytes => {
+            Form::Bytes => {
                 let (hash, held) = self.register_bytes(bytes)?;
-                (hash, held, vec![])
+                Ok((hash, held, vec![]))
             }
-        };
-        Ok(LoadAnswer { loaded: (self.answer)(hash, &held), unknown_fields })
+        }
+    }
+
+    /// The load's answer, as the lanes send it.
+    fn answer(&self, loaded: Result<(String, Arc<T>, Vec<String>), String>) -> String {
+        crate::outcome(loaded.map(|(hash, held, unknown_fields)| LoadAnswer { op: T::LOAD_OP, loaded: held.answer(hash), unknown_fields }))
     }
 }
 
 /// A kind seen by the routing, whatever it holds.
-pub trait Load: Sync {
+pub trait Loader: Sync {
     fn id(&self) -> &'static str;
     fn name(&self) -> &'static str;
     fn load_op(&self) -> &'static str;
     fn op(&self) -> u32;
     fn held(&self) -> &dyn Held;
     fn load_bytes(&self, bytes: &[u8]) -> String;
-    fn load_json(&self, envelope: &Envelope) -> String;
+    /// The load on the JSON lane: `text` is the whole request.
+    fn load_json(&self, text: &str) -> String;
 }
 
-impl<T: Send + Sync + 'static> Load for Kind<T> {
+impl<T: Load> Loader for Kind<T> {
     fn id(&self) -> &'static str {
-        self.id
+        T::ID
     }
     fn name(&self) -> &'static str {
-        self.name
+        T::NAME
     }
     fn load_op(&self) -> &'static str {
-        self.load_op
+        T::LOAD_OP
     }
     fn op(&self) -> u32 {
-        self.op
+        T::CODE
     }
     fn held(&self) -> &dyn Held {
         &self.registry
     }
     fn load_bytes(&self, bytes: &[u8]) -> String {
-        crate::outcome(self.load(bytes))
+        self.answer(self.load(bytes))
     }
-    fn load_json(&self, envelope: &Envelope) -> String {
-        crate::outcome((self.json)(envelope).and_then(|bytes| self.load(&bytes)))
+    fn load_json(&self, text: &str) -> String {
+        let loaded = match T::FORM {
+            Form::Json { field: name } => field(text, name).and_then(|raw| self.load(raw.get().as_bytes())),
+            // A byte document on the JSON lane: an array of numbers.
+            Form::Bytes => field(text, "bytes")
+                .and_then(|raw| serde_json::from_str::<Vec<u8>>(raw.get()).map_err(|e| format!("invalid request: bytes: {e}")))
+                .and_then(|bytes| self.load(&bytes)),
+        };
+        self.answer(loaded)
     }
 }
-
-/// Networks: the document every model-side capability reads.
-pub static NETWORK: Kind<Network> = Kind {
-    id: "network",
-    name: "network",
-    load_op: "load_network",
-    op: crate::OP_LOAD_NETWORK,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("network", "load_network", Retain::Host),
-    parse: |bytes| crate::parse_network(bytes),
-    json: |e| e.field(e.network, "network").map(Cow::Borrowed),
-    answer: |network_hash, network| Loaded::LoadNetwork { network_hash, timezone: network.timezone().map(str::to_string) },
-};
-
-/// Operator edit documents (the tagged document, wholesale-replaced
-/// by the host), in the version this build reads: an older or newer
-/// one is refused at the load, naming both versions. Validation
-/// against a network is a question (cap-divert `reports`), never the
-/// load's.
-pub static EDITS: Kind<EditDocument> = Kind {
-    id: "edits",
-    name: "edits",
-    load_op: "load_edits",
-    op: OP_LOAD_EDITS,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("edits", "load_edits", Retain::Host),
-    parse: crate::parse_versioned,
-    json: |e| e.field(e.edits, "edits").map(Cow::Borrowed),
-    answer: |edits_hash, _| Loaded::LoadEdits { edits_hash },
-};
-
-/// Live documents — ephemeral: re-minted every poll, the last four
-/// kept (D-70). Like every versioned kind below, refused at the load
-/// in another version, naming both (`crate::parse_versioned`).
-pub static LIVE: Kind<LiveDay> = Kind {
-    id: "live",
-    name: "live document",
-    load_op: "load_live",
-    op: OP_LOAD_LIVE,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("live document", "load_live", Retain::Last(4)),
-    parse: crate::parse_versioned,
-    json: |e| e.field(e.live, "live").map(Cow::Borrowed),
-    answer: |live_hash, _| Loaded::LoadLive { live_hash },
-};
-
-/// An import's boundary (the feed numbering an rt join pairs by).
-pub static BOUNDARY: Kind<Boundary> = Kind {
-    id: "boundary",
-    name: "boundary",
-    load_op: "load_boundary",
-    op: OP_LOAD_BOUNDARY,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("boundary", "load_boundary", Retain::Host),
-    parse: crate::parse_versioned,
-    json: |e| e.field(e.boundary, "boundary").map(Cow::Borrowed),
-    answer: |boundary_hash, _| Loaded::LoadBoundary { boundary_hash },
-};
-
-/// Walk tables (cap-streets `walks` mints them).
-pub static WALKS: Kind<WalkTable> = Kind {
-    id: "walks",
-    name: "walk table",
-    load_op: "load_walks",
-    op: OP_LOAD_WALKS,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("walk table", "load_walks", Retain::Host),
-    parse: crate::parse_versioned,
-    json: |e| e.field(e.walks, "walks").map(Cow::Borrowed),
-    answer: |walks_hash, _| Loaded::LoadWalks { walks_hash },
-};
-
-/// Streets documents, refused unless valid (so a registered document
-/// hashes as its import did).
-pub static STREETS: Kind<Streets> = Kind {
-    id: "streets",
-    name: "street network",
-    load_op: "load_streets",
-    op: OP_LOAD_STREETS,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("street network", "load_streets", Retain::Host),
-    parse: |bytes| {
-        let streets: Streets = crate::parse_versioned(bytes).map_err(|e| format!("streets document: {e}"))?;
-        streets.validate().map_err(|e| format!("streets document: {}", e.0))?;
-        Ok(streets)
-    },
-    json: |e| e.field(e.streets, "streets").map(Cow::Borrowed),
-    answer: |streets_hash, streets| {
-        let (ways, segments, nodes) = streets.counts();
-        Loaded::LoadStreets { streets_hash, ways, segments, nodes }
-    },
-};
-
-/// Watchlists (the personal saved set): the current version only. A
-/// copy from before the tags reads as the version it names.
-pub static WATCHLIST: Kind<Watchlist> = Kind {
-    id: "watchlist",
-    name: "watchlist",
-    load_op: "load_watchlist",
-    op: OP_LOAD_WATCHLIST,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("watchlist", "load_watchlist", Retain::Host),
-    parse: crate::parse_versioned,
-    json: |e| e.field(e.document, "document").map(Cow::Borrowed),
-    answer: |watchlist_hash, watchlist| Loaded::LoadWatchlist {
-        watchlist_hash,
-        version: transit_version::Versioned::schema_version(watchlist),
-    },
-};
-
-/// Work rules (transit-runs): the rules work is cut under, checked
-/// and normalized at the load, so two orderings of one document are
-/// one identity.
-pub static WORK_RULES: Kind<WorkRules> = Kind {
-    id: "work_rules",
-    name: "work rules",
-    load_op: "load_work_rules",
-    op: OP_LOAD_WORK_RULES,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("work rules", "load_work_rules", Retain::Host),
-    parse: |bytes| {
-        let rules: WorkRules = crate::parse_versioned(bytes).map_err(|e| format!("work rules: {e}"))?;
-        rules.checked().map_err(|e| format!("work rules: {e}"))
-    },
-    json: |e| e.field(e.work_rules, "work_rules").map(Cow::Borrowed),
-    answer: |work_rules_hash, rules| Loaded::LoadWorkRules { work_rules_hash, version: rules.schema_version.0 },
-};
-
-/// Stops documents (transit-stops: every stop a list of dated events,
-/// D-153), refused unless a write could store them — each refusal
-/// named — so a registered document is always one the model reads.
-pub static STOPS: Kind<Stops> = Kind {
-    id: "stops",
-    name: "stops document",
-    load_op: "load_stops",
-    op: OP_LOAD_STOPS,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("stops document", "load_stops", Retain::Host),
-    parse: |bytes| {
-        let stops: Stops = crate::parse_versioned(bytes).map_err(|e| format!("stops document: {e}"))?;
-        stops.checked().map_err(|refusals| {
-            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("stops document: {}", reasons.join("; "))
-        })
-    },
-    json: |e| e.field(e.stops, "stops").map(Cow::Borrowed),
-    answer: |stops_hash, stops| Loaded::LoadStops { stops_hash, stops: stops.stops.len() as u32 },
-};
-
-/// Stop requests documents (transit-requests: the planning team's
-/// requests for work at a stop, each tracking its work order, D-159),
-/// refused unless a write could store them — each refusal named.
-pub static STOP_REQUESTS: Kind<StopRequests> = Kind {
-    id: "stop_requests",
-    name: "stop requests document",
-    load_op: "load_stop_requests",
-    op: OP_LOAD_STOP_REQUESTS,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("stop requests document", "load_stop_requests", Retain::Host),
-    parse: |bytes| {
-        let requests: StopRequests = crate::parse_versioned(bytes).map_err(|e| format!("stop requests document: {e}"))?;
-        requests.checked().map_err(|refusals| {
-            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("stop requests document: {}", reasons.join("; "))
-        })
-    },
-    json: |e| e.field(e.requests, "requests").map(Cow::Borrowed),
-    answer: |requests_hash, requests| Loaded::LoadStopRequests { requests_hash, requests: requests.requests.len() as u32 },
-};
-
-/// Service alerts documents (transit-alerts: the agency's alerts in the
-/// network's ids, D-206), refused unless a write could store them, each
-/// refusal named.
-pub static SERVICE_ALERTS: Kind<ServiceAlerts> = Kind {
-    id: "service_alerts",
-    name: "service alerts document",
-    load_op: "load_service_alerts",
-    op: OP_LOAD_SERVICE_ALERTS,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("service alerts document", "load_service_alerts", Retain::Host),
-    parse: |bytes| {
-        let alerts: ServiceAlerts = crate::parse_versioned(bytes).map_err(|e| format!("service alerts document: {e}"))?;
-        alerts.checked().map_err(|refusals| {
-            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("service alerts document: {}", reasons.join("; "))
-        })
-    },
-    json: |e| e.field(e.alerts, "alerts").map(Cow::Borrowed),
-    answer: |alerts_hash, alerts| Loaded::LoadServiceAlerts { alerts_hash, alerts: alerts.alerts.len() as u32 },
-};
-
-/// Alert templates documents (transit-alerts: the agency's standard
-/// language with blanks, D-210), refused unless a write could store
-/// them, each refusal named.
-pub static ALERT_TEMPLATES: Kind<AlertTemplates> = Kind {
-    id: "alert_templates",
-    name: "alert templates document",
-    load_op: "load_alert_templates",
-    op: OP_LOAD_ALERT_TEMPLATES,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("alert templates document", "load_alert_templates", Retain::Host),
-    parse: |bytes| {
-        let templates: AlertTemplates = crate::parse_versioned(bytes).map_err(|e| format!("alert templates document: {e}"))?;
-        templates.checked().map_err(|refusals| {
-            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("alert templates document: {}", reasons.join("; "))
-        })
-    },
-    json: |e| e.field(e.templates, "templates").map(Cow::Borrowed),
-    answer: |templates_hash, templates| Loaded::LoadAlertTemplates { templates_hash, templates: templates.templates.len() as u32 },
-};
-
-/// Notes documents (transit-notes: the agency's internal notes, D-214),
-/// refused unless a write could store them, each refusal named.
-pub static NOTES: Kind<Notes> = Kind {
-    id: "notes",
-    name: "notes document",
-    load_op: "load_notes",
-    op: OP_LOAD_NOTES,
-    identity: Identity::Canonical(crate::canonical_hash),
-    registry: Registry::documents("notes document", "load_notes", Retain::Host),
-    parse: |bytes| {
-        let notes: Notes = crate::parse_versioned(bytes).map_err(|e| format!("notes document: {e}"))?;
-        notes.checked().map_err(|refusals| {
-            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("notes document: {}", reasons.join("; "))
-        })
-    },
-    json: |e| e.field(e.notes, "notes").map(Cow::Borrowed),
-    answer: |notes_hash, notes| Loaded::LoadNotes { notes_hash, notes: notes.notes.len() as u32 },
-};
-
-/// Weighted layers (GeoJSON points and polygons — people, jobs,
-/// households; D-47), by the hash of their bytes: which property is
-/// the weight is the coverage op's question, so the bytes are the
-/// whole document.
-pub static LAYER: Kind<WeightedLayer> = Kind {
-    id: "layer",
-    name: "layer",
-    load_op: "load_layer",
-    op: OP_LOAD_LAYER,
-    identity: Identity::Bytes,
-    registry: Registry::documents("layer", "load_layer", Retain::Host),
-    parse: transit_analysis::parse_layer,
-    json: |e| e.byte_field().map(Cow::Owned),
-    answer: |layer_hash, layer| Loaded::LoadLayer {
-        layer_hash,
-        features: layer.features() as u64,
-        points: layer.points() as u64,
-        polygons: layer.polygons() as u64,
-        fields: layer.fields().to_vec(),
-    },
-};
-
-/// GTFS feeds (the zip's bytes), by the hash of their bytes.
-pub static FEED: Kind<Feed> = Kind {
-    id: "feed",
-    name: "feed",
-    load_op: "load_feed",
-    op: OP_LOAD_FEED,
-    identity: Identity::Bytes,
-    registry: Registry::documents("feed", "load_feed", Retain::Host),
-    parse: |bytes| Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}")),
-    json: |e| e.byte_field().map(Cow::Owned),
-    answer: |feed_hash, feed| Loaded::LoadFeed { feed_hash, summary: feed.summary() },
-};
-
-/// Decoded GTFS-rt snapshots, by the hash of the payload — ephemeral:
-/// an agency re-mints them every poll, and a live answer reads at most
-/// three (trip updates, positions, alerts), so the last eight stay.
-pub static RT: Kind<RtOverview> = Kind {
-    id: "rt",
-    name: "rt snapshot",
-    load_op: "load_rt",
-    op: OP_LOAD_RT,
-    identity: Identity::Bytes,
-    registry: Registry::documents("rt snapshot", "load_rt", Retain::Last(8)),
-    parse: |bytes| transit_rt::decode_overview(bytes),
-    json: |e| e.byte_field().map(Cow::Owned),
-    answer: |rt_hash, _| Loaded::LoadRt { rt_hash },
-};
 
 // ---------------------------------------------------------------------
 // derived entries
@@ -744,43 +362,70 @@ pub fn retain_derived(derivation: &Derivation, keep: impl Fn(&str, &[String]) ->
     });
 }
 
-/// The day for (network, edits, date), held: the effective trips and,
-/// when edits are in force, what they took away.
-pub fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<Arc<transit_dispatch::Day>, String> {
-    // The request's own fields validate before any registry lookup —
-    // a garbage date is a caller error, not a missing-document error.
-    let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))?;
-    let network = NETWORK.require(network_hash)?;
-    let records = edits_hash.map(|hash| EDITS.require(hash)).transpose()?;
-    let mut inputs = vec![network_hash];
-    inputs.extend(edits_hash);
-    derive(&DAY, &transit_dispatch::day_key(network_hash, edits_hash, date), &inputs, || {
-        transit_dispatch::day(&network, parsed, records.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]))
-            .map_err(|e| format!("the network does not materialize: {e}"))
-    })
-}
-
 // ---------------------------------------------------------------------
 // capabilities and assemblies
 // ---------------------------------------------------------------------
 
 /// One capability as an assembly links it: its id, its dispatch pair,
-/// and the document kinds it reads. `capability!` declares it; an
-/// assembly (`assembly!`) routes to it.
+/// and the document kinds it reads, each as its registry ([`loader`]).
+/// `capability!` declares it; an assembly (`assembly!`) routes to it.
 pub struct Cap {
     pub id: &'static str,
     pub json: fn(&str) -> String,
     pub bytes: fn(u32, &[u8]) -> String,
-    pub documents: &'static [&'static dyn Load],
+    pub documents: &'static [fn() -> &'static dyn Loader],
+}
+
+/// A capability's whole declaration, as the generator reads it
+/// (`capability!` writes it): its id and lanes, its ops (the `Request`
+/// enum's tags), the kinds it reads, consumes, speaks, and migrates, and
+/// its `OPS.md`. It is a function, not a static: no module calls it, so
+/// no module carries the docs' text.
+#[derive(Debug, Clone)]
+pub struct Declared {
+    pub id: &'static str,
+    pub invoke: fn(&str) -> String,
+    pub invoke_bytes: fn(u32, &[u8]) -> String,
+    /// The `Request` enum's op tags.
+    pub ops: Vec<String>,
+    /// The kernel kinds it reads (`documents: [...]`).
+    pub documents: Vec<&'static str>,
+    /// Each kind it reads as another capability's answer, and that
+    /// capability's id.
+    pub consumes: &'static [(&'static str, &'static str)],
+    /// Each kind it reads or writes, and the versions it reads.
+    pub speaks: &'static [(&'static str, &'static [u32])],
+    /// The version steps it carries for a kind (cap-migrate's alone).
+    pub migrates: &'static [(&'static str, &'static [(u32, u32)])],
+    /// Its `OPS.md`: the purpose, then one `##` section for each op.
+    pub docs: &'static str,
+}
+
+/// The op tags of a capability's `Request` enum, in its order. Every
+/// `Request` is tagged by `op` (`#[serde(tag = "op")]`), so serde's
+/// refusal of an unknown tag names every tag it knows. Reading the
+/// refusal needs no dependency, and the list cannot differ from what the
+/// dispatch decodes.
+pub fn op_names<T: serde::de::DeserializeOwned>() -> Vec<String> {
+    let refusal = match serde_json::from_str::<T>(r#"{"op":"\u0001"}"#) {
+        Ok(_) => panic!("a Request decoded an op tag no capability has"),
+        Err(e) => e.to_string(),
+    };
+    let expected = refusal
+        .split_once("expected ")
+        .map(|(_, rest)| rest)
+        .unwrap_or_else(|| panic!("serde's refusal names no expected ops: {refusal}"));
+    let expected = expected.split(" at line ").next().unwrap_or(expected);
+    expected.split('`').skip(1).step_by(2).map(str::to_string).collect()
 }
 
 /// The kinds an assembly's capabilities read, each once.
-fn kinds<'a>(caps: &[&'a Cap]) -> Vec<&'a dyn Load> {
-    let mut out: Vec<&dyn Load> = Vec::new();
+fn kinds(caps: &[&Cap]) -> Vec<&'static dyn Loader> {
+    let mut out: Vec<&'static dyn Loader> = Vec::new();
     for cap in caps {
-        for kind in cap.documents {
-            if !out.iter().any(|k| k.name() == kind.name()) {
-                out.push(*kind);
+        for kind in cap.documents.iter().map(|k| k()) {
+            if !out.iter().any(|k| k.id() == kind.id()) {
+                out.push(kind);
             }
         }
     }
@@ -789,8 +434,8 @@ fn kinds<'a>(caps: &[&'a Cap]) -> Vec<&'a dyn Load> {
 
 /// The registries an assembly holds, in the order `held` lists them:
 /// each kind its capabilities read, then the derived entries.
-pub fn registries<'a>(caps: &[&'a Cap]) -> Vec<&'a dyn Held> {
-    let mut out: Vec<&dyn Held> = kinds(caps).into_iter().map(|k| k.held()).collect();
+pub fn registries(caps: &[&Cap]) -> Vec<&'static dyn Held> {
+    let mut out: Vec<&'static dyn Held> = kinds(caps).into_iter().map(|k| k.held()).collect();
     out.push(&DERIVED);
     out
 }
@@ -806,7 +451,7 @@ pub fn invoke(caps: &[&Cap], text: &str) -> String {
     let envelope: Option<Envelope> = serde_json::from_str(text).ok();
     if let Some(envelope) = &envelope {
         if let Some(kind) = kinds(caps).into_iter().find(|k| k.load_op() == envelope.op) {
-            return kind.load_json(envelope);
+            return kind.load_json(text);
         }
     }
     let named = envelope.as_ref().and_then(|e| e.cap.as_deref());
@@ -836,7 +481,7 @@ pub fn invoke_bytes(caps: &[&Cap], op: u32, bytes: &[u8]) -> String {
     if op == OP_ABOUT {
         let capabilities = caps
             .iter()
-            .map(|c| AboutCap { id: c.id.to_string(), documents: c.documents.iter().map(|k| k.id().to_string()).collect() })
+            .map(|c| AboutCap { id: c.id.to_string(), documents: c.documents.iter().map(|k| k().id().to_string()).collect() })
             .collect();
         return crate::outcome(Ok::<_, String>(About { capabilities }));
     }
@@ -871,8 +516,70 @@ mod tests {
     fn bytes_b(op: u32, _: &[u8]) -> String {
         format!(r#"{{"ok":{{"cap":"b","op":{op}}}}}"#)
     }
-    static A: Cap = Cap { id: "a", json: echo_a, bytes: bytes_a, documents: &[&BOUNDARY] };
-    static B: Cap = Cap { id: "b", json: echo_b, bytes: bytes_b, documents: &[&BOUNDARY, &WATCHLIST] };
+    /// Two test kinds: the kernel names no library's kind. A fence is a
+    /// JSON kind under its own field; a watch is one under `document`.
+    #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Fence {
+        #[serde(default)]
+        posts: u32,
+    }
+    #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Watch {
+        #[serde(default)]
+        stops: Vec<String>,
+    }
+
+    /// A plain JSON read: the test kinds carry no version.
+    fn plain<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+        crate::parse_document(bytes)
+    }
+
+    #[derive(serde::Serialize)]
+    struct FenceLoaded {
+        fence_hash: String,
+    }
+    impl Load for Fence {
+        const ID: &'static str = "fence";
+        const NAME: &'static str = "fence";
+        const LOAD_OP: &'static str = "load_fence";
+        const CODE: u32 = 900;
+        const FORM: Form = Form::Json { field: "fence" };
+        type Answer = FenceLoaded;
+        fn parse(bytes: &[u8]) -> Result<Self, String> {
+            plain(bytes)
+        }
+        fn canonical(&self) -> Option<Result<String, String>> {
+            Some(crate::canonical_hash(self))
+        }
+        fn answer(&self, fence_hash: String) -> FenceLoaded {
+            FenceLoaded { fence_hash }
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    struct WatchLoaded {
+        watch_hash: String,
+    }
+    impl Load for Watch {
+        const ID: &'static str = "watch";
+        const NAME: &'static str = "watch";
+        const LOAD_OP: &'static str = "load_watch";
+        const CODE: u32 = 901;
+        const FORM: Form = Form::Json { field: "document" };
+        type Answer = WatchLoaded;
+        fn parse(bytes: &[u8]) -> Result<Self, String> {
+            plain(bytes)
+        }
+        fn canonical(&self) -> Option<Result<String, String>> {
+            Some(crate::canonical_hash(self))
+        }
+        fn answer(&self, watch_hash: String) -> WatchLoaded {
+            WatchLoaded { watch_hash }
+        }
+    }
+
+    static A: Cap = Cap { id: "a", json: echo_a, bytes: bytes_a, documents: &[loader::<Fence>] };
+    static B: Cap = Cap { id: "b", json: echo_b, bytes: bytes_b, documents: &[loader::<Fence>, loader::<Watch>] };
 
     fn ok(answer: String) -> serde_json::Value {
         let value: serde_json::Value = serde_json::from_str(&answer).unwrap();
@@ -901,26 +608,29 @@ mod tests {
         assert!(invoke_bytes(&[&A, &B], cap_op(2, 0), b"").contains("unknown bulk op"));
         // Kernel codes name no capability, and a load the assembly's
         // capabilities do not read is not answered.
-        assert!(invoke_bytes(&[&A, &B], OP_LOAD_FEED, b"").contains("unknown bulk op"));
+        assert!(invoke_bytes(&[&A], Watch::CODE, b"").contains("unknown bulk op"));
     }
 
     #[test]
     fn a_load_registers_once_for_every_capability_that_reads_the_kind() {
-        let boundary = Boundary::default();
-        let want = crate::canonical_hash(&boundary).unwrap();
+        let fence = Fence::default();
+        let want = crate::canonical_hash(&fence).unwrap();
         // Both lanes, either capability: one identity, one entry.
-        let by_json = ok(invoke(&[&A, &B], r#"{"op":"load_boundary","boundary":{}}"#));
-        assert_eq!(by_json, serde_json::json!({ "op": "load_boundary", "boundary_hash": want }));
-        let by_bytes = ok(invoke_bytes(&[&A, &B], OP_LOAD_BOUNDARY, b"{}"));
-        assert_eq!(by_bytes["boundary_hash"], want.as_str());
-        assert!(BOUNDARY.get(&want).is_some());
+        let by_json = ok(invoke(&[&A, &B], r#"{"op":"load_fence","fence":{}}"#));
+        assert_eq!(by_json, serde_json::json!({ "op": "load_fence", "fence_hash": want }));
+        let by_bytes = ok(invoke_bytes(&[&A, &B], Fence::CODE, b"{}"));
+        assert_eq!(by_bytes["fence_hash"], want.as_str());
+        assert!(kind::<Fence>().get(&want).is_some());
         // The kind a capability does not read is not peeled for it.
-        assert_eq!(ok(invoke(&[&A], r#"{"op":"load_watchlist","document":{}}"#))["cap"], "a");
+        assert_eq!(ok(invoke(&[&A], r#"{"op":"load_watch","document":{}}"#))["cap"], "a");
+        // A load without its field names the field.
+        let missing = invoke(&[&B], r#"{"op":"load_watch","stops":[]}"#);
+        assert!(missing.contains("missing field `document`"), "{missing}");
         let about = ok(invoke_bytes(&[&A, &B], OP_ABOUT, b""));
-        assert_eq!(about["capabilities"][1], serde_json::json!({ "id": "b", "documents": ["boundary", "watchlist"] }));
+        assert_eq!(about["capabilities"][1], serde_json::json!({ "id": "b", "documents": ["fence", "watch"] }));
         // The registries are listed once per kind, then the derived ones.
         let held: Vec<&str> = registries(&[&A, &B]).iter().map(|r| r.kind()).collect();
-        assert_eq!(held, vec!["boundary", "watchlist", "derived"]);
+        assert_eq!(held, vec!["fence", "watch", "derived"]);
     }
 
     #[test]
@@ -978,33 +688,42 @@ mod tests {
         }
     }
 
-    static RATED: Kind<Rated> = Kind {
-        id: "rated",
-        name: "rated",
-        load_op: "load_rated",
-        op: 0,
-        identity: Identity::Canonical(crate::canonical_hash),
-        registry: Registry::documents("rated", "load_rated", Retain::Host),
-        parse: crate::parse_versioned,
-        json: |e| e.field(e.edits, "edits").map(Cow::Borrowed),
-        answer: |edits_hash, _| Loaded::LoadEdits { edits_hash },
-    };
+    #[derive(serde::Serialize)]
+    struct RatedLoaded {
+        rated_hash: String,
+    }
+    impl Load for Rated {
+        const ID: &'static str = "rated";
+        const NAME: &'static str = "rated";
+        const LOAD_OP: &'static str = "load_rated";
+        const CODE: u32 = 902;
+        const FORM: Form = Form::Json { field: "rated" };
+        type Answer = RatedLoaded;
+        fn parse(bytes: &[u8]) -> Result<Self, String> {
+            crate::parse_versioned(bytes)
+        }
+        fn canonical(&self) -> Option<Result<String, String>> {
+            Some(crate::canonical_hash(self))
+        }
+        fn answer(&self, rated_hash: String) -> RatedLoaded {
+            RatedLoaded { rated_hash }
+        }
+    }
 
     #[test]
     fn a_copy_read_ahead_keeps_its_identity_and_a_read_only_one_refuses_a_write() {
         let v2 = serde_json::json!({"kind": "rated", "schema_version": 2, "name": "a", "stars": 4});
-        let LoadAnswer { loaded, .. } = RATED.load(&serde_json::to_vec(&v2).unwrap()).unwrap();
-        let Loaded::LoadEdits { edits_hash: hash } = loaded else { panic!("{loaded:?}") };
+        let rated = kind::<Rated>();
+        let (hash, _, _) = rated.load(&serde_json::to_vec(&v2).unwrap()).unwrap();
         assert_eq!(hash, crate::canonical_hash(&v2).unwrap(), "the identity it is stored under");
-        assert_eq!(RATED.require(&hash).unwrap().name, "a", "held stepped down, and read");
-        assert_eq!(RATED.read_ahead(&hash), Some((2, transit_version::Ahead::ReadOnly)));
-        let refused = RATED.require_writable(&hash).unwrap_err();
+        assert_eq!(rated.require(&hash).unwrap().name, "a", "held stepped down, and read");
+        assert_eq!(rated.read_ahead(&hash), Some((2, transit_version::Ahead::ReadOnly)));
+        let refused = rated.require_writable(&hash).unwrap_err();
         assert!(refused.contains("rated v2") && refused.contains("does not write over it"), "{refused}");
 
         let v1 = serde_json::json!({"kind": "rated", "schema_version": 1, "name": "b"});
-        let LoadAnswer { loaded, .. } = RATED.load(&serde_json::to_vec(&v1).unwrap()).unwrap();
-        let Loaded::LoadEdits { edits_hash: hash } = loaded else { panic!("{loaded:?}") };
-        assert!(RATED.require_writable(&hash).is_ok(), "a copy in this version is a base as usual");
-        assert_eq!(RATED.read_ahead(&hash), None);
+        let (hash, _, _) = rated.load(&serde_json::to_vec(&v1).unwrap()).unwrap();
+        assert!(rated.require_writable(&hash).is_ok(), "a copy in this version is a base as usual");
+        assert_eq!(rated.read_ahead(&hash), None);
     }
 }

@@ -150,10 +150,11 @@ and before a release.
    dispatch, so an op's docs cannot drift from the module.
    A new document kind starts as a line in the kind list
    (`crates/cap-abi/src/kinds.rs`), and `just schema-lock` writes the
-   checked-in kind table. A kind a module reads also lands in
-   `cap_abi::kernel`: its registry and bound (`Retain::Host` or
-   `Retain::Last(n)`) and its load, with a worked example in
-   gen-manifest's `kernel_ops`. A test holds the kernel kind to its line.
+   checked-in kind table. A kind a module reads also implements
+   `transit_version::Load` in its library (`src/load.rs`): its bound
+   (`Retain::Host` or `Retain::Last(n)`), its load, and its answer, with
+   a worked example in the generator's `kernel_ops`. The generator holds
+   the impl to its line.
    A kind whose fields name other records declares them
    (`x-references`), and its crate's `tests/references_law_test.rs`
    lists them (D-232). The kind
@@ -166,11 +167,11 @@ and before a release.
    eviction would race the dispatch tests. Capability tests reach the
    module seam through `invoke` / `invoke_bytes` (the capability alone,
    kernel loads included). They can also register documents directly
-   (`cap_abi::kernel::NETWORK.register`). Assembly independence
+   (`cap_abi::kernel::kind::<Network>().register`). Assembly independence
    (`crates/cap-abi/independence.mjs`) re-runs every worked example
    inside each UI's assembly. An op whose answer leans on a derived
    entry that another capability computed fails it. The real-output
-   gate (cap-abi `tests/real_output_test.rs`) runs every worked example
+   gate (gen-manifest's tests, `generator::checks::real_output`) runs every worked example
    through its capability's `invoke` over the fixtures, and every
    document an answer holds must match its locked schema. A changed
    document shape fails `just caps` until its version is bumped and
@@ -207,7 +208,14 @@ and before a release.
    - The generated UIs' specs pin assembly and per-frame degraded
      state (`ui-ride-now` and `ui-service-design`). The answer graph's
      laws (`web/src/uis/answers.test.mjs`, in `just test`) pin each
-     node's state: unassembled, starved, failed, and answered.
+     node's state: unassembled, starved, unread, failed, and answered.
+   - The inputs' laws (`web/src/uis/inputs.test.mjs`) pin one poll, a
+     time limit on every read, the three outcomes of a read, and the
+     spread of reads after a failure. The host contract suite
+     (`web/src/uis/host-contract.json`) runs the same scenarios against
+     the server (`server/hostcontract_test.go`) and the browser
+     (`web/src/uis/host-contract.test.mjs`). A change to the rules in
+     `docs/architecture/hosts.md` changes the scenarios first.
    - `web/e2e/published-network.spec.mjs` pins that a document is
      refused unless it registers under the pinned hash.
    - `web/e2e/published-picks.spec.mjs` has its own store-mode server
@@ -269,7 +277,9 @@ and before a release.
    (`docs/architecture/generated-uis.md`, the procedure). The
    generated UIs gate in `just test` refuses a UI without its spec.
    The UI ops gate (`tools/ui-ops.mjs`) refuses a host that asks an op
-   its `ui.json` does not list.
+   its `ui.json` does not list. The failure-table gate
+   (`tools/failure-tables.mjs`) refuses an input whose `fails_as` names
+   a row that the UI's failure table does not have.
    `e2e/picker.spec.mjs` covers its card with no edit.
 7. **Accessibility and delivery gates** (`just e2e`). A change to a
    rider page, a shared component, or the static headers keeps these

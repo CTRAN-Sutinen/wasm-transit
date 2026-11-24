@@ -22,6 +22,7 @@ use ts_rs::TS;
 use transit_network::Network;
 
 mod coverage;
+pub mod load;
 pub use coverage::{
     coverage, coverage_compare, parse_layer, unserved_points, CoverageDelta, CoverageSide, CoverageStats,
     CoverageWindow, LayerField, LayerReading, Rings, UnservedPlaces, UnservedPoint, WeightedLayer, Weights,

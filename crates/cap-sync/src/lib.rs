@@ -376,4 +376,6 @@ cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
     documents: [],
+    request: Request,
+    speaks: &[("operator_edits", &[transit_sync::SCHEMA_VERSION])],
 }

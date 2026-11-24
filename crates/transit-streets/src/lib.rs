@@ -18,6 +18,7 @@ pub mod bus;
 pub mod geojson;
 mod model;
 pub mod walking;
+pub mod load;
 
 pub use model::{StreetClass, Streets, Way};
 

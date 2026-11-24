@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use cap_abi::kernel::NETWORK;
+use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::Network;
@@ -253,7 +253,7 @@ pub enum Response {
 pub const STOPS_NEAR_LIMIT: u32 = 10;
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORK.require(network_hash)
+    kind::<transit_network::Network>().require(network_hash)
 }
 
 fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
@@ -418,5 +418,8 @@ cap_abi::capability! {
     id: "directory",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK],
+    documents: [transit_network::Network],
+    request: Request,
+    consumes: &[("network", "network")],
+    speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
 }

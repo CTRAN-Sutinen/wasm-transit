@@ -149,3 +149,44 @@ test("nodes answer in declared order, and a node reads only nodes before it", as
   assert.deepEqual(log, ["A", "B", "C"]);
   assert.throws(() => graph([node("B", { needs: ["A"] }), node("A")]), /before it is declared/);
 });
+
+/// A graph whose host keeps input states (src/uis/inputs.ts).
+function withInputs(nodes, inputs) {
+  const frames = {};
+  const request = answers(nodes, { frames, onerror: () => {}, available: async () => true, inputs });
+  return { frames, request };
+}
+
+test("a node that requires an input whose reads fail, with nothing held, is unread, and is not run", async () => {
+  const { log, node } = ran();
+  let cleared = 0;
+  const inputs = { edits: { kind: "failed", input: "edits", name: "the detours", sinceMs: 5, held: false } };
+  const { frames, request } = withInputs([node("A", { inputs: ["edits"], clear: () => cleared++ }), node("B")], inputs);
+  await request("x");
+  assert.deepEqual(log, ["B"]);
+  assert.deepEqual(frames, { A: { kind: "unread", input: "edits", name: "the detours", sinceMs: 5 } });
+  assert.equal(cleared, 1);
+});
+
+test("a node runs over a held copy of a failed input, and over an input that keeps none", async () => {
+  const { log, node } = ran();
+  const inputs = {
+    edits: { kind: "failed", input: "edits", name: "the detours", sinceMs: 5, held: true },
+    stops: { kind: "none", input: "stops", name: "the stops", atMs: 5 },
+  };
+  const { frames, request } = withInputs([node("A", { inputs: ["edits"] }), node("B", { inputs: ["stops"] })], inputs);
+  await request("x");
+  assert.deepEqual(log, ["A", "B"]);
+  assert.deepEqual(frames, {});
+});
+
+test("an unread frame answers once its input does", async () => {
+  const { log, node } = ran();
+  const inputs = { edits: { kind: "failed", input: "edits", name: "the detours", sinceMs: 5, held: false } };
+  const { frames, request } = withInputs([node("A", { inputs: ["edits"] })], inputs);
+  await request("x");
+  inputs.edits = { kind: "answered", input: "edits", name: "the detours", atMs: 9, asOfMs: null, old: false };
+  await request("x");
+  assert.deepEqual(log, ["A"]);
+  assert.deepEqual(frames, {});
+});

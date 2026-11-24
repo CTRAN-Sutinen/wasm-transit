@@ -287,6 +287,24 @@ test("a stop whose routes cannot be read says so, never that no route stops ther
   await expect(page.getByTestId("stop-routes")).toContainText("The routes are not available: This part of the app did not load.");
 });
 
+// QAF-131: a read of the stops document that fails is said as a failed
+// read. The page never shows it as a deployment with no stops record,
+// and never seeds the stops of the schedule over it.
+test("a stops document whose read fails says so, never that the deployment publishes no stops yet", async ({ page }) => {
+  const pin = "f".repeat(64);
+  await page.route("**/manifest", async (route) => {
+    const resp = await route.fetch();
+    const manifest = await resp.json();
+    await route.fulfill({ response: resp, json: { ...manifest, stops_hash: pin } });
+  });
+  await page.route(`**/blobs/${pin}.gz`, (route) => route.fulfill({ status: 503, body: "the store is not answering" }));
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/stops.html");
+  await expect(page.getByTestId("status")).toContainText("Stops could not be read", { timeout: 15_000 });
+  await expect(page.getByText("publishes no stops yet")).toHaveCount(0);
+  await expect(page.getByText("stops from the schedule running today")).toHaveCount(0);
+});
+
 test("a stop request: made on its page, submitted, its work order opened, completed, and carried out", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
   await page.goto("/stops.html#on=2026-11-02&open=B");

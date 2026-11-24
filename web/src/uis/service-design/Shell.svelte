@@ -18,7 +18,7 @@
     sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, setLayerReading, selectGroup, openRoute, clearRoute,
     selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
     redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, why, setEditType, type View,
-    heldWrites, sendNow, retryHeld, discardHeld, applyUpdate,
+    heldWrites, sendNow, retryHeld, discardHeld, applyUpdate, offline, asOf,
   } from "./host.svelte";
   import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
@@ -114,8 +114,8 @@
       held={heldWrites()}
       warned={warnedWrites()}
       ondismiss={dismissWarning}
-      offline={sd.offline || outbox.offline}
-      asOf={sd.asOf}
+      offline={offline() || outbox.offline}
+      asOf={asOf()}
       needsSignIn={outbox.needsSignIn}
       updateReady={sd.updateReady}
       canUpdate={!sd.busy}
