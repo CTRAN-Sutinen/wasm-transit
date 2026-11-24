@@ -1,6 +1,6 @@
-//! Demand-responsive service: trips that serve groups of stops or
-//! zones within windows rather than stops at times, and the booking
-//! rules riders follow to ride them.
+//! Demand-responsive service: trips that serve groups of stops or zones
+//! within windows, not stops at times. This file also holds the booking
+//! rules that riders follow to ride them.
 
 use std::collections::BTreeMap;
 
@@ -20,16 +20,16 @@ pub struct DemandResponsive {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<LocationGroupId, LocationGroup>>")]
     pub location_groups: BTreeMap<LocationGroupId, LocationGroup>,
-    /// The zones riders are picked up or dropped off in: a GeoJSON
-    /// FeatureCollection whose features' ids are the zone ids.
+    /// The zones where riders are picked up or dropped off. A GeoJSON
+    /// FeatureCollection whose feature ids are the zone ids.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "unknown")]
     pub zones: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<BookingRuleId, BookingRule>>")]
     pub booking_rules: BTreeMap<BookingRuleId, BookingRule>,
-    /// The demand-responsive trips, by id (trip ids are unique across
-    /// these and the network's scheduled trips).
+    /// The demand-responsive trips, by id. Trip ids are unique across these
+    /// and the network's scheduled trips.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<TripId, DemandTrip>>")]
     pub trips: BTreeMap<TripId, DemandTrip>,
@@ -87,8 +87,8 @@ pub struct BookingRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub notice_max_minutes: Option<u32>,
-    /// Prior days: the last day (days before the ride) and time a
-    /// booking is taken, and the first.
+    /// Prior days: the last booking day (days before the ride) and time, and
+    /// the first booking day and time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_day: Option<u32>,

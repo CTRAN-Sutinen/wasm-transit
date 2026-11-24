@@ -1,31 +1,29 @@
-//! Native dispatch tests for the router capability — the SEAM over
-//! the NETWORK document and the EFFECTIVE DAY. The laws (the
-//! algorithm carries its own suite in transit-router; these pin the
-//! seam):
+//! Native dispatch tests for the router capability. These test the seam over
+//! the network document and the effective day. The algorithm carries its own
+//! suite in transit-router. These pin the seam:
 //!
 //! 1. the network document's identity is the module's canonical
-//!    serialization — the same identity every day-view capability
-//!    returns for the same document;
-//! 2. a plan is the materialized day (model trips, model
-//!    vocabulary), answered by hash pair + date;
-//! 3. the compare facet is the diversion delta: the patched day
-//!    against the unpatched one — one materialization apart, and no
-//!    baseline when no edit is in force;
+//!    serialization. Every day-view capability returns the same identity
+//!    for the same document;
+//! 2. a plan is the materialized day (model trips, model vocabulary),
+//!    answered by hash pair and date;
+//! 3. the compare facet is the diversion delta: the patched day against the
+//!    unpatched one. They are one materialization apart. There is no baseline
+//!    when no edit is in force;
 //! 4. unknown hashes and garbage are errors, never panics;
-//! 5. the compare facet's notice fires on ANY change the diversion
-//!    makes to the trip (no trip, a later arrival, a diverted ride),
-//!    structured, with its text line;
-//! 6. with a live document, plans ride the predicted times (the
-//!    graph keyed by the live hash too), and legs say so;
-//! 7. arrive-by answers the latest departure that arrives by the
-//!    deadline — the service day's end when none is given;
-//! 8. a leg names its route (short and long) and the sign at the
-//!    boarding visit;
-//! 9. with a walk table, a plan's transfers are its walks (the graph
-//!    keyed by the walks hash too); a table derived for another
-//!    network is refused;
-//! 10. a trip the edit document cancels on the date (D-45) is never
-//!    ridden — the plan takes the next trip, or none.
+//! 5. the compare facet's notice fires on any change the diversion makes to
+//!    the trip (no trip, a later arrival, a diverted ride). It is structured,
+//!    with its text line;
+//! 6. with a live document, plans ride the predicted times (the graph keyed by
+//!    the live hash too), and legs say so;
+//! 7. arrive-by answers the latest departure that arrives by the deadline. The
+//!    service day's end applies when none is given;
+//! 8. a leg names its route (short and long) and the sign at the boarding
+//!    visit;
+//! 9. with a walk table, a plan's transfers are its walks (the graph keyed by
+//!    the walks hash too). A table derived for another network is refused;
+//! 10. a trip the edit document cancels on the date (D-45) is never ridden.
+//!     The plan takes the next trip, or none.
 
 use serde_json::{json, Value};
 use transit_network::Network;
@@ -34,8 +32,8 @@ use transit_sync::{EditRecord, EditStatus};
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 
-/// The fixture-derived network document (import is the codec — the
-/// boundary; this module composes over the document it produces).
+/// The fixture-derived network document. Import is the codec, at the
+/// boundary. This module composes over the document it produces.
 fn derived_network() -> Network {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
     transit_codec::import(&feed).network
@@ -76,11 +74,11 @@ fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
 
 #[test]
 fn the_document_identity_is_the_canonical_hash_the_bus_agrees_on() {
-    // The composition law: documents are addressed by the hash of
-    // the module's canonical serialization, so the host can push the
-    // same document into every capability that needs it and assert
-    // they agree. Verified against the hash computed independently
-    // (the same formula every capability and the manifest use).
+    // The composition law: documents are addressed by the hash of the module's
+    // canonical serialization. The host can push the same document into every
+    // capability that needs it, and assert that they agree. This checks the
+    // hash against one computed independently, with the formula that every
+    // capability and the manifest use.
     let network = derived_network();
     let canonical = cap_abi::canonical_bytes(&network).unwrap();
     use sha2::Digest as _;
@@ -111,8 +109,8 @@ fn plan_answers_over_the_materialized_day() {
         panic!("A to B is reachable on the fixture date")
     };
     assert_eq!(it.arrival_secs, 8 * 3600 + 10 * 60, "t10: depart 08:00, arrive 08:10");
-    // The leg's identity is the trip instance — (trip, start_secs) —
-    // the identity every day view agrees on.
+    // The leg's identity is the trip instance, as (trip, start_secs). Every
+    // day view agrees on this identity.
     match &it.legs[0] {
         transit_router::Leg::Transit { trip, start_secs, .. } => {
             assert_eq!(trip, "t10");
@@ -125,8 +123,8 @@ fn plan_answers_over_the_materialized_day() {
 #[test]
 fn plan_is_none_on_an_unreachable_pair_or_day() {
     let hash = load_network();
-    // Sunday: only the SUN service runs (t11 at 09:00). A departure
-    // after the last trip is unreachable.
+    // Sunday: only the SUN service runs (t11 at 09:00). A departure after the
+    // last trip is unreachable.
     let late = cap_router::dispatch(cap_router::Request::Plan {
         network_hash: hash.clone(),
         edits_hash: None,
@@ -181,9 +179,9 @@ fn compare_answers_the_diversion_delta() {
     let cap_router::Response::PlanCompare { active, baseline, notice } = cmp else {
         panic!("compare")
     };
-    // The diversion adds 300 s to route 10's kept segment: the
-    // patched day arrives 08:15; the unpatched one 08:10 — and the
-    // rider is told: 5 min later, on route 10's detour (QAF-74).
+    // The diversion adds 300 s to route 10's kept segment. The patched day
+    // arrives at 08:15, and the unpatched one at 08:10. The rider is told: 5
+    // min later, on route 10's detour (QAF-74).
     assert_eq!(active.expect("active plan").arrival_secs, 8 * 3600 + 15 * 60);
     assert_eq!(baseline.expect("baseline world").arrival_secs, 8 * 3600 + 10 * 60);
     let notice = notice.expect("a later arrival carries a notice");
@@ -193,8 +191,8 @@ fn compare_answers_the_diversion_delta() {
     assert_eq!(notice.routes, vec!["10".to_string()]);
     assert!(notice.text.contains("5 min later"), "{}", notice.text);
 
-    // No edit document: there is no second world to compare
-    // against — the baseline is honestly absent.
+    // No edit document: there is no second world to compare against. The
+    // baseline is absent.
     let plain = cap_router::dispatch(cap_router::Request::PlanCompare {
         network_hash: hash,
         edits_hash: None,
@@ -252,8 +250,8 @@ fn json_seam_round_trips_the_tagged_form() {
     assert!(outcome["ok"]["op"] == "plan");
     assert_eq!(outcome["ok"]["itinerary"]["arrival_secs"], 29400);
 
-    // The router takes JSON documents; a bulk-bytes call is an
-    // honest error, never a silent ignore.
+    // The router takes JSON documents. A bulk-bytes call is an error, never a
+    // silent ignore.
     let outcome: serde_json::Value =
         serde_json::from_str(&cap_router::invoke_bytes(0, b"{}")).unwrap();
     assert!(outcome["error"].as_str().unwrap().contains("unknown bulk op"));
@@ -297,9 +295,9 @@ fn an_itinerary_draws_its_ridden_segments() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op — parsed straight into
-    // the model, no request envelope — answers exactly what the JSON
-    // op answers; garbage bytes are an error outcome, never a trap.
+    // The bare document on the kernel's bulk op is parsed into the model,
+    // with no request envelope. It answers what the JSON op answers. Garbage
+    // bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_router::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -369,14 +367,14 @@ fn the_live_documents_identity_is_its_canonical_hash() {
 fn a_live_plan_rides_the_predicted_times() {
     let hash = load_network();
     let live = load_live(live_t10(120));
-    // Schedule: t10 leaves 08:00, arrives 08:10 — no predictions.
+    // Schedule: t10 leaves 08:00 and arrives 08:10. There are no predictions.
     let scheduled = plan_a_b(&hash, None);
     assert_eq!(scheduled.arrival_secs, 8 * 3600 + 600);
     let transit_router::Leg::Transit { board_delay_secs: None, alight_delay_secs: None, .. } = &scheduled.legs[0] else {
         panic!("a schedule-only leg states no delay: {:?}", scheduled.legs[0])
     };
-    // Live: t10 predicted 2 min late — leaves 08:02, arrives 08:12,
-    // and the leg says both times are predictions.
+    // Live: t10 is predicted 2 min late. It leaves 08:02 and arrives 08:12.
+    // The leg says both times are predictions.
     let predicted = plan_a_b(&hash, Some(live.clone()));
     assert_eq!(predicted.arrival_secs, 8 * 3600 + 720);
     match &predicted.legs[0] {
@@ -428,10 +426,10 @@ fn a_compared_plan_reads_live_in_both_worlds() {
     .unwrap() else {
         panic!("compare")
     };
-    // Baseline: the unpatched t10, 2 min late → 08:12. Active: the
-    // patched t10's delay is against the PUBLISHED schedule (its
-    // detour time is already in what rt predicts) → 08:12 too, and
-    // it rides the diverted t10.
+    // Baseline: the unpatched t10, 2 min late, gives 08:12. Active: the
+    // patched t10's delay is against the PUBLISHED schedule. Its detour time
+    // is already in what rt predicts, so it also gives 08:12. It rides the
+    // diverted t10.
     assert_eq!(baseline.unwrap().arrival_secs, 8 * 3600 + 720);
     assert_eq!(active.unwrap().arrival_secs, 8 * 3600 + 720);
     let notice = notice.expect("a diverted ride carries a notice");
@@ -464,8 +462,8 @@ fn arrive_by_answers_the_latest_departure() {
     assert_eq!(by, 8 * 3600 + 35 * 60);
     let it = it.expect("t20 arrives 08:30");
     assert_eq!((it.depart_secs, it.arrival_secs), (8 * 3600 + 20 * 60, 8 * 3600 + 30 * 60));
-    // No deadline: the last bus home — t30 08:40 → 08:50, the day's
-    // last arrival (the deadline answered is the day's end).
+    // No deadline: the last bus home is t30, 08:40 to 08:50. That is the day's
+    // last arrival. The deadline answered is the day's end.
     let (by, it) = arrive_by(None);
     assert_eq!(by, 8 * 3600 + 50 * 60, "Friday's last arrival");
     let it = it.expect("the last bus home");
@@ -584,10 +582,10 @@ fn a_walk_table_is_the_plan_s_transfers() {
     assert!(err.contains("load_walks first"), "{err}");
 }
 
-/// A plan's ends over the JSON seam: a bare string is a stop, an
-/// object a place with its walks — cap-streets' `access` walks pass
-/// as they are (their paths ride along unread). The trip walks from
-/// the place; a place named like a stop is refused.
+/// A plan's ends over the JSON seam. A bare string is a stop. An object is a
+/// place with its walks. Cap-streets' `access` walks pass as they are. Their
+/// paths ride along unread. The trip walks from the place. A place named like
+/// a stop is refused.
 #[test]
 fn a_plan_from_a_place_walks_from_it() {
     let hash = load_network();

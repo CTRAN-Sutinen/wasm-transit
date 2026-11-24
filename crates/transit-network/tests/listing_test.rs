@@ -1,5 +1,5 @@
 //! The planner's lists: rows per kind narrowed by every query term,
-//! and a route's composition — its trip counts the materialized day's.
+//! and a route's composition: its trip counts the materialized day's.
 
 use transit_network::{
     apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departs, EntityKind, HeadwayBand,
@@ -57,12 +57,12 @@ fn pattern(name: &str, stops: &[&str]) -> transit_network::Pattern {
     }
 }
 
-/// A direction's VARIANTS are the ways a rider can ride it: patterns
+/// A direction's variants are the ways a rider can ride it: patterns
 /// that visit the same places in the same order are one variant, a
 /// station's bays being one place (the walking group its board
-/// departs across) — so patterns that differ only by the bay they use
-/// at a transit center read as one. Any other difference — a branch,
-/// a stop served only at some hours, a short trip — is its own
+/// departs across): so patterns that differ only by the bay they use
+/// at a transit center read as one. Any other difference: a branch,
+/// a stop served only at some hours, a short trip: is its own
 /// variant, named apart. Variants list most trips first.
 #[test]
 fn bay_variants_of_a_direction_read_as_one() {
@@ -101,7 +101,7 @@ fn bay_variants_of_a_direction_read_as_one() {
     );
 
     // Same ends as the main variant: each is named by what sets it
-    // apart — a place only it visits, else the first place it skips.
+    // apart: a place only it visits, else the first place it skips.
     assert_eq!(patterns(1), ["10-elm"]);
     assert_eq!(variants[1].name, "Main & 1st → Main & 3rd via Elm & 2nd");
     assert_eq!(patterns(2), ["10-short"]);
@@ -133,7 +133,7 @@ fn a_stop_lists_the_routes_serving_it() {
 }
 
 /// QAF-51 regression (C-TRAN, Fisher's Landing): a parent station
-/// whose patterns visit only its bays answers their routes — a stop
+/// whose patterns visit only its bays answers their routes: a stop
 /// with no service of its own pools the walking group, the same group
 /// the station board departs across.
 #[test]
@@ -183,7 +183,7 @@ fn a_station_answers_its_bays_routes() {
 
     // QAF-66 (C-TRAN, Fisher's Landing: Bay A serves only 012): a bay
     // with service of its own answers its own routes, never its
-    // siblings' — the board's rule.
+    // siblings': the board's rule.
     let mut net = net;
     let mut route20 = net.routes["10"].clone();
     route20.name = "Route 20".into();
@@ -315,7 +315,7 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
 fn a_timetable_against_its_baseline_marks_what_changed() {
     // Every 30 min 07:50–09:00: 08:00 and 08:30 move to 07:50 and
     // 08:20 (a moved trip keeps its id, so it reads retimed from its
-    // old start — QAF-64), 08:50 is a new trip, 25:30 is untouched.
+    // old start: QAF-64), 08:50 is a new trip, 25:30 is untouched.
     let base = network();
     let edit = NetworkEdit::SetHeadway {
         route: "10".into(),
@@ -342,8 +342,8 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     );
 }
 
-/// QAF-67: a row naming a route carries its LONG name ("Lincoln")
-/// beside the short one ("12") — a route with one answers it, one
+/// QAF-67: a row naming a route carries its long name ("Lincoln")
+/// beside the short one ("12"): a route with one answers it, one
 /// without answers none. Every listing row that names a route: the
 /// route list (entities), a stop's serving routes, the timetable's
 /// header.
@@ -376,7 +376,7 @@ fn a_timetable_trip_names_its_service_key() {
 }
 
 /// A stop's visit names the stops either side of it on its pattern
-/// (D-158: what the schedule says beside a survey) — the one before
+/// (D-158: what the schedule says beside a survey): the one before
 /// (none at the first stop), the one after (none at the last), each
 /// with the distance along the pattern between them, and whether the
 /// agency published both distances or either is an estimate.

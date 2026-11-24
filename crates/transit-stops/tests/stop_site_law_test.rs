@@ -1,15 +1,15 @@
 //! A stop's site survey (D-158, D-160, D-161), derived from the user's
-//! intent — C-TRAN's Service Stop Worksheet, filled at the stop — and
-//! written before the implementation:
+//! intent. The intent is C-TRAN's Service Stop Worksheet, filled at the
+//! stop. These laws are written before the implementation:
 //!
 //! * a stop's site answers and its references to other systems are
 //!   details like any other: set by the events that set details (a
 //!   stage, `changed`), merged by name, each name's answer the last
-//!   active event's — the fold law in `stops_law_test.rs` checks them
+//!   active event's. The fold law in `stops_law_test.rs` checks them
 //!   against its oracle with the rest of the stop;
 //! * a core question with a list of answers takes only an answer on its
 //!   list; a count takes a whole number; a written answer takes any
-//!   text — and the agency's own questions and references are kept and
+//!   text, and the agency's own questions and references are kept and
 //!   not checked;
 //! * an event recording a survey names who surveyed (`surveyed_by`),
 //!   only on an event that sets details; a stop on a date says when it
@@ -264,8 +264,8 @@ fn nothing_but_surveyors_changes_and_twice_is_once() {
     assert_eq!(Stops::default().attribute_surveys(fresh, "rosa.ortiz").stops["n"][0].surveyed_by.as_deref(), Some("rosa.ortiz"));
 }
 
-/// An event names the stop request it carries out (D-159); the stops
-/// document keeps it as given — the requests are their own document.
+/// An event names the stop request it carries out (D-159). The stops
+/// document keeps it as given. The requests are their own document.
 #[test]
 fn an_event_names_its_request() {
     let built = Event { request: Some("R-2027-014".into()), ..Event { event: EventKind::Built, on: Some(date(3)), ..Event::default() } };
@@ -276,11 +276,11 @@ fn an_event_names_its_request() {
     assert_eq!(read.stops["a"][1].request.as_deref(), Some("R-2027-014"));
 }
 
-/// A stop's event carries its photos and drawings (D-162): each named by
-/// its content hash ("sha256:" and 64 hex digits), never a URL, with its
-/// media type, and optionally its file name, caption, and the day it was
-/// taken; a hash or type of another shape, or a day that is not a date,
-/// is refused, named.
+/// A stop's event carries its photos and drawings (D-162). Each is named by
+/// its content hash ("sha256:" and 64 hex digits), never a URL. It has a
+/// media type. It may have a file name, a caption, and the day it was
+/// taken. A hash or type of another shape is refused, and named. So is a
+/// day that is not a date.
 #[test]
 fn an_event_names_its_attachments_by_hash() {
     let hash = format!("sha256:{}", "ab".repeat(32));

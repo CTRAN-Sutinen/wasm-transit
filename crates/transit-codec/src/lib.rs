@@ -95,7 +95,7 @@ pub struct Boundary {
     #[serde(default)]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
-    /// Per trip, the feed's stop_sequence numbers — kept only where
+    /// Per trip, the feed's stop_sequence numbers, kept only where
     /// they are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
@@ -105,7 +105,7 @@ pub struct Boundary {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, u32>>")]
     pub frequency_bases: BTreeMap<String, u32>,
-    /// Per alignment, the feed's shape_pt_sequence numbers — kept only
+    /// Per alignment, the feed's shape_pt_sequence numbers, kept only
     /// where they are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
@@ -148,7 +148,7 @@ pub const WEEKLY_MIN_DAYS: u32 = 4;
 pub const WEEKLY_MIN_SHARE: (u32, u32) = (3, 4);
 
 /// D-105: the weekly rule a service published as dates alone runs, when
-/// one reads out of them (D-111) — the qualifying weekdays, one range
+/// one reads out of them (D-111): the qualifying weekdays, one range
 /// from the first to the last date on them, a removed date for each of
 /// them it skips, an added date for each other date. It runs on exactly
 /// `dates`. None when no weekday qualifies: the service stays dated.
@@ -185,9 +185,9 @@ pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
     Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions, extra: Default::default() })
 }
 
-/// One thing the import could not carry into the document. Reported,
-/// never silent — the planner needs to see what the bootstrap did to
-/// their feed.
+/// One thing the import could not carry into the document. It is reported,
+/// never silent. The planner needs to see what the bootstrap did to their
+/// feed.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -201,8 +201,8 @@ pub enum ImportNote {
         missing_stop_coords: u32,
     },
     /// A transfers.txt row marks a stop whose walking group is
-    /// served by fewer than two routes — the feed's intent cannot
-    /// compose; the flag is reported, not applied.
+    /// served by fewer than two routes. The feed's intent cannot compose.
+    /// The flag is reported, not applied.
     UnusableTransferPoint { stop: String },
     /// Trips name a shape shapes.txt does not have; their pattern runs
     /// no alignment.
@@ -236,7 +236,7 @@ struct Read<'a> {
     stops: Vec<String>,
     flags: Vec<bool>,
     distances: Vec<f64>,
-    /// What each stop's row says beyond its times — part of the
+    /// What each stop's row says beyond its times. It is part of the
     /// pattern's identity.
     attrs: Vec<StopAttrs>,
 }
@@ -495,8 +495,8 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     let mut pattern_of: Vec<String> = vec![String::new(); trips.len()];
     let mut index: BTreeMap<(String, String), usize> = BTreeMap::new();
     let stop_name = |id: &str| net.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
-    // Alignments: every shape under its own id, in sequence order —
-    // including shapes no trip runs.
+    // Alignments: every shape under its own id, in sequence order. This
+    // includes shapes no trip runs.
     let mut shapes: BTreeMap<&str, Vec<(u32, AlignmentPoint)>> = BTreeMap::new();
     for row in &feed.shapes {
         let (Some(id), Some(lat), Some(lon)) = (row.shape_id.as_deref(), parse_f64(&row.shape_pt_lat), parse_f64(&row.shape_pt_lon))
@@ -601,7 +601,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
 
     // Directions, each named by its trips' most common headsign (else
     // "To" its most common terminal). Ties: the lexicographically
-    // first — deterministic.
+    // first, deterministic.
     let mut headsigns: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     let mut terminals: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     for ((route, direction, stops, ..), members) in &clusters {
@@ -668,7 +668,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         rule.exceptions.sort_by_key(|e| e.date);
         // D-105: a service published as dates alone (no weekday flagged,
         // every exception an added date) runs the weekly rule its dates
-        // read as, where one does; the boundary keeps how it was written.
+        // read as, where one does; the boundary keeps how it is written.
         let dated = rule.days == WeekdaySet::none()
             && !rule.exceptions.is_empty()
             && rule.exceptions.iter().all(|e| e.state == DayState::Added);
@@ -717,8 +717,8 @@ pub fn import(feed: &Feed) -> ImportOutcome {
 
     // Transfer points: transfers.txt declares them (pairs; type 3 is
     // "not possible" and never marks). A flag only composes where at
-    // least two routes meet across the stop's walking group —
-    // otherwise it is reported, not applied.
+    // least two routes meet across the stop's walking group. Otherwise it
+    // is reported, not applied.
     {
         let index = transit_network::stop_route_index(&net);
         let marked: BTreeSet<&str> = feed
@@ -1069,8 +1069,8 @@ pub fn model_direction(route: &transit_network::Route, code: u32) -> Option<&tra
 }
 
 /// The route_type a route is published under: its own vehicle type
-/// where it carries one, else its mode's code — what an rt alert's
-/// `route_type` selector names.
+/// where it carries one, else its mode's code. An rt alert's `route_type`
+/// selector names this code.
 pub fn published_route_type(route: &transit_network::Route) -> u16 {
     route.vehicle_type.unwrap_or_else(|| gtfs_route_type(route.mode))
 }
@@ -1095,7 +1095,7 @@ fn gtfs_route_type(mode: Mode) -> u16 {
 
 /// Meters along a trip, resolved from the feed's own
 /// `shape_dist_traveled` where it publishes any: known anchors are
-/// kept (clamped non-decreasing — the model requires it), missing
+/// kept (clamped non-decreasing, as the model requires), missing
 /// rows interpolate between their bracketing anchors and
 /// extrapolate by 500 m steps outside them. A trip without a
 /// single anchor fabricates index × 500 m (GTFS has none to keep).

@@ -1,4 +1,4 @@
-//! The stop requests capability's worked examples (its `examples`
+//! The worked examples of the stop requests capability (its `examples`
 //! feature): the documents to load and each request. The generator runs
 //! them through this crate's `invoke` and records the answers.
 

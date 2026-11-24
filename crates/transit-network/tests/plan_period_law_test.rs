@@ -1,29 +1,29 @@
 //! The fork-carries-the-calendar laws (D-41): `set_plan` with a period
-//! end (`through`) extends every WEEKLY service type to that date, so
+//! end (`through`) extends every weekly service type to that date, so
 //! a pick framed past the import's calendar runs its service.
 //!
-//! Written BEFORE the implementation, from the decision, with every
+//! Written before the implementation, from the decision, with every
 //! expected answer recomputed here from the generated calendars:
 //!
-//! 1. **Coverage** — on every date from the pick's `effective_from`
+//! 1. **Coverage**: on every date from the pick's `effective_from`
 //!    through `through` past the type's own last day, a weekly type
 //!    runs wherever its weekday is flagged and no exception says
-//!    otherwise (the fork EXTENDS a calendar; a type whose service
+//!    otherwise (the fork extends a calendar; a type whose service
 //!    starts after the period is not pulled back).
 //!    Only a type still running at the document's end is carried
-//!    (D-112): its last range ends in the calendar's final week — the
+//!    (D-112): its last range ends in the calendar's final week: the
 //!    week before the latest date any type names (a weekly type's last
-//!    range end, or an added date) up to `through` — a date past the
-//!    period leaves the fork's calendar, so it never counts (D-138). A closed period (C-TRAN's
-//!    1-WKDY/30, ended in October) is left where it ended.
-//! 2. **The fork's calendar is its period** (D-138) — every range and
+//!    range end, or an added date) up to `through`: a date past the
+//!    period leaves the fork's calendar, so it never counts (D-138). A closed
+//!    period is left where it ended. C-TRAN's 1-WKDY/30 ended in October.
+//! 2. **The fork's calendar is its period** (D-138): every range and
 //!    exception lies from `effective_from` through `through`: a range
 //!    is cut to the period and one wholly outside it goes, as does an
 //!    exception outside it; nothing runs outside the period. Inside
 //!    it, nothing a type already decided moves: a date on or before
-//!    the type's old last day runs exactly as before — the edit only
-//!    ADDS the dates between the type's old end and `through`.
-//! 3. **Dated service is not carried** — a type with no weekly rule
+//!    the type's old last day runs exactly as before: the edit only
+//!    adds the dates between the type's old end and `through`.
+//! 3. **Dated service is not carried**: a type with no weekly rule
 //!    (no flagged day, or no range: holidays, one-off events) gains
 //!    nothing: it keeps what it had inside the period. No exception is
 //!    added or moved, no weekday flag or name changes, and every type
@@ -31,7 +31,7 @@
 //! 4. **Idempotent**, and **without `through`** the period is open at
 //!    its end: only the dates before `effective_from` go, and every
 //!    date from it on runs as before.
-//! 5. **Refusal** — a `through` before the pick's `effective_from`, or
+//! 5. **Refusal**: a `through` before the pick's `effective_from`, or
 //!    not a date, is a named error; the input is untouched.
 //!
 //! The API these laws require: `NetworkEdit::SetPlan { plan, through:
@@ -158,7 +158,7 @@ proptest! {
         prop_assert_eq!(next.plan.effective_from, Some(d(from)));
         prop_assert_eq!(next.service_types.len(), net.service_types.len());
 
-        // D-112: the calendar's end, recomputed — within the period
+        // D-112: the calendar's end, recomputed within the period
         // (D-138: the fork's calendar is its period, so a date past
         // `through` never makes a type ended inside it look closed).
         let calendar_end = net

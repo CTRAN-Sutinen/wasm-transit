@@ -3,9 +3,9 @@
 //!
 //! The existence check (transit-log) judges only that the stop is held.
 //! This rule judges its state. The receive path refuses a write that
-//! breaks the rule in the world its writer read, and warns about one that
-//! the world broke later. A rule refuses only a contradiction, never a
-//! plausibility.
+//! breaks the rule in the world its writer read. It warns about a write
+//! that the world broke later. A rule refuses only a contradiction, not
+//! a plausibility.
 //!
 //! - An open request (drafted, submitted, ordered) needs a stop that is
 //!   not retired on the write's date. Why: a retired stop's life has
@@ -16,9 +16,9 @@
 //! - The request that the stop's `retired` event names is exempt: the
 //!   retirement is that request's outcome.
 //!
-//! A request's status is a string, so that a newer build's status still
-//! reads. A status this build does not know is not judged, and a law
-//! checks that every status in `transit_requests::STATUSES` is covered.
+//! A request's status is a string, so a newer build's status still reads.
+//! A status this build does not know is not judged. A law checks that
+//! every status in `transit_requests::STATUSES` is covered.
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ pub fn request_needs(status: &str) -> Option<Needs> {
 }
 
 /// Whether a stop at `status` gives what `needs` asks. Every state of the
-/// stop is named, so a new state does not compile until the rule judges
+/// stop is named. So a new state does not compile until the rule judges
 /// it.
 pub fn allows(needs: Needs, status: Status) -> bool {
     match (needs, status) {

@@ -1,4 +1,4 @@
-//! The kernel's load of a live document (D-239): its line in the kind list
+//! The kernel's load of a live document (D-239). Its line in the kind list
 //! (`crates/cap-abi/src/kinds.rs`) names this impl.
 
 /// What `load_live` answers.
@@ -7,8 +7,8 @@ pub struct LiveLoaded {
     pub live_hash: String,
 }
 
-/// Live documents are short-lived: made again every poll, the last four
-/// kept (D-70).
+/// Live documents are short-lived. They are made again every poll. The last
+/// four are kept (D-70).
 impl transit_version::Load for crate::LiveDay {
     const ID: &'static str = "live";
     const NAME: &'static str = "live document";

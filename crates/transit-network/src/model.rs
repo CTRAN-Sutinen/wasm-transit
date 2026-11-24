@@ -1,24 +1,22 @@
-//! The authored network model — planner intent as data.
+//! The authored network model: planner intent as data.
 //!
 //! Reading order: [`Network`] holds everything a planner authors.
-//! [`Route`]s run in directions; a [`Pattern`] is one stop sequence of
-//! a route with its timepoints; a [`ServiceType`] is the day type
-//! planners design (Weekday, Saturday…); [`PatternTrips`] are one
-//! pattern's [`Trip`]s under one service type; [`Block`] is the
-//! runcut. A planner's TIMETABLE — a route, one direction, one
-//! service type — is every trip of that direction's patterns
-//! (`listing::timetable`).
+//! [`Route`]s run in directions. A [`Pattern`] is one stop sequence of a
+//! route with its timepoints. A [`ServiceType`] is the day type that
+//! planners design (Weekday, Saturday…). [`PatternTrips`] are one pattern's
+//! [`Trip`]s under one service type. [`Block`] is the runcut. A planner's
+//! timetable (a route, one direction, one service type) is every trip of
+//! that direction's patterns (`listing::timetable`).
 //!
-//! A trip is a stored record: its own id, its own departure
-//! ([`Departs`]: one start, or a frequency), its own time at every
-//! stop. A pattern's [`TimingProfile`]s are the planner's tool for
-//! PRODUCING times for new trips, never the schedule — planners
-//! adjust individual trips to observed running times.
+//! A trip is a stored record. It has its own id, its own departure
+//! ([`Departs`]: one start, or a frequency), and its own time at every stop.
+//! A pattern's [`TimingProfile`]s produce times for new trips. They are never
+//! the schedule. Planners adjust individual trips to observed running times.
 //!
-//! Time conventions (see the crate docs): `u32` seconds after the
-//! service-day [`Anchor`] of the date in question. A trip's
-//! [`StopOffset`]s are seconds after its start; `at_timepoints` are
-//! cumulative seconds from the first timepoint.
+//! Time conventions (see the crate docs): `u32` seconds after the service-day
+//! [`Anchor`] of the date in question. A trip's [`StopOffset`]s are seconds
+//! after its start. `at_timepoints` are cumulative seconds from the first
+//! timepoint.
 
 use ts_rs::TS;
 use std::collections::BTreeMap;
@@ -32,8 +30,8 @@ use crate::fares::{FareNetworkId, Fares};
 use crate::operators::{Attribution, Operator, OperatorId, Publisher, Translation};
 use crate::places::{Level, LevelId, Pathway, PathwayId, StationPart, StopInfo, StopKind, TransferRule};
 
-/// IDs are opaque strings owned by this model. Type aliases document
-/// intent without newtype ceremony (a deliberate non-goal).
+/// IDs are opaque strings owned by this model. Type aliases document intent
+/// without newtype ceremony (a non-goal).
 pub type StopId = String;
 pub type RouteId = String;
 pub type PatternId = String;
@@ -44,10 +42,9 @@ pub type DirectionId = String;
 pub type TripId = String;
 pub type AlignmentId = String;
 
-/// A WGS84 position. Authored geometry (a pattern's alignment) is
-/// model data — `lat` first, matching `Stop`'s field order. (GeoJSON
-/// views at the boundary reorder to [lon, lat]; the model never
-/// stores GeoJSON order.)
+/// A WGS84 position. Authored geometry (a pattern's alignment) is model
+/// data. `lat` comes first, matching `Stop`'s field order. GeoJSON views at
+/// the boundary reorder to [lon, lat]. The model never stores GeoJSON order.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Coord {
@@ -55,11 +52,11 @@ pub struct Coord {
     pub lon: f64,
 }
 
-/// A line on the ground: the path vehicles take, in travel order.
-/// Purely geographic — it carries no timing and no stops, and
-/// materialization only uses it for drawing, never for scheduling.
-/// Patterns run one by reference ([`Pattern::alignment`]); any number
-/// may share one, and one no pattern runs still stands.
+/// A line on the ground: the path vehicles take, in travel order. It is
+/// purely geographic. It carries no timing and no stops. Materialization uses
+/// it for drawing only, never for scheduling. Patterns run one by reference
+/// ([`Pattern::alignment`]). Any number may share one. One that no pattern
+/// runs still stands.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Alignment {
@@ -84,7 +81,7 @@ pub struct AlignmentPoint {
 }
 
 /// Serde helper: dates cross every boundary as `"YYYY-MM-DD"`.
-/// (chrono's serde feature is deliberately not enabled workspace-wide.)
+/// (chrono's serde feature is not enabled workspace-wide.)
 pub mod iso_date {
     use chrono::NaiveDate;
     use serde::{Deserialize, Deserializer, Serializer};
@@ -128,11 +125,11 @@ pub mod iso_opt_date {
     }
 }
 
-/// Where a service day's second zero sits. `NoonMinusTwelve` is the
-/// GTFS convention, adopted on its merits rather than for
-/// compatibility: no DST transition occurs near noon, so offsets
-/// stay unambiguous on change days. The authored model makes the
-/// convention *explicit* where GTFS leaves it to inference.
+/// Where a service day's second zero sits. `NoonMinusTwelve` is the GTFS
+/// convention. It is chosen on its merits, not for compatibility. No DST
+/// transition occurs near noon, so offsets stay unambiguous on change days.
+/// The authored model states the convention where GTFS leaves it to
+/// inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -147,9 +144,9 @@ impl Default for Anchor {
     }
 }
 
-/// A stop as a planner authors it: one name, one location, optional
-/// parent (platform-in-station groupings) — a stop riders board at,
-/// or a station grouping stops.
+/// A stop as a planner authors it: one name, one location, and an optional
+/// parent (platform-in-station groupings). A stop is either a stop riders
+/// board at, or a station that groups stops.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Stop {
@@ -164,11 +161,11 @@ pub struct Stop {
     #[serde(default, skip_serializing_if = "StopInfo::is_empty")]
     #[ts(optional, as = "Option<StopInfo>")]
     pub info: StopInfo,
-    /// A designated transfer point: where the network intends riders
-    /// to change vehicles. Authored intent, not a badge — the flag
-    /// only means something composed with the routes that meet there
-    /// (validation requires at least two; the analysis ops measure
-    /// the timed connections it enables).
+        /// A designated transfer point: where the network intends riders to
+        /// change vehicles. This is authored intent, not a badge. The flag
+        /// means something only when composed with the routes that meet there.
+        /// Validation requires at least two. The analysis ops measure the timed
+        /// connections it enables.
     #[serde(default)]
     pub transfer: bool,
     /// Fields this build does not know, kept as written (D-167).
@@ -325,7 +322,7 @@ pub struct PatternStop {
     #[ts(optional, as = "Option<bool>")]
     pub distance_published: bool,
     /// What the vehicle's sign says at this visit, where it differs
-    /// from the trip's headsign (this visit only — `visit_destination`).
+    /// from the trip's headsign (this visit only: `visit_destination`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub headsign: Option<String>,
@@ -356,9 +353,9 @@ pub struct PatternStop {
     pub extra: transit_version::Extra,
 }
 
-/// Run-time profile for NEW trips departing in a time band
-/// `[start_secs, end_secs)` — the planner's production tool. Stored
-/// trips carry their own times; a profile never governs them.
+/// Run-time profile for new trips that depart in a time band
+/// `[start_secs, end_secs)`. It is the planner's production tool. Stored
+/// trips carry their own times. A profile never governs them.
 ///
 /// `at_timepoints` is cumulative seconds from the first timepoint at
 /// each of the pattern's timepoints, in pattern order (the first
@@ -382,11 +379,11 @@ impl TimingProfile {
     }
 }
 
-/// A route pattern: the stop sequence a planner draws along its
-/// alignment, with the profiles new trips are timed from. Every trip
-/// runs a pattern. A document written before alignments (an inline
-/// `path`) is version 1, refused at its load and brought forward by
-/// the migration (`migrate.rs`), which moves its line.
+/// A route pattern: the stop sequence a planner draws along its alignment.
+/// The profiles that new trips are timed from are also here. Every trip runs
+/// a pattern. A document written before alignments (an inline `path`) is
+/// version 1. Load refuses it. The migration (`migrate.rs`) brings it forward
+/// and moves its line.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Pattern {
@@ -428,10 +425,10 @@ impl Pattern {
     }
 }
 
-/// A service type: the service identifier planners design —
-/// Weekday, Saturday, Sunday, a holiday — linked to the days it
-/// runs by its calendar rule. This, not the day-of-month, is the
-/// axis planners design on (GTFS calls it service_id).
+/// A service type: the service identifier planners design, such as Weekday,
+/// Saturday, Sunday, or a holiday. It links to the days it runs by its
+/// calendar rule. This is the axis planners design on, not the day of the
+/// month. GTFS calls it service_id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceType {
@@ -523,7 +520,7 @@ pub enum DayState {
 }
 
 /// Authored weekday flags. A rule with no flags still runs on dates
-/// explicitly `Added` (special-event service) — see `runs_on`.
+/// explicitly `Added` (special-event service). See `runs_on`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct WeekdaySet {
@@ -702,10 +699,10 @@ impl Trip {
     }
 }
 
-/// One pattern's trips under one service type. Everything RAPTOR and
-/// dispatch consume derives from these. Not a planner's "schedule":
-/// the timetable a planner reads is a route's direction under one
-/// service type, across all its patterns (`listing::timetable`).
+/// One pattern's trips under one service type. Everything RAPTOR and dispatch
+/// consume derives from these. They are not a planner's "schedule". The
+/// timetable a planner reads is a route's direction under one service type,
+/// across all its patterns (`listing::timetable`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PatternTrips {
@@ -762,17 +759,17 @@ pub struct Layover {
     pub extra: transit_version::Extra,
 }
 
-/// The service-plan frame of a network document. Agencies implement
-/// a few service changes ("picks") a year at defined dates — the
-/// only times permanent stop/route changes are allowed — and each
-/// pick is one of these documents, effective from its service
-/// change date until superseded by the next. A document without
-/// plan metadata is unversioned (e.g. a fresh GTFS import).
+/// The service-plan frame of a network document. Agencies make a few service
+/// changes ("picks") a year, on defined dates. These are the only times that
+/// permanent stop/route changes are allowed. Each pick is one of these
+/// documents. It is effective from its service change date until the next
+/// pick supersedes it. A document without plan metadata is unversioned, such
+/// as a fresh GTFS import.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PlanMeta {
-    /// The plan's identity — the sync key (LWW per plan). Empty on
-    /// unversioned documents.
+        /// The plan's identity, which is the sync key (LWW per plan). Empty on
+        /// unversioned documents.
     #[serde(default)]
     pub id: String,
     /// Display name ("Fall 2026 pick").

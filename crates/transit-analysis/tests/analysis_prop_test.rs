@@ -1,28 +1,26 @@
 //! Analysis laws, as property tests with independent oracles.
 //!
-//! `analysis.rs` is what the planner persona READS — headways,
-//! spans, coverage. Its failure mode is silent plausibility: wrong
-//! numbers that neither panic nor look wrong. These laws hold for
-//! every generated network (the adversarial import generator, as in
-//! `codec_prop_test.rs`) and every generated point layer (the
-//! polygon and comparison laws are `coverage_law_test.rs`):
+//! `analysis.rs` is what the planner persona reads: headways, spans, and
+//! coverage. Its failure mode is silent plausibility. It returns wrong numbers
+//! that neither panic nor look wrong. These laws hold for every generated
+//! network (the adversarial import generator, as in `codec_prop_test.rs`) and
+//! every generated point layer. The polygon and comparison laws are in
+//! `coverage_law_test.rs`.
 //!
-//! * **Stats oracle** — every number `network_stats` reports is
-//!   recomputed from `materialize` output with independent
-//!   aggregation code: trip counts, first/last times, revenue hours,
-//!   per-route and per-stop activity, typical headways.
-//! * **Gap oracle** — `stop_gaps` (the stop's day folded into
-//!   headway gaps) is recomputed from the same materialized trips:
-//!   departures, distinct-time spine, max gap and the departure it
-//!   follows, per-hour departures and the max/median gap starting
-//!   in each hour.
-//! * **Coverage monotonicity and bounds** — a bigger radius never
-//!   serves less weight; served/frequent weight stay
-//!   within [0, total]; the served-stop counts are radius-
-//!   independent.
-//! * **Cross-function agreement** — `type_coverage` (a combination
-//!   of service types, the design axis) agrees with `coverage` (the
-//!   calendar view) on every date the combination holds.
+//! * **Stats oracle**: every number `network_stats` reports is recomputed from
+//!   `materialize` output with independent aggregation code. This covers trip
+//!   counts, first and last times, revenue hours, per-route and per-stop
+//!   activity, and typical headways.
+//! * **Gap oracle**: `stop_gaps` (the stop's day folded into headway gaps) is
+//!   recomputed from the same materialized trips. It covers departures, the
+//!   distinct-time spine, the max gap and the departure it follows, and the
+//!   per-hour departures and max/median gap starting in each hour.
+//! * **Coverage monotonicity and bounds**: a bigger radius never serves less
+//!   weight. served/frequent weight stays within [0, total]. The served-stop
+//!   counts do not depend on the radius.
+//! * **Cross-function agreement**: `type_coverage` (a combination of service
+//!   types, the design axis) agrees with `coverage` (the calendar view) on
+//!   every date the combination holds.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -73,9 +71,9 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     gen_feed_stations(trips, &[])
 }
 
-/// The same feed, with a station `st` (GTFS location_type 1) whose
-/// bays are the stops `parented` marks — none marked, the feed is
-/// `gen_feed`'s byte for byte.
+/// The same feed, with a station `st` (GTFS location_type 1). Its bays are the
+/// stops `parented` marks. With none marked, the feed is `gen_feed`'s byte for
+/// byte.
 fn gen_feed_stations(trips: &[GenTrip], parented: &[bool]) -> Vec<u8> {
     let station = parented.iter().any(|&p| p);
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -237,9 +235,9 @@ proptest! {
             let mut route_last: BTreeMap<String, u32> = BTreeMap::new();
             let mut route_patterns: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
             let mut route_runtime: BTreeMap<String, u64> = BTreeMap::new();
-            // QAF-21: pattern meters per route and total — the
-            // revenue-miles oracle, straight off the document's own
-            // stop distances.
+            // QAF-21: pattern meters per route and total. This is the
+            // revenue-miles oracle, straight off the document's own stop
+            // distances.
             let mut route_meters: BTreeMap<String, f64> = BTreeMap::new();
             let mut meters = 0f64;
             // (route, stop) → departures (every visit but the trip's last).
@@ -307,7 +305,7 @@ proptest! {
                 );
                 // Typical headway: the busiest stop (most departures,
                 // lowest stop id on a tie) and the upper-median gap
-                // between its sorted departures — None below four
+                // between its sorted departures. None below four
                 // departures (QAF-55: a median over fewer than three
                 // gaps is a headway nobody runs).
                 let mut busiest: Option<(&String, usize)> = None;
@@ -380,12 +378,12 @@ proptest! {
         prop_assert_eq!(c50.frequent_stops, c1000.frequent_stops, "frequent stops must not depend on radius");
     }
 
-    /// Agreement (D-55, QAF-89): what type_coverage reports for a
-    /// combination of service types equals what coverage reports on
-    /// every date the combination holds — on such a date exactly its
-    /// members run, so the combination's pooled served stops are the
-    /// union of that day's. Calendars here carry exceptions, so a
-    /// holiday is a combination of its own and agrees on its date.
+    /// Agreement (D-55, QAF-89): what type_coverage reports for a combination
+    /// of service types equals what coverage reports on every date the
+    /// combination holds. On such a date exactly its members run. So the
+    /// combination's pooled served stops are the union of that day's. Calendars
+    /// here carry exceptions, so a holiday is a combination of its own and
+    /// agrees on its date.
     #[test]
     fn type_coverage_agrees_with_coverage(
         (net, points) in spec_and_layer(),
@@ -411,12 +409,12 @@ proptest! {
         }
     }
 
-    /// QAF-2: network_stats is date-honest — the service_types
-    /// field names exactly the types whose calendar RUNS on the
-    /// queried date (it used to answer every type on any date, so
-    /// two different days read identically). The oracle walks each
-    /// rule by hand: ISO weekday, range check, exception scan — no
-    /// shared code with the model.
+    /// QAF-2: network_stats is date-honest. The service_types field names
+    /// exactly the types whose calendar runs on the queried date. Each date
+    /// lists
+    /// only its own types, so two different days never read the same.
+    /// The oracle walks each rule by hand: ISO weekday, range check, exception
+    /// scan. It shares no code with the model.
     #[test]
     fn service_types_match_the_date(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("generated feeds parse");
@@ -460,9 +458,9 @@ proptest! {
         }
     }
 
-    /// QAF-25: the stop's day as gaps — `stop_gaps` matches an
-    /// independent fold of the same materialized departures, on
-    /// every stop of the generated day and on an unknown stop.
+    /// QAF-25: the stop's day as gaps. `stop_gaps` matches an independent fold
+    /// of the same materialized departures, on every stop of the generated day
+    /// and on an unknown stop.
     #[test]
     fn stop_gaps_match_the_departure_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
@@ -471,7 +469,7 @@ proptest! {
 
         let materialized = transit_network::materialize(&net, date).expect("materialize");
         // The oracle's raw departures per stop (every visit but the
-        // trip's last — final stops are arrivals).
+        // trip's last; final stops are arrivals).
         let mut raw: BTreeMap<String, Vec<u32>> = BTreeMap::new();
         for trip in &materialized {
             for st in trip.stop_times.iter().rev().skip(1) {
@@ -537,13 +535,12 @@ proptest! {
         }
     }
 
-    /// A station's waits are its bays' — `stop_gaps` asked
-    /// for a station pools the departures of every stop that names
-    /// it as parent (nothing departs from the station itself), and
-    /// asked for a bay or a plain stop it reads that stop alone. The
-    /// oracle folds the materialized departures over the same set:
-    /// the count, the distinct-time spine's first, last, and largest
-    /// gap, and the departures per hour.
+    /// A station's waits are its bays'. `stop_gaps` asked for a station pools
+    /// the departures of every stop that names it as parent. Nothing departs
+    /// from the station itself. Asked for a bay or a plain stop, it reads that
+    /// stop alone. The oracle folds the materialized departures over the same
+    /// set: the count, the distinct-time spine's first, last, and largest gap,
+    /// and the departures per hour.
     #[test]
     fn a_stations_waits_pool_its_bays(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
@@ -598,17 +595,16 @@ proptest! {
         }
     }
 
-    /// The network's longest waits (service-design question 8):
-    /// every stop that departs on the date, ranked by its longest
-    /// wait — longest first, then by stop id — and cut to `limit`.
-    /// Without a window the wait is the largest gap between the
-    /// stop's distinct departure times (a stop with fewer than two
-    /// has none and is no row). With one, it is coverage's reading of
-    /// a window: from the window's start to the first departure in
-    /// it, between departures, and from the last to the window's end;
-    /// a stop that departs that day but not inside the window waits
-    /// the whole window. The oracle recomputes each from the
-    /// materialized departures.
+    /// The network's longest waits (service-design question 8): every stop that
+    /// departs on the date, ranked by its longest wait. The longest comes
+    /// first, then stop id. The list is cut to `limit`. Without a window the
+    /// wait is the largest gap between the stop's distinct departure times (a
+    /// stop with fewer than two has none and is no row). With one, it is
+    /// coverage's reading of a window: from the window's start to the first
+    /// departure in it, between departures, and from the last to the window's
+    /// end. A stop that departs that day but not inside the window waits the
+    /// whole window. The oracle recomputes each from the materialized
+    /// departures.
     #[test]
     fn longest_waits_rank_every_stops_wait(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
@@ -691,16 +687,16 @@ proptest! {
         }
     }
 
-    /// Just-missed connections (service-design question 9): at a
-    /// hub (the stop's walking group, as `timed_transfers` pools it),
-    /// every arrival of one route and departure of another where the
-    /// departure leaves from `miss_secs` before the arrival up to
-    /// (not including) the connection window's minimum after it —
-    /// the rider sees it go. `missed_by_secs` is how much later it
-    /// would have had to leave; `next_departure_secs` is that route's
-    /// first departure the rider can make (at least the minimum after
-    /// the arrival), or none. No near miss is a timed transfer. The
-    /// oracle recomputes the pairs from the materialized day.
+    /// Just-missed connections (service-design question 9): at a hub (the
+    /// stop's walking group, as `timed_transfers` pools it), every arrival of
+    /// one route and departure of another where the departure leaves from
+    /// `miss_secs` before the arrival. It leaves up to, but not including, the
+    /// connection window's minimum after the arrival. The rider sees it go.
+    /// `missed_by_secs` is how much later it would have had to leave.
+    /// `next_departure_secs` is that route's first departure the rider can make
+    /// (at least the minimum after the arrival), or none. No near miss is a
+    /// timed transfer. The oracle recomputes the pairs from the materialized
+    /// day.
     #[test]
     fn missed_connections_match_the_near_miss_oracle(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
@@ -761,21 +757,19 @@ proptest! {
         prop_assert!(transit_analysis::missed_connections(&net, date, "nope", window, miss).is_empty());
     }
 
-    /// The day types (the service-change UI's first question): the
-    /// service combinations inside a period, arranged by the days of
-    /// the week their dates fall on. Every combination with a date in
-    /// [from, through] appears once, with exactly those dates; one
-    /// with none does not appear. Walking the combinations most
-    /// in-period dates first (then first date, then id), a combination
-    /// whose dates all fall on an earlier day type's weekdays joins
-    /// the first such type; any other starts a new one and is its
-    /// regular service. A type's weekdays are those its regular group
-    /// runs on for more than half of that weekday's dates in the
-    /// period (from `from`, else the first in-period date, to
-    /// `through`, else the last) — a holiday it also runs on is not
-    /// one — or, with none, every weekday it runs on. Every other
-    /// group's weekdays are inside them, and no type's regular group
-    /// fits inside an earlier type.
+    /// The day types (the service-change UI's first question): the service
+    /// combinations inside a period, arranged by the days of the week their
+    /// dates fall on. Every combination with a date in [from, through] appears
+    /// once, with exactly those dates. One with none does not appear. Walking
+    /// the combinations most in-period dates first (then first date, then id),
+    /// a combination whose dates all fall on an earlier day type's weekdays
+    /// joins the first such type. Any other starts a new one and is its regular
+    /// service. A type's weekdays are those its regular group runs on for more
+    /// than half of that weekday's dates in the period (from `from`, else the
+    /// first in-period date, to `through`, else the last). A holiday it also
+    /// runs on does not count. With none, every weekday it runs on counts.
+    /// Every other group's weekdays are inside them, and no type's regular
+    /// group fits inside an earlier type.
     #[test]
     fn day_types_arrange_the_combinations_by_weekday(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
@@ -869,7 +863,7 @@ proptest! {
 
     /// A proposal judged across every day type (`plan_compare`): the
     /// proposal's day types in the period, each group carrying the
-    /// `service_type_compare` answer for its members — the same
+    /// `service_type_compare` answer for its members. The same
     /// arrangement `day_types` gives, the same comparison one group
     /// at a time gives.
     #[test]
@@ -896,24 +890,25 @@ proptest! {
         }
     }
 
-    /// The worklist (`network_findings`, D-136), recomputed from the
-    /// answers it gathers:
-    /// * a frequency hole is a route-hour (the group's grid,
-    ///   `route_frequency`) whose longest gap is at least `hole_factor`
-    ///   (1.5) times the longer of its two neighbouring hours' longest
-    ///   gaps — both neighbours must have one;
-    /// * a long wait is a `longest_waits` row (the group's first date,
-    ///   the window) of at least `wait_secs` (3600);
-    /// * a costly miss folds `missed_connections` at each hub (a
-    ///   station, or a transfer-flagged stop with no parent) by route
-    ///   pair, counting the near misses whose next departure is at
-    ///   least `miss_cost_secs` (900) after the arrival, or never;
-    /// each kind sorted (holes and waits longest first, misses most
-    /// first, then by key) and cut to `limit`; a window keeps hours
-    /// and arrivals inside it. Against a baseline, each finding
-    /// carries the baseline's finding under the same key, and the
-    /// baseline's findings with no key now are the resolved ones; a
-    /// plan against itself resolves nothing and changes nothing.
+    /// The worklist (`network_findings`, D-136), recomputed from the answers it
+    /// gathers:
+    /// * a frequency hole is a route-hour (the group's grid, `route_frequency`)
+    ///   whose longest gap is at least `hole_factor` (1.5) times the longer of
+    ///   its two neighbouring hours' longest gaps. Both neighbours must have
+    ///   one.
+    /// * a long wait is a `longest_waits` row (the group's first date, the
+    ///   window) of at least `wait_secs` (3600).
+    /// * a costly miss folds `missed_connections` at each hub (a station, or a
+    ///   transfer-flagged stop with no parent) by route pair. It counts the
+    ///   near misses whose next departure is at least `miss_cost_secs` (900)
+    ///   after the arrival, or never.
+    ///
+    /// Each kind is sorted (holes and waits longest first, misses most first,
+    /// then by key) and cut to `limit`. A window keeps hours and arrivals
+    /// inside it. Against a baseline, each finding carries the baseline's
+    /// finding under the same key. The baseline's findings with no key now are
+    /// the resolved ones. A plan against itself resolves nothing and changes
+    /// nothing.
     #[test]
     fn network_findings_gather_the_worklist(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
@@ -1050,7 +1045,7 @@ proptest! {
         }
 
         // Watched keys: each answered whatever the limit cuts, now and
-        // in the baseline, by its key — and an unknown key as nothing.
+        // in the baseline, by its key. An unknown key counts as nothing.
         let mut keys: Vec<String> = mine.iter().chain(base_keys.keys()).cloned().collect();
         keys.push("hole|nope|3".into());
         let watching = transit_analysis::FindingParams { watch: Some(keys.clone()), ..params.clone() };
@@ -1074,7 +1069,7 @@ proptest! {
         }
     }
 
-    /// QAF-4: the day's hourly profile — `hourly_trips` matches an
+    /// QAF-4: the day's hourly profile. `hourly_trips` matches an
     /// independent fold of the same materialized trips, bucketed by
     /// start hour: per-hour totals, per-type counts, only non-empty
     /// hours, and the day's trip count conserved across the rows.
@@ -1121,17 +1116,16 @@ proptest! {
         }
     }
 
-    /// QAF-16 (+ the 164 defect): the schedule texture — headway
-    /// uniformity and clockface alignment per PATTERN, keyed by the
-    /// service COMBINATION (D-55: the types that run together on the
-    /// same dates — the planner's unit, never a calendar date), with
-    /// the starts POOLED across every member running the pattern.
-    /// Several service ids share one service day and one route (route
-    /// 164's weekday trips split across 1-WKDY and its overlays), and
-    /// keying by service id would slice the corridor into thin, wrong
-    /// headways. The oracle recomputes the pooling independently: raw
-    /// trip counts, a distinct-start spine for gaps and grid, the
-    /// feeding schedule count, and the totals.
+    /// QAF-16 (+ the 164 defect): the schedule texture. It covers headway
+    /// uniformity and clockface alignment per pattern. It is keyed by the
+    /// service combination (D-55: the types that run together on the same
+    /// dates, the planner's unit, never a calendar date). The starts are pooled
+    /// across every member running the pattern. Several service ids share one
+    /// service day and one route. Route 164's weekday trips split across 1-WKDY
+    /// and its overlays. Keying by service id would slice the corridor into
+    /// thin, wrong headways. The oracle recomputes the pooling independently:
+    /// raw trip counts, a distinct-start spine for gaps and grid, the feeding
+    /// schedule count, and the totals.
     #[test]
     fn schedule_texture_matches_the_starts_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
@@ -1184,7 +1178,7 @@ proptest! {
         prop_assert!(transit_analysis::schedule_texture(&net, &["nope".to_string()]).is_none());
     }
 
-    /// QAF-22: the corridor read — `route_overlap` matches an
+    /// QAF-22: the corridor read. `route_overlap` matches an
     /// independent fold of the same materialized day: every pair of
     /// routes that shares a stop, the shared-stop and shared-segment
     /// counts, and the shared stop where the pair's departures stack
@@ -1199,7 +1193,7 @@ proptest! {
         let materialized = transit_network::materialize(&net, date).expect("materialize");
 
         // Oracle: per route, served stops, ordered segments, and
-        // departures per stop — then every pair, by hand.
+        // departures per stop. Then every pair, by hand.
         let mut stops: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut segs: BTreeMap<String, BTreeSet<(String, String)>> = BTreeMap::new();
         let mut deps: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
@@ -1248,12 +1242,12 @@ proptest! {
         }
     }
 
-    /// QAF-27: the hub's timed-transfer view — every arrival→
-    /// departure pair across routes inside the caller's connection
-    /// window (defaulting to the 60–900 s convention), pooled over
-    /// the walking group. The oracle recomputes the pairs from the
-    /// materialized day and checks the sort, the window bounds, and
-    /// that no connection pairs a route with itself.
+    /// QAF-27: the hub's timed-transfer view. It lists every
+    /// arrival-to-departure pair across routes inside the caller's connection
+    /// window. The window defaults to the 60 to 900 s convention. Pairs pool
+    /// over the walking group. The oracle recomputes the pairs from the
+    /// materialized day. It checks the sort, the window bounds, and that no
+    /// connection pairs a route with itself.
     #[test]
     fn timed_transfers_match_the_window_oracle(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
@@ -1275,7 +1269,7 @@ proptest! {
         let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         let materialized = transit_network::materialize(&net, date).expect("materialize");
 
-        // Every stop of the document is asked — the hub may be any
+        // Every stop of the document is asked. The hub may be any
         // of them, and a plain stop pools only itself.
         for stop_id in net.stops.keys() {
             let transfers = transit_analysis::timed_transfers(&net, date, stop_id, window);
@@ -1341,13 +1335,13 @@ proptest! {
         prop_assert!(transit_analysis::timed_transfers(&net, date, "nope", window).is_empty());
     }
 
-    /// QAF-23: the unserved WHERE — `unserved_points` names every
-    /// layer point beyond the radius of every stop the combination
-    /// serves, with the nearest served stop and its distance. The
-    /// oracle recomputes the served set on a date the combination
-    /// holds (D-55: exactly its members run then) and the distances
-    /// independently, and the unserved population plus the coverage
-    /// answer's served population conserves the layer total.
+    /// QAF-23: the location of the unserved weight. `unserved_points` names
+    /// every layer point
+    /// beyond the radius of every stop the combination serves. It gives the
+    /// nearest served stop and its distance. The oracle recomputes the served
+    /// set on a date the combination holds (D-55: exactly its members run then)
+    /// and the distances independently. The unserved population plus the
+    /// coverage answer's served population conserves the layer total.
     #[test]
     fn unserved_points_match_the_radius_oracle(
         (net, points) in spec_and_layer(),
@@ -1388,7 +1382,7 @@ proptest! {
             let nearest = served
                 .iter()
                 .map(|(id, (lat, lon))| {
-                    // Haversine by hand — independent of the module.
+                    // Haversine by hand, independent of the module.
                     let (p1, p2) = (p.lat.to_radians(), lat.to_radians());
                     let dl = (lon - p.lon).to_radians();
                     let dp = (lat - p.lat).to_radians();
@@ -1427,16 +1421,15 @@ proptest! {
         );
     }
 
-    /// D-55 (QAF-91, QAF-97): the service groups are the COMBINATIONS
-    /// of service types that run together on the same dates — one row
-    /// per combination (`transit_network::service_combinations`, whose
-    /// partition laws are transit-network's), each with its members'
-    /// pooled authored service. No date stands in for a combination:
-    /// its numbers ARE the service on EVERY date it holds — the
-    /// date-scoped `network_stats` and `hourly_trips` on each of its
-    /// dates answer exactly the pooled trips, revenue hours, routes,
-    /// and stops, and the drill-down's per-route rows. Members that
-    /// never share a day are never pooled.
+    /// D-55 (QAF-91, QAF-97): the service groups are the combinations of
+    /// service types that run together on the same dates. There is one row per
+    /// combination (`transit_network::service_combinations`, whose partition
+    /// laws are transit-network's). Each has its members' pooled authored
+    /// service. No date stands in for a combination. Its numbers are the
+    /// service on every date it holds. The date-scoped `network_stats` and
+    /// `hourly_trips` on each of its dates answer exactly the pooled trips,
+    /// revenue hours, routes, and stops. So do the drill-down's per-route rows.
+    /// Members that never share a day are never pooled.
     #[test]
     fn service_groups_are_the_combinations(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
@@ -1498,12 +1491,12 @@ proptest! {
         }
     }
 
-    /// The frequency grid's read — `route_frequency` matches an
-    /// independent fold of the service COMBINATION's pooled trips (the
+    /// The frequency grid's read. `route_frequency` matches an
+    /// independent fold of the service combination's pooled trips (the
     /// members `schedule_texture` reads, no date filter): one row per
     /// route with departures, at the route's headway stop (the most
-    /// departures, lowest id on a tie — the stop `service_type_detail`
-    /// reads its headway at), and that stop's day by hour — every
+    /// departures, lowest id on a tie, the stop `service_type_detail`
+    /// reads its headway at), and that stop's day by hour: every
     /// departure counted, gaps between distinct departure times
     /// belonging to the hour they start in, shortest, longest, and
     /// the median with the four-gap floor. The gaps are the trips'
@@ -1580,7 +1573,7 @@ proptest! {
         prop_assert!(transit_analysis::route_frequency(&net, &["nope".to_string()]).is_none(), "unknown members answer None");
     }
 
-    /// The hub's route-pair read — `hub_connections` is the fold of
+    /// The hub's route-pair read. `hub_connections` is the fold of
     /// `timed_transfers` by (from route, to route): how many timed
     /// connections the pair makes, the shortest and longest wait,
     /// and the median wait with the four-connection floor; pairs in
@@ -1611,11 +1604,11 @@ proptest! {
     }
 }
 
-/// A route's hour reports the gaps its trips actually leave: trips at
-/// :00, :10, :30 and 1:00 leave gaps of 10, 20 and 30 minutes in the
-/// first hour — the shortest and longest as they are, never snapped
-/// to a regular headway (the user, 2026-10-30: a target headway is
-/// adjusted through the day; the variation is information).
+/// A route's hour reports the gaps its trips actually leave. Trips at :00, :10,
+/// :30 and 1:00 leave gaps of 10, 20 and 30 minutes in the first hour. The
+/// shortest and longest are reported as they are, never snapped to a regular
+/// headway (the user, 2026-10-30: a target headway is adjusted through the day;
+/// the variation is information).
 #[test]
 fn an_hours_gaps_are_the_trips_own() {
     let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };

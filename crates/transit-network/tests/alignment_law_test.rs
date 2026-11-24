@@ -1,10 +1,10 @@
-//! The alignment laws: a line on the ground is its own record — its
-//! own id, its points, the distances published along it — and a
+//! The alignment laws: a line on the ground is its own record. Its
+//! own id, its points, the distances published along it: and a
 //! pattern runs one by reference (the pattern points at the
 //! alignment, so a pattern is its stops along its line). Alignments
 //! are shared by any number of patterns, or by none.
 //!
-//! Written BEFORE the implementation, as the definition of the
+//! Written before the implementation, as the definition of the
 //! behavior; every expected answer is recomputed here from the
 //! generated input, with no code shared with the implementation.
 //!
@@ -13,12 +13,12 @@
 //! * `Network.alignments: BTreeMap<AlignmentId, Alignment>`;
 //!   `Alignment { points: Vec<AlignmentPoint> }` (`Default`);
 //!   `AlignmentPoint { lat, lon, distance: Option<f64> }`.
-//! * `Pattern.alignment: Option<AlignmentId>` — no inline path.
+//! * `Pattern.alignment: Option<AlignmentId>`: no inline path.
 //! * `NetworkError::UnknownAlignment { pattern, alignment }`.
 //! * `pattern_alignment` draws the referenced alignment (two points
 //!   or more), else the stops joined.
 //! * `migrate_network` reads a pre-alignment (v1) document (an inline
-//!   `path` per pattern) as an alignment under the pattern's id —
+//!   `path` per pattern) as an alignment under the pattern's id:
 //!   the id the old export gave its shape.
 
 use proptest::prelude::*;
@@ -126,7 +126,7 @@ fn build(spec: &Spec) -> Network {
 }
 
 /// The stops joined in order, consecutive repeats dropped, empty
-/// below two points — recomputed from the spec.
+/// below two points: recomputed from the spec.
 fn stops_joined(spec: &Spec, stops: &[usize]) -> Vec<Coord> {
     let mut out: Vec<Coord> = Vec::new();
     for &s in stops {
@@ -149,8 +149,8 @@ fn stops_joined(spec: &Spec, stops: &[usize]) -> Vec<Coord> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// A pattern draws the alignment it runs — when that alignment is
-    /// a line (two points or more) — else its stops joined.
+    /// A pattern draws the alignment it runs: when that alignment is
+    /// a line (two points or more): else its stops joined.
     #[test]
     fn a_pattern_draws_its_alignment(spec in spec_strategy()) {
         let net = build(&spec);
@@ -204,8 +204,8 @@ proptest! {
         prop_assert_eq!(serde_json::from_str::<Network>(&text).unwrap(), net);
     }
 
-    /// A pre-alignment document — each pattern's line inline as its
-    /// `path` — reads as an alignment under the pattern's id, run by
+    /// A pre-alignment document: each pattern's line inline as its
+    /// `path`: reads as an alignment under the pattern's id, run by
     /// that pattern, drawn exactly as before.
     #[test]
     fn a_pre_alignment_document_migrates(spec in spec_strategy()) {

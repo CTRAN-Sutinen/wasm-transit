@@ -108,7 +108,7 @@ fn the_span_trims_and_extends_at_the_edge_headway() {
     assert!(refuse(span(Some(26 * H), None)).contains("leaves this direction no trip"));
     // A bound is the new last departure, in even steps nearest the
     // edge headway (17 h → 26:00 at 30 min: 25:30 is the edge, 26:00
-    // the one step; 25:40 is within half a headway — no trip).
+    // the one step; 25:40 is within half a headway: no trip).
     let later = apply(&net, vec![span(None, Some(26 * H))]);
     assert_eq!(starts(&later, "10-weekday"), [28_800, 30_600, 91_800, 93_600]);
     assert_eq!(starts(&apply(&net, vec![span(None, Some(92_400))]), "10-weekday"), [28_800, 30_600, 91_800]);

@@ -18,11 +18,11 @@ pub fn fixture_watchlist() -> transit_rider::watchlist::Watchlist {
     transit_rider::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
-/// The network examples' real context: the fixture's derived
-/// document (canonical hash — the module's formula), and its
-/// exported zip (content hash of the deterministic bytes).
+/// The network examples' real context: the fixture's derived document
+/// (canonical hash, the module's formula), and its exported zip (content
+/// hash of the deterministic bytes).
 pub struct NetworkExampleContext {
-    /// The typed derived document — the analysis examples compute
+    /// The typed derived document. The analysis examples compute
     /// real answers over it.
     pub network: transit_network::Network,
     pub derived: serde_json::Value,
@@ -93,7 +93,7 @@ pub fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContex
 }
 
 /// The parsed e2e fixture feed (for the gtfs capability's dispatch
-/// read examples — real answers, same library the module uses).
+/// read examples).
 pub fn fixture_gtfs() -> Option<transit_codec::Feed> {
     let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip");
     let bytes = std::fs::read(fixture).ok()?;
@@ -174,9 +174,8 @@ pub fn live_example() -> Option<(transit_live::LiveDay, String)> {
 }
 
 /// Worked examples: an agent reads these to learn the shapes.
-/// Requests carry the REAL feed hash computed above; responses
+/// Requests carry the real feed hash computed above; responses
 /// carry the fixture's known answers.
-/// The worked work rules: five minutes or a tenth of the run after
 /// A stops document (D-153, D-154, D-157): one stop in service, given
 /// amenities, suspended for a while, then moved; one planned, then
 /// permitted.
@@ -321,6 +320,7 @@ pub fn fixture_requests() -> transit_requests::StopRequests {
     .expect("the fixture requests parse")
 }
 
+/// The worked work rules: five minutes or a tenth of the run after
 /// every trip, route 10's own rule, routes 10 and 20 interlined, and an
 /// eight-hour run under report and clear times.
 pub fn fixture_work_rules() -> transit_runs::WorkRules {
@@ -344,7 +344,7 @@ pub fn fixture_work_rules() -> transit_runs::WorkRules {
 }
 
 /// The plan-chain examples' plan set: a two-pick chain around the
-/// fixture's dates — the spring pick in force on the fixture Friday,
+/// fixture's dates. The spring pick in force on the fixture Friday,
 /// the fall pick taking over after it.
 /// The host's date in the plan examples: before every fixture pick, so
 /// each publishes as a future one.

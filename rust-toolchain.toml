@@ -9,6 +9,6 @@
 # move — measure the churn) and document-versioning's schema lock (a
 # serde or compiler change must not move a document's canonical bytes).
 [toolchain]
-channel = "1.99.1"
+channel = "1.100.0"
 targets = ["wasm32-unknown-unknown"]
 profile = "minimal"

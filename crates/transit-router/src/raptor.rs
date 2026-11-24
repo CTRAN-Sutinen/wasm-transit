@@ -2,23 +2,22 @@
 //!
 //! How to read this file:
 //!
-//! * `tau[k][s]` — the earliest arrival at stop `s` using **at most k**
-//!   transit legs, as seconds since service-day midnight. `tau[0]` is
-//!   the initial state (origin = departure time, everything else
-//!   unreachable). Each round `k` scans patterns reachable from stops
-//!   improved in round `k-1`, then relaxes footpaths. Because
-//!   `tau[k]` starts as a copy of `tau[k-1]`, improvements are
-//!   cumulative and "at most k legs" is exact.
-//! * `parent[k][s]` — when round `k` improved stop `s`, how: which trip
-//!   from which boarding position, or which footpath. Reconstruction
-//!   walks these back from the destination.
-//! * The answer is `tau[rounds][destination]`; the itinerary is
-//!   rebuilt by following parents backward in time.
+//! * `tau[k][s]` is the earliest arrival at stop `s` using **at most k**
+//!   transit legs, as seconds since service-day midnight. `tau[0]` is the
+//!   initial state: the origin at its departure time, and everything else
+//!   unreachable. Each round `k` scans patterns reachable from stops improved
+//!   in round `k-1`, then relaxes footpaths. Because `tau[k]` starts as a copy
+//!   of `tau[k-1]`, improvements are cumulative. So "at most k legs" is exact.
+//! * `parent[k][s]` records how round `k` improved stop `s`: which trip from
+//!   which boarding position, or which footpath. Reconstruction walks these
+//!   back from the destination.
+//! * The answer is `tau[rounds][destination]`. The itinerary is rebuilt by
+//!   following parents backward in time.
 //!
-//! Arrive-by ([`latest_departure`]) is the same rounds run backward
-//! in time from the destination: the LATEST moment at each stop from
-//! which the destination is still reached by the deadline, then the
-//! forward plan from the origin's latest moment is the itinerary.
+//! Arrive-by ([`latest_departure`]) is the same rounds run backward in time
+//! from the destination. It finds the latest moment at each stop from which the
+//! destination is still reached by the deadline. The forward plan from the
+//! origin's latest moment is the itinerary.
 
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
@@ -29,9 +28,9 @@ use crate::{Result, RouterError};
 
 const INF: u32 = u32::MAX;
 
-/// Seconds since service-day midnight as "HH:MM:SS" — hours
-/// unbounded (past-86400 values are after-midnight trips, the
-/// GTFS reading everywhere on the bus).
+/// Seconds since service-day midnight as "HH:MM:SS". Hours are unbounded.
+/// Past-86400 values are after-midnight trips, the GTFS reading everywhere on
+/// the bus.
 pub(crate) fn fmt_time(secs: u32) -> String {
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
@@ -45,11 +44,11 @@ pub(crate) fn fmt_time(secs: u32) -> String {
 #[ts(export)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Leg {
-    /// One continuous walk. Footpaths reach only nearby stops, so a
-    /// longer walk is a chain of them; the chain is ONE leg (a rider
-    /// walks once), its time the sum, and the stops it passes are
-    /// `via_stop_ids`, in order (empty for a single footpath). A walk
-    /// from or to a [`Place`] names the place's id and name.
+    /// One continuous walk. Footpaths reach only nearby stops, so a longer walk
+    /// is a chain of them. The chain is one leg (a rider walks once). Its time
+    /// is the sum, and the stops it passes are `via_stop_ids`, in order (empty
+    /// for a single footpath). A walk from or to a [`Place`] names the place's
+    /// id and name.
     Walk {
         from_stop_id: String,
         from_stop_name: String,
@@ -58,12 +57,12 @@ pub enum Leg {
         walk_secs: u32,
         via_stop_ids: Vec<String>,
     },
-    /// One ride. Times are the ones the trip is expected to keep:
-    /// predicted where a live document states them, the day's own
-    /// elsewhere — the delays say which.
+    /// One ride. Times are the ones the trip is expected to keep: predicted
+    /// where a live document states them, the day's own elsewhere. The delays
+    /// say which.
     Transit {
-        /// The trip instance ridden: the network's trip and its start
-        /// — the key every day view agrees on.
+        /// The trip instance ridden: the network's trip and its start. This is
+        /// the key every day view agrees on.
         trip: String,
         start_secs: u32,
         route_id: String,
@@ -161,8 +160,8 @@ fn leave_secs(legs: &[Leg], depart_secs: u32) -> u32 {
     depart_secs
 }
 
-/// How `tau[k][s]` was improved — the reconstruction pointers.
-/// `Unset` is the initial value ("no label yet").
+/// The reconstruction pointers for `tau[k][s]`. `Unset` is the initial value
+/// ("no label yet").
 #[derive(Debug, Clone, Copy)]
 enum Parent {
     Unset,
@@ -178,7 +177,7 @@ enum Parent {
     },
 }
 
-/// Where a plan starts or ends: a stop of the network (its id — the
+/// Where a plan starts or ends: a stop of the network (its id, the
 /// JSON is the bare string), or a [`Place`] off it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -194,10 +193,10 @@ impl From<&str> for End {
     }
 }
 
-/// Somewhere off the network — a tapped spot, the rider's location —
-/// named by its walks to the stops near it (cap-streets `access`
-/// answers them along the streets). Its id and name stand where an
-/// itinerary names a stop; the id is never a stop's.
+/// Somewhere off the network, such as a tapped spot or the rider's location. It
+/// is named by its walks to the stops near it (cap-streets `access` answers
+/// them along the streets). Its id and name stand where an itinerary names a
+/// stop. The id is never a stop's id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Place {
@@ -206,10 +205,10 @@ pub struct Place {
     pub walks: Vec<PlaceWalk>,
 }
 
-/// A place's walk to (and, walks being symmetric, from) one stop, and
-/// the path the rider walks — the place first, the stop last (empty
-/// when the walk was given by its seconds alone). Planning reads the
-/// seconds; [`crate::walk_path`] draws the path.
+/// A place's walk to one stop, and from it (walks are symmetric). It holds the
+/// path the rider walks, the place first and the stop last. The path is empty
+/// when the walk was given by its seconds alone. Planning reads the seconds.
+/// [`crate::walk_path`] draws the path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PlaceWalk {
@@ -262,10 +261,9 @@ impl Side {
     }
 }
 
-/// Earliest-arrival query between stops — [`earliest_arrival_between`]
-/// with two [`End::Stop`]s. Returns `Ok(None)` when the destination
-/// is not reachable within `max_legs` transit legs (plus any number
-/// of walks).
+/// Earliest-arrival query between stops. It is [`earliest_arrival_between`]
+/// with two [`End::Stop`]s. Returns `Ok(None)` when the destination is not
+/// reachable within `max_legs` transit legs (plus any number of walks).
 pub fn earliest_arrival(
     net: &RouterNetwork,
     from_stop_id: &str,
@@ -277,13 +275,12 @@ pub fn earliest_arrival(
     earliest_arrival_between(net, &from, &to, None, depart_secs, max_legs)
 }
 
-/// Earliest-arrival query. Times are seconds since midnight of the
-/// network's service date. From a place, the rider walks to one of
-/// its stops; to a place, from one of its stops; `direct_walk_secs`
-/// is the walk straight between the two ends, when one joins them —
-/// arriving as early on foot, the rider walks. Returns `Ok(None)`
-/// when the destination is not reachable within `max_legs` transit
-/// legs (plus any number of walks).
+/// Earliest-arrival query. Times are seconds since midnight of the network's
+/// service date. From a place, the rider walks to one of its stops. To a place,
+/// the rider walks from one of its stops. `direct_walk_secs` is the walk
+/// straight between the two ends, when one joins them. If the rider arrives as
+/// early on foot, the rider walks. Returns `Ok(None)` when the destination is
+/// not reachable within `max_legs` transit legs (plus any number of walks).
 pub fn earliest_arrival_between(
     net: &RouterNetwork,
     from: &End,
@@ -314,11 +311,10 @@ pub fn earliest_arrival_between(
     let rounds = max_legs.max(1);
     let (tau, parent) = forward(net, &origin.stops, depart_secs, rounds);
 
-    // The best stop to leave the network at: its label plus its walk.
-    // The loop may have converged (or leg-capped) before the last
-    // round ran, and unvisited rounds were never given their
-    // cumulative copy — so a stop's label is the minimum across ALL
-    // rounds, not tau[rounds].
+    // The best stop to leave the network at: its label plus its walk. The loop
+    // may have converged, or hit the leg cap, before the last round ran.
+    // Unvisited rounds were never given their cumulative copy. So a stop's
+    // label is the minimum across all rounds, not tau[rounds].
     let mut best: Option<(u32, usize, u32)> = None;
     for &(e, walk) in &target.stops {
         let label = (0..=rounds).map(|k| tau[k][e]).min().unwrap_or(INF);
@@ -382,9 +378,9 @@ fn forward(
             marked_list.push(s);
         }
     }
-    // The walk to the first boarding is no leg: the sources' footpaths
-    // (chains included) settle into round 0, before any ride — so a
-    // one-leg plan may walk to its bus.
+    // The walk to the first boarding is no leg. The sources' footpaths (chains
+    // included) settle into round 0, before any ride. So a one-leg plan may
+    // walk to its bus.
     let mut i = 0;
     while i < marked_list.len() {
         let s = marked_list[i];
@@ -425,13 +421,13 @@ fn forward(
             }
         };
 
-        // ---- transit pass. For every pattern serving a stop marked in
-        // the previous round: at every marked position, board the
-        // earliest feasible trip and ride it to the end of the pattern.
-        // (Riding from *each* marked position is what makes patterns
-        // with several marked stops correct — a trip boarded at the
-        // first covers more stops, but a later marked stop may allow an
-        // earlier trip that only helps further downstream.)
+        // ---- transit pass. For every pattern serving a stop marked in the
+        // previous round: at every marked position, board the earliest feasible
+        // trip and ride it to the end of the pattern. Riding from each marked
+        // position is what makes patterns with several marked stops correct. A
+        // trip boarded at the first marked position covers more stops. But a
+        // later marked stop may allow an earlier trip that only helps further
+        // downstream.
         let mut pattern_seen = vec![false; net.patterns.len()];
         for &s in &marked_list {
             for &(pi, _) in &net.patterns_at_stop[s] {
@@ -452,11 +448,11 @@ fn forward(
                         continue;
                     }
                     // Earliest trip departing this position at/after the
-                    // label. Linear scan, not binary search: trips are
-                    // sorted by their *first* departure, but overtaking
-                    // trips (an express passing a local) make later
-                    // positions non-monotonic, which would break a
-                    // search assuming sorted departures.
+                    // label. Linear scan, not binary search. Trips are sorted
+                    // by their first departure. But overtaking trips (an
+                    // express passing a local) make later positions
+                    // non-monotonic. That would break a search that assumes
+                    // sorted departures.
                     let mut best: Option<(usize, u32)> = None;
                     for (ti, tr) in pattern.trips.iter().enumerate() {
                         let dep = tr.departures[p];
@@ -495,11 +491,10 @@ fn forward(
                 let candidate = base + edge.walk_secs;
                 let t = edge.to as usize;
                 if candidate < tau[k][t] {
-                    // Labels can improve multiple times within a round
-                    // (walk chains), so re-queue on every improvement —
-                    // the loop converges because labels strictly
-                    // decrease. `improved_set` still dedupes the next
-                    // round's marked set.
+                    // Labels can improve several times within a round (walk
+                    // chains). So re-queue on every improvement. The loop
+                    // converges because labels strictly decrease.
+                    // `improved_set` still dedupes the next round's marked set.
                     tau[k][t] = candidate;
                     parent[k][t] =
                         Parent::Walk { from: s as u32, walk_secs: edge.walk_secs };
@@ -568,14 +563,14 @@ impl Hop {
     }
 }
 
-/// The hops that reach `exit`, walking parents back from it — and the
-/// source stop they start at.
+/// The hops that reach `exit`, walking parents back from it. Also the source
+/// stop they start at.
 fn reconstruct(tau: &[Vec<u32>], parent: &[Vec<Parent>], net: &RouterNetwork, exit: usize, rounds: usize) -> (Vec<Hop>, usize) {
     let mut hops_rev: Vec<Hop> = Vec::new();
     let mut stop = exit;
     let mut k = rounds;
     loop {
-        // The label for `stop` at round `k` was set in the latest round
+        // The label for `stop` at round `k` is set in the latest round
         // r <= k that improved it (tau is cumulative, so tau[r][stop]
         // still equals tau[k][stop]).
         let mut label = None;
@@ -604,7 +599,7 @@ fn reconstruct(tau: &[Vec<u32>], parent: &[Vec<Parent>], net: &RouterNetwork, ex
             Some((r, Parent::Walk { from, walk_secs })) => {
                 hops_rev.push(Hop::Walk { from: from as usize, to: stop, walk_secs });
                 stop = from as usize;
-                // The walk used tau[r] at its source stop — same round.
+                // The walk used tau[r] at its source stop, in the same round.
                 k = r;
             }
             Some((_, Parent::Unset)) => unreachable!(),
@@ -626,7 +621,7 @@ struct Plan {
 }
 
 /// The shortest walks from `sources` (each at its own cost) over the
-/// footpaths, chains included — no farther than `limit` — and each
+/// footpaths, chains included, no farther than `limit`, and each
 /// stop's predecessor.
 struct WalkTree {
     secs: Vec<u32>,
@@ -673,12 +668,12 @@ impl WalkTree {
     }
 }
 
-/// The plan's rides kept — and so its arrival and its leg count — with
-/// each walk the least that still connects (D-35): the first ride
-/// boarded, each transfer's pair of stops, and the last ride left
-/// where the walk is shortest and the connection still made, until
-/// nothing moves (each move shortens one walk, so it ends). A tie
-/// keeps the search's choice. `None` for a plan with no ride.
+/// The plan's rides are kept, and so are its arrival and leg count. Each walk
+/// is the least that still connects (D-35). That covers the first ride boarded,
+/// each transfer's pair of stops, and the last ride left. Each walk is shortest
+/// where the connection still holds. This repeats until nothing moves. Each
+/// move shortens one walk, so it ends. A tie keeps the search's choice. `None`
+/// for a plan with no ride.
 fn walk_least(
     net: &RouterNetwork,
     hops: &[Hop],
@@ -809,10 +804,9 @@ fn merge_walks(legs: Vec<Leg>) -> Vec<Leg> {
     out
 }
 
-/// An arrive-by answer: the deadline it answered (the request's, or
-/// the service day's end when none was given) and the itinerary
-/// leaving as late as possible — `None` when nothing reaches the
-/// destination by the deadline.
+/// An arrive-by answer: the deadline it answered (the request's, or the service
+/// day's end when none was given) and the itinerary leaving as late as
+/// possible. `None` when nothing reaches the destination by the deadline.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ArriveBy {
@@ -820,7 +814,7 @@ pub struct ArriveBy {
     pub itinerary: Option<Itinerary>,
 }
 
-/// Arrive-by between stops — [`latest_departure_between`] with two
+/// Arrive-by between stops. It is [`latest_departure_between`] with two
 /// [`End::Stop`]s.
 pub fn latest_departure(
     net: &RouterNetwork,
@@ -833,21 +827,20 @@ pub fn latest_departure(
     latest_departure_between(net, &from, &to, None, arrive_by, max_legs)
 }
 
-/// Arrive-by: the LATEST departure from `from` that reaches `to` by
-/// `arrive_by` within `max_legs` transit legs (plus any walks; a
-/// place's walks and the direct walk as in
-/// [`earliest_arrival_between`]). With no deadline, the deadline is
-/// the service day's end ([`RouterNetwork::day_end`]) — "the last bus
-/// home": nothing arrives anywhere later than the day's last arrival.
+/// Arrive-by: the latest departure from `from` that reaches `to` by `arrive_by`
+/// within `max_legs` transit legs (plus any walks; a place's walks and the
+/// direct walk work as in [`earliest_arrival_between`]). With no deadline, the
+/// deadline is the service day's end ([`RouterNetwork::day_end`]). This is "the
+/// last bus home". Nothing arrives anywhere later than the day's last arrival.
 ///
-/// The search is RAPTOR backward in time: `tau[k][s]` is the latest
-/// moment at `s` from which the destination is reached by the
-/// deadline in at most `k` legs. A trip is boardable at every
-/// position before the last one it can alight at in time (its
-/// latest feasible alight — exact even when trips of a pattern
-/// overtake). The itinerary is then the forward earliest-arrival plan
-/// leaving at the origin's latest moment: it arrives by the deadline
-/// (the backward search proved a path exists), as early as it can.
+/// The search is RAPTOR backward in time. `tau[k][s]` is the latest moment at
+/// `s` from which the destination is reached by the deadline in at most `k`
+/// legs. A trip is boardable at every position before the last one it can
+/// alight at in time. That is its latest feasible alight. It is exact even when
+/// trips of a pattern overtake. The itinerary is then the forward
+/// earliest-arrival plan from the origin's latest moment. It arrives by the
+/// deadline, because the backward search proved a path exists. It arrives as
+/// early as it can.
 pub fn latest_departure_between(
     net: &RouterNetwork,
     from: &End,
@@ -876,9 +869,9 @@ pub fn latest_departure_between(
             }
         }
     }
-    // The walk from the last alighting is no leg: the footpaths into
-    // the sinks settle into round 0, before any ride (footpaths are
-    // symmetric) — so a one-leg plan may walk from its bus.
+    // The walk from the last alighting is no leg. The footpaths into the sinks
+    // settle into round 0, before any ride (footpaths are symmetric). So a
+    // one-leg plan may walk from its bus.
     let mut i = 0;
     while i < marked_list.len() {
         let t = marked_list[i];
@@ -967,7 +960,7 @@ pub fn latest_departure_between(
     }
 
     // The latest moment at the origin: each of its stops' latest,
-    // less the walk there — or the direct walk's.
+    // less the walk there, or the direct walk's.
     let mut latest = direct_walk_secs.map_or(NONE, |walk| by as i64 - walk as i64);
     for &(a, walk) in &origin.stops {
         let at = (0..=rounds).map(|k| tau[k][a]).max().unwrap_or(NONE);

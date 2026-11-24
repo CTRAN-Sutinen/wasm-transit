@@ -1,6 +1,6 @@
-//! The authoring capability's worked examples (its `examples` feature):
-//! the documents to load and each request. The generator runs them
-//! through this crate's `invoke` and records the answers.
+//! The worked examples of the authoring capability (its `examples` feature):
+//! the documents to load and each request. The generator runs them through
+//! this crate's `invoke` and records the answers.
 
 use cap_abi::manifest::{Example, KindExample};
 use serde_json::json;
@@ -28,10 +28,10 @@ pub fn examples() -> Vec<Example> {
     ]
 }
 
-/// `apply`'s example of each edit kind: one each, applied IN ORDER to the
+/// `apply`'s example of each edit kind: one each, applied in order to the
 /// fixture network through the same `apply_edits` the module runs. An
-/// example that stops applying fails the build, and so does an edit kind
-/// with no example (read off the type's own declaration).
+/// example that stops applying fails the build. So does an edit kind with
+/// no example. The kinds are read off the type's own declaration.
 fn kinds(network: &transit_network::Network) -> Vec<KindExample> {
     let mut doc = network.clone();
     let mut kinds = Vec::new();
@@ -51,17 +51,17 @@ fn kinds(network: &transit_network::Network) -> Vec<KindExample> {
 }
 
 /// The edit kinds, one each, in an order that applies to the fixture
-/// network (routes 10/20/40, stops A B C and the station STN with bays
-/// SA SB, service types WK SUN HOL, trips t10 t11 t20 t30 t40 t41,
-/// block B1 = t10 then t20): each later edit may name what an earlier
-/// one made.
+/// network. The network has routes 10/20/40, stops A B C and the station
+/// STN with bays SA SB, service types WK SUN HOL, trips t10 t11 t20 t30
+/// t40 t41, and block B1 = t10 then t20. Each later edit may name what an
+/// earlier one made.
 fn edit_kinds() -> Vec<serde_json::Value> {
     vec![
         // the plan
         json!({ "edit": "set_plan", "plan": { "id": "fall-2026", "name": "Fall 2026", "effective_from": "2026-10-19" } }),
         json!({ "edit": "update_plan", "name": "Fall 2026 service" }),
         json!({ "edit": "set_name", "name": "Sample transit" }),
-        // creation gestures (an omitted id is minted and reported in `created`)
+        // Creation gestures. An omitted id is minted and reported in `created`.
         json!({ "edit": "add_stop", "id": "D", "lat": 45.53, "lon": -73.53 }),
         json!({ "edit": "add_route", "id": "30" }),
         json!({ "edit": "add_pattern", "id": "pat-30", "route": "30" }),
@@ -84,8 +84,8 @@ fn edit_kinds() -> Vec<serde_json::Value> {
         json!({ "edit": "set_timepoint_time", "pattern": "pat-10-0-2", "profile": 1, "timepoint": 1, "secs": 300 }),
         json!({ "edit": "remove_timing_profile", "pattern": "pat-10-0-2", "index": 1 }),
         json!({ "edit": "remove_pattern_stop", "pattern": "pat-10-0-2", "index": 1 }),
-        // a pattern's line: `one` gives it its own alignment, `all`
-        // redraws the one it runs (every pattern on it moves; `touched`)
+        // A pattern's line. `one` gives it its own alignment. `all` redraws
+        // the one it runs. Every pattern on it moves, and `touched` lists them.
         json!({ "edit": "draw_alignment", "pattern": "pat-10-0-2", "redraw": "one", "id": "line-10-0-2",
             "points": [ { "lat": 45.5, "lon": -73.5 }, { "lat": 45.505, "lon": -73.505 }, { "lat": 45.51, "lon": -73.51 } ] }),
         // a service type's calendar
@@ -118,7 +118,7 @@ fn edit_kinds() -> Vec<serde_json::Value> {
             "from_secs": 28800, "to_secs": 32400, "delta_secs": 120 }),
         json!({ "edit": "insert_direction_stop", "route": "10", "direction": "0", "stop": "D", "after": "A" }),
         json!({ "edit": "remove_direction_stop", "route": "10", "direction": "0", "stop": "D" }),
-        // the runcut (an emptied block goes)
+        // The runcut. An emptied block goes.
         json!({ "edit": "add_block", "id": "B2" }),
         json!({ "edit": "add_block_trip", "block": "B2", "trip": { "trip": "t40" } }),
         json!({ "edit": "set_layover", "block": "B1", "after_trip": 0, "secs": 600 }),
@@ -133,7 +133,7 @@ fn edit_kinds() -> Vec<serde_json::Value> {
             "days": { "mon": false, "tue": false, "wed": false, "thu": false, "fri": false, "sat": false, "sun": false },
             "ranges": [], "exceptions": [ { "date": "2026-12-25", "state": "added" } ] } } }),
         json!({ "edit": "upsert_block", "id": "B3", "block": { "trips": [ { "trip": "t11" } ], "layovers": [] } }),
-        // removals refuse while referenced; these name what nothing references
+        // Removals refuse while referenced. These name what nothing references.
         json!({ "edit": "remove_block", "id": "B3" }),
         json!({ "edit": "remove_service_type", "id": "XMAS" }),
         json!({ "edit": "remove_stop", "id": "E" }),

@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 //! Service alerts at the boundary: the Alerts entities of an rt
 //! snapshot decode into the overview, and the live document keeps the
-//! ones IN FORCE at the snapshot's moment (its communication period,
+//! ones in force at the snapshot's moment (its communication period,
 //! else the deprecated active period; none = always), each informed
 //! entity resolved into the network's routes, stops, and trip
 //! instances. A selector naming something the network does not have

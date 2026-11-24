@@ -1,31 +1,31 @@
 //! Live planning laws (QAF-73: plans use live data).
 //!
-//! The intent, as the user stated it: with a live document, the
-//! router plans over the day with each trip instance's PREDICTED
-//! times where the live document states them (the stop entries of
-//! `LiveDay::trips`, keyed by trip instance, stop and scheduled
-//! departure: predicted = schedule + delay, arrival delay likewise;
-//! stops absent before the first stated delay stay on schedule), and
-//! the schedule elsewhere. Legs say which times are predicted.
+//! The intent, as the user stated it: with a live document, the router plans
+//! over the day. Each trip instance uses its predicted times where the live
+//! document states them. The stop entries of `LiveDay::trips` are keyed by trip
+//! instance, stop, and scheduled departure. Predicted time is the schedule plus
+//! the delay. The arrival delay works the same way. Stops absent before the
+//! first stated delay stay on schedule. Elsewhere the router uses the schedule.
+//! Legs say which times are predicted.
 //!
 //! The laws:
 //!
-//! 1. an empty live document changes nothing — the plan equals the
-//!    schedule-only plan;
-//! 2. a live plan IS the schedule plan of the predicted world: the
-//!    oracle builds a second feed whose trips run at the predicted
-//!    times outright (independently of the router's live join) and
-//!    plans it schedule-only — the arrivals agree;
-//! 3. a transit leg's times are the predicted ones, and say so:
-//!    `board_delay_secs` / `alight_delay_secs` are the stated delay
-//!    where the document states one and `None` (schedule) where it
-//!    does not, and `secs - delay` is the scheduled time;
-//! 4. scenarios: a predicted-late bus makes a connection the schedule
-//!    says is missed, and a predicted-late bus misses a connection
-//!    the schedule says is made;
-//! 5. a trip the live document cancels is never ridden: the live plan
-//!    is the schedule plan of the world without it; a stop it skips is
-//!    never boarded or alighted at (D-73).
+//! 1. An empty live document changes nothing. The plan equals the schedule-only
+//!    plan.
+//! 2. A live plan is the schedule plan of the predicted world. The oracle
+//!    builds a second feed whose trips run at the predicted times outright. It
+//!    does this independently of the router's live join. It plans that feed
+//!    schedule-only. The arrivals agree.
+//! 3. A transit leg's times are the predicted ones, and say so.
+//!    `board_delay_secs` and `alight_delay_secs` hold the stated delay where
+//!    the document states one. They are `None` (schedule) where it does not.
+//!    `secs - delay` is the scheduled time.
+//! 4. Scenarios: a predicted-late bus makes a connection that the schedule says
+//!    is missed. A predicted-late bus misses a connection that the schedule
+//!    says is made.
+//! 5. A trip that the live document cancels is never ridden. The live plan is
+//!    the schedule plan of the world without it. A stop it skips is never
+//!    boarded or alighted at (D-73).
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -39,14 +39,14 @@ use support::{build_zip_timed, model_day};
 
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
-/// Stop spacing (degrees) no walk crosses — law 5's plans ride.
+/// Stop spacing in degrees. No walk crosses it. Law 5's plans ride.
 const SPREAD: f64 = 0.05;
 
-/// One generated trip: its stops, scheduled start and step, and its
-/// live state — `None` (no prediction) or (first stated position,
-/// delay). A delay stated mid-trip is never negative here: an early
-/// bus that has not yet reached the earlier, on-schedule stops would
-/// run backwards in time — not a valid world.
+/// One generated trip: its stops, scheduled start and step, and its live state:
+/// `None` (no prediction), or (first stated position, delay). A delay stated
+/// mid-trip is never negative here. An early bus that has not yet reached the
+/// earlier, on-schedule stops would run backwards in time. That is not a valid
+/// world.
 #[derive(Debug, Clone)]
 struct LiveTripSpec {
     stops: Vec<u32>,
@@ -247,8 +247,8 @@ fn a_late_first_bus_misses_the_scheduled_connection() {
 
 #[test]
 fn a_late_second_bus_makes_a_connection_the_schedule_misses() {
-    // t0 predicted 4 min late arrives 08:14 — missing t1 at 08:12 on
-    // the schedule — but t1 is predicted 5 min late, leaving 08:17:
+    // t0 predicted 4 min late arrives 08:14, missing t1 at 08:12 on
+    // the schedule. But t1 is predicted 5 min late, leaving 08:17:
     // the connection is made, arriving 08:35.
     let it = connection(|_| {
         vec![
@@ -293,8 +293,8 @@ proptest! {
         let net = RouterNetwork::build(&network, &day, DATE, Some(&empty_live_with(cancelled)));
         // Stops too far apart to walk between: the plan rides.
 
-        // The oracle world: only the trips that run (the stops stay —
-        // a stop no trip serves is still a place to walk from).
+        // The oracle world keeps only the trips that run. The stops stay. A
+        // stop that no trip serves is still a place to walk from.
         let running: Vec<_> = trips.iter().enumerate().filter(|(i, _)| !cancel[*i]).map(|(_, t)| t).collect();
         let got = plan(&net, from, to, depart);
         for leg in got.iter().flat_map(|i| &i.legs) {
@@ -326,7 +326,7 @@ fn a_cancelled_connection_waits_for_the_next_bus() {
 
 #[test]
 fn a_skipped_stop_is_not_boarded() {
-    // t1 skips s1 — where the rider would board it: t0 then t2.
+    // t1 skips s1, where the rider would board it: t0 then t2.
     let it = connection(|day| {
         let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
         vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",

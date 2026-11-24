@@ -4,8 +4,8 @@
 //! * the standard's own examples come out byte for byte (its sample
 //!   document, its key order, its number forms);
 //! * the writer agrees with a plain reference written here from the
-//!   standard — a JSON value's keys sorted by UTF-16 code units at every
-//!   level, numbers as ECMAScript writes them — for any JSON value, and
+//!   standard: a JSON value's keys sorted by UTF-16 code units at every
+//!   level, numbers as ECMAScript writes them, for any JSON value, and
 //!   for every real document, typed, whatever order its fields are
 //!   declared in (a struct, a flattened map, a tagged enum);
 //! * the bytes read back to the same value;

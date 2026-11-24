@@ -1,4 +1,4 @@
-//! The architecture gates, each broken on a deliberate fixture: a gate
+//! The architecture gates, each broken on a fixture: a gate
 //! that cannot fail proves nothing. The gates themselves run over the
 //! real workspace in `just test` (`arch-gates`); the registry
 //! constructor's privacy is a `compile_fail` doctest on
@@ -178,11 +178,10 @@ fn a_capability_that_declares_state_fails() {
     }
 }
 
-// HASH CHURN (docs/architecture/release-artifacts.md): every module
-// links the kernel, so a library the kernel depends on is in every
-// module's closure — a dependency or feature change in it moves every
-// module's hash. The kernel requires only the libraries its own code
-// names (and gate 1 holds that set to transit-version).
+// Hash churn (docs/architecture/release-artifacts.md): a library the
+// kernel depends on is in every module's closure, so a change in it moves
+// every module's hash. The kernel requires only the libraries its own
+// code names (and gate 1 holds that set to transit-version).
 
 #[test]
 fn the_kernel_requires_only_the_libraries_its_code_names() {

@@ -4,14 +4,14 @@
 //! This is the boundary's serialization layer and nothing more. Each
 //! file is a list of rows; each row keeps every spec column as the
 //! exact text the feed carried (`None` = empty or absent). Typing is
-//! the import's job, where the model needs it — keeping text here is
+//! the import's job, where the model needs it. Keeping text here is
 //! what makes `Feed::from_zip_bytes` → `Feed::to_zip_bytes` lossless
 //! by construction. Extension files and columns outside the spec are
 //! not read.
 //!
 //! Writing is deterministic: files in spec order, columns in spec
 //! order (a column appears when the spec requires it or any row fills
-//! it), rows in the order given, fixed zip metadata — so the zip's
+//! it), rows in the order given, fixed zip metadata, so the zip's
 //! content hash is a document identity (the capability-bus rule).
 
 use std::io::{Cursor, Read, Write};
@@ -413,7 +413,7 @@ impl Feed {
     }
 }
 
-/// Standard base64 (with padding) — how zip bytes cross the JSON seam.
+/// Standard base64 (with padding). Zip bytes cross the JSON seam this way.
 pub fn base64_encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);

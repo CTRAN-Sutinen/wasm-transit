@@ -1,13 +1,13 @@
-//! Native dispatch tests for the authorization capability — the seam
-//! without wasm. The laws (fail-closed, order-insensitive verdict,
-//! role/action/pointer matching) are property-tested in
-//! transit-authz; here the seam pins them through the module:
+//! Native dispatch tests for the authorization capability. These test the
+//! seam without wasm. The laws (fail-closed, order-insensitive verdict,
+//! role/action/pointer matching) are property-tested in transit-authz.
+//! Here the seam pins them through the module:
 //!
-//! 1. a matching rule allows; anything else denies — empty policy,
-//!    unknown action, unknown pointer, missing role all deny;
+//! 1. a matching rule allows. Anything else denies: an empty policy, an
+//!    unknown action, an unknown pointer, or a missing role all deny;
 //! 2. an unknown action string is an error, never a silent allow;
 //! 3. garbage and bulk bytes are honest errors, never panics;
-//! 4. a policy in another version is refused naming both.
+//! 4. a policy in another version is refused. The error names both.
 
 use cap_authz::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use transit_authz::{Identity, Policy, Rule};
@@ -83,7 +83,7 @@ fn effective_projects_only_the_callers_own_capabilities() {
     match dispatch(Request::Effective { identity: identity(&["dispatcher"]), policy: cap_abi::Current(policy()) }).unwrap() {
         Response::Effective { effective } => {
             assert_eq!(effective.roles, vec!["dispatcher".to_string()]);
-            // Its own merged capabilities — and nothing about admin.
+            // Its own merged capabilities. Nothing about admin.
             assert_eq!(effective.capabilities.len(), 1);
             assert_eq!(effective.capabilities[0].pointer, "edits");
             assert_eq!(effective.capabilities[0].actions, vec!["write".to_string()]);
@@ -92,7 +92,7 @@ fn effective_projects_only_the_callers_own_capabilities() {
         }
         _ => panic!("effective"),
     }
-    // Empty policy → empty projection (fail-closed).
+    // An empty policy gives an empty projection (fail-closed).
     match dispatch(Request::Effective { identity: identity(&["admin"]), policy: cap_abi::Current(Policy::current(vec![])) }).unwrap() {
         Response::Effective { effective } => assert!(effective.capabilities.is_empty()),
         _ => panic!("effective"),
@@ -118,8 +118,8 @@ fn unknown_action_is_an_error_not_an_allow() {
     assert!(bad.contains("unknown bulk op"), "{bad}");
 }
 
-/// A policy in another version is refused naming both — never read as
-/// this build's (fail-closed; docs/FORMATS.md, "Versions").
+/// A policy in another version is refused. The error names both versions.
+/// It is never read as this build's (fail-closed; docs/FORMATS.md, "Versions").
 #[test]
 fn a_policy_in_another_version_is_refused_naming_both() {
     let request = serde_json::json!({

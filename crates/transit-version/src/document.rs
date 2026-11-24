@@ -1,16 +1,15 @@
-//! A document's identity and its versioned read: the content hash, the
-//! canonical hash (RFC 8785, D-169, [`crate::jcs`]), and the read of a
-//! versioned kind from JSON or gzipped JSON, one version ahead where the
-//! kind allows it (D-186). They live here, beside [`crate::Versioned`],
-//! so each kind's library reads and hashes its own kind in its own
-//! [`crate::Load`] (D-239), and one assembly carries one copy of each
-//! kind's reader. The kernel re-exports them (`cap_abi::canonical_hash`
-//! and the others).
+//! A document's identity and its versioned read. This covers the content
+//! hash, the canonical hash (RFC 8785, D-169, [`crate::jcs`]), and the
+//! read of a versioned kind from JSON or gzipped JSON. A kind may read one
+//! version ahead (D-186). These live here, beside [`crate::Versioned`].
+//! Each kind's library reads and hashes its own kind in its own
+//! [`crate::Load`] (D-239). One assembly carries one copy of each kind's
+//! reader. The kernel re-exports them (`cap_abi::canonical_hash` and the
+//! others).
 
 use crate::jcs;
 
-/// "sha256:<hex>" of bytes — the content-hash formula every module
-/// and host shares.
+/// "sha256:<hex>" of bytes. Every module and host shares this formula.
 pub fn content_hash(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("sha256:{:x}", Sha256::digest(bytes))
@@ -18,8 +17,8 @@ pub fn content_hash(bytes: &[u8]) -> String {
 
 
 /// A document's identity: the content hash of its canonical bytes,
-/// RFC 8785 (D-169, [`jcs`]). Streamed into the digest, so hashing never
-/// holds a copy of the document — byte-identical to hashing
+/// RFC 8785 (D-169, [`jcs`]). It streams into the digest, so hashing never
+/// holds a copy of the document. It is byte-identical to hashing
 /// [`canonical_bytes`].
 pub fn canonical_hash<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, String> {
     use sha2::{Digest, Sha256};
@@ -43,18 +42,18 @@ pub fn canonical_bytes<T: serde::Serialize + ?Sized>(value: &T) -> Result<String
 }
 
 
-/// Whether bulk bytes are a gzip stream (its magic bytes — no JSON
-/// document starts with 0x1f).
+/// Whether bulk bytes are a gzip stream, by its magic bytes. No JSON
+/// document starts with 0x1f.
 pub fn is_gzip(bytes: &[u8]) -> bool {
     bytes.starts_with(&[0x1f, 0x8b])
 }
 
-/// Parse a kernel document from bulk bytes, straight into its type:
-/// the document's JSON, or that JSON gzipped. A gzipped document is
-/// decoded AS IT PARSES — its text never exists whole in the module,
-/// so registration's peak is the parsed document plus the compressed
-/// input, not the text beside it (wasm memory never shrinks back from
-/// a peak). The identity is the parsed document's canonical hash
+/// Parse a kernel document from bulk bytes, straight into its type.
+/// The bytes are the document's JSON, or that JSON gzipped. A gzipped
+/// document is decoded as it parses. Its text never exists whole in the
+/// module. So registration's peak is the parsed document plus the
+/// compressed input, not the text beside it. Wasm memory never shrinks
+/// back from a peak. The identity is the parsed document's canonical hash
 /// either way, so both forms register the same document.
 pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
     let source: Box<dyn std::io::Read + '_> = if is_gzip(bytes) { Box::new(flate2::read::GzDecoder::new(bytes)) } else { Box::new(bytes) };
@@ -62,13 +61,14 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
 }
 
 /// Parse a document of a versioned kind from bulk bytes (JSON or
-/// gzipped JSON), in the version this build reads, or the next one
+/// gzipped JSON). It reads the version this build reads, or the next one
 /// where the kind reads one version ahead (`Versioned::AHEAD`, D-186).
-/// Any other version is refused, naming both: an older document with
-/// the op that brings it forward, a newer one as written by a newer
-/// build. It is never parsed and re-emitted (docs/FORMATS.md,
-/// "Versions"). A copy with no version field is the kind's untagged
-/// version. A copy read ahead is noted for the kernel ([`noting_read`]).
+/// Any other version is refused, and both versions are named. An older
+/// document is named with the op that brings it forward. A newer one is
+/// named as written by a newer build. The document is never parsed and
+/// re-emitted (docs/FORMATS.md, "Versions"). A copy with no version field
+/// is the kind's untagged version. A copy read ahead is noted for the
+/// kernel ([`noting_read`]).
 pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
@@ -89,8 +89,8 @@ pub struct ReadAhead {
     pub hash: String,
 }
 
-/// [`parse_versioned`], answering beside the document how it was read:
-/// `None` in this build's version, else the copy read ahead.
+/// [`parse_versioned`]. It also returns how the document was read: `None`
+/// in this build's version, else the copy read ahead.
 pub fn read_versioned<T>(bytes: &[u8]) -> Result<(T, Option<ReadAhead>), String>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
@@ -101,8 +101,8 @@ where
             ReadAs::Current => Ok((document, None)),
             ReadAs::Ahead(how) => ahead(parse_value(bytes)?, how),
         },
-        // The typed read failed: an older or newer shape says so by its
-        // version; a document in this version is just malformed.
+        // The typed read failed. An older or newer shape shows it by its
+        // version. A document in this version is only malformed.
         Err(typed) => match parse_value(bytes) {
             Ok(value) => match crate::reads::<T>(version_in::<T>(&value))? {
                 ReadAs::Current => Err(typed),
@@ -114,8 +114,8 @@ where
 }
 
 /// A document as a JSON value ([`parse_document`]). It is a plain
-/// function, so it is compiled once, here, and not in each kind's
-/// library that reads through [`read_versioned`].
+/// function. It is compiled once, here, not in each kind's library that
+/// reads through [`read_versioned`].
 pub fn parse_value(bytes: &[u8]) -> Result<serde_json::Value, String> {
     parse_document(bytes)
 }
@@ -144,10 +144,10 @@ thread_local! {
     static NOTED_READ: std::cell::Cell<Option<ReadAhead>> = const { std::cell::Cell::new(None) };
 }
 
-/// Run `read` and answer, beside its answer, the copy it read one
-/// version ahead, if any. The kernel's load uses it: a copy read ahead
-/// is held under its stored identity, and one read through a read-only
-/// step refuses a write (the kernel's `Kind::require_writable`).
+/// Run `read`. It returns the answer beside the copy it read one version
+/// ahead, if any. The kernel's load uses it. A copy read ahead is held
+/// under its stored identity. A copy read through a read-only step refuses
+/// a write (the kernel's `Kind::require_writable`).
 pub fn noting_read<R>(read: impl FnOnce() -> R) -> (R, Option<ReadAhead>) {
     NOTED_READ.with(|noted| noted.set(None));
     let answer = read();

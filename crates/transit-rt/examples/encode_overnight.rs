@@ -1,8 +1,8 @@
 //! Encode the overnight e2e realtime fixture (web/e2e/fixtures/
-//! overnight-rt.pb): owl trip n1's Friday 2026-10-23 instance — its
-//! A departure is 24:40, Saturday 00:40 on the wall — +120 s at A,
-//! naming its service date (`start_date`), as a producer must for a
-//! trip past midnight.
+//! overnight-rt.pb): owl trip n1's Friday 2026-10-23 instance. Its A
+//! departure is 24:40, Saturday 00:40 on the wall, +120 s at A. It names
+//! its service date (`start_date`), as a producer must for a trip past
+//! midnight.
 //!
 //! Usage: `cargo run -p transit-rt --example encode_overnight [out.pb]`
 

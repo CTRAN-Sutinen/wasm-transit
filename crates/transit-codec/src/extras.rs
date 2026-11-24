@@ -211,9 +211,9 @@ fn info_cells(info: &StopInfo, row: &mut StopRow) {
     row.stop_access = opt_bit_cell(info.street_access);
 }
 
-/// Stops and stations into `stops` (they need a place on the map —
-/// one without coordinates is left out); entrances, nodes, and
-/// boarding areas into `station_parts`.
+/// Stops and stations into `stops`. They need a place on the map, so one
+/// without coordinates is left out. Entrances, nodes, and boarding areas
+/// go into `station_parts`.
 pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
     for row in &feed.stops {
         let Some(id) = &row.stop_id else { continue };

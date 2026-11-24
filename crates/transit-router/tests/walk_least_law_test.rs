@@ -1,31 +1,30 @@
-//! A plan walks the least it can: at equal arrival and the same rides,
-//! every walk is the shortest that still connects (D-35, encoded
-//! provisionally).
+//! A plan walks the least it can: at equal arrival and the same rides, every
+//! walk is the shortest that still connects (D-35, encoded provisionally).
 //!
-//! The intent, as the user stated it (a C-TRAN plan walked 13 minutes
-//! up Broadway to a route 032 trip's first stop when the same bus
-//! passed a stop four minutes away, arriving the same): when another
-//! stop of the same bus serves the connection with less walking, the
-//! plan uses it. The earliest arrival and the rides are the search's
-//! answer and stay; only where each ride is boarded and left moves.
+//! The intent, as the user stated it: a C-TRAN plan walked 13 minutes up
+//! Broadway to a route 032 trip's first stop. The same bus passed a stop four
+//! minutes away and arrived at the same time. When another stop of the same bus
+//! serves the connection with less walking, the plan uses it. The earliest
+//! arrival and the rides are the search's answer and stay. Only where each ride
+//! is boarded and left moves.
 //!
-//! The laws, each against an oracle that shares nothing with the
-//! router — its own Dijkstra over the network's footpaths (walks chain
-//! through stops, as the router's do) — on plans the fixpoint oracle
-//! already pins for arrival (`prop_test.rs`):
+//! The laws, each against an oracle that shares nothing with the router. The
+//! oracle has its own Dijkstra over the network's footpaths (walks chain
+//! through stops, as the router's do). The laws apply to plans that the
+//! fixpoint oracle already pins for arrival (`prop_test.rs`):
 //!
-//! 1. **The first boarding walks least**: no stop of the first ride's
-//!    trip before where it is left is reached from the origin with a
-//!    shorter walk in time to board there.
-//! 2. **Every transfer walks least**: no stop where the earlier ride
-//!    could be left (after it is boarded) and stop where the later one
-//!    could be boarded (before it is left) are joined by a shorter
-//!    walk that still makes the connection.
-//! 3. **The last alighting walks least**: no stop of the last ride's
-//!    trip after it is boarded reaches the destination by a shorter
-//!    walk without arriving later.
-//! 4. The arrival is the earliest (the fixpoint oracle), and the plan
-//!    is feasible from its departure.
+//! 1. **The first boarding walks least**: no stop of the first ride's trip
+//!    before where it is left is reached from the origin with a shorter walk in
+//!    time to board there.
+//! 2. **Every transfer walks least**: no stop where the earlier ride could be
+//!    left (after it is boarded) and stop where the later one could be boarded
+//!    (before it is left) are joined by a shorter walk that still makes the
+//!    connection.
+//! 3. **The last alighting walks least**: no stop of the last ride's trip after
+//!    it is boarded reaches the destination by a shorter walk without arriving
+//!    later.
+//! 4. The arrival is the earliest (the fixpoint oracle), and the plan is
+//!    feasible from its departure.
 
 #[path = "prop_support.rs"]
 mod support;
@@ -196,13 +195,13 @@ proptest! {
     }
 }
 
-/// The Broadway case: a bus that starts three stops up the street and
-/// comes back past the stop next door. The rider boards next door —
-/// the same bus, the same arrival, a walk of one stop, not three.
+/// The Broadway case: a bus starts three stops up the street and comes back
+/// past the stop next door. The rider boards next door. It is the same bus,
+/// with the same arrival, and a walk of one stop, not three.
 #[test]
 fn the_rider_boards_the_same_bus_at_the_nearer_stop() {
-    // s0 … s9 in a line, ~89 m apart (69 s on foot). The bus starts at
-    // s3, passes s1, and ends at s9.
+    // s0 to s9 in a line, ~89 m apart (69 s on foot). The bus starts at s3,
+    // passes s1, and ends at s9.
     let trips = [TripSpec { stops: vec![3, 1, 9], start: 1_250, step: 10 }];
     let (network, day) = model_day(&build_zip_spaced(10, 0.0008, &trips), DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);

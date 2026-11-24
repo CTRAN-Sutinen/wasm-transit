@@ -94,7 +94,7 @@ struct Candidate<'a> {
 /// Chain the day's trips no authored block carries into suggested
 /// blocks: by start, each trip follows the vehicle that leaves it the
 /// least slack among those waiting where it starts (the same stop, or
-/// a bay of the same station — no deadheads), on a route the rules let
+/// a bay of the same station; no deadheads), on a route the rules let
 /// it interline with, after the recovery required (`rules`', else the
 /// terminal's floor); else it takes a new vehicle. Authored blocks
 /// are kept as authored.

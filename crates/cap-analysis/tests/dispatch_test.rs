@@ -1,9 +1,9 @@
-//! Native dispatch tests for the analysis capability — the seam
-//! without wasm, over a REAL document: the network is built by the
-//! codec's own import (transit_codec::import), so the capability is
-//! exercised on exactly the document a planner would author or
-//! derive. The content-hash registry gets explicit laws, same as the
-//! other capabilities: same document, same hash, one entry.
+//! Native dispatch tests for the analysis capability. These test the seam
+//! without wasm, over a real document. The codec's own import
+//! (transit_codec::import) builds the network, so the capability runs on
+//! the document a planner would author or derive. The content-hash
+//! registry has explicit laws, as other capabilities do: same document,
+//! same hash, one entry.
 
 use std::io::Write;
 
@@ -19,8 +19,8 @@ struct GenTrip {
     leg_min: u8,
 }
 
-/// Register a weighted layer through the module's seam (the kernel's
-/// load, as every host sends it): the load's answer.
+/// Register a weighted layer through the module's seam, as every host
+/// sends it. Returns the load's answer.
 fn load_layer(bytes: Vec<u8>) -> serde_json::Value {
     let request = serde_json::json!({ "op": "load_layer", "bytes": bytes });
     let outcome: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(&request.to_string())).expect("an outcome");
@@ -100,8 +100,8 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-/// A REAL network document: the monolith's own inference over a
-/// generated feed — the document a planner would derive.
+/// A real network document: the monolith's own inference over a generated
+/// feed. This is the document a planner would derive.
 fn network(trips: &[GenTrip]) -> transit_network::Network {
     let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(trips)).expect("parse");
     transit_codec::import(&feed).network
@@ -124,14 +124,14 @@ fn layer_geojson() -> Vec<u8> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// A real derived document loads, registers idempotently, and
-    /// answers stats — the capability speaks the planner's own data.
+    /// A real derived document loads, registers idempotently, and answers
+    /// stats. The capability reads the planner's own data.
     #[test]
     fn derived_documents_load_and_answer(
         trips in proptest::collection::vec(gen_trip(), 1..=14),
     ) {
-        // The generator can produce weekend-only documents; pin one
-        // trip to weekday service so the Monday probe has trips.
+        // The generator can make weekend-only documents. Pin one trip to
+        // weekday service, so the Monday probe has trips.
         let mut weekday_trips = trips;
         if let Some(first) = weekday_trips.first_mut() {
             first.service = 0;
@@ -158,8 +158,8 @@ proptest! {
         prop_assert!(stats.trips > 0, "the imported document has weekday trips");
     }
 
-    /// The design axis and coverage answer over hash-addressed
-    /// documents — never per-op document serialization.
+    /// The design axis and coverage answer over hash-addressed documents.
+    /// No op serializes a document.
     #[test]
     fn overview_and_coverage_answer_by_hash(
         trips in proptest::collection::vec(gen_trip(), 1..=14),
@@ -220,10 +220,9 @@ proptest! {
         prop_assert!(coverage.is_none(), "weekday and weekend service never run together");
     }
 
-    /// QAF-19: unknown IDs answer empty, unknown HASHES error — one
-    /// convention across the module surface. `service_type_detail`
-    /// used to error on an unknown type while its sibling lookups
-    /// answered empty; the law pins the convention for any id.
+    /// QAF-19: unknown IDs answer empty, and unknown HASHES error. The law
+    /// pins that one convention for any id. It covers `service_type_detail`
+    /// and its sibling lookups, which answer empty for an unknown type.
     #[test]
     fn unknown_ids_answer_empty_and_unknown_hashes_error(
         trips in proptest::collection::vec(gen_trip(), 1..=14),
@@ -231,9 +230,8 @@ proptest! {
     ) {
         let net = network(&trips);
         let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
-        // The generator's service keys are "0" and "1", so any
-        // alphabetic id is unknown to the document, and no set holding
-        // it runs together on a date.
+        // The generator's service keys are "0" and "1". Any alphabetic id
+        // is unknown to the document. No set holding it runs together.
         let detail = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
             network_hash: network_hash.clone(),
             members: vec![id.clone()],
@@ -314,7 +312,7 @@ fn json_seam_round_trips_the_tagged_form() {
         "op": "network_stats", "network_hash": hash, "date": "2026-01-05",
     }).to_string())).unwrap();
     assert!(stats["ok"]["stats"]["trips"].as_u64().unwrap() >= 1);
-    // Omitted flags default TRUE (the UI's shape is unchanged).
+    // Omitted flags default to true. The UI shape is unchanged.
     assert!(stats["ok"]["stats"]["routes"].as_array().unwrap().len() >= 1);
 
     let bad: serde_json::Value =
@@ -322,13 +320,11 @@ fn json_seam_round_trips_the_tagged_form() {
     assert!(bad["error"].as_str().unwrap().contains("invalid request"));
 }
 
-/// The stop's day as gaps (QAF-25): one op answers what used to be a
-/// jq fold over the board — departures, the max gap and the
-/// departure it follows, and the per-hour profile. The deep oracle
-/// law lives in the library's prop suite; this pins the SEAM: the
-/// tagged round-trip, the two-trip fixture's one gap, and the
-/// id-lookup honesty (an unknown stop answers empty, never an
-/// error).
+/// The stop's day as gaps (QAF-25). One op gives departures, the max gap
+/// and the departure it follows, and the per-hour profile. The deep oracle
+/// law lives in the library's prop suite. This pins the seam: the tagged
+/// round-trip, the two-trip fixture's one gap, and the id-lookup behavior.
+/// An unknown stop answers empty, never an error.
 #[test]
 fn stop_gaps_answer_through_the_seam() {
     let net = network(&[
@@ -357,7 +353,7 @@ fn stop_gaps_answer_through_the_seam() {
     assert_eq!(gaps.hourly[1].max_gap_secs, None, "no gap starts in hour 2");
     assert_eq!(gaps.hourly[0].median_gap_secs, None, "one gap is no median");
 
-    // The last stop is an arrival, not a departure — no gap row.
+    // The last stop is an arrival, not a departure. It has no gap row.
     let terminal = cap_analysis::dispatch(cap_analysis::Request::StopGaps {
         network_hash: network_hash.clone(),
         date: "2026-01-05".into(),
@@ -399,9 +395,9 @@ fn stop_gaps_answer_through_the_seam() {
 }
 
 /// The day's hourly profile (QAF-4): trips per hour by service type,
-/// bucketed by trip start — only hours with trips are rows, and the
-/// day's trip count is conserved across them. The deep oracle law
-/// lives in the library's prop suite; this pins the SEAM.
+/// bucketed by trip start. Only hours with trips are rows. The day's trip
+/// count is conserved across them. The deep oracle law lives in the
+/// library's prop suite. This pins the seam.
 #[test]
 fn hourly_trips_answer_through_the_seam() {
     let net = network(&[
@@ -425,8 +421,8 @@ fn hourly_trips_answer_through_the_seam() {
     assert_eq!(hours[1].hour, 2);
     assert_eq!(hours[1].trips, 1);
 
-    // A day nothing runs answers empty, never an error: a weekend-only
-    // document asked on a Monday.
+    // A day nothing runs answers empty, never an error. This is a
+    // weekend-only document, asked on a Monday.
     let weekend_only = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
     let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(weekend_only).expect("load").0;
     let quiet = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
@@ -439,10 +435,10 @@ fn hourly_trips_answer_through_the_seam() {
 }
 
 /// The schedule texture (QAF-16): headway uniformity and clockface
-/// alignment per pattern trips of a service combination (D-55).
-/// The deep oracle law lives in the library's prop suite; this pins
-/// the SEAM: the two-trip fixture's one 1800 s gap, the quarter-hour
-/// grid count, and the unknown-type honesty.
+/// alignment per pattern of trips in a service combination (D-55).
+/// The deep oracle law lives in the library's prop suite. This pins the
+/// seam: the two-trip fixture's one 1800 s gap, the quarter-hour grid
+/// count, and the unknown-type behavior.
 #[test]
 fn schedule_texture_answers_through_the_seam() {
     // Two trips 30 minutes apart, both on the quarter-hour grid.
@@ -480,14 +476,14 @@ fn schedule_texture_answers_through_the_seam() {
     assert!(unknown.is_none());
 }
 
-/// The corridor read (QAF-22): which routes share stops, and where
-/// their service stacks. The deep oracle law lives in the library's
-/// prop suite; this pins the SEAM: the two-route fixture answers one
-/// pair with its shared stop, and a day nothing runs answers empty.
+/// The corridor read (QAF-22): which routes share stops, and where their
+/// service stacks. The deep oracle law lives in the library's prop suite.
+/// This pins the seam: the two-route fixture answers one pair with its
+/// shared stop. A day nothing runs answers empty.
 #[test]
 fn route_overlap_answers_through_the_seam() {
-    // Routes 0 and 1 (both on weekday service 0), both calling at
-    // stop 0 — one shared stop, no shared segments.
+    // Routes 0 and 1 are both on weekday service 0. Both call at stop 0.
+    // That is one shared stop and no shared segments.
     let net = network(&[
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 1, service: 0, block: None, start_slot: 12, stops: vec![0, 2], leg_min: 5 },
@@ -519,15 +515,15 @@ fn route_overlap_answers_through_the_seam() {
     assert!(quiet.is_empty());
 }
 
-/// The hub's timed-transfer view (QAF-27): arrivals paired with the
-/// next routes' departures inside the 60–900 s window — the station
-/// board's next question. The deep oracle law lives in the library's
-/// prop suite; this pins the SEAM: the fixture's one connection, its
-/// window, and the id-lookup honesty.
+/// The hub's timed-transfer view (QAF-27): arrivals paired with the next
+/// routes' departures inside the 60–900 s window. This is the station
+/// board's next question. The deep oracle law lives in the library's prop
+/// suite. This pins the seam: the fixture's one connection, its window,
+/// and the id-lookup behavior.
 #[test]
 fn timed_transfers_answer_through_the_seam() {
-    // Route 0 arrives at s0 (06:00); route 1 departs s0 ten minutes
-    // later (06:10) — one usable connection, wait 600 s.
+    // Route 0 arrives at s0 (06:00). Route 1 departs s0 ten minutes later
+    // (06:10). That is one usable connection, with a 600 s wait.
     let net = network(&[
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![0, 2], leg_min: 5 },
@@ -573,10 +569,10 @@ fn timed_transfers_answer_through_the_seam() {
     assert!(unknown.is_empty());
 }
 
-/// The hub's route pairs and the frequency grid answer through the
-/// seam (the oracle laws live in the library's prop suite): route 0
-/// meets route 1 once at s0, and route 0's two trips leave s0 ten
-/// minutes apart in hour 1; unknown ids answer empty, never errors.
+/// The hub's route pairs and the frequency grid answer through the seam.
+/// The oracle laws live in the library's prop suite. Route 0 meets route 1
+/// once at s0. Route 0's two trips leave s0 ten minutes apart in hour 1.
+/// Unknown ids answer empty, never errors.
 #[test]
 fn hub_connections_and_route_frequency_answer_through_the_seam() {
     let net = network(&[
@@ -624,11 +620,10 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
     assert!(matches!(unknown, cap_analysis::Response::RouteFrequency { frequency: None }));
 }
 
-/// The query-shaping law (the founding dogfood session's 199 KiB
-/// answer to a five-number question): `include_routes` /
-/// `include_stops` false empty the corresponding lists while every
-/// summary number stays — the day-shape question answers in under a
-/// KiB, and the defaults keep the UI's full payload.
+/// The query-shaping law. A five-number question got a 199 KiB answer.
+/// `include_routes` and `include_stops` set to false empty the
+/// corresponding lists. Every summary number stays. The day-shape question
+/// answers in under a KiB. The defaults keep the UI's full payload.
 #[test]
 fn include_flags_shape_the_stats_response() {
     let net = network(&[GenTrip {
@@ -659,8 +654,7 @@ fn include_flags_shape_the_stats_response() {
     assert!(lean.routes.is_empty() && lean.stops.is_empty(), "the lists empty on request");
     assert!(lean.service_types.is_empty(), "the design axis empties on request too");
     assert!(!rich.routes.is_empty() && !rich.stops.is_empty(), "defaults keep the UI's payload");
-    // Every summary number is identical — shaping drops bulk, never
-    // meaning.
+    // Every summary number is identical. Shaping drops bulk, never meaning.
     assert_eq!(lean.trips, rich.trips);
     assert_eq!(lean.active_routes, rich.active_routes);
     assert_eq!(lean.active_stops, rich.active_stops);
@@ -674,9 +668,9 @@ fn include_flags_shape_the_stats_response() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op — parsed straight into
-    // the model, no request envelope — answers exactly what the JSON
-    // op answers; garbage bytes are an error outcome, never a trap.
+    // The bare document on the kernel's bulk op is parsed into the model,
+    // with no request envelope. It answers what the JSON op answers.
+    // Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_analysis::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -688,16 +682,15 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// The unserved WHERE of coverage (QAF-23): the share's complement,
-/// named — every point beyond the radius, with the nearest served
-/// stop and how far out it sits. The deep oracle law (and the
-/// conservation cross-check with `coverage`) lives in the
-/// library's prop suite; this pins the SEAM.
+/// The unserved where of coverage (QAF-23). It names the share's
+/// complement: every point beyond the radius, with the nearest served stop
+/// and its distance. The deep oracle law, and the conservation cross-check
+/// with `coverage`, live in the library's prop suite. This pins the seam.
 #[test]
 fn unserved_points_answer_the_where() {
-    // One weekday trip s0→s1; a layer with one point AT s0 and one
-    // far away — only the far point is unserved, and the answer
-    // names its nearest served stop.
+    // One weekday trip runs s0→s1. A layer has one point at s0 and one far
+    // away. Only the far point is unserved. The answer names its nearest
+    // served stop.
     let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
     let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
 
@@ -727,8 +720,8 @@ fn unserved_points_answer_the_where() {
     assert!((points[0].lat - 46.0).abs() < 1e-9 && (points[0].lon - -74.0).abs() < 1e-9);
     assert!(points[0].nearest_m > 60_000.0, "the far point is ~70 km out: {}", points[0].nearest_m);
 
-    // The weekend service carries no trip here, so it is in no
-    // combination: null, never a day of empty service standing in.
+    // The weekend service has no trips here, so it is in no combination.
+    // The answer is null, never a day of empty service.
     let weekend = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
         network_hash: network_hash.clone(),
         layer_hash: layer_hash.clone(),
@@ -741,10 +734,9 @@ fn unserved_points_answer_the_where() {
     let cap_analysis::Response::UnservedPoints { unserved, .. } = weekend else { panic!("unserved_points") };
     assert!(unserved.is_none(), "a service with no trips is in no combination");
 
-    // The comparison at the seam: the network's weekday type against
-    // a copy with nothing in it. The empty proposal loses the point at
-    // s0 and gains nothing; the Saturday type against itself runs
-    // nothing on either side.
+    // The comparison at the seam: the weekday type against a copy with
+    // nothing in it. The empty proposal loses the point at s0 and gains
+    // nothing. The Saturday type against itself runs nothing on either side.
     let mut empty = cap_abi::kernel::kind::<transit_network::Network>().require(&network_hash).expect("held").as_ref().clone();
     empty.pattern_trips.clear();
     let empty_hash = cap_abi::kernel::kind::<transit_network::Network>().register(empty).expect("load").0;
@@ -769,13 +761,12 @@ fn unserved_points_answer_the_where() {
     assert_eq!(comparison.base.members, ["0"]);
 }
 
-/// The service groups (D-55): the COMBINATIONS of service types
-/// that run together on the same dates, with those dates. A
-/// narrower overlay (Mon–Fri, Mar–Jun) and a Mon+Wed service each
-/// meet the weekday base only on the dates they run with it — every
-/// distinct set is its own row, and a type with no trips (the feed's
-/// weekend calendar) is no member of any. The deep oracle law lives
-/// in the library's prop suite; this pins the SEAM.
+/// The service groups (D-55): the combinations of service types that run
+/// together on the same dates, with those dates. A narrower overlay
+/// (Mon–Fri, Mar–Jun) and a Mon+Wed service each meet the weekday base only
+/// on the dates they run with it. Every distinct set is its own row. A type
+/// with no trips (the feed's weekend calendar) is in no group. The deep
+/// oracle law lives in the library's prop suite. This pins the seam.
 #[test]
 fn service_groups_answer_the_combinations() {
     let net = network(&[
@@ -813,12 +804,12 @@ fn service_groups_answer_the_combinations() {
     assert_eq!((detail.group.as_str(), detail.trips), ("0 + 3", 2));
 }
 
-/// The hub's near misses and the network's longest waits answer
-/// through the seam (the oracle laws live in the library's prop
-/// suite): route 0 arrives at s1 at 1:55, five minutes after route 1
-/// left at 1:50 — missed by six minutes with the 60 s minimum, and no
-/// later route 1 to make; s0 departs at 1:40 and 1:50, the only stop
-/// with two departures, so the ranking is its ten-minute gap alone.
+/// The hub's near misses and the network's longest waits answer through
+/// the seam. The oracle laws live in the library's prop suite. Route 0
+/// arrives at s1 at 1:55, five minutes after route 1 left at 1:50. It is
+/// missed by six minutes with the 60 s minimum. No later route 1 can be
+/// made. s0 departs at 1:40 and 1:50. It is the only stop with two
+/// departures, so the ranking is its ten-minute gap alone.
 #[test]
 fn missed_connections_and_longest_waits_answer_through_the_seam() {
     let net = network(&[
@@ -855,10 +846,10 @@ fn missed_connections_and_longest_waits_answer_through_the_seam() {
 }
 
 /// The day types, the whole-plan comparison, and the worklist answer
-/// through the seam (the laws live in the library's prop suite).
-/// Route 0 leaves s0 every ten minutes from 1:00 to 2:00, then not
-/// until 2:40, then every ten minutes to 4:00: hour 2's 40-minute gap
-/// is a frequency hole beside hours 1 and 3 (10 minutes each).
+/// through the seam. The laws live in the library's prop suite. Route 0
+/// leaves s0 every ten minutes from 1:00 to 2:00. Then it waits until 2:40,
+/// and leaves every ten minutes to 4:00. Hour 2's 40-minute gap is a
+/// frequency hole. Hours 1 and 3 have 10 minutes each.
 #[test]
 fn day_types_plan_compare_and_findings_answer_through_the_seam() {
     let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };

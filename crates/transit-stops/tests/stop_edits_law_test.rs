@@ -1,7 +1,7 @@
-//! An edit of the stops document (D-153, D-157) — the law, from the
-//! user's intent, before the implementation: an event added to a stop
-//! takes its place by date, and nothing else moves (every edit of the
-//! stops app is one event added).
+//! An edit of the stops document (D-153, D-157). This is the law, from the
+//! user's intent, before the implementation. An event added to a stop
+//! takes its place by date, and nothing else moves. Every edit of the
+//! stops app is one event added.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -46,8 +46,8 @@ fn on_of(e: &Event) -> Option<NaiveDate> {
 }
 
 proptest! {
-    /// An added event takes its place by date — after every event dated
-    /// on or before it, before every later one — and nothing else moves.
+    /// An added event takes its place by date. It goes after every event
+    /// dated on or before it, and before every later one. Nothing else moves.
     #[test]
     fn an_added_event_takes_its_place_by_date(doc in arb_doc(), which in 0usize..6, on in 0u32..40) {
         let id = format!("s{}", which % doc.stops.len());
@@ -81,9 +81,8 @@ fn a_suspension_added_suspends_the_stop_and_a_new_id_begins_a_stop() {
     assert_eq!(fresh.stops["n"], stop(1, 2, 1));
 }
 
-// A write that says a stop is new (D-228): the intent "new" is a refusal
-// of an id the document holds. An event added to a held stop is still an
-// ordinary write.
+// A write that says a stop is new (D-228) is refused for an id the
+// document holds. An event added to a held stop is still an ordinary write.
 
 #[test]
 fn a_new_stop_is_refused_an_id_the_document_holds() {

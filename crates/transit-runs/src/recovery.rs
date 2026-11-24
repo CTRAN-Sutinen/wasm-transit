@@ -45,7 +45,7 @@ pub struct RecoveryWait {
     /// trips are not adjacent in the block).
     pub required_secs: Option<u32>,
     pub required_by: Option<RecoverySource>,
-    /// The gap less the requirement — negative when the wait is short
+    /// The gap less the requirement. It is negative when the wait is short
     /// (validation's `layover_infeasible`).
     #[ts(type = "number | null")]
     pub slack_secs: Option<i64>,
@@ -102,7 +102,7 @@ pub fn recovery(network: &Network, day: &[MaterializedTrip], rules: Option<&Work
             }
             let arrival = end(before);
             if arrival > next_start {
-                continue; // infeasible order — validation's block_infeasible, not a wait
+                continue; // infeasible order. It is validation's block_infeasible, not a wait
             }
             let gap = next_start - arrival;
             let authored = block.layovers.iter().find(|l| l.after_trip == pi);
@@ -168,7 +168,7 @@ pub fn recovery(network: &Network, day: &[MaterializedTrip], rules: Option<&Work
     Recovery { waits, patterns }
 }
 
-/// A trip instance's arrival at its last stop — what validation
+/// A trip instance's arrival at its last stop. It is what validation
 /// judges a wait from.
 pub(crate) fn end(trip: &MaterializedTrip) -> u32 {
     trip.stop_times.last().map(|st| st.arrival_secs).unwrap_or(trip.start_secs)

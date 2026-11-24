@@ -1,7 +1,7 @@
-//! The realtime capability's worked examples (its `examples` feature):
-//! the documents to load and each request. The generator runs them
-//! through this crate's `invoke` and records the answers. They read the
-//! e2e fixture payload, the bytes the browser tests replay.
+//! The realtime capability's worked examples, under its `examples` feature.
+//! Each example gives the documents to load and a request. The generator runs
+//! them through this crate's `invoke` and records the answers. They read the
+//! e2e fixture payload, the bytes that the browser tests replay.
 
 use cap_abi::manifest::Example;
 use serde_json::json;

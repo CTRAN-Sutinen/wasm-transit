@@ -1,7 +1,7 @@
-//! The analysis capability's worked examples (its `examples` feature):
-//! each request over the fixture network, and the point and area layers
-//! the coverage ops read. The generator runs them through this crate's
-//! `invoke` and records the answers.
+//! The analysis capability's worked examples, under its `examples` feature.
+//! Each request runs over the fixture network. The point and area layers
+//! are the ones the coverage ops read. The generator runs them through this
+//! crate's `invoke` and records the answers.
 
 use cap_abi::manifest::Example;
 use serde_json::{json, Value};

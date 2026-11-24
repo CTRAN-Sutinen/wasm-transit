@@ -1,18 +1,17 @@
-//! Native dispatch tests for the network capability — the seam
-//! without wasm, over the REAL fixture: the e2e sample feed, the
-//! same bytes the caps smoke loads. The module answers the
-//! planner's whole
-//! bootstrap → author → publish flow (import, validate, export), and
-//! the produced artifact is a first-class feed document (the
-//! exported zip parses back to the same identity).
+//! Native dispatch tests for the network capability. These test the seam
+//! without wasm, over the real fixture: the e2e sample feed, the same bytes
+//! the caps smoke loads. The module answers the planner's whole bootstrap,
+//! author, and publish flow (import, validate, export). The produced artifact
+//! is a first-class feed document. The exported zip parses back to the same
+//! identity.
 
 use cap_network::{dispatch, invoke as dispatch_json, Request, Response};
 use sha2::Digest;
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 
-/// The shared authored-network fixture — the document the smoke
-/// and the manifest's sample load request carry.
+/// The shared authored-network fixture. The smoke test and the manifest's
+/// sample load request both carry this document.
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
 /// The kernel's load_feed, through the module's seam: its hash and summary.
@@ -46,12 +45,12 @@ fn import_infers_and_registers_the_document() {
             Response::Import { network, notes, network_hash, .. } => (network, notes, network_hash),
             _ => panic!("import"),
         };
-    // Valid by construction — the codec's law.
+    // Valid by construction. This is the codec's law.
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
     assert_eq!(network.stops.len(), 6, "A, B, C, the station pin, two bays");
     assert_eq!(network.patterns.len(), 6, "10's A→B with and without its shape, A→C→B, 20, the shuttle both ways");
-    // The fixture's single-stop trip is a REPORTED loss, never silent.
+    // The fixture's single-stop trip is a reported loss, never silent.
     assert!(!notes.is_empty(), "the dropped single-stop trip is reported: {notes:?}");
 
     // The module is the hash authority: the canonical serialization
@@ -157,15 +156,15 @@ fn export_is_the_publish_path_and_the_identity_law() {
     assert_eq!(summary.stops, 3);
     assert_eq!(summary.trips, 3);
 
-    // The hash authority: the returned hash is the content hash of
-    // the decoded payload — the same identity any module would
-    // return for the same bytes.
+    // The hash authority: the returned hash is the content hash of the
+    // decoded payload. Any module returns the same identity for the same
+    // bytes.
     let zip = base64_decode(&zip_b64);
     assert_eq!(feed_hash, format!("sha256:{:x}", sha2::Sha256::digest(&zip)));
 
-    // The exported artifact is a first-class feed: loading the bytes
-    // back lands on the SAME hash (the composition moment — the
-    // handoff a host asserts).
+    // The exported artifact is a first-class feed. Loading the bytes back
+    // lands on the same hash. This is the composition moment: the handoff a
+    // host asserts.
     let (again, reparsed) = load_feed(&zip);
     assert_eq!(again, feed_hash, "the exported zip loads to its own advertised hash");
     assert_eq!(
@@ -223,9 +222,9 @@ fn json_seam_round_trips_the_tagged_form() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op — parsed straight into
-    // the model, no request envelope — answers exactly what the JSON
-    // op answers; garbage bytes are an error outcome, never a trap.
+    // The bare document on the kernel's bulk op is parsed straight into the
+    // model, with no request envelope. It answers exactly what the JSON op
+    // answers. Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_network::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -237,12 +236,12 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// The publish path's identity: a host that stores a network (the
-/// server's `plan.<id>` pointer) stores the module's canonical bytes
-/// under the module's hash — never the bytes it was sent, which may
-/// be any serialization of the same document (a browser's
-/// JSON.stringify writes 1.0 as 1). The answer carries the plan frame
-/// so the host never reads the document.
+/// The publish path's identity. A host that stores a network (the server's
+/// `plan.<id>` pointer) stores the module's canonical bytes under the
+/// module's hash. It never stores the bytes it was sent. Those may be any
+/// serialization of the same document. A browser's JSON.stringify writes
+/// 1.0 as 1. The answer carries the plan frame, so the host never reads the
+/// document.
 #[test]
 fn document_answers_the_canonical_bytes_the_hash_names() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
@@ -278,7 +277,7 @@ fn import_answers_the_networks_timezone() {
 }
 
 /// An imported feed picks on its first service date (D-140): the
-/// import answers it — the fixture's weekday calendar starts Thursday
+/// import answers it. The fixture's weekday calendar starts Thursday
 /// 2026-01-01.
 #[test]
 fn import_answers_the_first_service_date() {
@@ -291,8 +290,8 @@ fn import_answers_the_first_service_date() {
 }
 
 /// What stops a network from being published, answered by the module
-/// (D-76): its validation issues, and the warnings that refuse
-/// publication — a pick that runs no service in its period. The other
+/// (D-76). These are its validation issues, and the warnings that refuse
+/// publication: a pick that runs no service in its period. The other
 /// warnings ride along and never refuse.
 #[test]
 fn publishable_answers_what_refuses_a_pick() {

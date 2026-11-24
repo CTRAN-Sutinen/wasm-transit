@@ -1,10 +1,10 @@
-//! Native dispatch tests for the stop requests capability — the seam
-//! without wasm. The document's own laws are tested at the library seam
-//! (transit-requests); here the module's contract is pinned: validate
-//! and the kernel's load agree on one identity, a refused document is
-//! refused at both with its reasons named, put begins and changes the
-//! document, a stop's requests are answered, and garbage is an honest
-//! error, never a panic.
+//! Native dispatch tests for the stop requests capability. These test the
+//! seam without wasm. The document's own laws are tested at the library
+//! seam (transit-requests). Here the module's contract is pinned. validate
+//! and the kernel's load agree on one identity. A refused document is
+//! refused at both, with its reasons named. put begins and changes the
+//! document. A stop's requests are answered. Garbage is an honest error,
+//! never a panic.
 
 use serde_json::{json, Value};
 

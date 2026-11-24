@@ -1,22 +1,22 @@
 //! cap-sync: what is the converged state of this edit document? (OPS.md
 //! has the ops.)
 //!
-//! The seam over transit-sync, whose merge is property-tested. The
-//! protocol is LWW per record id plus tombstones, on purpose: the final
-//! authority is the agency's scheduling system (propose, review, accept).
+//! The seam over transit-sync, whose merge is property-tested. The protocol
+//! is LWW per record id, plus tombstones. The final authority is the agency's
+//! scheduling system (propose, review, accept).
 //!
-//! * The host owns the documents and the clock (`now_ms`), and the receive
-//!   path clamps a client's clock to the host's (D-56).
-//! * Answers carry the canonical bytes and their hash; the module is the
-//!   hash authority, so a host never mints identity.
-//! * `read_edits` reads the current version only; an older one is
-//!   cap-migrate's. `receive` writes the disruptions log whole (D-228),
-//!   and `compact` skips a tombstone that another log's held record names
-//!   (D-57, D-231). A revert's records are stamped to win the merge
-//!   (D-193).
-//! * Validation is not here. Edit records are judged against the network
-//!   at `load_edits`, reported and never rejected (cap-divert's
-//!   `reports`); a second answer would be two answers to one question.
+//! * The host owns the documents and the clock (`now_ms`). The receive path
+//!   clamps a client's clock to the host's (D-56).
+//! * Answers carry the canonical bytes and their hash. The module is the hash
+//!   authority, so a host never mints identity.
+//! * `read_edits` reads the current version only. An older one is
+//!   cap-migrate's.
+//!   `receive` writes the disruptions log whole (D-228). `compact` skips a
+//!   tombstone that another log's held record names (D-57, D-231). A revert's
+//!   records are stamped to win the merge (D-193).
+//! * Validation is not here. Edit records are judged against the network at
+//!   `load_edits`. They are reported and never rejected (cap-divert's
+//!   `reports`). A second answer would be two answers to one question.
 //! * Stateless. How the store writes the log's objects is the host's
 //!   discipline (docs/FORMATS.md), never a module's.
 
@@ -30,27 +30,24 @@ use ts_rs::TS;
 #[ts(export, export_to = "cap_sync/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Merge the client's edit document with the server's (LWW per
-    /// record id — `transit_sync::merge`, the property-tested
-    /// semilattice), then transition drafts to submitted (the
-    /// submit bumps rev and stamps `now_ms`). The receive path clamps
-    /// the client's `updated_at` to `now_ms` first (D-56), so the
-    /// server clock bounds the LWW order. The answer is the converged
-    /// document — as records, and as the canonical `document` bytes
-    /// with their `document_hash` — and the client adopts it
-    /// wholesale.
+    /// Merge the client's edit document with the server's, LWW per record id.
+    /// `transit_sync::merge` is the property-tested semilattice. Then drafts
+    /// move to submitted. The submit bumps rev and stamps `now_ms`. The receive
+    /// path clamps the client's `updated_at` to `now_ms` first (D-56), so the
+    /// server clock bounds the LWW order. The answer is the converged document.
+    /// It comes as records, and as the canonical `document` bytes with their
+    /// `document_hash`. The client adopts it wholesale.
     SyncEdits {
         client: Vec<transit_sync::EditRecord>,
         server: Vec<transit_sync::EditRecord>,
         #[ts(type = "number")]
         now_ms: u64,
     },
-    /// Read a received or stored edit document in the version this
-    /// module reads — an older one is refused naming the migration
-    /// capability, a newer one naming both versions — with serde
-    /// defaults filling what age removed and malformed records dropped
-    /// and counted, never wedging the document
-    /// (`transit_sync::read_document`).
+    /// Read a received or stored edit document in the version this module
+    /// reads. An older one is refused, naming the migration capability. A newer
+    /// one is refused, naming both versions. Serde defaults fill what age
+    /// removed. Malformed records are dropped and counted. They never wedge the
+    /// document (`transit_sync::read_document`).
     ReadEdits {
         #[ts(type = "any")]
         document: serde_json::Value,
@@ -69,10 +66,9 @@ pub enum Request {
     /// document's own record, as the log capability's `compose` takes
     /// them.
     LogRecords { document: transit_sync::EditDocument },
-    /// The edit document assembled from the disruptions log's
-    /// `edit_record` records, in id order, answered as its canonical
-    /// bytes and hash. A record in another version is refused, naming
-    /// both.
+    /// The edit document assembled from the disruptions log's `edit_record`
+    /// records, in id order. The answer gives its canonical bytes and hash. A
+    /// record in another version is refused, and the refusal names both.
     LogDocument {
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
         records: std::collections::BTreeMap<String, transit_log::Held>,
@@ -81,20 +77,20 @@ pub enum Request {
         #[ts(optional, type = "{ version: number, value: unknown }")]
         document: Option<transit_log::Held>,
     },
-    /// A write to the disruptions log, whole (D-228): each op over the
-    /// edit document at the head, given inline (`documents.edit_records`;
-    /// absent: the empty document), then the entry that records what
-    /// changed. The ops (cap `sync`): `sync` (`{client, from}`), the
-    /// sync protocol's write: the client's document brought forward and
-    /// read as `read_edits` reads it, its clock clamped to the entry's
-    /// (D-56), merged with the head, and its drafts submitted; with
-    /// `from`, a head the writer did not read answers `moved`.
-    /// `compact` (`{horizon_ms}`): the tombstones older than the
-    /// horizon dropped (D-57), except one that a held record of
-    /// `write.now` names (D-231). `migrate`: the head read as `read_edits`
-    /// reads it and recorded (an empty log's first entry, from the old
-    /// pointer or the dev store's file); a head with no records writes
-    /// nothing.
+    /// A write to the disruptions log, whole (D-228). Each op runs over the
+    /// edit document at the head. The host gives it inline
+    /// (`documents.edit_records`). Absent means the empty document. The entry
+    /// then records what changed. The ops (cap `sync`) are:
+    /// `sync` (`{client, from}`), the sync protocol's write. It brings the
+    /// client's document forward, and reads it as `read_edits` does. Its clock
+    /// is clamped to the entry's (D-56). It is merged with the head, and its
+    /// drafts are submitted. With `from`, a head that the writer did not read
+    /// answers `moved`.
+    /// `compact` (`{horizon_ms}`) drops the tombstones older than the horizon
+    /// (D-57). It keeps one that a held record of `write.now` names (D-231).
+    /// `migrate` records the head, as `read_edits` reads it. An empty log's
+    /// first entry comes from the old pointer or the dev store's file. A head
+    /// with no records writes nothing.
     Receive {
         #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
         write: transit_log::Write,
@@ -124,9 +120,9 @@ pub enum Response {
         records: Vec<transit_sync::EditRecord>,
         /// The edit document over `records`, canonically serialized
         /// (`{"kind":"edit_records","schema_version":…,"records":[…]}`)
-        /// — the exact bytes a host stores.
+        /// These are the exact bytes a host stores.
         document: String,
-        /// The document's canonical hash — its identity.
+        /// The document's canonical hash. It is the document's identity.
         document_hash: String,
         /// The fields the client's records carry that this build does
         /// not know (D-167): kept in them, and flagged for a person,
@@ -139,9 +135,8 @@ pub enum Response {
         records: Vec<transit_sync::EditRecord>,
         dropped: usize,
         schema_version: u32,
-        /// The edit document over the read `records`, canonically
-        /// serialized — the exact bytes a host stores when seeding a
-        /// pointer.
+        /// The edit document over the read `records`, canonically serialized.
+        /// These are the exact bytes a host stores when seeding a pointer.
         document: String,
         document_hash: String,
     },
@@ -175,8 +170,8 @@ pub enum Response {
     },
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`, and never panic. The seam is total.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::SyncEdits { client, server, now_ms } => {
@@ -299,8 +294,8 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
                 let client = transit_sync::clamp_timestamps(&client, now_ms);
                 records = transit_sync::submit(transit_sync::merge(&client, &records), now_ms);
             }
-            // A record that a held record names stays (D-231): the logs
-            // now, as the host gives them for the reference checks.
+            // A record that a held record names stays (D-231). The logs are
+            // the ones the host gives now, for the reference checks.
             Intent::Compact { horizon_ms } => {
                 let keep = match (&write.references, write.now.as_ref().or(write.read.as_ref())) {
                     (Some(kinds), Some(now)) => transit_log::named(kinds, now, RECORD_KIND),
@@ -340,21 +335,21 @@ fn canonical(records: &[transit_sync::EditRecord]) -> Result<(String, String), S
     Ok((cap_abi::canonical_bytes(&document)?, cap_abi::canonical_hash(&document)?))
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, and `{"ok": ...}` or `{"error": ...}`
+/// out. Its bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The edit document is a JSON document — no bulk-bytes op exists;
-/// the seam answers honestly instead of silently ignoring one.
+/// The edit document is a JSON document. No bulk-bytes op exists. The seam
+/// answers with an error, and does not silently ignore a bulk op.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: the edit document is JSON (sync_edits)") })
         .to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

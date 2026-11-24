@@ -48,8 +48,8 @@ const CELL: f64 = 0.001;
 /// address (segment id, parameter along it from the segment's first
 /// vertex). Segments are numbered through the document, way by way
 /// and point pair by point pair, so an address holds for one streets
-/// document (one hash) — it is never committed to another document.
-/// `dist_m` is how far the query point was from the street.
+/// document (one hash). It is never committed to another document.
+/// `dist_m` is how far the query point is from the street.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StreetPosition {
@@ -146,7 +146,7 @@ impl Builder {
 }
 
 /// The routing graph over a streets document: nodes are the
-/// document's points (microdegrees — ways that share a point weld
+/// document's points (microdegrees; ways that share a point weld
 /// there), edges are segments, adjacency in CSR form. Cells index
 /// segments by bbox for snapping.
 pub struct StreetNetwork {
@@ -159,7 +159,7 @@ pub struct StreetNetwork {
     seg_oneway: Vec<bool>,
     /// Per segment: the document's way it belongs to.
     seg_way: Vec<u32>,
-    /// Per way: its class and name — what a path names it by.
+    /// Per way: its class and name, which a path names it by.
     way_street: Vec<(StreetClass, Option<String>)>,
     node_coords: Vec<f64>,
     adj_offset: Vec<u32>,
@@ -172,7 +172,7 @@ pub struct StreetNetwork {
 
 impl StreetNetwork {
     /// The graph over a streets document. Segments are numbered way
-    /// by way, point pair by point pair — the address a
+    /// by way, point pair by point pair. That is the address a
     /// [`StreetPosition`] names.
     pub fn build(streets: &Streets) -> StreetNetwork {
         let mut b = Builder {
@@ -194,7 +194,7 @@ impl StreetNetwork {
         let segment_count = b.coords.len() as u32 / 4;
 
         // CSR adjacency: each segment contributes the edges its
-        // direction allows — a one-way enters the graph as a
+        // direction allows. A one-way enters the graph as a
         // first-to-second edge only, so Dijkstra can only follow legal
         // travel.
         let node_count = b.node_coords.len() as u32 / 2;
@@ -309,13 +309,13 @@ impl StreetNetwork {
     /// along the graph, as points ending exactly at `to`. The path
     /// starts after `from` (its slice's end is already committed).
     /// None when the positions sit on disconnected parts of the
-    /// network — the caller falls back to a straight line.
+    /// network. The caller falls back to a straight line.
     pub fn route(&self, from: StreetPosition, to: StreetPosition) -> Option<Vec<StreetPoint>> {
         self.route_with_length(from, to).map(|(points, _)| points)
     }
 
     /// [`route`](Self::route) plus the path's length along the graph
-    /// in meters — from the `from` position itself (its walk to the
+    /// in meters, from the `from` position itself (its walk to the
     /// segment's exit counts) to the exact `to` position: the
     /// shortest-path cost the search settled on, so "how far by
     /// road?" is the router's own answer, never a host-side sum.
@@ -325,7 +325,7 @@ impl StreetNetwork {
 
     /// [`route_with_length`](Self::route_with_length) plus the streets
     /// the path follows, in order ([`StreetUse`]): every street it runs
-    /// along, whatever its class — a profile reads the classes (the bus
+    /// along, whatever its class. A profile reads the classes (the bus
     /// profile, [`bus`]); the path never depends on them.
     pub fn route_along(&self, from: StreetPosition, to: StreetPosition) -> Option<StreetRoute> {
         let (points, length_m, segments) = self.shortest(from, to)?;
@@ -345,12 +345,12 @@ impl StreetNetwork {
 
     /// The shortest path: its points, its length, and the segments it
     /// runs in order with the meters along each (the partial first and
-    /// last included) — they add up to the length.
+    /// last included). They add up to the length.
     fn shortest(&self, from: StreetPosition, to: StreetPosition) -> Option<(Vec<StreetPoint>, f64, Vec<(u32, f64)>)> {
         let from_oneway = self.seg_oneway[from.seg as usize];
         let to_oneway = self.seg_oneway[to.seg as usize];
 
-        // Same segment: the segment is straight — but only when the
+        // Same segment: the segment is straight, but only when the
         // direction allows reaching a target that sits behind the
         // position. On a one-way the route must leave and come back,
         // which is the Dijkstra below.
@@ -365,7 +365,7 @@ impl StreetNetwork {
         // The two ends of the target segment act as virtual edges to
         // the exact position: entering the segment at nodeA leaves
         // t*len to walk, at nodeB (1-t)*len. Entering is itself
-        // travel — nodeA always, nodeB only on a two-way.
+        // travel: nodeA always, nodeB only on a two-way.
         let to_len = self.seg_len[to.seg as usize];
         let to_a = self.seg_node[2 * to.seg as usize];
         let to_b = self.seg_node[2 * to.seg as usize + 1];
@@ -415,7 +415,7 @@ impl StreetNetwork {
                 break; // everything left is worse
             }
             // A target-segment end is a candidate entry; keep
-            // expanding — the other end may still be cheaper.
+            // expanding. The other end may still be cheaper.
             if let Some(inside) = inside_cost(node as u32) {
                 if d + inside < best_cost {
                     best_cost = d + inside;
@@ -439,9 +439,9 @@ impl StreetNetwork {
         }
 
         // The committed geometry is the chain of reached nodes, from
-        // the from-segment's exit node to the target's entry node —
-        // every bend on the path — then the exact target position.
-        // The terminal seed IS the from-segment's exit bend: it must
+        // the from-segment's exit node to the target's entry node,
+        // every bend on the path, then the exact target position.
+        // The terminal seed is the from-segment's exit bend: it must
         // be committed too (callers dedupe against the previous
         // trace point when the position sits on that node).
         let mut chain: Vec<usize> = Vec::new();
@@ -508,7 +508,7 @@ impl StreetNetwork {
     }
 
     /// Street meters from `from` to the position `to`, over the node
-    /// distances [`reach`](Self::reach) left from `from` — infinite
+    /// distances [`reach`](Self::reach) left from `from`, infinite
     /// when `to` is out of reach.
     pub(crate) fn meters_to(&self, from: StreetPosition, dist: &[f64], to: StreetPosition) -> f64 {
         let seg = to.seg as usize;

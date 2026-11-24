@@ -5,7 +5,7 @@
 //! version only.
 //!
 //! - v1 → v2: a request's `routes` are the planner's intent, written by
-//!   hand, and no longer a reference into the network (D-234). Every v1
+//!   hand, not a reference into the network (D-234). Every v1
 //!   document is a v2 document, so the step changes only the version.
 //!
 //! The stops log keeps each record in the version it was written in.
@@ -36,7 +36,7 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
 }
 
 /// One step: a document in version `from` to `from + 1`. No step loses
-/// anything yet.
+/// anything.
 pub fn migrate_step(doc: Value, from: u32) -> Result<Value, String> {
     let found = schema_version_of(&doc)?;
     if found != from {

@@ -1,23 +1,21 @@
-//! Building the routing network from the network model's materialized
-//! day.
+//! Building the routing network from the network model's materialized day.
 //!
-//! RAPTOR does not work on individual trips — it boards *trip
-//! patterns*: groups of trips that visit the same stop sequence in the
-//! same order (e.g. every run of "route 14 inbound today"). Within one
-//! pattern, trips are time-ordered, which turns "earliest trip I can
-//! board at stop S after time T" into one binary search.
+//! RAPTOR does not work on individual trips. It boards *trip patterns*: groups
+//! of trips that visit the same stop sequence in the same order (for example,
+//! every run of "route 14 inbound today"). Within one pattern, trips are
+//! time-ordered. That turns "earliest trip I can board at stop S after time T"
+//! into one binary search.
 //!
-//! The network is built for one service date over the materialized
-//! day (the model's own trips — materialized, and patched with the
-//! day's edits when the caller composed an effective day). Grouping
-//! is by ACTUAL stop sequence: an edited trip that skips stops no
-//! longer shares its authored pattern's sequence and must not ride
-//! the authored pattern's array.
+//! The network is built for one service date over the materialized day. These
+//! are the model's own trips, materialized, and patched with the day's edits
+//! when the caller composed an effective day. Grouping is by actual stop
+//! sequence. An edited trip that skips stops no longer shares its authored
+//! pattern's sequence. It must not ride the authored pattern's array.
 //!
-//! With a LIVE document, a trip instance rides at its PREDICTED
-//! times where the document states them (see [`live_times`]), the
-//! schedule elsewhere — the graph is the day as it is expected to
-//! run, and each visit remembers how far its time moved.
+//! With a live document, a trip instance rides at its predicted times where the
+//! document states them (see [`live_times`]). The schedule covers the rest. The
+//! graph is the day as it is expected to run. Each visit remembers how far its
+//! time moved.
 
 use std::collections::HashMap;
 
@@ -27,7 +25,7 @@ use transit_live::LiveDay;
 use transit_network::{MaterializedTrip, Network};
 use transit_streets::walking::WalkTable;
 
-/// The straight-line footpath radius in meters — the transfers of a
+/// The straight-line footpath radius in meters, for the transfers of a
 /// network with no walk table ([`RouterNetwork::with_walks`]; D-32).
 pub const WALK_RADIUS_M: f64 = 300.0;
 /// Average walking speed (m/s) used to turn distances into durations.
@@ -54,20 +52,19 @@ pub struct Footpath {
 pub struct Pattern {
     /// Stop indices in visit order.
     pub stop_positions: Vec<u32>,
-    /// Trips sorted by departure at the first position, for
-    /// deterministic iteration. Note: later positions are NOT
-    /// guaranteed monotonic (overtaking trips), so boarding searches
-    /// must scan rather than binary-search (see [`crate::raptor`]).
+    /// Trips sorted by departure at the first position, for deterministic
+    /// iteration. Later positions are not guaranteed monotonic, because of
+    /// overtaking trips. So boarding searches must scan rather than
+    /// binary-search (see [`crate::raptor`]).
     pub trips: Vec<PatternTrip>,
 }
 
 /// One trip of a pattern, with times aligned to `Pattern::stop_positions`.
 ///
-/// `departures`/`arrivals` are seconds since service-day midnight
-/// (the model's anchor; past-86400 values are after-midnight trips,
-/// not errors). Materialized times are complete — the model
-/// interpolates non-timepoints at materialize time, so there is
-/// nothing to fill here.
+/// `departures`/`arrivals` are seconds since service-day midnight (the model's
+/// anchor; past-86400 values are after-midnight trips, not errors).
+/// Materialized times are complete. The model interpolates non-timepoints at
+/// materialize time, so nothing needs filling here.
 #[derive(Debug, Clone)]
 pub struct PatternTrip {
     /// The trip instance: the network's trip and its start.
@@ -78,18 +75,17 @@ pub struct PatternTrip {
     pub route_name: String,
     /// The route's long name, when it has one.
     pub route_long_name: Option<String>,
-    /// The sign per visit, run-length encoded: `(first position,
-    /// headsign)` in position order — `transit_network::
-    /// visit_destination`, the one shared rule. Read with
-    /// [`PatternTrip::headsign_at`].
+    /// The sign per visit, run-length encoded: `(first position, headsign)` in
+    /// position order, under `transit_network::visit_destination`, the one
+    /// shared rule. Read with [`PatternTrip::headsign_at`].
     pub headsigns: Vec<(u32, String)>,
     /// The times the trip rides at: predicted where the live
     /// document states them, else the day's own.
     pub departures: Vec<u32>,
     pub arrivals: Vec<u32>,
-    /// Per position, `(arrival, departure)` minus the day's own time
-    /// — `None` where the time is the day's own (no prediction).
-    /// Empty when the live document says nothing about the trip.
+    /// Per position, `(arrival, departure)` minus the day's own time. `None`
+    /// where the time is the day's own, with no prediction. Empty when the live
+    /// document says nothing about the trip.
     pub delays: Vec<(Option<i32>, Option<i32>)>,
 }
 
@@ -104,7 +100,7 @@ impl PatternTrip {
             .unwrap_or("")
     }
 
-    /// `(arrival delay, departure delay)` at `position` — `None`
+    /// `(arrival delay, departure delay)` at `position`. `None`
     /// where the time is the day's own.
     pub fn delay_at(&self, position: usize) -> (Option<i32>, Option<i32>) {
         self.delays.get(position).copied().unwrap_or((None, None))
@@ -121,23 +117,22 @@ pub struct LiveVisit {
     pub stated: bool,
 }
 
-/// A trip instance's PREDICTED times per visit, or `None` when the live document states nothing about any
-/// of its visits.
+/// A trip instance's predicted times per visit. `None` when the live document
+/// states nothing about any of its visits.
 ///
-/// The live document keys a stop entry by trip instance, stop and
-/// the published schedule's departure there; its delays are against
-/// that published schedule (GTFS-rt's reading — propagation is
-/// already applied in the document, and stops before the first
-/// stated delay are absent: they stay on schedule). A visit matches
-/// the entry at its stop whose scheduled departure is the visit's
-/// own; failing that (a diverted trip's patched times moved), the
-/// entry at its stop when the stop is visited once and stated once.
-/// The predicted departure is the published departure plus the
-/// departure delay (else the arrival delay); the predicted arrival
-/// is the published arrival — the visit's dwell before it — plus the
-/// arrival delay (else the departure delay). Times never run
-/// backwards along the trip: a prediction is clamped to the time
-/// before it.
+/// The live document keys a stop entry by trip instance, stop, and the
+/// published schedule's departure there. Its delays are against that published
+/// schedule. This is GTFS-rt's reading. Propagation is already applied in the
+/// document. Stops before the first stated delay are absent. They stay on
+/// schedule. A visit matches the entry at its stop whose scheduled departure is
+/// the visit's own. Failing that, a diverted trip's patched times may have
+/// moved. Then the entry at its stop matches when the stop is visited once and
+/// stated once. The predicted departure is the published departure plus the
+/// departure delay. Without a departure delay, use the arrival delay. The
+/// predicted arrival is the published arrival, the visit's dwell before it,
+/// plus the arrival delay. Without an arrival delay, use the departure delay.
+/// Times never run backwards along the trip. A prediction is clamped to the
+/// time before it.
 pub fn live_times(trip: &MaterializedTrip, live: &LiveDay) -> Option<Vec<LiveVisit>> {
     let entry = live.trips.iter().find(|t| t.trip == trip.trip && t.start_secs == trip.start_secs)?;
     if entry.stops.is_empty() {
@@ -184,16 +179,16 @@ pub struct RouterNetwork {
     /// stop_id → index into `stops`.
     stop_index: HashMap<String, u32>,
     pub patterns: Vec<Pattern>,
-    /// For each stop index: (pattern index, position) — every pattern
+    /// For each stop index: (pattern index, position). Every pattern
     /// serving that stop and at which position(s).
     pub patterns_at_stop: Vec<Vec<(u32, u32)>>,
 }
 
 impl RouterNetwork {
-    /// The network with its transfers walking the streets: every
-    /// footpath is the walk table's (`transit_streets::walking` — the
-    /// stops' walks along the streets), the straight-line ones are
-    /// dropped, and a walk naming a stop the network lacks is ignored.
+    /// The network with its transfers walking the streets. Every footpath is
+    /// the walk table's (`transit_streets::walking`, the stops' walks along the
+    /// streets). The straight-line ones are dropped. A walk that names a stop
+    /// the network lacks is ignored.
     pub fn with_walks(mut self, walks: &WalkTable) -> RouterNetwork {
         for stop in &mut self.stops {
             stop.footpaths.clear();
@@ -227,25 +222,24 @@ impl RouterNetwork {
         Self::build(network, day, date, None)
     }
 
-    /// Build the network for `date` over a materialized day. The day
-    /// is the caller's composition: plain `materialize` for a
-    /// schedule-only day, `effective_day` for the day with the edits
-    /// in force — the router never expands calendars or applies
-    /// patches itself (Law 2: one composition, not per-module
-    /// reimplementations). Trips whose stop sequence references
-    /// unknown stops are skipped, never an error. With `live`, each
-    /// trip instance rides at its predicted times ([`live_times`]),
-    /// a cancelled one is not ridden, and a skipped stop is neither
-    /// boarded nor alighted at ([`LiveDay::runs`]).
+    /// Build the network for `date` over a materialized day. The day is the
+    /// caller's composition: plain `materialize` for a schedule-only day,
+    /// `effective_day` for the day with the edits in force. The router never
+    /// expands calendars or applies patches itself (Law 2: one composition, not
+    /// per-module reimplementations). Trips whose stop sequence references
+    /// unknown stops are skipped, never an error. With `live`, each trip
+    /// instance rides at its predicted times ([`live_times`]), a cancelled one
+    /// is not ridden, and a skipped stop is neither boarded nor alighted at
+    /// ([`LiveDay::runs`]).
     pub fn build(
         network: &Network,
         day: &[MaterializedTrip],
         date: NaiveDate,
         live: Option<&LiveDay>,
     ) -> RouterNetwork {
-        // Stops first, from the network document (BTreeMap order —
-        // deterministic): index every stop, remember coordinates for
-        // the footpath graph.
+        // Stops first, from the network document (BTreeMap order, so
+        // deterministic). Index every stop, and remember coordinates for the
+        // footpath graph.
         let mut stops: Vec<StopNode> = Vec::with_capacity(network.stops.len());
         let mut stop_index: HashMap<String, u32> = HashMap::with_capacity(network.stops.len());
         let mut coords: Vec<Option<(f64, f64)>> = Vec::with_capacity(network.stops.len());
@@ -260,15 +254,15 @@ impl RouterNetwork {
             stop_index.insert(stop_id.clone(), idx);
         }
 
-        // Group trips into patterns keyed by their stop sequence —
-        // the ACTUAL sequence (an edited trip that skips stops is its
-        // own pattern), resolved to stop indices.
+        // Group trips into patterns keyed by their actual stop sequence. An
+        // edited trip that skips stops is its own pattern. The sequence
+        // resolves to stop indices.
         let mut pattern_map: HashMap<Vec<u32>, Vec<PatternTrip>> = HashMap::new();
         for trip in day {
-            // What the live document says does not happen is not in
-            // the world planned over (D-73): a cancelled instance is
-            // gone, a skipped visit is not a stop of the trip — the
-            // trip runs as the pattern of the stops it still makes.
+            // What the live document says does not happen is not in the world
+            // planned over (D-73). A cancelled instance is gone. A skipped
+            // visit is not a stop of the trip. The trip runs as the pattern of
+            // the stops it still makes.
             let kept;
             let trip = match live {
                 Some(l) if trip.stop_times.iter().any(|st| !l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs)) => {
@@ -300,8 +294,8 @@ impl RouterNetwork {
             let route = network.routes.get(&trip.route);
             let route_name = route.map(|r| r.label().to_string()).unwrap_or_else(|| trip.route.clone());
             let route_long_name = route.and_then(|r| r.long_name.clone()).filter(|n| !n.is_empty());
-            // What the sign says at each visit — the shared rule,
-            // stored as runs (a trip's sign rarely changes).
+            // What the sign says at each visit, under the shared rule. Stored
+            // as runs, because a trip's sign rarely changes.
             let mut headsigns: Vec<(u32, String)> = Vec::new();
             for v in 0..trip.stop_times.len() {
                 let sign = transit_network::visit_destination(network, trip, v);
@@ -317,8 +311,8 @@ impl RouterNetwork {
                 .collect();
             let predicted = live.and_then(|l| live_times(trip, l));
             let times = predicted.as_deref().unwrap_or(&own);
-            // A visit's delay is how far its time moved — stated by
-            // the document (zero included), or carried by the clamp.
+            // A visit's delay is how far its time moved. The document states it
+            // (zero included), or the clamp carries it.
             let delays = match &predicted {
                 None => Vec::new(),
                 Some(p) => p

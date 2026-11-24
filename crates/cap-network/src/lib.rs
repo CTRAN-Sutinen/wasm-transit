@@ -29,41 +29,40 @@ use transit_network::Network;
 #[ts(export, export_to = "cap_network/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// The planner's bootstrap: read a loaded feed into an authored
-    /// network document — the agency's trips, by id, with their own
-    /// times. Deterministic; what the model cannot hold yet is
-    /// reported in the notes, never silent. The document registers
-    /// itself, and so does its boundary residue (what the feed's bytes
-    /// carry that the document does not): the response carries both
-    /// hashes so validate/export can chain without a reload.
+    /// The planner's bootstrap: read a loaded feed into an authored network
+    /// document. The document holds the agency's trips, by id, with their
+    /// own times. The import is deterministic. What the model cannot hold
+    /// yet is reported in the notes, never silent. The document registers
+    /// itself. Its boundary residue registers too. That residue is what the
+    /// feed's bytes carry that the document does not. The response carries
+    /// both hashes, so validate/export can chain without a reload.
     Import { feed_hash: String },
-    /// Every issue of a registered document — the authoring UI's
-    /// feedback loop, the whole list, never thrown.
+    /// Every issue of a registered document. This feeds the authoring UI's
+    /// loop. It returns the whole list and never throws.
     Validate { network_hash: String },
-    /// The publish path: write a registered document as a GTFS zip
-    /// (deterministic bytes) — numbered by `boundary_hash` when it
-    /// names the document's import's boundary (the feed round-trips),
-    /// 1..n otherwise. Returns the zip (base64) under the content hash
-    /// of those bytes — the same identity any other module returns for
-    /// the same bytes, so the host can assert the handoff. Invalid
-    /// documents are refused (validate first).
+    /// The publish path: write a registered document as a GTFS zip with
+    /// deterministic bytes. The numbering follows `boundary_hash` when it
+    /// names the document's import's boundary, so the feed round-trips.
+    /// Otherwise, the numbers run 1..n. The answer returns the zip (base64)
+    /// under the content hash of those bytes. Every module returns the same
+    /// identity for the same bytes, so the host can assert the handoff.
+    /// Invalid documents are refused. Validate first.
     Export {
         network_hash: String,
         #[serde(default)]
         #[ts(optional)]
         boundary_hash: Option<String>,
     },
-    /// A registered document's canonical bytes (its serialization, the
-    /// bytes its hash names) and its plan frame — what a host stores
-    /// when it persists a network it was sent in any serialization
-    /// (the server publishing a pick): the module is the hash
-    /// authority, the host stores exactly these bytes and never reads
-    /// them.
+    /// A registered document's canonical bytes and its plan frame. The bytes
+    /// are the serialization that its hash names. A host stores them when it
+    /// persists a network that it was sent in any serialization. For example,
+    /// the server publishes a pick this way. The module is the hash authority.
+    /// The host stores exactly these bytes and never reads them.
     Document { network_hash: String },
-    /// What refuses a registered network as a published pick: its
-    /// validation issues, and the warnings that refuse publication (a
-    /// pick that runs no service in its period, D-76). The remaining
-    /// warnings ride along and never refuse.
+    /// What refuses a registered network as a published pick. These are its
+    /// validation issues, and the warnings that refuse publication (a pick
+    /// that runs no service in its period, D-76). The remaining warnings
+    /// ride along and never refuse.
     Publishable { network_hash: String },
     /// A plan set a page stored, read back: its plans by store id, each
     /// as stored (the page reads each plan's own version on use). A set
@@ -80,12 +79,12 @@ pub enum Request {
 #[ts(export, export_to = "cap_network/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    /// `timezone`: the zone the network's dates are counted in (its
-    /// operators' one zone, absent when they name none or disagree) —
-    /// what a host needs to turn its clock into the agency's date.
+    /// `timezone`: the zone the network's dates are counted in. It is the
+    /// operators' one zone, absent when they name none or disagree. A host
+    /// needs it to turn its clock into the agency's date.
     /// `first_service_date`: the earliest date it runs service
-    /// ("YYYY-MM-DD"; absent when nothing runs) — the date the import
-    /// picks on (D-140).
+    /// ("YYYY-MM-DD"; absent when nothing runs). The import picks on this
+    /// date (D-140).
     Import {
         /// The network and its boundary as their canonical bytes
         /// exactly (RFC 8785, D-169): a host serves them under their
@@ -100,9 +99,9 @@ pub enum Response {
         timezone: Option<String>,
         first_service_date: Option<String>,
     },
-    /// `issues` gate (invalid documents never export); `warnings`
-    /// never gate — they name what validity lets through (trips with
-    /// no vehicle, a pick with no service in its period).
+    /// `issues` gate. Invalid documents never export. `warnings` never gate.
+    /// They name what validity lets through, such as trips with no vehicle,
+    /// or a pick with no service in its period.
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
     /// `timezone` as on import: the zone the pick's dates are counted in.
@@ -118,16 +117,16 @@ pub enum Response {
     },
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Import { feed_hash } => {
             let feed = kind::<transit_codec::Feed>().require(&feed_hash)?;
             let ImportOutcome { network, boundary, notes } = transit_codec::import(&feed);
-            // The documents register themselves: import's answer is
-            // immediately addressable for validate and export (and,
-            // in an assembly, for every capability that reads them).
+            // The documents register themselves. The import's answer is
+            // immediately addressable for validate and export. In an
+            // assembly, every capability that reads them can address it too.
             let (network_hash, _) = kind::<transit_network::Network>().register(network.clone())?;
             let (boundary_hash, _) = kind::<transit_codec::Boundary>().register(boundary.clone())?;
             let timezone = network.timezone().map(str::to_string);
@@ -187,22 +186,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with the monolith and every other
-/// capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
+/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The codec has no bulk op of its own (a feed's zip registers on the
-/// kernel's `load_feed`); the seam answers honestly instead of
-/// silently ignoring one.
+/// The codec has no bulk op of its own. A feed's zip registers on the
+/// kernel's `load_feed`. The seam answers with an error instead of silently
+/// ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the network codec has no bulk op of its own")))
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

@@ -1,4 +1,4 @@
-//! The kernel's load of a stops document (D-239): its line in the kind list
+//! The kernel loads a stops document (D-239). Its line in the kind list
 //! (`crates/cap-abi/src/kinds.rs`) names this impl.
 
 /// What `load_stops` answers: the hash, and how many stops the document holds.
@@ -8,9 +8,9 @@ pub struct StopsLoaded {
     pub stops: u32,
 }
 
-/// Stops documents (every stop a list of dated events, D-153), refused
-/// unless a write could store them, each refusal named, so a registered
-/// document is always one the model reads.
+/// Stops documents: every stop is a list of dated events (D-153). The load
+/// refuses a document that no write could store, and names each refusal.
+/// So a registered document is always one the model reads.
 impl transit_version::Load for crate::Stops {
     const ID: &'static str = "stops";
     const NAME: &'static str = "stops document";

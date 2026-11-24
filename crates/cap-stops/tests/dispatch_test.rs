@@ -1,11 +1,11 @@
-//! Native dispatch tests for the stops capability — the seam without
-//! wasm. The document's own laws (the stop on a date, served, each
+//! Native dispatch tests for the stops capability. They test the seam
+//! without wasm. The document's own laws (the stop on a date, served, each
 //! refusal, canonical bytes, what is not known kept) are tested at the
-//! library seam (transit-stops); here the module's contract is pinned:
-//! `validate` and the kernel's `load_stops` agree on one identity, a
-//! refused document is refused at both with its reasons named, the
-//! date questions answer over a registered document, and garbage is an
-//! honest error, never a panic.
+//! library seam (transit-stops). Here the module's contract is pinned:
+//! `validate` and the kernel's `load_stops` agree on one identity. A
+//! refused document is refused at both, with its reasons named. The date
+//! questions answer over a registered document. Garbage is an honest
+//! error, never a panic.
 
 use serde_json::{json, Value};
 
@@ -49,12 +49,13 @@ fn validate_and_the_load_agree_on_one_identity() {
     let hash = checked["document_hash"].as_str().unwrap();
     assert_eq!(cap_abi::content_hash(document.as_bytes()), hash, "the hash is the document's bytes'");
 
-    // the document a write stores is validate's answer, ids given
-    // (D-166); the load registers it under the same identity
+    // A write stores the document that validate answers, with ids given
+    // (D-166). The load registers it under the same identity.
     let answered: Value = serde_json::from_str(document).unwrap();
     let loaded = ok(json!({"op": "load_stops", "stops": answered}));
     assert_eq!(loaded, json!({"op": "load_stops", "stops_hash": hash, "stops": 2}));
-    // the bulk lane: the document's bytes, no envelope — the same answer
+    // The bulk lane takes the document's bytes, with no envelope. It gives
+    // the same answer.
     let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(<transit_stops::Stops as cap_abi::kernel::Load>::CODE, document.as_bytes())).unwrap();
     assert_eq!(bulk["ok"], loaded);
     // a writer's key order is not part of the identity
@@ -137,7 +138,8 @@ fn seed_begins_a_document_from_a_network() {
     let stops = &seeded["stops"]["stops"];
     assert_eq!(stops["A"].as_array().unwrap().len(), 1, "one in_service event per stop");
     assert!(stops["A"][0].get("on").is_none() && stops["A"][0]["event"] == "in_service");
-    // the seed is registered under its hash: load it again, same identity
+    // The seed is registered under its hash. Loading it again gives the
+    // same identity.
     assert_eq!(ok(json!({"op": "load_stops", "stops": seeded["stops"]}))["stops_hash"], seeded["stops_hash"]);
     assert!(err(json!({"op": "seed", "network_hash": "sha256:none"})).contains("load_network"));
 }
@@ -231,9 +233,9 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
         "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}));
     let read = ok(json!({"op": "read_records", "network_hash": network_hash, "stops_hash": renamed["stops_hash"], "on": "2026-10-05"}));
     assert_eq!(read["network"]["stops"]["A"]["name"], "A Street Station");
-    // a plan takes a stop the document holds (D-173): its record in the
-    // network's terms, as read_records gives it; a stop not there yet,
-    // or not held, is not answered
+    // A plan takes a stop that the document holds (D-173). The record is in
+    // the network's terms, as read_records gives it. A stop not there yet,
+    // or not held, is not answered.
     let planned = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "N1",
         "event": {"on": "2026-10-20", "event": "planned", "lat": 45.58, "lon": -122.348, "name": "Washougal TC", "code": "9906"}}));
     let taken = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "A", "Z"], "on": "2026-10-20"}));
@@ -244,9 +246,9 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
     assert!(taken["records"].get("Z").is_none());
     let early = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1"], "on": "2026-10-19"}));
     assert_eq!(early["records"], json!({}));
-    // a new route takes its stops: the plan's own are left, the rest are
-    // upsert_stop edits with the record, once each; a stop not answered
-    // refuses the take, naming it
+    // A new route takes its stops. The plan's own stops are left. The rest
+    // become upsert_stop edits with the record, once each. A stop not
+    // answered refuses the take, and the error names it.
     let take = ok(json!({"op": "take_stops", "network_hash": network_hash, "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "A", "N1"], "on": "2026-10-20"}));
     assert_eq!(take["edits"].as_array().unwrap().len(), 1);
     assert_eq!(take["edits"][0]["edit"], "upsert_stop");
@@ -260,11 +262,11 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
     assert!(err(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-12-01", "until": "2026-12-01"})).contains("until"));
 }
 
-/// GTFS out and in with the stops' history: a stop moved inside the
-/// export's dates is two stops sharing its code, the export read back
-/// adds no event (the round trip through a GTFS zip is transit-codec's
-/// law: the codec stays in its homes), and a feed's rename is an event
-/// on its first date.
+/// GTFS out and in with the stops' history. A stop moved inside the
+/// export's dates is two stops sharing its code. The export read back
+/// adds no event. (The round trip through a GTFS zip is transit-codec's
+/// law: the codec stays in its homes.) A feed's rename is an event on its
+/// first date.
 #[test]
 fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     let network_hash = sample_network()["network_hash"].clone();
@@ -280,8 +282,8 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(again["added"], json!([]), "{again}");
     assert_eq!(again["stops_hash"], moved["stops_hash"]);
 
-    // a feed (one with no history) whose stop A is renamed records the
-    // change on the feed's first date
+    // A feed with no history, whose stop A is renamed, records the change
+    // on the feed's first date.
     let mut renamed: transit_network::Network = serde_json::from_value(sample_network_value()).unwrap();
     renamed.stops.get_mut("A").unwrap().name = "A Street Station".into();
     let renamed_hash = ok(json!({"op": "load_network", "network": renamed}))["network_hash"].clone();
@@ -289,15 +291,16 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(changed["added"], json!([{"stop": "A", "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}]));
     assert_eq!(changed["on"], "2026-10-01");
 
-    // with no date, the feed's own first service date: the date a feed
-    // starts on is the feed's to say (cap-network import answers it too)
+    // With no date, the feed's own first service date is used. The feed
+    // states the date it starts on (cap-network import answers it too).
     let first = transit_network::first_service_date(&renamed).unwrap().to_string();
     let dated = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash}));
     assert_eq!(dated["on"], first);
     assert_eq!(dated["added"][0]["event"]["on"], first);
 
-    // a feed named on the import is named on every event it records, and
-    // found again by its id (D-150: the planner sees what the feed did)
+    // A feed named on the import is named on every event it records. The
+    // events are found again by its id (D-150: the planner sees what the
+    // feed did).
     let named = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "feed": "sha256:feed"}));
     assert_eq!(named["added"][0]["event"]["from_feed"], "sha256:feed");
     let shown = ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:feed"}));
@@ -305,9 +308,9 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:other"}))["events"], json!([]));
 }
 
-/// What a survey asks (D-158) is the library's: every core question in
-/// its order with its kind of answer, and the core amenity names — and
-/// an answer outside its kind is refused at add_event, named.
+/// What a survey asks (D-158) is the library's. It lists every core question
+/// in its order, with its kind of answer, and the core amenity names. An
+/// answer outside its kind is refused at add_event, and named.
 #[test]
 fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     let q = ok(json!({ "op": "questions" }));
@@ -334,8 +337,8 @@ fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     assert!(bad["stops_hash"].is_null());
 }
 
-/// The surveyor is the writer (D-158): a new survey names `by`, a held
-/// one keeps its own — the receive path's step before validate.
+/// The surveyor is the writer (D-158). A new survey names `by`. A held one
+/// keeps its own. This is the receive path's step before validate.
 #[test]
 fn attribute_surveys_names_the_writer() {
     let held = ok(json!({ "op": "load_stops", "stops": sample() }));
@@ -411,7 +414,7 @@ fn a_correction_of_an_event_changed_since_is_a_conflict() {
     let fix = json!({"on": "2027-05-04", "event": "permitted"});
     let fixed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "7001", "event_id": id, "event": fix, "saw": saw}));
     assert!(fixed.get("conflict").is_none() && fixed["stops"].is_object(), "{fixed}");
-    // Another writer's read: the event as it was before the fix.
+    // Another writer's read: the event as it stands before the fix.
     let stale = ok(json!({"op": "correct_event", "stops_hash": fixed["stops_hash"], "stop_id": "7001", "event_id": id, "event": fix, "saw": saw}));
     assert_eq!(stale["conflict"], json!(id));
     assert!(stale["stops"].is_null());

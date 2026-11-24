@@ -1,5 +1,5 @@
-//! The kernel's load of a boundary and a feed (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
+//! The kernel loads a boundary and a feed (D-239). Their lines in the kind
+//! list (`crates/cap-abi/src/kinds.rs`) name this impl.
 
 /// What `load_boundary` answers.
 #[derive(Debug, Clone, serde::Serialize)]

@@ -1,9 +1,10 @@
-//! Encode a small sample GTFS-rt feed to a file, so the demo page (and
-//! the node smoke test) have a `.pb` to work with. The vehicle's
-//! position is parameterized: the e2e suite re-encodes the feed with
-//! the bus slightly moved, to prove the bus popup follows its vehicle.
+//! Encode a small sample GTFS-rt feed to a file. The demo page and the
+//! node smoke test read this `.pb`. The vehicle's position is a parameter.
+//! The e2e suite re-encodes the feed with the bus slightly moved. This
+//! proves that the bus popup follows its vehicle.
 //!
-//! Usage: `cargo run -p transit-rt --example encode_sample [out.pb] [lat] [lon]`
+//! Usage:
+//! `cargo run -p transit-rt --example encode_sample [out.pb] [lat] [lon]`
 
 use prost::Message;
 use transit_rt::gtfs_rt::trip_update::{StopTimeEvent, StopTimeUpdate};

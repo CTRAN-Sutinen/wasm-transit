@@ -1,15 +1,15 @@
 //! The join the dispatcher actually asks for: one trip's remaining
-//! stops with the SCHEDULE, the live DELAY, and the PREDICTED time
-//! in one answer — plus the ranked "what's late right now" view.
+//! stops with the schedule, the live delay, and the predicted time
+//! in one answer, plus the ranked "what's late right now" view.
 //!
 //! This is the layer where realtime meets the network: rt gives
 //! delays, the network's trips give times, and no host should have
-//! to join them by hand. An rt trip id IS a model trip id; the
+//! to join them by hand. An rt trip id is a model trip id; the
 //! instance is the trip's start, or a frequency trip's rt start_time.
-//! The join is over the SEQUENCE: GTFS-rt's StopTimeUpdate carries
-//! the stop_sequence the published feed carries — the import's
-//! `Boundary` numbering, 1..n when it has none — so the rows pair
-//! without guessing; an update naming no sequence pairs by stop id.
+//! The join is over the sequence: GTFS-rt's StopTimeUpdate carries
+//! the stop_sequence the published feed carries (the import's `Boundary`
+//! numbering, 1..n when it has none), so the rows pair without guessing.
+//! An update naming no sequence pairs by stop id.
 
 use serde::Serialize;
 use transit_codec::Boundary;
@@ -19,7 +19,7 @@ use ts_rs::TS;
 use crate::overview::{RtOverview, TripUpdateView, VehicleView};
 
 /// One stop on a trip's progress: the schedule, the live delay, and
-/// the prediction (schedule + delay) — the three numbers a
+/// the prediction (schedule + delay): the three numbers a
 /// dispatcher reads off one row.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
@@ -34,7 +34,7 @@ pub struct ProgressStop {
     /// the first update.
     pub arrival_delay: Option<i32>,
     pub departure_delay: Option<i32>,
-    /// Schedule + delay, clamped at 0 — when this vehicle should
+    /// Schedule + delay, clamped at 0: when this vehicle should
     /// actually be here.
     pub predicted_arrival: Option<u32>,
     pub predicted_departure: Option<u32>,
@@ -53,7 +53,7 @@ pub struct TripProgress {
     pub start_secs: u32,
     pub route_id: Option<String>,
     pub block_id: Option<String>,
-    /// The worst delay across the trip's stops — the headline number.
+    /// The worst delay across the trip's stops: the headline number.
     pub worst_delay_secs: i32,
     pub stops: Vec<ProgressStop>,
 }
@@ -64,24 +64,24 @@ pub struct TripProgress {
 pub struct LateTrip {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
-    /// The trip's block in the network — the chain this delay lands
+    /// The trip's block in the network: the chain this delay lands
     /// in.
     pub block_id: Option<String>,
     /// The worst delay at any stop of the trip.
     pub worst_delay_secs: i32,
-    /// The located vehicle's internal id (VehicleDescriptor.id) —
+    /// The located vehicle's internal id (VehicleDescriptor.id):
     /// agencies that leave `label` empty (C-TRAN does) still name
     /// the bus here.
     pub vehicle_id: Option<String>,
     /// The user-visible bus number, when the located vehicle has one.
     pub vehicle_label: Option<String>,
-    /// DELAYED BUT DARK: a delay exists but no vehicle position
-    /// names this trip OR any trip of its block — the dispatcher
+    /// delayed but dark: a delay exists but no vehicle position
+    /// names this trip or any trip of its block. The dispatcher
     /// cannot see where the bus is.
     pub has_position: bool,
     /// The trip the located vehicle is actually running: this trip,
-    /// or another trip of the same block — a delay propagated to the
-    /// block's NEXT trip while the bus finishes the one before is a
+    /// or another trip of the same block. A delay propagated to the
+    /// block's next trip while the bus finishes the one before is a
     /// late bus, not a dark one.
     pub position_trip_id: Option<String>,
     pub lat: Option<f64>,
@@ -136,7 +136,7 @@ pub(crate) fn parse_time(text: &str) -> Option<u32> {
 }
 
 /// The trip instance an rt trip descriptor names: the network's trip
-/// by id, at its start — a frequency trip's at the descriptor's
+/// by id, at its start: a frequency trip's at the descriptor's
 /// start_time. `None` when the trip is unknown or the start is not
 /// one of its instances.
 pub fn resolve_instance(network: &Network, trip_id: &str, start_time: Option<&str>) -> Option<MaterializedTrip> {
@@ -218,7 +218,7 @@ fn block_of(network: &Network, trip: &str) -> Option<String> {
 /// live delay and the prediction. A trip the snapshot does not
 /// mention answers its schedule alone (delay-free) when it has one
 /// start. `None` when the trip is unknown, the update names no
-/// instance of it, or — a frequency trip with no update — no instance
+/// instance of it, or, for a frequency trip with no update, no instance
 /// is named at all.
 pub fn trip_progress(network: &Network, boundary: &Boundary, overview: &RtOverview, trip_id: &str) -> Option<TripProgress> {
     let quiet = TripUpdateView { trip_id: Some(trip_id.to_string()), route_id: None, start_time: None, start_date: None, canceled: false, stop_updates: vec![] };
@@ -230,12 +230,12 @@ pub fn trip_progress(network: &Network, boundary: &Boundary, overview: &RtOvervi
 /// The ranked "what's late right now" view: every trip whose worst
 /// stop delay reaches `min_delay_secs`, worst first, each carrying
 /// the vehicle's position when one names the trip (or, failing that,
-/// another trip of its block — the bus finishing the trip before) —
-/// and the DELAYED-BUT-DARK flag when none does.
+/// another trip of its block: the bus finishing the trip before). It
+/// sets the delayed-but-dark flag when none does.
 ///
 /// `positions` is the snapshot vehicles come from: agencies serve
-/// TripUpdates and VehiclePositions as SEPARATE feeds, so the
-/// delays and the positions are usually two snapshots — `None` means
+/// TripUpdates and VehiclePositions as separate feeds, so the
+/// delays and the positions are usually two snapshots. `None` means
 /// the delays snapshot carries its own positions (a combined feed).
 pub fn late_trips(
     network: &Network,
@@ -280,7 +280,7 @@ pub fn late_trips(
 
     let mut late: Vec<LateTrip> = Vec::new();
     for update in &delays.trips {
-        // A cancelled trip is not late — it does not run.
+        // A cancelled trip is not late: it does not run.
         let Some(trip_id) = update.trip_id.as_deref().filter(|_| !update.canceled) else { continue };
         let worst = update
             .stop_updates

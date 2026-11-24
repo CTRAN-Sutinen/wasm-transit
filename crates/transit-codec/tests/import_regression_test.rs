@@ -1,8 +1,8 @@
-//! Import regression tests: the shapes found importing REAL agency
-//! feeds (C-TRAN) that the import must handle — production trip ids
+//! Import regression tests: the shapes found importing real agency
+//! feeds (C-TRAN) that the import must handle: production trip ids
 //! that do not sort by start time, duplicated starts, per-trip
 //! run-time variation inside one pattern, impossible block chains,
-//! aspirational transfers — plus the rider-view and alignment checks
+//! aspirational transfers. Also the rider-view and alignment checks
 //! of the round trip. Every test builds its feed inline; import is
 //! the codec under test, so these live at the codec's own seam.
 
@@ -78,7 +78,7 @@ pub fn fixture_zip() -> Vec<u8> {
 /// time, a duplicated start, and per-trip run-time variation inside
 /// one pattern. These shapes are routine in real agency feeds (found
 /// importing C-TRAN) and the inference must still produce a valid
-/// document — "import is valid by construction" is the contract that
+/// document. "Import is valid by construction" is the contract that
 /// lets the planner edit a derived network immediately.
 pub fn production_zip() -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -95,7 +95,7 @@ pub fn production_zip() -> Vec<u8> {
         "stops.txt",
         "stop_id,stop_name,stop_lat,stop_lon\nA,Main & 1st,45.500,-73.500\nB,Main & 2nd,45.510,-73.510\nC,Main & 3rd,45.520,-73.520\n",
     );
-    // Lexical trip-id order is NOT start-time order (t1 < t3 < t5 <
+    // Lexical trip-id order is not start-time order (t1 < t3 < t5 <
     // t9), t1 and t3 duplicate the 08:00 start, and the pattern's
     // earliest trip (t9) runs 10 minutes slower than the rest.
     add(
@@ -131,15 +131,15 @@ pub fn import_production() -> transit_network::Network {
 #[test]
 fn import_infers_a_valid_document_from_a_feed() {
     let network = import(&fixture_zip()).network;
-    // The inference must produce a document the model accepts — that
-    // is the contract that lets the planner edit it immediately.
+    // The inference must produce a document the model accepts. That is
+    // the contract that lets the planner edit it immediately.
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
 
     // Fixture shape (see fixture_zip): 3 stops, 2 routes, four
-    // patterns — route 10's A·B with sh1 (t10) and without (t11),
+    // patterns: route 10's A·B with sh1 (t10) and without (t11),
     // its A·C·B (t30), route 20's A·B (t20); t12 is a single-stop
-    // trip, dropped and reported — every calendar the feed names (HOL
+    // trip, dropped and reported. Every calendar the feed names (HOL
     // served only t12), four pattern trips.
     assert_eq!(network.stops.len(), 3);
     assert_eq!(network.routes.len(), 2);
@@ -147,7 +147,7 @@ fn import_infers_a_valid_document_from_a_feed() {
     assert_eq!(network.service_types.keys().collect::<Vec<_>>(), ["HOL", "SUN", "WK"]);
     assert_eq!(network.pattern_trips.len(), 4);
 
-    // Route 10's shaped A→B pattern: t10 at 08:00 under WK — one
+    // Route 10's shaped A→B pattern: t10 at 08:00 under WK. One
     // pattern trips per (service, pattern).
     let svc = network.pattern_trips.get("WK:pat-10-0-1").expect("service id scheme");
     assert_eq!(ids(&network, "WK:pat-10-0-1"), ["t10"]);
@@ -177,7 +177,7 @@ fn import_infers_a_valid_document_from_a_feed() {
     assert_eq!(block.trips.iter().map(|r| r.trip.as_str()).collect::<Vec<_>>(), ["t10", "t20"]);
     // GTFS carries no layover data; the import infers each layover
     // from the observed end→start gap (t10 ends 08:10, t20 starts
-    // 08:20 — exactly feasible, the model's law holds with
+    // 08:20: exactly feasible, the model's law holds with
     // equality). The planner re-authors from there.
     assert_eq!(block.layovers.len(), 1, "the observed gap becomes the layover");
     assert_eq!(block.layovers[0].after_trip, 0);
@@ -187,10 +187,10 @@ fn import_infers_a_valid_document_from_a_feed() {
 #[test]
 fn an_authored_document_materializes_like_any_feed() {
     // A planner's authored document is a first-class feed: the shared
-    // network fixture (testdata/network.json — the manifest sample
+    // network fixture (testdata/network.json, the manifest sample
     // load reads the same file) expands and reparses with the
     // summary the feed line shows: 3 stops, 1 route, 3 trips,
-    // 9 stop_times — and the published zip reads back the same.
+    // 9 stop_times. The published zip reads back the same.
     let net: transit_network::Network =
         serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap();
     let feed = published(&net);
@@ -214,18 +214,17 @@ fn duplicate_starts_are_two_trips_in_start_order() {
 
 #[test]
 fn import_preserves_each_trips_own_run_time() {
-    // Regression (C-TRAN): the timing profile used to be collapsed
-    // to one runtime per stop sequence — the shortest member's —
-    // which planned boardings that did not exist in the feed (the
-    // real 105 trips ran 9–11 minutes past the modeled times). The
-    // run times are part of the pattern identity now: every trip
-    // materializes its own feed times, and connections that hold
-    // in the source feed hold in the model exactly.
+    // Regression (C-TRAN): the timing profile must not collapse to one
+    // runtime per stop sequence (the shortest member's). That plans
+    // boardings that do not exist in the feed. The real 105 trips ran
+    // 9–11 minutes past the modeled times. The run times are part of the
+    // pattern identity. Every trip materializes its own feed times, and
+    // connections that hold in the source feed hold in the model exactly.
     let network = import_production();
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
-    // t9's 30-minute run is its own, not a 20-minute trip (the old
-    // loss) and not the pattern profile.
+    // t9's 30-minute run is its own. It is not a 20-minute trip (the
+    // loss this test guards), and not the pattern profile.
     let end = |id: &str| {
         let (_, _, t) = network.trip(id).expect("kept");
         transit_network::trip_arrival_end_secs(t, t.departs.first_start().unwrap()).unwrap()
@@ -236,15 +235,15 @@ fn import_preserves_each_trips_own_run_time() {
     // (t1 arrives 08:20, t5 departs 08:22).
     let block = network.blocks.get("B1").expect("block B1 kept");
     assert_eq!(block.trips.iter().map(|r| r.trip.as_str()).collect::<Vec<_>>(), ["t9", "t1", "t5"]);
-    // The whole point: the document publishes.
+    // The document publishes.
     assert!(export(&network, &Boundary::default()).is_ok());
 }
 
-/// A feed outside the spec — an infeasible block chain (departs
-/// before the vehicle arrives), two trips of one block at the same
-/// second — imports as it is: nothing is dropped from a block, and
-/// validation names what one vehicle cannot run. A single-stop trip
-/// the model cannot hold is dropped and reported.
+/// A feed outside the spec: an infeasible block chain (departs before the
+/// vehicle arrives), two trips of one block at the same second. It imports
+/// as it is. Nothing is dropped from a block, and validation names what
+/// one vehicle cannot run. A single-stop trip the model cannot hold is
+/// dropped and reported.
 #[test]
 fn spec_invalid_blocks_import_as_they_are() {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -256,7 +255,7 @@ fn spec_invalid_blocks_import_as_they_are() {
     add(&mut w, "agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n");
     add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n10,1,10,3\n");
     add(&mut w, "stops.txt", "stop_id,stop_name,stop_lat,stop_lon\nA,Main & 1st,45.500,-73.500\nB,Main & 2nd,45.510,-73.510\n");
-    // t1/t2: block B1, t2 departs 08:05 while t1 arrives 08:30 —
+    // t1/t2: block B1, t2 departs 08:05 while t1 arrives 08:30. This is
     // genuinely infeasible source data. t3/t4: block B2, both at
     // 09:00. t5: block B3, alone. t6: a single-stop trip.
     add(&mut w, "trips.txt",
@@ -329,7 +328,7 @@ fn transfer_zip() -> Vec<u8> {
 #[test]
 fn import_flags_transfer_points_and_reports_unusable_ones() {
     let ImportOutcome { network, notes, .. } = import(&transfer_zip());
-    // The composed flags land; the aspirational ones do not — and are
+    // The composed flags land. The aspirational ones do not, and are
     // reported instead of silently ignored.
     assert!(network.stops["N1"].transfer, "two routes meet across the street");
     assert!(network.stops["N2"].transfer);
@@ -345,7 +344,7 @@ fn import_flags_transfer_points_and_reports_unusable_ones() {
     // And the flagged document still validates (import law).
     assert!(network.validate().is_ok(), "{:?}", transit_network::validation_issues(&network));
     // The analysis answers the composed question over the same
-    // fixture — pinned at the analysis crate's seam (regression
+    // fixture, pinned at the analysis crate's seam (regression
     // test: the walking group pools both routes and the day gives
     // route 10 → 20 a usable timed connection).
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
@@ -363,7 +362,7 @@ fn import_flags_transfer_points_and_reports_unusable_ones() {
 #[test]
 fn imported_network_preserves_the_service_view() {
     // What riders see at A on the Friday, read off the fixture by
-    // hand: t10 08:00 (10), t20 08:20 (20), t30 08:40 (10) — WK runs,
+    // hand: t10 08:00 (10), t20 08:20 (20), t30 08:40 (10). WK runs,
     // SUN does not, HOL's only trip starts at B. The import's day and
     // the published feed's re-import answer the same.
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
@@ -392,7 +391,7 @@ fn imported_network_preserves_the_service_view() {
 #[test]
 fn imported_alignment_survives_publishing() {
     // The alignment a pattern runs is the geometry the published feed
-    // draws, under the feed's own shape id — its trips reference it,
+    // draws, under the feed's own shape id. Its trips reference it,
     // so rider views after a planner publish follow the real line,
     // not stop chords. Patterns that run none publish no shape.
     let network = import(&fixture_zip()).network;

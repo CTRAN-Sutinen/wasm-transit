@@ -1,17 +1,17 @@
 //! Property-based tests (proptest) for the network model.
 //!
-//! Same discipline as `transit-codec/tests/spec_round_trip_test.rs`:
-//! laws that must hold for *every* network, with the expected answer recomputed
-//! **independently** from the generated input (no shared code with
-//! the implementation). Three flavors:
+//! Same discipline as `transit-codec/tests/spec_round_trip_test.rs`. The laws
+//! must hold for every network. Each expected answer is recomputed
+//! independently from the generated input, with no code shared with the
+//! implementation. There are three flavors:
 //!
 //! * round-trip laws (serde, canonical serialization);
-//! * oracle properties — which trips `materialize` runs on a date is
-//!   recomputed by a deliberately different expansion (count-derived
-//!   band expansion, brute-force calendar over `%u` weekdays); the
-//!   stop times a stored trip materializes are `trip_law_test.rs`'s;
-//! * structural invariants — generated networks validate clean,
-//!   single mutations always break validation.
+//! * oracle properties. Which trips `materialize` runs on a date is recomputed
+//!   by a deliberately different expansion (count-derived band expansion,
+//!   brute-force calendar over `%u` weekdays). The stop times a stored trip
+//!   materializes are checked in `trip_law_test.rs`.
+//! * structural invariants: generated networks validate clean, and single
+//!   mutations always break validation.
 
 use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
@@ -38,9 +38,9 @@ struct Spec {
     dayset: u32,        // preset index
     with_block: bool,
     with_exception: bool,
-    /// A parent station pin none of the patterns visits, with the
-    /// first `bays` stops as its children — the shape a transfer
-    /// center imports as (Fisher's Landing, its bays).
+        /// A parent station pin none of the patterns visits, with the first
+        /// `bays` stops as its children. This is the shape a transfer center
+        /// imports as (Fisher's Landing, its bays).
     station: bool,
     bays: u32,           // 1..3
 }
@@ -70,8 +70,8 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
         })
 }
 
-/// Day the exception date sits on — a mid-range Sunday that weekday
-/// presets don't run, so `Added` exceptions genuinely add service.
+/// The day the exception date sits on. It is a mid-range Sunday that weekday
+/// presets do not run, so `Added` exceptions add service.
 const EXCEPTION_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
 
 fn dayset(index: u32) -> WeekdaySet {
@@ -98,8 +98,8 @@ fn dayset(index: u32) -> WeekdaySet {
     }
 }
 
-/// Build a valid network from the spec. Valid **by construction**:
-/// every invariant is satisfied here, so `validate` must accept it.
+/// Build a valid network from the spec. It is valid by construction. Every
+/// invariant is satisfied here, so `validate` must accept it.
 fn build_network(spec: &Spec) -> Network {
     let mut net = Network { name: "Generated".into(), ..Default::default() };
     for i in 0..spec.n_stops {
@@ -113,8 +113,8 @@ fn build_network(spec: &Spec) -> Network {
             },
         );
     }
-    // The optional station pin: no pattern visits it, its bays
-    // carry the trips — the transfer-center shape.
+        // The optional station pin. No pattern visits it. Its bays carry the
+        // trips. This is the transfer-center shape.
     if spec.station {
         net.stops.insert(
             "STN".into(),
@@ -224,7 +224,7 @@ fn build_network(spec: &Spec) -> Network {
 
     if spec.with_block {
         // svc0's frequency trip, whole (GTFS: a block runs a trip
-        // whole) — only when one vehicle can run its instances back to
+        // whole), only when one vehicle can run its instances back to
         // back.
         let every = &net.pattern_trips["svc0"].trips[0];
         let run = every.times.last().and_then(|o| o.arrival_secs).unwrap();
@@ -270,7 +270,7 @@ fn net_strategy() -> impl Strategy<Value = Network> {
 // ---------------------------------------------------------------------
 
 /// Oracle calendar: ISO weekday via string formatting, exception
-/// scan, range check — deliberately different mechanics.
+/// scan, range check. The mechanics are deliberately different.
 fn oracle_runs_on(rule: &CalendarRule, date: NaiveDate) -> bool {
     let iso = date.format("%u").to_string();
     let flagged = match iso.as_str() {
@@ -334,18 +334,18 @@ fn oracle_day(net: &Network, date: NaiveDate) -> Vec<(String, u32)> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// Every generated network validates — validity by construction
+    /// Every generated network validates. Validity by construction
     /// is only meaningful if `validate` agrees.
     #[test]
     fn generated_networks_validate(net in net_strategy()) {
         prop_assert!(net.validate().is_ok(), "issues: {:?}", validation_issues(&net));
     }
 
-    /// The network on a map (`route_lines`): every route that draws a
-    /// line, in id order, with its name and color and the distinct
-    /// lines of its patterns — the same lines `entity_focus` frames
-    /// for the route. Given service types, only the patterns that run
-    /// trips under one of them draw, and a route with none is no row.
+        /// The network on a map (`route_lines`): every route that draws a line,
+        /// in id order. Each has its name, its color, and the distinct lines of
+        /// its patterns. These are the same lines `entity_focus` frames for the
+        /// route. Given service types, only the patterns that run trips under
+        /// one of them draw. A route with none is no row.
     #[test]
     fn route_lines_draw_what_focus_frames(net in net_strategy(), pick in proptest::collection::vec(any::<bool>(), 3)) {
         use std::collections::BTreeSet;
@@ -390,7 +390,7 @@ proptest! {
     /// The service keys (`service_keys`): every service type, in id
     /// order, with its name and its calendar rule as authored, the
     /// trips it runs (materialized, the count a day runs), and the
-    /// routes it carries — each with the pattern trips under the key
+    /// routes it carries. Each has the pattern trips under the key
     /// on that route and their trips. A route the key runs nothing on
     /// is no row; the routes' trips sum to the key's.
     #[test]
@@ -429,7 +429,7 @@ proptest! {
         prop_assert_eq!(back, net);
     }
 
-    /// Canonical serialization: identical bytes every time — the
+    /// Canonical serialization: identical bytes every time. This is the
     /// substrate per-entity sync and content addressing needs.
     #[test]
     fn serialization_is_deterministic(net in net_strategy()) {
@@ -438,8 +438,8 @@ proptest! {
         prop_assert_eq!(a, b);
     }
 
-    /// Oracle law: on every probed date — weekdays, weekends, the
-    /// exception date, and dates outside every range — materialization
+    /// Oracle law: on every probed date (weekdays, weekends, the
+    /// exception date, and dates outside every range), materialization
     /// runs exactly the stored trips of the services running that day.
     #[test]
     fn materialize_runs_the_days_trips(net in net_strategy()) {
@@ -503,8 +503,8 @@ proptest! {
         }
     }
 
-    /// Totality law: materialization never panics on *any* generated
-    /// network, valid or mutated — it returns Ok or Err.
+        /// Totality law: materialization never panics on any generated network,
+        /// valid or mutated. It returns Ok or Err.
     #[test]
     fn materialize_never_panics_on_broken_documents(net in net_strategy()) {
         let mut broken = net.clone();
@@ -521,13 +521,13 @@ proptest! {
         let _ = materialize(&broken, date);
     }
 
-    /// QAF-51 and QAF-66 (C-TRAN, Fisher's Landing): a stop's detail
-    /// answers the routes that serve IT — the board's rule (a stop
-    /// with service of its own never pools). A stop no pattern visits
-    /// (a station pin whose patterns visit only its bays) answers its
-    /// whole WALKING GROUP. The group is spelled out here from
-    /// `parent` fields (the oracle), never borrowed from the model's
-    /// own helper.
+        /// QAF-51 and QAF-66 (C-TRAN, Fisher's Landing): a stop's detail
+        /// answers the routes that serve that stop. This is the board's rule. A
+        /// stop with service of its own never pools. A stop that no pattern
+        /// visits (a station pin whose patterns visit only its bays) answers
+        /// for its whole walking group. The group is spelled out here from
+        /// `parent` fields (the oracle). It is never borrowed from the model's
+        /// own helper.
     #[test]
     fn stop_detail_answers_its_own_routes_or_its_walking_group(net in net_strategy()) {
         for id in net.stops.keys() {
@@ -568,14 +568,14 @@ proptest! {
         }
     }
 
-    /// The stop card (docs/units/ui-stops.md item 1): a stop's detail
-    /// carries its own record and EVERY pattern position that visits
-    /// it — never its walking group's — each with its route, its
-    /// direction, whether it ends the pattern, and the trips the
-    /// pattern runs under the members asked (every service type when
-    /// none are named; none under an empty set). Positions are
-    /// recomputed here by scanning every pattern; trips by the
-    /// oracle's own expansion.
+        /// The stop card (docs/units/ui-stops.md item 1): a stop's detail
+        /// carries its own record and every pattern position that visits it. It
+        /// never includes its walking group's positions. Each position has its
+        /// route, its direction, whether it ends the pattern, and the trips the
+        /// pattern runs under the members asked (every service type when none
+        /// are named; none under an empty set). Positions are recomputed here
+        /// by scanning every pattern. Trips come from the oracle's own
+        /// expansion.
     #[test]
     fn stop_detail_lists_every_visit_of_the_stop_itself(net in net_strategy()) {
         let all: Vec<String> = net.service_types.keys().cloned().collect();

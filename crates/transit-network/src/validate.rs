@@ -1,8 +1,8 @@
 //! Network invariants.
 //!
 //! `validation_issues` reports every problem a network document can
-//! carry — referential integrity, pattern/service/calendar/block
-//! structure — so an authoring UI can show the whole list at once.
+//! carry: referential integrity, pattern/service/calendar/block
+//! structure. An authoring UI can show the whole list at once.
 //! `validate` gates on the first. `Ok(())` is the contract
 //! `materialize` relies on: it cannot fail on a validated network.
 
@@ -32,9 +32,9 @@ pub struct RecoveryAt<'a> {
     pub terminal: &'a str,
 }
 
-/// The derived recovery floor (D-9): per terminal, the smallest
-/// authored layover waiting there — the recovery the network itself
-/// shows is enough at that stop. A layover waits at its `at`, else at
+/// The derived recovery floor (D-9): per terminal, the smallest authored
+/// layover waiting there. It is the recovery that the network itself shows
+/// is enough at that stop. A layover waits at its `at`. Otherwise it waits at
 /// the last stop of the trip before it.
 pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     let ends = trip_ends(network);
@@ -54,10 +54,10 @@ pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     floors
 }
 
-/// The recovery required after a trip (D-9), the one rule every
-/// reader applies: the policy's requirement when it has one (it
-/// wins); else, for a pair carrying an authored layover, the floor at
-/// the terminal; else none (the pair is judged for order only).
+/// The recovery required after a trip (D-9). Every reader applies this one
+/// rule. The policy's requirement wins when it has one. Otherwise, for a pair
+/// that carries an authored layover, it is the floor at the terminal.
+/// Otherwise there is none, and the pair is judged for order only.
 pub fn required_recovery(
     floors: &BTreeMap<String, u32>,
     policy: Option<u32>,
@@ -84,12 +84,11 @@ fn trip_ends(network: &Network) -> BTreeMap<&str, (&str, &str)> {
         .collect()
 }
 
-/// [`validation_issues`] with a work-rule policy's recovery
-/// requirement: `policy` answers the seconds required after a trip
-/// (and wins), or `None` where no rule applies — there the terminal's
-/// floor judges a pair carrying an authored layover, and a pair with
-/// none is judged for order only. With a requirement, every adjacent
-/// pair of distinct trips is judged.
+/// [`validation_issues`] with a work-rule policy's recovery requirement.
+/// `policy` answers the seconds required after a trip, and it wins. It answers
+/// `None` where no rule applies. Then the terminal's floor judges a pair that
+/// carries an authored layover. A pair with no layover is judged for order
+/// only. With a requirement, every adjacent pair of distinct trips is judged.
 pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -> Option<u32>) -> Vec<NetworkError> {
     let mut issues = Vec::new();
 
@@ -195,11 +194,11 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
     }
 
     // --- Transfer points ---------------------------------------------
-    // A transfer flag is composed intent: what matters is the routes
-    // meeting across the stop's WALKING GROUP (see [`walking_group`]
-    // — transfers happen across a street or down a block, not only
-    // at one pin). Fewer than two routes in the group means the
-    // flag is meaningless.
+        // A transfer flag is composed intent. What matters is the routes that
+        // meet across the stop's walking group (see [`walking_group`]).
+        // Transfers happen across a street or down a block, not only at one
+        // pin. Fewer than two routes in the group means the flag has no
+        // meaning.
     {
         let index = stop_route_index(network);
         for (stop_id, stop) in &network.stops {
@@ -316,11 +315,12 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         if !resolved {
             continue; // feasibility needs every trip
         }
-        // Feasibility, day by day: on each combination of service types
-        // that run together on some date, the block's trips running that
-        // day — every instance of a frequency trip — must follow one
-        // another in block order, each arriving before the next departs,
-        // with the layover between adjacent trips accounted for.
+                // Feasibility, day by day. On each combination of service types
+                // that run together on some date, the block's trips that run
+                // that day must follow one another in block order. This
+                // includes every instance of a frequency trip. Each trip
+                // arrives before the next departs. The layover between adjacent
+                // trips is counted.
         let types: BTreeSet<&str> = block.trips.iter().map(|t| index[t.trip.as_str()].0).collect();
         'days: for day in days.signatures(&types) {
             // (block index, trip, start, arrival) of the previous instance.
@@ -573,12 +573,11 @@ pub fn validate(network: &Network) -> Result<(), NetworkError> {
     network.validate()
 }
 
-/// The walking group of a stop: itself, its siblings sharing a
-/// parent, its children, and its parent. The places a rider at this
-/// stop can walk to for a connection — transfers happen across a
-/// street or down a block, not only at one pin. Parents are how
-/// GTFS models transfer centers; the walking group is the model's
-/// word for the same reality.
+/// The walking group of a stop: itself, its siblings sharing a parent, its
+/// children, and its parent. These are the places a rider at this stop can
+/// walk to for a connection. Transfers happen across a street or down a block,
+/// not only at one pin. GTFS models transfer centers with parents. The walking
+/// group is the model's word for the same reality.
 pub fn walking_group(network: &Network, stop_id: &str) -> BTreeMap<String, ()> {
     let mut group: BTreeMap<String, ()> = BTreeMap::new();
     let Some(stop) = network.stops.get(stop_id) else {

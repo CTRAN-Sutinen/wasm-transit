@@ -1,13 +1,14 @@
-//! What a rider is told about a compared plan — the one place the
-//! notice is computed.
+//! What a rider is told about a compared plan. This is the one place the notice
+//! is computed.
 //!
-//! A compared plan is the same query over two worlds: the day with
-//! the edits in force (active: diversions patched, cancelled trips
-//! out) and the unpatched day (baseline). The rider hears about ANY
-//! change the edits make to their trip: no trip at all, a later
-//! arrival (a cancelled trip's rider takes the next), or a ride on a diverted
-//! trip (a trip instance whose patched stop times differ from its
-//! unpatched instance) — not only when the active world has no trip.
+//! A compared plan is the same query over two worlds. One is the day with the
+//! edits in force (active: diversions patched, cancelled trips out). The other
+//! is the unpatched day (baseline). The rider hears about any change the edits
+//! make to their trip. That covers no trip at all, a later arrival (a cancelled
+//! trip's rider takes the next), or a ride on a diverted trip. A diverted trip
+//! is a trip instance whose patched stop times differ from its unpatched
+//! instance. The rider hears about these changes, not only when the active
+//! world has no trip.
 
 use std::collections::HashMap;
 

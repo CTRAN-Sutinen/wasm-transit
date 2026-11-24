@@ -177,7 +177,7 @@ fn fixture_validates_and_serializes_as_expected() {
 fn serialization_is_canonical_regardless_of_insertion_order() {
     let a = valid_network();
     // Same content, maps rebuilt in reverse insertion order: BTreeMap
-    // keying must produce byte-identical JSON — that is what makes
+    // keying must produce byte-identical JSON: that is what makes
     // the document mergeable and content-addressable later.
     let mut b = a.clone();
     b.stops = a.stops.iter().rev().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -396,7 +396,7 @@ fn rejects_broken_runcut() {
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].after_trip = 1;
     }), LayoverAfterLastTrip { .. }));
-    // Second trip departs before the first arrives (arrival 7:20) —
+    // Second trip departs before the first arrives (arrival 7:20).
     // a trip the schedule really runs, so feasibility is what fails.
     assert!(matches!(defect(|n| {
         n.pattern_trips.get_mut("5-weekday").unwrap().trips[1].departs = Departs::At { start_secs: 7 * 3600 + 60 };
@@ -464,7 +464,7 @@ fn a_block_runs_day_by_day() {
 
 #[test]
 fn materialization_is_total_on_invalid_networks() {
-    // No panics on documents that failed validation — the wasm seam
+    // No panics on documents that failed validation: the wasm seam
     // must never trap on hostile input.
     let mut net = valid_network();
     net.pattern_trips.get_mut("5-weekday").unwrap().trips[0].times.pop();
@@ -495,8 +495,8 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
         Err(NetworkError::TransferPointWithoutConnections { stop }) if stop == "B"
     ));
 
-    // A second route meeting across the street — a sibling stop
-    // sharing B's parent station — makes the flag compose: the
+    // A second route meeting across the street: a sibling stop
+    // sharing B's parent station makes the flag compose. The
     // walking group, not the pin, is the unit.
     let mut net = valid_network();
     net.stops.insert("STN".into(), transit_network::Stop {
@@ -586,7 +586,7 @@ fn warnings_name_what_validity_lets_through() {
 }
 
 /// D-76: a pick that runs no service in its period is refused
-/// publication — on its date every rider would load a network that
+/// publication: on its date every rider would load a network that
 /// runs nothing. Every other warning publishes; issues never do.
 #[test]
 fn a_pick_with_no_service_in_its_period_is_refused_publication() {

@@ -1,7 +1,7 @@
 //! Where a bus is going, as its sign says it: the visit's own
 //! headsign (GTFS stop_headsign overrides the trip's at that visit
-//! only), else the trip's headsign, else the final stop — named as
-//! the PLACE (its parent station), never the bay it pulls into.
+//! only), else the trip's headsign, else the final stop: named as
+//! the place (its parent station), never the bay it pulls into.
 
 use transit_network::{materialize, visit_destination, Network, Stop};
 

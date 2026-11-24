@@ -120,9 +120,9 @@ STE dictionary. Technical words and code names stay.
 ### Why: about 80% of ASD-STE100
 
 - **Holds:** the developer documents and the code comments follow the
-  rules above. New and changed text follows them now. Older text
-  changes when it is next edited, or in the plain-docs unit
-  (`docs/units/plain-docs.md`).
+  rules above. New and changed text follows them now. Older documents
+  change when they are next edited. The code comments change in one
+  sweep (`docs/units/plain-comments.md`).
 - **Because:** people read these documents as well as agents. The
   earlier style was difficult for a new developer to read. It had dash
   asides, words in capitals, aphorisms, and decision numbers inside
@@ -221,10 +221,10 @@ your report what you updated.
    outside the code: what it answers, the rules other code depends on,
    and why, in one line each with the decision id. It never restates
    a signature, a field list, or a walkthrough of a function, and it
-   names a law test rather than repeating it. Module and crate doc comments, the API notes in
-   law-test headers, and the web glue's comments. A comment that
-   describes a retired type, op, field, or address misleads the next
-   reader as much as a stale doc does.
+   names a law test rather than repeating it. Check the module doc
+   comments, the law-test headers, and the web glue's comments too. A
+   comment that describes a retired type, op, field, or address
+   misleads the next reader as much as a stale doc does.
 5. **The retired names.** Search the whole tree (`*.md`, `*.rs`, `*.ts`,
    `*.svelte`, `*.mjs`, and the justfile) for every name the change
    removed or renamed: crates, types, ops, fields, decision ids, and

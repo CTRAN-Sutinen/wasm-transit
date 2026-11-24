@@ -1,28 +1,16 @@
-//! When a stopped route next runs at a stop (D-42).
+//! When a stopped route next runs at a stop (D-42), over generated weekly
+//! service, calendar ends, and diversions that take the stop away on some
+//! dates.
 //!
-//! The intent, as the user decided it (D-42, 2026-11-05): when a route
-//! and destination has stopped for the day at a stop, the display says
-//! when service resumes ("Next: 5:12 am tomorrow", "Next: Monday").
-//! Look ahead day by day for up to a week, each day's in-force edits
-//! read and never the live feed; say nothing past a week. "A week
-//! sounds good to me."
-//!
-//! The laws, over generated weekly service, calendar ends, and
-//! diversions that take the stop away on some dates:
-//!
-//! 1. **A group with departures left today has no next.**
-//! 2. **A stopped group's next is the first later day that serves it**:
-//!    the earliest departure of that route to that destination from
-//!    the stop on the first of the next seven dates whose PATCHED day
-//!    (the edits in force that date) carries one — its date, how many
-//!    days ahead, the date's weekday, and the departure.
-//! 3. **Nothing past a week**: no such departure on any of the seven
-//!    dates, no next.
-//! 4. **Never the live feed**: the live document changes today's rows
-//!    only; a next is the same with or without it.
-//! 5. **Nothing already gone**: a later day's departure counts only if
-//!    it leaves at or after the moment asked (`from_secs`, which may
-//!    run past midnight into the next calendar day).
+//! 1. A group with departures left today has no next.
+//! 2. A stopped group's next is its earliest departure from the stop on the
+//!    first of the next seven dates whose patched day (the edits in force that
+//!    date) carries one, with its date, days ahead, weekday, and departure.
+//! 3. With no such departure on any of the seven dates, there is no next.
+//! 4. The live document changes today's rows only. A next is the same with or
+//!    without it.
+//! 5. A later day's departure counts only if it leaves at or after `from_secs`,
+//!    which may run past midnight into the next calendar day.
 
 use std::collections::BTreeMap;
 
@@ -176,8 +164,8 @@ fn edits(routes: &[GenRoute]) -> Vec<EditRecord> {
         .collect()
 }
 
-/// The oracle: route r's next departure from X after today, from the
-/// generated calendar alone — (days ahead, departure secs).
+/// The oracle: route r's next departure from X after today, from the generated
+/// calendar alone. The result is (days ahead, departure secs).
 fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
     for k in 1..=7u64 {
         let d = today().checked_add_days(Days::new(k)).unwrap();
@@ -195,8 +183,7 @@ fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
     None
 }
 
-/// Every trip cancelled live: today's rows go (D-73) — the next must
-/// not move.
+/// Every trip cancelled live: today's rows go (D-73). The next must not move.
 fn all_cancelled(net: &Network, day: &Day) -> LiveDay {
     let _ = net;
     LiveDay { kind: Default::default(), schema_version: Default::default(),
@@ -264,8 +251,8 @@ proptest! {
     }
 }
 
-/// The worked case: the last trip has left Friday night; the route
-/// runs weekdays only, so the next is Monday at 05:10.
+/// The worked case: the last trip has left Friday night. The route runs
+/// weekdays only, so the next is Monday at 05:10.
 #[test]
 fn a_weekday_route_stopped_on_friday_night_next_runs_monday() {
     let mut days = [false; 7];

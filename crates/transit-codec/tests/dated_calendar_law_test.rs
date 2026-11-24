@@ -1,34 +1,34 @@
 //! The dated-calendar laws (D-105): a feed may publish weekly service
-//! as dates alone — no weekday flagged in calendar.txt (or no row at
-//! all), and every day it runs an ADDED row in calendar_dates.txt, as
-//! C-TRAN does. The import reads the weekly rule out of those dates,
+//! as dates alone: no weekday flagged in calendar.txt (or no row at all),
+//! and every day it runs an added row in calendar_dates.txt, as C-TRAN
+//! does. The import reads the weekly rule out of those dates,
 //! so the model sees a weekday service as one (and the fork can carry
 //! it, D-41); the export writes the dates back as the feed had them.
 //!
-//! Written BEFORE the implementation, from the decision. The
+//! Written before the implementation, from the decision. The
 //! recognition threshold is D-111 (encoded provisionally):
 //!
-//! 1. **Exact** — whatever the import reads, the imported rule runs on
+//! 1. **Exact**: whatever the import reads, the imported rule runs on
 //!    exactly the feed's dates: no date gained, none lost.
-//! 2. **Recognition** (D-111) — over the span of the dates (first to
+//! 2. **Recognition** (D-111): over the span of the dates (first to
 //!    last), a weekday is part of the rule when the service runs on at
 //!    least 4 of them AND on at least three quarters of that weekday's
 //!    occurrences in the span. Fewer, and that weekday's dates stay
 //!    dated (added exceptions). No weekday qualifying: the service
 //!    stays dated, imported as the feed wrote it.
-//! 3. **The shape of the rule** — the qualifying weekdays as the flags,
-//!    one range from the first to the last date ON those weekdays (so a
-//!    closed period ends where its dates end), a REMOVED exception for
-//!    each of those weekdays in the range it does not run, an ADDED
+//! 3. **The shape of the rule**: the qualifying weekdays as the flags,
+//!    one range from the first to the last date on those weekdays (so a
+//!    closed period ends where its dates end), a removed exception for
+//!    each of those weekdays in the range it does not run, an added
 //!    exception for each date the flags and range do not cover (a
-//!    holiday running Sunday service) — and nothing else.
-//! 4. **Only dated service is read** — a service with a flagged
+//!    holiday running Sunday service). Nothing else.
+//! 4. **Only dated service is read**: a service with a flagged
 //!    calendar row, or any removed date, imports as the feed wrote it.
-//! 5. **Lossless** — export(import(feed)) writes calendar.txt and
+//! 5. **Lossless**: export(import(feed)) writes calendar.txt and
 //!    calendar_dates.txt back as the feed had them.
-//! 6. **The publisher's form after an edit** — a carried (extended)
+//! 6. **The publisher's form after an edit**: a carried (extended)
 //!    rule still exports as dates: the same calendar row, and every
-//!    date the rule now runs as an added date.
+//!    date the rule runs as an added date.
 
 use chrono::{Datelike, Duration, NaiveDate};
 use proptest::prelude::*;
@@ -217,7 +217,7 @@ proptest! {
 
     #[test]
     fn a_carried_rule_exports_in_the_publishers_form(svc in dated(), weeks in 1i64..10) {
-        // Only a service whose rule was read (a dated one that stays
+        // Only a service whose rule is read (a dated one that stays
         // dated has no rule to carry: no weekday is flagged).
         prop_assume!(expected_flags(&svc.dates).iter().any(|&b| b));
         let f = feed(std::slice::from_ref(&svc));

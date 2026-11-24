@@ -1,16 +1,16 @@
 //! The network document's version: its tag, and its migration chain.
 //!
 //! Every network document says what it is inside it (D-62, D-115):
-//! `"kind": "network"` and `"schema_version"`, first, so a copy
-//! anywhere — an export, a backup, a file another tool reads — names
-//! its kind and its version, and the hash covers both. A document
-//! with no `schema_version` is version 1: every shape written before
-//! the tag (pre-trip, pre-alignment, and the untagged current shape).
+//! `"kind": "network"` and `"schema_version"`, first. So a copy anywhere,
+//! such as an export, a backup, or a file another tool reads, names its kind
+//! and its version. The hash covers both. A document with no
+//! `schema_version` is version 1. That covers every shape written before the
+//! tag: pre-trip, pre-alignment, and the untagged current shape.
 //!
-//! The chain is kept forever (D-66): one pure step per version
-//! (`vN → vN+1`), total over valid vN, preserving every record id,
-//! reporting every loss as a [`MigrationNote`]. The migration
-//! capability wraps it; a consumer reads the current version only.
+//! The chain is kept forever (D-66). It has one pure step per version
+//! (`vN → vN+1`), total over valid vN, preserving every record id. It reports
+//! every loss as a [`MigrationNote`]. The migration capability wraps it. A
+//! consumer reads the current version only.
 //!
 //! - v1 → v2: the shapes v1 covers read into the current model
 //!   (`migrate.rs`), and the tag is added. Nothing is lost.
@@ -86,7 +86,7 @@ impl NetworkVersion {
     }
 }
 
-/// One loss a migration step applied to document data — reported,
+/// One loss a migration step applied to document data. It is reported,
 /// never silent (the import-notes convention, restated for
 /// migrations).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

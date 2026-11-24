@@ -1,23 +1,23 @@
-//! gen-assemblies — write the assembly crates (`assemblies/`): the
+//! gen-assemblies: write the assembly crates (`assemblies/`). The
 //! crates that emit a module's four exports over the capabilities it
 //! links (`cap_abi::assembly!`).
 //!
 //! Two kinds of module crate, both generated, never hand-edited:
 //!
-//! * `module-<cap>` — one capability alone, for every `crates/cap-*`:
+//! * `module-<cap>`: one capability alone, for every `crates/cap-*`:
 //!   what caps-run, agents, the registry's blobs, and the Go server run;
-//! * `module-ui-<id>` — one generated UI's capabilities linked into one
+//! * `module-ui-<id>`: one generated UI's capabilities linked into one
 //!   module (D-77), for every `web/src/uis/<id>/ui.json`: the
-//!   capabilities its `ops` name (`"<cap>.<op>"`), in id order — a
+//!   capabilities its `ops` name (`"<cap>.<op>"`), in id order. A
 //!   capability's bulk ops carry its index in that order.
 //!
 //! It also writes `gen-manifest`, the generator's binary: every
 //! capability with its worked examples, handed to the generator library
 //! (`common::generator_files`).
 //!
-//! `just caps` runs it before the build. The crates are GENERATED and
-//! gitignored (like the TS bindings): `assemblies/.gitkeep` keeps the
-//! directory so the workspace glob resolves in a fresh checkout.
+//! `just caps` runs it before the build. The crates are gitignored (like
+//! the TS bindings): `assemblies/.gitkeep` keeps the directory so the
+//! workspace glob resolves in a fresh checkout.
 
 use std::fs;
 use std::path::Path;

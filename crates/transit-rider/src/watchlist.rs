@@ -4,15 +4,15 @@
 //! Version 2, the one this build reads and writes, is
 //! `{"kind": "watchlist", "schema_version": 2, "stops": [{"id", "label"}]}`.
 //! Version 1 gave each stop a note and an optional color. Its step makes
-//! the note the label, and drops each color AND REPORTS it, never a
-//! silent loss. The chain is kept forever (D-66). cap-migrate wraps it,
+//! the note the label, and drops each color. It reports each drop, so
+//! no loss is silent. The chain is kept forever (D-66). cap-migrate wraps it,
 //! and the kernel registers the current version only
 //! (`cap_abi::kernel::WATCHLIST`).
 //!
-//! Before its tags, a copy named its version as `"version": "vN"`. Such
-//! a copy of v2 reads as v2 and writes tagged, as every kind's copy from
-//! before its tags reads as its version. A copy of v1 comes forward
-//! through the chain.
+//! A copy with no tags names its version as `"version": "vN"`. Such
+//! a copy of v2 reads as v2 and writes tagged. Every kind reads such a
+//! copy as the version it names. A copy of v1 comes forward through the
+//! chain.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -52,7 +52,7 @@ pub struct Watchlist {
     #[serde(default)]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<2>,
-    /// The version a copy from before the tags names (`"v2"`). Read,
+    /// The version a copy with no tags names (`"v2"`). Read,
     /// never written.
     #[serde(default, rename = "version", skip_serializing)]
     #[schemars(skip)]
@@ -115,8 +115,8 @@ pub struct MigrationNote {
 }
 
 /// The version a watchlist is in: its `schema_version`, else the
-/// version a copy from before the tags names (`"version": "vN"`), else
-/// 2. Every copy from before the tags named its version, so a copy with
+/// version a copy with no tags names (`"version": "vN"`), else 2. A copy
+/// with no tags names its version, so a copy with
 /// neither is the current one, as the type reads it. Not an object,
 /// another kind, or a version that is no number is an error.
 pub fn schema_version_of(doc: &Value) -> Result<u32, String> {

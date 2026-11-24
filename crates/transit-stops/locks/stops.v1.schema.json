@@ -2,7 +2,7 @@
   "$defs": {
     "Attachment": {
       "additionalProperties": true,
-      "description": "A photo or drawing a record carries (D-162): named by its content\nhash, never a URL — the deployment names the bucket, the server hands\nout the link, and only a signed-in person may read it.",
+      "description": "A photo or drawing a record carries (D-162). It is named by its content\nhash, never a URL. The deployment names the bucket. The server hands\nout the link. Only a signed-in person may read it.",
       "properties": {
         "caption": {
           "description": "What it shows, in a few words (\"approaching\", \"the cross street\").",
@@ -59,7 +59,7 @@
           "type": "array"
         },
         "code": {
-          "description": "The number riders see on the sign — the rider's identifier, not\nunique (D-151).",
+          "description": "The number that riders see on the sign. It is the rider's\nidentifier, not unique (D-151).",
           "type": [
             "string",
             "null"
@@ -163,7 +163,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "The stop and its parts in other systems (D-160): each system or\npart by name, its id there (`sign` — the Sign ID, `tms`, `hp`,\n`gis`, `shelter`, …). Kept and not checked.",
+          "description": "The stop and its parts in other systems (D-160): each system or\npart by name, its id there (`sign`, the Sign ID; `tms`, `hp`, `gis`,\n`shelter`, …). Kept and not checked.",
           "type": "object"
         },
         "replaces": {
@@ -175,7 +175,7 @@
           "x-references": "stop"
         },
         "request": {
-          "description": "The stop request this event carries out (D-159): its id in the\nstop requests document — a new stop built, a stop relocated or\nremoved. Not checked here: the requests are their own document.",
+          "description": "The stop request this event carries out (D-159), by its id in the\nstop requests document. The request is a new stop built, or a stop\nrelocated or removed. Not checked here: the requests are their own\ndocument.",
           "type": [
             "string",
             "null"
@@ -186,7 +186,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "The site as surveyed (D-158): each question's answer by name,\nabsent not recorded. The core questions ([`SITE`]) are C-TRAN's\nService Stop Worksheet's, each answer checked against its kind;\nthe agency's own questions are kept and not checked. What a\nsurvey says the agency's other data may contradict (D-161) — both\nare kept as given.",
+          "description": "The site as surveyed (D-158): each question's answer by name,\nabsent not recorded. The core questions ([`SITE`]) are C-TRAN's\nService Stop Worksheet's, each answer checked against its kind;\nthe agency's own questions are kept and not checked. What a\nsurvey says may contradict the agency's other data (D-161). Both\nare kept as given.",
           "type": "object"
         },
         "spoken_name": {

@@ -1,4 +1,4 @@
-//! The kernel's load of an rt snapshot (D-239): its line in the kind list
+//! The kernel's load of an rt snapshot (D-239). Its line in the kind list
 //! (`crates/cap-abi/src/kinds.rs`) names this impl.
 
 /// What `load_rt` answers.
@@ -8,9 +8,8 @@ pub struct RtLoaded {
 }
 
 /// Decoded GTFS-rt snapshots, by the hash of the payload. They are
-/// short-lived: an agency makes them again every poll, and a live answer
-/// reads at most three (trip updates, positions, alerts), so the last
-/// eight stay.
+/// short-lived. An agency makes them again every poll. A live answer reads
+/// at most three (trip updates, positions, alerts), so the last eight stay.
 impl transit_version::Load for crate::RtOverview {
     const ID: &'static str = "rt";
     const NAME: &'static str = "rt snapshot";

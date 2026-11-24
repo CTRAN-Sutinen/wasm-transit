@@ -79,7 +79,7 @@
         },
         "type": "array"
       },
-      "description": "Per alignment, the feed's shape_pt_sequence numbers — kept only\nwhere they are not 1..=n.",
+      "description": "Per alignment, the feed's shape_pt_sequence numbers, kept only\nwhere they are not 1..=n.",
       "type": "object"
     },
     "stop_sequences": {
@@ -91,7 +91,7 @@
         },
         "type": "array"
       },
-      "description": "Per trip, the feed's stop_sequence numbers — kept only where\nthey are not 1..=n.",
+      "description": "Per trip, the feed's stop_sequence numbers, kept only where\nthey are not 1..=n.",
       "type": "object"
     }
   },

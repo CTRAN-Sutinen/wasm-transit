@@ -1,34 +1,8 @@
-//! The previous service day's after-midnight trips
-//! (crates/cap-board/src/lib.rs). GTFS times past 24:00 belong to the service
-//! date the trip started on: at 00:30 on Saturday, Friday's 24:45
-//! departure leaves in 15 minutes. A board answers its date and, when
-//! the host gives the same instant on the previous date's clock
-//! (`Overnight`: that clock's seconds and the previous day's length,
-//! anchor to anchor — 25 h on the night the clocks go back), the
-//! previous date's departures still to leave.
-//!
-//! The laws:
-//!
-//! 1. **The previous day's after-midnight departures are on the
-//!    board** when they have not left, each on its own date's clock
-//!    (`departure_secs` past 86 400) and carrying its date; without
-//!    `previous` the board is its date alone.
-//! 2. **One order across both days**: rows by how long until each
-//!    leaves, the wait counted on each row's own clock.
-//! 3. **Live data joins by date**: a live trip stating the previous
-//!    date (GTFS-rt `start_date`) predicts, cancels, or skips the
-//!    previous day's instance; a live trip stating no date is the
-//!    current service day's (the spec's reading) and never touches
-//!    the previous day's.
-//! 4. **The previous day's edits are the previous day's**: a cancel on
-//!    the previous date takes its departure off the board and lists
-//!    it as skipped.
-//! 5. **The fall-back hour**: before a fall-back day's anchor the
-//!    instant precedes the date's clock; waits on that date count from
-//!    the true instant (previous seconds minus the previous day's
-//!    length), not from the clamped zero.
-//! 6. **A route only the previous day still runs has its group** on
-//!    the grouped board.
+//! A board also answers the previous service day's after-midnight departures
+//! (GTFS stop_times.txt, times past 24:00; crates/cap-board/OPS.md
+//! "stop_board", the `previous` input). At 00:30 on Saturday, Friday's 24:45
+//! departure leaves in 15 minutes. On the night the clocks go back, the
+//! previous day is 25 h long.
 
 use std::collections::BTreeMap;
 
@@ -48,9 +22,10 @@ fn date(s: &str) -> NaiveDate {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
 }
 
-/// Route r1 runs A → X → T every day (X is 600 s in): "late" starts at
-/// 24:35 (X at 24:45), "dawn" at 00:00 (X at 00:10), "early" at 00:40
-/// (X at 00:50). Route r2 runs Friday only: "owl" at 24:50 (X at 25:00).
+/// Route r1 runs A → X → T every day (X is 600 s in). "late" starts at 24:35 (X
+/// at 24:45). "dawn" starts at 00:00 (X at 00:10). "early" starts at 00:40 (X
+/// at 00:50).
+/// Route r2 runs Friday only: "owl" starts at 24:50 (X at 25:00).
 fn network() -> Network {
     let plain = |name: &str| Stop { name: name.into(), lat: 45.5, lon: -122.5, ..Default::default() };
     let stops: BTreeMap<String, Stop> =
@@ -126,7 +101,7 @@ fn live(trips: Vec<LiveTrip>) -> LiveDay {
     }
 }
 
-/// "late" (start 24:35) live: `delay` at X, or cancelled; on `date`.
+/// "late" (start 24:35) live: `delay` at X, or cancelled. On `date`.
 fn late_live(date: Option<&str>, delay: i32, canceled: bool) -> LiveTrip {
     LiveTrip {
         trip: "late".into(),
@@ -160,8 +135,8 @@ fn cancel_late_on(on: &str) -> EditRecord {
     }
 }
 
-/// Saturday's board over Friday's night: `prev_secs` on Friday's
-/// clock, Friday `length` seconds long.
+/// Saturday's board over Friday's night: `prev_secs` on Friday's clock, Friday
+/// `length` seconds long.
 fn ask<'a>(
     sat: &'a transit_dispatch::Day,
     fri: &'a transit_dispatch::Day,
@@ -188,6 +163,9 @@ fn rows(board: &transit_dispatch::StopBoard) -> Vec<(String, String, u32)> {
     board.rows.iter().map(|r| (r.departure.trip.clone(), r.departure.date.clone().unwrap(), r.departure.departure_secs)).collect()
 }
 
+/// The previous day's after-midnight departures that have not left are on the
+/// board, each on its own date's clock (`departure_secs` past 86 400) and
+/// carrying its date. Without `previous`, the board is its date alone.
 #[test]
 fn law1_the_previous_days_after_midnight_departures_are_on_the_board() {
     let net = network();
@@ -216,17 +194,20 @@ fn law1_the_previous_days_after_midnight_departures_are_on_the_board() {
     assert_eq!(alone.rows[0].departure.trip, "early");
 }
 
+/// A previous day departure that has left is not on the board.
 #[test]
 fn law1_a_previous_day_departure_that_has_left_is_not_on_the_board() {
     let net = network();
     let (sat, fri) = days(&net, &[]);
-    // 00:55 Saturday: Friday's 24:45 has left, its 25:00 has not.
+    // 00:55 Saturday: Friday's 24:45 has left. Its 25:00 has not.
     let board = stop_board_at(&net, &ask(&sat, &fri, 89_700, 86_400, 3_300), "X", 10, None);
     let r = rows(&board);
     assert!(!r.contains(&("late".into(), FRI.into(), 89_100)));
     assert_eq!(r[0], ("owl".into(), FRI.into(), 90_000));
 }
 
+/// Rows order by how long until each leaves, the wait counted on each row's
+/// own clock.
 #[test]
 fn law2_rows_order_by_the_wait_on_each_rows_own_clock() {
     let net = network();
@@ -237,6 +218,9 @@ fn law2_rows_order_by_the_wait_on_each_rows_own_clock() {
     assert_eq!(board.rows[2].wait, Wait::Minutes { minutes: 30 }, "Friday's 25:00");
 }
 
+/// A live trip stating the previous date (GTFS-rt `start_date`) predicts,
+/// cancels, or skips the previous day's instance. A live trip stating no date
+/// is the current service day's and never touches the previous day's.
 #[test]
 fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     let net = network();
@@ -252,8 +236,8 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     let row = friday_late(&board).expect("Friday's late is on the board");
     assert_eq!((row.expected_secs, row.delay_secs), (Some(89_220), Some(120)));
 
-    // Stating no date: the current service day's — Saturday's — never
-    // Friday's.
+    // Stating no date: the current service day's (Saturday's) trip. It never
+    // touches Friday's.
     let undated = live(vec![late_live(None, 120, false)]);
     let board = stop_board_at(&net, &at, "X", 10, Some(&undated));
     let row = friday_late(&board).expect("Friday's late is on the board");
@@ -261,7 +245,7 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     let saturday = board.rows.iter().find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(SAT)).unwrap();
     assert_eq!(saturday.delay_secs, Some(120), "it is Saturday's instance");
 
-    // A cancel stating Friday takes Friday's instance off (D-73); one
+    // A cancel stating Friday takes Friday's instance off (D-73). A cancel
     // stating no date does not.
     let board = stop_board_at(&net, &at, "X", 10, Some(&live(vec![late_live(Some(FRI), 0, true)])));
     assert!(friday_late(&board).is_none());
@@ -269,6 +253,8 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     assert!(friday_late(&board).is_some());
 }
 
+/// A cancel on the previous date takes its departure off the board and lists it
+/// as skipped.
 #[test]
 fn law4_the_previous_days_edits_are_the_previous_days() {
     let net = network();
@@ -281,14 +267,17 @@ fn law4_the_previous_days_edits_are_the_previous_days() {
     assert_eq!((skipped.departure.date.as_deref(), skipped.cancel.as_deref()), (Some(FRI), Some("cancel-late")));
 }
 
+/// Before a fall-back day's anchor the instant precedes the date's clock. Waits
+/// on that date count from the true instant (previous seconds minus the
+/// previous day's length), not from the clamped zero.
 #[test]
 fn law5_the_fall_back_hour_counts_waits_from_the_true_instant() {
     let net = network();
     let (sat, fri) = days(&net, &[]);
-    // The clocks go back at Saturday 02:00, so Friday is 25 h anchor to
-    // anchor and Saturday's anchor is 01:00 on the wall. At 00:30 on
-    // the wall, Friday's clock reads 24:30 and Saturday's -00:30 —
-    // clamped to 0 by the host.
+    // The clocks go back at Saturday 02:00. Friday is 25 h anchor to anchor,
+    // and Saturday's anchor is 01:00 on the wall.
+    // At 00:30 on the wall, Friday's clock reads 24:30. Saturday's clock reads
+    // -00:30, which the host clamps to 0.
     let board = stop_board_at(&net, &ask(&sat, &fri, 88_200, 90_000, 0), "X", 10, None);
     let dawn = board.rows.iter().find(|r| r.departure.trip == "dawn").expect("Saturday's 00:10 has not left");
     assert_eq!(dawn.wait, Wait::Minutes { minutes: 40 }, "00:10 on Saturday's clock is 40 minutes off, not 10");
@@ -296,6 +285,7 @@ fn law5_the_fall_back_hour_counts_waits_from_the_true_instant() {
     assert_eq!(board.rows[0].wait, Wait::Minutes { minutes: 15 });
 }
 
+/// A route only the previous day still runs has its group on the grouped board.
 #[test]
 fn law6_a_route_only_the_previous_day_runs_has_its_group() {
     let net = network();
@@ -308,8 +298,8 @@ fn law6_a_route_only_the_previous_day_runs_has_its_group() {
     let order: Vec<_> = r1.departures.iter().map(|r| (r.departure.trip.as_str(), r.departure.date.as_deref().unwrap())).collect();
     assert_eq!(order, [("late", FRI), ("early", SAT), ("late", SAT)]);
 
-    // Once Friday's night is done, the owl's group is gone from
-    // Saturday's board (Saturday does not run it).
+    // Once Friday's night is done, the owl's group is gone: Saturday does not
+    // run it.
     let later = grouped_board_at(&net, &ask(&sat, &fri, 100_000, 86_400, 13_600), "X", 3, None);
     assert!(later.groups.iter().all(|g| g.route != "r2"));
 }

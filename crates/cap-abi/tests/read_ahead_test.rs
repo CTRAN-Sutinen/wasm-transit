@@ -9,7 +9,7 @@
 //! - read-only: A reads it down, and refuses to write over it, naming
 //!   both versions.
 //!
-//! A version past the next, or an older one, is refused as before. The
+//! A version past the next, or an older one, is refused. The
 //! laws run over fixture kinds: no kind has a next version today.
 
 use cap_abi::{read_versioned, versioned, Base, Current, ReadAhead};

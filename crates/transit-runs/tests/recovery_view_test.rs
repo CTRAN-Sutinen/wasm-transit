@@ -1,7 +1,7 @@
 //! The recovery view: every wait between a block's adjacent
 //! trips on a day, its run before it, the recovery required there
 //! (D-9: the rules' requirement wins, else the terminal's floor), and
-//! the slack above it — folded per pattern into layover-to-runtime.
+//! the slack above it, folded per pattern into layover-to-runtime.
 //!
 //! The laws: a wait is short exactly when validation reports the
 //! layover infeasible under the same rules (one rule, two readers);

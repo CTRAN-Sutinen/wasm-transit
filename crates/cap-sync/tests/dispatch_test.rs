@@ -1,17 +1,16 @@
-//! Native dispatch tests for the sync capability — the seam without
-//! wasm, over the e2e fixture's edit-record shape. The laws (the
-//! merge's own laws are property-tested in transit-sync; here the
-//! seam pins them through the module):
+//! Native dispatch tests for the sync capability. These test the seam without
+//! wasm, over the e2e fixture's edit-record shape. The merge's own laws are
+//! property-tested in transit-sync. Here the seam pins them through the module:
 //!
-//! 1. the union of ids, sorted; LWW per record id — the newer
+//! 1. the union of ids, sorted. LWW per record id: the newer
 //!    `updated_at` wins, a tombstone propagates over a stale live
 //!    record;
 //! 2. drafts submit (rev bumped, the host clock stamped); records
 //!    already past draft pass through untouched;
-//! 3. the answer is byte-deterministic — the same pair merges to
+//! 3. the answer is byte-deterministic. The same pair merges to
 //!    the same document in any input order (client and server are
 //!    roles, not order);
-//! 4. garbage and bulk bytes are honest errors, never panics;
+//! 4. garbage and bulk bytes are errors, never panics;
 //! 5. the receive path clamps the client clock to `now_ms` (D-56),
 //!    and the answer carries the canonical document bytes plus their
 //!    hash, so a host stores exact bytes and never mints identity;
@@ -86,9 +85,9 @@ fn merges_lww_and_submits() {
 
 #[test]
 fn the_pair_is_order_insensitive_and_deterministic() {
-    // client and server are roles, not order: the same two documents
-    // converge to the same answer either way — the semilattice the
-    // library property-tests, pinned through the seam.
+    // client and server are roles, not order. The same two documents converge
+    // to the same answer either way. This is the semilattice that the library
+    // property-tests, pinned through the seam.
     let a = record("e1", EditStatus::Accepted, 2, 7);
     let mut b = record("e2", EditStatus::Draft, 1, 3);
 
@@ -107,8 +106,8 @@ fn the_pair_is_order_insensitive_and_deterministic() {
 
 #[test]
 fn empty_documents_converge_to_empty() {
-    // The server's first day: both sides empty, the answer is empty
-    // — the protocol's zero case (the Go round-trip pins the same).
+    // The server's first day: both sides empty, and the answer is empty. This
+    // is the protocol's zero case. The Go round-trip pins the same.
     assert!(synced(vec![], vec![], 0).is_empty());
 }
 
@@ -128,8 +127,8 @@ fn garbage_and_bulk_bytes_are_errors_not_panics() {
 
 #[test]
 fn sync_edits_clamps_the_client_clock() {
-    // D-56: a client whose clock runs fast cannot mint a record that
-    // beats every honest write — the receive path clamps to now_ms.
+    // D-56: a client whose clock runs fast cannot mint a record that beats
+    // every honest write. The receive path clamps to now_ms.
     let future = record("e1", EditStatus::Accepted, 5, 10_000);
     let mut tombstone = record("e1", EditStatus::Accepted, 3, 2);
     tombstone.status = EditStatus::Retired;

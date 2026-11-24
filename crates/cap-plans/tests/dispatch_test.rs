@@ -1,9 +1,8 @@
-//! Native dispatch tests for the plan-chain capability — the seam
-//! without wasm, over plan-set metadata. The chain's own laws
-//! (resolution, windows, validity, order-insensitivity) are tested
-//! at the library seam (transit-plans); here the module's contract
-//! is pinned: the tagged wire form round-trips, and garbage or
-//! bulk bytes are honest errors, never panics.
+//! Native dispatch tests for the plan-chain capability. These test the seam
+//! without wasm, over plan-set metadata. The chain's own laws (resolution,
+//! windows, validity, order-insensitivity) are tested at the library seam
+//! (transit-plans). This pins the module's contract. The tagged wire form
+//! round-trips. Garbage or bulk bytes are errors, never panics.
 
 use cap_abi::{Base, Current};
 use cap_plans::{dispatch, dispatch_bytes, dispatch_json, PlanInfo, Request, Response};
@@ -60,9 +59,9 @@ fn garbage_and_bulk_bytes_are_errors_not_panics() {
     assert!(ok.contains(r#""issues":[]"#), "{ok}");
 }
 
-/// Publishing through the seam: the module is the hash authority for
-/// the published plan set — its answer carries the canonical bytes and
-/// their hash, and a host stores exactly those (docs/FORMATS.md).
+/// Publishing through the seam. The module is the hash authority for the
+/// published plan set. Its answer carries the canonical bytes and their
+/// hash. A host stores exactly those bytes (docs/FORMATS.md).
 #[test]
 fn publish_answers_the_canonical_document_and_its_hash() {
     use cap_plans::PublishedPlans;
@@ -112,9 +111,9 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
 }
 
-/// Retiring through the seam (D-75): a future pick is retired and the
-/// answer is the next canonical set; a pick that took effect is refused
-/// with its reason. The host passes its date, as it does to publish.
+/// Retiring through the seam (D-75). A future pick is retired, and the answer
+/// is the next canonical set. A pick that took effect is refused, with its
+/// reason. The host passes its date, as it does to publish.
 #[test]
 fn retire_answers_the_next_set_or_why_not() {
     let h = format!("sha256:{}", "cd".repeat(32));
@@ -361,9 +360,9 @@ fn a_pick_that_does_not_publish_is_refused_with_its_issues_and_refusals() {
     assert!(got.get("entry").is_none() && got.get("made").is_none(), "{got}");
 }
 
-/// A pick frozen and adopted in one entry names the network for the host
-/// to store first: the canonical bytes the kernel registered, as the head
-/// of plan.<id>, the hash the adoption names.
+/// A pick frozen and adopted in one entry names the network for the host to
+/// store first. It gives the canonical bytes the kernel registered, as the
+/// head of plan.<id>. The adoption names their hash.
 #[test]
 fn a_pick_freezes_and_adopts_and_names_the_network_to_store_first() {
     let network_hash = registered_pick(fall_2026());
@@ -393,10 +392,10 @@ fn a_pick_brought_forward_pins_the_version_it_came_from() {
     assert_eq!(version["after"]["from_network_hash"], serde_json::json!(source), "{version}");
 }
 
-/// An adopted pick reads the stops document over its period (D-157): the
-/// stored network carries each stop's record on its first date, and the
-/// warnings name a stop not in service inside it. The same answer as
-/// cap-stops' `read_pick`, which calls the same library function.
+/// An adopted pick reads the stops document over its period (D-157). The
+/// stored network carries each stop's record on its first date. The warnings
+/// name a stop that is not in service inside the period. This gives the same
+/// answer as cap-stops' `read_pick`, which calls the same library function.
 #[test]
 fn an_adopted_pick_reads_the_stops_document() {
     let network_hash = registered_pick(fall_2026());

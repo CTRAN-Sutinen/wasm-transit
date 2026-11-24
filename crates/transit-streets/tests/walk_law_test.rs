@@ -7,8 +7,8 @@
 //! * **Walks follow the streets document**, whatever source filled it.
 //! * **The walking profile is strict**: a rider walks every class but
 //!   motorway, ramp, and unknown.
-//! * **A rider walks a one-way street both ways** — one-way is a
-//!   vehicle restriction — so every walk is symmetric.
+//! * **A rider walks a one-way street both ways.** One-way is a
+//!   vehicle restriction, so every walk is symmetric.
 //! * **A walk is the stop's walk to its street, the street distance,
 //!   and the walk from the street to the other stop**: each stop
 //!   snaps to the nearest walkable street (the graph's snap
@@ -25,8 +25,8 @@
 //!   long as the walk.
 //!
 //! The oracle rebuilds the walking graph from the document with its
-//! own code — its own snap (brute force over the snap neighborhood),
-//! its own Dijkstra — and shares nothing with the implementation.
+//! own code: its own snap (brute force over the snap neighborhood),
+//! its own Dijkstra. It shares nothing with the implementation.
 //! "The nearest street" does not choose between streets equally near
 //! (two overlapping lines that never join, as layers draw a path over
 //! a street): the oracle accepts the walk from any equally near
@@ -93,7 +93,7 @@ fn layer_bytes(lines: &[Line]) -> Vec<u8> {
     serde_json::to_vec(&json!({ "type": "FeatureCollection", "features": features })).unwrap()
 }
 
-/// Stops at fractional lattice positions — never exactly equidistant
+/// Stops at fractional lattice positions, never exactly equidistant
 /// from two streets, so the nearest street is one street.
 fn stops() -> impl Strategy<Value = Vec<(String, f64, f64)>> {
     vec((-1.0f64..7.0, -1.0f64..7.0), 1..=7).prop_map(|pts| {
@@ -165,8 +165,8 @@ impl Oracle {
         Oracle { segs, adj }
     }
 
-    /// The nearest walkable streets within the snap neighborhood —
-    /// every position equally near: (segment, t, distance in meters).
+    /// The nearest walkable streets within the snap neighborhood.
+    /// Every position is equally near: (segment, t, distance in meters).
     fn snap(&self, lat: f64, lon: f64) -> Vec<(usize, f64, f64)> {
         let (qx, qy) = ((lon / CELL).floor() as i64, (lat / CELL).floor() as i64);
         let m_lat = M_PER_DEG;
@@ -282,7 +282,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     /// Every walk is the oracle's: the right pairs, the right seconds,
-    /// none past the limit — on walkable streets only, both ways along
+    /// none past the limit, on walkable streets only, both ways along
     /// one-way streets.
     #[test]
     fn walks_match_the_oracle((doc, stops, speed, max) in case()) {

@@ -3,8 +3,8 @@
 //! and the locked schemas. It is checked in as `crates/cap-abi/kinds.json`
 //! and written beside the server's modules as `web/pkg/kinds.json`. It
 //! gives each kind the store keeps how it is written, the module that
-//! checks a write, the merge rule, the read class, the log records of
-//! its collection, its kernel load, and its references. The server's
+//! checks a write, the merge rule, the read class, its log record kinds,
+//! its kernel load, and its references. The server's
 //! receive path reads it, and refuses a kind with no entry. `store
 //! verify` and `store gc` read the copy the store keeps, to find a log
 //! record's schema (D-202).
@@ -82,7 +82,7 @@ pub struct KindEntry {
     /// The log that holds its records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<String>,
-    /// The log's record kinds of its collection.
+    /// The log's record kinds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub records: Vec<RecordEntry>,
     /// Its own write route, answered by its log's receive op.

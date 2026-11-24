@@ -1,28 +1,25 @@
 //! The capability manifest: the assembly itself. A deployment is a
-//! manifest; "ship capabilities to match the user" is a statement
-//! about this document.
+//! manifest.
 //!
-//! The types are the contract three things hang off — the browser's
-//! bus worker, the (future) Go assembler, and the registry tooling —
-//! so they live here, next to the ABI, with TS bindings generated
-//! into `types/cap_abi/`.
+//! The types are the contract the browser's bus worker, the (future) Go
+//! assembler, and the registry tooling hang off. They live here, next to
+//! the ABI, with TS bindings generated into `types/cap_abi/`.
 //!
 //! Two parts that only matter together:
 //!
-//! * **Compatibility** — `speaks` (which document versions a module
+//! * **Compatibility**: `speaks` (which document versions a module
 //!   understands directly) and `migrates` (which version steps it can
 //!   bridge). The assembler's version arithmetic is: local document at
 //!   version V, module speaking W, migration path V→…→W available →
-//!   migrate (immutably — the old bytes stay addressable), else the
-//!   module is unavailable FOR THAT DOCUMENT and the assembly
+//!   migrate (immutably; the old bytes stay addressable). Otherwise the
+//!   module is unavailable for that document, and the assembly
 //!   degrades per capability.
-//! * **Agent context** — `purpose` and `op_docs` are the discovery
-//!   surface for agents that assemble apps from a registry: what the
-//!   capability is FOR, what each op does, and a worked
-//!   request→response example per op (and, for an op whose argument
-//!   is a tagged vocabulary — cap-author `apply`'s edits — one worked
-//!   example per kind).
-//!   Context lives IN the manifest so it versions with the capability
+//! * **Agent context**: `purpose` and `op_docs` are the discovery
+//!   surface for agents that assemble apps from a registry. They say
+//!   what the capability is for, and what each op does. They give a
+//!   worked request→response example per op. For an op whose argument
+//!   is a tagged vocabulary (cap-author `apply`'s edits), they give one
+//!   worked example per kind. The context versions with the capability,
 //!   and its diff is reviewable like any other contract change.
 
 use std::collections::BTreeMap;
@@ -31,8 +28,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// The document-kernel version this build speaks. A module rejects a
-/// document whose version is not its own AT LOAD (the seam), never
-/// three layers deep in an op.
+/// document whose version is not its own at load (the seam), never
+/// deep in an op.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct CapManifest {
@@ -43,15 +40,15 @@ pub struct CapManifest {
     #[serde(default)]
     pub kernel_ops: Vec<KernelOp>,
     pub capabilities: Vec<Capability>,
-    /// The linked assemblies: per generated UI, ONE module linking the
-    /// capabilities it uses (D-77) — one kernel registry, so each
-    /// document registers once per page. Each capability above is also
-    /// built alone (its `url`), for runners, agents, and the server.
+    /// The linked assemblies: per generated UI, one module linking the
+    /// capabilities it uses (D-77), over one kernel registry. Each
+    /// capability above is also built alone (its `url`), for runners,
+    /// agents, and the server.
     #[serde(default)]
     pub assemblies: Vec<LinkedAssembly>,
 }
 
-/// One linked module: the capabilities it links (in index order — a
+/// One linked module: the capabilities it links (in index order: a
 /// capability's bulk op carries its index in the high 16 bits), and
 /// its exact bytes, pinned like a capability's.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -93,15 +90,14 @@ pub struct KernelOp {
 pub struct Capability {
     /// The identity screens declare needs by ("router", "gtfs", ...).
     pub id: String,
-    /// "sha256:<hex>" of the module bytes — integrity at the seam.
+    /// "sha256:<hex>" of the module bytes.
     pub hash: String,
-    /// Where the module bytes are served (hash-addressed, so the
-    /// HTTP cache holds each build forever).
+    /// Where the module bytes are served (hash-addressed).
     pub url: String,
-    /// Module size in bytes — the size budget watches this.
+    /// Module size in bytes. The size budget watches this.
     pub bytes: u64,
     /// The JSON ops this capability's dispatch answers (the kernel's
-    /// loads are not among them — they are `kernel_ops`).
+    /// loads are not among them. They are `kernel_ops`).
     pub ops: Vec<String>,
     /// The kernel document kinds it reads ("network", "edits", …): the
     /// kernel loads every module linking it answers.
@@ -132,9 +128,8 @@ pub struct MigrationSpec {
 }
 
 /// Agent-facing documentation for one op: what it does, plus a worked
-/// request→response pair an agent can pattern-match against. Examples
-/// are raw JSON, so the float_roundtrip workspace feature keeps them
-/// exact.
+/// request→response pair. Examples are raw JSON, so the float_roundtrip
+/// workspace feature keeps them exact.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct OpDoc {
@@ -142,7 +137,7 @@ pub struct OpDoc {
     pub example: Option<OpExample>,
     /// An op whose argument is a tagged vocabulary (cap-author
     /// `apply`'s edits): one worked example per kind, so every kind's
-    /// shape is readable here — not only in the generated types.
+    /// shape is readable here, not only in the generated types.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<KindExample>,
 }
@@ -157,7 +152,6 @@ pub struct KindExample {
     pub example: serde_json::Value,
 }
 
-/// A worked request→response pair.
 /// A capability's worked example of one op, as its crate gives it
 /// (its `examples` feature): the kernel loads to run first, each a JSON
 /// load request, and the op's request. The generator runs both through
@@ -178,7 +172,7 @@ pub struct Example {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct OpExample {
-    /// Raw JSON — the agent reads the shape, TS just sees `unknown`.
+    /// Raw JSON. The agent reads the shape; TS sees only `unknown`.
     #[ts(type = "unknown")]
     pub request: serde_json::Value,
     #[ts(type = "unknown")]

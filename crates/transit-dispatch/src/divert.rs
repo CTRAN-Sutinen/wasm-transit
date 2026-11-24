@@ -1,15 +1,14 @@
-//! Authoring a diversion: the editor's draft, answered over the
-//! NETWORK.
+//! Authoring a diversion: the editor's draft, answered over the network.
 //!
-//! A dispatcher builds a diversion in steps — a route, the pattern
-//! (the model's direction), two anchors, which interior stops the
-//! detour still serves, a traced path, added time, dates. The DRAFT
-//! is that form state, plain data the host holds; the VIEW is
-//! everything the editor shows about it (the route's patterns, the
-//! default pattern, each stop's role, the skips in effect, the
-//! alignment the detour is drawn against, the traced path and its
-//! length) and whether it is ready to become a record. The record
-//! itself is [`diversion_of`] — the same rule for every host.
+//! A dispatcher builds a diversion in steps: a route, the pattern (the model's
+//! direction), two anchors, the interior stops the detour still serves, a
+//! traced path, added time, and dates. The draft is that form state, plain data
+//! the host holds.
+//! The view is everything the editor shows about it: the route's patterns, the
+//! default pattern, each stop's role, the skips in effect, the alignment the
+//! detour is drawn against, the traced path and its length, and whether the
+//! draft is ready to become a record. The record itself is [`diversion_of`],
+//! the same rule for every host.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -17,14 +16,14 @@ use ts_rs::TS;
 use transit_network::{Coord, Network};
 use transit_sync::{DetourPoint, Diversion, EditRecord, EditStatus, TripCancel};
 
-/// The editor's form state. Every field but the route may be unset
-/// while the dispatcher works.
+/// The editor's form state. Every field but the route may be unset while the
+/// dispatcher works.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DiversionDraft {
     pub route_id: String,
-    /// The pattern anchored against; unset (or not the route's) means
-    /// the default — the route's longest pattern.
+    /// The pattern anchored against. If unset, or not the route's, the default
+    /// applies: the route's longest pattern.
     #[serde(default)]
     #[ts(optional)]
     pub pattern: Option<String>,
@@ -34,13 +33,12 @@ pub struct DiversionDraft {
     #[serde(default)]
     #[ts(optional)]
     pub last_kept_stop: Option<String>,
-    /// Interior stops the detour still SERVES. Every other stop between
-    /// the anchors is skipped — a detour usually bypasses them — so new
-    /// anchors never leave stale skips behind.
+    /// Interior stops the detour still serves. Every other stop between the
+    /// anchors is skipped. New anchors never leave stale skips behind.
     #[serde(default)]
     pub served_stops: Vec<String>,
-    /// The traced path, one slice per waypoint step (Undo removes a
-    /// whole step); flattened into the record's detour.
+    /// The traced path, one slice per waypoint step (undo removes a whole
+    /// step). The slices flatten into the record's detour.
     #[serde(default)]
     pub slices: Vec<Vec<DetourPoint>>,
     /// Extra running time, in the form's unit (minutes).
@@ -72,8 +70,8 @@ pub enum DraftStopRole {
     Outside,
 }
 
-/// One visit of the pattern (a loop visits a stop twice — `index` is
-/// the identity).
+/// One visit of the pattern. A loop visits a stop twice, so `index` is the
+/// identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DraftStop {
@@ -91,25 +89,25 @@ pub struct DraftStop {
 pub struct DraftView {
     /// The route's patterns, in the network's order.
     pub patterns: Vec<DraftPattern>,
-    /// The pattern in effect: the draft's when it is the route's, else
-    /// the longest (ties: the first).
+    /// The pattern in effect: the draft's pattern when it is the route's.
+    /// Otherwise the longest pattern. Ties go to the first.
     pub pattern: Option<String>,
     pub stops: Vec<DraftStop>,
     /// The skips the record would carry, in pattern order.
     pub skipped_stops: Vec<String>,
-    /// The pattern's alignment — its authored path, stop-to-stop when
-    /// none is authored: the line the detour is drawn against.
+    /// The pattern's alignment: its authored path, or stop-to-stop when none
+    /// is authored. The detour is drawn against this line.
     pub alignment: Vec<Coord>,
-    /// The traced path, flattened (consecutive duplicates dropped —
-    /// routing can return the previous endpoint).
+    /// The traced path, flattened. Consecutive duplicates are dropped
+    /// (routing can return the previous endpoint).
     pub detour: Vec<DetourPoint>,
     pub detour_length_m: f64,
-    /// Why the draft cannot become a record yet; empty = ready.
+    /// Why the draft cannot become a record yet. Empty means ready.
     pub problems: Vec<String>,
 }
 
-/// The view of a draft over the network. Total: a draft that names
-/// things the network lacks answers problems, never an error.
+/// The view of a draft over the network. It is total: a draft that names
+/// things the network lacks gets problems, not an error.
 pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
     let mut problems = Vec::new();
     let patterns: Vec<DraftPattern> = network
@@ -147,8 +145,8 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
         .unwrap_or_default();
     let first = draft.first_kept_stop.as_deref().filter(|s| !s.is_empty());
     let last = draft.last_kept_stop.as_deref().filter(|s| !s.is_empty());
-    // The anchors the patch will match: the first visit of the first
-    // anchor, the first visit of the last anchor after it.
+    // The anchors the patch matches: the first visit of the first anchor, and
+    // the first visit of the last anchor after it.
     let p0 = first.and_then(|f| visits.iter().position(|s| *s == f));
     let p1 = p0.zip(last).and_then(|(p0, l)| visits[p0 + 1..].iter().position(|s| *s == l).map(|i| i + p0 + 1));
     if pattern.is_some() {
@@ -182,8 +180,8 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
         .collect();
     let mut skipped_stops: Vec<String> = Vec::new();
     for s in stops.iter().filter(|s| s.skipped) {
-        // An anchor visited again inside the span is still an anchor:
-        // the record must never skip it.
+        // An anchor visited again inside the span is still an anchor.
+        // The record must never skip it.
         if !skipped_stops.contains(&s.stop_id) && Some(s.stop_id.as_str()) != first && Some(s.stop_id.as_str()) != last {
             skipped_stops.push(s.stop_id.clone());
         }
@@ -211,10 +209,11 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
     DraftView { patterns, pattern, stops, skipped_stops, alignment, detour, detour_length_m, problems }
 }
 
-/// The diversion a ready draft becomes: anchors, the skips in effect,
-/// the traced path (none below two points — skip only), the added
-/// time in seconds, the dates. `id` is the domain id the host mints
-/// (the record id is the sync envelope's). Errors name every problem.
+/// The diversion a ready draft becomes: the anchors, the skips in effect, the
+/// traced path, the added time in seconds, and the dates.
+/// The path is omitted below two points, which means skip only.
+/// `id` is the domain id the host mints. The record id is the sync envelope's.
+/// Errors name every problem.
 pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Result<Diversion, String> {
     let view = draft_view(network, draft);
     if !view.problems.is_empty() {
@@ -223,8 +222,8 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
     Ok(Diversion {
         id: id.to_string(),
         route_id: draft.route_id.clone(),
-        // The pattern owns the anchor truth; GTFS's direction_id is
-        // feed vocabulary the model never matches on.
+        // The pattern owns the anchor truth. GTFS's direction_id is feed
+        // vocabulary, and the model never matches on it.
         direction_id: None,
         first_kept_stop: draft.first_kept_stop.clone().unwrap_or_default(),
         last_kept_stop: draft.last_kept_stop.clone().unwrap_or_default(),
@@ -237,12 +236,11 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
     })
 }
 
-/// The trip cancel a dispatcher's pick becomes (D-45): the trip, one
-/// instance or all of them, on one service date. The trip must exist,
-/// a named instance must be one it runs, and its service type must run
-/// on the date — a cancel of a trip that does not run takes nothing
-/// away, so it is refused with the reason. `id` is the domain id the
-/// host mints.
+/// The trip cancel a dispatcher's pick becomes (D-45): the trip, one instance
+/// or all of them, on one service date. The trip must exist, a named instance
+/// must be one the trip runs, and the service type must run on the date. A
+/// cancel of a trip that does not run takes nothing away, so it is refused
+/// with the reason. `id` is the domain id the host mints.
 pub fn cancel_of(
     network: &Network,
     id: &str,
@@ -264,15 +262,15 @@ pub fn cancel_of(
     Ok(TripCancel { id: id.to_string(), trip_id: trip_id.to_string(), start_secs, date: on, extra: Default::default() })
 }
 
-/// One record of the edit document as the dispatcher's list shows it:
-/// ids resolved to the network's names (an id the network lacks shows
-/// as itself — the record's own validation report says why).
+/// One record of the edit document, as the dispatcher's list shows it.
+/// Ids resolve to the network's names; an id the network lacks shows as
+/// itself, and the record's own validation report gives the reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DiversionRow {
     pub record_id: String,
     pub status: EditStatus,
-    /// Retired is the tombstone: out of the working list.
+    /// Retired is the tombstone. A retired record is out of the working list.
     pub in_force: bool,
     pub route_name: String,
     pub first_kept_name: String,
@@ -284,8 +282,8 @@ pub struct DiversionRow {
     pub end_date: String,
 }
 
-/// The edit document's diversion rows, in document order (its cancels
-/// are [`cancel_rows`]).
+/// The edit document's diversion rows, in document order. Its cancels are in
+/// [`cancel_rows`].
 pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<DiversionRow> {
     records
         .iter()
@@ -308,20 +306,20 @@ pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<Diversio
         .collect()
 }
 
-/// One trip cancel of the edit document as the list shows it: the
-/// trip by its route and its ends, and when it would have left (an
-/// id the network lacks shows as itself — the record's validation
-/// report says why).
+/// One trip cancel of the edit document, as the list shows it: the trip by its
+/// route and its ends, and when it would have left.
+/// An id the network lacks shows as itself; the record's validation report
+/// gives the reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CancelRow {
     pub record_id: String,
     pub status: EditStatus,
-    /// Retired is the tombstone: out of the working list.
+    /// Retired is the tombstone. A retired record is out of the working list.
     pub in_force: bool,
     pub trip_id: String,
-    /// The instance cancelled: the one named, else the trip's only
-    /// start; `None` for every instance of a frequency trip.
+    /// The instance cancelled: the one named, else the trip's only start.
+    /// `None` means every instance of a frequency trip.
     pub start_secs: Option<u32>,
     pub route_name: String,
     /// The trip's first and last stops, by name.
@@ -370,8 +368,8 @@ fn parse_date(raw: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok()
 }
 
-/// Path length in meters: the one distance, summed over the legs
-/// (what the dispatcher reasons about for added time).
+/// Path length in meters: the one distance, summed over the legs. The
+/// dispatcher uses it for added time.
 fn path_length_m(points: &[DetourPoint]) -> f64 {
     points.windows(2).map(|w| transit_geo::distance_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon)).sum()
 }

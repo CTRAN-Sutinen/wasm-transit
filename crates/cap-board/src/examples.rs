@@ -1,6 +1,6 @@
-//! The board capability's worked examples (its `examples` feature): the
-//! documents to load and each request. The generator runs them through
-//! this crate's `invoke` and records the answers.
+//! The board capability's worked examples, under its `examples` feature.
+//! Each example gives the documents to load and a request. The generator
+//! runs them through this crate's `invoke` and records the answers.
 
 use cap_abi::manifest::Example;
 use serde_json::json;
@@ -26,8 +26,8 @@ pub fn examples() -> Vec<Example> {
             request: json!({ "op": "stop_board", "network_hash": net.network_hash, "stop_id": "A", "date": "2026-10-23",
                              "from_secs": 28860, "limit": 5, "live_hash": live_hash }),
         },
-        // Route 10 at stop A, and the station: the first reaches route
-        // 10's two departures at A, the second none at the station's bays.
+        // Route 10 at stop A, and the station. The first reaches route 10's
+        // two departures at A. The second reaches none at the station's bays.
         Example {
             bytes: None, kinds: vec![],
             op: "alert_reach",

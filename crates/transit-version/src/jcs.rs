@@ -19,17 +19,16 @@
 //!
 //! - an object whose keys arrive in order (a `BTreeMap`, most maps)
 //!   streams;
-//! - an object whose keys arrive out of order and that has few of them
-//!   (a struct) is serialized once for each key, in canonical order,
-//!   writing only that key's entry and skipping the rest without
-//!   visiting them;
+//! - an object whose keys arrive out of order, with few keys (a struct),
+//!   is serialized once for each key, in canonical order. Each pass writes
+//!   only that key's entry. It skips the rest without visiting them;
 //! - one with many keys out of order (rare) has its entries buffered and
 //!   written sorted.
 //!
-//! Which way an object takes is learned by writing it. Below the root
-//! and its fields, a value is staged in a small buffer, where an object
-//! is written whole as it arrives and taken back if a key comes out of
-//! order. The root and its fields hold the whole document, so their
+//! The writer learns which way an object takes by writing it. Below the
+//! root and its fields, a value is staged in a small buffer. There an
+//! object is written whole as it arrives. It is taken back if a key comes
+//! out of order. The root and its fields hold the whole document. So their
 //! keys are read first, by a pass that does not descend into the values.
 
 use std::fmt;
@@ -58,8 +57,8 @@ impl Error {
         Error(Some(Box::new(message.into())))
     }
 
-    /// The writer's own signal, never an answer: an object written
-    /// whole found a key out of order. It costs no allocation.
+    /// The writer's own signal, never an answer. An object written whole
+    /// found a key out of order. It costs no allocation.
     fn unsorted() -> Error {
         Error(None)
     }

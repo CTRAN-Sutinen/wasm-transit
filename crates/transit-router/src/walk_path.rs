@@ -1,7 +1,7 @@
-//! Where a walk leg runs: through the stops it passes, and along the
-//! streets where it walks from or to a place — the place's walk to
-//! its stop carries the path (cap-streets `access`), and a walk
-//! straight between two places runs the direct walk's path.
+//! Where a walk leg runs. It passes through the stops it visits. Where it walks
+//! from or to a place, it follows the streets. The place's walk to its stop
+//! carries the path (cap-streets `access`). A walk straight between two places
+//! runs the direct walk's path.
 
 use transit_network::{Coord, Network};
 use transit_streets::walking::DirectWalk;

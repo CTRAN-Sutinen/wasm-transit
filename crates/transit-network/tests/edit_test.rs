@@ -1,9 +1,9 @@
-//! The authoring laws — `apply_edits` over the committed planner
+//! The authoring laws: `apply_edits` over the committed planner
 //! network (testdata/network.json: stops A/B/C, route 10, one
 //! pattern, one weekday schedule, block 400 with a layover at C).
 //!
 //! 1. the input document is never mutated; no edits is identity;
-//! 2. a change is atomic — one edit that cannot apply rejects the
+//! 2. a change is atomic: one edit that cannot apply rejects the
 //!    whole list, naming its position;
 //! 3. removal refuses while anything references the entity, and
 //!    succeeds once the references are gone (no dangling documents);
@@ -106,7 +106,7 @@ fn upserts_are_the_planners_verbs() {
     assert_eq!(next.plan.id, "spring", "the pick frame is stamped");
     assert!(validation_issues(&next).is_empty());
 
-    // An upsert that drops a block's trip is APPLIED (a document
+    // An upsert that drops a block's trip is applied (a document
     // mid-edit may be invalid) and validation names the break.
     let mut stranded = net.pattern_trips["10-weekday"].clone();
     stranded.trips.remove(0);
@@ -130,7 +130,7 @@ fn a_retime_keeps_the_trip_and_its_runcut() {
     assert_eq!(moved.departs, Departs::At { start_secs: 29_100 });
     assert_eq!(next.blocks, net.blocks);
     assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
-    // Past the next trip's start, the block cannot run it — reported.
+    // Past the next trip's start, the block cannot run it: reported.
     let late = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 30_300 }]).unwrap();
     assert!(!validation_issues(&late).is_empty());
 

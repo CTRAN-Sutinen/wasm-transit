@@ -1,20 +1,20 @@
-//! Native dispatch tests for the diversion-authoring capability — the
-//! seam without wasm, over the committed planner network. The laws
+//! Native dispatch tests for the diversion-authoring capability. These test
+//! the seam without wasm, over the committed planner network. The laws
 //! (the draft and envelope semantics live in transit-dispatch's
 //! divert_test and transit-sync):
 //!
 //! 1. a draft answers its view, problems included, never an error;
-//! 2. propose → retire → restore walks the edit document's states,
-//!    the domain id stable across re-proposals;
+//! 2. propose → retire → restore walks the edit document's states.
+//!    The domain id stays stable across re-proposals;
 //! 3. an unready draft, an unknown record, an unknown hash, and
 //!    garbage are errors, never panics;
-//! 4. a trip cancel (D-45) walks the same envelope — cancel → list →
-//!    reports → retire — its domain id stable, and a trip that does
+//! 4. a trip cancel (D-45) walks the same envelope: cancel → list →
+//!    reports → retire. Its domain id stays stable. A trip that does
 //!    not run that day is refused;
 //! 5. every op takes the edit document whole and answers the next one,
-//!    tagged in the version this build reads: an older document is
-//!    refused naming the migration op, a newer one naming both
-//!    versions (docs/FORMATS.md, "Versions").
+//!    tagged in the version this build reads. An older document is
+//!    refused and names the migration op. A newer one is refused and
+//!    names both versions (docs/FORMATS.md, "Versions").
 
 use cap_abi::{Base, Current};
 use cap_divert::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
@@ -146,9 +146,9 @@ fn refusals_are_errors_never_panics() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op — parsed straight into
-    // the model, no request envelope — answers exactly what the JSON
-    // op answers; garbage bytes are an error outcome, never a trap.
+    // The bare document on the kernel's bulk op is parsed straight into the
+    // model, with no request envelope. It answers exactly what the JSON op
+    // answers. Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_divert::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -160,10 +160,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// What each record of an edit document amounts to on the network —
-/// the one answer (the loads report nothing): a valid record and the
-/// trips it touches, an invalid one REPORTED with what is wrong, never
-/// rejected, in document order.
+/// What each record of an edit document amounts to on the network. This is
+/// the one answer. The loads report nothing. A valid record reports the
+/// trips it touches. An invalid record is reported with what is wrong. It is
+/// never rejected. Records keep document order.
 #[test]
 fn reports_say_what_each_record_amounts_to_on_the_network() {
     let network_hash = load();

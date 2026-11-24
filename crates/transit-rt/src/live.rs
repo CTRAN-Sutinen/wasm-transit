@@ -1,7 +1,7 @@
 //! The boundary resolution: one rt moment (trip updates and/or
-//! vehicle positions) plus the network → THE live document in model
-//! vocabulary. An rt trip id IS a model trip id; each update resolves
-//! HERE, once, to the trip instance it names, and downstream readers
+//! vehicle positions) plus the network → the live document in model
+//! vocabulary. An rt trip id is a model trip id; each update resolves
+//! here, once, to the trip instance it names, and downstream readers
 //! key by (trip, start). Service alerts resolve here too: the ones in
 //! force at the snapshot's moment, their informed entities named as
 //! the network's routes, stops, and trip instances.
@@ -18,17 +18,17 @@ use crate::progress::{progress_of, resolve_instance};
 
 /// A descriptor's `start_date` ("YYYYMMDD") as the instance's service
 /// date ("YYYY-MM-DD"): `Ok(None)` when it states none (the current
-/// service day's), `Err` when it is unreadable — the descriptor then
+/// service day's), `Err` when it is unreadable, and the descriptor then
 /// names no instance.
 fn service_date(start_date: Option<&str>) -> Result<Option<String>, ()> {
     let Some(text) = start_date else { return Ok(None) };
     chrono::NaiveDate::parse_from_str(text, "%Y%m%d").map(|d| Some(d.format("%Y-%m-%d").to_string())).map_err(|_| ())
 }
 
-/// The worst delay an update states anywhere (arrival or departure)
-/// — `None` when it states none, and for a cancelled trip (it is not
-/// late: it does not run). A skipped stop states none. The same
-/// headline `late_trips` and `trip_progress` rank by.
+/// The worst delay an update states anywhere (arrival or departure). It
+/// is `None` when it states none, and for a cancelled trip (it is not
+/// late: it does not run). A skipped stop states none. The same headline
+/// `late_trips` and `trip_progress` rank by.
 fn stated_worst(update: &TripUpdateView) -> Option<i32> {
     if update.canceled {
         return None;
@@ -39,7 +39,7 @@ fn stated_worst(update: &TripUpdateView) -> Option<i32> {
 /// Resolve a snapshot. `delays` carries trip updates, `positions`
 /// vehicles, `alerts` service alerts; agencies that serve one combined
 /// feed pass it as `delays` and `None`s (its own vehicles and alerts
-/// are used — alerts are gathered from every snapshot given, one per
+/// are used. Alerts are gathered from every snapshot given, one per
 /// entity id). `boundary` is the published numbering the updates'
 /// stop_sequences use. Every status is classified under `window`,
 /// which the document records.

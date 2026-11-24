@@ -1,5 +1,5 @@
 //! The real-output gate's check (`generator::doc_check`), broken on
-//! deliberate fixtures: a gate that cannot fail proves nothing.
+//! fixtures: a gate that cannot fail proves nothing.
 
 use generator::doc_check::Locks;
 use serde_json::json;

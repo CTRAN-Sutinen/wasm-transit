@@ -1,30 +1,30 @@
-//! cap-abi — the kernel, and the capability-module ABI shell.
+//! cap-abi: the kernel, and the capability-module ABI shell.
 //!
 //! The capability-module ABI: four exports, zero imports, every host
 //! trivial. A capability differs in *which ops* its dispatch answers,
-//! never in how it is called — so the shell is a macro here instead of
-//! a copy per crate.
+//! never in how it is called. The shell is a macro here, not copied per
+//! crate.
 //!
 //! Protocol (the same contract every module speaks):
 //!
 //! * `transit_alloc(len) -> ptr`, `transit_free(ptr, len)`;
-//! * `transit_invoke(ptr, len) -> ptr` — JSON request in,
+//! * `transit_invoke(ptr, len) -> ptr`: JSON request in,
 //!   `[u32 LE len][{"ok": ...} | {"error": ...}]` out;
-//! * `transit_invoke_bytes(op, ptr, len) -> ptr` — the bulk-payload
-//!   form for bytes (a feed zip, an rt payload, a gzipped network — a
-//!   JSON array of numbers would be absurd).
+//! * `transit_invoke_bytes(op, ptr, len) -> ptr`: the bulk-payload
+//!   form for bytes (a feed zip, an rt payload, a gzipped network), not
+//!   a JSON array of numbers.
 //!
-//! A module is an ASSEMBLY of one or more capabilities over the
-//! kernel ([`kernel`]): the kernel owns the registries (one per
+//! A module is an assembly of one or more capabilities over the
+//! kernel ([`kernel`]). The kernel owns the registries (one per
 //! document kind) and the loads that fill them, and routes each call.
 //! A capability's own bulk ops number 0–255 (an assembly of several
-//! carries the capability's index in the high 16 bits); kernel ops
+//! carries the capability's index in the high 16 bits). Kernel ops
 //! number from 256 and mean the same thing in every module: the loads
 //! for the kinds its capabilities read (each kind's code is its
 //! library's, `transit_version::Load::CODE`), and the registry ops
 //! [`registry::OP_EVICT`] (257) and [`registry::OP_HELD`] (258).
 //!
-//! A capability crate REGISTERS — it never exports:
+//! A capability crate registers. It never exports:
 //!
 //! ```ignore
 //! // In the capability crate's lib.rs:
@@ -47,10 +47,9 @@
 //! The unsafe exports live here; a capability crate forbids `unsafe`.
 
 /// Declare a capability: `CAPABILITY` (what an assembly links), and
-/// its native seam — `invoke`, `invoke_bytes`, `registries` — the
-/// capability alone, exactly as its one-capability module answers
-/// (the kernel's loads included), for the crate's tests and native
-/// hosts.
+/// its native seam: `invoke`, `invoke_bytes`, `registries`. They answer
+/// exactly as its one-capability module does (the kernel's loads
+/// included), for the crate's tests and native hosts.
 ///
 /// `json` is `fn(&str) -> String`; `bytes` is `fn(u32, &[u8]) ->
 /// String` (the op code is the capability's own, 0–255, advertised in
@@ -133,8 +132,7 @@ macro_rules! __or {
 
 /// Emit the four-export flat ABI over the capabilities an assembly
 /// links (in index order: a capability's bulk ops carry its index in
-/// the high 16 bits). Used once per module, by a generated assembly
-/// crate.
+/// the high 16 bits). A generated assembly crate uses it once.
 #[macro_export]
 macro_rules! assembly {
     ($($cap:path),+ $(,)?) => {
@@ -205,7 +203,7 @@ macro_rules! assembly {
 
 // A document's identity and its versioned read live in transit-version,
 // so each kind's library reads and hashes its own kind (D-239). The
-// kernel and every capability reach them here, as before.
+// kernel and every capability reach them here.
 pub use transit_version::document::{
     canonical_bytes, canonical_hash, content_hash, is_gzip, noting_read, parse_document, parse_versioned, read_versioned,
     versioned, ReadAhead,
@@ -215,7 +213,7 @@ pub use transit_version::jcs;
 
 /// A record's identity in a log (D-190): the canonical hash of the
 /// record as stored. A record that does not serialize gets a name that
-/// never equals a hash. cap-log and every receive op name records by it.
+/// never equals a hash. cap-log and every receive op use it.
 pub fn record_hash(value: &serde_json::Value) -> String {
     canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
 }
@@ -254,7 +252,7 @@ impl<T> std::ops::Deref for Canonical<T> {
 /// A request field holding a document in the version this build
 /// reads, or the next one it reads ahead ([`versioned`]): another
 /// version fails the request, naming both (docs/FORMATS.md, "Versions").
-/// It is for a document an op reads. The base of an op that answers the
+/// It is for a document an op reads; the base of an op that answers the
 /// next document is a [`Base`]. Reads as the document (`Deref`); on the
 /// wire it is the document itself (`#[ts(as = "T")]` on the field).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -315,7 +313,7 @@ impl<T> std::ops::Deref for Base<T> {
 
 /// The version check every versioned kind's load makes: the document's
 /// version is the one this build reads, or the load is refused naming
-/// both — an older one with the capability op that migrates it, a
+/// both: an older one with the capability op that migrates it, a
 /// newer one as written by a newer build (refused, never rewritten).
 pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), String> {
     if found == reads {
@@ -325,10 +323,10 @@ pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), String> {
     }
 }
 
-/// The JSON lane every module answers: `{"op": ...}` in, the
-/// request decoded into the module's typed `Request` and answered by
-/// its `dispatch`, as [`outcome`] — `{"ok": ...}` / `{"error": ...}`,
-/// a total seam (an undecodable request is an error, never a panic).
+/// The JSON lane every module answers: `{"op": ...}` in, decoded into
+/// the module's typed `Request`, answered by its `dispatch` as
+/// [`outcome`]: `{"ok": ...}` / `{"error": ...}`. The seam is total: an
+/// undecodable request is an error, never a panic.
 pub fn answer<Q: serde::de::DeserializeOwned, A: serde::Serialize>(
     text: &str,
     dispatch: impl FnOnce(Q) -> Result<A, String>,
@@ -356,7 +354,7 @@ pub fn request_unknown_fields() -> Vec<String> {
 }
 
 /// The `{"ok": ..} | {"error": ..}` outcome every op answers,
-/// serialized directly: no intermediate `serde_json::Value` — which
+/// serialized directly: no intermediate `serde_json::Value`, which
 /// would hold a second copy of the answer, and in which a document
 /// carried as its canonical bytes ([`Canonical`]) would not cross as
 /// those bytes (docs/FORMATS.md).

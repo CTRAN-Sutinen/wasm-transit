@@ -1,18 +1,18 @@
 //! cap-plans: which service plan governs a date? (OPS.md has the ops.)
 //!
 //! The seam over transit-plans. The host owns the plan set and pushes its
-//! metadata on each call; the chain is derived on every answer, never
+//! metadata on each call. The chain is derived on every answer, never
 //! stored. The server's plans log holds the published plan set and the
-//! frozen versions (D-191), and `publish` answers canonical bytes the
-//! server stores as given.
+//! frozen versions (D-191). `publish` answers canonical bytes that the server
+//! stores as given.
 //!
-//! * `pick` is the server's whole write of a pick, in one op (D-237): the
-//!   network's publish check (as cap-network's `publishable`), the stops
-//!   it reads on its first date, the freeze, and the adoption. So this
-//!   module also links transit-network and transit-stops, and their
-//!   documents register on the kernel's loads.
-//! * `receive` writes the plans log whole (D-228). A publish is a freeze
-//!   and an adoption in one call.
+//! * `pick` is the server's whole write of a pick, in one op (D-237). It runs
+//!   the network's publish check (as cap-network's `publishable`), reads the
+//!   stops it uses on its first date, freezes the pick, and adopts it. So this
+//!   module also links transit-network and transit-stops, and their documents
+//!   register on the kernel's loads.
+//! * `receive` writes the plans log whole (D-228). A publish is a freeze and
+//!   an adoption in one call.
 //! * Ops that judge "today" take the host's date.
 
 #![forbid(unsafe_code)]
@@ -26,9 +26,9 @@ pub use transit_plans::{
     DevicePlan, FrozenVersion, FrozenVersions, PickStatus, PlanInfo, PlanIssue, PlanPeriod, PublishedPlan, PublishedPlans, TimelineRow,
 };
 
-/// The plans log's record kinds (D-191): a published pick, and the
-/// published plan set's own record; a frozen version, and the frozen
-/// versions' own record.
+/// The plans log's record kinds (D-191). A published pick is one, and the
+/// published plan set's own record is another. A frozen version is one, and
+/// the frozen versions' own record is another.
 pub const PICK_RECORD: &str = "pick";
 pub const PLANS_DOCUMENT: &str = "plans";
 pub const FROZEN_RECORD: &str = "frozen_version";
@@ -45,12 +45,12 @@ pub enum Request {
     /// Chain validity: unique plan ids, versioned plans
     /// effective-dated, effective dates unique.
     Validate { plans: Vec<PlanInfo> },
-    /// What a planning page lists (D-228): every plan on the device,
-    /// then each published pick it does not hold. A device plan is
+    /// What a planning page lists (D-228). It gives every plan on the device,
+    /// then each published pick the device does not hold. A device plan is
     /// published when its id is a published pick's, or when it is the
-    /// deployment's feed (`served`). The answer also gives the pick in
-    /// force on `today` and the chain's periods and issues over every
-    /// row with an id.
+    /// deployment's feed (`served`). The answer also gives the pick in force on
+    /// `today`. It gives the chain's periods and issues over every row with an
+    /// id.
     Timeline {
         plans: Vec<DevicePlan>,
         #[serde(default)]
@@ -58,17 +58,17 @@ pub enum Request {
         published: Option<Current<PublishedPlans>>,
         today: String,
     },
-    /// Every chain member's governing period — [effective_from,
-    /// until the next pick) — derived, sorted by pick date.
+    /// Every chain member's governing period, [effective_from, until the next
+    /// pick). Periods are derived and sorted by pick date.
     Periods { plans: Vec<PlanInfo> },
-    /// Publish a pick: the published plan set (`null` for the first
-    /// publish) with `plan` (re)placed by id, naming its network by
-    /// hash; republishing a retired pick restores it. `today` is the
-    /// host's date: a new, restored, or moved pick never lands before
-    /// it, a correction under its own date always publishes (D-76).
-    /// Answers the canonical document and its hash — the module is the
-    /// hash authority; a host stores exactly those bytes — or every
-    /// reason and no document.
+    /// Publish a pick: the published plan set (`null` for the first publish),
+    /// with `plan` (re)placed by id. The plan names its network by hash.
+    /// Republishing a retired pick restores it. `today` is the host's date. A
+    /// new, restored, or moved pick never lands before it. A correction under
+    /// its own date always publishes (D-76). The answer is the canonical
+    /// document and its hash. The module is the hash authority, and a host
+    /// stores exactly those bytes. Otherwise the answer gives every reason and
+    /// no document.
     Publish {
         #[ts(as = "Option<PublishedPlans>")]
         published: Option<Base<PublishedPlans>>,
@@ -76,36 +76,37 @@ pub enum Request {
         network_hash: String,
         today: String,
     },
-    /// Retire a pick that has not taken effect (D-75): it stays in the
-    /// set as the tombstone and never governs. Answers like publish.
+    /// Retire a pick that has not taken effect (D-75). It stays in the set as
+    /// the tombstone, and never governs. Answers like publish.
     Retire {
         #[ts(as = "PublishedPlans")]
         published: Base<PublishedPlans>,
         id: String,
         today: String,
     },
-    /// The published pick in force on `date` and its network hash —
-    /// how a client chooses which network to load. Null before the
-    /// first pick takes effect.
+    /// The published pick in force on `date`, and its network hash. A client
+    /// uses this to choose which network to load. Null before the first pick
+    /// takes effect.
     InForce {
         #[ts(as = "PublishedPlans")]
         published: Current<PublishedPlans>,
         date: String,
     },
-    /// The picks in use on `today`, the host's date: the pick in force,
-    /// then every published pick still to come. The server brings their
-    /// networks forward at startup. A pick that stopped governing, or a
-    /// retired one, stays in its version.
+    /// The picks in use on `today`, the host's date. It gives the pick in
+    /// force, then every published pick still to come. The server brings their
+    /// networks forward at startup. A pick that stopped governing, or a retired
+    /// one, stays in its version.
     InUse {
         #[ts(as = "PublishedPlans")]
         published: Current<PublishedPlans>,
         today: String,
     },
-    /// Freeze a version (D-191): the frozen versions (`null` for the
-    /// first freeze) with the network of `plan` by `network_hash`, and
-    /// what it is (`purpose`: "proposal for public comment"). A freeze
-    /// puts nothing in force. Answers the canonical document, its hash,
-    /// and its records for the plans log, or every reason and none.
+    /// Freeze a version (D-191). The frozen versions (`null` for the first
+    /// freeze) gain the network of `plan`, named by `network_hash`. `purpose`
+    /// says what it is, such as "proposal for public comment". A freeze puts
+    /// nothing in force. Answers the canonical document, its hash, and its
+    /// records for the plans log. Otherwise it answers every reason, and no
+    /// document.
     Freeze {
         #[ts(as = "Option<FrozenVersions>")]
         frozen: Option<Base<FrozenVersions>>,
@@ -113,11 +114,10 @@ pub enum Request {
         network_hash: String,
         purpose: String,
     },
-    /// Adopt a frozen version (D-191): the published set (`null` for the
-    /// first) with the version's pick placed under its own frame, as
-    /// publish places it, naming `stops_seq`, the stops log entry the
-    /// adoption read. Refused when no frozen version has `network_hash`.
-    /// Answers like publish.
+    /// Adopt a frozen version (D-191). The published set (`null` for the first)
+    /// gains the version's pick, placed under its own frame as publish places
+    /// it. `stops_seq` names the stops log entry that the adoption read. It is
+    /// refused when no frozen version has `network_hash`. Answers like publish.
     Adopt {
         #[ts(as = "Option<PublishedPlans>")]
         published: Option<Base<PublishedPlans>>,
@@ -129,8 +129,8 @@ pub enum Request {
         #[ts(optional)]
         stops_seq: Option<u64>,
     },
-    /// The plans log's records of a published set and of the frozen
-    /// versions, as the log capability's `compose` takes them: each
+    /// The plans log's records of a published set and of the frozen versions.
+    /// They are shaped as the log capability's `compose` takes them: each
     /// collection's records, and each document's own record.
     LogRecords {
         #[serde(default)]
@@ -140,39 +140,38 @@ pub enum Request {
         #[ts(optional, as = "Option<FrozenVersions>")]
         frozen: Option<Base<FrozenVersions>>,
     },
-    /// A write to the plans log, whole (D-228): each op over the
-    /// documents at the head, given inline by store kind (`plans`,
-    /// `frozen_versions`; absent: none), then the entry that records
-    /// what changed. The ops (cap `plans`): `freeze` (`{plan,
-    /// network_hash, purpose}`), `adopt` (`{network_hash, today,
-    /// stops_seq}`), `retire` (`{id, today}`), `pick`, and `migrate`:
-    /// each pick of the published set frozen as "published before the
-    /// plans log", and both documents recorded (an empty log's first
-    /// entry, from the old pointer). `today` is the agency's date, which
-    /// the host's clock gives. A refused op answers its issues, and an
-    /// op that does not run answers why (`failed`): no entry either way.
+    /// A write to the plans log, whole (D-228). Each op runs over the documents
+    /// at the head. The host gives them inline by store kind (`plans`,
+    /// `frozen_versions`; absent means none). The entry then records what
+    /// changed. The ops (cap `plans`) are: `freeze` (`{plan, network_hash,
+    /// purpose}`), `adopt` (`{network_hash, today, stops_seq}`), `retire`
+    /// (`{id, today}`), `pick`, and `migrate`. `migrate` freezes each pick of
+    /// the published set as "published before the plans log". It records both
+    /// documents. An empty log's first entry comes from the old pointer.
+    /// `today`
+    /// is the agency's date, which the host's clock gives. A refused op answers
+    /// its issues. An op that does not run answers why (`failed`). Neither case
+    /// writes an entry.
     ///
     /// `pick` (`{purpose?, from_network_hash?, adopt, today, stops_seq?}`,
-    /// D-237) writes the
-    /// network the host registered (`loaded.network_hash`) as a pick:
-    /// refused with `{issues, refusals}` when it does not publish; its
-    /// stop records read from the stops document on its first date
-    /// (`loaded.stops_hash`, when adopted); frozen under `purpose`,
-    /// naming the version it was brought forward from
-    /// (`from_network_hash`, a migration's), and put in force when
-    /// `adopt`. The answer's `made` is the network
-    /// for the host to store as the head of `plan.<id>` before the
-    /// entry, and its `answer` is `{plan_id, network_hash, timezone,
-    /// warnings, stop_warnings}`. A plan issue is refused as
-    /// `{issues}`.
+    /// D-237) writes the network the host registered (`loaded.network_hash`)
+    /// as a pick.
+    /// It is refused with `{issues, refusals}` when the network does not
+    /// publish. Its stop records are read from the stops document on its first
+    /// date (`loaded.stops_hash`, when adopted). It is frozen under `purpose`.
+    /// It names the version it was brought forward from (`from_network_hash`, a
+    /// migration's). It is put in force when `adopt`. The answer's `made` is
+    /// the network for the host to store as the head of `plan.<id>` before the
+    /// entry. Its `answer` is `{plan_id, network_hash, timezone, warnings,
+    /// stop_warnings}`. A plan issue is refused as `{issues}`.
     Receive {
         #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
         write: transit_log::Write,
         #[serde(default)]
         #[ts(type = "Record<string, unknown>")]
         documents: std::collections::BTreeMap<String, serde_json::Value>,
-        /// The hashes of the documents the host registered on the
-        /// kernel's loads before the write, by the load's answer field
+        /// The hashes of the documents the host registered on the kernel's
+        /// loads before the write. They are keyed by the load's answer field
         /// (`network_hash`, `stops_hash`).
         #[serde(default)]
         #[ts(type = "Record<string, string>")]
@@ -180,10 +179,10 @@ pub enum Request {
         #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
         ops: Vec<transit_log::OpCall>,
     },
-    /// A document assembled from the plans log's records of its kind
-    /// (`plans` from `pick` records, `frozen_versions` from
-    /// `frozen_version` records), answered as its canonical bytes and
-    /// hash. A record in another version is refused, naming both.
+    /// A document assembled from the plans log's records of its kind. `plans`
+    /// is assembled from `pick` records, and `frozen_versions` from
+    /// `frozen_version` records. The answer gives its canonical bytes and hash.
+    /// A record in another version is refused, and the refusal names both.
     LogDocument {
         kind: String,
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
@@ -259,10 +258,10 @@ fn answered(next: Result<PublishedPlans, Vec<PlanIssue>>) -> Result<(Vec<PlanIss
     }
 }
 
-/// A published set in another version is refused, never guessed —
-/// naming both (docs/FORMATS.md, "Versions"). A set from the JSON lane
-/// reads through `Current` or `Base` (one version ahead, D-186); this
-/// check holds a typed request from a native host to the same rule.
+/// A published set in another version is refused, never guessed. The refusal
+/// names both versions (docs/FORMATS.md, "Versions"). A set from the JSON lane
+/// reads through `Current` or `Base` (one version ahead, D-186). This check
+/// holds a typed request from a native host to the same rule.
 fn spoken(published: &PublishedPlans) -> Result<(), String> {
     use transit_version::Versioned;
     cap_abi::speaks(PublishedPlans::KIND, published.schema_version(), PublishedPlans::READS)
@@ -291,8 +290,8 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
         .map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`, and never panic. The seam is total.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Resolve { plans, date } => {
@@ -498,11 +497,11 @@ fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<S
     Ok(None)
 }
 
-/// The `pick` op (D-237): the registered network checked as a pick, its
-/// stop records read when adopted, then frozen and adopted over the
-/// heads. A network that does not publish is refused with `{issues,
-/// refusals}`, as cap-network's `publishable` answers it; a plan issue
-/// with `{issues}`.
+/// The `pick` op (D-237). It checks the registered network as a pick. Its stop
+/// records are read when adopted. Then it is frozen and adopted over the heads.
+/// A network that does not publish is refused with `{issues, refusals}`, as
+/// cap-network's `publishable` answers it. A plan issue is refused with
+/// `{issues}`.
 #[allow(clippy::too_many_arguments)]
 fn pick(
     heads: &mut Heads,
@@ -522,9 +521,9 @@ fn pick(
     if !check.publishes() {
         return Ok(Some(serde_json::json!({ "issues": check.issues, "refusals": check.refusals })));
     }
-    // A pick reads the stops document (D-157): each stop's record on its
-    // first date, and the warnings of the stops it visits that are not
-    // in service over its period.
+    // A pick reads the stops document (D-157). It takes each stop's record on
+    // its first date. It also takes the warnings of the stops it visits that
+    // are not in service over its period.
     let mut stop_warnings = Vec::new();
     let mut read = None;
     if let (true, Some(stops_hash)) = (adopt, loaded.get("stops_hash")) {
@@ -626,22 +625,21 @@ fn receive(
     answer(received)
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, and `{"ok": ...}` or `{"error": ...}`
+/// out. Its bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The plan chain takes its metadata inline — no bulk-bytes op
-/// exists; the seam answers honestly instead of silently ignoring
-/// one.
+/// The plan chain takes its metadata inline. No bulk-bytes op exists. The
+/// seam answers with an error, and does not silently ignore a bulk op.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: the plan chain takes its metadata inline (resolve / validate / periods)") })
         .to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

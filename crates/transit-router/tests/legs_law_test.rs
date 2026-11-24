@@ -1,22 +1,22 @@
 //! What a transit leg tells the rider (QAF-67/68).
 //!
-//! The intent, as the user stated it: a transit leg carries the
-//! route's long name alongside its short name, and the headsign the
-//! bus shows WHERE THE RIDER BOARDS — the one shared rule
-//! (`transit_network::visit_destination`): the visit's own headsign,
-//! else the trip's, else the final stop named as the place (its
-//! parent station), never the bay — and never the authored pattern's
-//! name.
+//! The intent, as the user stated it: a transit leg carries the route's long
+//! name next to its short name. It also carries the headsign the bus shows
+//! where the rider boards. The one shared rule is
+//! `transit_network::visit_destination`. It uses the visit's own headsign.
+//! Otherwise it uses the trip's. Otherwise it uses the final stop, named as the
+//! place (its parent station). It never names the bay, and it never names the
+//! authored pattern.
 //!
 //! The fixture:
 //!
-//! * t1 (route 12 "Fourth Plain", trip headsign "Downtown"):
-//!   A → B → C — boarding anywhere reads "Downtown";
-//! * t2 (route 12, no trip headsign, stop headsign "Via Main" at A
-//!   only): A → B → BAY (a bay of "Van Mall TC") — boarding at A reads
-//!   "Via Main", boarding at B reads "Van Mall TC";
-//! * t3 (route 7, short name only): C → BAY, no headsigns — "Van
-//!   Mall TC"; its long name is absent.
+//! * t1 (route 12 "Fourth Plain", trip headsign "Downtown"): A to B to C.
+//!   Boarding anywhere reads "Downtown".
+//! * t2 (route 12, no trip headsign, stop headsign "Via Main" at A only): A to
+//!   B to BAY (a bay of "Van Mall TC"). Boarding at A reads "Via Main".
+//!   Boarding at B reads "Van Mall TC".
+//! * t3 (route 7, short name only): C to BAY, no headsigns. It reads "Van Mall
+//!   TC". Its long name is absent.
 
 use std::io::Write;
 
@@ -89,8 +89,8 @@ fn a_leg_names_its_route_and_the_sign_where_the_rider_boards() {
     // t1: the trip's headsign, wherever you board.
     assert_eq!(signs(&ride(&net, "A", "C", 7 * 3600)), ("12".into(), long.clone(), "Downtown".into()));
     assert_eq!(signs(&ride(&net, "B", "C", 7 * 3600)), ("12".into(), long.clone(), "Downtown".into()));
-    // t2: the visit's own headsign at A; at B, no visit or trip
-    // headsign — the final stop as the place (the station, not the bay).
+    // t2: the visit's own headsign at A. At B, there is no visit or trip
+    // headsign. The final stop names the place (the station, not the bay).
     assert_eq!(signs(&ride(&net, "A", "BAY", 8 * 3600 + 30 * 60)), ("12".into(), long.clone(), "Via Main".into()));
     assert_eq!(signs(&ride(&net, "B", "BAY", 8 * 3600 + 30 * 60)), ("12".into(), long, "Van Mall TC".into()));
     // t3: a route with no long name says so.

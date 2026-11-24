@@ -1,7 +1,7 @@
-//! The network capability's worked examples (its `examples` feature):
-//! the documents to load and each request, over the fixture's real
-//! derived document. The generator runs them through this crate's
-//! `invoke` and records the answers.
+//! The worked examples of the network capability (its `examples` feature):
+//! the documents to load and each request, over the fixture's real derived
+//! document. The generator runs them through this crate's `invoke` and
+//! records the answers.
 
 use cap_abi::manifest::Example;
 use serde_json::json;

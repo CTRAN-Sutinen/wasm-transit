@@ -1,4 +1,4 @@
-//! The gesture laws — one edit per thing a planner does, each
+//! The gesture laws: one edit per thing a planner does, each
 //! carrying the rule that keeps the document coherent, over the
 //! committed planner network (testdata/network.json: stops A/B/C,
 //! route 10, pattern 10-inbound A·B·C with A and C timepoints, the
@@ -12,7 +12,7 @@
 //! 3. blocks stay in time order and layovers only sit between two
 //!    trips;
 //! 4. a gesture that cannot apply is a named error, never a silent
-//!    no-op — and the document is untouched.
+//!    no-op: and the document is untouched.
 
 use transit_network::{
     apply_edits, apply_edits_reporting, Day, DayState, Departs, HeadwayBand, Network, NetworkEdit, StopOffset,
@@ -113,7 +113,7 @@ fn pattern_gestures_keep_timing_aligned() {
     assert_eq!(off.pattern_trips, on.pattern_trips);
 
     // Insert before the last stop: halfway along the last leg, not a
-    // timepoint — the vectors do not move.
+    // timepoint: the vectors do not move.
     let inserted = apply(&net, vec![NetworkEdit::InsertPatternStop { pattern: "10-inbound".into(), stop: "A".into(), index: None }]);
     let stops = &inserted.patterns["10-inbound"].stops;
     assert_eq!(stops.len(), 4);
@@ -124,7 +124,7 @@ fn pattern_gestures_keep_timing_aligned() {
     assert!(inserted.trips().all(|(_, _, t)| t.times[2] == StopOffset::default()), "unscheduled on every trip");
     assert!(transit_network::validation_issues(&inserted).is_empty());
 
-    // Removing a middle TIMEPOINT drops its time from every profile.
+    // Removing a middle timepoint drops its time from every profile.
     let with_profile = apply(&on, vec![NetworkEdit::AddTimingProfile { pattern: "10-inbound".into() }]);
     assert_eq!(with_profile.patterns["10-inbound"].timing.len(), 2);
     let removed = apply(&with_profile, vec![NetworkEdit::RemovePatternStop { pattern: "10-inbound".into(), index: 1 }]);
@@ -288,7 +288,7 @@ fn a_pattern_runs_in_one_of_its_routes_directions() {
     assert!(refused(&two, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: Some("in".into()) })
         .contains("route 20 has no direction in"));
 
-    // An upsert can still strand one — validation names it.
+    // An upsert can still strand one: validation names it.
     let mut route = placed.routes["10"].clone();
     route.directions.clear();
     let stranded = apply(&placed, vec![NetworkEdit::UpsertRoute { id: "10".into(), route }]);

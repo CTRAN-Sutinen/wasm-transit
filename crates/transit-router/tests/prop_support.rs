@@ -12,7 +12,7 @@ pub struct TripSpec {
 
 /// A fixture feed through the sanctioned path: the codec's import
 /// (feed → network document), then the model's own materialize for
-/// the date — the same composition the capability performs, never
+/// the date. The same composition the capability performs, never
 /// the GTFS substrate in router code.
 pub fn model_day(
     zip: &[u8],
@@ -95,10 +95,10 @@ pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec
 #[allow(dead_code)]
 pub const INF: u32 = u32::MAX;
 
-/// The deliberately dumb earliest-arrival oracle: Bellman-Ford-style
-/// relaxation over every (trip, board, alight) triple and every
-/// footpath of the built network, to a fixpoint, with no leg bound.
-/// It shares no code with the round-based search.
+/// The earliest-arrival oracle is brute force: Bellman-Ford-style relaxation
+/// over every (trip, board, alight) triple and every footpath of the built
+/// network, to a fixpoint, with no leg bound. It shares no code with the
+/// round-based search.
 #[allow(dead_code)]
 pub fn oracle_arrival(net: &transit_router::RouterNetwork, from: usize, to: usize, depart: u32) -> u32 {
     let n = net.stops.len();

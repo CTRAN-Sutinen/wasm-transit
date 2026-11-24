@@ -1,8 +1,7 @@
-//! The schema lock, each of its conditions broken on a deliberate
-//! fixture: a gate that cannot fail proves nothing. The gate itself runs
-//! over every real document kind in `just caps` (gen-manifest), and
-//! `just schema-lock` writes the locks (docs/FORMATS.md, "The schema
-//! lock").
+//! The schema lock, each of its conditions broken on a fixture: a gate
+//! that cannot fail proves nothing. The gate itself runs over every real
+//! document kind in `just caps` (gen-manifest), and `just schema-lock`
+//! writes the locks (docs/FORMATS.md, "The schema lock").
 //!
 //! The fixture kind is `thing`. Each module below is one build's serde
 //! type for it, with the same Rust name, so a schema differs only where

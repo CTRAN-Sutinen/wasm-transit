@@ -4,7 +4,7 @@
 //! (docs/ROADMAP.md 1): every client resolves which pick is in force
 //! from this one document, so it must be canonical (one set of picks,
 //! one byte sequence, however it was built), and a chain it holds must
-//! be valid — the server refuses to publish a pick that would break it.
+//! be valid. The server refuses to publish a pick that would break it.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -90,7 +90,7 @@ fn a_pick_that_would_break_the_chain_is_refused() {
     let issues = publish(&set, &info("fall", Some("2026-03-01")), &hash(2), early()).unwrap_err();
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::DuplicateEffectiveDate { .. })), "{issues:?}");
 
-    // A date that does not parse is refused, not guessed.
+    // A date that does not parse is refused.
     assert!(publish(&set, &info("fall", Some("2026-13-01")), &hash(2), early()).is_err());
 }
 
@@ -159,7 +159,8 @@ proptest! {
         prop_assert_eq!(published(&steps), published(&shuffled));
     }
 
-    /// Redelivery converges: publishing the same pick twice is publishing it once.
+    /// Redelivery converges: publishing the same pick twice is publishing
+    /// it once.
     #[test]
     fn publish_is_idempotent(steps in arb_steps()) {
         let once = published(&steps);
@@ -255,7 +256,7 @@ fn a_retired_pick_is_not_a_chain_member() {
     let retired = retire(&fall_and_spring(), "spring", today()).unwrap();
     let other = publish(&retired, &info("spring-b", Some("2027-03-01")), &hash(4), today()).unwrap();
     assert_eq!(in_force(&other, date("2027-03-01")).unwrap().unwrap().id, "spring-b");
-    // Restoring the retired one would now put two picks on that day.
+    // Restoring the retired one would put two picks on that day.
     let issues = publish(&other, &info("spring", Some("2027-03-01")), &hash(2), today()).unwrap_err();
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::DuplicateEffectiveDate { .. })), "{issues:?}");
 }

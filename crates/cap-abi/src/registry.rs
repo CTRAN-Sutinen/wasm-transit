@@ -8,24 +8,24 @@
 //!   kind's default says how it is bounded on its own: a durable kind
 //!   (networks, feeds, edits, layers, walk tables) keeps everything until
 //!   the host says otherwise ([`Retain::Host`]); an ephemeral kind (rt
-//!   snapshots, live documents — re-minted every poll) keeps its last N
+//!   snapshots, live documents; each is re-minted every poll) keeps its last N
 //!   ([`Retain::Last`]), so a poll loop plateaus with no host steering.
 //! * a **derived registry** caches what a module computed from documents
 //!   (the router's RAPTOR graph per day), keyed by anything, and
 //!   remembers the hashes it was computed from.
 //!
 //! The kernel ops ([`OP_EVICT`], [`OP_HELD`]) are answered by
-//! [`kernel`] over a module's declared registries — the `capability!`
-//! macro wires it, so a module declares its registries and never
-//! re-implements eviction. An evicted document asked for again is the
-//! honest unknown-hash error ([`Registry::require`]), never a wrong
-//! answer: the host registers it again.
+//! [`kernel`] over a module's declared registries. The `capability!`
+//! macro wires it, so a module never re-implements eviction. An evicted
+//! document asked for again gets the unknown-hash error
+//! ([`Registry::require`]), never a wrong answer: the host registers it
+//! again.
 //!
 //! Registries are `const`-constructed statics (no lazy init), and only
 //! the kernel constructs them ([`crate::kernel`]): one registry per
 //! document kind and one derived registry per instance, so every
-//! capability linked into an assembly reads the same `Arc` and none
-//! can declare shared state of its own.
+//! capability in an assembly reads the same `Arc` and none can declare
+//! shared state of its own.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -54,7 +54,7 @@ pub enum Retain {
 }
 
 struct Entry<T: ?Sized> {
-    /// Registration order — the age `Retain::Last` drops by.
+    /// Registration order: the age `Retain::Last` drops by.
     seq: u64,
     /// The document hashes a derived entry was computed from (empty
     /// for a document: its key is its hash).
@@ -69,7 +69,7 @@ struct Entries<T: ?Sized> {
 
 /// One kind's registry: values by key, bounded by its [`Retain`].
 ///
-/// Only the kernel constructs one — a capability that declares a
+/// Only the kernel constructs one. A capability that declares a
 /// registry of its own does not compile (the gate, D-77):
 ///
 /// ```compile_fail
@@ -83,8 +83,8 @@ struct Entries<T: ?Sized> {
 /// ```
 pub struct Registry<T: ?Sized> {
     kind: &'static str,
-    /// The op that registers this kind ("load_network") — the
-    /// unknown-hash error names it. Empty for a derived registry.
+    /// The op that registers this kind ("load_network"). The unknown-hash
+    /// error names it. Empty for a derived registry.
     load_op: &'static str,
     derived: bool,
     retain: Retain,
@@ -96,7 +96,7 @@ pub struct Registry<T: ?Sized> {
 
 impl<T: ?Sized> Registry<T> {
     /// A document registry: values by their content hash. Private to
-    /// the kernel — a capability cannot declare shared state.
+    /// the kernel.
     pub(crate) const fn documents(kind: &'static str, load_op: &'static str, retain: Retain) -> Self {
         Registry { kind, load_op, derived: false, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
     }
@@ -112,14 +112,13 @@ impl<T: ?Sized> Registry<T> {
         self.entries.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Note that the document under `hash` was read one version ahead,
-    /// from version `found` (D-186).
+    /// The document under `hash` was read one version ahead, from
+    /// version `found` (D-186).
     pub(crate) fn mark_ahead(&self, hash: &str, found: u32, how: transit_version::Ahead) {
         self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(hash.to_string(), (found, how));
     }
 
-    /// The version a document read one version ahead was in, and how it
-    /// was read.
+    /// The version a document read one version ahead was in, and how.
     pub(crate) fn ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
         self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(hash).copied()
     }
@@ -136,7 +135,7 @@ impl<T: ?Sized> Registry<T> {
         self.get(hash).ok_or_else(|| format!("unknown {} {hash}: {} first", self.kind, self.load_op))
     }
 
-    /// Register a document under its hash — idempotent: a document held
+    /// Register a document under its hash. It is idempotent: a document held
     /// already keeps its first copy (and its age).
     pub fn insert(&self, hash: String, value: T) -> Arc<T>
     where
@@ -151,7 +150,7 @@ impl<T: ?Sized> Registry<T> {
     }
 
     /// Drop the oldest entries `within` approves until at most `n` of
-    /// them stay — a per-derivation bound inside one derived registry.
+    /// them stay: a per-derivation bound inside one derived registry.
     pub(crate) fn bound(&self, n: usize, within: impl Fn(&str) -> bool) {
         let mut entries = self.lock();
         loop {
@@ -185,7 +184,7 @@ impl<T: ?Sized> Registry<T> {
         value
     }
 
-    /// Keep only the entries `keep(key, inputs)` approves — a module's
+    /// Keep only the entries `keep(key, inputs)` approves: a module's
     /// own rule over its derived cache (the router keeps only the
     /// newest live document's graphs).
     pub fn retain(&self, keep: impl Fn(&str, &[String]) -> bool) {

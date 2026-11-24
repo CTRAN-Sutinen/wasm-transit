@@ -5,7 +5,7 @@
 //! relief points, pay) are what the runs cut will read.
 //!
 //! API notes: `WorkRules::checked()` validates and normalizes (rules
-//! and pairs sorted, each pair's routes in order) — the kernel's load
+//! and pairs sorted, each pair's routes in order). The kernel's load
 //! runs it, so two orderings of one document are one identity;
 //! `recovery_secs(&RecoveryAt)` answers the most specific rule's
 //! requirement; `interlines(a, b)`; `required(Option<&WorkRules>)`

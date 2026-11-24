@@ -1,11 +1,11 @@
-//! Native dispatch tests for the authoring capability — the seam
-//! without wasm, over the committed planner network. The laws (the
-//! edit semantics themselves live in transit-network's edit_test):
+//! Native dispatch tests for the authoring capability. These test the seam
+//! without wasm, over the committed planner network. The laws (the edit
+//! semantics themselves live in transit-network's edit_test):
 //!
 //! 1. the document identity is the canonical-serialization hash
 //!    every capability returns;
-//! 2. apply answers the next document REGISTERED under its own hash —
-//!    changes chain by hash, and the last document stays addressable;
+//! 2. apply answers the next document registered under its own hash.
+//!    Changes chain by hash, and the last document stays addressable;
 //! 3. issues and warnings ride along (the authoring loop in one op);
 //! 4. a refused change, an unknown hash, and garbage are errors,
 //!    never panics.
@@ -59,7 +59,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     assert!(touched.is_empty());
     assert_eq!(network.plan.id, "spring");
     assert!(issues.is_empty());
-    // (The 25:30 trip was never in block 400: unassigned, warned.)
+    // The 25:30 trip was never in block 400. It is unassigned and warned.
     let unassigned = NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 };
     assert_eq!(
         warnings,
@@ -72,8 +72,8 @@ fn changes_chain_by_hash_and_report_the_result() {
     // The fork keeps only its period's dates (D-138): the weekday
     // calendar, all before the pick, left with no range.
     assert!(network.service_types["weekday"].rule.ranges.is_empty());
-    // The next change chains on the answered hash (no reload): give the
-    // weekday a range in the period and the plan-period warning clears.
+    // The next change chains on the answered hash, with no reload. Give the
+    // weekday a range in the period, and the plan-period warning clears.
     let Response::Apply { warnings, .. } = apply(
         &pick,
         vec![NetworkEdit::AddServiceRange {
@@ -107,9 +107,8 @@ fn changes_chain_by_hash_and_report_the_result() {
     };
     assert_eq!(again, pick, "the same change of the same document is the same document");
 
-    // D-41 (QAF-54): the fork carries the calendar — the same pick with
-    // its period end runs the weekday on its date, and the warning
-    // never fires.
+    // D-41 (QAF-54): the fork carries the calendar. The same pick, with its
+    // period end, runs the weekday on its date. The warning never fires.
     let Response::Apply { network, warnings, .. } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
@@ -188,9 +187,9 @@ fn gestures_report_what_they_created() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op — parsed straight into
-    // the model, no request envelope — answers exactly what the JSON
-    // op answers; garbage bytes are an error outcome, never a trap.
+    // The bare document on the kernel's bulk op is parsed straight into the
+    // model, with no request envelope. It answers exactly what the JSON op
+    // answers. Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_author::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();

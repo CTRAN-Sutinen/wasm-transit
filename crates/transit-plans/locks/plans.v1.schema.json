@@ -57,7 +57,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The published plan set: every pick the deployment publishes — the\ndocument the server's `plans` pointer holds and the manifest pins\nas `plans_hash`. Every client resolves the pick in force from it.\nCanonical: picks sorted by (effective_from, id), one entry per id,\nso one set of picks is one byte sequence however it was published.",
+  "description": "The published plan set: every pick the deployment publishes. It is the\ndocument the server's `plans` pointer holds, and the manifest pins\nas `plans_hash`. Every client resolves the pick in force from it.\nCanonical: picks sorted by (effective_from, id), one entry per id,\nso one set of picks is one byte sequence however it was published.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/PlansKind",

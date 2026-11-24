@@ -1,4 +1,4 @@
-//! arch-gates — the architecture gates over the workspace as it is
+//! arch-gates: the architecture gates over the workspace as it is
 //! (`just test`): the dependency graph (`cargo metadata`), the kernel's
 //! closure (only the libraries its code names), and every capability
 //! crate's source (no state of its own, `unsafe` forbidden).

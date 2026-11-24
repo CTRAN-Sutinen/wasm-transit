@@ -7,9 +7,9 @@
 //! - [`Version<N>`] is a version field whose absence reads as `N`.
 //! - [`Versioned`] refuses another version at load, naming both
 //!   ([`parse_versioned`]). For one release a kind may read the next
-//!   version ([`Ahead`], D-79, D-186): the owning crate's `step_down` is
-//!   lossless and writable, or else the copy is read-only and a write over
-//!   it is refused. A write's base reads through `cap_abi::Base` or
+//!   version ([`Ahead`], D-79, D-186). The owning crate's `step_down` is
+//!   either lossless and writable, or the copy is read-only and a write
+//!   over it is refused. A write's base reads through `cap_abi::Base` or
 //!   `Kind::require_writable` (docs/FORMATS.md, "Rolling a version back").
 //! - [`Extra`] keeps a record's unknown fields through a read and a write
 //!   (D-167). Values (a point, a time pair) carry none. Every load and
@@ -50,11 +50,11 @@ pub trait Versioned {
     const UNTAGGED: u32 = 1;
     /// The version this copy carries.
     fn schema_version(&self) -> u32;
-    /// The version a copy carries, read from its JSON when it does not
-    /// read as this type (`cap_abi::parse_versioned` names it in the
-    /// refusal): the number in [`Self::VERSION_FIELD`], else
+    /// The version a copy carries, read from its JSON when the copy does
+    /// not read as this type. `cap_abi::parse_versioned` names it in the
+    /// refusal. It is the number in [`Self::VERSION_FIELD`], else
     /// [`Self::UNTAGGED`]. A kind whose older copies name their version
-    /// another way reads that too.
+    /// another way reads that way too.
     fn version_in(value: &serde_json::Value) -> u32 {
         value.get(Self::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(Self::UNTAGGED, |v| v as u32)
     }
@@ -179,9 +179,9 @@ impl<'de> serde::Deserialize<'de> for Extra {
     }
 }
 
-/// Run `read` and answer, beside its answer, the names of the fields
-/// it read that this build does not know (D-167), in name order: what
-/// a receive path flags for a person. A read outside it notes nothing.
+/// Run `read`. It returns the answer beside the names of the fields it
+/// read that this build does not know (D-167), in name order. A receive
+/// path flags these for a person. A read outside it notes nothing.
 pub fn noting_unknown<R>(read: impl FnOnce() -> R) -> (R, Vec<String>) {
     let outer = NOTED.with(|noted| noted.borrow_mut().replace(Default::default()));
     let answer = read();

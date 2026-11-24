@@ -2,7 +2,7 @@
   "$defs": {
     "Attachment": {
       "additionalProperties": true,
-      "description": "A photo or drawing a record carries (D-162): named by its content\nhash, never a URL — the deployment names the bucket, the server hands\nout the link, and only a signed-in person may read it.",
+      "description": "A photo or drawing a record carries (D-162): named by its content\nhash, never a URL. The deployment names the bucket. The server hands\nout the link. Only a signed-in person may read it.",
       "properties": {
         "caption": {
           "description": "What it shows, in a few words (\"approaching\", \"the cross street\").",
@@ -190,7 +190,7 @@
           ]
         },
         "routes": {
-          "description": "The routes meant to serve the stop, and the direction of travel\n(one of [`DIRECTIONS`]) — a new stop's intent: no schedule\nserves it yet. The routes are names the planner writes, not a\nreference into the network: a route can be one no pick runs yet\n(D-234).",
+          "description": "The routes meant to serve the stop, and the direction of travel\n(one of [`DIRECTIONS`]). This is a new stop's intent: no schedule\nserves it yet. The routes are names the planner writes, not a\nreference into the network: a route can be one no pick runs yet\n(D-234).",
           "items": {
             "type": "string"
           },
@@ -255,7 +255,7 @@
     },
     "WorkOrder": {
       "additionalProperties": true,
-      "description": "The work order a request tracks, as the work order system says:\nwhich system, its id there (the worksheet's Control #), a link, and\nits status as last read, and when — shown as given.",
+      "description": "The work order a request tracks, as the work order system says:\nwhich system, its id there (the worksheet's Control #), a link, and\nits status as last read, and when. It is shown as given.",
       "properties": {
         "id": {
           "default": "",

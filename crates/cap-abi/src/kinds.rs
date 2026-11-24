@@ -14,11 +14,11 @@
 //! The kind table (`crates/cap-abi/kinds.json`, D-202) is generated
 //! from this list and the locked schemas. It is checked in, so a new kind
 //! shows in a review's diff, and gen-manifest stops while the table
-//! differs from the list (`just schema-lock` writes it again). The same
-//! table is written beside the server's modules as `web/pkg/kinds.json`.
+//! differs from the list (`just schema-lock` writes it again). It is also
+//! written beside the server's modules as `web/pkg/kinds.json`.
 //!
-//! A line is data. No module reads the list, so a kind costs a module
-//! nothing until a capability names it (`capability! { documents: [...] }`).
+//! A line is data. No module reads the list: a kind costs a module nothing
+//! until a capability names it (`capability! { documents: [...] }`).
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -46,9 +46,8 @@ pub struct Declaration {
 }
 
 /// A kind's kernel load: the registry it fills, and its two ops. The
-/// load itself is the line's library type's `transit_version::Load`
-/// impl (D-239). The generator checks that the impl's constants are the
-/// line's.
+/// load is the library type's `transit_version::Load` impl (D-239); the
+/// generator checks that its constants are the line's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KernelLoad {
     /// The registry's id, as `capability! { documents: [...] }` and the
@@ -81,8 +80,7 @@ pub struct Store {
     pub read: Read,
 }
 
-/// The log that holds a kind's records, and the record kinds of its
-/// collection.
+/// The log that holds a kind's records, and its record kinds.
 #[derive(Debug, Clone, Copy)]
 pub struct Log {
     pub name: &'static str,

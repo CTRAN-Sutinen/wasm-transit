@@ -1,6 +1,6 @@
-//! The service-plan chain's law tests — pure functions, the exact
+//! The service-plan chain's law tests. They are pure functions, the exact
 //! code every host dispatches through cap-plans. The chain is
-//! DERIVED: resolution, windows, and validity recomputed from the
+//! derived: resolution, windows, and validity recomputed from the
 //! plan set's metadata on every call, deterministic and
 //! order-insensitive whatever order the set arrives in.
 
@@ -34,7 +34,7 @@ fn resolution_picks_the_latest_effective_plan() {
     let imported = vec![info("", "imported", None)];
     assert_eq!(resolve(&imported, date("2026-10-24")).unwrap(), None);
 
-    // Invalid dates are an error, not a guess.
+    // Invalid dates are an error.
     assert!(resolve(&chain, NaiveDate::MAX).is_ok());
 }
 
@@ -59,7 +59,7 @@ fn validation_reports_every_invariant() {
     assert!(kinds.contains(&"duplicate_plan_id".to_string()), "{kinds:?}");
     assert!(kinds.contains(&"plan_missing_effective_date".to_string()), "{kinds:?}");
     assert!(kinds.contains(&"duplicate_effective_date".to_string()), "{kinds:?}");
-    // Unversioned imports are standalone — never flagged.
+    // Unversioned imports are standalone. They are never flagged.
     assert!(!kinds.iter().any(|k| k.contains("undated")), "{kinds:?}");
 }
 
@@ -87,8 +87,8 @@ fn windows_are_derived_not_stored() {
 
 #[test]
 fn the_chain_is_order_insensitive() {
-    // The chain is a SET: the same metadata in any input order
-    // resolves, validates, and windows identically — an invalid
+    // The chain is a set: the same metadata in any input order
+    // resolves, validates, and windows identically. An invalid
     // chain with duplicate dates still resolves deterministically
     // (ties broken by id), so every host agrees.
     let a = vec![

@@ -34,8 +34,8 @@ pub enum Request {
         #[ts(optional)]
         to: Option<u32>,
     },
-    /// The version a document is in, and the version this build reads
-    /// — whether it needs `migrate`, without migrating it.
+    /// The version a document is in, and the version this build reads. This
+    /// says whether it needs `migrate`, without migrating it.
     Version {
         kind: String,
         #[ts(type = "unknown")]
@@ -43,7 +43,7 @@ pub enum Request {
     },
 }
 
-/// One loss a step applied — reported, never silent.
+/// One loss that a step applied. It is reported, never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_migrate/")]
 pub struct MigrationNote {
@@ -65,8 +65,8 @@ pub enum Response {
         /// The migrated document, as JSON.
         #[ts(type = "unknown")]
         document: serde_json::Value,
-        /// Its canonical bytes and their hash — the identity a host
-        /// stores it under (the module is the hash authority).
+        /// Its canonical bytes and their hash. This is the identity a host
+        /// stores it under. The module is the hash authority.
         canonical: String,
         document_hash: String,
         from: u32,
@@ -163,8 +163,8 @@ fn loose(doc: &serde_json::Value) -> Result<(String, String), String> {
     Ok((text, hash))
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Migrate { kind, document, to } => {
@@ -190,20 +190,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
+/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// Documents travel inline — no bulk op of its own; the seam answers
-/// honestly instead of silently ignoring one.
+/// Documents travel inline. There is no bulk op of its own. The seam
+/// answers with an error instead of silently ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: migrate takes its document inline")))
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

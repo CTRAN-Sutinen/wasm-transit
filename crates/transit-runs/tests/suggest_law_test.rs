@@ -1,14 +1,14 @@
 //! Suggested blocking (D-46): the trips no block carries,
-//! chained into suggested blocks the planner adopts or edits — tuned
+//! chained into suggested blocks the planner adopts or edits, tuned
 //! by the work rules (recovery, interlining per route pair), with the
 //! slack each wait leaves and the peak the adopted blocking needs.
 //!
 //! The laws: every unassigned trip the day runs is in exactly one
 //! suggested block (or named as one the suggestion cannot place);
-//! every wait is at one place (a stop, or a bay of the same station —
-//! there are no deadheads yet), interlines only a pair the rules
+//! every wait is at one place (a stop, or a bay of the same station;
+//! there are no deadheads), interlines only a pair the rules
 //! allow, and is at least the recovery required; the answer's edits
-//! adopt it — the next document carries the authored blocks
+//! adopt it. The next document carries the authored blocks
 //! unchanged, validates clean under the same rules, and its fleet
 //! peak is the answer's.
 //!

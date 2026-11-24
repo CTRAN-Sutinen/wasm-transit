@@ -1,28 +1,28 @@
-//! The service COMBINATION laws (D-55): a planner's service group is
+//! The service combination laws (D-55): a planner's service group is
 //! the set of service types that run together on the same dates, shown
 //! with the dates on which it holds. Members that never share a day
-//! are never pooled, and no date stands in for a combination — every
+//! are never pooled, and no date stands in for a combination: every
 //! date it holds on runs exactly its members.
 //!
 //! The oracle walks every date independently (`runs_on` per type, per
 //! date) and checks the answer against it:
 //!
-//! * **Partition** — every date on which a type with trips runs
+//! * **Partition**: every date on which a type with trips runs
 //!   belongs to exactly one combination, whose members are exactly the
 //!   types with trips that run that date; a date nothing runs on
 //!   belongs to none.
-//! * **Never pooled apart** — two members of a combination share every
+//! * **Never pooled apart**: two members of a combination share every
 //!   one of its dates (so types that never share a day never meet).
-//! * **Trip-less types** — a type that carries no trips runs no
+//! * **Trip-less types**: a type that carries no trips runs no
 //!   service and is never a member (D-94).
-//! * **Identity** — members sorted, the id their " + " join, dates
+//! * **Identity**: members sorted, the id their " + " join, dates
 //!   sorted and distinct; `service_combination` finds a combination by
 //!   its member set in any order and answers None for a set that holds
 //!   on no date.
-//! * **Spans** (D-94) — the dates, folded into spans: a new span starts
+//! * **Spans** (D-94): the dates, folded into spans. A new span starts
 //!   where the next date it holds is more than seven days after the
 //!   last; the spans' days sum to the dates.
-//! * **First service date** (D-140) — `first_service_date` is the
+//! * **First service date** (D-140): `first_service_date` is the
 //!   earliest date some type with trips runs, None when nothing runs:
 //!   the date an imported feed picks on.
 
@@ -131,7 +131,7 @@ proptest! {
         let net = network(&types);
         let combos = service_combinations(&net);
 
-        // Oracle: per date, the types WITH TRIPS that run on it.
+        // Oracle: per date, the types with trips that run on it.
         let with_trips: BTreeSet<String> = net.pattern_trips.values()
             .filter(|pt| !pt.trips.is_empty())
             .map(|pt| pt.service_type.clone())
@@ -211,8 +211,8 @@ proptest! {
     }
 
     /// The date is an address, never an input: every date a combination
-    /// holds on materializes the same day, so whatever reads a day —
-    /// the fleet as blocked, the suggested blocks — answers by the
+    /// holds on materializes the same day, so whatever reads a day:
+    /// the fleet as blocked, the suggested blocks: answers by the
     /// service keys running, never by which of their dates was asked.
     #[test]
     fn every_date_of_a_combination_materializes_the_same_day(types in proptest::collection::vec(gen_type(), 0..=5)) {
@@ -230,8 +230,8 @@ proptest! {
 /// Two overlays in successive periods never pool (QAF-91's shape): a
 /// base weekday with /30 in one month and /31 the next is two
 /// combinations, base + /30 and base + /31, and no row holds /30 and
-/// /31 together. A dated exception — the base removed on a holiday a
-/// holiday type runs — is a combination of its own.
+/// /31 together. A dated exception: the base removed on a holiday a
+/// holiday type runs: is a combination of its own.
 #[test]
 fn successive_overlays_are_separate_combinations() {
     let mut net = base();

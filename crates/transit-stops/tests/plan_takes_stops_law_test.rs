@@ -1,10 +1,10 @@
-//! A plan takes a stop from the stops document (D-173): the
-//! planner adding a stop to a pattern may pick one the stops app made,
-//! and the plan gets that stop's record — the laws, before the
+//! A plan takes a stop from the stops document (D-173). The planner
+//! adding a stop to a pattern may pick one the stops app made, and the
+//! plan gets that stop's record. These are the laws, before the
 //! implementation:
 //!
 //! * `records(stops, ids, on)` answers each named stop's record in the
-//!   network's terms on `on` — exactly the record a pick reads of it
+//!   network's terms on `on`: exactly the record a pick reads of it
 //!   (`read_records`), so a stop taken in, then read at publish, is
 //!   unchanged;
 //! * a stop that is not there yet on `on` (its first event is later) is

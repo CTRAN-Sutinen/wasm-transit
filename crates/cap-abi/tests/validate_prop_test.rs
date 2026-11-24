@@ -1,14 +1,14 @@
 //! Assembly-validator laws: the compose-time tier is only trust-
 //! worthy if the validator itself is gated. Three laws:
 //!
-//! * **Totality** — ANY manifest (garbage fields and all) yields
+//! * **Totality**: any manifest (garbage fields and all) yields
 //!   Ok or Err, never a panic: the validator is total, because
 //!   agents will hand it arbitrary output.
-//! * **Purity** — validation is a pure function of the manifest:
+//! * **Purity**: validation is a pure function of the manifest:
 //!   same bytes, same verdict, on every host.
-//! * **Mutation law** — every single way to break an otherwise-valid
+//! * **Mutation law**: every single way to break an otherwise-valid
 //!   assembly is caught, by name (the check an agent or a reviewer
-//!   acts on). A blind spot here is a lie the validator tells.
+//!   acts on).
 
 use std::collections::BTreeMap;
 
@@ -17,7 +17,7 @@ use proptest::prelude::*;
 use cap_abi::manifest::{CapManifest, Capability, MigrationSpec};
 use cap_abi::validate::{validate_assembly, validate_with_kernel};
 
-/// The PoC's own assembly — the baseline the mutations break.
+/// The PoC's own assembly: the baseline the mutations break.
 fn valid_manifest() -> CapManifest {
     let cap = |id: &str,
                hash: &str,
@@ -114,8 +114,8 @@ fn rejects_with(manifest: &CapManifest, check: &str) -> bool {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// Totality: arbitrary manifests — garbage ids, malformed hashes,
-    /// empty everything — produce a verdict, never a panic.
+    /// Totality: arbitrary manifests (garbage ids, malformed hashes,
+    /// empty everything) produce a verdict, never a panic.
     #[test]
     fn validation_is_total(
         kernel in any::<u32>(),
@@ -206,7 +206,7 @@ fn every_single_break_is_caught_by_name() {
     }
 }
 
-/// Kernel negotiation: the validator is honest about which host it
+/// Kernel negotiation: the validator states which host it
 /// speaks for.
 #[test]
 fn kernel_mismatch_is_reported_not_swallowed() {

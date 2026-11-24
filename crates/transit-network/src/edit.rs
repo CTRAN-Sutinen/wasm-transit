@@ -1,23 +1,24 @@
 //! Authoring: the network document's edit vocabulary.
 //!
-//! A planner's change is a list of typed edits applied to a document
-//! that is never mutated in place — `apply` answers the NEXT document
-//! (the caller re-addresses it by hash and wholesale-replaces its
-//! copy, the way every host owns documents). The list is atomic: one
-//! edit that cannot apply rejects the whole change, naming it.
+//! A planner's change is a list of typed edits. Each edit applies to a
+//! document that is never changed in place. `apply` answers the next
+//! document. The caller addresses it by hash and replaces its copy whole,
+//! as every host owns documents. The list is atomic. One edit that cannot
+//! apply rejects the whole change, and the error names it.
 //!
-//! The vocabulary has two levels: entity-level (upsert / remove per
-//! collection, plus the plan frame) and GESTURE-level — one edit per
-//! thing a planner does (add a stop to a pattern, make a stop a
-//! timepoint, add a trip, set a layover), each carrying the rule that
-//! keeps the document coherent (timing vectors aligned with
-//! timepoints, every trip's times aligned with its pattern's stops,
-//! layovers only between trips, minted ids). An authoring UI, a script, and an agent all
-//! express a change in the same edits and get the same document. Removal refuses while anything still
-//! references the entity — a dangling reference is a broken document,
-//! and the model, not each host, is where that rule lives. Validity of
-//! the RESULT is not enforced here: a document mid-edit may be
-//! invalid, and validation reports it (`validation_issues`).
+//! The vocabulary has two levels. Entity-level edits (upsert and remove
+//! per collection, and the plan frame) come first. Gesture-level edits
+//! follow. Each gesture is one thing a planner does: add a stop to a
+//! pattern, make a stop a timepoint, add a trip, or set a layover. Each
+//! gesture carries a rule that keeps the document coherent. The rules cover
+//! timing vectors aligned with timepoints, every trip's times aligned with
+//! its pattern's stops, layovers only between trips, and minted ids.
+//! An authoring UI, a script, and an agent all express a change in the
+//! same edits, and they get the same document. Removal refuses while
+//! anything still references the entity. A dangling reference is a broken
+//! document. The model holds that rule, not each host. Validity of the
+//! result is not enforced here. A document mid-edit may be invalid, and
+//! validation reports it (`validation_issues`).
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -40,29 +41,28 @@ use crate::model::{
 #[ts(export)]
 #[serde(tag = "edit", rename_all = "snake_case")]
 pub enum NetworkEdit {
-    /// The plan frame: identity, name, pick date. Forking a plan into
-    /// the next pick, or stamping a fresh import into the chain, is
-    /// this edit. With `through` ("YYYY-MM-DD", the period's last day,
-    /// not before `effective_from`) the fork carries the calendar
-    /// (D-41): every WEEKLY service type (a flagged day and a date
-    /// range) still running in the calendar's final week (D-112) whose
-    /// last range ends before `through` now ends on it; dated-only
-    /// types (holidays, events) gain nothing — next year's holidays
-    /// are the planner's to add. The fork's calendar is then its
-    /// period (D-138): every range is cut to `effective_from` ..
-    /// `through` (open at the end without `through`), and a range or
-    /// exception wholly outside it goes. Every service type stays —
-    /// trips still name it — even one left with no date.
+        /// The plan frame: identity, name, and pick date. This edit forks a
+        /// plan into the next pick. It also stamps a fresh import into the
+        /// chain. With `through` ("YYYY-MM-DD", the period's last day, not
+        /// before `effective_from`), the fork carries the calendar (D-41).
+        /// Every weekly service type (a flagged day and a date range) still
+        /// running in the calendar's final week (D-112) gets its last range
+        /// extended, when that range ends before `through`. Dated-only types
+        /// (holidays, events) gain nothing. Next year's holidays are the
+        /// planner's to add. The fork's calendar is then its period (D-138).
+        /// Every range is cut to `effective_from` .. `through` (open at the end
+        /// without `through`). A range or exception wholly outside it goes.
+        /// Every service type stays, even one left with no date, because trips
+        /// still name it.
     SetPlan {
         plan: PlanMeta,
         #[serde(default)]
         #[ts(optional)]
         through: Option<String>,
     },
-    /// Change the plan frame field-wise: `name`; `effective_from`
-    /// ("YYYY-MM-DD", or "" to clear the date); `id` only stamps an
-    /// UNVERSIONED plan (an empty id) — a framed pick keeps its
-    /// identity.
+        /// Change the plan frame field by field: `name`, and `effective_from`
+        /// ("YYYY-MM-DD", or "" to clear the date). `id` stamps only an
+        /// unversioned plan (an empty id). A framed pick keeps its identity.
     UpdatePlan {
         #[serde(default)]
         #[ts(optional)]
@@ -103,9 +103,9 @@ pub enum NetworkEdit {
         id: Option<String>,
         start_secs: u32,
     },
-    /// Remove a trip everywhere: its pattern trips (removed when
-    /// emptied) and its block (the layovers either side go; a block
-    /// it empties goes).
+        /// Remove a trip everywhere: its pattern trips, which go when emptied,
+        /// and its block. The layovers on either side go. A block that it
+        /// empties goes.
     RemoveTrip { trip: String },
     /// Refused while a block carries one of its trips.
     RemovePatternTrips { id: String },
@@ -113,8 +113,8 @@ pub enum NetworkEdit {
     RemoveBlock { id: String },
 
     // --- gestures: creation (an absent id is minted; `apply` reports it)
-    /// A new stop, named "Stop N"; placed at `lat`/`lon`, else at the
-    /// centre of the network's stops.
+        /// A new stop, named "Stop N". It is placed at `lat`/`lon`. Otherwise
+        /// it goes at the centre of the network's stops.
     AddStop {
         #[serde(default)]
         #[ts(optional)]
@@ -132,9 +132,9 @@ pub enum NetworkEdit {
         #[ts(optional)]
         id: Option<String>,
     },
-    /// A new pattern on `route` (else the first route): the first two
-    /// stops, both timepoints, 500 m apart, one all-day profile at
-    /// 0 / 10 minutes — a skeleton to author from.
+        /// A new pattern on `route`, or on the first route. It has the first
+        /// two stops, both timepoints, 500 m apart. It has one all-day profile
+        /// at 0 and 10 minutes. This is a skeleton to author from.
     AddPattern {
         #[serde(default)]
         #[ts(optional)]
@@ -143,14 +143,15 @@ pub enum NetworkEdit {
         #[ts(optional)]
         route: Option<String>,
     },
-    /// A new pattern on `route` laid through `stops` in order (a new
-    /// route's, or another variant): each visit at the great-circle
-    /// length of the legs before it (estimated, never published), the
-    /// first and last timepoints, one all-day profile running
-    /// `run_secs` end to end, in `direction` (one of the route's),
-    /// named `name` else "<route> → <last stop>", drawn stop to stop.
-    /// Refused: fewer than two stops, an unknown stop, a stop twice in
-    /// a row, an unknown route or direction, a zero run time.
+        /// A new pattern on `route` laid through `stops` in order. It is a new
+        /// route's pattern, or another variant. Each visit takes the
+        /// great-circle length of the legs before it. That length is estimated
+        /// and never published. The first and last visits are timepoints. One
+        /// all-day profile runs `run_secs` end to end, in `direction` (one of
+        /// the route's). It is named `name`, else "<route> → <last stop>", and
+        /// drawn stop to stop. Refused: fewer than two stops, an unknown stop,
+        /// a stop twice in a row, an unknown route or direction, or a zero run
+        /// time.
     AddPatternThrough {
         #[serde(default)]
         #[ts(optional)]
@@ -172,8 +173,8 @@ pub enum NetworkEdit {
         id: Option<String>,
         from: String,
     },
-    /// A new pattern trips: `pattern` / `service_type` (else the first
-    /// of each), one trip at 08:00 timed by the pattern's profile.
+        /// A new pattern trip: `pattern` and `service_type`, or else the first
+        /// of each. It has one trip at 08:00, timed by the pattern's profile.
     AddPatternTrips {
         #[serde(default)]
         #[ts(optional)]
@@ -217,10 +218,11 @@ pub enum NetworkEdit {
         #[ts(optional)]
         mode: Option<Mode>,
     },
-    /// A pattern's fields. `direction` names one of its route's
-    /// directions ("" leaves it in none); moving the pattern to
-    /// another `route` leaves it in none unless `direction` places it
-    /// there in the same edit (direction ids are per route).
+        /// A pattern's fields. `direction` names one of its route's directions.
+        /// An empty `direction` ("") leaves the pattern in none. Moving the
+        /// pattern to another `route` also leaves it in none. The exception is
+        /// a `direction` that places it there in the same edit, because
+        /// direction ids are per route.
     UpdatePattern {
         id: String,
         #[serde(default)]
@@ -233,15 +235,15 @@ pub enum NetworkEdit {
         #[ts(optional)]
         direction: Option<String>,
     },
-    /// Redraw a pattern's line (D-11). The edit names what it redraws:
-    /// `one` gives the pattern a new alignment of its own (`id`, else
-    /// minted `al{n}`; reported in `created`) and the other patterns on
-    /// its old line keep it; `all` redraws the alignment the pattern
-    /// runs, so every pattern on it moves (a pattern with no alignment
-    /// gets a new one, as with `one`). The patterns redrawn are
-    /// reported in `touched`; their stop distances keep their meters
-    /// and stop claiming to be published (they were measured along the
-    /// old line). Two points or more, each on the globe.
+        /// Redraw a pattern's line (D-11). The edit names what it redraws.
+        /// `one` gives the pattern a new alignment of its own: `id`, else a
+        /// minted `al{n}`, reported in `created`. The other patterns on its old
+        /// line keep the old alignment. `all` redraws the alignment that the
+        /// pattern runs, so every pattern on it moves. A pattern with no
+        /// alignment gets a new one, as with `one`. The redrawn patterns are
+        /// reported in `touched`. Their stop distances keep their meters. They
+        /// no longer claim to be published, because they were measured along
+        /// the old line. Two points or more, each on the globe.
     DrawAlignment {
         pattern: String,
         points: Vec<Coord>,
@@ -266,9 +268,9 @@ pub enum NetworkEdit {
     },
 
     // --- gestures: a pattern's stops and timing
-    /// Visit `stop` before visit `index` (default: the last stop),
-    /// halfway along that leg, as a non-timepoint (the endpoints stay
-    /// the endpoints; the timing vectors are untouched).
+        /// Visit `stop` before visit `index` (default: the last stop). The
+        /// visit is halfway along that leg, and it is a non-timepoint. The
+        /// endpoints stay the endpoints. The timing vectors are untouched.
     InsertPatternStop {
         pattern: String,
         stop: String,
@@ -276,8 +278,8 @@ pub enum NetworkEdit {
         #[ts(optional)]
         index: Option<usize>,
     },
-    /// Drop a MIDDLE visit (endpoints are fixed); a timepoint's entry
-    /// leaves every timing profile with it.
+        /// Drop a middle visit. Endpoints are fixed. A timepoint's entry leaves
+        /// every timing profile with it.
     RemovePatternStop { pattern: String, index: usize },
     SetPatternStop {
         pattern: String,
@@ -289,9 +291,9 @@ pub enum NetworkEdit {
         #[ts(optional)]
         distance_m: Option<f64>,
     },
-    /// Flip a MIDDLE visit's timepoint flag, keeping every timing
-    /// profile aligned: turning on inserts the midpoint of its
-    /// neighbours' times, turning off drops the entry.
+        /// Flip a middle visit's timepoint flag, keeping every timing profile
+        /// aligned. Turning the flag on inserts the midpoint of the neighbours'
+        /// times. Turning it off drops the entry.
     ToggleTimepoint { pattern: String, index: usize },
     /// A new profile after the last one (6 hours long), copying its
     /// times.
@@ -312,10 +314,10 @@ pub enum NetworkEdit {
 
     // --- gestures: a service type's calendar
     ToggleServiceDay { id: String, day: Day },
-    /// A new date range, `start` to `end` ("YYYY-MM-DD"). A date left
-    /// out continues the last range: `start` where the last one ends,
-    /// `end` at `start`. A key with no range takes its first one only
-    /// with a `start`; a range never ends before it starts.
+        /// A new date range, `start` to `end` ("YYYY-MM-DD"). A date that is
+        /// left out continues the last range. `start` is where the last range
+        /// ends. `end` is at `start`. A key with no range takes its first one
+        /// only with a `start`. A range never ends before it starts.
     AddServiceRange {
         id: String,
         #[serde(default)]
@@ -360,14 +362,14 @@ pub enum NetworkEdit {
     RemoveBand { trip: String, index: usize },
 
     // --- gestures: the timetable (route + direction + service type;
-    // `direction` null or omitted: the route's patterns in none). See
-    // `timetable_edit` for the rules every one of them keeps.
-    /// Frequency by period: a one-start trip every `headway_secs` from
-    /// `from_secs` (the first departure) until before `to_secs`.
-    /// Trips in the window move to the nearest slots in order, keeping
-    /// their ids, times and blocks; open slots are new trips
-    /// (`pattern`, else the one the trip before runs); surplus trips
-    /// go. Frequency trips are left as they are.
+        // With `direction` null or omitted, the route's patterns are in none.
+        // See `timetable_edit` for the rules that every one of them keeps.
+        /// Frequency by period: a one-start trip every `headway_secs`. The
+        /// trips run from `from_secs` (the first departure) until before
+        /// `to_secs`. Trips in the window move to the nearest slots, in order.
+        /// They keep their ids, times, and blocks. Open slots become new trips
+        /// (`pattern`, else the one that the trip before runs). Surplus trips
+        /// go. Frequency trips stay as they are.
     SetHeadway {
         route: String,
         #[serde(default)]
@@ -381,9 +383,10 @@ pub enum NetworkEdit {
         #[ts(optional)]
         pattern: Option<String>,
     },
-    /// The span: trips before `first_secs` or after `last_secs` go; a
-    /// bound past the first / last trip is reached at `headway_secs`
-    /// (else the edge's median gap), on the edge trip's pattern.
+        /// The span: trips before `first_secs` or after `last_secs` go. A bound
+        /// past the first or last trip is reached at `headway_secs`. Without
+        /// it, the edge's median gap is used. The trips use the edge trip's
+        /// pattern.
     SetSpan {
         route: String,
         #[serde(default)]
@@ -400,11 +403,11 @@ pub enum NetworkEdit {
         #[ts(optional)]
         headway_secs: Option<u32>,
     },
-    /// Running time by period: the one-start trips of the direction
-    /// under `service_type` departing in [`from_secs`, `to_secs`) run
-    /// `delta_secs` longer (negative: shorter), in proportion along
-    /// each trip. Nothing else changes — not another service type, not
-    /// the profiles.
+        /// Running time by period. The one-start trips of the direction under
+        /// `service_type` that depart in [`from_secs`, `to_secs`) run
+        /// `delta_secs` longer. A negative `delta_secs` makes them shorter. The
+        /// change is in proportion along each trip. Nothing else changes: not
+        /// another service type, and not the profiles.
     AdjustRunningTime {
         route: String,
         #[serde(default)]
@@ -440,8 +443,8 @@ pub enum NetworkEdit {
     /// start; layovers past the last trip are dropped.
     AddBlockTrip { block: String, trip: TripRef },
     RemoveBlockTrip { block: String, index: usize },
-    /// Set (or, with `secs` null, clear) the layover after trip
-    /// `after_trip` — only between two trips of the block.
+        /// Set the layover after trip `after_trip` (only between two trips of
+        /// the block). With `secs` null, clear it.
     SetLayover {
         block: String,
         after_trip: usize,
@@ -497,7 +500,8 @@ pub struct Applied {
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct CreatedEntity {
-    /// stop | route | pattern | service_type | pattern_trips | block | trip | alignment
+    /// stop | route | pattern | service_type | pattern_trips | block | trip |
+    /// alignment
     pub kind: String,
     pub id: String,
 }
@@ -525,8 +529,8 @@ pub fn apply_edits(network: &Network, edits: &[NetworkEdit]) -> Result<Network, 
 }
 
 /// [`apply_edits`], also naming what the change created (minted ids
-/// included) — what an authoring host opens next — and what it
-/// touched beyond that.
+/// included). An authoring host opens these next. It also names what
+/// the change touched beyond that.
 pub fn apply_edits_reporting(network: &Network, edits: &[NetworkEdit]) -> Result<Applied, EditError> {
     let mut next = network.clone();
     let mut created = Vec::new();
@@ -589,14 +593,14 @@ fn draw_alignment(
     Ok(created)
 }
 
-/// D-41: every weekly service type still running at the document's
-/// end (its last range ends in the calendar's final week, D-112) whose
-/// last range ends before `through` ends on it; dated-only types and
-/// closed periods are left alone.
+    /// D-41: each weekly service type still running at the document's end.
+    /// Its last range ends in the calendar's final week (D-112). If that range
+    /// ends before `through`, the type ends on `through`. Dated-only types and
+    /// closed periods are left alone.
 fn carry_calendars(net: &mut Network, through: NaiveDate) {
-    // The calendar as the fork reads it: up to `through` — a range
-    // starting after it, or a date past it, leaves the fork's calendar
-    // (D-138), so it never makes a type look closed or still running.
+        // The calendar as the fork reads it: up to `through`. A range that
+        // starts after it, or a date past it, leaves the fork's calendar
+        // (D-138). So it never makes a type look closed or still running.
     let in_time = |r: &DateRange| r.start <= through;
     let weekly = |rule: &CalendarRule| rule.days != WeekdaySet::none() && rule.ranges.iter().any(in_time);
     // The calendar's end: the latest date any type names.
@@ -626,9 +630,9 @@ fn carry_calendars(net: &mut Network, through: NaiveDate) {
     }
 }
 
-/// The fork's calendar is its period (D-138): each range cut to
-/// `from` ..= `through` (either end open when absent), a range or an
-/// exception wholly outside it dropped. Service types themselves stay.
+    /// The fork's calendar is its period (D-138). Each range is cut to `from`
+    /// ..= `through`. Either end is open when absent. A range or an exception
+    /// wholly outside it is dropped. Service types stay.
 fn clip_calendars(net: &mut Network, from: Option<NaiveDate>, through: Option<NaiveDate>) {
     let inside = |d: NaiveDate| from.is_none_or(|f| d >= f) && through.is_none_or(|t| d <= t);
     for service_type in net.service_types.values_mut() {
@@ -646,8 +650,8 @@ fn clip_calendars(net: &mut Network, from: Option<NaiveDate>, through: Option<Na
     }
 }
 
-/// The first free `{prefix}{n}`, n from 1 — or the caller's id, when
-/// free.
+    /// The first free `{prefix}{n}`, with n from 1. Or the caller's id, when
+    /// it is free.
 fn mint<V>(map: &BTreeMap<String, V>, wanted: &Option<String>, prefix: &str, kind: &str) -> Result<String, String> {
     if let Some(id) = wanted {
         if map.contains_key(id) {
@@ -675,7 +679,7 @@ fn at_mut<'a, T>(items: &'a mut [T], index: usize, what: &str) -> Result<&'a mut
     items.get_mut(index).ok_or_else(|| format!("no {what} {index} (there are {len})"))
 }
 
-/// A middle visit of a pattern — endpoints are fixed by invariant.
+    /// A middle visit of a pattern. The endpoints are fixed by invariant.
 fn middle(pattern: &Pattern, id: &str, index: usize) -> Result<(), String> {
     if index == 0 || index + 1 >= pattern.stops.len() {
         return Err(format!("visit {index} of pattern {id} is an endpoint (or absent) — endpoints stay"));
@@ -1188,8 +1192,9 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     times.insert(position.min(times.len()), (prev + next).div_ceil(2));
                 }
             }
-            // A timepoint is exact on every trip: one that left the stop
-            // unscheduled is scheduled where it materialized.
+                        // A timepoint is exact on every trip. A trip that left
+                        // the stop unscheduled is scheduled where it
+                        // materialized.
             if !turning_off {
                 let before = before.expect("found above");
                 for trip in timetable_edit::pattern_trips_mut(net, pattern) {

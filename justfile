@@ -194,8 +194,19 @@ types:
 # release modules. TS_RS_EXPORT_DIR keeps the ts-rs bindings
 # regenerating into web/src/types on every run (.cargo/config.toml
 # pins the same path for plain cargo runs; without either, ts-rs
-# scatters them into crates/*/bindings).
-test: caps-fast _host-tests
+# scatters them into crates/*/bindings). Last, `prune` deletes the
+# build artifacts the gate no longer uses, so target/ stays bounded.
+test: caps-fast _host-tests prune
+
+# Delete the artifacts in target/ that the gate's own cargo commands do
+# not use: the copies that `-p` runs, dependency changes, and toolchain
+# upgrades leave behind (tools/prune-target.mjs says how it decides).
+# `just test` runs it last, when every unit is fresh and it takes
+# seconds. Run alone on a changed tree, it builds what the gate builds
+# first. `just prune --dry-run` only reports. The release directories
+# are not touched.
+prune *args:
+    node tools/prune-target.mjs {{ args }}
 
 # The same suites and gates over the release modules (`caps`: whole-
 # program LTO, the bytes the registry publishes). Run it when a unit

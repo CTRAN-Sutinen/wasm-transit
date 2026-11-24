@@ -2,8 +2,8 @@
 //!
 //! The edit document names its kind and version inside it (D-62,
 //! D-115): `{"kind":"edit_records","schema_version":2,"records":[…]}`.
-//! Version 1 is the bare array of records every copy carried before
-//! the tag (the store's sidecar said v1; no copy itself did).
+//! Version 1 is the bare array of records. No copy of it carries a tag.
+//! The store's sidecar names v1.
 //!
 //! The chain is kept forever (D-66): one pure step per version,
 //! preserving every record, reporting every loss as a
@@ -55,7 +55,7 @@ impl schemars::JsonSchema for EditsKind {
 }
 
 /// The operator edit document: every edit record, whole, keyed by id
-/// (LWW per id, retirement the tombstone — `merge`).
+/// (LWW per id, retirement the tombstone; `merge`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditDocument {
@@ -69,7 +69,7 @@ pub struct EditDocument {
     pub extra: transit_version::Extra,
 }
 
-/// A copy with no `schema_version` — the bare array — is v1.
+/// A copy with no `schema_version`, the bare array, is v1.
 impl transit_version::Versioned for EditDocument {
     const KIND: &'static str = KIND;
     const READS: u32 = SCHEMA_VERSION;
@@ -91,7 +91,7 @@ impl Default for EditDocument {
     }
 }
 
-/// One loss a migration step applied — reported, never silent.
+/// One loss a migration step applied. It is reported, never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "transit_sync/")]
 pub struct MigrationNote {

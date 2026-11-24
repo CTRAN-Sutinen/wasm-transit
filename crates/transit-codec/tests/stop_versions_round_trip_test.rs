@@ -1,4 +1,4 @@
-//! GTFS out and back in with the stops' history (D-150, D-151) — the law
+//! GTFS out and back in with the stops' history (D-150, D-151): the law
 //! at the codec's boundary: a pick exported with a stop moved inside its
 //! dates is a GTFS feed with one stops.txt row per version sharing the
 //! stop's code, and that feed, imported again, adds no event to the stops

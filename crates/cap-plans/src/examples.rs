@@ -1,5 +1,5 @@
-//! The plan chain's worked examples (its `examples` feature): each
-//! request, over the fixture's two-pick chain. The generator runs them
+//! The plan chain's worked examples, under its `examples` feature. Each
+//! request runs over the fixture's two-pick chain. The generator runs them
 //! through this crate's `invoke` and records the answers.
 
 use cap_abi::manifest::Example;

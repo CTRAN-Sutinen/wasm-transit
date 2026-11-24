@@ -1,7 +1,7 @@
-//! Planner-analysis regression tests over production-shaped feeds
-//! (found importing C-TRAN; the fixtures import through the codec,
-//! the boundary). The property laws live in analysis_prop_test.rs;
-//! these pin the numbers the planner's design axis reads.
+//! Planner-analysis regression tests over production-shaped feeds, from an
+//! import of C-TRAN. The fixtures import through the codec, the boundary. The
+//! property laws live in analysis_prop_test.rs. These tests pin the numbers the
+//! planner's design axis reads.
 
 use std::io::Write;
 
@@ -74,7 +74,7 @@ fn stats_report_route_and_stop_activity() {
     // The planner's read view: activity on one service date, from the
     // document (no materialization needed). On the production-shaped
     // fixture (DATE = Friday, WK runs): 5 trips (t1 and t3 both leave
-    // at 08:00 — two vehicles, two trips), two patterns, three stops,
+    // at 08:00: two vehicles, two trips), two patterns, three stops,
     // every stop on route 10.
     let network = import_production();
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
@@ -85,11 +85,10 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(stats.active_stops, 3);
     assert_eq!(stats.first_start_secs, Some(6 * 3600));
     assert_eq!(stats.last_arrival_secs, Some(9 * 3600 + 10 * 60));
-    // Run times as the MODEL materializes them — each trip's own
-    // (the import preserves per-trip run time as pattern variants):
-    // t9 30 min, t1 20, t3 20, t5 20, t7 10 — 6000 s total. An
-    // import that collapsed every A→C trip to the shortest member's
-    // 20 minutes reported 4200 s.
+    // Run times as the model materializes them. Each trip keeps its own (the
+    // import preserves per-trip run time as pattern variants): t9 30 min, t1
+    // 20, t3 20, t5 20, t7 10. The total is 6000 s. An import that collapsed
+    // every A to C trip to the shortest member's 20 minutes reported 4200 s.
     assert!((stats.revenue_hours - 6000.0 / 3600.0).abs() < 1e-9);
     let route = &stats.routes[0];
     assert_eq!(route.route_id, "10");
@@ -98,20 +97,19 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(route.stops, 3);
     assert_eq!(route.first_start_secs, Some(6 * 3600));
     assert_eq!(route.last_arrival_secs, Some(9 * 3600 + 10 * 60));
-    // The busiest stop is A (06:00/08:00/08:22/09:00 — t7's A→B
-    // departs A too; B is only ever passed or ended at). Gaps 7200,
-    // 1320, 2280 → the median 2280 s (38 min). The old per-pattern
-    // span average said 4260 s, and a clustered pattern could say
-    // anything lower — QAF-41.
+    // The busiest stop is A (06:00/08:00/08:22/09:00). t7's A to B departs A
+    // too. B is only ever passed or ended at. Gaps: 7200, 1320, 2280. The
+    // median is 2280 s (38 min). A per-pattern span average gives 4260 s. A
+    // clustered pattern can give a lower value (QAF-41).
     assert_eq!(route.headway_stop.as_deref(), Some("A"));
     assert_eq!(route.typical_headway_secs, Some(2280));
     // The route's own revenue hours: all of the day's runtime here
     // (30 + 20 + 20 + 20 + 10 min = 6000 s), the per-route cost basis.
     assert!((route.revenue_hours - 6000.0 / 3600.0).abs() < 1e-9);
-    // QAF-21: the other cost basis — revenue MILES, straight off the
-    // patterns' authored distances (no shape_dist in the fixture, so
-    // the codec's 500 m per stop applies): four A→B→C trips at
-    // 1000 m and one A→B at 500 m = 4500 m.
+    // QAF-21: the other cost basis, revenue miles. The values come straight
+    // from the patterns' authored distances. The fixture has no shape_dist, so
+    // the codec's 500 m per stop applies. Four A to B to C trips at 1000 m, and
+    // one A to B at 500 m, make 4500 m.
     assert!((stats.revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
     assert!((route.revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
 
@@ -123,18 +121,17 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(a.typical_headway_secs, Some((9 * 3600 - 6 * 3600) / 4));
     let c = by_id("C");
     assert_eq!(c.departures, 4);
-    // C arrivals as materialized: 06:30/08:20/08:42 — each trip's
-    // own feed times (t9's 06:30 survives; the old import collapsed
-    // it to the 20-minute variant's 06:20).
+    // C arrivals as materialized: 06:30/08:20/08:42. Each trip keeps its own
+    // feed times. t9's 06:30 stays. An import that collapsed it would give the
+    // 20-minute variant's 06:20.
     assert_eq!(c.typical_headway_secs, Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 30 * 60)) / 3));
 }
 
 #[test]
 fn service_type_ops_expose_the_design_axis() {
-    // The planner designs SERVICE TYPES, not calendar dates: the
-    // overview lists every type's own authored service, the detail
-    // expands a combination (here WK alone) into everything that runs
-    // under it.
+    // The planner designs service types, not calendar dates. The overview lists
+    // each type's own authored service. The detail expands a combination (here
+    // WK alone) into everything that runs under it.
     let network = import_production();
 
     let types = service_type_overview(&network);
@@ -157,7 +154,7 @@ fn service_type_ops_expose_the_design_axis() {
         .iter()
         .map(|s| (s.pattern_trips.as_str(), s.trips))
         .collect();
-    // Two patterns — stop sequences: t7's A→B, and the four A→B→C
+    // Two patterns, as stop sequences: t7's A→B, and the four A→B→C
     // trips whatever their run times (each keeps its own).
     assert_eq!(schedule_trips["WK:pat-10-0-1"], 4);
     assert_eq!(schedule_trips["WK:pat-10-0-0"], 1);
@@ -170,20 +167,19 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(coverage.group, "WK");
     assert_eq!(coverage.members, ["WK"]);
     assert!((coverage.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
-    // Frequent counts DEPARTURES (D-6): C, a terminal, has four
-    // arrivals two hours apart and nobody boards there, so only A's
-    // 100 read frequent — the whole-day test agrees with the windowed
-    // one.
+    // Frequent counts departures (D-6). C, a terminal, has four arrivals two
+    // hours apart, and nobody boards there. So only A's 100 read frequent. The
+    // whole-day test agrees with the windowed one.
     assert!((coverage.frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6, "{coverage:?}");
 }
 
 #[test]
 fn frequency_in_a_window_is_the_worst_wait() {
-    // QAF-42: the whole-day average hides a frequent window. Stop A
-    // departs 06:00, 08:00, 08:22, 09:00 — a 60-min average, so a
-    // 40-min frequency test fails on the day; between 08:00 and 09:00
-    // nobody waits more than 38 minutes, so it passes in that window.
-    // The window counts its edges: from 07:00 the first wait is 60.
+    // QAF-42: the whole-day average hides a frequent window. Stop A departs
+    // 06:00, 08:00, 08:22, and 09:00. That is a 60-min average, so a 40-min
+    // frequency test fails on the day. Between 08:00 and 09:00, nobody waits
+    // more than 38 minutes. So the test passes in that window. The window
+    // counts its edges: from 07:00 the first wait is 60.
     let network = import_production();
     let layer = parse_layer(&pop_layer_geojson()).expect("layer parses");
     let layer = layer.weights(None, None).expect("one weight (POP)");
@@ -197,8 +193,8 @@ fn frequency_in_a_window_is_the_worst_wait() {
     let wider = CoverageWindow { start_secs: 7 * 3600, end_secs: 9 * 3600 };
     assert_eq!(frequent_pct(Some(wider)), 0.0, "07:00–09:00: a rider at 07:00 waits 60 min");
 
-    // C is only ever a trip's last stop: served (riders alight), but
-    // never frequent — an arrival is not a departure.
+    // C is only ever a trip's last stop. It is served, because riders alight
+    // there. It is never frequent, because an arrival is not a departure.
     let all_day = CoverageWindow { start_secs: 0, end_secs: 30 * 3600 };
     let c = type_coverage(&network, &layer, &["WK".to_string()], 400.0, 30 * 3600, 1, Some(all_day)).expect("WK runs");
     assert!((c.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6, "A and C both served");
@@ -207,8 +203,8 @@ fn frequency_in_a_window_is_the_worst_wait() {
 
 #[test]
 fn a_proposal_compares_route_by_route_against_its_baseline() {
-    // "What does this change do?": route 10 runs its last trip on to
-    // 21:00 every 3 h (12:00 … 21:00) — the only changed row.
+    // "What does this change do?" Route 10 runs its last trip on to 21:00,
+    // every 3 h (12:00 to 21:00). It is the only changed row.
     let base = import_production();
     let proposal = transit_network::apply_edits(
         &base,
@@ -238,7 +234,7 @@ fn a_proposal_compares_route_by_route_against_its_baseline() {
     assert!(same.routes.is_empty());
     assert_eq!(same.unchanged_routes, 1);
     assert_eq!((same.base.days, same.proposal.days), (cmp.base.days, cmp.base.days), "the dates WK holds on");
-    // Unknown members answer empty, never an error — the lookup
-    // convention (QAF-19): errors are for hash addresses.
+    // Unknown members answer empty, never an error. This is the lookup
+    // convention (QAF-19). Errors are for hash addresses.
     assert!(transit_analysis::service_type_compare(&base, &proposal, &["ghost".to_string()]).is_none());
 }

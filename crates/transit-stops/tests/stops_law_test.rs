@@ -2,35 +2,35 @@
 //! user's intent and written before the implementation:
 //!
 //! * a stop has a life of its own: planned, permitted, built, in
-//!   service, suspended for a while, retired (D-157); the events are the
-//!   truth — a stop on a date is its events applied in order up to that
-//!   date, a temporary one (`until`) only while it lasts — checked
-//!   against an oracle that answers each detail as the LAST active event
-//!   that sets it, a different reading of the same rule;
-//! * the stages only go forward (a stage may be skipped); a suspension
-//!   is of a stop in service, and a stop returns to service from a
-//!   suspension or goes into service from an earlier stage — it may
-//!   also never return, and end retired;
+//!   service, suspended for a while, retired (D-157). The events are the
+//!   truth. A stop on a date is its events applied in order up to that
+//!   date. A temporary one (`until`) applies only while it lasts. The
+//!   check uses an oracle that answers each detail as the last active
+//!   event that sets it. That is a different reading of the same rule;
+//! * the stages only go forward (a stage may be skipped). A suspension is
+//!   of a stop in service. A stop returns to service from a suspension, or
+//!   goes into service from an earlier stage. It may also never return,
+//!   and end retired;
 //! * a temporary suspension or move ends on its `until`: from that date
 //!   the stop is what it would be without the event;
 //! * served is in service, nothing else;
-//! * a stop on a date says when its status began, when it ends (a
-//!   temporary one: its `until`, or sooner the next stage event after
-//!   the date — a stop back early, or retired while suspended), and the
-//!   note on the event that set it;
-//! * a correction edits the event that was wrong: it is the event taken
-//!   out and the corrected one placed by date, nothing else moving;
+//! * a stop on a date says when its status began. It says when the status
+//!   ends. A temporary one ends at its `until`, or sooner at the next stage
+//!   event after the date (a stop back early, or retired while suspended).
+//!   It also gives the note on the event that set it;
+//! * a correction edits the event that is wrong. The event is taken out,
+//!   and the corrected one is placed by date. Nothing else moves;
 //! * the stops on a date are counted by status;
-//! * the stops near a point on a date — "which stop am I standing at?",
-//!   asked in the field — are those the date and the statuses asked
-//!   hold, each at its great-circle distance, nearest first (ties by
-//!   id), at most the limit asked and none past the radius asked; a stop
-//!   left out is no nearer than the last one listed;
+//! * the stops near a point on a date, asked in the field as "which stop am
+//!   I standing at?", are those the date and the statuses ask for. Each is
+//!   at its great-circle distance, nearest first (ties by id), at most the
+//!   limit asked, and none past the radius asked. A stop left out is no
+//!   nearer than the last one listed;
 //! * a document that breaks the model is refused, each reason named;
 //! * one document is one byte sequence however its stops and keys are
 //!   ordered;
-//! * what this repo does not know — the agency's own amenity names, a
-//!   field another tool wrote — survives a read and a write.
+//! * what this repo does not know (the agency's own amenity names, a field
+//!   another tool wrote) survives a read and a write.
 
 use std::collections::BTreeMap;
 
@@ -149,7 +149,7 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
 }
 
 /// How far along a stop is: the stages in order, a suspension counting
-/// as in service (it was in service to be suspended).
+/// as in service (a stop must be in service to be suspended).
 fn rank(s: Status) -> u8 {
     match s {
         Status::Planned => 0,
@@ -183,10 +183,10 @@ fn arb_step() -> impl Strategy<Value = Step> {
     ]
 }
 
-/// A stop's history: a first stage, then steps at non-decreasing dates
-/// — each kept only where the model allows it (stages forward, a
-/// suspension of a stop in service, a return of one not in service,
-/// nothing after retirement).
+/// A stop's history: a first stage, then steps at non-decreasing dates.
+/// Each step is kept only where the model allows it: stages forward, a
+/// suspension of a stop in service, a return of one not in service, and
+/// nothing after retirement.
 fn arb_history() -> impl Strategy<Value = Vec<Event>> {
     (0usize..4, proptest::option::of(0u32..30), proptest::collection::vec((0u32..20, arb_step()), 0..10)).prop_map(
         |(stage, first_on, steps)| {
@@ -298,7 +298,8 @@ proptest! {
             .collect();
         prop_assert!(got.len() <= limit);
         if got.len() < limit {
-            // fewer than the limit: every stop clearly inside the radius is listed
+            // fewer than the limit: every stop clearly inside the radius is
+            // listed
             let listed: Vec<&str> = got.iter().map(|n| n.stop.stop_id.as_str()).collect();
             for (id, m) in &eligible {
                 prop_assert!(radius.is_some_and(|r| *m > r - 0.5) || listed.contains(&id.as_str()), "{} at {} left out", id, m);
@@ -383,7 +384,7 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
     /// A valid history is accepted, and the stop on every date is its
-    /// events applied in order — the oracle's last-writer reading.
+    /// events applied in order. This is the oracle's last-writer reading.
     #[test]
     fn a_stop_on_a_date_is_its_events_applied(doc in arb_doc(), d in 0u32..400) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -512,9 +513,9 @@ proptest! {
         prop_assert_eq!(bytes(&read.checked().unwrap()), bytes(&doc));
     }
 
-    /// Fields this repo does not know — another tool's, the agency's
-    /// own amenity names — survive a read and a write, at the top, in
-    /// an event, and among the amenities.
+    /// Fields this repo does not know (another tool's, or the agency's own
+    /// amenity names) survive a read and a write. They survive at the top,
+    /// in an event, and among the amenities.
     #[test]
     fn what_is_not_known_survives(doc in arb_doc(), name in "x_[a-z]{1,8}", value in "[a-z ]{0,12}", heated in any::<bool>()) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -660,8 +661,8 @@ fn nothing_follows_retirement() {
 }
 
 /// The walk's case: suspended from day 16 until day 30, back early on
-/// day 24 — on day 23 it is suspended and ends on day 24, not day 30;
-/// retired on day 20 instead, it ends on day 20.
+/// day 24. On day 23 it is suspended and ends on day 24, not day 30.
+/// Retired on day 20 instead, it ends on day 20.
 #[test]
 fn a_suspension_ends_when_the_stop_is_back_early() {
     let back = doc(vec![(

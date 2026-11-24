@@ -1,32 +1,30 @@
-//! Assembly validation: the COMPOSE-time tier of the proof stack.
+//! Assembly validation: the compose-time tier of the proof stack.
 //!
 //! The registry's rigor is layered, and each layer is cheap where it
 //! runs:
 //!
 //! * **Build time** (expensive, once, published as evidence): the
 //!   property laws with independent oracles, the module dispatch
-//!   tests, the mutation runs. An agent never re-runs these — it
+//!   tests, the mutation runs. An agent never re-runs these. It
 //!   reads their attestations.
-//! * **Compose time** (this module — light, cheap, TOTAL): the
-//!   assembly a agent writes is checked the way a compiler
-//!   type-checks, not the way a test suite samples. Every check is
-//!   decidable over the manifest alone, holds for ALL future requests
-//!   rather than worked examples, and finishes in microseconds.
+//! * **Compose time** (this module: light, cheap, total): the
+//!   assembly an agent writes is checked the way a compiler
+//!   type-checks, not sampled like a test suite. Every check is
+//!   decidable over the manifest alone, holds for all future requests,
+//!   and finishes in microseconds.
 //! * **Run time** (the seam): fetched bytes verified against pinned
 //!   hashes, documents rejected at load when out-of-version, every op
-//!   total (errors, never panics — the panic-fuzz law).
+//!   total (errors, never panics: the panic-fuzz law).
 //!
-//! What "total" buys: a validated assembly cannot later discover a
-//! document some loaded capability can neither speak nor migrate —
-//! version coherence is proven for every kind, not demonstrated on
-//! the documents that happened to be lying around.
+//! What "total" buys: a validated assembly cannot later find a document
+//! that a loaded capability can neither speak nor migrate. Version
+//! coherence is proven for every kind, not shown on sample documents.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::manifest::{CapManifest, Capability};
 
-/// One thing wrong with an assembly, in the vocabulary of the
-/// registry (capability id, check name, human-readable detail).
+/// One thing wrong with an assembly: capability id, check name, detail.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct AssemblyIssue {
     pub capability: String,
@@ -39,7 +37,7 @@ pub struct AssemblyIssue {
 pub const HOST_KERNEL: u32 = 1;
 
 /// Validate an assembly: decidable checks, total over the manifest.
-/// Ok(()) means the assembly is provably coherent — dependency
+/// Ok(()) means the assembly is provably coherent: dependency
 /// closure, document-kind coherence between producers and consumers,
 /// and migration-path mutual reachability for every document kind.
 pub fn validate_assembly(manifest: &CapManifest) -> Result<(), Vec<AssemblyIssue>> {
@@ -156,7 +154,7 @@ pub fn validate_with_kernel(
     }
 
     // The linked assemblies (D-77): each links capabilities the
-    // manifest carries, once each, under pinned bytes, and is closed —
+    // manifest carries, once each, under pinned bytes, and is closed:
     // every document kind a linked capability consumes is produced by a
     // capability linked beside it.
     let mut uis = BTreeSet::new();
@@ -202,11 +200,10 @@ pub fn validate_with_kernel(
     }
 
     // Version coherence, per document kind: every version any
-    // capability speaks must be READABLE by every consumer of the
-    // kind — spoken directly, or reachable through the migration
+    // capability speaks must be readable by every consumer of the
+    // kind: spoken directly, or reachable through the migration
     // paths the assembly carries (any capability may provide the
-    // bridge; the host routes the op). This is the check that makes
-    // graceful degradation PREDICTABLE: a document can never be
+    // bridge; the host routes the op). So a document can never be
     // unreadable-by-and-unmigratable-for a loaded consumer.
     let kinds: BTreeSet<&str> = manifest
         .capabilities
@@ -224,7 +221,7 @@ pub fn validate_with_kernel(
                 }
             }
         }
-        // Transitive reachability (tiny graphs — versions per kind
+        // Transitive reachability (tiny graphs; versions per kind
         // are single digits).
         let reach = |from: u32| -> BTreeSet<u32> {
             let mut seen = BTreeSet::from([from]);

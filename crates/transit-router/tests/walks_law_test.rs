@@ -1,16 +1,15 @@
 //! The router over a walk table: a plan's transfers walk the streets.
 //!
-//! The intent (crates/transit-streets/src/lib.rs, the walk table): with a
-//! walk table, the router's footpaths ARE the table's walks — every
-//! walk between two of the network's stops at the table's seconds,
-//! and nothing else (no straight-line pair survives, and a walk naming
-//! a stop the network does not have is ignored). With none, the
-//! router keeps its straight-line transfers (D-32, encoded
-//! provisionally).
+//! The intent (crates/transit-streets/src/lib.rs, the walk table): with a walk
+//! table, the router's footpaths are the table's walks. These are every walk
+//! between two of the network's stops, at the table's seconds, and nothing
+//! else. No straight-line pair survives. A walk that names a stop the network
+//! does not have is ignored. With no walk table, the router keeps its
+//! straight-line transfers (D-32, encoded provisionally).
 //!
-//! The planning laws (`prop_test.rs`, `arrive_by_law_test.rs`) hold
-//! over whatever footpaths the network has; these laws pin which
-//! footpaths those are.
+//! The planning laws (`prop_test.rs`, `arrive_by_law_test.rs`) hold over
+//! whatever footpaths the network has. These laws pin which footpaths those
+//! are.
 
 #[path = "prop_support.rs"]
 mod support;
@@ -38,8 +37,8 @@ fn table(walks: Vec<Walk>) -> WalkTable {
     }
 }
 
-/// A symmetric table over `n` stops (`s0`…), with walks naming a stop
-/// the network does not have mixed in.
+/// A symmetric table over `n` stops (`s0`...), with walks naming a stop the
+/// network does not have mixed in.
 fn walks(n: usize) -> impl Strategy<Value = Vec<Walk>> {
     vec((0..n + 1, 0..n + 1, 1u32..600), 0..12).prop_map(move |pairs| {
         let id = |i: usize| if i == n { "ghost".to_string() } else { format!("s{i}") };
@@ -77,7 +76,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     /// With a walk table, the footpaths are exactly the table's walks
-    /// between the network's stops — the straight-line pairs (every
+    /// between the network's stops. The straight-line pairs (every
     /// stop here is ~89 m from the next) are gone.
     #[test]
     fn the_footpaths_are_the_walk_table((n, walks) in case()) {

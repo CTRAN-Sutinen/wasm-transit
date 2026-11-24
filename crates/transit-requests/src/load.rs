@@ -1,5 +1,5 @@
-//! The kernel's load of a stop requests document (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
+//! The kernel's load of a stop requests document (D-239). Its line in the
+//! kind list (`crates/cap-abi/src/kinds.rs`) names this impl.
 
 /// What `load_stop_requests` answers: the hash, and how many requests the
 /// document holds.

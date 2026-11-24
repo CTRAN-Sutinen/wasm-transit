@@ -58,8 +58,8 @@ fn transfers_beat_later_direct_trips() {
     assert_eq!(it.legs.len(), 2, "two transit legs");
     match &it.legs[0] {
         Leg::Transit { trip, start_secs, board_stop_id, alight_stop_id, .. } => {
-            // The trip instance ridden: the network's trip (the feed's
-            // own id) and its start — t1 departs A at 08:00.
+            // The trip instance ridden: the network's trip (the feed's own id)
+            // and its start. t1 departs A at 08:00.
             assert_eq!((trip.as_str(), *start_secs), ("t1", 8 * 3600));
             assert_eq!(board_stop_id, "A");
             assert_eq!(alight_stop_id, "B");

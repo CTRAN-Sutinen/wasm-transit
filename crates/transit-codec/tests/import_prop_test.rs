@@ -1,40 +1,39 @@
-//! The inference law: `import` is valid BY CONSTRUCTION over
-//! every SPEC-VALID feed — the inferred document passes the model's
-//! own validation, so a planner can always edit a derived network
-//! immediately (this broke on the real C-TRAN feed: 187 issues, the
-//! derived document unloadable). The generator is adversarial toward
+//! The inference law: `import` is valid by construction over every
+//! spec-valid feed. The inferred document passes the model's own
+//! validation, so a planner can always edit a derived network
+//! immediately. (A failure seen on the real C-TRAN feed: 187 issues, the
+//! derived document unloadable.) The generator is adversarial toward
 //! the inference's failure modes while staying inside the GTFS spec:
 //! colliding trip starts, trip ids whose lexical order ignores time,
 //! per-trip run-time variation inside one pattern, and shared blocks
-//! (a block's trips on one service day never overlap — one vehicle,
+//! (a block's trips on one service day never overlap, one vehicle,
 //! as the spec has it).
 //! Garbage beyond the spec is the panic-fuzz layer's job
 //! (panic_fuzz_test.rs); this law assumes a well-formed feed.
 //!
 //! Laws:
 //!
-//! 1. `validation_issues(import(feed))` is empty — always.
-//!    Validation is the gate that blocks *authored* edits; the
+//! 1. `validation_issues(import(feed))` is empty, always.
+//!    Validation is the gate that blocks *authored* edits. The
 //!    bootstrap path must never hand the planner a document the gate
 //!    rejects.
-//! 2. The import is deterministic — the same feed yields the same
+//! 2. The import is deterministic. The same feed yields the same
 //!    outcome on every host (the sync thesis needs that).
 //!
-//! What the import keeps — the agency's trip ids, every scheduled
-//! time, frequency trips, blocks — is `trip_import_law_test.rs`; that
-//! the whole feed survives export is `spec_round_trip_test.rs`.
+//! What the import keeps (the agency's trip ids, every scheduled time,
+//! frequency trips, blocks) is `trip_import_law_test.rs`. That the whole
+//! feed survives export is `spec_round_trip_test.rs`.
 
 use std::io::Write;
 
 use proptest::prelude::*;
 
-/// One generated trip. Everything about it is adversarial by
-/// default: starts come from a small pool (collisions are the point),
-/// the per-trip `leg` varies run time inside one pattern, and blocks
-/// come from a small pool so chains are long (a trip joins only where
-/// it fits — `blocks`). Trip
-/// ids are assigned per index in `gen_feed` (unique — the spec's
-/// primary key) and their lexical order ignores start time.
+/// One generated trip. Everything about it is adversarial by default.
+/// Starts come from a small pool (collisions are intended). The per-trip
+/// `leg` varies run time inside one pattern. Blocks come from a small
+/// pool so chains are long (a trip joins only where it fits: `blocks`).
+/// Trip ids are assigned per index in `gen_feed`, unique as the spec's
+/// primary key. Their lexical order ignores start time.
 #[derive(Clone, Debug)]
 struct GenTrip {
     route: u8,

@@ -1,29 +1,29 @@
 //! Street graph laws, as property tests with independent oracles.
 //!
 //! `streets_test.rs` covers hand-picked configurations. These laws
-//! hold for ANY streets document the generator's layers import to
+//! hold for any streets document the generator's layers import to
 //! (the layer → document laws are `import_law_test.rs`):
 //!
-//! * **Structure** — the graph's segment and node counts match the
+//! * **Structure**: the graph's segment and node counts match the
 //!   document (a segment per consecutive point pair, way by way;
 //!   ways that share a point weld there).
-//! * **Snap projection** — the snapped point lies on its segment,
+//! * **Snap projection**: the snapped point lies on its segment,
 //!   `dist_m` is the true distance to it, and re-snapping is a fixed
 //!   point.
-//! * **Snap nearest** — `dist_m` matches the brute-force nearest
+//! * **Snap nearest**: `dist_m` matches the brute-force nearest
 //!   projection over every segment whose cell range intersects the
 //!   query's 3x3 window; no street in the window means None.
-//! * **Route optimality** — the routed path's total cost (the walk-in
+//! * **Route optimality**: the routed path's total cost (the walk-in
 //!   from the `from` position to its exit node included) equals the
 //!   oracle's own Dijkstra over its own graph, one-way conventions
 //!   included.
-//! * **Reachability** — route returns None exactly when the oracle
+//! * **Reachability**: route returns None exactly when the oracle
 //!   says unreachable, and a returned path ends exactly at `to`.
 //!
-//! The oracle rebuilds the graph from the DOCUMENT with its own code —
-//! same documented rules (segments numbered way by way, point pair by
-//! point pair, the graph address a position names), none of the
-//! implementation's code.
+//! The oracle rebuilds the graph from the document with its own code.
+//! It follows the same documented rules (segments numbered way by way,
+//! point pair by point pair, the graph address a position names). It uses
+//! none of the implementation's code.
 
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -35,7 +35,7 @@ const CELL: f64 = 0.001;
 const LAT0: f64 = 45.0;
 const LON0: f64 = -73.0;
 
-/// Great-circle meters (haversine, mean earth radius) — the module's
+/// Great-circle meters (haversine, mean earth radius): the module's
 /// documented metric, written out independently here.
 fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
     let (p1, p2) = (a_lat.to_radians(), b_lat.to_radians());
@@ -373,7 +373,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     /// Structure: the graph agrees with the document on segment and
-    /// node counts — welding included.
+    /// node counts, welding included.
     #[test]
     fn graph_shape_matches_the_document(spec in spec()) {
         let Ok(doc) = import(build_geojson(&spec).as_bytes()) else { return Ok(()) };
@@ -456,13 +456,13 @@ proptest! {
                 let total = path_total_cost(from, &path);
                 // The path cost is measured hop-by-hop with the
                 // midpoint-cos metric; the oracle sums per-segment
-                // lengths. The two agree to ~1e-6 relative — anything
+                // lengths. The two agree to ~1e-6 relative. Anything
                 // beyond that is a genuinely suboptimal path.
                 prop_assert!(
                     close(total, cost, 1e-4 * (1.0 + cost)),
                     "routed {total} m, oracle says {cost} m"
                 );
-                // The reported length IS the search's cost: the
+                // The reported length is the search's cost: the
                 // oracle's shortest distance, not a re-sum.
                 let (_, length) = net.route_with_length(from, to).expect("same pair routes");
                 prop_assert!(close(length, cost, 1e-6 * (1.0 + cost)), "length {length} m, oracle {cost} m");

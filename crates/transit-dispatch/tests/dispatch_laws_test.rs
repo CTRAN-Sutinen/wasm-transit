@@ -1,23 +1,7 @@
-//! The dispatch laws, model-native (the day-view laws): the day is
-//! `materialize(net, date)`, operator edits patch THE DAY, boards
-//! and chains read the patched day. No GTFS substrate exists here to
-//! accidentally test against — the network below is authored model
-//! code, the same vocabulary the library speaks.
-//!
-//! The laws:
-//!
-//! 1. the edit document patches the materialized day: skipped stops
-//!    lose service, added time shifts everything from the last
-//!    anchor onward, and nothing else moves;
-//! 2. the input day is never mutated (before/after comparison stays
-//!    trivial — the base-feed immutability law, model edition);
-//! 3. the station board pools the walking group, rows tagged with
-//!    their concrete bay;
-//! 4. the block chain is the AUTHORED runcut; a diverted trip — or a
-//!    trip a live prediction ends late — eats its next layover (the
-//!    connection-health ripple);
-//! 5. edit validation reports against the NETWORK, invalid records
-//!    reported, never rejected.
+//! The day-view laws on an authored model network, with no GTFS substrate:
+//! operator edits patch `materialize(net, date)`, and boards and chains read
+//! the patched day (crates/cap-board/OPS.md "stop_board",
+//! crates/cap-divert/OPS.md "reports", crates/cap-runcut/OPS.md "blocks").
 
 use chrono::NaiveDate;
 use transit_dispatch::{block_chain, layover_health, LayoverHealth, TIGHT_LAYOVER_SECS, board, effective_day, patch_day, report_against_network, station_board, stop_board};
@@ -213,6 +197,8 @@ fn find_trip<'a>(day: &'a [MaterializedTrip], pattern_trips: &str) -> &'a Materi
     day.iter().find(|t| t.pattern_trips == pattern_trips).unwrap()
 }
 
+/// The edit document patches the day. Skipped stops lose service, added time
+/// shifts everything from the last anchor onward, and nothing else moves.
 #[test]
 fn edits_patch_the_day_skip_shift_and_only_the_match() {
     let net = network();
@@ -221,8 +207,8 @@ fn edits_patch_the_day_skip_shift_and_only_the_match() {
 
     let patched = patch_day(&base, &[diversion(300)]);
 
-    // The diverted trip: C loses its stop time entirely, B and every
-    // stop from the last anchor onward shift +300, A does not move.
+    // The diverted trip: C loses its stop time entirely. B, and every stop from
+    // the last anchor onward, shift +300. A does not move.
     let t10 = find_trip(&patched, "s10");
     let stops: Vec<&str> = t10.stop_times.iter().map(|st| st.stop.as_str()).collect();
     assert_eq!(stops, vec!["A", "B"], "the skipped stop loses service");
@@ -248,6 +234,7 @@ fn edits_patch_the_day_skip_shift_and_only_the_match() {
     assert_eq!(t10.stop_times.len(), 3, "anchors out of order never match");
 }
 
+/// The input day is never mutated (the base-feed immutability law).
 #[test]
 fn the_day_is_never_mutated() {
     let net = network();
@@ -263,8 +250,8 @@ fn boards_read_the_patched_day() {
     let records = vec![record(EditStatus::Accepted, 300)];
     let day = effective_day(&net, date(), &records).unwrap();
 
-    // B's board: route 10 ENDS at B (an arrival, never a departure),
-    // route 20 passes through on time.
+    // B's board: route 10 ends at B (an arrival, never a departure). Route 20
+    // passes through on time.
     let rows = board(&net, &day, "B", 0, 10);
     let by_route: std::collections::BTreeMap<&str, u32> =
         rows.iter().map(|r| (r.route.as_str(), r.departure_secs)).collect();
@@ -283,9 +270,8 @@ fn boards_read_the_patched_day() {
     let r10 = at_c_late.iter().find(|r| r.route == "10").expect("route 10 departs C");
     assert_eq!(r10.departure_secs, 28_800 + 600 + 300, "the board reads the patched day");
 
-    // C loses the diverted route's service — the skipped stop shows
-    // its emptiness (the diversion law). Route 20 still starts
-    // there; route 10's rows are gone.
+    // C loses the diverted route's service. The skipped stop shows its
+    // emptiness (the diversion law). Route 20 still starts there.
     let at_c = board(&net, &day, "C", 0, 10);
     assert!(
         at_c.iter().all(|r| r.route != "10"),
@@ -308,8 +294,8 @@ fn boards_read_the_patched_day() {
 
 #[test]
 fn a_terminating_visit_is_not_a_departure() {
-    // Every board row is a visit the trip LEAVES from: no row is
-    // ever the trip's final stop time, at any stop of the network.
+    // Every board row is a visit the trip leaves from. No row is ever the
+    // trip's final stop time, at any stop of the network.
     let net = network();
     let day = transit_network::materialize(&net, date()).unwrap();
     for stop in net.stops.keys() {
@@ -323,8 +309,8 @@ fn a_terminating_visit_is_not_a_departure() {
         }
     }
 
-    // A loop (first stop == last stop): the first visit departs, the
-    // closing visit arrives — exactly one row at the terminal.
+    // A loop (first stop == last stop): the first visit departs, the closing
+    // visit arrives. That gives exactly one row at the terminal.
     let mut looped = net.clone();
     looped.patterns.insert(
         "p50".to_string(),
@@ -340,13 +326,15 @@ fn a_terminating_visit_is_not_a_departure() {
     assert_eq!(loop_rows[0].departure_secs, 36_000);
 }
 
+/// The station board pools the walking group, and its rows are tagged with
+/// their concrete bay.
 #[test]
 fn the_station_board_pools_the_walking_group() {
     let net = network();
     let day = transit_network::materialize(&net, date()).unwrap();
 
-    // The station pin answers its bays' board, rows tagged with the
-    // concrete bay; any member of the group answers the same board.
+    // The station pin answers its bays' board, with rows tagged by the concrete
+    // bay. Any member of the group answers the same board.
     let from_pin = station_board(&net, &day, "STN", 0, 10);
     let from_bay = station_board(&net, &day, "SA", 0, 10);
     assert_eq!(from_pin, from_bay, "every member of the group answers the same board");
@@ -397,8 +385,8 @@ fn the_board_is_realtime_first() {
     assert_eq!(plain.rows.iter().map(|r| r.departure.clone()).collect::<Vec<_>>(), board(&net, &day, "A", 0, 10));
     assert!(plain.rows.iter().all(|r| r.status == LiveStatus::NoPrediction && r.expected_secs.is_none()));
 
-    // s10 leaves A at 08:00; live says +240. At 08:01 the late bus is
-    // still to come — on the board, expected 08:04, late.
+    // s10 leaves A at 08:00. Live says +240. At 08:01 the late bus is still to
+    // come: it is on the board, expected at 08:04, late.
     let live = live_at("s10@28800", 28_800, "A", 28_800, 240);
     let late = stop_board(&net, &day, "A", 28_860, 10, Some(&live), None);
     let r = late.rows.iter().find(|r| r.departure.trip == "s10@28800").expect("the late bus is still to come");
@@ -411,8 +399,8 @@ fn the_board_is_realtime_first() {
     let early = live_at("s10@28800", 28_800, "A", 28_800, -120);
     assert!(stop_board(&net, &day, "A", 28_740, 10, Some(&early), None).rows.iter().all(|r| r.departure.trip != "s10@28800"));
 
-    // Ordered by when buses actually leave: s20 reaches A at 08:50
-    // on time; s10 delayed to 09:00 sorts after it.
+    // Ordered by when buses actually leave: s20 reaches A at 08:50 on time.
+    // s10, delayed to 09:00, sorts after it.
     let very_late = live_at("s10@28800", 28_800, "A", 28_800, 3_600);
     let order: Vec<_> = stop_board(&net, &day, "A", 0, 10, Some(&very_late), None)
         .rows
@@ -448,6 +436,8 @@ fn the_board_pools_only_a_walking_group() {
     assert!(empty.rows.is_empty() && !empty.pooled);
 }
 
+/// The block chain is the authored runcut. A diverted trip, or a trip a live
+/// prediction ends late, eats its next layover.
 #[test]
 fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     let net = network();
@@ -462,8 +452,8 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     assert_eq!(chain[1].start_secs, 30_600);
     assert!(chain.iter().all(|t| t.runs), "everything runs on the fixture Friday");
 
-    // The ripple: the diverted trip ends +300 — the 10-minute layover
-    // has 4 minutes left (the connection-health read).
+    // The ripple: the diverted trip ends +300. The 10-minute layover has 4
+    // minutes left (the connection-health read).
     let records = vec![record(EditStatus::Accepted, 300)];
     let day = effective_day(&net, date(), &records).unwrap();
     let ripped = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, None);
@@ -473,7 +463,7 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     // The threshold is the caller's policy.
     assert_eq!(block_chain(&net, &day, "B1", 301, None)[0].layover_health, Some(LayoverHealth::Tight));
 
-    // A connection eaten outright goes negative — the dispatcher's
+    // A connection eaten outright goes negative. That is the dispatcher's
     // alarm, not a silent clamp.
     let eaten = vec![record(EditStatus::Accepted, 900)];
     let day = effective_day(&net, date(), &eaten).unwrap();
@@ -485,21 +475,21 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     // Unknown blocks answer empty, never error.
     assert!(block_chain(&net, &day, "nope", TIGHT_LAYOVER_SECS, None).is_empty());
 
-    // A trip of the chain that does not run on the date stays in the
-    // chain, marked — the authored work, the hole visible.
+    // A trip of the chain that does not run on the date stays in the chain,
+    // marked. This keeps the authored work and makes the hole visible.
     let b2 = block_chain(&net, &schedule_day, "B2", TIGHT_LAYOVER_SECS, None);
     assert!(b2[0].runs, "s10 runs on the Friday");
     assert!(!b2[1].runs, "the Sunday schedule does not");
     assert_eq!(b2[1].end_secs, None);
 }
 
-/// QAF-31: the ripple reads a live prediction the way it reads an
-/// edit — "will this late bus make its next trip?" A trip the live
-/// document says ends +370 s leaves 230 s of its 600 s layover. The
-/// rt delay is against the published schedule and wins over a
-/// diversion's added time (D-18): +370 live on a trip diverted +300
-/// still leaves 230 s. A live document about another instance, or
-/// none, leaves the edit ripple as it was.
+/// QAF-31: the ripple reads a live prediction the way it reads an edit:
+/// will this late bus make its next trip? A trip the live document says ends
+/// +370 s leaves 230 s of its 600 s layover.
+/// The rt delay is against the published schedule and wins over a diversion's
+/// added time (D-18). So +370 live on a trip diverted +300 still leaves 230 s.
+/// A live document about another instance, or none, leaves the edit ripple as
+/// it was.
 #[test]
 fn the_ripple_reads_the_live_delay() {
     let net = network();
@@ -531,6 +521,8 @@ fn the_ripple_reads_the_live_delay() {
     assert_eq!(block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&other)), plain);
 }
 
+/// Edit validation reports against the network. Invalid records are reported,
+/// never rejected.
 #[test]
 fn validation_reports_against_the_network() {
     let net = network();
@@ -574,8 +566,8 @@ fn retired_never_patches_but_a_draft_previews() {
     let t10 = find_trip(&day, "s10");
     assert_eq!(t10.stop_times.len(), 3, "a retired edit never applies");
 
-    // A draft previews locally (the dispatcher's own document, run
-    // locally — the sync contract).
+    // A draft previews locally. The dispatcher's own document runs locally,
+    // under the sync contract.
     let day = effective_day(&net, date(), &[record(EditStatus::Draft, 300)]).unwrap();
     let t10 = find_trip(&day, "s10");
     assert_eq!(t10.stop_times.len(), 2, "a draft previews the edit");
@@ -587,13 +579,10 @@ fn retired_never_patches_but_a_draft_previews() {
     assert_eq!(t10.stop_times.len(), 3, "the edit does not cover the 30th");
 }
 
-// ---------------------------------------------------------------------
-// What a rider reads off the board: names, signs, the reason a stop
-// is empty, and the alerts about it.
-// ---------------------------------------------------------------------
+// --- What a rider reads off the board: names, signs, empty stops, alerts ---
 
-/// QAF-67, QAF-69: a row names its route both ways and the bay it
-/// leaves from — "which bay do I stand at?" is on the row.
+/// QAF-67, QAF-69: a row names its route both ways and the bay it leaves from.
+/// "Which bay do I stand at?" is on the row.
 #[test]
 fn a_row_names_its_route_and_its_bay() {
     let mut net = network();
@@ -605,8 +594,8 @@ fn a_row_names_its_route_and_its_bay() {
     let pooled = stop_board(&net, &day, "STN", 0, 10, None, None);
     assert!(pooled.rows.iter().all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
     assert_eq!(pooled.rows[0].departure.route_long_name, None, "a route without a long name has none");
-    // The bay's own identifier (GTFS platform_code), when it has one —
-    // what the sign at a station prints.
+    // The bay's own identifier (GTFS platform_code), when it has one. The sign
+    // at a station prints it.
     assert_eq!(a.platform, None);
     net.stops.get_mut("SA").unwrap().info.platform = Some("A".into());
     let day = transit_network::materialize(&net, date()).unwrap();
@@ -630,9 +619,9 @@ fn a_row_is_going_where_its_sign_says() {
     assert_eq!(stop_board(&net, &day, "C", 0, 10, None, None).rows.iter().find(|r| r.departure.route == "10").unwrap().departure.destination, "Downtown via 2nd");
 }
 
-/// QAF-75: a stop the day's edits take service away from says so —
-/// each skipped visit, the diversion that skips it — instead of an
-/// empty board with no reason.
+/// QAF-75: a stop the day's edits take service away from says so. Each skipped
+/// visit is listed, with the diversion that skips it.
+/// The board never shows an empty list with no reason.
 #[test]
 fn a_diverted_away_stop_says_what_skips_it() {
     let net = network();
@@ -665,9 +654,9 @@ fn scope(route: Option<&str>, stop: Option<&str>) -> transit_live::AlertScope {
     transit_live::AlertScope { route: route.map(Into::into), stop: stop.map(Into::into), ..Default::default() }
 }
 
-/// Service alerts reach the board: the board carries every alert that
-/// touches a row, a skipped visit, or the stop itself; each row names
-/// the alerts about it.
+/// Service alerts reach the board. The board carries every alert that touches a
+/// row, a skipped visit, or the stop itself. Each row names the alerts about
+/// it.
 #[test]
 fn the_board_carries_the_alerts_about_it() {
     let net = network();
@@ -708,14 +697,11 @@ fn a_direction_alert_reaches_only_its_direction_on_the_board() {
     assert_eq!(a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["10-dir-0"]);
 }
 
-// ---------------------------------------------------------------------
-// The grouped board — a stop's display: the board by route and
-// destination (its own laws: grouped_board_prop_test.rs).
-// ---------------------------------------------------------------------
+// --- The grouped board (its own laws: grouped_board_prop_test.rs) ---
 
-/// A station pin pools like THE board, each group's rows naming their
-/// bay; a group the edits took away from the stop stays, empty, with
-/// the visits it lost and the diversion; the board carries the alerts.
+/// A station pin pools like the board. Each group's rows name their bay.
+/// A group the edits took away from the stop stays, empty. It keeps the visits
+/// it lost and the diversion. The board carries the alerts.
 #[test]
 fn the_grouped_board_pools_skips_and_alerts() {
     use transit_dispatch::grouped_board;
@@ -733,8 +719,8 @@ fn the_grouped_board_pools_skips_and_alerts() {
     let empty = grouped_board(&net, &day, "B", 40_000, 3, None, None);
     assert!(!empty.pooled);
 
-    // The diversion takes the 10 away from C: its group stays, empty,
-    // and says what skipped it; the 20 still leaves.
+    // The diversion takes the 10 away from C. Its group stays, empty, and says
+    // what skipped it. The 20 still leaves.
     let records = vec![record(EditStatus::Accepted, 300)];
     let edits = transit_dispatch::day(&net, date(), &records).unwrap().edits.expect("an edit is in force");
     let patched = effective_day(&net, date(), &records).unwrap();
@@ -757,10 +743,10 @@ fn the_grouped_board_pools_skips_and_alerts() {
     assert_eq!(a.groups[0].departures[0].alerts, ["stop-a"]);
 }
 
-/// The held day is the day: its trips are the effective day, and what
-/// it says the edits took away is the unpatched day and the diversions
-/// in force on the date — one materialization, the same answer as
-/// computing each per call, for every edit status and date.
+/// The held day is the day. Its trips are the effective day, and what the
+/// edits took away is the unpatched day and the diversions in force on the
+/// date: one materialization. It gives the same answer as computing each
+/// per call, for every edit status and date.
 #[test]
 fn the_held_day_is_the_effective_day_and_its_edits() {
     let net = network();

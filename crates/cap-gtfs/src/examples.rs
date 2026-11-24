@@ -1,4 +1,4 @@
-//! The gtfs capability's worked examples (its `examples` feature): the
+//! The worked examples of the gtfs capability (its `examples` feature): the
 //! documents to load and each request. The generator runs them through
 //! this crate's `invoke` and records the answers.
 

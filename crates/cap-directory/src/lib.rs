@@ -22,10 +22,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::Network;
 
-/// One stop as the directory lists it: identity, name, where it
-/// is, and its walking-group structure — the parent flag a station
-/// board keys off, the transfer flag that marks a designated
-/// change point.
+/// One stop as the directory lists it: identity, name, and location. It
+/// also gives its walking-group structure: the parent flag that a station
+/// board keys off, and the transfer flag that marks a designated change point.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_directory/")]
 pub struct DirectoryStop {
@@ -33,18 +32,18 @@ pub struct DirectoryStop {
     pub name: String,
     pub lat: f64,
     pub lon: f64,
-    /// The parent station when this stop is a bay — the flag the
-    /// station board keys off (a stop with a parent, or with
-    /// children, pools; a plain stop stays per-stop).
+    /// The parent station when this stop is a bay. The station board keys
+    /// off this flag. A stop with a parent, or with children, pools. A plain
+    /// stop stays per-stop.
     pub parent: Option<String>,
-    /// A designated transfer point (authored intent — the analysis
-    /// ops measure the timed connections it enables).
+    /// A designated transfer point (authored intent). The analysis ops
+    /// measure the timed connections it enables.
     pub transfer: bool,
 }
 
-/// One route as the directory lists it: identity, display name, its
-/// long name beside it when it has one, its mode (the model's closed
-/// set, not GTFS's numeric codes), and its authored color when there
+/// One route as the directory lists it: identity, display name, and long
+/// name beside it when it has one. It also gives its mode, from the model's
+/// closed set (not GTFS's numeric codes), and its authored color when there
 /// is one.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_directory/")]
@@ -66,8 +65,8 @@ pub struct StopName {
     pub name: String,
 }
 
-/// One pattern of a route: its identity, its human-facing name, and
-/// its ordered stops — the alignment of service a diversion editor
+/// One pattern of a route: its identity, its human-facing name, and its
+/// ordered stops. This is the alignment of service that a diversion editor
 /// anchors against.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_directory/")]
@@ -78,8 +77,8 @@ pub struct PatternStops {
 }
 
 /// One operation call. Tagged like every capability's seam.
-/// A point's walk to one stop — cap-streets `access`'s walks pass as
-/// they are (their paths ride along unread).
+/// A point's walk to one stop. Cap-streets `access` walks pass through as
+/// they are. Their paths ride along unread.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_directory/")]
 pub struct StopWalk {
@@ -91,21 +90,21 @@ pub struct StopWalk {
 #[ts(export, export_to = "cap_directory/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What the network is: its name and the plan it is (as the
-    /// document carries them) — the heading a host shows over a
-    /// network it holds only as bytes it never parsed.
+    /// What the network is: its name and the plan it is, as the document
+    /// carries them. This is the heading a host shows over a network it holds
+    /// only as bytes it never parsed.
     About { network_hash: String },
-    /// The stop list, name-sorted (the pickers' shape): every stop
-    /// with its walking-group structure. `query` narrows it the way
-    /// a picker's typing does — every whitespace-separated term must
-    /// be answered, case-insensitive: inside the name or the id
-    /// ("fisher landing" finds Fisher's Landing and its bays), by an
-    /// abbreviation on the sign ("vancouver mall" finds Van Mall), or
+    /// The stop list, name-sorted (the pickers' shape). Every stop comes with
+    /// its walking-group structure. `query` narrows it the way a picker's
+    /// typing does. Every whitespace-separated term must be answered,
+    /// case-insensitive. A term matches inside the name or the id ("fisher
+    /// landing" finds Fisher's Landing and its bays). It matches an
+    /// abbreviation on the sign ("vancouver mall" finds Van Mall). It matches
     /// within a typo of a name word (D-48; the thresholds are D-91,
-    /// `transit_network::listing::name_match`). Exact matches list
-    /// first, then abbreviations, then typos, each by name. `limit`
-    /// truncates after the sort; `None` answers the whole list — a
-    /// silently truncated directory would be a lie.
+    /// `transit_network::listing::name_match`). Exact matches list first, then
+    /// abbreviations, then typos, each by name. `limit` truncates after the
+    /// sort. `None` answers the whole list. A silently truncated directory
+    /// would be a lie.
     Stops {
         network_hash: String,
         #[serde(default)]
@@ -114,16 +113,16 @@ pub enum Request {
         #[serde(default)]
         limit: Option<u32>,
     },
-    /// The stop list asked from a POINT: the places nearest
-    /// (`lat`, `lon`), by great-circle distance in meters, ties by id —
-    /// at most `limit` (default 10), none farther than `radius_m` when
-    /// given (none: the nearest `limit`, however far). A place is what
-    /// a rider walks to: a station's bays answer once, as the station,
-    /// at the distance of its nearest member. With the point's `walks`
-    /// (cap-streets `access` answers them, along the streets), the
-    /// places a walk reaches come first, by walk, each with its
-    /// `walk_secs` (the shortest to any member); the rest follow by
-    /// distance (D-34).
+    /// The stop list asked from a POINT: the places nearest (`lat`, `lon`), by
+    /// great-circle distance in meters, with ties by id. It gives at most
+    /// `limit` (default 10). With `radius_m`, none is farther than that.
+    /// Without it, the answer is the nearest `limit`, however far. A place is
+    /// what a rider walks to. A station's bays answer once, as the station, at
+    /// the distance of its nearest member. With the point's `walks`
+    /// (cap-streets
+    /// `access` answers them, along the streets), the places a walk reaches
+    /// come first, by walk. Each carries its `walk_secs`, the shortest to any
+    /// member. The rest follow by distance (D-34).
     StopsNear {
         network_hash: String,
         lat: f64,
@@ -138,21 +137,20 @@ pub enum Request {
         #[ts(optional)]
         walks: Option<Vec<StopWalk>>,
     },
-    /// Stops by id, in the request's order — the names join hosts
-    /// otherwise do by hand when a view (like rt's) carries ids a
-    /// human reads as names. Unknown ids are omitted (the caller
-    /// asked for stops, and silence is the honest answer for an id
-    /// the network does not carry).
+    /// Stops by id, in the request's order. Hosts otherwise join names by hand
+    /// when a view (like rt's) carries ids that a human reads as names. Unknown
+    /// ids are omitted. The caller asked for stops, and silence is the honest
+    /// answer for an id the network does not carry.
     StopsByIds { network_hash: String, ids: Vec<String> },
     /// The route list, name-sorted: every route with its mode.
     Routes { network_hash: String },
-    /// One route's patterns with their ordered stops — the model's
+    /// One route's patterns with their ordered stops. These are the model's
     /// directions. An unknown route answers empty, never an error.
     RouteStopSequence { network_hash: String, route_id: String },
-    /// Where one entity is on the map: its lines (pattern alignments —
-    /// authored, else stop to stop) and the stops it serves. A stop is
-    /// its point; a schedule its pattern; a route, a service type, or a
-    /// block every pattern it runs. Null for an unknown id.
+    /// Where one entity is on the map: its lines and the stops it serves.
+    /// Lines are pattern alignments: authored, else stop to stop. A stop is its
+    /// point. A schedule is its pattern. A route, a service type, or a block is
+    /// every pattern it runs. Null for an unknown id.
     Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
     /// The service keys, id order: each one's name, its calendar rule
     /// as authored (weekdays, date ranges, exceptions), and the routes
@@ -169,11 +167,11 @@ pub enum Request {
         #[ts(optional)]
         members: Option<Vec<String>>,
     },
-    /// Every entity of one kind, in id order, narrowed the way a
-    /// filter box's typing does (every term in the id, the name, or a
-    /// route's long name, case-insensitive): what places it (a pattern's route, a
-    /// schedule's pattern and service type) and the trips a schedule
-    /// runs or a block chains.
+    /// Every entity of one kind, in id order. A filter box's typing narrows it:
+    /// every term must match the id, the name, or a route's long name,
+    /// case-insensitive. Each row gives what places it: a pattern's route, or a
+    /// schedule's pattern and service type. It also gives the trips that a
+    /// schedule runs or a block chains.
     Entities {
         network_hash: String,
         kind: transit_network::EntityKind,
@@ -181,17 +179,18 @@ pub enum Request {
         #[ts(optional)]
         query: Option<String>,
     },
-    /// One route's composition: its patterns, the stops they visit,
-    /// its schedules grouped by service type, each with the trips it
-    /// runs (the materialized day's count), and its directions — each
-    /// with its patterns and its VARIANTS, the ways a rider rides it
-    /// (patterns over the same places in order, a station's bays one
-    /// place). Null for an unknown route.
+    /// One route's composition. It gives its patterns, the stops they visit,
+    /// and its schedules grouped by service type. Each schedule carries the
+    /// trips it runs (the materialized day's count). It also gives its
+    /// directions. Each direction has its patterns and its variants, the ways
+    /// a rider rides it. Variants are patterns over the same places in order,
+    /// with a station's bays as one place. Null for an unknown route.
     RouteDetail { network_hash: String, route_id: String },
-    /// One stop's composition: the routes whose patterns visit it, in
-    /// id order; the stop's record; and every pattern position that
-    /// visits it, with the trips each runs under `members` (every
-    /// service type when omitted). Null for an unknown stop.
+    /// One stop's composition. It gives the routes whose patterns visit it, in
+    /// id order. It gives the stop's record. It also gives every pattern
+    /// position that visits it, with the trips each runs under `members`.
+    /// Every service type applies when `members` is omitted. Null for an
+    /// unknown stop.
     StopDetail {
         network_hash: String,
         stop_id: String,
@@ -199,13 +198,13 @@ pub enum Request {
         #[ts(optional)]
         members: Option<Vec<String>>,
     },
-    /// The planner's timetable: one route, one direction (null: its
-    /// patterns in no direction), one service COMBINATION (`members`,
-    /// the types that run together — analysis `service_groups`) —
-    /// every trip its members run on the direction's patterns, one
-    /// row per trip by start, one column per stop in route order.
-    /// Null for an unknown route or direction, or members that never
-    /// run together on a date.
+    /// The planner's timetable: one route, one direction, and one service
+    /// combination (`members`, the types that run together; see analysis
+    /// `service_groups`). A null direction means its patterns in no direction.
+    /// It gives every trip its members run on the direction's patterns. There
+    /// is one row per trip, by start, and one column per stop in route order.
+    /// Null for an unknown route or direction, or for members that never run
+    /// together on a date.
     Timetable {
         network_hash: String,
         route_id: String,
@@ -213,9 +212,9 @@ pub enum Request {
         #[ts(optional)]
         direction: Option<String>,
         members: Vec<String>,
-        /// A loaded baseline to mark the timetable against: trips it
-        /// does not run are `added`, its trips this one no longer runs
-        /// are `removed`.
+        /// A loaded baseline to mark the timetable against. Trips it does not
+        /// run are `added`. Its trips that this one no longer runs are
+        /// `removed`.
         #[serde(default)]
         #[ts(optional)]
         compare_hash: Option<String>,
@@ -241,8 +240,8 @@ pub enum Response {
     Timetable { timetable: Option<transit_network::Timetable> },
 }
 
-/// How many places `stops_near` answers when the request names no
-/// limit — a screenful.
+/// How many places `stops_near` answers when the request names no limit.
+/// That is a screenful.
 pub const STOPS_NEAR_LIMIT: u32 = 10;
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
@@ -260,8 +259,8 @@ fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
     })
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`, and never panic. The seam is total.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Stops { network_hash, query, limit } => {
@@ -389,21 +388,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, and `{"ok": ...}` or
+/// `{"error": ...}` out. Its bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The directory has no bulk op of its own (the network registers on
-/// the kernel's load); the seam answers honestly instead of silently
-/// ignoring one.
+/// The directory has no bulk op of its own. The network registers on the
+/// kernel's load. The seam answers with an error, and does not silently
+/// ignore a bulk op.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: directory has no bulk op of its own")))
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

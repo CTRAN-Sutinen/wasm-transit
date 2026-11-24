@@ -15,13 +15,13 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_codec::FeedInfo;
 
-/// One operation call. Tagged like the monolith's seam: the serde form
+/// One operation call. Tagged like every capability's seam: the serde form
 /// is `{"op": "<name>", ...fields}`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_gtfs/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// `feed_info.txt` metadata (version, publisher) — the identity
+    /// `feed_info.txt` metadata (version, publisher). This is the identity
     /// question: which feed is this?
     FeedInfo { feed_hash: String },
 }
@@ -41,21 +41,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
+/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The feed capability has no bulk op of its own (a zip registers on
-/// the kernel's `load_feed`); the seam answers honestly instead of
-/// silently ignoring one.
+/// The feed capability has no bulk op of its own. A zip registers on the
+/// kernel's `load_feed`. The seam answers with an error instead of
+/// silently ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the feed capability has no bulk op of its own")))
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

@@ -1,43 +1,42 @@
-//! Coverage against a WEIGHTED LAYER (D-47): what share of a layer's
-//! weight — people, jobs, zero-car households, whatever the planner
-//! imported and labelled — sits within a radius of a stop with
-//! service, and of a stop with frequent service.
+//! Coverage against a weighted layer (D-47). It measures the share of a layer's
+//! weight within a radius of a stop with service, and of a stop with frequent
+//! service. The weight can be people, jobs, zero-car households, or any weight
+//! the planner imported and labelled.
 //!
-//! **The layer is any weighted geography.** A GeoJSON
-//! FeatureCollection of points and polygons; its numeric properties
-//! are the weights it can be read by. The document is the bytes: which
-//! property is the weight (`field`) and what it means (`label`) are
-//! the question's, so one file carrying both people and jobs is one
-//! layer read two ways.
+//! **The layer is any weighted geography.** A GeoJSON FeatureCollection of
+//! points and polygons. Its numeric properties are the weights it can be read
+//! by. The document holds the bytes. Which property is the weight (`field`) and
+//! what it means (`label`) belong to the question. One file with people and
+//! jobs is one layer read two ways.
 //!
-//! **Polygons are weighted by area.** A polygon's weight spreads
-//! evenly over its area: it is sampled on a lattice at parse time
-//! (each sample carrying an equal share, the shares summing to one),
-//! and a polygon is served by the share of its samples within the
-//! radius. A polygon wholly inside the radius is wholly served; one
-//! straddling it is served by about the share of its area inside, to
-//! the sampling resolution the answer states (`sample_spacing_m`).
-//! **Points stay valid**: a point's whole weight is served or not, and
-//! the answer states the layer's resolution as the average area per
-//! point (`point_spacing_m`) — a tract centroid two kilometres from
-//! the next swings with the radius in a way a block's does not.
+//! **Polygons are weighted by area.** A polygon's weight spreads evenly over
+//! its area. At parse time the polygon is sampled on a lattice. Each sample
+//! carries an equal share, and the shares sum to one. A polygon is served by
+//! the share of its samples within the radius. A polygon wholly inside the
+//! radius is wholly served. A polygon that straddles the radius is served by
+//! about the share of its area inside. The answer states the sampling
+//! resolution (`sample_spacing_m`).
 //!
-//! **Frequent counts departures (D-6).** Served is any visit (a rider
-//! alights at a terminal); frequent is departures only, on the whole
-//! day and in a window — a terminal where nobody boards is never
-//! frequent.
+//! **Points stay valid.** A point's whole weight is served or not. The answer
+//! states the layer's resolution as the average area per point
+//! (`point_spacing_m`). A tract centroid two kilometres from the next swings
+//! with the radius. A block's does not.
+//!
+//! **Frequent counts departures (D-6).** Served is any visit, such as a rider
+//! who alights at a terminal. Frequent counts departures only, on the whole day
+//! or in a window. A terminal where nobody boards is never frequent.
 //!
 //! **Coverage answers a combination (D-55).** `type_coverage` and
-//! `unserved_points` read the service types that run together, pooled
-//! over their authored service with no date standing in; on every date
-//! a combination holds exactly its members run, so its coverage is
-//! each of those dates' ([`coverage`], the calendar view, is the
-//! laws' oracle).
+//! `unserved_points` read the service types that run together. They pool the
+//! authored service of those types, with no date. On every date, a combination
+//! holds exactly the members that run. So its coverage is the coverage of each
+//! of those dates ([`coverage`], the calendar view, is the oracle for the
+//! laws).
 //!
-//! **A comparison is churn between two named sides.** `coverage_compare`
-//! pools the service types the host names on each side (D-99) and
-//! answers the weight gained and lost; it never matches one plan's
-//! types to the other's (D-43's matching rule is open).
+//! **A comparison is churn between two named sides.** `coverage_compare` pools
+//! the service types the host names on each side (D-99). It answers the weight
+//! gained and lost. It never matches one plan's types to the other's. D-43's
+//! matching rule is open.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -50,11 +49,11 @@ use transit_geo::distance_m;
 
 /// The finest lattice a polygon is sampled on, in meters.
 const MIN_SAMPLE_SPACING_M: f64 = 25.0;
-/// The samples a polygon aims for at most: a big polygon's lattice
-/// coarsens until its area holds about this many.
+/// The most samples a polygon aims for. A big polygon's lattice coarsens until
+/// its area holds about this many.
 const TARGET_SAMPLES: f64 = 4096.0;
-/// The lattice a polygon's bounding box may hold at most (a long,
-/// thin, diagonal polygon's box is mostly outside it).
+/// The most lattice cells a polygon's bounding box may hold. A long, thin,
+/// diagonal polygon's box is mostly outside the polygon.
 const MAX_LATTICE: f64 = 65_536.0;
 /// Meters per degree of latitude, on the sphere of the one distance.
 const M_PER_DEG: f64 = transit_geo::METERS_PER_DEGREE;
@@ -63,25 +62,25 @@ const M_PER_DEG: f64 = transit_geo::METERS_PER_DEGREE;
 // The layer document
 // ---------------------------------------------------------------------
 
-/// A polygon as GeoJSON holds it: rings of [lon, lat], the first the
-/// outer ring, the rest holes.
+/// A polygon as GeoJSON holds it. Rings are [lon, lat] pairs. The first ring is
+/// the outer ring. The rest are holes.
 pub type Rings = Vec<Vec<(f64, f64)>>;
 
 /// One feature's place.
 #[derive(Debug, Clone)]
 enum Place {
     Point { lat: f64, lon: f64 },
-    /// A polygon or multipolygon: its parts, its samples (lat, lon,
-    /// share of the feature — the shares sum to one), and the lattice
-    /// spacing they were taken at.
+    /// A polygon or multipolygon: its parts, its samples, and the lattice
+    /// spacing they were taken at. Each sample is (lat, lon, share of the
+    /// feature). The shares sum to one.
     Area { parts: Vec<Rings>, samples: Vec<(f64, f64, f64)>, spacing_m: f64 },
 }
 
 #[derive(Debug, Clone)]
 struct Feature {
     place: Place,
-    /// Numeric properties: (name, value, whether the JSON value is a
-    /// number — a numeric string is read only when named).
+    /// Numeric properties: (name, value, whether the JSON value is a number). A
+    /// numeric string is read only when named.
     values: Vec<(String, f64, bool)>,
 }
 
@@ -127,9 +126,9 @@ pub struct LayerReading {
     pub polygons: u32,
     /// The weight over those features.
     pub total: f64,
-    /// A point layer's resolution: the side of the average area per
-    /// point (the points' bounding box over their count), in meters.
-    /// Null with fewer than two points.
+    /// A point layer's resolution, in meters: the side of the average area per
+    /// point. That is the points' bounding box over their count. Null with
+    /// fewer than two points.
     pub point_spacing_m: Option<f64>,
     /// A polygon layer's resolution: the coarsest lattice its polygons
     /// were sampled on, in meters. Null with no polygons.
@@ -163,11 +162,11 @@ impl WeightedLayer {
         self.features.len() - self.points()
     }
 
-    /// Read the layer by one weight. `field` names the property; with
-    /// none, a layer with exactly one numeric property reads by it,
-    /// and any other layer is an error naming its fields. `label` is
-    /// what the weight means (the field when none). Features without
-    /// the field are left out of the reading.
+    /// Read the layer by one weight. `field` names the property. With no
+    /// `field`, a layer with exactly one numeric property reads by it. Any
+    /// other layer is an error that names its fields. `label` says what the
+    /// weight means. Without a label, the field names the weight. Features
+    /// without the field are left out of the reading.
     pub fn weights(&self, field: Option<&str>, label: Option<&str>) -> Result<Weights<'_>, String> {
         let field = match field {
             Some(f) => f.to_string(),
@@ -227,10 +226,10 @@ impl WeightedLayer {
     }
 }
 
-/// Parse a weighted layer from GeoJSON: a FeatureCollection of Point,
-/// Polygon and MultiPolygon features, each keeping its numeric
-/// properties (JSON numbers, and numeric strings when a reading names
-/// them). Other geometries are skipped and counted.
+/// Parse a weighted layer from GeoJSON. The input is a FeatureCollection of
+/// Point, Polygon, and MultiPolygon features. Each feature keeps its numeric
+/// properties: JSON numbers, and numeric strings when a reading names them.
+/// Other geometries are skipped and counted.
 pub fn parse_layer(bytes: &[u8]) -> Result<WeightedLayer, String> {
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| format!("layer: {e}"))?;
     let raw = value
@@ -321,9 +320,9 @@ fn inside(rings: &[Vec<(f64, f64)>], x: f64, y: f64, project: &impl Fn((f64, f64
     odd
 }
 
-/// The polygon's samples: lattice cell centres inside it, each an
-/// equal share (summing to one), and the lattice spacing. A polygon
-/// smaller than one cell is one sample at its outer ring's mean.
+/// The polygon's samples: lattice cell centres inside it, each an equal share
+/// that sums to one. Also the lattice spacing. A polygon smaller than one cell
+/// is one sample at its outer ring's mean.
 fn sample(parts: &[Rings]) -> (Vec<(f64, f64, f64)>, f64) {
     let all = || parts.iter().flat_map(|rings| rings.iter().flatten());
     let (mut lon_lo, mut lon_hi, mut lat_lo, mut lat_hi) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
@@ -382,13 +381,13 @@ fn sample(parts: &[Rings]) -> (Vec<(f64, f64, f64)>, f64) {
 // What a date serves
 // ---------------------------------------------------------------------
 
-/// "Frequent" inside a time window — the way planners state it:
-/// "every 15 minutes, 07:00–19:00". A stop is frequent in the window
-/// when no rider waits longer than `frequent_secs` anywhere in it:
-/// the gap from the window's start to the first departure, every gap
-/// between departures, and the gap from the last departure to the
-/// window's end all fit. Departures only (a trip's final visit is an
-/// arrival); every route at the stop pools, as a rider sees it.
+/// "Frequent" inside a time window, as planners state it: "every 15 minutes,
+/// 07:00 to 19:00". A stop is frequent in the window when no rider waits longer
+/// than `frequent_secs` anywhere in it. These gaps must all fit: the gap from
+/// the window's start to the first departure, every gap between departures, and
+/// the gap from the last departure to the window's end. Departures only. A
+/// trip's final visit is an arrival. Every route at the stop pools, as a rider
+/// sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct CoverageWindow {
@@ -434,9 +433,8 @@ fn served_by(
     min_departures: u32,
     window: Option<CoverageWindow>,
 ) -> Served {
-    // Visits and departure times per stop — every service and route
-    // calling at the stop pools: two routes at 30 minutes each make
-    // one 15-minute stop.
+    // Visits and departure times per stop. Every service and route that calls
+    // at the stop pools. Two routes at 30 minutes each make one 15-minute stop.
     let mut visited: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     for (service_id, service) in &net.pattern_trips {
         if !include(&service.service_type) {
@@ -462,7 +460,7 @@ fn served_by(
         departs.sort_unstable();
         let n = departs.len() as u32;
         let is_frequent = match window {
-            // Inside the window: the worst wait fits, with enough
+            // Inside the window: the worst wait must fit. There must be enough
             // departures that a lone pair cannot pass.
             Some(window) => {
                 let inside = departs.iter().filter(|t| (window.start_secs..=window.end_secs).contains(t)).count();
@@ -480,8 +478,8 @@ fn served_by(
     out
 }
 
-/// Stops bucketed on a grid at least a radius wide, so "is any stop
-/// within the radius" reads the 3×3 cells around a sample.
+/// Stops are bucketed on a grid at least one radius wide. So "is any stop
+/// within the radius" reads only the 3x3 cells around a sample.
 struct Grid {
     radius_m: f64,
     cell_lat: f64,
@@ -493,9 +491,9 @@ impl Grid {
     fn new(stops: impl Iterator<Item = (f64, f64)>, radius_m: f64) -> Grid {
         let stops: Vec<(f64, f64)> = stops.collect();
         let max_lat = stops.iter().map(|(lat, _)| lat.abs()).fold(0.0f64, f64::max);
-        // Cells no smaller than the radius anywhere among the stops (a
-        // degree of longitude shrinks toward the poles; a margin for
-        // the haversine against the flat bound).
+        // Cells are no smaller than the radius anywhere among the stops. A
+        // degree of longitude shrinks toward the poles. The margin covers the
+        // haversine against the flat bound.
         let cell_lat = (radius_m.max(1.0) / (M_PER_DEG * 0.99)).max(1e-6);
         let cos = (max_lat + 1.0).min(89.0).to_radians().cos();
         let cell_lon = (radius_m.max(1.0) / (M_PER_DEG * cos * 0.99)).max(1e-6);
@@ -536,11 +534,10 @@ fn classify(weights: &Weights, radius_m: f64, served: &Served) -> Vec<(bool, boo
 // The answers
 // ---------------------------------------------------------------------
 
-/// Coverage on one service date: what share of the layer's weight is
-/// within `radius_m` of a stop with service, and what share is near
-/// *frequent* service (headway at or under `frequent_secs` over at
-/// least `min_departures` departures, so a 2-trip pocket cannot read
-/// as frequent).
+/// Coverage on one service date. What share of the layer's weight is within
+/// `radius_m` of a stop with service? What share is near *frequent* service?
+/// Frequent means headway at or under `frequent_secs`, over at least
+/// `min_departures` departures. So a 2-trip pocket cannot read as frequent.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct CoverageStats {
@@ -551,8 +548,8 @@ pub struct CoverageStats {
     pub radius_m: f64,
     pub frequent_secs: u32,
     pub min_departures: u32,
-    /// The window frequency was judged in; null = the whole-day
-    /// average headway.
+    /// The window the frequency is judged in. Null means the
+    /// whole-day average headway.
     pub window: Option<CoverageWindow>,
     pub total: f64,
     pub served: f64,
@@ -563,9 +560,9 @@ pub struct CoverageStats {
     pub frequent_stops: u32,
 }
 
-/// Coverage on one service date: everything that runs that day. The
-/// calendar view the combination reads ([`crate::type_coverage`]) agree
-/// with on every date they hold.
+/// Coverage on one service date: everything that runs that day. On every date a
+/// combination holds, the calendar view it reads ([`crate::type_coverage`])
+/// agrees with this.
 pub fn coverage(
     net: &Network,
     date: NaiveDate,
@@ -635,9 +632,9 @@ fn weigh(weights: &Weights, flags: &[(bool, bool)]) -> (f64, f64) {
     })
 }
 
-/// One feature nothing serves (wholly or in part) — the
-/// WHERE of the unserved share ("which part, and where?"): its
-/// unserved weight, where that part sits, and the nearest served stop.
+/// One feature that nothing serves, wholly or in part. It answers the where of
+/// the unserved share: "which part, and where?" It gives the unserved weight,
+/// where that part sits, and the nearest served stop.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct UnservedPoint {
@@ -672,13 +669,13 @@ pub struct UnservedPlaces {
     pub points: Vec<UnservedPoint>,
 }
 
-/// The unserved features of a layer under a service COMBINATION (D-55):
-/// every feature with weight beyond `radius_m` of every stop its
-/// members' pooled service calls at (the same served set
-/// [`crate::type_coverage`] measures against — on any date it holds,
-/// that day's), sorted by unserved weight descending then by position —
-/// the biggest unserved places first. Served plus unserved conserves
-/// the layer's total. None when the members never run together.
+/// The unserved features of a layer under a service combination (D-55). Every
+/// feature has weight beyond `radius_m` of every stop that its members' pooled
+/// service calls at. This is the same served set that [`crate::type_coverage`]
+/// measures against. On any date the combination holds, it is that day's set.
+/// Sorted by unserved weight, descending, then by position. The biggest
+/// unserved places come first. Served plus unserved equals the layer's total.
+/// None when the members never run together.
 pub fn unserved_points(net: &Network, weights: &Weights, members: &[String], radius_m: f64) -> Option<UnservedPlaces> {
     let combination = transit_network::service_combination(net, members)?;
     let points = unserved_of(net, weights, &combination.members, radius_m);
@@ -709,8 +706,8 @@ fn unserved_of(net: &Network, weights: &Weights, members: &[String], radius_m: f
         .into_iter()
         .map(|(feature, (weight, lat_sum, lon_sum, n))| {
             let (lat, lon) = (lat_sum / n as f64, lon_sum / n as f64);
-            // Served means within radius of SOME served stop; id order
-            // breaks a distance tie toward the lowest id.
+            // Served means within radius of a served stop. Id order breaks a
+            // distance tie toward the lowest id.
             let nearest = served.served.iter().fold(None::<(&str, f64)>, |best, (id, s_lat, s_lon)| {
                 let d = distance_m(lat, lon, *s_lat, *s_lon);
                 if best.map_or(true, |(_, bd)| d < bd) {
@@ -759,11 +756,10 @@ pub struct CoverageSide {
     pub frequent_stops: u32,
 }
 
-/// A proposal's coverage against its base: both sides, and the churn
-/// a net change hides — the weight the proposal newly serves
-/// (`served_gained`) and no longer serves (`served_lost`), and the
-/// same for frequent service. The proposal's served weight is the
-/// base's plus gained minus lost.
+/// A proposal's coverage against its base: both sides, and the churn a net
+/// change hides. That is the weight the proposal newly serves (`served_gained`)
+/// and no longer serves (`served_lost`). The same holds for frequent service.
+/// The proposal's served weight is the base's plus gained minus lost.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct CoverageDelta {
@@ -775,13 +771,12 @@ pub struct CoverageDelta {
     pub frequent_lost: f64,
 }
 
-/// Compare two networks' coverage of one layer, each side the
-/// service types the host names: `base_members` of the base,
-/// `members` of the proposal, each pooled over its authored service
-/// (a combination of types that run together, D-55). Which of one
-/// plan's combinations answers to which of the other's — when a fork
-/// renames or splits a type — is the host's to say here; the op never
-/// matches them (the rule is not decided, QAF-20).
+/// Compare two networks' coverage of one layer. Each side names its service
+/// types: `base_members` for the base, `members` for the proposal. Each side
+/// pools over its authored service, a combination of types that run together
+/// (D-55). The host decides which combination of one plan answers to which of
+/// the other's, when a fork renames or splits a type. The op never matches
+/// them. The rule is not decided (QAF-20).
 #[allow(clippy::too_many_arguments)]
 pub fn coverage_compare(
     base: &Network,

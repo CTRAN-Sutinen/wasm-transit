@@ -1,23 +1,23 @@
-//! The directory's stop question, asked from a POINT: the places a
+//! The directory's stop question, asked from a point: the places a
 //! rider can walk to, nearest first. The laws, from the
 //! intent ("stops near me"), never from the implementation:
 //!
 //! 1. rows are ordered by great-circle distance (meters, haversine)
-//!    — monotone non-decreasing, ties by stop id;
+//!   : monotone non-decreasing, ties by stop id;
 //! 2. with a radius, every row lies within it, and every place
 //!    within it answers (up to the limit);
 //! 3. the nearest place is first, at the distance of the nearest
 //!    point of it;
 //! 4. never more rows than the limit;
-//! 5. one row per PLACE: a station's bays answer as the station
+//! 5. one row per place: a station's bays answer as the station
 //!    (the walking group the station board pools), at the distance
 //!    of its nearest member; a stop with no station is its own place.
 //!
-//! Asked with the point's WALKS to stops (cap-streets `access`, along
-//! the streets — crates/transit-streets/src/lib.rs; D-34):
+//! Asked with the point's walks to stops (cap-streets `access`, along
+//! the streets: crates/transit-streets/src/lib.rs; D-34):
 //!
 //! 6. the places a walk reaches come first, by walk (then distance,
-//!    then id); the rest follow by distance, ties by id — a place
+//!    then id); the rest follow by distance, ties by id: a place
 //!    across a freeway is no nearer for being near;
 //! 7. a place's walk is the shortest walk to any of its members, and
 //!    a walk to a stop the network does not hold reaches nothing;
@@ -35,7 +35,7 @@ use transit_network::listing::{stops_near, stops_near_walked, NearbyStop};
 use transit_network::{Network, Stop};
 
 /// The test's own great-circle distance (the spec's formula, mean
-/// earth radius) — independent of the library's.
+/// earth radius): independent of the library's.
 fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
     let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
@@ -242,7 +242,7 @@ proptest! {
 }
 
 /// The worked case: a station whose bays sit nearer than its pin
-/// answers ONCE, as the station, at its nearest bay's distance — the
+/// answers once, as the station, at its nearest bay's distance: the
 /// place a rider walks to, not three rows of one transit center.
 #[test]
 fn a_station_answers_once_at_its_nearest_bay() {

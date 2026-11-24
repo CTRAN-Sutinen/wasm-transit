@@ -1,7 +1,7 @@
 //! Where a bus is going, as its sign says it. One rule for every
 //! reader (the board, the planner's legs): the visit's own headsign
 //! (it overrides the trip's at that visit only), else the trip's,
-//! else the final stop — named as the place (its parent station), not
+//! else the final stop, named as the place (its parent station), not
 //! the bay the trip pulls into.
 
 use crate::materialize::MaterializedTrip;

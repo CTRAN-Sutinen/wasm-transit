@@ -54,7 +54,7 @@ impl transit_version::Versioned for StopRequests {
 pub const JOBS: [&str; 5] = ["new", "reinstall", "relocate_remove", "repair_improve", "temporary"];
 
 /// A request's life: drafted, submitted, the work order opened
-/// (`ordered`), completed — or cancelled, the tombstone.
+/// (`ordered`), completed, or cancelled (the tombstone).
 /// The statuses of work still in flight: what the work queue opens on.
 pub const OPEN_STATUSES: [&str; 3] = ["drafted", "submitted", "ordered"];
 pub const STATUSES: [&str; 5] = ["drafted", "submitted", "ordered", "completed", "cancelled"];
@@ -109,7 +109,7 @@ pub struct StopRequest {
     #[ts(optional)]
     pub requested_on: Option<String>,
     /// The routes meant to serve the stop, and the direction of travel
-    /// (one of [`DIRECTIONS`]) — a new stop's intent: no schedule
+    /// (one of [`DIRECTIONS`]). This is a new stop's intent: no schedule
     /// serves it yet. The routes are names the planner writes, not a
     /// reference into the network: a route can be one no pick runs yet
     /// (D-234).
@@ -190,8 +190,8 @@ pub struct StopRequest {
 }
 
 /// A photo or drawing a record carries (D-162): named by its content
-/// hash, never a URL — the deployment names the bucket, the server hands
-/// out the link, and only a signed-in person may read it.
+/// hash, never a URL. The deployment names the bucket. The server hands
+/// out the link. Only a signed-in person may read it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, rename = "RequestAttachment")]
 pub struct Attachment {
@@ -252,7 +252,7 @@ pub struct Locate {
 
 /// The work order a request tracks, as the work order system says:
 /// which system, its id there (the worksheet's Control #), a link, and
-/// its status as last read, and when — shown as given.
+/// its status as last read, and when. It is shown as given.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct WorkOrder {
@@ -382,7 +382,7 @@ impl StopRequests {
         self.requests.contains_key(id).then(|| RequestRefusal { request: id.to_string(), problem: RequestProblem::IdTaken })
     }
 
-    /// One request placed by id — new, or replacing the one held; every
+    /// One request placed by id: new, or replacing the one held. Every
     /// other request as it was. Unchecked: a write passes
     /// [`StopRequests::checked`].
     pub fn put(&self, id: &str, request: StopRequest) -> StopRequests {
@@ -394,7 +394,7 @@ impl StopRequests {
     /// What the work order system answered, on request `id` (D-165): its
     /// reference replaces the one held, a field it lacks kept (the link,
     /// the system), and a drafted or submitted request moves to
-    /// `ordered` — its work order is open; one ordered, completed, or
+    /// `ordered`. Its work order is open. One ordered, completed, or
     /// cancelled keeps its status. None for an id the document does not
     /// hold. Unchecked: a write passes [`StopRequests::checked`].
     pub fn record_work_order(&self, id: &str, answer: WorkOrder) -> Option<StopRequests> {
@@ -421,7 +421,7 @@ impl StopRequests {
     }
 
     /// The work across every stop: every request in id order, only those
-    /// at `statuses` and of `jobs` — each filter only where given.
+    /// at `statuses` and of `jobs`. Each filter applies only where given.
     pub fn list(&self, statuses: Option<&[String]>, jobs: Option<&[String]>) -> Vec<(&str, &StopRequest)> {
         self.requests
             .iter()

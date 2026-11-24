@@ -1,5 +1,6 @@
 //! A pick's period, and what a pick reads of the stops over it (D-157,
-//! D-228) — the laws, from the user's intent, before the implementation:
+//! D-228). These are the laws, from the user's intent, before the
+//! implementation:
 //!
 //! * a pick governs from its own date until the date of the next pick
 //!   that is not retired; a retired pick bounds nothing;
@@ -8,7 +9,7 @@
 //! * a pick with no id or no date has no period, and reads nothing;
 //! * `read_pick` is `read_records` on the pick's first date and
 //!   `visit_warnings` over its period, and `export_pick` is
-//!   `export_versions` over the same period — so every host that asks
+//!   `export_versions` over the same period, so every host that asks
 //!   gets the same answer.
 
 use chrono::NaiveDate;

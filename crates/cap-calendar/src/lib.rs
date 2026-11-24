@@ -1,13 +1,13 @@
 //! cap-calendar: which service keys run on a date, and its reverse, on
 //! which dates one service type runs (OPS.md has the ops).
 //!
-//! Both answers read the effective day, not the calendar rules: the
-//! network materialized for the date and patched by the edits in force
+//! Both answers read the effective day, not the calendar rules. The day is
+//! the network materialized for the date and patched by the edits in force
 //! (the kernel's held day, `transit_dispatch::day_of` under
 //! `cap_abi::kernel::DAY`). A key whose every trip is skipped or cannot be
-//! represented is not running, whatever its calendar says; the runcut
+//! represented is not running, whatever its calendar says. The runcut
 //! view's hole keeps the same rule. It reads the same documents and day as
-//! cap-board. There is no GTFS expansion here, and the arch gate forbids a
+//! cap-board. There is no GTFS expansion here. The arch gate forbids a
 //! GTFS layer.
 
 #![forbid(unsafe_code)]
@@ -32,10 +32,10 @@ pub enum Request {
         edits_hash: Option<String>,
         date: String,
     },
-    /// The dates one service type runs on within a window — the same
-    /// question `active_services` answers in the other direction
-    /// ("when does 1-WKDY/31 run?"). Inclusive "YYYY-MM-DD" window;
-    /// an unknown type or an inverted window answers empty.
+    /// The dates one service type runs on within a window. This is the
+    /// same question `active_services` answers in the other direction
+    /// ("when does 1-WKDY/31 run?"). Inclusive "YYYY-MM-DD" window.
+    /// An unknown type or an inverted window answers empty.
     /// Schedule-only when `edits_hash` is omitted.
     ServiceDates {
         network_hash: String,
@@ -60,8 +60,8 @@ fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
         .map_err(|e| format!("invalid date {date:?}: {e}"))
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::ActiveServices { network_hash, edits_hash, date } => {
@@ -72,8 +72,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })
         }
         Request::ServiceDates { network_hash, edits_hash, service_type, from, to } => {
-            // The request's own fields validate before any registry
-            // lookup — a garbage date is a caller error, not a
+            // Validate the request's own fields before any registry
+            // lookup. A garbage date is a caller error, not a
             // missing-document error.
             let from = parse_date(&from)?;
             let to = parse_date(&to)?;
@@ -91,21 +91,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
+/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The calendar has no bulk op of its own (its documents register on
-/// the kernel's loads); the seam answers honestly instead of silently
-/// ignoring one.
+/// The calendar has no bulk op of its own. Its documents register on the
+/// kernel's loads. The seam answers with an error instead of silently
+/// ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the calendar has no bulk op of its own")))
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 
@@ -122,8 +122,8 @@ cap_abi::capability! {
     ],
 }
 
-/// The day for (network, edits, date), held in the kernel's derived
-/// registry under `transit_dispatch::day_key`: the effective trips and,
+/// The day for (network, edits, date). The kernel's derived registry holds
+/// it under `transit_dispatch::day_key`. It holds the effective trips and,
 /// when edits are in force, what they took away. The date is read first,
 /// so a date that does not parse is the caller's error.
 fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {

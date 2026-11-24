@@ -5,7 +5,7 @@
     },
     "Rule": {
       "additionalProperties": true,
-      "description": "One policy rule: identities holding any of `roles` may perform any\nof `actions` on any of `pointers`. `\"*\"` matches all actions /\npointers. A rule with EMPTY `roles` never matches — an empty\nintersection is not an intersection.",
+      "description": "One policy rule: identities holding any of `roles` may perform any\nof `actions` on any of `pointers`. `\"*\"` matches all actions /\npointers. A rule with empty `roles` never matches, because an empty\nrole set has no overlap with any identity.",
       "properties": {
         "actions": {
           "default": [],
@@ -40,7 +40,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The policy document: a versioned rule list, evaluated in order.\nFail-closed by construction — see `authorize`.",
+  "description": "The policy document: a versioned rule list, evaluated in order.\nFail-closed by construction. See `authorize`.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/PolicyKind",

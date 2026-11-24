@@ -110,7 +110,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [plain-docs.md](plain-docs.md) | the developer documents rewritten to the writing rules, the first-change guide tested, and one name for each concept |
+| [plain-comments.md](plain-comments.md) | the code comments rewritten to the writing rules and made shorter, with a guard on each file and a lint in `just test` |
 
 ## Queued, not yet scoped
 

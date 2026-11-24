@@ -1,9 +1,8 @@
-//! The router's graphs are derived entries (`cap_abi::kernel::GRAPH`):
-//! bounded on their own (a long session's dates would each leave a
-//! RAPTOR graph behind in linear memory that never shrinks), and
-//! dropped with any document they were computed from. Its own test
-//! binary: the registries are process-global, and eviction would race
-//! the dispatch tests.
+//! The router's graphs are derived entries (`cap_abi::kernel::GRAPH`). They
+//! are bounded on their own. A long session's dates would each leave a RAPTOR
+//! graph behind in linear memory that never shrinks. They are dropped with any
+//! document they were computed from. This has its own test binary, because the
+//! registries are process-global. Eviction would race the dispatch tests.
 
 use cap_abi::kernel::{kind, derived_len, GRAPH};
 use cap_abi::registry::OP_EVICT;
@@ -31,8 +30,8 @@ fn graphs_are_bounded_and_follow_their_documents_out() {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).unwrap();
     let (network_hash, _) = kind::<transit_network::Network>().register(transit_codec::import(&feed).network).unwrap();
 
-    // A session that asks across a month of dates: one graph a day,
-    // never more than eight held.
+    // A session that asks across a month of dates gets one graph a day. No
+    // more than eight are held.
     for day in 1..=30 {
         plan(&network_hash, &format!("2026-10-{day:02}")).unwrap();
         assert!(derived_len(&GRAPH) <= 8, "day {day}: {} graphs held", derived_len(&GRAPH));

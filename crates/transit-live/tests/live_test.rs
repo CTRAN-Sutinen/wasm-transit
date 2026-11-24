@@ -1,6 +1,6 @@
-//! The live document's laws: one classification rule under one
-//! window, loop-safe visit lookup, and the summary's two modes
-//! (late buses when positions exist, late trips when they do not).
+//! The live document's laws. One classification rule runs under one
+//! window. Visit lookup is loop-safe. The summary has two modes: late buses
+//! when positions exist, late trips when they do not.
 
 use transit_live::{classify, summarize, LiveDay, LiveStatus, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow};
 
@@ -18,9 +18,9 @@ fn classification_follows_the_window_edges() {
     assert_eq!(classify(Some(-61), &grace), LiveStatus::Early);
 }
 
-/// Early is not on time (the user's decision: 0 s): under the default
-/// window ANY earliness is early — a bus that leaves before its time
-/// is a missed bus. QAF-71: the 09:25 034 at -91 s read on time.
+/// Early is not on time (the user's decision: 0 s). Under the default
+/// window, any earliness is early. A bus that leaves before its time is a
+/// missed bus. QAF-71: the 09:25 034 at -91 s read on time.
 #[test]
 fn under_the_default_window_any_earliness_is_early() {
     let w = OnTimeWindow::default();
@@ -30,8 +30,8 @@ fn under_the_default_window_any_earliness_is_early() {
     }
 }
 
-/// A document minted without an early bound reads the default — the
-/// strict one, never a permissive fallback.
+/// A document minted without an early bound reads the default. The default
+/// is strict, never a permissive fallback.
 #[test]
 fn a_window_without_an_early_bound_is_strict() {
     let w: OnTimeWindow = serde_json::from_str(r#"{"late_secs":60,"very_late_secs":300}"#).unwrap();
@@ -124,12 +124,12 @@ fn the_summary_ranks_buses_and_falls_back_to_predictions() {
     assert_eq!(summarize(&no_positions, 0).late.len(), 0, "the limit holds");
 }
 
-/// A trip instance is (trip, service date, start): the live document
-/// carries the date a feed states (GTFS-rt `start_date`), and a reader
-/// asks for one date's view. An instance stating no date is the
-/// current service day's (the GTFS-rt spec's reading) — in that day's
-/// view only. Vehicles and trip-scoped alerts follow the same rule;
-/// an alert scoped to no trip speaks on every date.
+/// A trip instance is (trip, service date, start). The live document
+/// carries the date that a feed states (GTFS-rt `start_date`). A reader
+/// asks for one date's view. An instance that states no date belongs to
+/// the current service day (the GTFS-rt spec's reading). It appears in that
+/// day's view only. Vehicles and trip-scoped alerts follow the same rule.
+/// An alert scoped to no trip speaks on every date.
 #[test]
 fn a_dates_view_holds_that_dates_instances() {
     use transit_live::{AlertScope, LiveAlert};

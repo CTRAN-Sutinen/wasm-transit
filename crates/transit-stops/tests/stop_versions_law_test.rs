@@ -1,21 +1,21 @@
-//! GTFS out and in with the stops' history (D-150, D-151, D-157) — the
-//! laws, from the user's intent, before the implementation:
+//! GTFS out and in with the stops' history (D-150, D-151, D-157). These are
+//! the laws, from the user's intent, before the implementation:
 //!
 //! * EXPORT: a stop whose record (point, name, code, details) changes
-//!   inside the export's dates is one stop per version — the version in
-//!   force on the last date under the stop's id, each earlier one under
-//!   `<id>@<its first date>`, every one with the stop's code — and each
-//!   pattern visiting it splits at those dates, its trips under calendars
-//!   cut to each version's dates; on every date the export runs exactly
-//!   the trips the pick runs that day, at the stops' records of that day;
-//!   a suspension or retirement splits nothing; with no record changing,
+//!   inside the export's dates is one stop per version. The version in
+//!   force on the last date keeps the stop's id. Each earlier one is
+//!   `<id>@<its first date>`. Every one has the stop's code. Each pattern
+//!   visiting it splits at those dates, and its trips run under calendars
+//!   cut to each version's dates. On every date the export runs exactly
+//!   the trips the pick runs that day, at the stops' records of that day.
+//!   A suspension or retirement splits nothing. With no record changing,
 //!   the export is the pick read on its first date;
 //! * IMPORT: the feed's stops compared with the stops document on the
 //!   feed's first date, each difference an event dated that day
 //!   (`in_service` for a stop the document lacks or has not yet in
 //!   service, `moved`, `changed`); a stop the feed does not list keeps
 //!   its events, later events stand, a made id reads back as a version of
-//!   its stop — so a re-import of this repo's own export adds no event.
+//!   its stop, so a re-import of this repo's own export adds no event.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;

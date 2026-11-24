@@ -1,7 +1,6 @@
-//! Native dispatch tests for the directory capability — the seam
-//! without wasm, over the REAL fixture-derived network (the same
-//! document cap-network's import produces from the e2e zip). The
-//! laws:
+//! Native dispatch tests for the directory capability. These test the seam
+//! without wasm, over the real fixture-derived network. That is the same
+//! document cap-network's import produces from the e2e zip. The laws:
 //!
 //! 1. the network document's identity is the module's canonical
 //!    serialization (the same identity every network-consuming
@@ -26,8 +25,8 @@ use transit_network::Network;
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 
-/// The fixture-derived network document (import is the codec — the
-/// boundary; this module composes over the document it produces).
+/// The fixture-derived network document. Import is the codec, at the
+/// boundary. This module composes over the document it produces.
 fn derived_network() -> Network {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
     transit_codec::import(&feed).network
@@ -47,8 +46,8 @@ fn stops(limit: Option<u32>) -> Vec<cap_directory::DirectoryStop> {
 #[test]
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
-    // The same formula every network-consuming module uses: the
-    // canonical bytes (RFC 8785, D-169) hashed. One document, one truth.
+    // Every network-consuming module uses this formula: the canonical bytes
+    // (RFC 8785, D-169), hashed. One document, one truth.
     let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
@@ -61,7 +60,7 @@ fn the_stop_list_is_name_sorted_and_carries_the_walking_group() {
     let all = stops(None);
     assert_eq!(all.len(), 6, "A, B, C, the station pin, two bays");
 
-    // Name-sorted (the pickers' shape), ties by id — a total order.
+    // Name-sorted (the pickers' shape), with ties by id. This is a total order.
     let names: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
     let mut sorted = names.clone();
     sorted.sort();
@@ -75,7 +74,7 @@ fn the_stop_list_is_name_sorted_and_carries_the_walking_group() {
     assert_eq!(by_id("STN").parent, None);
     assert_eq!(by_id("A").name, "Main & 1st");
 
-    // The limit truncates AFTER the sort, never silently the list.
+    // The limit truncates after the sort. It never silently truncates the list.
     let two = stops(Some(2));
     assert_eq!(two.len(), 2);
     assert_eq!(two[0].stop_id, all[0].stop_id);
@@ -117,8 +116,8 @@ fn the_names_join_answers_in_request_order() {
         Response::StopsByIds { stops } => stops,
         _ => panic!("stops_by_ids"),
     };
-    // Unknown ids are omitted — the caller asked for stops — and
-    // the answer keeps the request's order.
+    // Unknown ids are omitted, since the caller asked for stops. The answer
+    // keeps the request's order.
     assert_eq!(
         result.iter().map(|s| (s.stop_id.as_str(), s.name.as_str())).collect::<Vec<_>>(),
         vec![("B", "Main & 2nd"), ("STN", "Main Station"), ("A", "Main & 1st")],
@@ -143,11 +142,10 @@ fn the_route_list_is_name_sorted_with_model_modes() {
     assert!(routes.iter().any(|r| r.route_id == "10"));
 }
 
-/// A route's stop sequences are its PATTERNS — the model's
-/// directions. Route 10 carries three in the fixture (the direct
-/// A→B run with its shape and without, and the A→C→B run), and the
-/// LONGEST is the one with the skippable interior the diversion
-/// editor anchors against.
+/// A route's stop sequences are its patterns, the model's directions. Route
+/// 10 has three in the fixture. They are the direct A→B run with its shape
+/// and without, and the A→C→B run. The longest is the one with the
+/// skippable interior that the diversion editor anchors against.
 #[test]
 fn a_routes_stop_sequences_are_its_patterns() {
     let patterns = match dispatch(Request::RouteStopSequence {
@@ -163,7 +161,7 @@ fn a_routes_stop_sequences_are_its_patterns() {
     let longest = patterns.iter().max_by_key(|p| p.stops.len()).unwrap();
     let ids: Vec<&str> = longest.stops.iter().map(|s| s.stop_id.as_str()).collect();
     assert!(ids.contains(&"A") && ids.contains(&"B") && ids.contains(&"C"), "{ids:?}");
-    // The interior stop sits between the anchors — the editor's
+    // The interior stop sits between the anchors. This is the editor's
     // skippable middle (the diversion e2e's contract).
     let pos = |id: &str| ids.iter().position(|s| *s == id).unwrap();
     assert!(pos("A") < pos("C") && pos("C") < pos("B"), "C is interior on the longest pattern");
@@ -183,8 +181,8 @@ fn a_routes_stop_sequences_are_its_patterns() {
     assert!(ghost.is_empty());
 }
 
-/// QAF-67: a route row carries its long name beside the short one
-/// — the fixture's routes all have one ("Downtown via Main").
+/// QAF-67: a route row carries its long name beside the short one. The
+/// fixture's routes all have one ("Downtown via Main").
 #[test]
 fn a_route_row_carries_its_long_name() {
     let routes = match dispatch(Request::Routes { network_hash: load_network() }).unwrap() {
@@ -202,9 +200,9 @@ fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result
     })
 }
 
-/// The stop question from a point — places nearest first,
-/// the station's bays answering as the station (one place), each
-/// row with its distance in meters.
+/// The stop question from a point. Places come nearest first. The station's
+/// bays answer as the station, as one place. Each row gives its distance in
+/// meters.
 #[test]
 fn stops_near_a_point_are_places_nearest_first() {
     // Standing on Bay A: the station is the nearest place (0 m).
@@ -216,8 +214,8 @@ fn stops_near_a_point_are_places_nearest_first() {
     assert_eq!(ids.len(), 4, "A, B, C and the station — every place, under the default limit");
     assert!(rows.windows(2).all(|w| w[0].distance_m <= w[1].distance_m));
 
-    // The limit and the radius narrow it; the answer is honest-empty
-    // when nothing is near.
+    // The limit and the radius narrow it. The answer is empty when nothing
+    // is near.
     assert_eq!(near(45.5150, -73.5155, Some(1), None).unwrap().len(), 1);
     assert!(near(45.5150, -73.5155, None, Some(500.0)).unwrap().iter().all(|r| r.distance_m <= 500.0));
     assert!(near(0.0, 0.0, None, Some(1000.0)).unwrap().is_empty());
@@ -230,10 +228,10 @@ fn stops_near_a_point_are_places_nearest_first() {
     assert!(bad.contains("invalid request"), "{bad}");
 }
 
-/// With the point's walks (cap-streets `access`'s, passed as they are,
-/// paths and all): the station a walk reaches comes first at its
-/// bays' shortest walk, though A and B are nearer as the crow flies; the places
-/// no walk reaches follow by distance.
+/// With the point's walks (cap-streets `access`'s, passed as they are, paths
+/// and all): the station a walk reaches comes first, at its bays' shortest
+/// walk. A and B are nearer as the crow flies. The places no walk reaches
+/// follow by distance.
 #[test]
 fn stops_near_with_walks_ranks_by_walk() {
     let request = serde_json::json!({
@@ -368,9 +366,9 @@ fn the_planners_lists_are_directory_answers() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op — parsed straight into
-    // the model, no request envelope — answers exactly what the JSON
-    // op answers; garbage bytes are an error outcome, never a trap.
+    // The bare document on the kernel's bulk op is parsed into the model,
+    // with no request envelope. It answers what the JSON op answers.
+    // Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_directory::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -385,10 +383,10 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// QAF-19 re-pin (the finding asked to re-check these): unknown
-    /// IDs are lookup misses — NULL details, never errors. Errors
-    /// are for hash addresses only. A lowercase id cannot collide
-    /// with the fixture's (A/B/C, 10/20, WK/SUN/HOL, B1, pat-*).
+    /// QAF-19 re-pin: the finding asked to re-check these. Unknown IDs are
+    /// lookup misses. They give null details, never errors. Errors are for
+    /// hash addresses only. A lowercase id cannot collide with the fixture's
+    /// (A/B/C, 10/20, WK/SUN/HOL, B1, pat-*).
     #[test]
     fn unknown_ids_answer_empty_never_errors(id in "[a-z][a-z0-9_]{0,7}") {
         let hash = load_network();
@@ -434,9 +432,9 @@ proptest! {
     }
 }
 
-/// A page that registered the network from bytes it never parsed
-/// still heads itself with the network's name: `about` answers it,
-/// and the plan the document is, as the document carries them.
+/// A page that registers the network from bytes it never parsed still heads
+/// itself with the network's name. `about` answers it, with the plan the
+/// document is, as the document carries them.
 #[test]
 fn about_names_the_network_as_the_document_does() {
     let network = derived_network();
@@ -460,10 +458,10 @@ fn about_names_the_network_as_the_document_does() {
     }
 }
 
-/// The network on a map answers through the seam (the law is
-/// transit-network's `route_lines_draw_what_focus_frames`): every
-/// route the fixture runs, route 10 drawing the lines `focus` frames
-/// for it; a service type that runs no route draws nothing.
+/// The network on a map answers through the seam. The law is in
+/// transit-network's `route_lines_draw_what_focus_frames`. Every route the
+/// fixture runs draws. Route 10 draws the lines that `focus` frames for it.
+/// A service type that runs no route draws nothing.
 #[test]
 fn route_lines_draw_the_network() {
     let hash = load_network();
@@ -479,7 +477,8 @@ fn route_lines_draw_the_network() {
 }
 
 /// The service keys answer through the seam (the law is
-/// transit-network's `service_keys_are_the_authored_calendars_and_what_runs_on_them`):
+/// transit-network's
+/// `service_keys_are_the_authored_calendars_and_what_runs_on_them`):
 /// the fixture's weekday key carries route 10's trips.
 #[test]
 fn service_keys_name_each_calendar_and_what_runs_on_it() {

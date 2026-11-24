@@ -1,8 +1,7 @@
-//! The diversion capability's worked examples (its `examples` feature):
-//! the documents to load and each request. The generator runs them
-//! through this crate's `invoke` and records the answers. Each runs over
-//! the fixture network: route 10 anchored end to end on its default
-//! pattern.
+//! The worked examples of the diversion capability (its `examples` feature):
+//! the documents to load and each request. The generator runs them through
+//! this crate's `invoke` and records the answers. Each runs over the fixture
+//! network: route 10 anchored end to end on its default pattern.
 
 use cap_abi::manifest::Example;
 use serde_json::json;

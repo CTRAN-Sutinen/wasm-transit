@@ -1,7 +1,6 @@
 //! Text ⇄ values: how the feed's cells read as model values and are
-//! written back. Every reader treats an empty cell as absent (the
-//! feed layer already does) and every writer writes the spec's own
-//! spelling.
+//! written back. Every reader treats an empty cell as absent, as the
+//! feed layer does. Every writer uses the spec's own spelling.
 
 use chrono::NaiveDate;
 use transit_network::operators::Contactless;
@@ -120,8 +119,8 @@ pub(crate) fn text(cell: &Option<String>) -> Option<String> {
     cell.clone()
 }
 
-/// A route's cEMV cell: empty means the operator's answer, so 0 is
-/// kept apart from it.
+/// A route's cEMV cell. Empty means the operator's answer, so 0 stays
+/// apart from it.
 pub(crate) fn contactless(cell: &Option<String>) -> Option<Contactless> {
     match int::<u8>(cell)? {
         1 => Some(Contactless::Accepted),

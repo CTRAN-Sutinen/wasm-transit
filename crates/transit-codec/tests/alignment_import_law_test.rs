@@ -1,11 +1,11 @@
-//! The import's alignment laws: a feed's shapes ARE the network's
-//! alignments — the feed's ids, every point in sequence order, every
-//! published distance — and a trip's `shape_id` is the alignment its
+//! The import's alignment laws: a feed's shapes are the network's
+//! alignments: the feed's ids, every point in sequence order, every
+//! published distance, and a trip's `shape_id` is the alignment its
 //! pattern runs (the pattern points at the alignment). A shape
 //! no trip uses is still an alignment; a shape several stop lists use
 //! is one alignment.
 //!
-//! Written BEFORE the implementation, as the definition of the
+//! Written before the implementation, as the definition of the
 //! behavior; the expected answers come from the generator's own
 //! values, never from parsing or from the implementation. The feed is
 //! built in memory (`transit_codec::Feed`), so no parser sits between
@@ -220,8 +220,8 @@ fn trip_shapes(feed: &Feed) -> BTreeMap<String, Option<String>> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// Every shape is an alignment under the feed's id — including
-    /// shapes no trip uses — with its points in sequence order and
+    /// Every shape is an alignment under the feed's id, including
+    /// shapes no trip uses, with its points in sequence order and
     /// the distances the feed published (and none it did not).
     #[test]
     fn every_shape_is_an_alignment(spec in spec_strategy()) {
@@ -257,9 +257,9 @@ proptest! {
         prop_assert!(validation_clean(&net));
     }
 
-    /// Export writes every alignment back as the feed published it —
-    /// its id, its sequence numbers, its points, its distances — and
-    /// every trip keeps its shape id.
+    /// Export writes every alignment back as the feed published it: its id,
+    /// its sequence numbers, its points, its distances. Every trip keeps
+    /// its shape id.
     #[test]
     fn shapes_export_as_published(spec in spec_strategy()) {
         let feed = build_feed(&spec);

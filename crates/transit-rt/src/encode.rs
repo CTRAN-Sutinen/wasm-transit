@@ -3,15 +3,15 @@
 //!
 //! GTFS-rt is the alerts' serialization, as GTFS is the network's. The
 //! feed is a full dataset of the published alerts not yet ended at the
-//! feed's moment, one entity for each, under the alert's id, in id
-//! order. The bytes are the same for the same document and moment.
+//! feed's moment. It holds one entity for each, under the alert's id, in
+//! id order. The bytes are the same for the same document and moment.
 //!
 //! An entity is written as authored, in the network's ids. A direction
 //! is written as the GTFS code the export gives it
 //! (`transit_codec::gtfs_direction`). A direction with no code cannot
-//! be written as the author meant it, so the entity is left out and
-//! named in [`EncodedAlerts::skipped`]. It is never widened to the
-//! whole route. An alert left with no entity is not written.
+//! be written as the author meant it. So the entity is left out and
+//! named in [`EncodedAlerts::skipped`]. It is never widened to the whole
+//! route. An alert left with no entity is not written.
 
 use prost::Message;
 use serde::{Deserialize, Serialize};

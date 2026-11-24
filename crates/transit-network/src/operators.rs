@@ -156,12 +156,12 @@ pub struct Translation {
 }
 
 impl crate::Network {
-    /// The zone the network's service days are counted in: its
-    /// operators' one timezone. GTFS requires every agency in a dataset
-    /// to share `agency_timezone`, so operators that disagree (or a
-    /// network with none, or an empty zone) answer `None` — naming one
-    /// would be a guess. Hosts turn their clock into the agency's date
-    /// with it, never their own zone's.
+        /// The zone the network's service days are counted in: its operators'
+        /// one timezone. GTFS requires every agency in a dataset to share
+        /// `agency_timezone`, so operators that disagree (or a network with
+        /// none, or an empty zone) answer `None`. Naming one would be a guess.
+        /// Hosts turn their clock into the agency's date with it, never their
+        /// own zone's.
     pub fn timezone(&self) -> Option<&str> {
         let mut zones = self.operators.values().map(|o| o.timezone.as_str());
         let first = zones.next().filter(|z| !z.is_empty())?;

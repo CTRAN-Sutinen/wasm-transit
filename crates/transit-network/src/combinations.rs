@@ -1,16 +1,16 @@
-//! Service COMBINATIONS (D-55): the planner's service group is the set
-//! of service types that run TOGETHER on the same dates, shown with the
-//! dates on which it holds. Service ids key trips; a combination is
-//! what a rider actually gets on a day. Types that never share a day
-//! are never pooled (C-TRAN's 1-WKDY/30 and /31 run in successive
-//! periods, so they meet 1-WKDY in two combinations, never in one),
-//! and a dated exception (a holiday the base skips and a holiday type
-//! runs) is a combination of its own.
+//! Service combinations (D-55). The planner's service group is the set
+//! of service types that run together on the same dates. The dates on
+//! which it holds are shown with it. Service ids key trips. A combination
+//! is what a rider actually gets on a day. Types that never share a day
+//! are never pooled. C-TRAN's 1-WKDY/30 and /31 run in successive periods,
+//! so they meet 1-WKDY in two combinations, never in one. A dated exception
+//! (a holiday the base skips and a holiday type runs) is a combination of
+//! its own.
 //!
-//! No date stands in for a combination: every date it holds on runs
-//! exactly its members, so any one of them materializes the same day
-//! (the analysis laws pin that equality), and the answer names the
-//! combination by its members.
+//! No date stands in for a combination. Every date it holds on runs
+//! exactly its members, so any one of them materializes the same day.
+//! The analysis laws pin that equality. The answer names the combination
+//! by its members.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,18 +24,17 @@ use crate::{DayState, Network};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceCombination {
-    /// The combination's name and address: its members joined " + "
+    /// Its name and address: the members joined by " + ".
     /// ("1-WKDY + 1-WKDY/30").
     pub id: String,
     /// The service types that run together, sorted. Only types that
-    /// carry trips: a type with none runs no service (D-94).
+    /// carry trips count. A type with none runs no service (D-94).
     pub members: Vec<String>,
     /// Every date it holds on ("YYYY-MM-DD", sorted).
     pub dates: Vec<String>,
-    /// The dates folded into spans: a new span starts where the next
-    /// date is more than seven days after the last (D-94) — a weekly
-    /// pattern reads as one span, a period that comes back later as
-    /// another.
+    /// The dates folded into spans. A new span starts where the next date
+    /// is more than seven days after the last (D-94). A weekly pattern reads
+    /// as one span. A period that comes back later reads as another.
     pub spans: Vec<DateSpan>,
 }
 
@@ -52,7 +51,7 @@ pub struct DateSpan {
 /// The longest step between two dates of one span.
 const SPAN_GAP_DAYS: i64 = 7;
 
-/// Sorted dates folded into spans: a new span starts where the next
+/// Sorted dates folded into spans. A new span starts where the next
 /// date is more than seven days after the last (D-94).
 pub fn date_spans(dates: &[NaiveDate]) -> Vec<DateSpan> {
     let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
@@ -96,10 +95,10 @@ pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
         .min()
 }
 
-/// The edits that stamp an imported feed as a pick (D-140, D-228): one
-/// `set_plan` under `id` and `name`, effective from the feed's first
-/// service date. None when the document is a pick already (it carries a
-/// plan id) or runs no service, so has no date.
+/// The edits that stamp an imported feed as a pick (D-140, D-228). They
+/// are one `set_plan` under `id` and `name`, effective from the feed's
+/// first service date. None when the document is a pick already (it
+/// carries a plan id) or runs no service, so it has no date.
 pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::NetworkEdit> {
     if !network.plan.id.is_empty() {
         return Vec::new();
@@ -109,9 +108,9 @@ pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::Netw
     vec![crate::NetworkEdit::SetPlan { plan, through: None }]
 }
 
-/// The service combinations: one per distinct set of types (with
-/// trips) that run on some date, with the dates it holds on. Sorted by
-/// the days it holds (most first), then its first date, then its id.
+/// The service combinations. There is one per distinct set of types (with
+/// trips) that run on some date, with the dates it holds on. Sorted by the
+/// days it holds (most first), then its first date, then its id.
 pub fn service_combinations(network: &Network) -> Vec<ServiceCombination> {
     let with_trips: BTreeSet<&str> = network
         .pattern_trips

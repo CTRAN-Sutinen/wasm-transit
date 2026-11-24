@@ -138,9 +138,9 @@ pub enum NetworkError {
     #[error("block {block} layover after trip {after_trip} is out of range")]
     LayoverAfterLastTrip { block: String, after_trip: usize },
 
-    /// One vehicle cannot run it: an instance arrives after the next
-    /// one (the next trip, or the frequency trip's next instance) on a
-    /// day both run departs.
+    /// One vehicle cannot run it. An instance arrives after the next one (the
+    /// next trip, or the frequency trip's next instance) departs, on a day
+    /// both run.
     #[error("block {block} trip {trip} arrives at {arrival_secs}, after trip {next} departs at {start_secs}")]
     BlockInfeasible {
         block: String,
@@ -150,11 +150,11 @@ pub enum NetworkError {
         start_secs: u32,
     },
 
-    /// The wait after trip `after_trip` is shorter than the recovery
-    /// required where the vehicle waits (D-9): a policy's requirement
-    /// when one applies (it wins), else the smallest authored layover
-    /// at that terminal. The layover's own authored length is not the
-    /// requirement — what is above the requirement is slack.
+    /// The wait after trip `after_trip` is shorter than the recovery required
+    /// where the vehicle waits (D-9). A policy's requirement wins when one
+    /// applies. Otherwise it is the smallest authored layover at that terminal.
+    /// The authored length of a layover is not the requirement. What is above
+    /// the requirement is slack.
     #[error("block {block}: {gap_secs} s after trip {after_trip}, under the {required_secs} s recovery required there")]
     LayoverInfeasible {
         block: String,
@@ -175,30 +175,30 @@ pub enum NetworkError {
     UnknownPatternTrips { pattern_trips: String },
 }
 
-/// A planning concern that does not make the document invalid —
-/// materialization still succeeds, export still publishes — but that
-/// the planner almost certainly did not intend. Reported beside the
-/// issues so nothing about a document goes silent; never a gate.
+/// A planning concern that does not make the document invalid.
+/// Materialization still succeeds, and export still publishes. The planner
+/// almost certainly did not intend it. It is reported beside the issues, so
+/// nothing about a document goes silent. It is never a gate.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkWarning {
-    /// Trip instances of a pattern trips that no block carries: service with no
-    /// vehicle assigned. Reported only once the document has a runcut
-    /// at all (a network with no blocks yet is unassigned by design).
+    /// Trip instances of a pattern's trips that no block carries. This is
+    /// service with no vehicle assigned. Reported only once the document has a
+    /// runcut at all. A network with no blocks yet is unassigned.
     UnassignedTrips { pattern_trips: String, trips: u32 },
-    /// A versioned plan whose service types run on no day of its
-    /// first week: the pick governs a period it carries no service
-    /// for (the calendar ranges a fork inherited end before it). The
-    /// plan is the document's own, named as a reader knows it — its
-    /// name, never its (often minted) id.
+    /// A versioned plan whose service types run on no day of its first week.
+    /// The pick governs a period that the plan carries no service for. The
+    /// calendar ranges that a fork inherited end before it. The plan carries
+    /// its own name. A reader knows it by that name, not by its (often minted)
+    /// id.
     NoServiceInPlanPeriod { plan_name: String, effective_from: String },
-    /// A stop the pick's patterns visit that is not in service from
-    /// `from` until `until` (open-ended without), as the stops document
-    /// records it (D-157): planned, permitted, built, retired, or not
-    /// there yet (`status` none) — or suspended, when the suspension
-    /// covers the pick's whole period or has no end. A shorter
-    /// suspension is not the pick's to say (real time says it).
+    /// A stop that the pick's patterns visit is not in service from `from`
+    /// until `until`. Without `until`, the stop stays open-ended. The stops
+    /// document records the status (D-157): planned, permitted, built, retired,
+    /// or not there yet (`status` none). It is suspended when the suspension
+    /// covers the pick's whole period or has no end. A shorter suspension is
+    /// not the pick's to say. Real time says it.
     StopNotInService {
         stop: String,
         #[serde(skip_serializing_if = "Option::is_none")]

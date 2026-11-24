@@ -1,11 +1,11 @@
-//! What a pick reads of the stops document (D-157) — the laws, from the
-//! user's intent, before the implementation:
+//! What a pick reads of the stops document (D-157). These are the laws,
+//! from the user's intent, before the implementation:
 //!
-//! * a pick takes each stop's record — its point, name, code, station,
-//!   and details — from the stops document as it stands on the pick's
-//!   first date, and never writes it; a stop the document does not hold,
-//!   or that is not there yet that day, keeps the pick's own record, and
-//!   nothing else in the pick changes;
+//! * a pick takes each stop's record (its point, name, code, station, and
+//!   details) from the stops document as it stands on the pick's first
+//!   date. It never writes the document. A stop the document does not
+//!   hold, or that is not there yet that day, keeps the pick's own record.
+//!   Nothing else in the pick changes;
 //! * a pick read from a document seeded from it is the pick unchanged;
 //! * the planner is warned, never refused, when the pick visits a stop
 //!   not in service on its dates: always for a stop planned, permitted,
@@ -117,8 +117,8 @@ proptest! {
     }
 
     /// A stop warns exactly when, on some date of the pick's period, it
-    /// is not in service — and, when that is a suspension, the suspension
-    /// covers the whole period or has no end.
+    /// is not in service. When that is a suspension, the suspension must
+    /// also cover the whole period or have no end.
     #[test]
     fn a_pick_is_warned_of_the_stops_it_visits_not_in_service(stops in arb_stops(&fixture()), first in 0u32..80, len in proptest::option::of(1u32..60)) {
         let net = fixture();

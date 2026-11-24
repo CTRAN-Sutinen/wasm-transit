@@ -31,7 +31,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Every walk between a network's stops within the limit, and what\nit was derived from: the streets and network documents' hashes,\nthe speed, the limit. Walks in (from, to) order; symmetric.",
+  "description": "Every walk between a network's stops within the limit, and what\nit derives from: the streets and network documents' hashes,\nthe speed, the limit. Walks in (from, to) order; symmetric.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/WalksKind",

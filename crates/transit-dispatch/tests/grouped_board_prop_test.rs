@@ -1,30 +1,8 @@
-//! The grouped board's laws — what a stop's display shows: the next
-//! departures of each route to each destination.
-//!
-//! The intent (the user's directive for the stop display, 2026-10-29):
-//!
-//! 1. one group per route AND destination ("4 → Downtown" and
-//!    "4 → Fisher's Landing" are two groups);
-//! 2. each group holds its next `per_group` departures (three on the
-//!    display), soonest-leaving first, by the same realtime-first rule
-//!    as THE board — so the groups together, uncut, ARE the board;
-//! 3. a route and destination the stop is served by today stays on
-//!    the board after its last departure, with none left — the display
-//!    says it has stopped, never that it does not exist;
-//! 4. groups list in the route's display order (GTFS
-//!    `route_sort_order`, lower first; routes without one after, by id
-//!    — D-23), then by destination;
-//! 5. every board row says how long until it leaves: due under a
-//!    minute, whole minutes (rounded down — D-24) under an hour, then
-//!    the clock time it leaves at; live when predicted, else the
-//!    schedule;
-//! 6. a departure the live document says does not happen — its trip
-//!    cancelled, or the stop skipped — leaves the board silently
-//!    (D-73): it is no row and takes no group's place, and the group
-//!    stays (the stop is still served today).
-//!
-//! The oracle recomputes each answer from the generated schedule
-//! (start + offset + the live delay), sharing nothing with the board.
+//! What a stop's display shows, the next departures of each route to each
+//! destination (crates/cap-board/OPS.md "grouped_board"; the user's directive
+//! for the stop display, 2026-10-29; D-23, D-24, D-73). The oracle recomputes
+//! each answer from the generated schedule (start + offset + the live delay),
+//! sharing nothing with the board.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,7 +29,7 @@ enum Shape {
     Through(usize),
     /// X → terminal: starts at X.
     Starts(usize),
-    /// A → X: ends at X — an arrival, never a departure.
+    /// A → X: ends at X. This is an arrival, never a departure.
     Ends,
 }
 
@@ -217,8 +195,8 @@ fn build(routes: &[GenRoute]) -> Network {
     net
 }
 
-/// The live document: each predicted visit to X, at its delay; each
-/// cancelled trip; each visit to X skipped.
+/// The live document: each predicted visit to X, at its delay, each
+/// cancelled trip, and each visit to X skipped.
 fn live(routes: &[GenRoute]) -> LiveDay {
     let mut trips = Vec::new();
     for (r, route) in routes.iter().enumerate() {
@@ -289,8 +267,8 @@ struct Expected {
     /// When it leaves: the prediction when live, else the schedule.
     at: u32,
     expected: Option<u32>,
-    /// It leaves at all: with the live document, neither cancelled
-    /// nor skipping X.
+    /// It leaves at all: neither cancelled nor skipping X, by the live
+    /// document.
     runs: bool,
 }
 
@@ -346,10 +324,10 @@ fn case() -> impl Strategy<Value = (Vec<GenRoute>, u32, usize, bool)> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Laws 1, 3 and 6: the groups are exactly the (route, destination)
-    /// pairs that leave the stop at any time of the day — however late
-    /// it is asked, and however many of their trips are cancelled — and
-    /// none other (a pattern ending here makes none).
+    /// There is one group per route and destination that leaves the stop at any
+    /// time of the day, however late it is asked, and however many of its trips
+    /// are cancelled (D-73). A group whose departures have all gone stays. No
+    /// other pair forms a group: a pattern ending here makes none.
     #[test]
     fn the_groups_are_the_days_routes_and_destinations((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -364,10 +342,10 @@ proptest! {
         prop_assert_eq!(board.live, with_live);
     }
 
-    /// Laws 2 and 6: each group holds its next `per_group` departures
-    /// that run, by when the bus actually leaves (a late bus not yet
-    /// gone is still next; an early one already gone is not; a
-    /// cancelled or skipping one never is), soonest first.
+    /// Each group holds its next `per_group` departures that run,
+    /// by when the bus actually leaves.
+    /// A late bus not yet gone is still next. An early one already gone is not.
+    /// A cancelled or skipping one never is. Soonest first.
     #[test]
     fn each_group_holds_its_next_departures((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -390,8 +368,8 @@ proptest! {
         }
     }
 
-    /// Law 2, the other way round: uncut, the groups together are THE
-    /// board — the same rows, nothing added, nothing lost.
+    /// Uncut, the groups together are the board,
+    /// with nothing added and nothing lost.
     #[test]
     fn uncut_the_groups_are_the_board((routes, from, _per_group, with_live) in case()) {
         let net = build(&routes);
@@ -405,8 +383,8 @@ proptest! {
         prop_assert_eq!(flat, stop_board(&net, &day, "X", from, usize::MAX, live, None).rows);
     }
 
-    /// Law 4: the groups list in the route's display order, then by
-    /// destination.
+    /// Groups list by `route_sort_order` (routes without one last, by id), then
+    /// by destination (D-23).
     #[test]
     fn the_groups_list_in_display_order((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -419,8 +397,8 @@ proptest! {
         prop_assert_eq!(keys, sorted);
     }
 
-    /// Law 5: every row — on the grouped board and on THE board — says
-    /// how long until it leaves, from when it actually leaves.
+    /// Every row, on the grouped board and on the board, says how long until it
+    /// leaves (D-24). The wait counts from when it actually leaves.
     #[test]
     fn every_row_says_how_long_until_it_leaves((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -440,8 +418,8 @@ proptest! {
     }
 }
 
-/// The edges of the wait, pinned: 59 s is due, 60 s one minute,
-/// 3 599 s fifty-nine minutes, 3 600 s the clock.
+/// The edges of the wait (D-24): 59 s is due, 60 s one minute, 3 599 s
+/// fifty-nine minutes, 3 600 s the clock.
 #[test]
 fn the_wait_turns_at_a_minute_and_an_hour() {
     let routes = vec![GenRoute {

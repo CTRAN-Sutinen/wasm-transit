@@ -1,4 +1,4 @@
-//! The boundary resolution over the REAL e2e fixture pair
+//! The boundary resolution over the real e2e fixture pair
 //! (sample-gtfs.zip + sample-rt.pb: t10 +120 s at A, +180 s at B,
 //! one vehicle on t10): rt trip ids are the network's trip ids,
 //! resolved once into trip instances, and the document classifies
@@ -32,7 +32,7 @@ fn a_snapshot_resolves_into_trip_instances() {
     assert_eq!(bus.status, LiveStatus::Late);
     assert_eq!(bus.route_name.as_deref(), Some("10"), "named as the model names the route");
 
-    // A tighter window reclassifies — the policy is an input.
+    // A tighter window reclassifies. The policy is an input.
     let strict = OnTimeWindow { early_secs: 0, late_secs: 60, very_late_secs: 120 };
     assert_eq!(live_day(net, boundary, Some(&rt), None, None, strict).vehicles[0].status, LiveStatus::VeryLate);
 
@@ -48,7 +48,7 @@ fn a_snapshot_resolves_into_trip_instances() {
 
 /// A trip instance is (trip, service date, start): the descriptor's
 /// `start_date` (YYYYMMDD) becomes the instance's date, "YYYY-MM-DD";
-/// absent, the instance states none (the current service day's —
+/// absent, the instance states none (the current service day's:
 /// `LiveDay::on`); unreadable, the update names no instance and is
 /// reported unmatched. Vehicles carry their trip's date the same way.
 #[test]

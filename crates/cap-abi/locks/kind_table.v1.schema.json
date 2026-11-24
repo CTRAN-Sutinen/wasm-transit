@@ -67,7 +67,7 @@
           ]
         },
         "records": {
-          "description": "The log's record kinds of its collection.",
+          "description": "The log's record kinds.",
           "items": {
             "$ref": "#/$defs/RecordEntry"
           },

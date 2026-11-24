@@ -1,6 +1,6 @@
 //! The kernel helpers every capability shares. The law: a document's
 //! identity is the content hash of its canonical serialization, and
-//! streaming that serialization into the digest changes nothing —
+//! streaming that serialization into the digest changes nothing:
 //! every hash minted before the stream is the same hash after it.
 
 use proptest::prelude::*;
@@ -83,8 +83,8 @@ fn a_gzipped_network_registers_under_the_plain_hash() {
 
 /// The live document is v2 (a trip instance carries its service
 /// date): an untagged copy is its v1 and is refused naming both
-/// versions, as is a newer one; a v2 copy reads. It is ephemeral —
-/// minted by the build that reads it — so no migration brings a v1
+/// versions, as is a newer one; a v2 copy reads. It is ephemeral:
+/// minted by the build that reads it, so no migration brings a v1
 /// forward.
 #[test]
 fn the_live_document_reads_v2_only() {
@@ -108,7 +108,7 @@ fn the_live_document_reads_v2_only() {
 /// A module reads the network version it was built for, and only that
 /// (docs/FORMATS.md, "Versions"): an older document is
 /// refused with the op that brings it forward, a newer one naming both
-/// versions — at the load, never three layers deep in an op.
+/// versions. The check runs at the load, never three layers deep in an op.
 #[test]
 fn a_network_load_refuses_other_versions_naming_both() {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata/network.json")).unwrap();
@@ -133,7 +133,7 @@ fn a_network_load_refuses_other_versions_naming_both() {
 /// Every versioned kind's load (docs/FORMATS.md, "Versions"): a copy
 /// with no tag is the kind's v1 (the derived kinds and the work rules
 /// gained their tags at v1), and a newer copy is refused naming both
-/// versions — never read as this build's.
+/// versions, never read as this build's.
 #[test]
 fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     use transit_version::Versioned;

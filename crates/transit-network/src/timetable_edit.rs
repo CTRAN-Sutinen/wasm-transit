@@ -1,28 +1,27 @@
-//! The timetable's gestures: changes a planner states against a
-//! TIMETABLE (one route, one direction, one service type — see
-//! `listing::timetable`), applied across every pattern of the
-//! direction (bay and short-turn variants together). Each carries the
+//! The timetable's gestures: changes a planner states against a timetable.
+//! A timetable is one route, one direction, and one service type (see
+//! `listing::timetable`). Each gesture applies across every pattern of the
+//! direction, including bay and short-turn variants. Each carries the
 //! coherence rule of the trips it moves:
 //!
-//! * a trip that stays is RETIMED, never re-created — it keeps its id
-//!   and its own running times, and its blocks keep it (they
-//!   reference it by id);
-//! * a trip that goes leaves its blocks, and the layovers either side
-//!   of it go with it (the chain closes up — validation names a gap
-//!   that no longer fits); a block it empties goes;
-//! * a new trip gets an id no trip had, runs the pattern of the trip
-//!   before it in the timetable (the bay variant it slots between),
-//!   timed by that pattern's profile, under the pattern's busiest
-//!   pattern trips for the type (minted when there is none); it is
-//!   unassigned until a block takes it (the `unassigned_trips`
-//!   warning);
-//! * pattern trips a gesture empties are removed (the model keeps no
-//!   empty trip list);
-//! * a new trip never lands where its pattern's profiles cannot time
-//!   it — that is a named refusal.
+//! * A trip that stays is retimed. It is never re-created. It keeps its id
+//!   and its own running times. Its blocks keep it, because they reference
+//!   it by id.
+//! * A trip that goes leaves its blocks. The layovers on either side of it
+//!   go with it, and the chain closes up. Validation names a gap that no
+//!   longer fits. A block that the trip empties goes.
+//! * A new trip gets an id that no trip had. It runs the pattern of the trip
+//!   before it in the timetable, which is the bay variant it slots between.
+//!   The pattern's profile times it. It joins the pattern's busiest pattern
+//!   trips for the type, or a minted one when there is none. It is unassigned
+//!   until a block takes it (the `unassigned_trips` warning).
+//! * Pattern trips that a gesture empties are removed. The model keeps no
+//!   empty trip list.
+//! * A new trip never lands where its pattern's profiles cannot time it. That
+//!   is a named refusal.
 //!
-//! Only one-start trips are moved; frequency trips are left as they
-//! are (edit their bands).
+//! Only one-start trips are moved. Frequency trips are left as they are. Edit
+//! their bands instead.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -129,11 +128,11 @@ pub(crate) fn pattern_trips_mut<'a>(net: &'a mut Network, pattern: &'a str) -> i
     net.pattern_trips.values_mut().filter(move |pt| pt.pattern == pattern).flat_map(|pt| pt.trips.iter_mut())
 }
 
-/// Retime, remove, and add trips in one step: `moves` (trip id → new
-/// start) keep their ids, times and blocks; `removed` leave
-/// everything; `added` (pattern, start) are new trips under the
-/// pattern's busiest pattern trips for the type. Answers the first
-/// pattern trips it had to create.
+/// Retime, remove, and add trips in one step. `moves` (trip id → new start)
+/// keep their ids, times, and blocks. `removed` trips leave everything.
+/// `added` (pattern, start) pairs are new trips under the pattern's busiest
+/// pattern trips for the type. Answers the first pattern trips that it had
+/// to create.
 fn rewrite(
     net: &mut Network,
     service_type: &str,
@@ -141,8 +140,8 @@ fn rewrite(
     removed: &[String],
     added: &[(String, u32)],
 ) -> Result<Option<CreatedEntity>, String> {
-    // A new trip is timed by its pattern's profile: refuse one no
-    // profile can time.
+        // A new trip is timed by its pattern's profile. Refuse a trip that no
+        // profile can time.
     let mut timed = Vec::new();
     for (pattern, start) in added {
         let times = net.patterns.get(pattern).and_then(|p| produce_times(p, *start)).ok_or_else(|| {
@@ -264,12 +263,11 @@ fn busiest_pattern(net: &Network, timetable: &[Row], patterns: &[String]) -> Str
         .unwrap_or_default()
 }
 
-/// Frequency by period: one-start trips every `headway_secs` from
-/// `from_secs` (the first departure) until before `to_secs`. Existing
-/// trips in the window move to the nearest slots in order (keeping
-/// their ids, times and blocks); slots left over are new trips
-/// (`pattern` when given, else the neighbour's); trips left over — a
-/// lower frequency — go.
+/// Frequency by period: one-start trips every `headway_secs` from `from_secs`
+/// (the first departure) until before `to_secs`. Existing trips in the window
+/// move to the nearest slots, in order. They keep their ids, times, and
+/// blocks. Slots left over become new trips (`pattern` when given, else the
+/// neighbour's). Trips left over go, because the frequency is lower.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn set_headway(
     net: &mut Network,
@@ -325,11 +323,11 @@ pub(crate) fn set_headway(
     rewrite(net, service_type, &moves, &removed, &added)
 }
 
-/// Span: one-start trips before `first_secs` / after `last_secs` go;
-/// a bound past the current first / last trip becomes the new first /
-/// last departure, reached in the even steps nearest `headway_secs`
-/// (else the lower median of the edge's last three gaps), each new
-/// trip running the edge trip's pattern.
+/// Span: one-start trips before `first_secs` or after `last_secs` go. A bound
+/// past the current first or last trip becomes the new first or last
+/// departure. It is reached in even steps nearest `headway_secs`, or else the
+/// lower median of the edge's last three gaps. Each new trip runs the edge
+/// trip's pattern.
 pub(crate) fn set_span(
     net: &mut Network,
     route: &str,
@@ -386,7 +384,7 @@ pub(crate) fn set_span(
 }
 
 /// The departures from `edge` (exclusive) to `bound` (inclusive), in
-/// the whole number of even steps nearest `headway` — none when the
+/// the whole number of even steps nearest `headway`. None when the
 /// bound is within half a headway of the edge. Either direction.
 fn steps(edge: u32, bound: u32, headway: u32) -> Vec<u32> {
     let span = edge.abs_diff(bound);
@@ -509,10 +507,9 @@ pub(crate) fn insert_direction_stop(
     Ok(None)
 }
 
-/// Stop visiting `stop` on every pattern of the direction (a
-/// timepoint's entry leaves every profile with it, and every trip
-/// loses its time there). Refused when it ends a pattern — endpoints
-/// stay.
+/// Stop visiting `stop` on every pattern of the direction (a timepoint's entry
+/// leaves every profile with it, and every trip loses its time there).
+/// Refused when it ends a pattern. Endpoints stay.
 pub(crate) fn remove_direction_stop(
     net: &mut Network,
     route: &str,

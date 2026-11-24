@@ -1,40 +1,36 @@
-//! Coverage laws over a WEIGHTED LAYER (D-47) and the coverage
-//! comparison, as property tests with independent oracles.
+//! Coverage laws over a weighted layer (D-47) and the coverage comparison, as
+//! property tests with independent oracles.
 //!
 //! The decisions, restated as laws:
 //!
-//! * **A layer is any weighted geography** — points or polygons, its
-//!   weight any numeric property (population, jobs, zero-car
-//!   households), named by the planner's label. The document is the
-//!   bytes: the same bytes read under another field are the same
-//!   document, read another way.
-//! * **Areal weighting conserves a polygon's weight**: served plus
-//!   unserved is the layer's total; a polygon wholly inside a served
-//!   stop's radius is wholly served, one wholly outside every radius
-//!   is wholly unserved, and one straddling a radius is served by
-//!   about the share of its area inside it (within the sampling
-//!   resolution the answer states).
-//! * **Points stay valid**: a point layer reads exactly as it always
-//!   has, with its resolution (the average area per point) stated.
-//! * **Frequent counts departures only (D-6)**: a stop that is only
-//!   ever a trip's last stop is never frequent, on the whole day or in
-//!   a window — a terminal where nobody boards is not frequent.
-//! * **A combination covers what each of its dates covers (D-55,
-//!   QAF-89)**: `type_coverage` and `unserved_points` answer a
-//!   COMBINATION of service types (the ones that run together), pooled
-//!   over its members' authored service with no date standing in — and
-//!   on every date the combination holds, exactly its members run, so
-//!   its served and frequent weight, its stops, and its unserved places
-//!   equal the date's own coverage (the union of what runs that day).
-//!   Members in any order are one combination; members that never run
-//!   together answer null.
-//! * **A comparison separates churn**: each side pools the service
-//!   types the host names (which combination answers to which across
-//!   two plans is not decided — QAF-20 — so the op never matches
-//!   them); the proposal's served (and frequent) weight is the base's
-//!   plus what it gains minus what it loses; a network compared with
-//!   itself gains and loses nothing; swapping the sides swaps gained
-//!   and lost.
+//! * **A layer is any weighted geography.** It can be points or polygons. Its
+//!   weight is any numeric property (population, jobs, zero-car households),
+//!   named by the planner's label. The document holds the bytes. The same bytes
+//!   read under another field are the same document, read another way.
+//! * **Areal weighting conserves a polygon's weight.** Served plus unserved is
+//!   the layer's total. A polygon wholly inside a served stop's radius is
+//!   wholly served. A polygon wholly outside every radius is wholly unserved. A
+//!   polygon that straddles a radius is served by about the share of its area
+//!   inside it, within the sampling resolution the answer states.
+//! * **Points stay valid.** A point layer reads exactly as it always has, with
+//!   its resolution (the average area per point) stated.
+//! * **Frequent counts departures only (D-6).** A stop that is only ever a
+//!   trip's last stop is never frequent, on the whole day or in a window. A
+//!   terminal where nobody boards is not frequent.
+//! * **A combination covers what each of its dates covers (D-55, QAF-89).**
+//!   `type_coverage` and `unserved_points` answer for a combination of service
+//!   types (the ones that run together). They pool its members' authored
+//!   service with no date. On every date the combination holds, exactly its
+//!   members run. So its served and frequent weight, its stops, and its
+//!   unserved places equal that date's own coverage (the union of what runs
+//!   that day). Members in any order are one combination. Members that never
+//!   run together answer null.
+//! * **A comparison separates churn.** Each side pools the service types the
+//!   host names. Which combination answers to which across two plans is not
+//!   decided (QAF-20). So the op never matches them. The proposal's served (and
+//!   frequent) weight is the base's plus what it gains minus what it loses. A
+//!   network compared with itself gains and loses nothing. Swapping the sides
+//!   swaps gained and lost.
 
 use std::io::Write;
 
@@ -157,7 +153,7 @@ fn place() -> impl Strategy<Value = Place> {
     ]
 }
 
-/// A layer carrying two weights per feature — `jobs` and `pop` — and a
+/// A layer carrying two weights per feature, `jobs` and `pop`, and a
 /// string id (never a weight).
 fn layer_bytes(places: &[Place]) -> Vec<u8> {
     let features: Vec<String> = places
@@ -186,7 +182,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
     /// Conservation: served plus unserved is the layer's total, for
-    /// points and polygons alike, whichever weight is read — and the
+    /// points and polygons alike, whichever weight is read, and the
     /// total is the sum of the features' own values.
     #[test]
     fn served_and_unserved_conserve_the_layer(
@@ -222,13 +218,12 @@ proptest! {
         }
     }
 
-    /// D-55 (QAF-89): a combination's coverage is what each date it
-    /// holds covers. On such a date exactly its members run, so the
-    /// combination's pooled served stops are the union of what runs
-    /// that day: served and frequent weight, shares, stops and the
-    /// unserved places all equal the date's own coverage — whole day
-    /// or in a window. Members in any order are one combination; a set
-    /// that never runs together answers null.
+    /// D-55 (QAF-89): a combination's coverage is what each date it holds
+    /// covers. On such a date exactly its members run. So the combination's
+    /// pooled served stops are the union of what runs that day. Served and
+    /// frequent weight, shares, stops, and the unserved places all equal the
+    /// date's own coverage, whole day or in a window. Members in any order are
+    /// one combination. A set that never runs together answers null.
     #[test]
     fn a_combination_covers_what_each_of_its_dates_covers(
         trips in proptest::collection::vec(gen_trip(), 0..6),
@@ -288,9 +283,9 @@ proptest! {
         }
     }
 
-    /// D-6: a stop is frequent only on its DEPARTURES — a stop that is
-    /// only ever a trip's last stop is never frequent, on the whole
-    /// day or in any window, however many buses arrive there.
+    /// D-6: a stop is frequent only on its departures. A stop that is only ever
+    /// a trip's last stop is never frequent, on the whole day or in any window,
+    /// however many buses arrive there.
     #[test]
     fn a_terminal_nobody_boards_at_is_never_frequent(
         headway in 5u8..30,
@@ -319,10 +314,10 @@ proptest! {
         prop_assert!(close(origin.frequent, 1.0), "the origin departs every {headway} min");
     }
 
-    /// The comparison separates churn: each side pools the service
-    /// types the host names (no date, no matching between the plans —
-    /// QAF-20), and the proposal's served (and frequent) weight is the
-    /// base's plus what it gains minus what it loses.
+    /// The comparison separates churn: each side pools the service types the
+    /// host names (no date, no matching between the plans, QAF-20). The
+    /// proposal's served (and frequent) weight is the base's plus what it gains
+    /// minus what it loses.
     #[test]
     fn a_comparison_is_gains_and_losses(
         base_trips in proptest::collection::vec(gen_trip(), 0..6),
@@ -373,8 +368,8 @@ fn areal_weighting_serves_the_share_of_the_area() {
         inside = square(LAT, stop_lon(0), 200.0),
         // 200 m across, 5 km north of the line.
         outside = square(LAT + 0.045, stop_lon(0), 200.0),
-        // 2 km across, centred on s5: a 400 m radius covers π·400² of
-        // its 2000² m² — 12.57%.
+        // 2 km across, centred on s5: a 400 m radius covers pi x 400^2 of its
+        // 2000^2 m^2, which is 12.57%.
         straddle = square(LAT, stop_lon(5), 2_000.0),
     );
     let weights_layer = parse_layer(layer.as_bytes()).unwrap();

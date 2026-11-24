@@ -1,8 +1,8 @@
-//! The rt registry is the eviction pin case (QAF-49): an agency
-//! re-mints its snapshots every poll, so a session must plateau with
-//! no host steering, and a host's keep-set must bound the durable
-//! kinds. Its own test binary: the registries are process-global, and
-//! eviction would race the dispatch tests' registrations.
+//! The rt registry is the eviction pin case (QAF-49). An agency re-mints its
+//! snapshots every poll. A session must plateau with no host steering. A host's
+//! keep-set must bound the durable kinds. This has its own test binary, because
+//! the registries are process-global. Eviction would race the dispatch tests'
+//! registrations.
 
 use cap_abi::kernel::kind;
 use cap_abi::registry::{OP_EVICT, OP_HELD};
@@ -67,8 +67,8 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     let after = held(&dispatch_bytes(OP_EVICT, keep.as_bytes()));
     assert_eq!(after, vec![("network".into(), network_hash.clone()), ("rt snapshot".into(), last.clone())]);
 
-    // Evicted-then-asked is the honest unknown-hash error, never a
-    // wrong answer — and registering again answers the same hash.
+    // Evicted-then-asked gives the unknown-hash error, never a wrong answer.
+    // Registering again answers the same hash.
     let asked = dispatch(Request::Live {
         network_hash: network_hash.clone(),
         boundary_hash: Some(boundary_hash.clone()),

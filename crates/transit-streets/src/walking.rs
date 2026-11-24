@@ -9,7 +9,7 @@
 //! walking speed, rounded up to the second; a walk past the limit is
 //! no walk, and a stop with no walkable street nearby walks nowhere.
 //!
-//! The walk table ([`WalkTable`]) is a document DERIVED from a streets
+//! The walk table ([`WalkTable`]) is a document derived from a streets
 //! document and a network: the router plans its transfers over it
 //! instead of straight lines. A point off the network (a tapped spot,
 //! the rider's location) walks the same way a stop there would
@@ -53,7 +53,7 @@ pub struct PointWalk {
 }
 
 /// The walk from a point straight to another, and its path (empty
-/// when the walk was given by its seconds alone).
+/// when the walk is given by its seconds alone).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DirectWalk {
@@ -76,7 +76,7 @@ impl transit_version::Versioned for WalkTable {
 }
 
 /// Every walk between a network's stops within the limit, and what
-/// it was derived from: the streets and network documents' hashes,
+/// it derives from: the streets and network documents' hashes,
 /// the speed, the limit. Walks in (from, to) order; symmetric.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -151,9 +151,9 @@ impl WalkGraph {
     }
 
     /// Every walk from the point (`lat`, `lon`) to `stops` within
-    /// `max_walk_secs` at `speed_mps` — the walks a stop at the point
-    /// would have — each with its path, nearest first (ties in `stops`
-    /// order). A point with no walkable street nearby walks nowhere.
+    /// `max_walk_secs` at `speed_mps`, the walks a stop at the point would
+    /// have, each with its path, nearest first (ties in `stops` order). A
+    /// point with no walkable street nearby walks nowhere.
     pub fn walks_from(
         &self,
         lat: f64,
@@ -183,7 +183,7 @@ impl WalkGraph {
     }
 
     /// The point, its street, the streets between, the stop's street,
-    /// the stop — consecutive repeats dropped.
+    /// the stop, with consecutive repeats dropped.
     fn path(&self, from: StreetPosition, a: (f64, f64), to: StreetPosition, b: (f64, f64)) -> Option<Vec<StreetPoint>> {
         let mut points = vec![StreetPoint { lat: a.0, lon: a.1 }, StreetPoint { lat: from.lat, lon: from.lon }];
         points.extend(self.0.route(from, to)?);

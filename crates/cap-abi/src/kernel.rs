@@ -4,38 +4,38 @@
 //! **One registry per document kind, owned here.** A capability names
 //! the kinds it reads by their types
 //! (`capability! { documents: [Network, EditDocument] }`) and reads them
-//! through [`kind`] ([`Kind::require`]); it cannot declare a registry of
-//! its own (the constructor is private to this crate). Linked into one
-//! assembly, every capability reads the same `Arc`: a document registers
-//! once per instance, however many capabilities read it (D-77).
+//! through [`kind`] ([`Kind::require`]). It cannot declare a registry: the
+//! constructor is private to this crate. In one assembly, every
+//! capability reads the same `Arc`, so a document registers once per
+//! instance, however many capabilities read it (D-77).
 //!
 //! **The kernel knows no kind (D-239).** Each kind's library implements
 //! `transit_version::Load`: the kind's id, its load op and code, how it
 //! reads the bytes, and what the load answers. The kernel keeps one
-//! registry for each type, and depends on no domain library.
+//! registry for each type and depends on no domain library.
 //!
-//! **Registration is the kernel's.** Each kind's load is a kernel op —
-//! a bulk op from 256, and the same JSON op
-//! (`{"op": "load_network", "network": …}`) on the JSON lane, peeled
-//! before any capability decodes the request. A load answers the
-//! document's identity (`<kind>_hash`, the module is the hash
-//! authority) and what the host shows about it (a feed's summary, a
-//! layer's fields). A capability's `Request` carries no load op.
+//! **Registration is the kernel's.** Each kind's load is a kernel op: a
+//! bulk op from 256, and the same JSON op
+//! (`{"op": "load_network", "network": …}`) on the JSON lane. The kernel
+//! peels it before any capability decodes the request, so a capability's
+//! `Request` carries no load op. A load answers the document's identity
+//! (`<kind>_hash`, the module is the hash authority) and what the host
+//! shows about it (a feed's summary, a layer's fields).
 //!
-//! **Derived data is held here too.** A derivation — the day patched
-//! with the edits in force, the router's graph, a street graph — is a
-//! library's pure function and its key; [`derive`] finds the entry or
-//! computes it, bounded per [`Derivation`], and drops it when a
-//! keep-set drops any document it was computed from. The answer is
-//! the same either way: an entry is a cache, never a dependency
+//! **Derived data is held here too.** A derivation is a library's pure
+//! function and its key: the day patched with the edits in force, the
+//! router's graph, a street graph. [`derive`] finds the entry or
+//! computes it, bounded per [`Derivation`], and drops it when a keep-set
+//! drops any document it came from. The answer is the same either way:
+//! an entry is a cache, never a dependency
 //! (assembly independence, `crates/cap-abi/independence.mjs`).
 //!
 //! **Routing.** An assembly is one or more [`Cap`]s. A JSON request
 //! names its capability (`{"cap": "board", "op": …}`) unless the
-//! assembly holds one; a capability's bulk op carries its index in
-//! the high 16 bits (its own codes are 0–255); the kernel ops (256 and
-//! up) name none. [`invoke`] and [`invoke_bytes`] are what the
-//! exports run (`assembly!`), and what native tests call.
+//! assembly holds one. A capability's bulk op carries its index in the
+//! high 16 bits (its own codes are 0–255). The kernel ops (256 and up)
+//! name none. [`invoke`] and [`invoke_bytes`] are what the exports run
+//! (`assembly!`), and what native tests call.
 
 use std::any::Any;
 use std::borrow::Cow;
@@ -49,14 +49,12 @@ pub use transit_version::{Form, Load};
 
 use crate::registry::{Held, Registry, Retain, OP_EVICT, OP_HELD};
 
-// ---------------------------------------------------------------------
-// the kernel ops
-// ---------------------------------------------------------------------
+// --- the kernel ops ---
 
-/// Kernel bulk op: what the module is — the capabilities it links, in
-/// index order, each with the document kinds it reads (the bytes are
-/// ignored). The answer is [`About`]. The kinds' loads take their codes
-/// from their libraries (`transit_version::Load::CODE`), 256 and up.
+/// Kernel bulk op: the capabilities the module links, in index order, each
+/// with the kinds it reads (the bytes are ignored). The answer is
+/// [`About`]. The kinds' loads take their codes from their libraries
+/// (`transit_version::Load::CODE`), 256 and up.
 pub const OP_ABOUT: u32 = 268;
 
 /// [`OP_ABOUT`]'s answer.
@@ -79,10 +77,9 @@ pub const KERNEL_OPS: u32 = 256;
 
 /// A load's whole answer: the op, what the kind answers
 /// (`transit_version::Load::answer`: its hash under the kind's field, and
-/// what the host shows about it), and the names of the fields the
-/// document carries that this build does not know (D-167). They are kept
-/// in the document; a receive path flags them for a person. Absent when
-/// every field is known.
+/// what the host shows about it), and the fields the document carries that
+/// this build does not know (D-167). The document keeps them; a receive
+/// path flags them for a person. Absent when every field is known.
 #[derive(Serialize)]
 struct LoadAnswer<A> {
     op: &'static str,
@@ -94,8 +91,7 @@ struct LoadAnswer<A> {
 
 /// The JSON lane's envelope: the op and the capability it names. Every
 /// other field is skipped, so a request that is not a load costs one
-/// scan. A load reads its document's field from the request again
-/// ([`Loader::load_json`]), left as raw JSON.
+/// scan. A load reads its document's field again ([`Loader::load_json`]).
 #[derive(Deserialize)]
 pub struct Envelope<'a> {
     #[serde(borrow)]
@@ -104,29 +100,23 @@ pub struct Envelope<'a> {
     cap: Option<Cow<'a, str>>,
 }
 
-/// The field a load needs from the request, left as raw JSON, or the
-/// request error naming it.
+/// The field a load needs, as raw JSON, or the request error naming it.
 fn field<'a>(text: &'a str, name: &str) -> Result<&'a RawValue, String> {
     let fields: std::collections::HashMap<Cow<'a, str>, &'a RawValue> =
         serde_json::from_str(text).map_err(|e| format!("invalid request: {e}"))?;
     fields.get(name).copied().ok_or_else(|| format!("invalid request: missing field `{name}`"))
 }
 
-// ---------------------------------------------------------------------
-// the kinds
-// ---------------------------------------------------------------------
+// --- the kinds ---
 
 /// One document kind's registry. Its library says what the kind is and
-/// how it loads (`transit_version::Load`, D-239); the kernel keeps one
-/// registry for each type ([`kind`]) and knows no kind.
+/// how it loads (`transit_version::Load`, D-239).
 pub struct Kind<T: 'static> {
     registry: Registry<T>,
 }
 
 /// The registry of kind `T`: one for each type in an instance, made the
-/// first time a capability or the routing asks. Every capability linked
-/// into one assembly reads the same registry, so a document registers
-/// once per instance, however many capabilities read it (D-77).
+/// first time a capability or the routing asks.
 pub fn kind<T: Load>() -> &'static Kind<T> {
     use std::any::{Any, TypeId};
     use std::sync::Mutex;
@@ -152,21 +142,19 @@ pub fn loader<T: Load>() -> &'static dyn Loader {
 }
 
 impl<T: Load> Kind<T> {
-    /// The document under `hash`, or the unknown-hash error every
-    /// module speaks (`unknown <kind> <hash>: <load op> first`).
+    /// The document under `hash`, or the shared unknown-hash error
+    /// (`unknown <kind> <hash>: <load op> first`).
     pub fn require(&self, hash: &str) -> Result<Arc<T>, String> {
         self.registry.require(hash)
     }
 
-    /// The document under `hash`, if held.
     pub fn get(&self, hash: &str) -> Option<Arc<T>> {
         self.registry.get(hash)
     }
 
-    /// The document under `hash` as the base of a write: an op that
-    /// answers the next document from it. A copy read one version ahead
-    /// through a read-only step is refused, naming both versions
-    /// (D-186). Otherwise it is [`Self::require`].
+    /// The document under `hash` as the base of a write. A copy read one
+    /// version ahead through a read-only step is refused, naming both
+    /// versions (D-186). Otherwise it is [`Self::require`].
     pub fn require_writable(&self, hash: &str) -> Result<Arc<T>, String>
     where
         T: transit_version::Versioned,
@@ -179,14 +167,14 @@ impl<T: Load> Kind<T> {
     }
 
     /// The version the document under `hash` was in, where it was read
-    /// one version ahead (D-186), and how. It is held under the identity
-    /// it was stored with, and holds the document stepped down.
+    /// one version ahead (D-186), and how. It is held under its stored
+    /// identity, stepped down.
     pub fn read_ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
         self.registry.ahead(hash)
     }
 
     /// Register a document an op minted (an import's network, cap-rt's
-    /// live document) and answer its identity: the page holds a handle,
+    /// live document) and answer its identity, so the page holds a handle
     /// and the document need not cross back in.
     pub fn register(&self, document: T) -> Result<(String, Arc<T>), String>
     where
@@ -217,8 +205,7 @@ impl<T: Load> Kind<T> {
         self.registry.is_empty()
     }
 
-    /// The load: the document's identity, the document held under it,
-    /// and the fields it carries that this build does not know.
+    /// The load: the identity, the held document, and the unknown fields.
     fn load(&self, bytes: &[u8]) -> Result<(String, Arc<T>, Vec<String>), String> {
         match T::FORM {
             Form::Json { .. } => {
@@ -243,7 +230,6 @@ impl<T: Load> Kind<T> {
         }
     }
 
-    /// The load's answer, as the lanes send it.
     fn answer(&self, loaded: Result<(String, Arc<T>, Vec<String>), String>) -> String {
         crate::outcome(loaded.map(|(hash, held, unknown_fields)| LoadAnswer { op: T::LOAD_OP, loaded: held.answer(hash), unknown_fields }))
     }
@@ -292,20 +278,17 @@ impl<T: Load> Loader for Kind<T> {
     }
 }
 
-// ---------------------------------------------------------------------
-// derived entries
-// ---------------------------------------------------------------------
+// --- derived entries ---
 
 /// Every derived entry, whatever it holds, by `<derivation>|<key>`.
 static DERIVED: Registry<dyn Any + Send + Sync> = Registry::derived("derived", Retain::Host);
 
-/// The derived registry, as the registry ops see it.
 pub fn derived_registry() -> &'static dyn Held {
     &DERIVED
 }
 
-/// One derivation: its name (the entry's key prefix) and how many of
-/// its entries an instance keeps on its own (D-70).
+/// One derivation: its name (the entry's key prefix) and how many entries
+/// an instance keeps on its own (D-70).
 pub struct Derivation {
     pub name: &'static str,
     pub keep: usize,
@@ -323,9 +306,9 @@ pub const WALK_GRAPH: Derivation = Derivation { name: "walk graph", keep: 4 };
 
 /// The entry `derivation` holds under `key`, or `compute`'s answer,
 /// held from now on. `inputs` are the document hashes it was computed
-/// from: a keep-set that drops any of them drops the entry. Whoever
-/// computes it, the value is the same — a library's pure function of
-/// the documents the key names.
+/// from: a keep-set that drops any of them drops the entry. The value is
+/// the same whoever computes it: a pure function of the documents the key
+/// names.
 pub fn derive<T: Any + Send + Sync>(
     derivation: &Derivation,
     key: &str,
@@ -351,7 +334,7 @@ pub fn derived_len(derivation: &Derivation) -> usize {
     DERIVED.keys().iter().filter(|k| k.starts_with(&prefix)).count()
 }
 
-/// Drop the derivation's entries `keep` refuses — a capability's own
+/// Drop the derivation's entries `keep` refuses: a capability's own
 /// rule over its entries (the router keeps only the newest live
 /// document's graphs).
 pub fn retain_derived(derivation: &Derivation, keep: impl Fn(&str, &[String]) -> bool) {
@@ -362,13 +345,11 @@ pub fn retain_derived(derivation: &Derivation, keep: impl Fn(&str, &[String]) ->
     });
 }
 
-// ---------------------------------------------------------------------
-// capabilities and assemblies
-// ---------------------------------------------------------------------
+// --- capabilities and assemblies ---
 
 /// One capability as an assembly links it: its id, its dispatch pair,
 /// and the document kinds it reads, each as its registry ([`loader`]).
-/// `capability!` declares it; an assembly (`assembly!`) routes to it.
+/// `capability!` declares it; `assembly!` routes to it.
 pub struct Cap {
     pub id: &'static str,
     pub json: fn(&str) -> String,
@@ -377,16 +358,14 @@ pub struct Cap {
 }
 
 /// A capability's whole declaration, as the generator reads it
-/// (`capability!` writes it): its id and lanes, its ops (the `Request`
-/// enum's tags), the kinds it reads, consumes, speaks, and migrates, and
-/// its `OPS.md`. It is a function, not a static: no module calls it, so
-/// no module carries the docs' text.
+/// (`capability!` writes it): its id, lanes, ops (the `Request` enum's
+/// tags), kinds, and `OPS.md`. It is a function, not a static: no module
+/// calls it, so no module carries the docs' text.
 #[derive(Debug, Clone)]
 pub struct Declared {
     pub id: &'static str,
     pub invoke: fn(&str) -> String,
     pub invoke_bytes: fn(u32, &[u8]) -> String,
-    /// The `Request` enum's op tags.
     pub ops: Vec<String>,
     /// The kernel kinds it reads (`documents: [...]`).
     pub documents: Vec<&'static str>,
@@ -403,9 +382,8 @@ pub struct Declared {
 
 /// The op tags of a capability's `Request` enum, in its order. Every
 /// `Request` is tagged by `op` (`#[serde(tag = "op")]`), so serde's
-/// refusal of an unknown tag names every tag it knows. Reading the
-/// refusal needs no dependency, and the list cannot differ from what the
-/// dispatch decodes.
+/// refusal of an unknown tag names every tag it knows. This needs no
+/// dependency, and the list cannot differ from what the dispatch decodes.
 pub fn op_names<T: serde::de::DeserializeOwned>() -> Vec<String> {
     let refusal = match serde_json::from_str::<T>(r#"{"op":"\u0001"}"#) {
         Ok(_) => panic!("a Request decoded an op tag no capability has"),
@@ -432,8 +410,8 @@ fn kinds(caps: &[&Cap]) -> Vec<&'static dyn Loader> {
     out
 }
 
-/// The registries an assembly holds, in the order `held` lists them:
-/// each kind its capabilities read, then the derived entries.
+/// The registries an assembly holds, in `held` order: each kind its
+/// capabilities read, then the derived entries.
 pub fn registries(caps: &[&Cap]) -> Vec<&'static dyn Held> {
     let mut out: Vec<&'static dyn Held> = kinds(caps).into_iter().map(|k| k.held()).collect();
     out.push(&DERIVED);
@@ -444,9 +422,9 @@ fn error(message: String) -> String {
     crate::outcome::<()>(Err(message))
 }
 
-/// The JSON lane of an assembly: a kernel load when the op is one of
-/// its kinds' loads, otherwise the capability the request names (or
-/// the only one).
+/// The JSON lane of an assembly: a kernel load when the op is one of its
+/// kinds' loads, otherwise the capability the request names (or the only
+/// one).
 pub fn invoke(caps: &[&Cap], text: &str) -> String {
     let envelope: Option<Envelope> = serde_json::from_str(text).ok();
     if let Some(envelope) = &envelope {
@@ -471,9 +449,9 @@ pub fn invoke(caps: &[&Cap], text: &str) -> String {
     }
 }
 
-/// The bulk lane of an assembly: the registry ops, its kinds' loads,
-/// and each capability's own bulk ops (its index in the high 16 bits,
-/// its code in the low 8).
+/// The bulk lane of an assembly: the registry ops, its kinds' loads, and
+/// each capability's own bulk ops (index in the high 16 bits, code in the
+/// low 8).
 pub fn invoke_bytes(caps: &[&Cap], op: u32, bytes: &[u8]) -> String {
     if op == OP_EVICT || op == OP_HELD {
         return crate::registry::kernel(op, bytes, &registries(caps)).expect("evict and held are the registry ops");
@@ -516,7 +494,7 @@ mod tests {
     fn bytes_b(op: u32, _: &[u8]) -> String {
         format!(r#"{{"ok":{{"cap":"b","op":{op}}}}}"#)
     }
-    /// Two test kinds: the kernel names no library's kind. A fence is a
+    /// Two test kinds, since the kernel names no library's kind. A fence is a
     /// JSON kind under its own field; a watch is one under `document`.
     #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
     struct Fence {

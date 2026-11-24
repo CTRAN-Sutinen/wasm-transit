@@ -38,17 +38,17 @@ pub struct SiteQuestion {
 #[ts(export, export_to = "cap_stops/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What a write must pass: every refusal (its stop, its event's
-    /// index, its problem), or — when there is none — the canonical
+    /// What a write must pass. The answer is every refusal (its stop, its
+    /// event's index, its problem). When there is none, it is the canonical
     /// document and its hash.
     Validate {
         #[ts(as = "Stops")]
         stops: cap_abi::Base<Stops>,
     },
-    /// Every stop as its events make it on `date`, in id order —
-    /// or only `stop_ids`, where given, and only those at `statuses`,
-    /// where given — with the stops on the date counted by status. A
-    /// stop not yet there on the date is not listed.
+    /// Every stop as its events make it on `date`, in id order. Only
+    /// `stop_ids`, where given, and only those at `statuses`, where given.
+    /// The stops on the date are counted by status. A stop not yet there
+    /// on the date is not listed.
     StopsOn {
         stops_hash: String,
         date: String,
@@ -78,9 +78,10 @@ pub enum Request {
         #[ts(optional)]
         statuses: Option<Vec<Status>>,
     },
-    /// One stop on `date` (null before it exists), every event it has,
-    /// oldest first — the card's record and its history — and what it
-    /// may become that day: the lifecycle events a write would accept.
+    /// One stop on `date` (null before it exists), with every event it has,
+    /// oldest first. This is the card's record and its history. It also
+    /// gives what the stop may become that day: the lifecycle events a
+    /// write would accept.
     Stop { stops_hash: String, stop_id: String, date: String },
     /// The rule of each request's reference to its stop on `date`, the
     /// agency's today (transit-stops `request_rule`, D-238): each request
@@ -95,14 +96,14 @@ pub enum Request {
         #[ts(optional)]
         stop: Option<String>,
     },
-    /// A stops document from a network's stops: each one `in_service`
-    /// event with no date, carrying its point and details — registered,
-    /// answered with its hash.
+    /// A stops document from a network's stops. Each stop has one
+    /// `in_service` event with no date. The event carries its point and
+    /// details. The document is registered and answered with its hash.
     Seed { network_hash: String },
-    /// The document with `event` added to stop `stop_id` in its place
-    /// by date — an id the document does not hold begins a stop — then
-    /// checked as a write is: every refusal, or the document registered
-    /// and answered with its hash.
+    /// The document with `event` added to stop `stop_id` in its place by
+    /// date. An id the document does not hold begins a stop. The document
+    /// is then checked as a write is: every refusal, or the document
+    /// registered and answered with its hash.
     ///
     /// With `new`, the write says the stop is new (D-228): an id the
     /// document holds is refused (`stop_exists`), and nothing is added.
@@ -117,11 +118,11 @@ pub enum Request {
     /// The lists a stop's answers come from: its statuses, in the order a
     /// stop goes through them. The op reads no document.
     Vocabulary {},
-    /// The document with the event `event_id` of stop `stop_id`
-    /// corrected — taken out and `event` placed by date, keeping its id,
-    /// or, with no `event`, taken out — then checked as a write is. A
-    /// correction edits the event that was wrong (D-153), named by its
-    /// id (D-166).
+    /// The document with the event `event_id` of stop `stop_id` corrected.
+    /// The event is taken out, and `event` is placed by date and keeps its
+    /// id. With no `event`, the event is only taken out. Then the document
+    /// is checked as a write is. A correction edits the event that was
+    /// wrong (D-153), named by its id (D-166).
     CorrectEvent {
         stops_hash: String,
         stop_id: String,
@@ -152,7 +153,7 @@ pub enum Request {
     /// - `requests`: `put`, `record_work_order` (as cap-requests takes
     ///   them, with no `requests_hash`); `validate` (`{requests, from}`);
     /// - `migrate`, under either: the documents at the head recorded as
-    ///   they are (an empty log's first entry, from the old pointers).
+    ///   they are (an empty log's first entry, from the existing pointers).
     ///
     /// Every survey a written stops document adds names `by` (D-158;
     /// absent: the header's writer), then each written document is
@@ -184,12 +185,12 @@ pub enum Request {
         document: Option<transit_log::Held>,
     },
     /// The pick with each stop's record as the stops document has it on
-    /// `on`, its first date (D-157: a pick only reads the stops) —
-    /// registered, answered with its hash.
+    /// `on`, its first date (D-157: a pick only reads the stops). The pick
+    /// is registered and answered with its hash.
     ReadRecords { network_hash: String, stops_hash: String, on: String },
-    /// The named stops' records in the network's terms on `on` — what a
-    /// plan takes when its planner picks a stop the stops document holds
-    /// (D-173); a stop not there yet that day, or not held, is not
+    /// The named stops' records in the network's terms on `on`. A plan
+    /// takes these when its planner picks a stop that the stops document
+    /// holds (D-173). A stop not there yet that day, or not held, is not
     /// answered.
     Records { stops_hash: String, stop_ids: Vec<String>, on: String },
     /// The edits that take stops into a plan (D-173, D-228): `upsert_stop`
@@ -198,9 +199,10 @@ pub enum Request {
     /// refuses the take.
     TakeStops { network_hash: String, stops_hash: String, stop_ids: Vec<String>, on: String },
     /// What a pick reads of the stops over the period the published set
-    /// gives it (D-228): the pick with each stop's record on its first
-    /// date, and the warnings of the stops it visits that are not in
-    /// service over the period — registered, answered with its hash.
+    /// gives it (D-228). This is the pick with each stop's record on its
+    /// first date. It also has the warnings of the stops it visits that are
+    /// not in service over the period. The result is registered and
+    /// answered with its hash.
     ReadPick {
         network_hash: String,
         stops_hash: String,
@@ -222,7 +224,7 @@ pub enum Request {
     },
     /// What the planner is told of the stops the pick visits over
     /// `[from, until)`: each not in service, and each suspended for the
-    /// whole period or with no end — warnings, never refusals.
+    /// whole period or with no end. These are warnings, never refusals.
     VisitWarnings {
         network_hash: String,
         stops_hash: String,
@@ -233,8 +235,9 @@ pub enum Request {
     },
     /// The network over `[from, until)` with the stops' history in GTFS
     /// terms (D-151): one stop per version of a stop whose record
-    /// changes inside the dates, each visiting pattern split at them —
-    /// registered, answered with its hash, for cap-network's export.
+    /// changes inside the dates. Each visiting pattern splits at them. The
+    /// network is registered and answered with its hash, for cap-network's
+    /// export.
     ExportVersions {
         network_hash: String,
         stops_hash: String,
@@ -244,9 +247,9 @@ pub enum Request {
         until: Option<String>,
     },
     /// A feed's stops (an imported network) recorded on `on`, its first
-    /// service date (D-150): each difference an event dated that day,
-    /// checked as a write is — registered, answered with the events
-    /// added, the stops the feed does not list, and those whose
+    /// service date (D-150). Each difference becomes an event dated that
+    /// day, checked as a write is. The answer is registered. It holds the
+    /// events added, the stops the feed does not list, and those whose
     /// difference does not fit their history.
     ImportEvents {
         stops_hash: String,
@@ -263,7 +266,7 @@ pub enum Request {
         feed: Option<String>,
     },
     /// The events the document holds that the feed `feed` (its id)
-    /// recorded — what the planner is shown of an import (D-150).
+    /// recorded. This is what the planner is shown of an import (D-150).
     FeedEvents { stops_hash: String, feed: String },
     /// What a survey asks (D-158): the core site questions in the
     /// worksheet's order, each with the kind of answer it takes, and
@@ -326,7 +329,7 @@ pub enum Response {
         stops_hash: Option<String>,
         stops: Option<Stops>,
         /// The event the writer read has changed since: its id. Nothing
-        /// was corrected.
+        /// is corrected.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         conflict: Option<String>,
@@ -399,7 +402,7 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// are `{"error": ...}`, never panics. It is a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::AttributeSurveys { stops_hash, stops, by } => {
@@ -703,7 +706,7 @@ fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
 const STOPS_LOG_OPS: &str = "stops: add_event, correct_event, validate, import_events, migrate; requests: put, record_work_order, validate, migrate";
 
 /// One op over the stops document: none when it ran, the answer that
-/// ends the write when it was refused, moved, or in conflict, or the
+/// ends the write when it is refused, moved, or in conflict, or the
 /// error of an op that did not run.
 fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Option<transit_log::Received>, String> {
     let refused = |refusals: &[Refusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
@@ -868,7 +871,7 @@ struct Judged {
 /// (`write.today`; absent: not judged). Judged as of the read: each
 /// request the write changes, against the stops the writer read
 /// (`write.read`) with the write's own stop changes, refused unless it
-/// was already broken before the write, so a person can still change or
+/// is already broken before the write, so a person can still change or
 /// cancel it. Judged as of now: each request the write changes and each
 /// request on a stop the write changes, against the heads after the
 /// write, warned.
@@ -938,8 +941,8 @@ fn stops_of(records: &transit_log::Records) -> Option<Stops> {
     transit_log::assemble(template, own.as_ref(), "stops", &stops, false).ok()
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}` out.
+/// Its bytes are compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }

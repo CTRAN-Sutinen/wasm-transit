@@ -1,26 +1,26 @@
 //! Arrive-by laws (QAF-72, "the last bus home").
 //!
-//! The intent, as the user stated it: an arrive-by query answers the
-//! LATEST departure from `from` that reaches `to` by the deadline;
-//! with no deadline, the latest departure on the service day that
-//! reaches `to` at all. Times past 86400 are after-midnight trips of
-//! the same service day, never errors.
+//! The intent, as the user stated it: an arrive-by query answers the latest
+//! departure from `from` that reaches `to` by the deadline. With no deadline,
+//! it answers the latest departure on the service day that reaches `to` at all.
+//! Times past 86400 are after-midnight trips of the same service day, never
+//! errors.
 //!
 //! The laws, each against the independent fixpoint oracle
 //! (`prop_support::oracle_arrival`, no code shared with the search):
 //!
-//! 1. the answer's itinerary is feasible from its own departure and
-//!    arrives no later than the deadline;
-//! 2. no later departure reaches `to` by the deadline — checked at
-//!    the answer + 1 s, which covers every later second because
-//!    leaving later never arrives earlier (FIFO: waiting is free);
-//! 3. "no answer" means no departure at all (from the start of the
-//!    service day) reaches `to` by the deadline;
-//! 4. with no deadline, the deadline is the service day's end — the
-//!    latest arrival of any trip that day (after-midnight included):
-//!    nothing reaches anywhere later than that, so "reaches at all"
-//!    and "reaches by the day's end" are the same question;
-//! 5. the leg bound holds: with `k` legs, the same two-sided law
+//! 1. The answer's itinerary is feasible from its own departure. It arrives no
+//!    later than the deadline.
+//! 2. No later departure reaches `to` by the deadline. This is checked at the
+//!    answer plus 1 s. That covers every later second, because leaving later
+//!    never arrives earlier (FIFO: waiting is free).
+//! 3. "No answer" means no departure at all (from the start of the service day)
+//!    reaches `to` by the deadline.
+//! 4. With no deadline, the deadline is the service day's end: the latest
+//!    arrival of any trip that day, after-midnight included. Nothing reaches
+//!    anywhere later than that. So "reaches at all" and "reaches by the day's
+//!    end" are the same question.
+//! 5. The leg bound holds. With `k` legs, the same two-sided law applies
 //!    against the router's own earliest-arrival search at `k` legs.
 
 use chrono::NaiveDate;
@@ -71,8 +71,8 @@ fn day_end(trips: &[TripSpec]) -> u32 {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Laws 1–4: the answer is the latest feasible departure, against
-    /// the oracle; absent, nothing reaches by the deadline.
+    /// Laws 1 to 4: the answer is the latest feasible departure, against the
+    /// oracle. If there is no answer, nothing reaches by the deadline.
     #[test]
     fn the_answer_is_the_latest_departure_that_arrives_by_the_deadline(
         (n_stops, spacing, trips, from, to, deadline) in feed()
@@ -135,9 +135,9 @@ proptest! {
     }
 }
 
-/// The last bus home, after midnight (the QAF-72 shape): the last
-/// trip leaves 23:07 and arrives 24:01 — the no-deadline answer is
-/// that trip, not "unreachable".
+/// The last bus home, after midnight (the QAF-72 shape): the last trip leaves
+/// 23:07 and arrives 24:01. The no-deadline answer is that trip, not
+/// "unreachable".
 #[test]
 fn the_last_bus_home_runs_past_midnight() {
     let trips = vec![

@@ -1,5 +1,5 @@
-//! The kernel's load of a walk table and a streets document (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
+//! The kernel's load of a walk table and a streets document (D-239). Its
+//! line in the kind list (`crates/cap-abi/src/kinds.rs`) names this impl.
 
 /// What `load_walks` answers.
 #[derive(Debug, Clone, serde::Serialize)]

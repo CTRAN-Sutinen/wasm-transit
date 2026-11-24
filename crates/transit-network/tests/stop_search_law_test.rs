@@ -1,15 +1,15 @@
 //! Finding a stop by what a rider types (D-48).
 //!
 //! The intent, as the user decided it (D-48, 2026-11-05): fuzzy
-//! matching on the stop names — typos, and abbreviations like "Van"
-//! for "Vancouver" — and no authored aliases (a hand-kept separate
+//! matching on the stop names: typos, and abbreviations like "Van"
+//! for "Vancouver": and no authored aliases (a hand-kept separate
 //! dataset). "vancouver mall" must find the stops whose sign says "Van
 //! Mall". The thresholds are D-91 (encoded provisionally).
 //!
 //! The laws, over generated stop names:
 //!
 //! 1. **Exact still finds**: every term a substring of the name or id
-//!    (the picker's typing) finds the stop, as an exact match — fuzzy
+//!    (the picker's typing) finds the stop, as an exact match: fuzzy
 //!    matching never drops what the substring rule found.
 //! 2. **An abbreviation on the sign answers the full word**: a name
 //!    word of three letters or more answers any term it begins
@@ -18,7 +18,7 @@
 //!    ("St" answers "street", "Blvd" answers "boulevard").
 //! 3. **A typo still finds**: a term within one edit (a letter
 //!    substituted, added, dropped, or two neighbours swapped) of a name
-//!    word, or of the start of one, finds it — two edits from eight
+//!    word, or of the start of one, finds it: two edits from eight
 //!    letters on; a term under four letters is never corrected.
 //! 4. **Exact first**: every exact match lists before every
 //!    abbreviation, every abbreviation before every typo; inside a

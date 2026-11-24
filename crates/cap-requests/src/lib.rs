@@ -20,9 +20,9 @@ pub use transit_requests::{RequestRefusal, StopRequest, StopRequests};
 #[ts(export, export_to = "cap_requests/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What a write must pass: every refusal (its request, its
-    /// problem), or — when there is none — the canonical document and
-    /// its hash.
+    /// What a write must pass. It returns every refusal (its request, its
+    /// problem). With no refusal, it returns the canonical document and its
+    /// hash.
     Validate {
         #[ts(as = "StopRequests")]
         requests: cap_abi::Base<StopRequests>,
@@ -41,8 +41,8 @@ pub enum Request {
         #[ts(optional)]
         jobs: Option<Vec<String>>,
     },
-    /// The document with `request` placed under `id` — new, or
-    /// replacing the one held — then checked as a write is: every
+    /// The document with `request` placed under `id`, new or replacing
+    /// the one held. Then it is checked as a write is: every
     /// refusal, or the document registered and answered with its hash.
     /// A document absent (`requests_hash` omitted) is an empty one: the
     /// first request begins it.
@@ -62,10 +62,10 @@ pub enum Request {
     /// `action` is `open` or `refresh`. The host makes the call, and
     /// `record_work_order` records the answer.
     WorkOrderCall { requests_hash: String, id: String, action: String },
-    /// What the work order system answered, on request `id` (D-165): its
-    /// reference on the request, a drafted or submitted one moved to
-    /// ordered — then checked as a write is. An id the document does not
-    /// hold is an error.
+    /// What the work order system answered, on request `id` (D-165). Its
+    /// reference goes on the request. A drafted or submitted request moves
+    /// to ordered. Then the document is checked as a write is. An id the
+    /// document does not hold is an error.
     RecordWorkOrder { requests_hash: String, id: String, work_order: transit_requests::WorkOrder },
     /// The lists a request's answers come from: its jobs, statuses, the
     /// sides of a street, the directions of travel, and the markings.
@@ -103,9 +103,9 @@ pub enum Response {
         refusals: Vec<RequestRefusal>,
         document: Option<String>,
         document_hash: Option<String>,
-        /// The fields the document carries that this build does not
-        /// know (D-167): kept in it, and flagged for a person, never
-        /// refused. Absent when every field is known.
+        /// Fields the document carries that this build does not know (D-167).
+        /// The document keeps them and flags them for a person. It never
+        /// refuses them. The list is absent when every field is known.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<String>>")]
         unknown_fields: Vec<String>,
@@ -138,7 +138,7 @@ fn strings(list: &[&str]) -> Vec<String> {
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// are `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Validate { requests } => {
@@ -231,8 +231,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
+/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
@@ -243,8 +243,8 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: a stop requests document registers on the kernel's load_stop_requests") }).to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

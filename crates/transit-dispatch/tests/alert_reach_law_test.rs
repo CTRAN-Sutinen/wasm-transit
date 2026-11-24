@@ -1,13 +1,10 @@
-//! What an alert reaches on a day: each departure its scopes select,
-//! by the board's own rule (`LiveAlert::touches` for the visit, or
-//! `touches_stop` for the stop it leaves from). GTFS-rt joins the fields
-//! of one informed entity with AND, and each informed entity applies to
-//! its own affected entity.
+//! What an alert reaches on a day: the departures its scopes select, by the
+//! board's own rule (crates/cap-board/OPS.md "alert_reach").
 //!
-//! Over the e2e fixture on Friday 2026-10-23: t10 (route 10, A → B),
-//! t20 (route 20, A → B), t30 (route 10, A → C → B), t40 and t41
-//! (route 40, between the station STN's bays SA and SB). A trip's last
-//! stop is not a departure.
+//! Fixture: the e2e network on Friday 2026-10-23. t10 (route 10, A to B), t20
+//! (route 20, A to B), t30 (route 10, A to C to B), t40 and t41 (route 40,
+//! between the bays SA and SB of station STN). A trip's last stop is not a
+//! departure.
 
 use proptest::prelude::*;
 use transit_dispatch::alert_reach;
@@ -37,7 +34,7 @@ fn stops(r: &transit_dispatch::Reach) -> Vec<(&str, u32)> {
 fn route_and_stop_together_reach_that_route_at_that_stop_only() {
     let net = network();
     let r = alert_reach(&net, &day(&net), &[scope(Some("10"), Some("A"))], DATE);
-    // Not route 20 at A, not route 10 at C.
+    // Not route 20 at A. Not route 10 at C.
     assert_eq!(stops(&r), [("A", 2)]);
     assert_eq!(r.routes, ["10"]);
     assert_eq!(r.departures, 2);
@@ -99,9 +96,8 @@ fn arb_scope() -> impl Strategy<Value = AlertScope> {
 }
 
 proptest! {
-    /// Each entity applies on its own: an alert reaches, at each stop,
-    /// the departures that any of its scopes reaches alone, and no
-    /// other.
+    /// Each entity applies on its own. At each stop, an alert reaches the
+    /// departures that any of its scopes reaches alone, and no others.
     #[test]
     fn several_scopes_reach_what_each_reaches(scopes in prop::collection::vec(arb_scope(), 1..4)) {
         let net = network();
@@ -115,9 +111,9 @@ proptest! {
     }
 }
 
-/// A trip the edit document cancels is out of the patched day, but the
-/// board still lists its visits as skipped, with the alerts about them:
-/// an alert about the cancel reaches them.
+/// A trip the edit document cancels is out of the patched day. The board still
+/// lists its visits as skipped, with the alerts about them (an alert about
+/// the cancel reaches them).
 #[test]
 fn a_cancelled_trip_is_reached_where_the_board_lists_it_skipped() {
     let net = network();

@@ -3,7 +3,7 @@
 //! A street layer (an agency GIS export, TIGER, OSM) is a
 //! serialization; this is the model it is read into
 //! ([`crate::geojson::import`]). The document is canonical, so its
-//! content hash is the identity of the STREETS, not of one file
+//! content hash is the identity of the streets, not of one file
 //! spelling them: the same streets in another feature order, drawn in
 //! the other direction, or carrying other properties are the same
 //! document.
@@ -12,7 +12,7 @@
 //!
 //! * a way is two or more points with no point repeated in a row;
 //! * points are `[lat, lon]` in integer microdegrees (1e-6°, about
-//!   0.1 m) — the resolution at which ways weld into a graph;
+//!   0.1 m): the resolution at which ways weld into a graph;
 //! * a one-way runs from its first point to its last; a two-way is
 //!   drawn in whichever direction puts the smaller point sequence
 //!   first;
@@ -59,7 +59,7 @@ pub struct Streets {
 
 impl Streets {
     /// The document's size as its graph will be: (ways, segments,
-    /// distinct points) — counted off the document, no graph built.
+    /// distinct points), counted off the document with no graph built.
     pub fn counts(&self) -> (u32, u32, u32) {
         let segments = self.ways.iter().map(|w| w.points.len().saturating_sub(1) as u32).sum();
         let nodes = self.ways.iter().flat_map(|w| &w.points).collect::<std::collections::HashSet<_>>().len() as u32;
@@ -104,7 +104,7 @@ pub enum StreetClass {
 }
 
 impl StreetClass {
-    /// The wire name — the canonical order sorts by it.
+    /// The wire name. The canonical order sorts by it.
     pub fn as_str(self) -> &'static str {
         match self {
             StreetClass::Motorway => "motorway",
@@ -149,7 +149,7 @@ impl Streets {
         Streets { kind: Default::default(), schema_version: Default::default(), ways }
     }
 
-    /// Hold a document to canonical form — the form the import writes,
+    /// Hold a document to canonical form: the form the import writes,
     /// so a document registered from the host hashes as the import's.
     pub fn validate(&self) -> Result<(), StreetError> {
         for (i, way) in self.ways.iter().enumerate() {

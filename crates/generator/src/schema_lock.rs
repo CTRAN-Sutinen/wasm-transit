@@ -9,8 +9,8 @@
 //!
 //! `<tag>` is the kind's tag, the name a document carries inside it.
 //! [`check`] compares a build with its lock. [`freeze`] writes what a
-//! build adds: a new version, or an added optional field (D-167). It
-//! refuses every other change. gen-manifest runs both, and its test is
+//! build adds (a new version, or an added optional field, D-167) and
+//! refuses every other change. gen-manifest runs both; the test is
 //! `crates/generator/tests/schema_lock_test.rs`.
 
 #![allow(dead_code)]

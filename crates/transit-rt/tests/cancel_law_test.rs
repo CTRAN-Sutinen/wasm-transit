@@ -1,17 +1,17 @@
 //! Cancellation laws: a trip the rt feed cancels, or a stop it skips,
-//! does not run there — and the live document says so in the model's
+//! does not run there. The live document says so in the model's
 //! vocabulary, so no reader shows or rides it.
 //!
 //! The intent (the user, 2026-11-04, on the stop display showing a
 //! cancelled 34 as leaving in three minutes): a cancelled trip leaves
 //! the board silently (D-73). GTFS-rt states it two ways:
 //!
-//! 1. TripDescriptor.schedule_relationship CANCELED — the trip
-//!    instance does not run; DELETED — it does not run and should not
+//! 1. TripDescriptor.schedule_relationship CANCELED: the trip
+//!    instance does not run. DELETED: it does not run and should not
 //!    be shown to riders at all. Both mean no visit of the instance
 //!    happens: the live trip is `canceled`.
-//! 2. StopTimeUpdate.schedule_relationship SKIPPED — the vehicle does
-//!    not stop there; the trip still runs. The live stop is `skipped`,
+//! 2. StopTimeUpdate.schedule_relationship SKIPPED: the vehicle does
+//!    not stop there. The trip still runs. The live stop is `skipped`,
 //!    and a skipped stop states no delay of its own: the delay stated
 //!    before it carries past it to the stops after.
 //!
@@ -20,7 +20,7 @@
 //! instance and for a skipped visit, true otherwise (including every
 //! trip the snapshot does not mention).
 //!
-//! Written BEFORE the implementation, from the GTFS-rt spec.
+//! Written before the implementation, from the GTFS-rt spec.
 //!
 //! The API these laws require: `TripUpdateView.canceled: bool`,
 //! `StopUpdateView.skipped: bool`, `LiveTrip.canceled: bool`,

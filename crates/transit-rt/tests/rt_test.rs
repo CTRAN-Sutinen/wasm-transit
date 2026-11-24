@@ -1,12 +1,12 @@
 //! Round-trip test: build a FeedMessage, encode it as protobuf, decode it
-//! back. This validates our generated types against prost itself without
-//! needing a live feed.
+//! back. This checks the generated types against prost itself. No live feed
+//! is needed.
 //!
-//! Note: gtfs-realtime.proto is proto2. Two prost consequences matter here:
+//! Note: gtfs-realtime.proto is proto2. Two prost effects matter here:
 //! * `required` fields (FeedMessage.header, TripUpdate.trip, FeedEntity.id,
 //!   FeedHeader.gtfs_realtime_version) become plain, non-Option Rust fields.
 //! * `optional` fields become Option<T>.
-//! Nested messages like StopTimeUpdate live in generated modules
+//! Nested messages, such as StopTimeUpdate, live in generated modules
 //! (`gtfs_rt::trip_update`) matching the proto's scoping.
 
 use prost::Message;

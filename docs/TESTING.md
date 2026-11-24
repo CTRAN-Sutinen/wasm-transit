@@ -11,8 +11,11 @@ to match the implementation, so the tests certified the bug. The rules:
 
 - **Derive each law from the stated intent.** Use the user's directive,
   the GTFS spec, and the architecture laws. Never use what the code
-  currently does. Write the intent that the law encodes in the law's
-  doc comment.
+  currently does. A law test's header names what it pins and where
+  the intent lives: a decision id, a GTFS spec section, or an
+  `OPS.md` section. Quote the intent only when no decision file holds
+  it. Each law is one line on its test. The header does not restate
+  the decision, the op contract, or the API.
 - **Independent oracles.** Recompute a law's expected answer from the
   generated input. Use code that shares nothing with the implementation
   (`docs/CONVENTIONS.md`, native tests first).
@@ -89,6 +92,14 @@ done: `just test-release`, `just e2e-release`, `just check-release`
 
 For a narrower loop, run one owner's tests directly: `cargo test -p
 <crate>`, or `go test -race -run <Test> .` in `server/`.
+
+`just test` ends with `just prune` (`tools/prune-target.mjs`). It
+deletes each artifact in `target/` that the gate's own cargo commands
+do not use. A `-p` run unifies features over fewer packages, so it
+builds its own copy of a shared dependency and every crate above it.
+Cargo never deletes those copies. After the prune, the next `cargo
+test -p <crate>` builds its copy again. After a toolchain upgrade, run
+`cargo clean` instead: every artifact is stale.
 
 Publishing the registry is its own gate. `just registry` runs `cargo
 test` and the module smoke, then `just reproducible`. That recipe makes

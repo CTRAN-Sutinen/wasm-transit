@@ -14,11 +14,11 @@
 //!   specific rule answers), else the terminal's floor. Without a rule,
 //!   an imported layover is the whole observed gap, and every delay would
 //!   read infeasible (D-9, D-110). [`recovery`] shows each wait's
-//!   requirement and slack; it is short exactly where validation says
+//!   requirement and slack. It is short exactly where validation says
 //!   `layover_infeasible`.
 //! * [`suggest_blocks`] chains the unblocked trips: each follows the
 //!   vehicle that leaves it the least slack at the same stop or station,
-//!   under the interline rules and the recovery. No deadheads yet. Its
+//!   under the interline rules and the recovery. It has no deadheads. Its
 //!   blocks are suggestions with the edits that adopt them and the peak
 //!   they need, because a vehicle need is a block assignment, not a count
 //!   of concurrent trips (D-46, D-107, D-109).

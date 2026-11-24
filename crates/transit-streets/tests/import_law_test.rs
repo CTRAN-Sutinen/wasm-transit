@@ -6,8 +6,8 @@
 //! * **Streets are a model, not a file.** The document's identity is
 //!   the streets, so what does not change the streets does not change
 //!   the document: the layer's feature order, the direction a two-way
-//!   street was digitized in (a one-way's travel direction is kept,
-//!   whichever way it was drawn), the same street drawn twice, and
+//!   street is digitized in (a one-way's travel direction is kept,
+//!   whichever way it is drawn), the same street drawn twice, and
 //!   every property outside the model (OBJECTID, publish dates).
 //! * **Only streets are streets** (D-30, encoded provisionally): a
 //!   line whose class field names something other than a road
@@ -436,7 +436,7 @@ proptest! {
         prop_assert_eq!(a.ok(), b.ok());
     }
 
-    /// The direction a street was digitized in is not the streets; a
+    /// The direction a street is digitized in is not the streets; a
     /// one-way's travel direction is.
     #[test]
     fn digitized_direction_does_not_change_the_document(features in layer()) {
@@ -478,7 +478,7 @@ proptest! {
 
 // ---------------------------------------------------------------------
 // Validity: a stored document the host hands back is checked, so a
-// registered document is canonical — the hash of the streets, not of
+// registered document is canonical: the hash of the streets, not of
 // one spelling of them.
 // ---------------------------------------------------------------------
 

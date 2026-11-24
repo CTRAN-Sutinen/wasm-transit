@@ -49,8 +49,8 @@ pub struct Fares {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<FareMediaId, FareMedia>>")]
     pub media: BTreeMap<FareMediaId, FareMedia>,
-    /// What riders buy, by id — one offer per rider category and
-    /// medium it is sold for.
+        /// What riders buy, by id. There is one offer per rider category and
+        /// medium it is sold for.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<FareProductId, Vec<FareOffer>>>")]
     pub products: BTreeMap<FareProductId, Vec<FareOffer>>,

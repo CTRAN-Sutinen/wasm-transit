@@ -1,11 +1,11 @@
 //! Property-based tests for RAPTOR.
 //!
-//! The oracle is a deliberately dumb implementation: Bellman-Ford-style
-//! relaxation over every (trip, board position, alight position) pair
-//! and every footpath, iterated to a fixpoint. It shares no code with
-//! the round-based search — if RAPTOR ever claims an arrival earlier
-//! than the oracle, or misses a connection the oracle finds, the test
-//! fails and proptest shrinks the feed to the smallest counterexample.
+//! The oracle is brute force: Bellman-Ford-style relaxation over every (trip,
+//! board position, alight position) pair and every footpath, iterated to a
+//! fixpoint. It shares no code with the round-based search. If RAPTOR claims an
+//! arrival earlier than the oracle, or misses a connection the oracle finds,
+//! the test fails. Proptest then shrinks the feed to the smallest
+//! counterexample.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;

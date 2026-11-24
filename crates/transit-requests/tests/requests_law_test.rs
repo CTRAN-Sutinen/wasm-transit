@@ -1,13 +1,13 @@
 //! The stop requests document's laws (D-159), derived from the user's
-//! intent — C-TRAN's Bus Stop Sign & Shelter Installation Worksheet,
+//! intent: C-TRAN's Bus Stop Sign & Shelter Installation Worksheet,
 //! which "the planning team submits, the sheet isn't itself a work
 //! order. they should have their own record and the system should be
-//! able to track a reference to the external work order" — and written
+//! able to track a reference to the external work order" and written
 //! before the implementation:
 //!
 //! * a request is a record of its own, by id: the job (the worksheet's
 //!   five), the stop it concerns, its status (drafted, submitted, work
-//!   order opened, completed, cancelled — cancelled is the tombstone:
+//!   order opened, completed, cancelled. Cancelled is the tombstone:
 //!   nothing is deleted), and the worksheet's fields, every one
 //!   optional but the stop and the job;
 //! * a write refuses only what makes a request wrong, each reason named:
@@ -18,13 +18,13 @@
 //! * `put` places one request by id (new, or replacing the one held)
 //!   and nothing else changes; `for_stop` is a stop's requests in id
 //!   order;
-//! * `list` is the work across every stop — "what work is in flight,
+//! * `list` is the work across every stop: "what work is in flight,
 //!   and where is it?": every request in id order, only those at the
 //!   statuses and of the jobs asked, where asked; beside it the count
 //!   of every request by status, whatever the filters ask, in the
 //!   statuses' order, only the statuses some request has;
 //! * one document is one byte sequence however its keys are ordered,
-//!   and what this repo does not know — another tool's field — is kept.
+//!   and what this repo does not know (another tool's field) is kept.
 
 use proptest::prelude::*;
 use serde_json::{json, Value};
@@ -233,8 +233,8 @@ proptest! {
 
 /// What the work order system answers lands on the request (D-165): its
 /// reference replaces the one held (a link or status the answer lacks is
-/// kept), a drafted or submitted request moves to `ordered` — its work
-/// order is open — and a request already ordered, completed, or cancelled
+/// kept), a drafted or submitted request moves to `ordered`. Its work
+/// order is open. A request already ordered, completed, or cancelled
 /// keeps its status; every other request is as it was, and an id the
 /// document does not hold answers none.
 #[test]

@@ -1,8 +1,8 @@
 //! How long a planned trip takes, and from when (D-40).
 //!
 //! The intent, as the user decided it (D-40, 2026-11-05): door to
-//! door. An itinerary carries `leave_secs` — when the rider leaves the
-//! origin: the first ride's boarding minus the walk before it — and
+//! door. An itinerary carries `leave_secs`, when the rider leaves the
+//! origin: the first ride's boarding minus the walk before it, and
 //! `duration_secs`, the arrival minus that leave. "Leave in N min" is
 //! the board's one wait rule (D-24, `transit_dispatch::wait`) from the
 //! moment the plan was asked to leave (`depart_secs`) to `leave_secs`.
@@ -54,7 +54,7 @@ fn end(n_stops: usize, id: &'static str) -> impl Strategy<Value = End> {
     ]
 }
 
-/// Laws 1, 2 and 4 — what every itinerary says about itself.
+/// Laws 1, 2 and 4: what every itinerary says about itself.
 fn check_door_to_door(it: &Itinerary) {
     let first_ride = it.legs.iter().position(|l| matches!(l, Leg::Transit { .. }));
     let expected_leave = match first_ride {
@@ -126,9 +126,9 @@ proptest! {
     }
 }
 
-/// The worked case: a 300 s walk to a bus boarding at 08:10 that
-/// arrives 08:30, asked at 08:00 — leave 08:05, 25 minutes door to
-/// door, leave in 5 min.
+/// The worked case: a 300 s walk to a bus. The bus boards at 08:10 and arrives
+/// 08:30. The rider asks at 08:00. Leave is 08:05, which is 25 minutes door to
+/// door, and leave in 5 min.
 #[test]
 fn a_walk_then_a_ride_leaves_at_the_walk_before_the_boarding() {
     let zip = build_zip_spaced(2, 0.003, &[TripSpec { stops: vec![0, 1], start: 29_400, step: 1_200 }]);

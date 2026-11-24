@@ -1,7 +1,7 @@
 //! The new-route laws: a planner builds a route that does not
-//! exist yet — the route, its directions, a pattern each way laid
+//! exist yet: the route, its directions, a pattern each way laid
 //! through stops they pick in order, and trips at a headway under a
-//! service key — as one change, over the committed planner network
+//! service key: as one change, over the committed planner network
 //! (testdata/network.json: stops A/B/C, route 10, service type
 //! `weekday`).
 //!
@@ -12,7 +12,7 @@
 //!    and last are timepoints, the rest are not (scheduled between them
 //!    by distance until the planner makes one a timepoint);
 //! 2. each visit's distance is the great-circle length of the legs
-//!    before it — 0 at the first, never decreasing, and estimated (never
+//!    before it: 0 at the first, never decreasing, and estimated (never
 //!    claimed as published);
 //! 3. it carries one all-day timing profile, `run_secs` end to end, so
 //!    trips set on it at a headway run `run_secs` first to last stop;

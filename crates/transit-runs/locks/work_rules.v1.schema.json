@@ -23,7 +23,7 @@
     },
     "Pay": {
       "additionalProperties": true,
-      "description": "What a run is paid, in time (D-51: no dollars — operators' rates\nvary by seniority).",
+      "description": "What a run is paid, in time (D-51: no dollars, because operators'\nrates vary by seniority).",
       "properties": {
         "guarantee_secs": {
           "description": "A run is paid at least this long.",
@@ -126,7 +126,7 @@
     },
     "RunRules": {
       "additionalProperties": true,
-      "description": "The rules a run is cut under — each optional; the runs cut reads\nthem (`docs/units/runs-layer.md`).",
+      "description": "The rules a run is cut under. Each is optional. The runs cut reads\nthem (`docs/units/runs-layer.md`).",
       "properties": {
         "clear_secs": {
           "description": "Paid time after the last piece (pull-in, sign-off).",
@@ -240,7 +240,7 @@
       "description": "What a run is paid."
     },
     "recovery": {
-      "description": "The recovery a wait after a trip requires (D-9). The most\nspecific rule answers: route and service type, then route, then\nservice type, then neither. No rule applies → the terminal's\nfloor (the smallest authored layover there).",
+      "description": "The recovery a wait after a trip requires (D-9). The most\nspecific rule answers: route and service type, then route, then\nservice type, then neither. If no rule applies, the terminal's\nfloor (the smallest authored layover there).",
       "items": {
         "$ref": "#/$defs/RecoveryRule"
       },

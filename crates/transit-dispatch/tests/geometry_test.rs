@@ -1,9 +1,5 @@
-//! Where service runs today: a trip that follows its pattern draws the
-//! authored alignment; a diverted trip draws the alignment to its
-//! first kept stop, the diversion's traced detour, and the alignment
-//! from its last kept stop (QAF-50) — a skip-only diversion leaves the
-//! alignment as it is; the ridden segment slices that line between
-//! its stops.
+//! The line a trip draws today, and the segment a rider rides along it (QAF-50;
+//! crates/cap-runcut/OPS.md "trip_path").
 
 use chrono::NaiveDate;
 use transit_dispatch::{patch_day, trip_path, trip_segment};
@@ -34,6 +30,8 @@ fn day(net: &Network) -> Vec<MaterializedTrip> {
     materialize(net, date()).unwrap()
 }
 
+/// A trip that follows its pattern draws the authored alignment. The ridden
+/// segment slices that line between its stops.
 #[test]
 fn a_trip_on_its_pattern_draws_the_alignment() {
     let net = network();
@@ -65,10 +63,11 @@ fn around_b() -> Vec<Coord> {
     vec![c(45.50, -73.49), c(45.52, -73.49)]
 }
 
+/// A skip-only diversion leaves the alignment as it is.
 #[test]
 fn a_skip_only_diversion_keeps_the_alignment() {
-    // `detour: None` = the alignment unchanged: the bus drives the
-    // same streets past the stop it skips.
+    // `detour: None` means the alignment is unchanged. The bus drives the same
+    // streets past the stop it skips.
     let net = network();
     let skip_b = [diversion("A", "C", &["B"], None)];
     let d = patch_day(&day(&net), &skip_b);
@@ -83,12 +82,14 @@ fn a_skip_only_diversion_keeps_the_alignment() {
     assert!(trip_segment(&net, &d, &skip_b, "10-weekday@28800", 28800, "A", "Z").is_empty());
 }
 
+/// A diverted trip draws the alignment to its first kept stop, then the
+/// diversion's traced detour, then the alignment from its last kept stop.
 #[test]
 fn a_detour_splices_into_the_alignment() {
     let net = network();
     let line = trip_path(&net, &day(&net), &[], "10-weekday@28800", 28800);
 
-    // A → C around B: the alignment to A, the detour, the alignment
+    // A → C around B: the alignment to A, then the detour, then the alignment
     // from C.
     let around = [diversion("A", "C", &["B"], Some(&around_b()))];
     let d = patch_day(&day(&net), &around);
@@ -98,8 +99,8 @@ fn a_detour_splices_into_the_alignment() {
     assert_eq!(trip_path(&net, &d, &around, "10-weekday@28800", 28800), expected);
     assert_eq!(trip_segment(&net, &d, &around, "10-weekday@28800", 28800, "A", "C"), expected, "the ride follows the detour");
 
-    // A → B with nothing skipped (a detour between two kept stops):
-    // the alignment from B's vertex on.
+    // A → B with nothing skipped (a detour between two kept stops): the
+    // alignment from B's vertex on.
     let ab = [diversion("A", "B", &[], Some(&around_b()))];
     let d = patch_day(&day(&net), &ab);
     let mut expected = vec![line[0]];
@@ -113,6 +114,7 @@ fn a_detour_splices_into_the_alignment() {
     assert_eq!(trip_path(&net, &day(&net), &[other], "10-weekday@28800", 28800), line);
 }
 
+/// Without an alignment, the patched stops join in order around the detour.
 #[test]
 fn without_an_alignment_a_diverted_trip_joins_its_stops_around_the_detour() {
     let mut net = network();

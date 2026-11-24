@@ -3,15 +3,15 @@
 //! including those written before trips were stored or alignments
 //! stood on their own.
 //!
-//! A pre-alignment document draws each pattern's line inline, as its
-//! `path`. That line becomes an alignment under the pattern's id —
-//! the id the old export gave its shape — run by that pattern.
+//! A pre-alignment document draws each pattern's line inline, as its `path`.
+//! That line becomes an alignment under the pattern's id, which is the id that
+//! the export gave its shape. The pattern runs that alignment.
 //!
 //! A pre-trip document keeps `departures` (exact starts or headway
 //! bands) per pattern trips and references block trips as
 //! `(pattern_trips, start_secs)`. Every departure it derived becomes a
-//! one-start trip with the id the old export minted —
-//! `"{pattern_trips}@{start}"` — timed by the profile that covered its
+//! one-start trip with the id that the export minted:
+//! `"{pattern_trips}@{start}"`, timed by the profile that covered its
 //! start (timepoints at the profile's offsets, other stops
 //! unscheduled, so they materialize where they did); block references
 //! become trip references.

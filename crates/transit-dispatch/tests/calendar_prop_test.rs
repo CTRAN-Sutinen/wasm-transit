@@ -1,21 +1,14 @@
-//! The calendar's two-way law, as a property test:
-//! `active_services` (date → service keys) and `service_dates`
-//! (type → dates) are the same relation read in opposite directions.
-//! For every generated network (authored model vocabulary — weekday
-//! flags, date ranges, per-date exceptions) and every date window:
+//! `active_services` and `service_dates` are one relation read in opposite
+//! directions (crates/cap-calendar/OPS.md "service_dates"), over every
+//! generated network and date window. The day fold is the oracle, computed
+//! independently per date.
 //!
-//! 1. **per-date two-way agreement** — for every service type and
-//!    every date, `service_dates` names the date iff
-//!    `active_services` names the type (the day fold is the
-//!    oracle, computed independently per date);
-//! 2. **window agreement** — each type's window answer equals the
-//!    dates the day fold lists it on, and a type with a non-empty
-//!    window answer is exactly one the day fold ever lists in the
-//!    window — no date the rule answers that the day fold does
-//!    not, and none the day fold has that the rule misses;
-//! 3. **id-lookup honesty** — an unknown type, or one no pattern
-//!    trips run under, answers empty however its rule reads; so
-//!    does an inverted window.
+//! 1. For every service type and date, `service_dates` names the date if and
+//!    only if `active_services` names the type.
+//! 2. Each type's window answer equals the dates the day fold lists it on: the
+//!    rule answers no date the day fold does not, and misses none it does.
+//! 3. An unknown type, or one no pattern trips run under, answers empty however
+//!    its rule reads. So does an inverted window.
 
 use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
@@ -28,9 +21,9 @@ use transit_network::{
 const YEAR_START: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
 const TYPES: [&str; 3] = ["WK", "SAT", "HOL"];
 
-/// An authored calendar rule: weekday flags, date ranges within the
-/// fixture year, and per-date exceptions that always win (an `Added`
-/// exception may sit outside every range).
+/// An authored calendar rule: weekday flags, date ranges within the fixture
+/// year, and per-date exceptions.
+/// An exception always wins. An `Added` exception may sit outside every range.
 #[derive(Clone, Debug)]
 struct GenRule {
     days: [bool; 7],
@@ -56,9 +49,9 @@ fn day(offset: u16) -> NaiveDate {
 }
 
 /// The authored test network: one route, one pattern A→B→C, and one
-/// pattern-trips entry per service type up to `trips_per_type` (a
-/// generated rule may belong to a type that runs no trips — the law
-/// pins that it then never runs, however its rule reads).
+/// pattern-trips entry per service type up to `trips_per_type`.
+/// A generated rule may belong to a type that runs no trips; that type never
+/// runs, however its rule reads.
 fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
     let mut stops = std::collections::BTreeMap::new();
     for (id, name) in [("A", "Main & 1st"), ("B", "Main & 2nd"), ("C", "Main & 3rd")] {
@@ -208,8 +201,8 @@ proptest! {
             prop_assert_eq!(window, expect);
         }
 
-        // Law 3: unknown types and no-trips types answer empty, and
-        // so does an inverted window.
+        // Law 3: unknown types and no-trips types answer empty. So does an
+        // inverted window.
         prop_assert!(service_dates(&net, &[], "NOPE", from, to).unwrap().is_empty());
         if trips_per_type < 3 {
             let idle = TYPES[trips_per_type as usize];

@@ -3,14 +3,14 @@
 //! An imported layover is the whole observed gap between two trips,
 //! so judging a block against its own authored layover makes every
 //! later arrival infeasible. The laws: a layover is judged against the
-//! recovery REQUIRED where the vehicle waits — a policy's requirement
+//! recovery required where the vehicle waits: a policy's requirement
 //! when the caller supplies one (it wins), else the smallest authored
 //! layover at that terminal (the derived floor). What is above the
 //! requirement is slack, and slack may shrink freely.
 //!
-//! API notes: `recovery_floors(net)` — terminal → smallest authored
+//! API notes: `recovery_floors(net)`: terminal → smallest authored
 //! layover secs (the layover's `at`, else the stop the trip before
-//! ends at); `validation_issues_under(net, &policy)` — the issues with
+//! ends at); `validation_issues_under(net, &policy)`: the issues with
 //! a policy's requirement per adjacent pair (`RecoveryAt`: the trip
 //! before's route, service type, run time, and the terminal; `None`
 //! falls back to the floor); `validation_issues(net)` is the same with
@@ -161,7 +161,7 @@ fn the_floor_is_the_smallest_authored_layover_where_the_vehicle_waits() {
 
 proptest! {
     /// An observed gap that shrinks is slack spent, not a
-    /// broken block — the block fails only below the terminal's floor.
+    /// broken block: the block fails only below the terminal's floor.
     #[test]
     fn a_layover_is_judged_against_its_terminals_floor_not_its_own_length(cut in 0u32..=2400) {
         let mut net = network();
@@ -176,7 +176,7 @@ proptest! {
     }
 
     /// D-9: the policy wins over the derived floor, in both directions
-    /// — under it a gap below the floor passes, over it a gap above
+    /// under it a gap below the floor passes, over it a gap above
     /// the floor fails.
     #[test]
     fn a_policy_requirement_wins_over_the_floor(required in 0u32..3000, cut in 0u32..=2400) {

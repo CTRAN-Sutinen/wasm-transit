@@ -1,12 +1,12 @@
-//! Native dispatch tests for the gtfs capability — the seam without
-//! wasm (the same law the monolith's dispatch_test holds). The
-//! content-hash registry gets explicit laws: same bytes, same hash,
-//! one entry (idempotence); different bytes, different hashes; and
-//! the registry is addressed by hash, so a query for an unknown hash
-//! is an error, never a panic. The day views AND the directory
-//! questions (pickers, names join) are NOT here — they answer over
-//! the NETWORK document (cap-board / cap-runcut / cap-calendar /
-//! cap-directory; one question, one answer on the bus).
+//! Native dispatch tests for the gtfs capability. These test the seam
+//! without wasm, as each capability's dispatch_test does. The content-hash
+//! registry has explicit laws: same bytes, same hash, one entry
+//! (idempotence); different bytes, different hashes; and the registry is
+//! addressed by hash, so a query for an unknown hash is an error, never a
+//! panic. The day views and the directory questions (pickers, names join)
+//! are not here. They answer over the network document (cap-board /
+//! cap-runcut / cap-calendar / cap-directory; one question, one answer on
+//! the bus).
 
 use std::io::Read;
 
@@ -73,8 +73,8 @@ fn json_seam_round_trips_the_tagged_form() {
     let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(r#"{"op": "nope"}"#)).unwrap();
     assert!(bad["error"].as_str().unwrap().contains("invalid request"));
 
-    // The retired day ops answer as REQUEST errors — the module no
-    // longer speaks them, and the seam says so honestly.
+    // The retired day ops answer as request errors. The module does not
+    // speak them. The seam says so.
     for retired in [
         "departures",
         "blocks",

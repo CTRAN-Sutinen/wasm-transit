@@ -36,20 +36,19 @@ pub enum Request {
     /// What the editor shows about a draft (total: problems, never an
     /// error, for a draft that names what the network lacks).
     Draft { network_hash: String, draft: DiversionDraft },
-    /// The edit document's rows, names resolved over the network —
-    /// what the list shows: the diversions and the trip cancels, each
-    /// in document order.
+    /// The edit document's rows, with names resolved over the network. The
+    /// list shows the diversions and the trip cancels, each in document
+    /// order.
     List {
         network_hash: String,
         #[ts(as = "EditDocument")]
         edits: Current<EditDocument>,
     },
-    /// What each record of the edit document amounts to on the
-    /// network, in document order: whether it is valid against it (its
-    /// route, pattern, and stops exist and are in order), what is wrong
-    /// when it is not, and how many trip instances it touches. Invalid
-    /// records are REPORTED, never rejected (the sync contract) — every
-    /// day view simply finds nothing to patch for them.
+    /// What each record amounts to on the network, in document order:
+    /// whether it is valid (its route, pattern, and stops exist and are in
+    /// order), what is wrong when it is not, and how many trip instances it
+    /// touches. Invalid records are reported, never rejected (the sync
+    /// contract). Every day view simply finds nothing to patch for them.
     Reports {
         network_hash: String,
         #[ts(as = "EditDocument")]
@@ -85,7 +84,7 @@ pub enum Request {
         #[ts(type = "number")]
         now_ms: u64,
     },
-    /// The edit document with `record_id` retired — the tombstone.
+    /// The edit document with `record_id` retired. This is the tombstone.
     Retire {
         #[ts(as = "EditDocument")]
         edits: Base<EditDocument>,
@@ -120,8 +119,8 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
     kind::<transit_network::Network>().require(network_hash)
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics — a total seam.
+/// The typed dispatch. Native hosts call this directly. Failures are
+/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     let next = |records| EditDocument::new(records);
     match request {
@@ -175,20 +174,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out — byte-compatible with every other capability module.
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
+/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// Drafts and edit documents travel inline — no bulk op of its own;
-/// the seam answers honestly instead of silently ignoring one.
+/// Drafts and edit documents travel inline. There is no bulk op of its own.
+/// The seam answers with an error instead of silently ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: divert has no bulk op of its own")))
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
+/// The worked examples. The generator runs them. No module build turns
+/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

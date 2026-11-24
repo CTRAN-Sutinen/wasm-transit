@@ -1,27 +1,27 @@
 //! The alignment-authoring laws (D-11): `draw_alignment` redraws a
-//! pattern's line, and the edit NAMES what it redraws — `one` (the
+//! pattern's line, and the edit names what it redraws: `one` (the
 //! pattern gets its own new alignment; the others on the old line keep
 //! it) or `all` (the alignment itself changes, so every pattern on it
-//! is redrawn) — and the change reports every pattern it touched.
+//! is redrawn): and the change reports every pattern it touched.
 //! Nothing moves silently.
 //!
-//! Written BEFORE the implementation, from the decision; every
+//! Written before the implementation, from the decision; every
 //! expected answer is recomputed here from the generated input:
 //!
-//! 1. **One** — the pattern draws the new points under a new alignment
+//! 1. **One**: the pattern draws the new points under a new alignment
 //!    (created, reported); every other pattern draws what it drew, and
 //!    no existing alignment changes. Touched: the pattern alone.
-//! 2. **All** — every pattern that ran the pattern's alignment draws
+//! 2. **All**: every pattern that ran the pattern's alignment draws
 //!    the new points, under the same alignment id; every other pattern
 //!    draws what it drew. Touched: exactly those patterns, in id order.
 //!    A pattern with no alignment has no shared line: `all` gives it a
 //!    new one, as `one` does.
-//! 3. **Nothing silent** — every pattern whose line changed is in
+//! 3. **Nothing silent**: every pattern whose line changed is in
 //!    `touched`; the touched patterns' stop distances stop claiming
 //!    to be published (they were measured along the old line), keep
 //!    their meters, and nothing else in the document changes (stops,
 //!    timing, trips, blocks, the other patterns).
-//! 4. **Refusal** — an unknown pattern, fewer than two points, a point
+//! 4. **Refusal**: an unknown pattern, fewer than two points, a point
 //!    off the globe, or a taken alignment id is a named error; the
 //!    input is untouched.
 //!
@@ -123,7 +123,7 @@ fn draw(spec: &Spec, redraw: Redraw) -> NetworkEdit {
 }
 
 /// A pattern with its line fields (alignment, published flags) blanked
-/// — what the edit must leave alone.
+/// what the edit must leave alone.
 fn rest(p: &Pattern) -> Pattern {
     let mut p = p.clone();
     p.alignment = None;

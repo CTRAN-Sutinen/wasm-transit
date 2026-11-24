@@ -1,16 +1,5 @@
-//! The diversion editor's laws, over the committed planner network
-//! plus a loop pattern:
-//!
-//! 1. the default pattern is the route's longest; a named pattern of
-//!    the route wins; a foreign one falls back;
-//! 2. the stops strictly between the anchors are skipped unless
-//!    served — new anchors never leave stale skips;
-//! 3. an anchor revisited inside the span is never skipped;
-//! 4. a draft that is not ready answers problems, never an error, and
-//!    the record refuses it naming them;
-//! 5. the traced path flattens with duplicates dropped, and a record
-//!    carries no detour below two points;
-//! 6. the list names what the network names, ids where it cannot.
+//! The diversion editor over the committed planner network plus a loop pattern
+//! (crates/cap-divert/OPS.md "draft" and "list").
 
 use transit_dispatch::{diversion_of, diversion_rows, draft_view, DiversionDraft, DraftStopRole};
 use transit_sync::{EditRecord, EditStatus};
@@ -19,7 +8,7 @@ use transit_sync::DetourPoint;
 
 fn network() -> Network {
     let mut net: Network = serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap();
-    // A loop out and back: A B C B A — the route's longest pattern.
+    // A loop out and back: A B C B A. This is the route's longest pattern.
     let mut loop_pattern = net.patterns["10-inbound"].clone();
     loop_pattern.name = "10 loop".into();
     loop_pattern.stops = ["A", "B", "C", "B", "A"]
@@ -51,6 +40,8 @@ fn pt(lat: f64, lon: f64) -> DetourPoint {
     DetourPoint { lat, lon }
 }
 
+/// The default pattern is the route's longest. A named pattern of the route
+/// wins. A foreign one falls back.
 #[test]
 fn the_default_pattern_is_the_longest() {
     let net = network();
@@ -66,6 +57,8 @@ fn the_default_pattern_is_the_longest() {
     assert_eq!(view.problems, vec!["pick the first stop the diversion keeps"]);
 }
 
+/// The stops strictly between the anchors are skipped unless served. New
+/// anchors never leave stale skips.
 #[test]
 fn the_interior_is_skipped_unless_served() {
     let net = network();
@@ -82,16 +75,17 @@ fn the_interior_is_skipped_unless_served() {
     assert_eq!(view.skipped_stops, vec!["B"]);
     let served = draft_view(&net, &DiversionDraft { served_stops: vec!["B".into()], ..d.clone() });
     assert!(served.skipped_stops.is_empty(), "serving every interior stop skips none");
-    // New anchors: a served stop outside the span is simply ignored.
+    // New anchors: a served stop outside the span is ignored.
     let moved = draft_view(&net, &DiversionDraft { last_kept_stop: Some("B".into()), served_stops: vec!["C".into()], ..d });
     assert!(moved.skipped_stops.is_empty());
 }
 
+/// An anchor revisited inside the span is never skipped.
 #[test]
 fn a_revisited_anchor_is_never_skipped() {
     let net = network();
-    // On the loop, A … C spans B once; B … A (from the first B) spans
-    // C and the second B — B is an anchor, only C is skipped.
+    // On the loop, A … C spans B once. B … A (from the first B) spans C and the
+    // second B. B is an anchor, so only C is skipped.
     let d = DiversionDraft { first_kept_stop: Some("B".into()), last_kept_stop: Some("A".into()), ..draft() };
     let view = draft_view(&net, &d);
     assert!(view.problems.is_empty(), "{:?}", view.problems);
@@ -100,6 +94,8 @@ fn a_revisited_anchor_is_never_skipped() {
     assert_eq!(indexes, vec![2, 3]);
 }
 
+/// A draft that is not ready answers problems, never an error, and the record
+/// refuses it naming them.
 #[test]
 fn an_unready_draft_answers_problems_and_the_record_refuses() {
     let net = network();
@@ -118,6 +114,8 @@ fn an_unready_draft_answers_problems_and_the_record_refuses() {
     assert_eq!(unknown.problems[0], "unknown route 99");
 }
 
+/// The traced path flattens with duplicates dropped, and a record carries no
+/// detour below two points.
 #[test]
 fn the_trace_flattens_and_short_traces_are_skip_only() {
     let net = network();
@@ -140,6 +138,7 @@ fn the_trace_flattens_and_short_traces_are_skip_only() {
     assert!(diversion_of(&net, &one, "d1").unwrap().detour.is_none());
 }
 
+/// The list names what the network names, and ids where it cannot.
 #[test]
 fn the_list_names_what_the_network_names() {
     let net = network();

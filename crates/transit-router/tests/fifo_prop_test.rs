@@ -1,15 +1,15 @@
-//! A RAPTOR law the oracle tests don't state: the network is FIFO —
-//! leaving later never gets you there earlier. Two departures from
-//! the same stop, the later one at least as late as the earlier:
+//! A RAPTOR law the oracle tests do not state: the network is FIFO. Leaving
+//! later never gets you there earlier. Take two departures from the same stop,
+//! the later one at least as late as the earlier:
 //!
-//! * when both reach, `arrival(later) >= arrival(earlier)` — a later
-//!   start cannot beat an earlier one's best arrival;
-//! * when the earlier reaches and the later doesn't (missed the only
-//!   bus), that is legitimate and not a FIFO violation.
+//! * when both reach, `arrival(later) >= arrival(earlier)`. A later start
+//!   cannot beat an earlier one's best arrival;
+//! * when the earlier reaches and the later does not (missed the only bus),
+//!   that is legitimate. It is not a FIFO violation.
 //!
-//! This is a different bug class than the brute-force fixpoint
-//! oracle: a board/alight window off-by-one can be consistently wrong
-//! in both, but not violate monotonicity in one and not the other.
+//! This is a different bug class from the brute-force fixpoint oracle. A
+//! board/alight window off-by-one can be consistently wrong in both, but not
+//! violate monotonicity in one and not the other.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;

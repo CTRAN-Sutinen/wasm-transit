@@ -1,9 +1,8 @@
 //! cap-migrate's seam laws (docs/FORMATS.md, "Versions"):
 //!
-//! * a v1 network, edit document, watchlist, and service alerts
-//!   document each come forward to
-//!   the version this build reads, and the answer's hash is the one
-//!   the kernel registers the migrated bytes under (one identity on
+//! * a v1 network, edit document, watchlist, and service alerts document
+//!   each come forward to the version this build reads. The answer's hash is
+//!   the one the kernel registers the migrated bytes under (one identity on
 //!   every host);
 //! * the chain's losses come back as notes, each naming its step;
 //! * a document already current is refused (nothing to migrate); a

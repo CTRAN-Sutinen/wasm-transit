@@ -1,19 +1,19 @@
 //! transit-plans: the service-plan chain and the published plan set.
 //! cap-plans is the seam.
 //!
-//! Service changes are picks, a few a year at set dates. transit-network
-//! owns one plan's document; the chain over many of them is cross-document
-//! logic and lives here.
+//! Service changes are picks, a few a year, at set dates. transit-network
+//! owns one plan's document. The chain over many of them is cross-document
+//! logic, and it lives here.
 //!
 //! * The chain (which pick is in force, each pick's governing period, the
-//!   chain's invariants) is derived, never stored, deterministic, and
-//!   order-insensitive, because a pick's date moves while it is in
-//!   development. An unversioned plan (a fresh import) is never a chain
-//!   member. `period_in` places a pick by id, so its own date wins.
+//!   chain's invariants) is derived. It is never stored. It is
+//!   deterministic and order-insensitive, because a pick's date moves while
+//!   it is in development. An unversioned plan (a fresh import) is never a
+//!   chain member. `period_in` places a pick by id, so its own date wins.
 //! * The published plan set (`PublishedPlans`, kind `plans`) is canonical
-//!   in (effective_from, id) order. `publish` gives the next set or every
+//!   in (effective_from, id) order. `publish` gives the next set, or every
 //!   reason it refuses, including a pick dated before today (D-76). A
-//!   retired pick is kept as the tombstone and never governs (D-75).
+//!   retired pick is kept as the tombstone. It never governs (D-75).
 //!   "In use" is the pick in force and every later one.
 //! * Frozen versions (`FrozenVersions`, kind `frozen_versions`; D-191)
 //!   hold each network version the agency froze, with its purpose. A
@@ -26,7 +26,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// One plan's chain metadata — the plan set's per-pick distillation
+/// One plan's chain metadata: the plan set's per-pick distillation
 /// (the `plan` field of each network document).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
@@ -38,9 +38,9 @@ pub struct PlanInfo {
 }
 
 /// One plan's governing period: effective from its pick date until
-/// the next pick takes over. The `until` end is DERIVED, never
-/// stored — a plan's date is a target that may move while the pick
-/// is in development, and the chain recomputes the windows.
+/// the next pick takes over. The `until` end is derived, never stored.
+/// A plan's date is a target that may move while the pick is in
+/// development. So the chain recomputes the windows.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 pub struct PlanPeriod {
@@ -61,7 +61,7 @@ pub enum PlanIssue {
     DuplicatePlanId { id: String },
     /// A versioned plan must be effective-dated to sit in a chain.
     PlanMissingEffectiveDate { id: String },
-    /// Two plans take effect the same day — a chain is strictly
+    /// Two plans take effect the same day. A chain must be strictly
     /// increasing.
     DuplicateEffectiveDate { date: String, a: String, b: String },
     /// A standalone import (no plan id) is not a pick: only a
@@ -89,11 +89,10 @@ fn parse_date(s: &str) -> Result<NaiveDate, String> {
 }
 
 /// Which plan is in force on `date`: the one with the latest
-/// effective date at or before it (ties broken by id — deterministic
-/// and order-insensitive, so an invalid chain with duplicate dates
-/// still resolves the same way no matter the input order).
-/// Unversioned plans never resolve. Invalid dates are an error,
-/// not a guess.
+/// effective date at or before it. Ties break by id, so the answer is
+/// deterministic and order-insensitive. An invalid chain with duplicate
+/// dates still resolves the same way for any input order.
+/// Unversioned plans never resolve. Invalid dates are an error.
 pub fn resolve(plans: &[PlanInfo], date: NaiveDate) -> Result<Option<String>, String> {
     // (effective_from, id): the max at or before the date.
     let mut best: Option<(NaiveDate, String)> = None;
@@ -112,7 +111,7 @@ pub fn resolve(plans: &[PlanInfo], date: NaiveDate) -> Result<Option<String>, St
 
 /// Chain validity: unique ids, every versioned plan effective-dated,
 /// effective dates unique. Unversioned plans (empty id) are
-/// standalone imports — not chain members, never flagged.
+/// standalone imports. They are not chain members and are never flagged.
 pub fn validate(plans: &[PlanInfo]) -> Vec<PlanIssue> {
     let mut issues = Vec::new();
     // Order-stable duplicate detection: seen-sets keyed by value.
@@ -338,8 +337,8 @@ pub fn period_in(set: Option<&PublishedPlans>, pick: &PlanInfo) -> Option<String
     periods(&plans).into_iter().find(|p| p.id == pick.id).and_then(|p| p.until)
 }
 
-/// The published plan set: every pick the deployment publishes — the
-/// document the server's `plans` pointer holds and the manifest pins
+/// The published plan set: every pick the deployment publishes. It is the
+/// document the server's `plans` pointer holds, and the manifest pins
 /// as `plans_hash`. Every client resolves the pick in force from it.
 /// Canonical: picks sorted by (effective_from, id), one entry per id,
 /// so one set of picks is one byte sequence however it was published.
@@ -366,8 +365,8 @@ impl PublishedPlans {
 }
 
 /// Publish a pick: the set with `plan` (re)placed by id and naming
-/// `network_hash`, in canonical order — a republish is the pick's next
-/// revision, and republishing a retired pick restores it. `today` is
+/// `network_hash`, in canonical order. A republish is the pick's next
+/// revision. Republishing a retired pick restores it. `today` is
 /// the host's date: a pick that is new, restored, or moved never lands
 /// before it, while a published pick republished under its own date (a
 /// correction to the pick in force) always does (D-76). Refused, with
@@ -417,7 +416,7 @@ pub fn publish(
     Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
 }
 
-/// Retire a pick (D-75): the set with it marked retired — it stays in
+/// Retire a pick (D-75): the set with it marked retired. It stays in
 /// the set and never governs. Only a pick that has not taken effect
 /// (dated after `today`, the host's date) is retired; one that has is
 /// corrected by republishing it. Retiring a retired pick changes
@@ -443,10 +442,10 @@ pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<Publis
     Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
 }
 
-/// The published pick in force on `date` — the chain's `resolve` over
-/// the set's published picks (a retired pick never governs), answering
-/// the pick (and so its network). None before the first pick takes
-/// effect.
+/// The published pick in force on `date`. It comes from the chain's
+/// `resolve` over the set's published picks (a retired pick never
+/// governs). It answers the pick, and so its network. None before the first
+/// pick takes effect.
 pub fn in_force(set: &PublishedPlans, date: NaiveDate) -> Result<Option<&PublishedPlan>, String> {
     Ok(resolve(&chain(&set.plans), date)?.and_then(|id| set.plans.iter().find(|p| p.id == id)))
 }
@@ -553,8 +552,8 @@ pub fn freeze(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purp
 
 /// [`freeze`], naming the frozen version this one was made from
 /// (`source`, its network hash): a migration that brings a version
-/// forward pins its source (D-232). Without `source`, a version already frozen
-/// keeps the source it has.
+/// forward pins its source (D-232). Without `source`, a version already
+/// frozen keeps the source it has.
 pub fn freeze_from(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purpose: &str, source: Option<&str>) -> Result<FrozenVersions, Vec<PlanIssue>> {
     if plan.id.is_empty() {
         return Err(vec![PlanIssue::UnversionedPlan]);

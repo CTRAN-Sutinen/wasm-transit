@@ -42,7 +42,7 @@ pub struct WorkRules {
     pub name: String,
     /// The recovery a wait after a trip requires (D-9). The most
     /// specific rule answers: route and service type, then route, then
-    /// service type, then neither. No rule applies → the terminal's
+    /// service type, then neither. If no rule applies, the terminal's
     /// floor (the smallest authored layover there).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<RecoveryRule>>")]
@@ -104,7 +104,7 @@ pub struct RoutePair {
     pub extra: transit_version::Extra,
 }
 
-/// The rules a run is cut under — each optional; the runs cut reads
+/// The rules a run is cut under. Each is optional. The runs cut reads
 /// them (`docs/units/runs-layer.md`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
@@ -164,8 +164,8 @@ pub struct MealBreak {
     pub extra: transit_version::Extra,
 }
 
-/// What a run is paid, in time (D-51: no dollars — operators' rates
-/// vary by seniority).
+/// What a run is paid, in time (D-51: no dollars, because operators'
+/// rates vary by seniority).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct Pay {
@@ -212,7 +212,7 @@ impl RecoveryRule {
 
 impl WorkRules {
     /// The document validated and normalized (rules and pairs sorted,
-    /// each pair's routes in order) — what the kernel registers, so
+    /// each pair's routes in order). It is what the kernel registers, so
     /// two orderings of one document are one identity. Refused: a
     /// version this build does not speak, a rule that requires
     /// nothing, two rules over one scope, a share over 1000 percent, a

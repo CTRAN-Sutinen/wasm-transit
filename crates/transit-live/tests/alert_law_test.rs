@@ -1,7 +1,7 @@
-//! Service alerts in model vocabulary. GTFS-rt's selector rule: the
-//! fields of one informed entity are ANDed (route 12 AT stop 6277),
-//! each entity of an alert applies to its own affected entity, and an
-//! entity naming only the agency covers everything.
+//! Service alerts in model vocabulary: the GTFS-rt selector rule.
+//! The fields of one informed entity are ANDed (route 12 at stop 6277).
+//! Each entity applies to its own affected entity. An entity naming only
+//! the agency covers everything.
 
 use transit_live::{AlertScope, LiveAlert, Visit};
 
@@ -77,7 +77,7 @@ fn a_trip_scope_names_one_instance_or_all_of_them() {
 
 #[test]
 fn a_stop_is_touched_only_by_a_scope_about_the_whole_stop() {
-    // "Stop 6277 is closed" is the stop's news; "route 12 skips 6277"
+    // "Stop 6277 is closed" is news for the stop. "Route 12 skips 6277"
     // is news only where the 12 leaves from it.
     assert!(alert(vec![scope(None, Some("6277"), None, None)]).touches_stop("6277"));
     assert!(!alert(vec![scope(None, Some("6277"), None, None)]).touches_stop("6130"));

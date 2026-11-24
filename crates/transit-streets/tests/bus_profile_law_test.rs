@@ -1,22 +1,22 @@
 //! The bus profile's laws (D-26, a bus): a planner draws a bus along
-//! ANY class of street — the data's class is a grey area the planner
-//! judges — and the classes the data does not clearly allow (unknown,
+//! any class of street. The data's class is a grey area the planner
+//! judges. The classes the data does not clearly allow (unknown,
 //! and the path-like path, steps and track) come back named, as
 //! streets to confirm, never as a refusal.
 //!
-//! Written BEFORE the implementation, from the decision:
+//! Written before the implementation, from the decision:
 //!
-//! 1. **Never refused** — a route's points and length do not depend on
+//! 1. **Never refused**: a route's points and length do not depend on
 //!    the classes of the streets it runs: the same document with every
 //!    class relabeled answers the same path.
-//! 2. **The streets it follows** — a route names the streets it runs,
+//! 2. **The streets it follows**: a route names the streets it runs,
 //!    in order (`streets`: class, name, meters along it); their meters
 //!    add up to the route's length, none is empty, and two in a row
 //!    differ (a street is one entry however many segments it has).
 //!    Each is a street of the document.
-//! 3. **On one street** — a route that never leaves a way names that
+//! 3. **On one street**: a route that never leaves a way names that
 //!    way alone.
-//! 4. **The profile** — the bus profile asks the planner to confirm
+//! 4. **The profile**: the bus profile asks the planner to confirm
 //!    exactly unknown, path, steps and track; nothing else.
 //!
 //! The API: `StreetNetwork::route_along(from, to) -> Option<StreetRoute

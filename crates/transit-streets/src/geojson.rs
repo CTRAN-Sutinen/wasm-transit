@@ -1,10 +1,10 @@
 //! The street-layer import: GeoJSON lines in, the streets document
-//! out. The boundary half of the crate — the graph and every query
+//! out. It is the boundary half of the crate: the graph and every query
 //! read the document, never a layer's properties.
 //!
 //! A layer's own schemes are read here and nowhere else: the class
-//! (TIGER's CFCC — the agency's Trapeze export spells it so — TIGER's
-//! MTFCC, OSM's `highway`), the name (`FULLNAME`, `name`, `NAME`), and
+//! (TIGER's CFCC, which the agency's Trapeze export spells so; TIGER's
+//! MTFCC; OSM's `highway`), the name (`FULLNAME`, `name`, `NAME`), and
 //! the one-way conventions (TIGER `OneWay`, OSM `oneway`). Which lines
 //! are streets and what class each is: D-30 (docs/decisions/D-30.md).
 
@@ -125,9 +125,8 @@ fn e6(x: f64, limit: f64) -> Option<i32> {
 }
 
 /// One line's runs of well-formed vertices: a malformed vertex (not a
-/// number pair, or off the globe) breaks
-/// the line (a gap, not a segment), repeated vertices collapse, and a
-/// run of fewer than two points is no street.
+/// number pair, or off the globe) breaks the line (a gap, not a segment).
+/// Repeated vertices collapse. A run of fewer than two points is no street.
 fn runs(line: &Value) -> Vec<Vec<[i32; 2]>> {
     let mut runs = vec![Vec::new()];
     for vertex in line.as_array().into_iter().flatten() {

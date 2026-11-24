@@ -1,9 +1,9 @@
 //! Where things are: the network's own geometry answers.
 //!
-//! The model's contract for drawing a pattern is the alignment it
-//! runs, or — "None means draw stop-to-stop lines" — its stops joined
-//! in order. Every view that draws a pattern (the diversion editor's
-//! ghost, a planner's drill-down, a trip that still follows its
+//! The model's contract for drawing a pattern is the alignment it runs. If the
+//! pattern has none ("None means draw stop-to-stop lines"), the contract is
+//! its stops joined in order. Every view that draws a pattern (the diversion
+//! editor's ghost, a planner's drill-down, a trip that still follows its
 //! pattern) asks here, so every host draws the same line.
 
 use serde::{Deserialize, Serialize};
@@ -93,11 +93,11 @@ pub struct RouteLines {
     pub lines: Vec<Vec<Coord>>,
 }
 
-/// The network on a map: every route that draws a line, in id order,
-/// with the distinct lines of its patterns (each its alignment, else
-/// its stops joined — the lines `entity_focus` frames). Given
-/// `members`, only the patterns that run trips under one of those
-/// service types draw, and a route with none is left out.
+/// The network on a map: every route that draws a line, in id order. Each
+/// has the distinct lines of its patterns. A pattern's line is its alignment,
+/// else its stops joined. These are the lines that `entity_focus` frames.
+/// Given `members`, only the patterns that run trips under one of those
+/// service types draw. A route with none is left out.
 pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLines> {
     let runs = |pattern: &str| {
         members.map_or(true, |m| {

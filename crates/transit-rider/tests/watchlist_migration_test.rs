@@ -2,19 +2,19 @@
 //! mechanism's real payload, so its chain is property-tested here (the
 //! library owns the document; cap-migrate wraps the chain):
 //!
-//! * **Identity** — the stop-id sequence is invariant across
+//! * **Identity**: the stop-id sequence is invariant across
 //!   versions. This is the law that keeps sync sound: LWW-by-record-id
 //!   merges stay well-defined across clients at different document
 //!   versions only if migrations never touch the key space.
-//! * **No silent loss** — every dropped color is counted in a
+//! * **No silent loss**: every dropped color is counted in a
 //!   MigrationNote. Never silent, always reported.
-//! * **Determinism** — the same input produces the same output bytes,
+//! * **Determinism**: the same input produces the same output bytes,
 //!   on every host (the sync thesis needs this).
-//! * **Totality of the seam** — a current input is an error, never a
+//! * **Totality of the seam**: a current input is an error, never a
 //!   panic.
 //!
 //! And the tags (D-115): the current version writes `kind` and
-//! `schema_version`. A copy written before the tags named its version as
+//! `schema_version`. A copy with no tags names its version as
 //! `"version": "vN"`. Such a copy of v2 reads as v2 and writes tagged,
 //! and one of v1 does not read as the current type (it comes forward
 //! through the chain).
@@ -147,7 +147,7 @@ fn a_newer_version_is_refused_by_the_chain() {
 
 #[test]
 fn a_copy_with_no_version_is_the_current_one() {
-    // Every copy from before the tags named its version, so a copy with
+    // Every copy with no tags names its version, so a copy with
     // neither field is current, as the type reads it.
     assert_eq!(schema_version_of(&json!({"stops": []})), Ok(SCHEMA_VERSION));
     let read: Watchlist = serde_json::from_value(json!({"stops": []})).unwrap();

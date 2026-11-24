@@ -1,17 +1,16 @@
 //! The stops document (D-153, D-154, D-157).
 //!
 //! A stop has a life of its own, on a timeline set by permits and
-//! construction, not by the service plans, which only read it (D-157). A
-//! stop is a list of dated events, oldest first: `planned`, `permitted`,
-//! `built`, `in_service` (forward only; a stage may be skipped),
-//! `suspended`, `moved`, `changed`, and `retired` (the end; every later
-//! event is refused). Its id lasts through a move (D-145). Nothing in the
-//! document means "today". A stop on a date is its events applied in order
-//! ([`Stops::stop_on`]); a temporary event applies until its `until`.
+//! construction. The service plans only read it (D-157). A stop is a list
+//! of dated events, oldest first: `planned`, `permitted`, `built`,
+//! `in_service` (forward only; a stage may be skipped), `suspended`,
+//! `moved`, `changed`, and `retired` (the end; every later event is
+//! refused). Its id lasts through a move (D-145). Nothing in the document
+//! means "today". A stop on a date is its events applied in order
+//! ([`Stops::stop_on`]). A temporary event applies until its `until`.
 //! Every reader asks this library (the stop on a date, [`Stops::served`]),
-//! never the raw list, so a finer grain than a service day (D-148)
-//! changes these functions and not their callers. Only `in_service` is
-//! served.
+//! never the raw list. So a finer grain than a service day (D-148) changes
+//! these functions and not their callers. Only `in_service` is served.
 //!
 //! Writes:
 //!
@@ -31,13 +30,14 @@
 //!
 //! The site survey (D-158, D-160, D-163) is C-TRAN's Service Stop
 //! Worksheet. It is part of the stop's details, set by events like any
-//! detail. A core question ([`SITE`]) takes only an answer of its kind;
-//! the agency's own questions are kept and not checked. A part's type is
-//! an answer and its id is a reference (`refs`); parts are not records of
-//! their own unless they come to move between stops. The survey never
-//! asks what a schedule says. GTFS has no place for the answers, so
-//! export and import leave them alone. Amenities are true, false, or
-//! absent (not recorded), named as OpenStreetMap does where it can (D-154).
+//! other detail. A core question ([`SITE`]) takes only an answer of its
+//! kind. The agency's own questions are kept and not checked. A part's
+//! type is an answer. Its id is a reference (`refs`). Parts are not
+//! records of their own, unless they come to move between stops. The
+//! survey never asks what a schedule says. GTFS has no place for the
+//! answers, so export and import leave them alone. Amenities are true,
+//! false, or absent (not recorded), named as OpenStreetMap does where it
+//! can (D-154).
 //!
 //! The joins with other crates. This crate depends on transit-network only
 //! for [`stop_record`] and on transit-requests only for [`request_rule`];
@@ -47,17 +47,17 @@
 //! * [`request_rule`] (D-233, D-238): an open request needs a stop not
 //!   retired on the write's date; a closed one accepts any state; the
 //!   request that a `retired` event names is exempt. It matches every
-//!   stop state, so a new state does not compile until the rule judges
-//!   it. cap-stops' `receive` refuses as of what the writer read and warns
-//!   as of now.
+//!   stop state. So a new state does not compile until the rule judges it.
+//!   cap-stops' `receive` refuses as of what the writer read and warns as
+//!   of now.
 //! * A pick governs from its date to the next live published pick
 //!   (`pick_period`). `visit_warnings` warns of a stop a pick visits that
 //!   is not in service for that period; a suspension warns only if it
 //!   covers the whole period or has no end (D-157, D-228).
 //! * A feed's stops apply (D-150, D-151). Import records each difference
-//!   as an event dated the feed's first service date, naming the feed,
-//!   because that is the only date a feed states and a bad feed is fixed
-//!   by a correct one. "Unlisted" means in service or suspended that day.
+//!   as an event that names the feed. The event is dated the feed's first
+//!   service date, the only date a feed states. A bad feed is fixed by a
+//!   correct one. "Unlisted" means in service or suspended that day.
 //!   A difference that would break a stop's history is unapplied, for a
 //!   person to check; a retired stop that the feed lists is always
 //!   unapplied. Export writes a stop that changes inside its dates as one
@@ -167,9 +167,10 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub surveyed_by: Option<String>,
-    /// The stop request this event carries out (D-159): its id in the
-    /// stop requests document — a new stop built, a stop relocated or
-    /// removed. Not checked here: the requests are their own document.
+    /// The stop request this event carries out (D-159), by its id in the
+    /// stop requests document. The request is a new stop built, or a stop
+    /// relocated or removed. Not checked here: the requests are their own
+    /// document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[schemars(extend("x-references" = "stop_request"))]
@@ -192,9 +193,9 @@ pub struct Event {
     pub extra: transit_version::Extra,
 }
 
-/// A photo or drawing a record carries (D-162): named by its content
-/// hash, never a URL — the deployment names the bucket, the server hands
-/// out the link, and only a signed-in person may read it.
+/// A photo or drawing a record carries (D-162). It is named by its content
+/// hash, never a URL. The deployment names the bucket. The server hands
+/// out the link. Only a signed-in person may read it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Attachment {
@@ -246,9 +247,9 @@ pub enum EventKind {
     /// there (an import, a seed); later, a return from a suspension.
     #[default]
     InService,
-    /// Out of service for a while — a closure, works, an event; with
+    /// Out of service for a while: a closure, works, or an event. With
     /// `until`, it returns by itself on that date. It is expected to
-    /// return, and may not (a long closure is a long suspension).
+    /// return, but it may not (a long closure is a long suspension).
     Suspended,
     /// A new point; with `until`, temporary.
     Moved,
@@ -348,8 +349,8 @@ pub struct Details {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent: Option<String>,
-    /// The number riders see on the sign — the rider's identifier, not
-    /// unique (D-151).
+    /// The number that riders see on the sign. It is the rider's
+    /// identifier, not unique (D-151).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub code: Option<String>,
@@ -402,14 +403,14 @@ pub struct Details {
     /// absent not recorded. The core questions ([`SITE`]) are C-TRAN's
     /// Service Stop Worksheet's, each answer checked against its kind;
     /// the agency's own questions are kept and not checked. What a
-    /// survey says the agency's other data may contradict (D-161) — both
+    /// survey says may contradict the agency's other data (D-161). Both
     /// are kept as given.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, String>>")]
     pub site: BTreeMap<String, String>,
     /// The stop and its parts in other systems (D-160): each system or
-    /// part by name, its id there (`sign` — the Sign ID, `tms`, `hp`,
-    /// `gis`, `shelter`, …). Kept and not checked.
+    /// part by name, its id there (`sign`, the Sign ID; `tms`, `hp`, `gis`,
+    /// `shelter`, …). Kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, String>>")]
     pub refs: BTreeMap<String, String>,
@@ -431,14 +432,13 @@ pub enum Answer {
 const YES_NO: &[&str] = &["yes", "no"];
 
 /// The core site questions (D-158): C-TRAN's Service Stop Worksheet, in
-/// its order. What the worksheet asks that the document already holds
-/// elsewhere is there: the stop number (`code`), the point, lift access
-/// (`wheelchair`), and what is at the stop (the amenities — a front and
-/// rear door pad, a bench and a seat, a shelter, a post, a schedule
-/// kiosk, a garbage can, lighting); a part's type is a written answer
-/// here and its id a reference (`refs`). What a schedule says — the
-/// routes, a time point, the previous and next stop — is the schedule's,
-/// never asked.
+/// its order. Some answers the document already holds elsewhere. These
+/// are the stop number (`code`), the point, lift access (`wheelchair`),
+/// and what is at the stop (the amenities: a front and rear door pad, a
+/// bench and a seat, a shelter, a post, a schedule kiosk, a garbage can,
+/// lighting). A part's type is a written answer here. Its id is a
+/// reference (`refs`). What a schedule says is the schedule's, never
+/// asked: the routes, a time point, and the previous and next stop.
 pub const SITE: [(&str, Answer); 32] = [
     ("on_street", Answer::Text),
     ("cross_street", Answer::Text),
@@ -599,7 +599,7 @@ pub struct StopOn {
     #[ts(optional)]
     pub since: Option<String>,
     /// The date a temporary status ends (a suspension with an end): its
-    /// `until`, or sooner the next status event after the date — a stop
+    /// `until`, or sooner the next status event after the date: a stop
     /// back early, or retired while suspended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -838,8 +838,8 @@ impl Stops {
         self.stops.iter().filter_map(|(id, events)| fold(id, events, date)).collect()
     }
 
-    /// The stops near a point on `date` — "which stop am I standing at?":
-    /// those that exist that day at `statuses` (every status, where not
+    /// The stops near a point on `date`: "which stop am I standing at?".
+    /// Those that exist that day at `statuses` (every status, where not
     /// given), each at its great-circle distance, nearest first (ties by
     /// id), at most `limit`, and none farther than `radius_m` where given.
     pub fn near(&self, date: NaiveDate, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>, statuses: Option<&[Status]>) -> Vec<NearStop> {
@@ -857,8 +857,8 @@ impl Stops {
 
     /// Whether a trip at the stop on `date`, at `secs` since the service
     /// day's midnight, is served there: the stop is in service. At a service
-    /// day's grain (D-148) the time is not read; it is the question's
-    /// so a finer grain changes this function and not its callers.
+    /// day's grain (D-148), the time is not read. The parameter stays so
+    /// that a finer grain changes this function and not its callers.
     pub fn served(&self, id: &str, date: NaiveDate, _secs: u32) -> bool {
         self.stop_on(id, date).is_some_and(|s| s.status == Status::InService)
     }
@@ -888,7 +888,7 @@ impl Stops {
 
     /// What stop `id` may become on `date`: the lifecycle events
     /// (`planned`, `permitted`, `built`, `in_service`, `suspended`,
-    /// `retired`) a write would accept dated that day, in that order —
+    /// `retired`) a write would accept dated that day, in that order.
     /// each tried as [`Stops::add_event`] and kept where the document
     /// still passes [`Stops::checked`]. A move or a change of details is
     /// always one more choice while the stop is not retired.
@@ -913,12 +913,12 @@ impl Stops {
         counts.into_iter().map(|(status, stops)| StatusCount { status, stops }).collect()
     }
 
-    /// The document with event `index` of stop `id` corrected — the
-    /// wrong event taken out and `event` placed by date
-    /// ([`Stops::add_event`]), or with none, taken out. A correction
-    /// edits the event that was wrong (D-153); the store keeps the
-    /// earlier version. None when the stop or the index is not there.
-    /// Unchecked: a write passes `checked`.
+    /// The document with event `index` of stop `id` corrected. The wrong
+    /// event is taken out, and `event` is placed by date
+    /// ([`Stops::add_event`]), or with none, taken out. A correction edits
+    /// the event that is wrong (D-153); the store keeps the earlier
+    /// version. None when the stop or the index is not there. Unchecked: a
+    /// write passes `checked`.
     pub fn correct_event(&self, id: &str, index: usize, event: Option<Event>) -> Option<Stops> {
         let mut next = self.clone();
         let events = next.stops.get_mut(id)?;
@@ -972,14 +972,13 @@ impl Stops {
         self
     }
 
-    /// `next` with its surveys attributed to `by`, the signed-in
-    /// writer, as a write receives it (D-158): every survey event (one
-    /// with `surveyed_by`, a name or empty) that this document — the one
-    /// held — does not hold, compared whole, in the same stop, names
-    /// `by`; every event it holds keeps its surveyor. A client's name is
-    /// never kept: a survey it sent, or a held one it rewrote, is the
-    /// writer's. Nothing else changes, and attributing twice is
-    /// attributing once.
+    /// `next` with its surveys attributed to `by`, the signed-in writer,
+    /// as a write receives it (D-158). Every survey event (one with
+    /// `surveyed_by`, a name or empty) that the held document does not
+    /// hold, compared whole, in the same stop, names `by`. Every event the
+    /// held document holds keeps its surveyor. A client's name is never
+    /// kept: a survey it sent, or a held one it rewrote, is the writer's.
+    /// Nothing else changes, and attributing twice is attributing once.
     pub fn attribute_surveys(&self, mut next: Stops, by: &str) -> Stops {
         for (id, events) in next.stops.iter_mut() {
             // the held events still unmatched, each matched once

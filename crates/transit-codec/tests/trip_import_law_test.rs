@@ -1,8 +1,8 @@
-//! The import's trip laws: a feed's trips ARE the network's trips —
+//! The import's trip laws: a feed's trips are the network's trips, with
 //! the agency's ids, every scheduled time exactly, frequency trips as
-//! frequency trips — and patterns are stop sequences, not timings.
+//! frequency trips. Patterns are stop sequences, not timings.
 //!
-//! Written BEFORE the implementation, as the definition of the
+//! Written before the implementation, as the definition of the
 //! behavior; the expected answers come from the generator's own
 //! values, never from parsing or from the implementation. The feed is
 //! built in memory (`transit_codec::Feed`), so no parser sits between
@@ -33,11 +33,11 @@ struct GenTrip {
     shape: Option<u8>,
     /// Ordered distinct stops (2..=4 of s0..s5).
     stops: Vec<u8>,
-    /// A 5-minute slot from a small pool: duplicates are the point.
+    /// A 5-minute slot from a small pool. Duplicates are intended.
     start: u32,
     /// Per stop: (leg seconds to reach it, dwell seconds, which times
-    /// the row carries — 0 both, 1 arrival only, 2 departure only, 3
-    /// neither — and its timepoint cell). First and last rows carry
+    /// the row carries (0 both, 1 arrival only, 2 departure only, 3
+    /// neither), and its timepoint cell). First and last rows carry
     /// both times; a row missing a time is marked approximate.
     rows: Vec<(u32, u32, u8, Option<bool>)>,
     /// `Some` = a frequency trip: (start, end, headway, exact_times).
@@ -256,9 +256,9 @@ proptest! {
         prop_assert_eq!(model, feed);
     }
 
-    /// Every scheduled time survives exactly — arrivals and departures,
-    /// timepoints or not; an unscheduled row stays unscheduled; the
-    /// trip runs on its feed service.
+    /// Every scheduled time survives exactly: arrivals and departures,
+    /// timepoints or not. An unscheduled row stays unscheduled. The trip
+    /// runs on its feed service.
     #[test]
     fn every_scheduled_time_survives(trips in trips_strategy()) {
         let net = transit_codec::import(&build_feed(&trips)).network;
@@ -337,7 +337,7 @@ proptest! {
     }
 
     /// Blocks keep every trip the feed gives them, by id, in the order
-    /// they run — including trips on different services under one
+    /// they run, including trips on different services under one
     /// block id.
     #[test]
     fn blocks_keep_their_trips(trips in trips_strategy()) {

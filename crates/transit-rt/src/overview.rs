@@ -1,8 +1,7 @@
 //! Host-friendly view of a decoded GTFS-rt feed: header, entity
 //! counts by type, trip updates (delays), live vehicles, and service
-//! alerts — the
-//! serialization target of cap-rt's `decode` op, shared with every
-//! host that wants meaning out of the protobuf bytes.
+//! alerts. It is the serialization target of cap-rt's `decode` op, shared
+//! with every host that wants meaning out of the protobuf bytes.
 
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
@@ -16,11 +15,11 @@ use crate::gtfs_rt::trip_update::stop_time_update::ScheduleRelationship as StopR
 pub struct TripUpdateView {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
-    /// The instance's start ("HH:MM:SS") — how a frequency trip's
+    /// The instance's start ("HH:MM:SS"): how a frequency trip's
     /// update names which run it is.
     pub start_time: Option<String>,
     /// The instance's service date ("YYYYMMDD", as the feed writes
-    /// it) — which day's run a trip past midnight is.
+    /// it): which day's run a trip past midnight is.
     pub start_date: Option<String>,
     /// The instance does not run: the descriptor's
     /// schedule_relationship is CANCELED, or DELETED (cancelled and
@@ -58,7 +57,7 @@ pub struct VehicleView {
     pub bearing: Option<f32>,
     pub stop_id: Option<String>,
     /// VehicleDescriptor: the internal vehicle id and the user-
-    /// visible label — the bus number a rider reads off the vehicle.
+    /// visible label: the bus number a rider reads off the vehicle.
     pub vehicle_id: Option<String>,
     pub label: Option<String>,
 }

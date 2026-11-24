@@ -1,29 +1,28 @@
-//! Detour notice laws (QAF-74: notices on ANY change).
+//! Detour notice laws (QAF-74: notices on any change).
 //!
-//! The intent, as the user stated it: a compared plan's notice fires
-//! whenever the active (diverted) itinerary arrives later than the
-//! baseline OR rides a diverted trip — a trip instance whose patched
-//! stop times differ from its unpatched instance — not only when the
-//! active world has no trip. The notice is structured (its kind, the
-//! time lost, the diverted routes and the stops they skip) and
-//! carries one text line. `plan_notice` is the one place it is
-//! computed.
+//! The intent, as the user stated it: a compared plan's notice fires whenever
+//! the active (diverted) itinerary arrives later than the baseline. It also
+//! fires when the active itinerary rides a diverted trip. A diverted trip is a
+//! trip instance whose patched stop times differ from its unpatched instance.
+//! The notice does not wait for the active world to have no trip. The notice is
+//! structured. It holds its kind, the time lost, the diverted routes, and the
+//! stops they skip. It carries one text line. `plan_notice` is the one place it
+//! is computed.
 //!
-//! The laws, over generated days and a generated diversion of one
-//! trip (an interior stop skipped, or the trip delayed from a visit
-//! on — the two things a diversion does to a day):
+//! The laws, over generated days and a generated diversion of one trip (an
+//! interior stop skipped, or the trip delayed from a visit on: the two things a
+//! diversion does to a day):
 //!
-//! 1. no notice exactly when the active plan exists, arrives no later
-//!    than the baseline (or there is no baseline), and rides no
-//!    diverted trip;
-//! 2. the kind: no active plan → `unreachable` when the baseline has
-//!    one, `no_trip` when neither does; an active plan arriving later
-//!    → `later`, with the seconds lost and the minutes (rounded up —
-//!    a rider is never told a loss is smaller than it is); otherwise
-//!    `diverted`;
-//! 3. every diverted trip the active plan rides is named: its route,
-//!    and the stops it skips;
-//! 4. the notice always says something.
+//! 1. No notice exactly when the active plan exists, arrives no later than the
+//!    baseline (or there is no baseline), and rides no diverted trip.
+//! 2. The kind. With no active plan, the kind is `unreachable` when the
+//!    baseline has one, and `no_trip` when neither does. An active plan that
+//!    arrives later gives `later`, with the seconds lost and the minutes
+//!    (rounded up, so a rider is never told a loss is smaller than it is).
+//!    Otherwise the kind is `diverted`.
+//! 3. Every diverted trip the active plan rides is named: its route, and the
+//!    stops it skips.
+//! 4. The notice always says something.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -101,7 +100,7 @@ fn patch(day: &[MaterializedTrip], which: usize, how: &Divert) -> Vec<Materializ
     out
 }
 
-/// The stops a patched trip no longer visits (multiset difference) —
+/// The stops a patched trip no longer visits (multiset difference),
 /// recomputed here from the two days, not from the router.
 fn skipped(base: &MaterializedTrip, patched: &MaterializedTrip) -> Vec<String> {
     let mut left: Vec<&str> = patched.stop_times.iter().map(|s| s.stop.as_str()).collect();

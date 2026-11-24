@@ -1,5 +1,5 @@
-//! The directory's worked examples (its `examples` feature): each
-//! request over the fixture network — the stop list with its walking
+//! The directory's worked examples, under its `examples` feature. Each
+//! request runs over the fixture network: the stop list with its walking
 //! group, the route list, and route 10's patterns (the direct run and the
 //! via-C run). The generator runs them through this crate's `invoke` and
 //! records the answers.
@@ -19,8 +19,8 @@ pub fn examples() -> Vec<Example> {
     vec![
         ask("about", json!({})),
         ask("stops", json!({ "limit": 3 })),
-        // Standing on the station's Bay A: the station answers once (0 m,
-        // its nearest member), then the plain stops by distance.
+        // Standing at the station's Bay A. The station answers once (0 m, at
+        // its nearest member). Then the plain stops follow by distance.
         ask("stops_near", json!({ "lat": 45.515, "lon": -73.5155, "limit": 3 })),
         ask("stops_by_ids", json!({ "ids": ["A", "ghost", "STN"] })),
         ask("routes", json!({})),

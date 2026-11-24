@@ -1,26 +1,27 @@
-//! The trip laws: a trip is a stored record — its own id, its own
-//! departure, its own times — and the pattern's timing profile is
-//! the planner's tool for producing times, never the schedule.
+//! The trip laws: a trip is a stored record. It has its own id, its own
+//! departure, and its own times. The pattern's timing profile is the planner's
+//! tool for producing times. It is never the schedule.
 //!
-//! Written BEFORE the implementation, as the definition of the
-//! behavior; every expected answer is recomputed here from the
-//! generated input, with no code shared with the implementation.
+//! Written before the implementation, as the definition of the behavior. Every
+//! expected answer is recomputed here from the generated input. No code is
+//! shared with the implementation.
+//!
 //!
 //! The API these laws require (the contract the model must meet):
 //!
 //! * `Trip { id: TripId, departs: Departs, times: Vec<StopOffset>, .. }`
 //!   (`Default`), stored in `PatternTrips { pattern, service_type,
 //!   trips: Vec<Trip> }`.
-//! * `Departs::At { start_secs }` — one trip; `Departs::Every { bands,
-//!   exact }` — a frequency trip, one instance per band slot, all
-//!   sharing the trip's id and times.
+//! * `Departs::At { start_secs }` is one trip. `Departs::Every { bands,
+//!   exact }` is a frequency trip, with one instance per band slot. All
+//!   instances share the trip's id and times.
 //! * `StopOffset { arrival_secs: Option<u32>, departure_secs:
-//!   Option<u32> }` — seconds after the instance's start, one per
-//!   pattern stop; `None` = not scheduled (approximate). The first
-//!   and last stops carry both.
-//! * `TripRef { trip: TripId }` — a block's reference, as GTFS has
-//!   it: a block runs a trip whole, so a frequency trip in a block is
-//!   every one of its instances, back to back.
+//!   Option<u32> }`: seconds after the instance's start, one per pattern
+//!   stop. `None` means not scheduled (approximate). The first and last
+//!   stops carry both.
+//! * `TripRef { trip: TripId }` is a block's reference, as GTFS has it. A
+//!   block runs a trip whole, so a frequency trip in a block is every one of
+//!   its instances, back to back.
 //! * `MaterializedTrip.trip: TripId`.
 //! * `migrate_network` reads pre-trip (v1) documents
 //!   (`departures` + `(pattern_trips, start_secs)` block refs).
@@ -53,10 +54,10 @@ struct GenTrip {
     /// `None` = a frequency trip (`every` holds its band).
     start_secs: Option<u32>,
     every: (u32, u32, u32, bool),
-    /// Per stop: (leg seconds to reach it, dwell seconds, which
-    /// times are scheduled: 0 both, 1 arrival only, 2 departure only,
-    /// 3 neither). Timepoint stops — the first and last always among
-    /// them — carry both, as GTFS requires of an exact row.
+        /// Per stop: (leg seconds to reach it, dwell seconds, which times are
+        /// scheduled: 0 both, 1 arrival only, 2 departure only, 3 neither).
+        /// Timepoint stops carry both, as GTFS requires of an exact row. The
+        /// first and last stops are always timepoints.
     rows: Vec<(u32, u32, u8)>,
 }
 
@@ -212,10 +213,11 @@ fn build(spec: &Spec) -> Network {
     net
 }
 
-/// b0: the weekday one-start trips, chained greedily in start order
-/// where the vehicle can make it. b1: a weekday frequency trip whole —
-/// only when one vehicle can run its instances back to back. b2: a weekday and a Saturday trip at the same
-/// minute — the two never share a day, so they cannot conflict.
+/// b0: the weekday one-start trips, chained greedily in start order where the
+/// vehicle can make it. b1: a weekday frequency trip whole, only when one
+/// vehicle can run its instances back to back. b2: a weekday and a Saturday
+/// trip at the same minute. The two never share a day, so they cannot
+/// conflict.
 fn add_blocks(net: &mut Network) {
     let mut weekday: Vec<(u32, u32, String)> = Vec::new();
     let mut saturday: Vec<(u32, String)> = Vec::new();
@@ -279,7 +281,7 @@ fn net_strategy() -> impl Strategy<Value = Network> {
 // Oracles.
 // ===================================================================
 
-/// Instance starts: a count, then an index — not a walk.
+/// Instance starts: a count, then an index. Not a walk.
 fn oracle_instances(departs: &Departs) -> Vec<u32> {
     match departs {
         Departs::At { start_secs } => vec![*start_secs],
@@ -349,26 +351,26 @@ fn check_instance(pattern: &Pattern, trip: &Trip, start: u32, got: &Materialized
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Every generated network validates — including duplicate starts,
-    /// frequency trips, unscheduled stops, a block running a frequency
-    /// trip whole, and a block whose trips never share a day.
+        /// Every generated network validates. This includes duplicate starts,
+        /// frequency trips, unscheduled stops, a block running a frequency trip
+        /// whole, and a block whose trips never share a day.
     #[test]
     fn generated_networks_validate(net in net_strategy()) {
         let issues = validation_issues(&net);
         prop_assert!(issues.is_empty(), "{:?}", issues);
     }
 
-    /// The document round-trips through JSON.
-    /// the current shape as itself.
+        /// The document round-trips through JSON. It reads the current shape as
+        /// itself.
     #[test]
     fn documents_round_trip(net in net_strategy()) {
         let json = serde_json::to_string(&net).unwrap();
         prop_assert_eq!(&serde_json::from_str::<Network>(&json).unwrap(), &net);
     }
 
-    /// Materialization IS the stored trips: one instance per start
-    /// (two trips at one minute are two trips), each carrying its
-    /// trip's id and its own times.
+        /// Materialization is the stored trips: one instance per start (two
+        /// trips at one minute are two trips), each carrying its trip's id and
+        /// its own times.
     #[test]
     fn materialize_answers_the_stored_trips(net in net_strategy()) {
         for (key, pt) in &net.pattern_trips {
@@ -470,7 +472,7 @@ proptest! {
     }
 
     /// Retiming moves a trip, it does not replace it: same id, the new
-    /// start, the same running times, the same block — and nothing
+    /// start, the same running times, the same block, and nothing
     /// else changes.
     #[test]
     fn retime_keeps_the_trip(net in net_strategy(), pick in any::<prop::sample::Index>(), by in 1u32..20) {
@@ -494,12 +496,12 @@ proptest! {
         prop_assert_eq!(&next.blocks, &net.blocks, "block membership is by id");
     }
 
-    /// A running-time change applies to the trips it names — one
-    /// route, one direction, ONE service type, starts in the window —
-    /// and only to them: each ends `delta` later, starts when it did,
-    /// keeps its id, and still runs forward. Every other trip,
-    /// including the same pattern on another service type, is
-    /// untouched — planners time weekends separately.
+        /// A running-time change applies to the trips it names: one route, one
+        /// direction, one service type, and starts in the window. It applies
+        /// only to them. Each ends `delta` later, starts when it did, keeps its
+        /// id, and still runs forward. Every other trip, including the same
+        /// pattern on another service type, is untouched. Planners time
+        /// weekends separately.
     #[test]
     fn running_time_changes_only_the_named_trips(
         net in net_strategy(),
@@ -595,14 +597,14 @@ proptest! {
         }
     }
 
-    /// QAF-64: a trip's id is its identity, so the timetable against a
-    /// baseline reads a moved trip as RETIMED — kept, with its
-    /// baseline start — never as removed and added. A one-start trip
-    /// both documents hold reads unchanged at its old start and
-    /// retimed at a new one; a trip only the proposal holds is added;
-    /// a one-start trip only the baseline holds is removed. A
-    /// frequency trip's instances have no identity beyond (trip,
-    /// start): each is kept, added, or removed by that pair.
+        /// QAF-64: a trip's id is its identity. So the timetable against a
+        /// baseline reads a moved trip as retimed: kept, with its baseline
+        /// start. It is never read as removed and added. A one-start trip that
+        /// both documents hold reads unchanged at its old start, and retimed at
+        /// a new one. A trip that only the proposal holds is added. A one-start
+        /// trip that only the baseline holds is removed. A frequency trip's
+        /// instances have no identity beyond (trip, start). Each is kept,
+        /// added, or removed by that pair.
     #[test]
     fn a_retimed_trip_reads_retimed_against_its_baseline(
         net in net_strategy(),
@@ -799,12 +801,12 @@ fn old_document(s: &OldSpec) -> (serde_json::Value, Vec<Vec<u32>>) {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// A pre-trip document reads as stored trips: every departure it
-    /// derived — exact starts and headway slots alike — becomes a
-    /// one-start trip with the id the old export minted
-    /// (`"{pattern_trips}@{start}"`), timed by the profile that covered
-    /// its start; block references become trip references. The
-    /// migrated document validates, and it runs the same service.
+        /// A pre-trip document reads as stored trips. Every departure it
+        /// derived, exact starts and headway slots alike, becomes a one-start
+        /// trip. Its id is the one the export minted
+        /// (`"{pattern_trips}@{start}"`). It is timed by the profile that
+        /// covered its start. Block references become trip references. The
+        /// migrated document validates, and it runs the same service.
     #[test]
     fn pre_trip_documents_migrate(s in old_spec()) {
         let (doc, profiles) = old_document(&s);

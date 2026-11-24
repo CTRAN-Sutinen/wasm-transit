@@ -1,4 +1,4 @@
-//! An imported feed becomes a pick (D-140, D-228) — the laws, from the
+//! An imported feed becomes a pick (D-140, D-228): the laws, from the
 //! user's intent:
 //!
 //! * a feed that carries no plan id is stamped as a pick on its first

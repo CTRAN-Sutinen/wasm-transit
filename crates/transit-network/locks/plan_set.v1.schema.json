@@ -2,7 +2,7 @@
   "$defs": {
     "Alignment": {
       "additionalProperties": true,
-      "description": "A line on the ground: the path vehicles take, in travel order.\nPurely geographic — it carries no timing and no stops, and\nmaterialization only uses it for drawing, never for scheduling.\nPatterns run one by reference ([`Pattern::alignment`]); any number\nmay share one, and one no pattern runs still stands.",
+      "description": "A line on the ground: the path vehicles take, in travel order. It is\npurely geographic. It carries no timing and no stops. Materialization uses\nit for drawing only, never for scheduling. Patterns run one by reference\n([`Pattern::alignment`]). Any number may share one. One that no pattern\nruns still stands.",
       "properties": {
         "points": {
           "items": {
@@ -42,7 +42,7 @@
       "type": "object"
     },
     "Anchor": {
-      "description": "Where a service day's second zero sits. `NoonMinusTwelve` is the\nGTFS convention, adopted on its merits rather than for\ncompatibility: no DST transition occurs near noon, so offsets\nstay unambiguous on change days. The authored model makes the\nconvention *explicit* where GTFS leaves it to inference.",
+      "description": "Where a service day's second zero sits. `NoonMinusTwelve` is the GTFS\nconvention. It is chosen on its merits, not for compatibility. No DST\ntransition occurs near noon, so offsets stay unambiguous on change days.\nThe authored model states the convention where GTFS leaves it to\ninference.",
       "oneOf": [
         {
           "const": "noon_minus_twelve",
@@ -255,7 +255,7 @@
           "$ref": "#/$defs/BookingKind"
         },
         "last_day": {
-          "description": "Prior days: the last day (days before the ride) and time a\nbooking is taken, and the first.",
+          "description": "Prior days: the last booking day (days before the ride) and time, and\nthe first booking day and time.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -390,7 +390,7 @@
       "type": "string"
     },
     "Coord": {
-      "description": "A WGS84 position. Authored geometry (a pattern's alignment) is\nmodel data — `lat` first, matching `Stop`'s field order. (GeoJSON\nviews at the boundary reorder to [lon, lat]; the model never\nstores GeoJSON order.)",
+      "description": "A WGS84 position. Authored geometry (a pattern's alignment) is model\ndata. `lat` comes first, matching `Stop`'s field order. GeoJSON views at\nthe boundary reorder to [lon, lat]. The model never stores GeoJSON order.",
       "properties": {
         "lat": {
           "format": "double",
@@ -459,11 +459,11 @@
           "additionalProperties": {
             "$ref": "#/$defs/DemandTrip"
           },
-          "description": "The demand-responsive trips, by id (trip ids are unique across\nthese and the network's scheduled trips).",
+          "description": "The demand-responsive trips, by id. Trip ids are unique across these\nand the network's scheduled trips.",
           "type": "object"
         },
         "zones": {
-          "description": "The zones riders are picked up or dropped off in: a GeoJSON\nFeatureCollection whose features' ids are the zone ids."
+          "description": "The zones where riders are picked up or dropped off. A GeoJSON\nFeatureCollection whose feature ids are the zone ids."
         }
       },
       "type": "object"
@@ -907,7 +907,7 @@
             },
             "type": "array"
           },
-          "description": "What riders buy, by id — one offer per rider category and\nmedium it is sold for.",
+          "description": "What riders buy, by id. There is one offer per rider category and\nmedium it is sold for.",
           "type": "object"
         },
         "rider_categories": {
@@ -1377,7 +1377,7 @@
     },
     "Pattern": {
       "additionalProperties": true,
-      "description": "A route pattern: the stop sequence a planner draws along its\nalignment, with the profiles new trips are timed from. Every trip\nruns a pattern. A document written before alignments (an inline\n`path`) is version 1, refused at its load and brought forward by\nthe migration (`migrate.rs`), which moves its line.",
+      "description": "A route pattern: the stop sequence a planner draws along its alignment.\nThe profiles that new trips are timed from are also here. Every trip runs\na pattern. A document written before alignments (an inline `path`) is\nversion 1. Load refuses it. The migration (`migrate.rs`) brings it forward\nand moves its line.",
       "properties": {
         "alignment": {
           "description": "The [`Alignment`] the pattern runs, by id. `None` (omitted)\nmeans \"draw stop-to-stop lines\".",
@@ -1465,7 +1465,7 @@
           ]
         },
         "headsign": {
-          "description": "What the vehicle's sign says at this visit, where it differs\nfrom the trip's headsign (this visit only — `visit_destination`).",
+          "description": "What the vehicle's sign says at this visit, where it differs\nfrom the trip's headsign (this visit only: `visit_destination`).",
           "type": [
             "string",
             "null"
@@ -1498,7 +1498,7 @@
     },
     "PatternTrips": {
       "additionalProperties": true,
-      "description": "One pattern's trips under one service type. Everything RAPTOR and\ndispatch consume derives from these. Not a planner's \"schedule\":\nthe timetable a planner reads is a route's direction under one\nservice type, across all its patterns (`listing::timetable`).",
+      "description": "One pattern's trips under one service type. Everything RAPTOR and dispatch\nconsume derives from these. They are not a planner's \"schedule\". The\ntimetable a planner reads is a route's direction under one service type,\nacross all its patterns (`listing::timetable`).",
       "properties": {
         "pattern": {
           "type": "string"
@@ -1522,7 +1522,7 @@
     },
     "PlanMeta": {
       "additionalProperties": true,
-      "description": "The service-plan frame of a network document. Agencies implement\na few service changes (\"picks\") a year at defined dates — the\nonly times permanent stop/route changes are allowed — and each\npick is one of these documents, effective from its service\nchange date until superseded by the next. A document without\nplan metadata is unversioned (e.g. a fresh GTFS import).",
+      "description": "The service-plan frame of a network document. Agencies make a few service\nchanges (\"picks\") a year, on defined dates. These are the only times that\npermanent stop/route changes are allowed. Each pick is one of these\ndocuments. It is effective from its service change date until the next\npick supersedes it. A document without plan metadata is unversioned, such\nas a fresh GTFS import.",
       "properties": {
         "effective_from": {
           "description": "The service change date this plan takes effect, \"YYYY-MM-DD\".\nNone on unversioned documents; a plan in a chain must have one.",
@@ -1534,7 +1534,7 @@
         },
         "id": {
           "default": "",
-          "description": "The plan's identity — the sync key (LWW per plan). Empty on\nunversioned documents.",
+          "description": "The plan's identity, which is the sync key (LWW per plan). Empty on\nunversioned documents.",
           "type": "string"
         },
         "name": {
@@ -1756,7 +1756,7 @@
     },
     "ServiceType": {
       "additionalProperties": true,
-      "description": "A service type: the service identifier planners design —\nWeekday, Saturday, Sunday, a holiday — linked to the days it\nruns by its calendar rule. This, not the day-of-month, is the\naxis planners design on (GTFS calls it service_id).",
+      "description": "A service type: the service identifier planners design, such as Weekday,\nSaturday, Sunday, or a holiday. It links to the days it runs by its\ncalendar rule. This is the axis planners design on, not the day of the\nmonth. GTFS calls it service_id.",
       "properties": {
         "name": {
           "description": "Display name (\"Weekday\", \"Saturday service\", …).",
@@ -1834,7 +1834,7 @@
     },
     "Stop": {
       "additionalProperties": true,
-      "description": "A stop as a planner authors it: one name, one location, optional\nparent (platform-in-station groupings) — a stop riders board at,\nor a station grouping stops.",
+      "description": "A stop as a planner authors it: one name, one location, and an optional\nparent (platform-in-station groupings). A stop is either a stop riders\nboard at, or a station that groups stops.",
       "properties": {
         "info": {
           "$ref": "#/$defs/StopInfo"
@@ -1861,7 +1861,7 @@
         },
         "transfer": {
           "default": false,
-          "description": "A designated transfer point: where the network intends riders\nto change vehicles. Authored intent, not a badge — the flag\nonly means something composed with the routes that meet there\n(validation requires at least two; the analysis ops measure\nthe timed connections it enables).",
+          "description": "A designated transfer point: where the network intends riders to\nchange vehicles. This is authored intent, not a badge. The flag\nmeans something only when composed with the routes that meet there.\nValidation requires at least two. The analysis ops measure the timed\nconnections it enables.",
           "type": "boolean"
         }
       },
@@ -2029,7 +2029,7 @@
     },
     "TimingProfile": {
       "additionalProperties": true,
-      "description": "Run-time profile for NEW trips departing in a time band\n`[start_secs, end_secs)` — the planner's production tool. Stored\ntrips carry their own times; a profile never governs them.\n\n`at_timepoints` is cumulative seconds from the first timepoint at\neach of the pattern's timepoints, in pattern order (the first\nentry is 0).",
+      "description": "Run-time profile for new trips that depart in a time band\n`[start_secs, end_secs)`. It is the planner's production tool. Stored\ntrips carry their own times. A profile never governs them.\n\n`at_timepoints` is cumulative seconds from the first timepoint at\neach of the pattern's timepoints, in pattern order (the first\nentry is 0).",
       "properties": {
         "at_timepoints": {
           "items": {
@@ -2417,7 +2417,7 @@
       ]
     },
     "WeekdaySet": {
-      "description": "Authored weekday flags. A rule with no flags still runs on dates\nexplicitly `Added` (special-event service) — see `runs_on`.",
+      "description": "Authored weekday flags. A rule with no flags still runs on dates\nexplicitly `Added` (special-event service). See `runs_on`.",
       "properties": {
         "fri": {
           "default": false,

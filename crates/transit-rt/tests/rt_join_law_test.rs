@@ -1,6 +1,6 @@
 //! The rt join laws: realtime speaks about the network's own trips.
-//! An rt trip id IS a model trip id; the instance it means is the
-//! trip's start, or — for a frequency trip — the update's start_time
+//! An rt trip id is a model trip id; the instance it means is the
+//! trip's start, or, for a frequency trip, the update's start_time
 //! (on the grid when the trip runs exact times, anywhere in a band
 //! when it does not, as GTFS-rt defines it). Stop updates pair with
 //! the schedule by the publisher's stop_sequence (the import's
@@ -8,7 +8,7 @@
 //! names no sequence. A stated delay carries downstream, never
 //! upstream.
 //!
-//! Written BEFORE the implementation, as the definition of the
+//! Written before the implementation, as the definition of the
 //! behavior; the expected answers are recomputed here from the
 //! generated input.
 //!
@@ -64,7 +64,7 @@ struct GenUpdate {
     /// Index into the trips, or past the end for an id the network
     /// does not have.
     trip: usize,
-    /// For a frequency trip: which start the update names — an
+    /// For a frequency trip: which start the update names: an
     /// instance (0), a time inside a band off the grid (1), or a time
     /// outside every band (2).
     start_kind: u8,
@@ -330,7 +330,7 @@ proptest! {
 
     /// A trip's instances, date-free: a one-start trip at its start, an
     /// exact frequency trip on its grid, a non-exact one at any start
-    /// inside a band — each at its stored offsets.
+    /// inside a band, each at its stored offsets.
     #[test]
     fn a_trip_instance_is_its_start_plus_its_times(spec in spec_strategy(), pick in any::<u32>()) {
         let (net, _) = build(&spec);
@@ -402,7 +402,7 @@ proptest! {
     }
 
     /// The live document names each resolved update by the model's
-    /// own address — (trip, start) — and counts every update that
+    /// own address, (trip, start), and counts every update that
     /// names no trip instance as unmatched.
     #[test]
     fn the_live_document_speaks_in_trip_instances(spec in spec_strategy()) {

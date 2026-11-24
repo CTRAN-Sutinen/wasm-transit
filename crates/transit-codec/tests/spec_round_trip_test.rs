@@ -1,5 +1,5 @@
 //! The spec round-trip law: for every spec-valid GTFS feed,
-//! `export(import(feed))` is the SAME feed — over the whole GTFS
+//! `export(import(feed))` is the same feed, over the whole GTFS
 //! Schedule reference, every file and every field.
 //!
 //! This is the law that sees import-side loss. The document fixpoint
@@ -9,19 +9,19 @@
 //! the feed itself.
 //!
 //! The oracle is independent of the code under test: both zips are
-//! read as RAW CSV tables against the spec table below — never
-//! through a parser the codec owns — so a file or column the parser
+//! read as raw CSV tables against the spec table below, never
+//! through a parser the codec owns, so a file or column the parser
 //! ignores is a loss here, not an invisible one. The generator writes
 //! every file and field the spec defines, with the cross-file
 //! references and conditional requirements the spec states.
 //!
-//! What "the same feed" means — the only equivalences allowed:
+//! What "the same feed" means. These are the only equivalences allowed:
 //!
 //! * CSV encoding: file order, row order, COLUMN order, quoting, line
 //!   endings, a BOM. A row is a map from column to value.
 //! * An empty cell is an absent cell (the spec's own reading of an
 //!   optional field), and so is a cell holding the value the spec
-//!   says empty MEANS ("0 or empty", "1 or empty" — `SPEC_DEFAULTS`).
+//!   says empty means ("0 or empty", "1 or empty"; `SPEC_DEFAULTS`).
 //!   Only where the spec says so: an empty `fare_attributes.transfers`
 //!   is unlimited, not 0, and an empty stop-time continuous_* inherits
 //!   the route's, so neither has a default here.
@@ -31,7 +31,7 @@
 //!   compare exactly.
 //! * `locations.geojson` compares as a JSON value.
 //!
-//! Nothing else. Ids survive (trip, service, shape, fare — realtime
+//! Nothing else. Ids survive (trip, service, shape, fare; realtime
 //! feeds and every downstream consumer key on them); a calendar
 //! published as calendar.txt stays calendar.txt; two trips with
 //! identical times are two trips.
@@ -46,7 +46,7 @@ use std::io::{Cursor, Read, Write};
 use proptest::prelude::*;
 
 // ===================================================================
-// The codec's round trip — the ONLY lines that name the codec's API.
+// The codec's round trip. Only these lines name the codec's API.
 // When the codec's API moves, only this changes.
 // ===================================================================
 
@@ -67,7 +67,7 @@ fn round_trip(feed: &[u8]) -> Result<Vec<u8>, String> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {
     /// Ids, names, URLs, emails, phones, timezones, languages,
-    /// currency codes, dates — exact text.
+    /// currency codes, dates: exact text.
     Text,
     /// Integers and enums.
     Int,
@@ -224,7 +224,7 @@ const SPEC: &[FileSpec] = &[
     ] },
 ];
 
-/// (file, column, the value an empty cell means) — the spec's
+/// (file, column, the value an empty cell means). These are the spec's
 /// "N or empty" enums.
 const SPEC_DEFAULTS: &[(&str, &str, &str)] = &[
     ("agency.txt", "cemv_support", "0"),
@@ -629,8 +629,8 @@ fn build(feed: &SpecFeed) -> Builder {
 
     // ---- trips.txt + stop_times.txt (the scheduled core) ----
     // Blocks as the spec requires them: one vehicle, so a block's
-    // trips on one service never overlap (a frequency trip — t0 under
-    // FREQUENCIES — stays out of blocks). A block may span services.
+    // trips on one service never overlap (a frequency trip, t0 under
+    // FREQUENCIES, stays out of blocks). A block may span services.
     let mut spans: BTreeMap<(u8, u8), Vec<(u32, u32)>> = BTreeMap::new();
     let blocks: Vec<Option<u8>> = feed
         .trips
@@ -1021,7 +1021,7 @@ fn build(feed: &SpecFeed) -> Builder {
 /// The generated feed as zip bytes. Each file's header is the
 /// union of its rows' columns in a seeded order (column order is
 /// not significant), and every column is checked against the spec
-/// table — a typo in the generator fails here, not as a fake loss.
+/// table. A typo in the generator fails here, not as a fake loss.
 fn zip_feed(feed: &SpecFeed) -> Vec<u8> {
     let mut built = build(feed);
     let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1274,7 +1274,7 @@ every_file_survives! {
 }
 
 /// The oracle itself: a feed compared with itself is the same feed,
-/// and the generator's output is readable as raw tables — so a
+/// and the generator's output is readable as raw tables, so a
 /// failing law above is the codec's loss, never the oracle's.
 #[test]
 fn the_oracle_accepts_the_identity() {
@@ -1306,7 +1306,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     /// The codec's serialization layer alone reads and writes every
-    /// spec file without loss — so a failing law above is a loss in
+    /// spec file without loss, so a failing law above is a loss in
     /// the network import or export, never in the feed layer.
     #[test]
     fn the_feed_layer_is_lossless(feed in gen_spec_feed()) {
