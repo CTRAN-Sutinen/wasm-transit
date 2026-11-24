@@ -13,7 +13,7 @@ concept one name.
 2. **The rest of the rewrite.** `AGENTS.md`, `crates/AGENTS.md`, every
    file in `docs/architecture/`, `docs/CONVENTIONS.md`,
    `docs/TESTING.md`, `docs/FORMATS.md`, and `docs/ROADMAP.md` follow
-   the writing rules. Unit files, `docs/DECISIONS.md`,
+   the writing rules. Unit files, `docs/DECISIONS.md` and `docs/decisions/`,
    `docs/QA-FINDINGS.md`, `qa/`, and the `OPS.md` files change when
    they are next edited. Keep every fact.
 3. **The names.** These concepts have two names, or one name has two

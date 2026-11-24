@@ -197,7 +197,8 @@ your report what you updated.
      unless the reader needs them to act.
 2. **The open-work records.**
    - Edit a unit down to what is left, or delete it with its pin.
-   - Add every decision you had to encode to `docs/DECISIONS.md`, as
+   - Add every decision you had to encode as an entry in
+     `docs/decisions/`, with its row in `docs/DECISIONS.md`, as
      provisional, with its pins. Mark the ones the user settled as
      Decided, with their answer.
    - When a decided entry is built, its reasoning moves into the Why of

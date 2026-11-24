@@ -76,7 +76,7 @@ sweep", and say in your report what you updated.
 | The agent runner | the header of `tools/caps-run.mjs`, and `docs/architecture/registry.md` |
 | UI screenshots (`tools/ui-shot.mjs`) | `docs/TESTING.md` |
 | Open work | `docs/units/` (read its README before you touch anything) |
-| Questions for the user, and their answers | `docs/DECISIONS.md` (never delete an entry) |
+| Questions for the user, and their answers | `docs/DECISIONS.md` (the rules and the summary), one file for each entry in `docs/decisions/` (never delete one) |
 | Open real-data findings | `docs/QA-FINDINGS.md` |
 | The sequenced feature plan | `docs/ROADMAP.md` |
 | The standing end-to-end QA tests | `qa/`, one folder each, with a README |
@@ -223,7 +223,8 @@ qa/, LRP/          the standing QA tests and the dogfood material
 - **Clarify, don't assume.** Ask before you build on an answer you
   picked, when a directive is ambiguous, conflicts with the GTFS spec
   or an architecture law, or leaves a design decision open. Record the
-  question in `docs/DECISIONS.md`, and name the work it blocks. The rest
+  question as an entry (`docs/DECISIONS.md`, "The rules"), and name
+  the work it blocks. The rest
   of the work continues while the question is decided.
 - **Git is the user's.** Never commit, push, stash, or move refs in any
   other way. Do the work, leave the tree, and report what changed.
