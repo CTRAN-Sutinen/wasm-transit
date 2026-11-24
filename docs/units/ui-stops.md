@@ -3,8 +3,7 @@
 Stops are shared by the network, not owned by a route. The
 service-change UI edits them in a stage of their own, and a route only
 chooses which stops it serves and where its line runs. The Stops stage
-reads each stop on its card (`docs/architecture/generated-uis.md`,
-service-change), and the Route stage can drop a stop from a direction
+reads each stop on its card (`docs/architecture/generated-uis/service-change.md`), and the Route stage can drop a stop from a direction
 or insert an existing one by name; nothing creates, moves,
 consolidates, or removes a stop, and no gesture redraws a line.
 
@@ -12,7 +11,7 @@ consolidates, or removes a stop, and no gesture redraws a line.
 
 A stop's own record and lifecycle — creating it, moving it, its
 details, suspending and retiring it — are the stops page's
-(the stops page, `docs/architecture/generated-uis.md`; D-157), never this page's:
+(the stops page, `docs/architecture/generated-uis/stops.md`; D-157), never this page's:
 a plan only says which stops its service visits.
 
 1. **A station's bays on its card.** The card names a bay's station,

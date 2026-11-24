@@ -230,6 +230,18 @@ your report what you updated.
 
 ## Frontend
 
+- **UI copy reads like an application.** Headings, labels, step names,
+  and buttons are one to three words of standard UI vocabulary
+  ("Location", "Requested by", "Suspend", "Edit details"). Do not
+  write conversational phrases ("Where it goes", "Close it for a
+  while").
+  - Show a status as a short tag ("No alert", "Edited 2:29 PM").
+  - Put no sentence on the screen that explains how the app works or
+    why. Design reasoning goes to the reviewer, not the screen.
+  - Put hint text under a field only when a user would otherwise
+    enter the field wrong.
+  - The plain-language rule (ISO 24495-1) is for the guide, not for
+    the UI. These rules apply to mockups too.
 - **TypeScript end to end.** Every type that crosses the wasm boundary
   is generated (`just types`, which wipes and regenerates). `just build`
   and `just dev` run it, and `just test` refreshes it.

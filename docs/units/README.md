@@ -24,6 +24,16 @@ archive — nothing here records what is finished.
 - **What a landed unit built is described in the present tense in
   the architecture docs** (`docs/architecture/`,
   `crates/AGENTS.md`, `docs/CONVENTIONS.md`), in the same change.
+- **A unit holds only the work of its own topic.** When work leaves a
+  part of another topic open (for example, the UI that reads a storage
+  change), move that part to the unit of its topic, such as
+  `docs/units/ui-<id>.md`. The work stays open. Only its home changes.
+- **Only work in this repo is a unit.** The choice of provider,
+  backups, checks of a real host, the agency's own feed fixes, and
+  trials on real devices are operator steps. Document them in
+  `DEPLOYMENTS.md` or `DEPLOYMENTS-SERVER.md`, record any decision as
+  the operator's concern, and keep them out of units. The repo's part
+  is to make each step possible and documented.
 - **A finding becomes a unit only when it is picked up**: the unit
   names the `QAF-N` it closes; the finding is deleted from
   `docs/QA-FINDINGS.md` when the unit lands.

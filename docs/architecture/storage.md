@@ -334,6 +334,22 @@ reading **Because**.
   vendor's.
 - **Decided:** D-113, D-115, D-152.
 
+### An infrastructure choice is judged by its failures, not by its parts (this file; D-113, D-116)
+- **Holds:** a storage, infrastructure, or durability choice is weighed
+  for an agency that runs 24/7 at moderate to low traffic, with high
+  audit needs. Operational simplicity means that the part breaks
+  rarely, that a failure has a bounded reach, and that the part is easy
+  to restore, fix, change, roll back, and integrate with. Easy to
+  monitor and troubleshoot weighs most. Never score a design by the
+  number of stores or services it has.
+- **Holds:** no choice ties the record to one provider (S3, Azure Blob,
+  or GCS), also not in a unit's "Done when". A store that runs on a
+  developer's machine is a convenience for development, not a target.
+- **Because:** an agency already runs many systems, a data lake among
+  them. Publishing into them is integration, not a burden. Integration
+  pain comes from the data model and its access, not from the database
+  engine.
+
 ### What people edit is an append-only log (`server/store/log.go`, `server/caplog.go`, `crates/transit-log`)
 - **Holds:** each write that changes a record is one entry, with each
   changed record's hash before and its new state, the writer, the intent,

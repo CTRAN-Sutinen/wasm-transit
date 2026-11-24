@@ -244,7 +244,7 @@ _host-tests:
     node --test web/src/uis/host-contract.test.mjs
     # FAILURE TABLES (tools/failure-tables.mjs): every input a UI
     # declares in its ui.json names rows that its failure table in
-    # docs/architecture/generated-uis.md has. The broken fixtures run
+    # docs/architecture/generated-uis/<id>.md has. The broken fixtures run
     # first.
     node --test tools/failure-tables.test.mjs
     node tools/failure-tables.mjs

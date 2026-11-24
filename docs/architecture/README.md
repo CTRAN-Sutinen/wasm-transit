@@ -31,7 +31,7 @@ Related documents:
 | [storage.md](storage.md) | The agency's record: the bucket, what it holds for each shape of data, and how it is written and read |
 | [static-deployment.md](static-deployment.md) | A rider UI deployed with no server: the export, the bundle, and following a GTFS URL |
 | [web.md](web.md) | The frontend: parity, the bus worker, and external services |
-| [generated-uis.md](generated-uis.md) | The generated UIs, and the procedure for a new one |
+| [generated-uis.md](generated-uis.md) | The generated UIs: the shared kit, the components, the procedure for a new one, and the gates. Each UI has one file in `generated-uis/`, with its failure table |
 | [updates-offline.md](updates-offline.md) | How an open page follows the deployment, applies a new build, and works offline |
 | [adjacent-systems.md](adjacent-systems.md) | CAD/AVL, workforce, and scheduling systems: what they read and write |
 | [registry.md](registry.md) | The capability registry and the agent runner |

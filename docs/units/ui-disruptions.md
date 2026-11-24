@@ -5,7 +5,7 @@ explains it, and what dispatch has noted. Status, Alerts, Dispatch, an
 opened disruption with its notes, the alert form, what riders see of
 an alert, and its preview are built and walked on C-TRAN
 (`src/uis/disruptions/`, `e2e/ui-disruptions.spec.mjs`;
-`docs/architecture/generated-uis.md`). This unit holds what is left.
+`docs/architecture/generated-uis/disruptions.md`). This unit holds what is left.
 
 Vehicle assignments and trip coverage are not here. CAD/AVL holds
 them (D-122, D-212). The page stays one workspace for dispatch,

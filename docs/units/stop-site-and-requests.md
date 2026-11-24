@@ -4,13 +4,13 @@ The paper forms the planning team fills for a stop move into the
 stops app. The Service Stop Worksheet is the stop's **site survey**,
 answered on a phone or tablet at the stop (D-158, D-160;
 `docs/architecture/crates/transit-stops.md`, and its Why;
-`docs/architecture/generated-uis.md`, `stops`). The Bus Stop Sign &
+`docs/architecture/generated-uis/stops.md`). The Bus Stop Sign &
 Shelter Installation Worksheet is a **stop request**: the planning team's submission, a record of its own that tracks the work order the agency's work order
 system opens for it (D-159; `docs/architecture/crates/transit-requests.md`, and its Why). Photos and the site drawing are
 **attachments** in a bucket of their own, named by content hash
 (D-162). The stop's lifecycle stays the stops document's (D-157;
 `docs/architecture/crates/transit-stops.md`; the stops page in
-`docs/architecture/generated-uis.md`); a request is work, not a fact
+`docs/architecture/generated-uis/stops.md`); a request is work, not a fact
 about the stop.
 
 ## Scope, in order

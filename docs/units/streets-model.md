@@ -7,7 +7,7 @@ the model, never of the file it came from
 (`docs/architecture/crates/transit-streets.md` and cap-streets). The
 server publishes it and its walk table, the store keeps both
 (`docs/FORMATS.md`), and ride-now walks them
-(`docs/architecture/generated-uis.md`, ride-now).
+(`docs/architecture/generated-uis/ride-now.md`).
 
 Drawing on the streets is not this unit's. A pattern's line drawn
 along the streets is [ui-stops.md](ui-stops.md) item 5. A detour

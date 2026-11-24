@@ -202,7 +202,7 @@ only the site's own `.html` files and listens on loopback only.
     inputs, drawn from its `ui.json` (`inputs`): where each comes from,
     how often it is read, its time limit, and what the page keeps when
     a read fails, beside the rows of the UI's failure table that it
-    fails as (`docs/architecture/generated-uis.md`). Both are read as
+    fails as (`docs/architecture/generated-uis/<id>.md`). Both are read as
     data through `tools/failure-tables.mjs`. The test fails when a
     declared input is not drawn.
   - What each UI links: a table of capabilities and UI assemblies.
