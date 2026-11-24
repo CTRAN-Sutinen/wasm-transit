@@ -52,6 +52,7 @@ only with the user, after you read **Because**.
 ### A service group is a combination that runs together (`service_groups`, `members`)
 
 - **Holds:** a group is the set of service types that run on the same dates, shown with those dates. Types that never share a day are never pooled. No "representative day" stands in for a combination.
+- **Holds:** a combination is named by its members, with its dates. Any rule that groups, labels, or ranks combinations ("weekday", "Saturday", "regular", "exception") is the user's call. Record it as an unanswered decision before any code, never as a provisional encoding.
 - **Because:** pooling a base type with subsets that run in successive periods counted trips that never run together (2,130 against 1,774 on C-TRAN). A planner needs the real combinations and when they hold.
 - **Rejected:** counting members on a representative day; splitting a group into periods with representative days; counting every member and saying so.
 - **Decided:** D-55.

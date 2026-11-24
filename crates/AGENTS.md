@@ -2,6 +2,8 @@
 
 Three laws govern everything in this directory. If a design breaks one
 of them, the design is wrong. Do not change the law to fit the design.
+The mechanics behind the laws (the kernel, the loads, the day entry,
+the declarations) are in `docs/architecture/bus.md`.
 
 ## Law 1: the network is the core data model
 
@@ -9,40 +11,30 @@ GTFS is a serialization for sharing data with other systems. Nothing
 new goes into GTFS. Code on the model side does not read a
 serialization.
 
-- GTFS lives only at the boundary. Its homes are:
-  - transit-codec: the whole-spec feed layer, and import and export;
-  - cap-gtfs and cap-network: the boundary capabilities;
-  - cap-rt: rt trip ids resolve against the network here, with the
-    import's stop numbering.
+- GTFS lives only at the boundary: transit-codec (the whole-spec feed
+  layer, import, and export), cap-gtfs and cap-network (the boundary
+  capabilities), and cap-rt (rt trip ids resolve against the network
+  there, with the import's stop numbering).
 - The charter of cap-gtfs is closed. It parses, exports, and answers
   primitive boundary queries. Add nothing else.
 - **"Network or feed" is never a design choice.** Capabilities on the
-  model side compose over the network document and its day views. Do
-  not present composition over the feed as an option, a trade-off, or
-  an open question. That breaks this law. Write no new code that
+  model side compose over the network document, named by its content
+  hash, and its day views. Do not present composition over the feed as
+  an option, a trade-off, or an open question. Write no new code that
   composes over the feed. No plan may open the question again.
-- Capabilities compose over the network document, named by its content
-  hash. The module is the hash authority.
-- Operator edits, rt joins, analysis, and dispatch views all work in
-  the model's vocabulary: network, service type, pattern trips, walking
+- Operator edits, rt joins, analysis, and dispatch views work in the
+  model's vocabulary: network, service type, pattern trips, walking
   group, and materialized trip. Route ids and stop ids cross the
   boundary. GTFS types and row shapes do not.
 - Streets follow the same rule. A street layer (an agency GIS export,
   TIGER, or OSM) is a serialization. Only `transit_streets::geojson`
-  reads it, into the streets document. The graph and every op read the
-  document. A network never refers to a streets document or a graph
-  position. A trace commits geometry.
-- The formats beside GTFS follow the same rule.
-  - TODS serializes the operations plan: the runs layer, deadheads, and
-    internal locations. It lives in transit-codec, beside GTFS (D-126).
-  - TIDES is the history of operations. It is read as a source into a
-    document (D-127) and is never written (D-128).
-  - GTFS-rt is read for the live picture. It is also the serialization
-    of the authored cancellations and detours, which the edit document
-    models (D-124), and of the agency's service alerts, which the
-    service alerts document models (D-206).
-
-  Their row shapes stay at the boundary.
+  reads it, into the streets document. A network never refers to a
+  streets document or a graph position.
+- TODS (the operations plan), TIDES (the history of operations, read
+  and never written), and GTFS-rt (the live picture, and the
+  serialization of the edit document and the service alerts document)
+  follow the same rule. Their row shapes stay at the boundary (D-124,
+  D-126, D-127, D-128, D-206).
 
 ## Law 2: do not rebuild the monolith inside a module
 
@@ -55,20 +47,16 @@ Reject these on sight:
 - A whole GTFS feed written where a day is enough. For example,
   `transit_codec::export` inside a capability. That function is the
   codec's publish path and has no other use.
-- Caches of a derived or effective feed, keyed by date. This was the
-  monolith's `FeedState` and `with_effective` shape. The derived thing
-  is the model's day: a library's pure function, held by the kernel.
+- Caches of a derived or effective feed, keyed by date. The derived
+  thing is the model's day: a library's pure function, held by the
+  kernel.
 - GTFS-shaped registries, or GTFS row types in responses, such as
   `transit_codec::feed::TripRow`. Responses use the model's own types.
 
-The day view is `transit_network::materialize(net, date)`: the trips of
-the day. Patch the day, never the calendar. Operator edits patch the
-materialized stop times. `transit_dispatch::day` is the effective day
-and what the edits took away, in one materialization. The kernel holds
-it for each (network, edits, date) as a derived entry
-(`cap_abi::kernel::DAY`, under `transit_dispatch::day_key`). The entry is bounded, and it goes when its
-documents go. So every capability that reads the day finds the same
-day.
+The day view is `transit_network::materialize(net, date)`. Patch the
+day, never the calendar. The kernel holds the effective day once for
+each (network, edits, date), so every capability that reads the day
+finds the same day (`docs/architecture/bus.md`).
 
 ## Law 3: one need for each module
 
@@ -82,10 +70,10 @@ design a module around who will use it. Do not merge ops because the
 same users wire them together.
 
 Linking assembles the bytes of the capabilities that a UI lists into
-one binary, at build time (D-77, D-176; `docs/architecture/bus.md`,
-"Bus rules"). Linking merges no surface.
-Each capability keeps its crate, its `Request` enum, and its manifest
-entry, and can still be retired alone.
+one binary, at build time. Linking merges no surface. Each capability
+keeps its crate, its `Request` enum, and its manifest entry, and can
+still be retired alone (`docs/architecture/bus.md`, "Bus rules"; D-77,
+D-176).
 
 Reject these on sight:
 
@@ -97,13 +85,10 @@ Reject these on sight:
 - Shared day machinery as a reason to merge module surfaces. Shared
   day machinery is a library's job (transit-dispatch).
 
-Registration belongs to the kernel. Loads such as `load_network`,
-`load_edits`, and `load_feed` connect documents to capabilities. They
-are not authoring. Each document kind's load is a kernel op
-(`cap_abi::kernel`) and is never in a capability's `Request`. The host
-owns every document and replaces it whole. Authoring ops mint
-documents, and register them where they mint them. A reader has no
-authoring op, by construction.
+Registration belongs to the kernel. Each document kind's load is a
+kernel op, never in a capability's `Request`. Authoring ops mint
+documents and register them where they mint them. A reader has no
+authoring op.
 
 ### The cut: the criteria every capability must pass
 
@@ -158,40 +143,29 @@ does the next op go". Split in the change that trips the trigger.
 
 Always use the extraction pattern, in this order:
 
-1. **Library first.** Put the domain logic in a shared library crate,
-   with its law tests. Examples: transit-analysis, transit-rt,
-   transit-dispatch, transit-runs, and transit-plans.
-2. **Capability second.** Write a thin module over the library. Put its
-   purpose and each op's description in the crate's `OPS.md`. The file
-   has a `#` heading that names the capability, then one `##` section
-   for each op of its `Request` enum. The generator refuses any other
-   shape. The rest of its declaration is its `capability!`: the kinds
-   it reads, consumes, speaks, and migrates. Nothing outside the crate
-   names a capability. Give the op's worked example in the crate's
-   `src/examples.rs` (its `examples` feature): the documents to load,
-   and the request. The generator runs it through the crate's own
-   dispatch and records the answer.
+1. **Library first.** Put the domain logic in a library crate, with its
+   law tests.
+2. **Capability second.** Write a thin module over the library: its
+   `OPS.md` (the purpose, and one `##` section for each op), its
+   `capability!` declaration, and a worked example for each op in
+   `src/examples.rs`. `docs/architecture/bus.md` gives the exact shape,
+   and the generator refuses any other. `docs/guide/first-change.md`
+   walks through one.
 
 A new domain op is a library and a capability, never host code.
 
-A capability is a documented namespace for one need: its ops, its
-`OPS.md`, its schemas, and its worked examples. It is not a wall in
-the domain. Its crate may link any library. A question that spans
-kinds is one op of the capability whose need it answers, and that op
-links each kind's library. A host never composes it from two answers.
-A host routes values between ops unchanged, and applies no domain
-rule (`docs/architecture/hosts.md`; D-226, D-228).
+A capability is a documented namespace for one need, not a wall in the
+domain. Its crate may link any library. A question that spans kinds is
+one op of the capability whose need it answers, and that op links each
+kind's library. A host never composes it from two answers, and applies
+no domain rule (`docs/architecture/hosts.md`; D-226, D-228).
 
-A capability declares no state.
-
-- The documents it reads are the kernel's kinds, named by type in its
-  `capability! { documents: [...] }`. A new kind is a line in the kind
-  list (`cap_abi::kinds`), and its library implements
-  `transit_version::Load` (its `src/load.rs`): its bound, its load, and
-  its answer. The kernel does not change (D-239).
-- What it derives from documents is a library's pure function and its
-  key. The kernel holds it through `cap_abi::kernel::derive`, under a
-  `Derivation`. A derived entry is a cache, never a dependency.
+A capability declares no state. The documents it reads are the
+kernel's kinds. A new kind is a line in the kind list
+(`cap_abi::kinds`) and a `transit_version::Load` in its library, and
+the kernel does not change (D-239). What a capability derives from
+documents is a library's pure function, held by the kernel as a cache,
+never a dependency.
 
 Capabilities never call capabilities. A capability crate depends only
 on cap-abi and libraries. Only a generated assembly (`assemblies/`)
@@ -199,35 +173,25 @@ links capabilities.
 
 ## Enforcement
 
-The `test` recipe in the justfile checks laws 1 and 2 and the linking
-rule:
+`just test` checks laws 1 and 2 and the linking rule. The gates are:
 
-- `arch-gates` reads the dependency graph (`cargo metadata`) and denies
-  by default:
-  - a capability depends only on cap-abi and libraries;
-  - only assemblies, and the generator's generated binary, depend on
-    capabilities;
-  - only the codec's homes read transit-codec;
-  - the kernel depends on transit-version alone. Each kind's library
-    loads its own kind (D-239), and every module carries the kernel's
-    closure (`docs/architecture/release-artifacts.md`).
-- `arch-gates` also reads the generator, the kernel, and their
-  manifests. None of them names a capability: a capability is its
-  crate, and the generator takes it as data.
-- `arch-gates` also reads the source of every capability crate. It
-  requires `#![forbid(unsafe_code)]`, and no static or `thread_local`
-  of the crate's own.
-- The registry constructor is private to the kernel. Its
-  `compile_fail` doctests check this.
-- `transit_codec::export` may not appear outside the codec's homes.
-- No library code reads a clock, randomness, or the environment. This
-  is the determinism gate.
+- `arch-gates`, over the dependency graph: a capability depends only on
+  cap-abi and libraries; only assemblies and the generator's binary
+  depend on capabilities; only the codec's homes read transit-codec;
+  the kernel depends on transit-version alone.
+- `arch-gates`, over the source: the generator, the kernel, and their
+  manifests name no capability; every capability crate has
+  `#![forbid(unsafe_code)]` and no static or `thread_local` of its own;
+  `transit_codec::export` appears only in the codec's homes; no library
+  reads a clock, randomness, or the environment.
+- The registry constructor is private to the kernel (`compile_fail`
+  doctests).
 - Every worked example gives the same answer alone and inside each UI's
   assembly (`crates/cap-abi/independence.mjs`).
 
-Each gate fails on a broken fixture in its own test:
-`crates/cap-abi/tests/arch_gates_test.rs` and
-`independence.test.mjs`.
+Each gate fails on a broken fixture in its own test
+(`crates/cap-abi/tests/arch_gates_test.rs`, `independence.test.mjs`).
+`docs/architecture/bus.md`, "Bus rules", has the detail.
 
 Law 3 is a review gate. The criteria above are the checklist: each op
 of every new module must name one need.

@@ -363,6 +363,15 @@ these rules:
   route in the UI on `just qa`, from the stops app through service
   change to ride now and the stop display. It keeps its last run and
   its own findings.
+- **What is a finding, and what is not.**
+  - A default that hides a failure a rider or an operator would see is
+    a finding, not a policy choice. For example, an on-time window that
+    counts an early departure as on time hides a missed bus.
+  - Two sources that disagree, each shown as given, are not a defect.
+    An alert that closes a stop beside trip updates that still predict
+    departures there is the system showing its inputs. A finding never
+    asks the code to pick a winner between sources. At most, it is a
+    question for the user.
 - **Findings are open work, not a log.** A session adds new findings
   (and re-confirmation lines on old ones) to `docs/QA-FINDINGS.md`. The
   change that fixes a finding deletes it and names its pin. The session

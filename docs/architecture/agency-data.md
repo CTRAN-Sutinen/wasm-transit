@@ -26,6 +26,11 @@ street layer in) are interfaces like any other. Each one is a
 translation between a standard and a model document. The two formats
 define it, never the caller.
 
+Reporting, analytics, and ad hoc queries are out of scope. They belong
+to the agency's data lake, which reads the open documents and logs like
+any other application. The store and the server need no read model,
+projection, or query language for them, and their absence is not a gap.
+
 ## Writes are governed
 
 A write changes the agency's record for every reader at once. So it

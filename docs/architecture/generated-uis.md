@@ -311,7 +311,10 @@ any code. Delete it when the UI lands.
 
 1. **Name the need and its questions.** Open the unit. Write the need
    that the UI serves. Name it for the need, never a persona (a
-   persona is one example of who has the need). Write the questions
+   persona is one example of who has the need). The rider,
+   dispatcher, and planner cuts are examples, not the right cuts. A
+   persona never becomes a type, an enum, a layout, or a branch in
+   code. Write the questions
    that the UI answers, in the order they are asked.
 2. **Inventory the ops, from the manifest.** For each question, find
    the op that answers it (`caps-run tools <cap>`). Or find the open
