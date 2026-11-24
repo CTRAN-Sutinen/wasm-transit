@@ -46,6 +46,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use transit_network::Network;
+use transit_geo::distance_m;
 
 /// The finest lattice a polygon is sampled on, in meters.
 const MIN_SAMPLE_SPACING_M: f64 = 25.0;
@@ -55,8 +56,8 @@ const TARGET_SAMPLES: f64 = 4096.0;
 /// The lattice a polygon's bounding box may hold at most (a long,
 /// thin, diagonal polygon's box is mostly outside it).
 const MAX_LATTICE: f64 = 65_536.0;
-/// Meters per degree of latitude (mean earth radius).
-const M_PER_DEG: f64 = 6_371_000.0 * std::f64::consts::PI / 180.0;
+/// Meters per degree of latitude, on the sphere of the one distance.
+const M_PER_DEG: f64 = transit_geo::METERS_PER_DEGREE;
 
 // ---------------------------------------------------------------------
 // The layer document
@@ -477,15 +478,6 @@ fn served_by(
         }
     }
     out
-}
-
-/// Great-circle distance in meters (haversine, mean earth radius).
-pub(crate) fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let dlat = p2 - p1;
-    let dlon = (lon2 - lon1).to_radians();
-    let a = (dlat / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dlon / 2.0).sin().powi(2);
-    6_371_000.0 * 2.0 * a.sqrt().min(1.0).asin()
 }
 
 /// Stops bucketed on a grid at least a radius wide, so "is any stop

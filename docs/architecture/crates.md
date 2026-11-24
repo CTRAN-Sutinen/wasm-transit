@@ -16,6 +16,7 @@ is described by its `OPS.md` (`node tools/caps-run.mjs tools <id>`).
 - [transit-rt](crates/transit-rt.md)
 - [transit-live](crates/transit-live.md)
 - [transit-version](crates/transit-version.md)
+- [transit-geo](crates/transit-geo.md)
 - [transit-sync](crates/transit-sync.md)
 - [transit-log](crates/transit-log.md)
 - [transit-plans](crates/transit-plans.md)

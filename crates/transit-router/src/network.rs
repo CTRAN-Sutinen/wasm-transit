@@ -372,15 +372,6 @@ impl RouterNetwork {
     }
 }
 
-/// Straight-line walking distance in meters.
-fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let (lat1, lon1, lat2, lon2) = (lat1.to_radians(), lon1.to_radians(), lat2.to_radians(), lon2.to_radians());
-    let dlat = lat2 - lat1;
-    let dlon = lon2 - lon1;
-    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
-    6_371_000.0 * 2.0 * a.sqrt().atan()
-}
-
 /// Grid cell ~0.005° (~400-550 m): a 3x3 neighborhood covers the
 /// walk radius.
 const CELL: f64 = 0.005;
@@ -406,7 +397,7 @@ fn build_footpaths(coords: &[Option<(f64, f64)>]) -> Vec<Vec<Footpath>> {
                         continue;
                     }
                     let Some((lat2, lon2)) = coords[j] else { continue };
-                    let dist = haversine_m(lat1, lon1, lat2, lon2);
+                    let dist = transit_geo::distance_m(lat1, lon1, lat2, lon2);
                     if dist <= WALK_RADIUS_M {
                         result[i].push(Footpath {
                             to: j as u32,

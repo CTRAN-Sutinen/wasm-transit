@@ -605,15 +605,6 @@ pub struct NearStop {
     pub stop: StopOn,
 }
 
-/// Great-circle distance in metres (haversine, mean earth radius — the
-/// directory's `stops_near` measures alike).
-fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
-    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
-    2.0 * 6_371_000.0 * a.sqrt().asin()
-}
-
 /// How many stops stand at a status on a date.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -827,7 +818,7 @@ impl Stops {
             .on_date(date)
             .into_iter()
             .filter(|s| statuses.is_none_or(|w| w.contains(&s.status)))
-            .map(|s| NearStop { distance_m: haversine_m(lat, lon, s.lat, s.lon), stop: s })
+            .map(|s| NearStop { distance_m: transit_geo::distance_m(lat, lon, s.lat, s.lon), stop: s })
             .filter(|n| radius_m.is_none_or(|r| n.distance_m <= r))
             .collect();
         out.sort_by(|a, b| a.distance_m.total_cmp(&b.distance_m).then_with(|| a.stop.stop_id.cmp(&b.stop.stop_id)));

@@ -82,15 +82,6 @@ pub struct StreetRoute {
     pub streets: Vec<StreetUse>,
 }
 
-/// Equirectangular meters between two positions — accurate at the
-/// street scales this module works at.
-fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
-    let cos_lat = ((a_lat + b_lat) / 2.0).to_radians().cos();
-    let dy = (b_lat - a_lat) * 110_540.0;
-    let dx = (b_lon - a_lon) * 111_320.0 * cos_lat;
-    dx.hypot(dy)
-}
-
 fn cell_key(ix: i64, iy: i64) -> i64 {
     (ix + 200_000) * 400_000 + (iy + 100_000)
 }
@@ -122,7 +113,7 @@ impl Builder {
         let (b_lat, b_lon) = (b[0] as f64 / 1e6, b[1] as f64 / 1e6);
         let id = self.coords.len() as u32 / 4;
         self.coords.extend_from_slice(&[a_lat, a_lon, b_lat, b_lon]);
-        self.seg_len.push(meters_between(a_lat, a_lon, b_lat, b_lon));
+        self.seg_len.push(transit_geo::distance_m(a_lat, a_lon, b_lat, b_lon));
         self.seg_oneway.push(oneway);
         self.seg_way.push(way);
         let node_a = self.node_of(a);
@@ -257,8 +248,8 @@ impl StreetNetwork {
     pub fn snap(&self, lat: f64, lon: f64) -> Option<StreetPosition> {
         let ix = (lon / CELL).floor() as i64;
         let iy = (lat / CELL).floor() as i64;
-        let m_lat = 110_540.0;
-        let m_lon = 111_320.0 * lat.to_radians().cos();
+        let m_lat = transit_geo::METERS_PER_DEGREE;
+        let m_lon = transit_geo::meters_per_degree_lon(lat);
 
         let mut best: Option<StreetPosition> = None;
         for dx in -1i64..=1 {

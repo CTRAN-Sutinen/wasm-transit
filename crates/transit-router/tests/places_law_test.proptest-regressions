@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c3cf229446141812782b345207a83dfef364ff7fefa30d0dbb28bbc26223ec06 # shrinks to (n_stops, spacing, trips, from, to, direct, depart) = (4, 0.003, [TripSpec { stops: [1, 2, 0, 3], start: 38595, step: 100 }, TripSpec { stops: [1, 2, 0, 3], start: 37863, step: 833 }], Stop(1), Stop(2), None, 0)

@@ -131,7 +131,7 @@ fn the_trace_flattens_and_short_traces_are_skip_only() {
     };
     let view = draft_view(&net, &d);
     assert_eq!(view.detour.len(), 2, "the repeated endpoint is dropped");
-    assert!((view.detour_length_m - 110.54).abs() < 0.01);
+    assert!((view.detour_length_m - 0.001 * transit_geo::METERS_PER_DEGREE).abs() < 0.01, "{}", view.detour_length_m);
     let record = diversion_of(&net, &d, "d1").unwrap();
     assert_eq!(record.added_secs, 150);
     assert_eq!(record.skipped_stops, vec!["B"]);

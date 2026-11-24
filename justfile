@@ -620,7 +620,7 @@ _host-tests:
     # by documents across two capabilities — streets mints the walk
     # table from the walking fixture (a residential street through
     # the station's bays; a motorway no rider walks) and the network,
-    # the router registers it and walks bay A to bay B on it (61 s
+    # the router registers it and walks bay A to bay B on it (60 s
     # along Station Rd, before the day's first bus).
     node tools/caps-run.mjs streets --load web/e2e/fixtures/walk-streets.geojson \
       --op @web/public/caps/sample-network-load.json \
@@ -628,17 +628,17 @@ _host-tests:
       --cap router --op @web/public/caps/sample-network-load.json \
       --op '{"op":"load_walks","walks":"$walks.walks"}' \
       --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"SA","to":"SB","date":"2026-10-23","depart_secs":18000,"max_legs":2,"walks_hash":"$load_walks.walks_hash"}' \
-      | grep '"arrival_secs":18061' > /dev/null
+      | grep '"arrival_secs":18060' > /dev/null
     # The place gate: a trip from any point — streets answers a
     # dropped pin's walks to the stops near it (with their paths),
     # the router plans from the pin as a place, the walks passed as
-    # they are (138 s along Station Rd to bay B).
+    # they are (137 s along Station Rd to bay B).
     node tools/caps-run.mjs streets --load web/e2e/fixtures/walk-streets.geojson \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"access","streets_hash":"$load.streets_hash","network_hash":"$load_network.network_hash","point":{"lat":45.5152,"lon":-73.5165}}' \
       --cap router --op @web/public/caps/sample-network-load.json \
       --op '{"op":"plan","network_hash":"$load_network.network_hash","from":{"id":"pin","name":"Dropped pin","walks":"$access.walks"},"to":"SB","date":"2026-10-23","depart_secs":18000,"max_legs":2}' \
-      | grep '"from_stop_id":"pin","from_stop_name":"Dropped pin","to_stop_id":"SB","to_stop_name":"Main Station: Bay B","depart_secs":18000,"arrival_secs":18138' > /dev/null
+      | grep '"from_stop_id":"pin","from_stop_name":"Dropped pin","to_stop_id":"SB","to_stop_name":"Main Station: Bay B","depart_secs":18000,"arrival_secs":18137' > /dev/null
     # The sync capability's gate: the protocol's one step — a draft
     # client against an empty server converges to the submitted
     # document (rev bumped, host clock stamped).

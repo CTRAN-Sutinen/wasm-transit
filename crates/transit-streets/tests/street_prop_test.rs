@@ -35,14 +35,17 @@ const CELL: f64 = 0.001;
 const LAT0: f64 = 45.0;
 const LON0: f64 = -73.0;
 
-/// Equirectangular meters — the module's documented metric, written
-/// out independently here.
+/// Great-circle meters (haversine, mean earth radius) — the module's
+/// documented metric, written out independently here.
 fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
-    let cos_lat = ((a_lat + b_lat) / 2.0).to_radians().cos();
-    let dy = (b_lat - a_lat) * 110_540.0;
-    let dx = (b_lon - a_lon) * 111_320.0 * cos_lat;
-    dx.hypot(dy)
+    let (p1, p2) = (a_lat.to_radians(), b_lat.to_radians());
+    let (dp, dl) = ((b_lat - a_lat).to_radians(), (b_lon - a_lon).to_radians());
+    let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * 6_371_000.0 * h.sqrt().min(1.0).asin()
 }
+
+/// Meters per degree of latitude on the same sphere.
+const M_PER_DEG: f64 = 6_371_000.0 * std::f64::consts::PI / 180.0;
 
 fn close(a: f64, b: f64, eps: f64) -> bool {
     (a - b).abs() <= eps
@@ -208,8 +211,8 @@ impl OGraph {
     fn snap_distance(&self, lat: f64, lon: f64) -> Option<(f64, f64, f64)> {
         let qx = (lon / CELL).floor() as i64;
         let qy = (lat / CELL).floor() as i64;
-        let m_lat = 110_540.0;
-        let m_lon = 111_320.0 * lat.to_radians().cos();
+        let m_lat = M_PER_DEG;
+        let m_lon = M_PER_DEG * lat.to_radians().cos();
         let mut best: Option<(f64, f64, f64)> = None; // (plat, plon, dist)
         for seg in &self.segs {
             let ix0 = (seg.a.1.min(seg.b.1) / CELL).floor() as i64;
@@ -244,8 +247,8 @@ impl OGraph {
     /// True point-segment distance (for the projection law), in meters.
     fn distance_to_segment(&self, lat: f64, lon: f64, seg: usize) -> f64 {
         let seg = &self.segs[seg];
-        let m_lat = 110_540.0;
-        let m_lon = 111_320.0 * lat.to_radians().cos();
+        let m_lat = M_PER_DEG;
+        let m_lon = M_PER_DEG * lat.to_radians().cos();
         let ax = (seg.a.1 - lon) * m_lon;
         let ay = (seg.a.0 - lat) * m_lat;
         let bx = (seg.b.1 - lon) * m_lon;

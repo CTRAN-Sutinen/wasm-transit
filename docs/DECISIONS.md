@@ -62,7 +62,7 @@ first, and open only the entries you need.
 - **The summary has one row for each entry.** A new entry adds its
   row in the same change. A change of state or of what it blocks
   updates the row and the entry together.
-- IDs are never reused; the next new decision is **D-249**.
+- IDs are never reused; the next new decision is **D-252**.
 
 ## Summary
 
@@ -311,3 +311,6 @@ first, and open only the entries you need.
 | [D-246](decisions/D-246.md) | When does a page read a failed input again? | encoded | nothing |
 | [D-247](decisions/D-247.md) | Do the staff pages follow the deployment's network as it moves? | encoded | nothing |
 | [D-248](decisions/D-248.md) | D-239 costs each module 2 to 5 percent: keep it? | unanswered | `kind-registration.md` (the release gate at the unit's end) |
+| [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | unanswered | `http-contract-generated.md` item 4 |
+| [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
+| [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |

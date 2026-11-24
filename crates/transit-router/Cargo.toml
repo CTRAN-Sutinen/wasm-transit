@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+transit-geo = { path = "../transit-geo" }
 transit-network = { path = "../transit-network" }
 # The live document (read-only): predicted times per trip instance.
 transit-live = { path = "../transit-live" }

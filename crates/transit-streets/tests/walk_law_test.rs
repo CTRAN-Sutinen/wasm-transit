@@ -48,11 +48,14 @@ const STEP: f64 = 0.001;
 const CELL: f64 = 0.001;
 
 fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
-    let cos_lat = ((a_lat + b_lat) / 2.0).to_radians().cos();
-    let dy = (b_lat - a_lat) * 110_540.0;
-    let dx = (b_lon - a_lon) * 111_320.0 * cos_lat;
-    dx.hypot(dy)
+    let (p1, p2) = (a_lat.to_radians(), b_lat.to_radians());
+    let (dp, dl) = ((b_lat - a_lat).to_radians(), (b_lon - a_lon).to_radians());
+    let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * 6_371_000.0 * h.sqrt().min(1.0).asin()
 }
+
+/// Meters per degree of latitude on the same sphere.
+const M_PER_DEG: f64 = 6_371_000.0 * std::f64::consts::PI / 180.0;
 
 // ---------------------------------------------------------------------
 // Generator: a street layer and stops near it
@@ -166,8 +169,8 @@ impl Oracle {
     /// every position equally near: (segment, t, distance in meters).
     fn snap(&self, lat: f64, lon: f64) -> Vec<(usize, f64, f64)> {
         let (qx, qy) = ((lon / CELL).floor() as i64, (lat / CELL).floor() as i64);
-        let m_lat = 110_540.0;
-        let m_lon = 111_320.0 * lat.to_radians().cos();
+        let m_lat = M_PER_DEG;
+        let m_lon = M_PER_DEG * lat.to_radians().cos();
         let mut all: Vec<(usize, f64, f64)> = Vec::new();
         for (i, s) in self.segs.iter().enumerate() {
             let ix0 = (s.a.1.min(s.b.1) / CELL).floor() as i64;
@@ -397,7 +400,7 @@ fn a_rider_never_walks_a_motorway_a_ramp_or_an_unknown_street() {
     ]);
     let got = walks(&beside, &stops, WALK_SPEED_MPS, MAX_WALK_SECS);
     assert_eq!(got.len(), 2, "a to b and b to a, along the local street");
-    let meters = meters_between(45.6002, -122.6, 45.6002, -122.595) + 2.0 * 0.0002 * 110_540.0;
+    let meters = meters_between(45.6002, -122.6, 45.6002, -122.595) + 2.0 * 0.0002 * M_PER_DEG;
     assert!(got[0].walk_secs.abs_diff((meters / WALK_SPEED_MPS).ceil() as u32) <= 1, "{got:?}");
 }
 

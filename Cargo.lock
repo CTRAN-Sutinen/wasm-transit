@@ -2118,6 +2118,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-codec",
+ "transit-geo",
  "transit-network",
  "transit-version",
  "ts-rs",
@@ -2164,6 +2165,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-codec",
+ "transit-geo",
  "transit-live",
  "transit-network",
  "transit-sync",
@@ -2187,6 +2189,13 @@ dependencies = [
  "transit-stops",
  "transit-sync",
  "ts-rs",
+]
+
+[[package]]
+name = "transit-geo"
+version = "0.1.0"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]
@@ -2289,6 +2298,7 @@ dependencies = [
  "thiserror 1.0.69",
  "transit-codec",
  "transit-dispatch",
+ "transit-geo",
  "transit-live",
  "transit-network",
  "transit-streets",
@@ -2341,6 +2351,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-geo",
  "transit-network",
  "transit-plans",
  "transit-requests",
@@ -2356,6 +2367,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "transit-geo",
  "transit-version",
  "ts-rs",
 ]

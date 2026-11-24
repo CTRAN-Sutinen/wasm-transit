@@ -6,10 +6,12 @@
 //! are out) are answered over the NETWORK document — never over a
 //! GTFS expansion. The day is [`transit_network::materialize`]
 //! applied to one service date; operator edits (their own
-//! document, transit-sync) PATCH that materialized day. There is
-//! no derived registry and no date-keyed effective cache: a day is
-//! computed per call, and it is cheap because it is one day, not
-//! a calendar.
+//! document, transit-sync) PATCH that materialized day. This library
+//! keeps no cache: a day ([`day_of`]) is a pure function of the
+//! network, the edits, and the date. The kernel holds each day that a
+//! capability computes, under [`day_key`] (`cap_abi::kernel::DAY`), so
+//! the capabilities that read one day share one copy. A day is cheap
+//! because it is one day, not a calendar.
 //!
 //! This is shared domain code, off the wire: several capabilities
 //! (the board, the runcut, the calendar, the diversion editor) sit over

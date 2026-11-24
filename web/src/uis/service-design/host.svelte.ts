@@ -1152,7 +1152,7 @@ export const gestures = {
 // ---------------------------------------------------------------------
 
 /// Publish the active plan as a pick: the server's modules validate it
-/// and decide whether it is refused (docs/FORMATS.md, POST /plans); the
+/// and decide whether it is refused (server/openapi.json, POST /plans); the
 /// page sends the document and shows what came back.
 export async function publishPlan(): Promise<void> {
   const doc = active();

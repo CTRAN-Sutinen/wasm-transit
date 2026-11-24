@@ -98,10 +98,13 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [server-assembly.md](server-assembly.md) | the server links one assembly, as a UI does, with authz and each import in instances of their own |
-| [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are six failing `just e2e` specs, the findings it closes, and the release gates |
+| [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are one clean `just e2e` run, the findings it closes, and the release gates |
 | [kind-registration.md](kind-registration.md) | a document kind declared once: a gate on where a kind's name appears, the server's and the engine's plumbing, and the kind lists in the docs generated; the references between records checked, as of what the writer read |
 | [capability-declared-once.md](capability-declared-once.md) | a capability declared once, in its crate: the gate that holds it, and the last docs |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
+| [http-contract-generated.md](http-contract-generated.md) | the HTTP contract generated from the mux, the kind table, and the answer types, with its prose in one overlay; a gate fails a hand edit |
+| [refusal-codes.md](refusal-codes.md) | the refusals a host acts on (an evicted document, a newer version, a log that moved) carry a stable code; no host matches an error's text, and a gate holds it |
+| [shared-dates-and-distance.md](shared-dates-and-distance.md) | the service date parsed and written by one helper, and the network's distance through transit-geo; blocked on D-251 |
 
 ### The documents
 

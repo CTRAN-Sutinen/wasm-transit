@@ -1,6 +1,6 @@
 # cap-analysis
 
-The analysis capability gives the planner's numbers: stats, service
+The analysis capability gives a network's numbers: stats, service
 types, the frequency grid, hub connections, and coverage. It reads the
 kernel's networks and weighted layers. `load_layer` answers the
 features of a layer, and the numeric fields it can be read by. A

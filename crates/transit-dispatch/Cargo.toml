@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+transit-geo = { path = "../transit-geo" }
 transit-version = { path = "../transit-version" }
 schemars = { workspace = true }
 serde = { workspace = true }

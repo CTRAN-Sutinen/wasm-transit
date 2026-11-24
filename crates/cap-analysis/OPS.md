@@ -1,6 +1,6 @@
 # analysis
 
-Planner analysis: what do the numbers of an authored network document say? The ops answer network, route, and stop stats, and per-service-type overview and detail. They also answer the coverage of a weighted layer (people, jobs, or households, as points or polygons), and a proposal's coverage gains and losses. This was the first capability extracted from the monolith. The domain code lives in the shared transit-analysis library. Assemble this capability for planners. Riders never download it. Documents are hash-addressed: load a document once, then query it by hash. No op serializes a document.
+What do the numbers of an authored network document say? The ops answer network, route, and stop stats, and per-service-type overview and detail. They also answer the coverage of a weighted layer (people, jobs, or households, as points or polygons), and a proposal's coverage gains and losses. The domain code lives in the shared transit-analysis library. Documents are hash-addressed: load a document once, then query it by hash. No op serializes a document.
 
 ## network_stats
 

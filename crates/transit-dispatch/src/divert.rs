@@ -370,14 +370,8 @@ fn parse_date(raw: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok()
 }
 
-/// Path length in metres (equirectangular per leg — exact enough at
-/// street scale; what the dispatcher reasons about for added time).
+/// Path length in meters: the one distance, summed over the legs
+/// (what the dispatcher reasons about for added time).
 fn path_length_m(points: &[DetourPoint]) -> f64 {
-    points
-        .windows(2)
-        .map(|w| {
-            let cos_lat = ((w[0].lat + w[1].lat) / 2.0).to_radians().cos();
-            ((w[1].lon - w[0].lon) * 111_320.0 * cos_lat).hypot((w[1].lat - w[0].lat) * 110_540.0)
-        })
-        .sum()
+    points.windows(2).map(|w| transit_geo::distance_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon)).sum()
 }

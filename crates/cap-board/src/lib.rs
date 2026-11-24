@@ -138,12 +138,6 @@ pub enum Request {
         #[ts(optional)]
         previous: Option<Previous>,
     },
-    /// The board for a watchlist: each watched stop's board on a
-    /// service date, labelled per its version — the same question the
-    /// per-stop board answers, parameterized by the personal document,
-    /// so the same answer: `stop_board` for each stop with the same
-    /// edits and live document (realtime-first, skipped visits, a
-    /// watched station pin pooling its bays).
     /// What an alert reaches on a day, entity by entity, read as a
     /// rider's app reads the feed: each entity as published, what it
     /// names, and the departures it puts the alert on; and the whole
@@ -156,10 +150,17 @@ pub enum Request {
         date: String,
         alert: transit_alerts::ServiceAlert,
     },
+    /// The board for a watchlist: each watched stop's board on a
+    /// service date, labelled per its version — the same question the
+    /// per-stop board answers, parameterized by the personal document,
+    /// so the same answer: `stop_board` for each stop with the same
+    /// edits and live document (realtime-first, skipped visits, a
+    /// watched station pin pooling its bays).
     WatchlistBoard {
         watchlist_hash: String,
         network_hash: String,
         #[serde(default)]
+        #[ts(optional)]
         edits_hash: Option<String>,
         date: String,
         from_secs: u32,

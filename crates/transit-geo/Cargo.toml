@@ -1,0 +1,11 @@
+[package]
+name = "transit-geo"
+description = "The one distance between two coordinates: a great circle on the mean earth radius"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"

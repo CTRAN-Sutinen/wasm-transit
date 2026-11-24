@@ -1,10 +1,9 @@
-//! cap-analysis — the planner-analysis capability module.
+//! cap-analysis — the analysis capability module: what do the numbers
+//! of an authored network say?
 //!
-//! The first capability extracted from the MONOLITH: the analysis
-//! functions (network stats, service-type overview and detail,
-//! coverage of a weighted layer) live in `transit-analysis`, shared as a
-//! library under this module. A planner's bundle ships it; a
-//! rider's never hears of it.
+//! The analysis functions (network stats, service-type overview and
+//! detail, coverage of a weighted layer) live in `transit-analysis`,
+//! shared as a library under this module.
 //!
 //! The documents it reads are the kernel's, content-addressed like
 //! everywhere on the bus: an authored network (the JSON document)
