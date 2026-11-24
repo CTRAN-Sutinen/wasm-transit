@@ -46,8 +46,10 @@ They share one lifecycle (D-63, D-65):
   that waits.
 
   A display applies it itself at a poll. It does so only while the
-  server answers (`serverAnswers`: not the worker's last copy) and its
-  setup is closed.
+  server answers (its manifest input's last read answered, not from the
+  worker's last copy) and its setup is closed. It stops its inputs'
+  reads first: the old build's worker hands over only when no request
+  is in flight.
 
   A document another build wrote also makes the page look at once
   (`web/src/versions.ts`, D-79). A module refuses a version newer than
@@ -139,7 +141,7 @@ Each entry covers one choice that the design depends on. Its heading
 names the code the choice governs. **Holds** is what must stay true.
 Change it only with the user, and only after you read **Because**.
 
-### A new build waits, then applies (`sw.js`, `buildWaiting`, `installApp`, `applyBuild`, `serverAnswers`)
+### A new build waits, then applies (`sw.js`, `buildWaiting`, `installApp`, `applyBuild`)
 - **Holds:** A new build downloads in the background and waits. A
   rider's page applies it at the next cold start or navigation, or when
   the rider accepts. A display applies it itself at a poll. It does so

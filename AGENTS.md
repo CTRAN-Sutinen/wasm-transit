@@ -70,6 +70,7 @@ you updated.
 | cap-abi, the modules, the assemblies | `docs/architecture/bus.md`, `docs/architecture/registry.md` |
 | The document kinds and formats at rest | `crates/cap-abi/src/kinds.rs`, `docs/FORMATS.md` |
 | The server and the capabilities it hosts | `docs/architecture/server.md` |
+| The HTTP contract (each route's bodies and answers) | `server/openapi.json`, held to the server by Go tests |
 | The web and the generated UIs | `docs/architecture/web.md`, `docs/architecture/generated-uis.md` (one file for each UI in `generated-uis/`) |
 | Writing, traceability, gotchas, the sweep | `docs/CONVENTIONS.md` |
 | Testing and dogfood QA | `docs/TESTING.md` |

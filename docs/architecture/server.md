@@ -152,8 +152,10 @@ has the bucket and the same configuration serves the same manifest.
 
 While the bucket does not answer (D-119), the server serves the heads
 and blobs it holds (a byte-bounded blob cache; blobs are immutable). It
-labels each such read `X-Store-Stale` / `X-Store-As-Of`. It refuses
-every write with 503 and `Retry-After`. The pages show the edit
+labels each such read `X-Store-Stale` / `X-Store-As-Of`. No age makes a
+read fail. A read that the server holds nothing for answers 503. It
+refuses every write with 503 and `Retry-After`, and the client holds
+its document and resends. The pages show the edit
 document's age (each page's edit document input; kit's `inputLabel`). A bucket call that takes longer
 than its timeout (20 s, 2 min for a create) is a bucket that does not
 answer (`store/degraded.go`).
@@ -241,11 +243,17 @@ there, and `-addr` defaults to `:8080`. The image therefore runs with
 only its deployment's flags. The operator's guide is
 [DEPLOYMENTS-SERVER.md](../../DEPLOYMENTS-SERVER.md).
 
-Its HTTP surface:
+Its HTTP surface. The contract for each route (its method, parameters,
+request and response bodies, and status codes) is `server/openapi.json`
+(D-81). Go tests hold it to the real server, and a gate holds each
+change to expand, then contract ([release-artifacts.md](release-artifacts.md),
+"The HTTP contract"). This section says what the server does behind
+each route, and gives a body or an answer only where the behavior needs
+it:
 
 - `/healthz`: liveness. It answers 200 `ok` while the process answers
   HTTP. It reads nothing (`health.go`).
-- `/readyz`: readiness, JSON `{status, store, store_as_of_ms, error}`.
+- `/readyz`: readiness. Its `status` is one of these:
   - 200 `ready`.
   - 200 `degraded` while the bucket does not answer and the cached
     heads serve labelled reads. A copy that booted on its disk cache
@@ -310,21 +318,29 @@ Its HTTP surface:
   - `just geocoder` starts it on :4000.
   - `geocoder = "http://127.0.0.1:4000"` in `server/local.toml` makes
     `just serve` (or `just dev`) proxy it.
-- `/manifest`: `{network_hash, boundary_hash, feed_url, feed_hash, feed_version, plans_hash, stops_hash, streets_hash, walks_hash, wasm_hash, authz_hash, policy_hash, build_hash, generated_at, publisher, timezone, services}`. The server omits the optional ones
-  when they are empty. The manifest says these things:
+- `/manifest`: the deployment's pins (its fields are in the contract).
+  The server omits the optional ones when they are empty. The manifest
+  says these things:
   - which network is authoritative, and its boundary (the import's
-    numbering, named by the sha256 of its bytes)
+    numbering, named by the sha256 of its bytes): `network_hash`,
+    `boundary_hash`
   - in an export that names the feed instead (D-132), the GTFS URL
     that the pages import themselves (`feed_url`)
-  - the GTFS zip that the network was imported from
-  - the published plan set
-  - the build that the pages are served from (store mode)
-  - which sync module bytes the server runs
-  - who says so
-  - the agency's zone (the server counts its today in this zone, and
-    every page reads its clock in it)
-  - the external services that it proxies (`services.geocoder: {path, query}` with
-    `-geocoder`)
+  - the GTFS zip that the network was imported from (`feed_hash`,
+    `feed_version`)
+  - the published streets and walk table (`streets_hash`, `walks_hash`)
+  - the published plan set and each log's documents, with each log's
+    seq (`plans_hash` and the others, `log_seqs`; "One path for a log")
+  - the build that the pages are served from, in store mode
+    (`build_hash`)
+  - which sync module bytes the server runs (`wasm_hash`), and the
+    authorization module and policy (`authz_hash`, `policy_hash`)
+  - who says so, and when (`publisher`, `generated_at`)
+  - the agency's zone (`timezone`): the server counts its today in this
+    zone, and every page reads its clock in it
+  - how a page signs in (`auth`, "Authentication and authorization")
+  - the external services that it proxies (`services`, for example
+    `services.geocoder: {path, query}` with `-geocoder`)
 
   The server serves it `no-cache` with an ETag that names what it pins.
   The ETag is the store's manifest head. Without the store, it is a
@@ -341,7 +357,8 @@ Its HTTP surface:
   changes. It is gzipped, and its ETag is the walks hash. The pages
   read it by the manifest's `walks_hash` (`servedWalks`).
 - `/network`: the import's answer for the configured zip (`-feed`),
-  served as-is: `{network, boundary, notes, network_hash}`.
+  served as-is: the network, its boundary, the import's notes, and the
+  network hash.
   - It is gzipped when the client takes it.
   - Its ETag is the network hash, so a client that holds it
     revalidates for a 304.
@@ -410,11 +427,6 @@ Its HTTP surface:
   - The reverse proxy throttles repeated 401s.
   - A browser gets and refreshes its IdP token on its own. It presents
     the token on writes only.
-- **The HTTP contract** is `server/openapi.json` (D-81). It names every
-  route, method, parameter, and body this section describes. Go tests
-  hold it to the real server, and a gate holds each change to expand,
-  then contract ([release-artifacts.md](release-artifacts.md), "The
-  HTTP contract").
 - `/edits`: the edit document. `POST` a client document and receive the
   LWW-merged result (cap-sync's `sync_edits`). The receive path clamps
   client timestamps to the server clock (D-56). `GET` reads the
@@ -462,8 +474,8 @@ Its HTTP surface:
   - `GET /pointers/{name}/log?since=<hash>`: delta sync over the
     append-only log. For `edits` this is the pointer's history before
     the disruptions log.
-  - `POST /pointers/{name}` (`{from, …}`): 200 and the new head, or 409
-    and the current head on conflict. For `edits` the write is one entry
+  - `POST /pointers/{name}`: a compare-and-swap from the head the
+    writer read (`from`). A conflict answers 409 with the current head. For `edits` the write is one entry
     of the disruptions log, and `from` is the fold's hash. Every other
     write is governed by the kind table (`-kinds`, `web/pkg/kinds.json`;
     D-202): a kind it does not name, or one with its own route, answers
@@ -565,8 +577,8 @@ Its HTTP surface:
   each object `attachments/<hex>` only if it is absent, with its media
   type in the object's metadata.
   - A POST (write on the policy's `attachments` pointer) takes a photo
-    (JPEG, PNG, WebP, HEIC) or a PDF up to 25 MB. It answers
-    `{hash, type, bytes}`.
+    (JPEG, PNG, WebP, HEIC) or a PDF up to 25 MB, and answers the
+    file's hash.
   - A GET needs any signed-in person whenever sign-in is on
     (`protectSignedIn`). It answers the bytes with
     `Cache-Control: private`.
@@ -584,10 +596,9 @@ Its HTTP surface:
   writes the answer on the request (dated the server's today) over the
   requests at the head when the write runs, as one entry of the stops
   log. The writer is `work-orders:<system>`.
-  - 200 `{requests_hash, work_order, landed?}`. A body with a `key`
-    whose entry landed answers the request's work order, and the system
-    is not asked again, so an outbox's resend never opens a second one
-    (D-189).
+  - A body with a `key` whose entry landed answers the request's work
+    order, and the system is not asked again, so an outbox's resend
+    never opens a second one (D-189).
   - 501 `{configured: false}` with no adapter.
   - The manifest's `services.work_orders` offers the route only when an
     adapter is configured.
@@ -686,21 +697,17 @@ Its HTTP surface:
   - An empty log gets entry 1 from its kinds' old pointers (the kind
     table's `pointers`) at startup: the receive op's `migrate` records
     their heads as they are (writer `migrate:<log>`).
-  - `POST /logs/<log>` answers 200 `{seq, <store kind>_hash, landed?, references?}`,
-    422 `{op, refusals}` or `{refusals: [], references}`, 409 `{conflict, overlap, seq}` for a record
-    an unread entry changed, 409 `{op, conflict}` for an event changed
-    since the writer read it, and 400 for an op the log does not take. A
-    key that landed answers 200 with `landed`, before the ops run.
+  - `POST /logs/<log>` refuses a write that a record changed since the
+    writer read it, whether by an unread entry or an event changed
+    since, with 409, and an op the log does not take with 400. A key
+    that landed answers with `landed`, before the ops run.
   - A kind's own route (the kind table's `post`) is one op of the
     kind's checking capability over the request's body: `POST /notes`
-    (`write`, answering `{notes_hash, id}`), `POST /service-alerts`
-    (`validate`, `{from, alerts}`, answering `{alerts_hash}`), `POST
-    /alert-templates` (`validate_templates`, `{from, templates}`,
-    answering `{templates_hash}`), `POST /stops` (`stops validate`,
-    `{from, stops}`, answering `{stops_hash}`), and `POST
-    /stop-requests` (`requests validate`, `{from, requests}`, answering
-    `{requests_hash}`). A whole document over a head the writer did not
-    read (`from`) answers 409 `{current, seq}`. An older service alerts
+    (`write`), `POST /service-alerts` (`validate`), `POST
+    /alert-templates` (`validate_templates`), `POST /stops` (`stops
+    validate`), and `POST /stop-requests` (`requests validate`). A whole
+    document over a head the writer did not read (`from`) answers 409
+    with the current head. An older service alerts
     document comes forward in the op (D-216). The fields a document
     carries that this build does not know are named in a header
     (D-167).

@@ -55,8 +55,8 @@ meets one contract, whichever application makes it:
   (`X-Unknown-Fields`) and logs them with the writer.
 
 Every write goes through a receive path that holds that contract.
-Nothing writes the bucket directly (`docs/FORMATS.md`, "The HTTP
-surface"). Where it holds today:
+Nothing writes the bucket directly (`server/openapi.json`; what each route does is in `server.md`).
+Where it holds today:
 
 | Write | Shape | Invariants | Concurrency | Attribution |
 |---|---|---|---|---|

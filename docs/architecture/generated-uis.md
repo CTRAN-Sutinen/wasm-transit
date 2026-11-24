@@ -97,9 +97,14 @@ Shared by every generated UI:
     the open pages do not all read again at the same moment. Each
     input's state is in the host's `inputs` record. `inputLabel()`
     says it in the server's words: an answer from a working copy says
-    its age, and a failed read says since when. A changed document
-    changes the input's `feeds` in one request for each poll. The laws
-    are `src/uis/inputs.test.mjs`.
+    its age, and a read with no answer says since when. A read that
+    answered with something the page refused (a module's refusal, not
+    a `ReadFailed`) is `refused`, and its label gives the reason. A
+    changed document changes the input's `feeds` in one request for
+    each poll. `read(...ids)` reads inputs now (a write moved their
+    head). `stop()` ends the reads: a page that applies a new build
+    stops them, because the old build's worker hands over only when no
+    request is in flight. The laws are `src/uis/inputs.test.mjs`.
   - The answer graph (`src/uis/answers.ts`, through kit's
     `answerGraph`) runs each host's flows. A UI's flows are code, not
     data (D-176). A host declares its answers as `AnswerNode`s: the

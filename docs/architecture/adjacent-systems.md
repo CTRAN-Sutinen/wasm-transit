@@ -43,8 +43,7 @@ feed gives it (D-213). The seam:
 **In from an adjacent system**
 
 4. **Only as records, through the receive path.** Write with
-   `POST /edits` or a pointer commit (`docs/FORMATS.md`, "The HTTP
-   surface"). Use the system's own credentials, so the log's `writer`
+   `POST /edits` or a pointer commit (the contract, `server/openapi.json`). Use the system's own credentials, so the log's `writer`
    names it. The module validates each record, and the per-record LWW
    merge applies. Nothing writes the bucket directly. An adjacent system
    is one more writer under the receive contract
