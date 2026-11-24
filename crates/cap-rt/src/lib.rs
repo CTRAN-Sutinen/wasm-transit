@@ -1,30 +1,19 @@
-//! cap-rt — the realtime capability module.
+//! cap-rt: GTFS-realtime decoding and its join to the network (OPS.md has
+//! the ops).
 //!
-//! The third capability extracted from the MONOLITH (after analysis
-//! and the network codec): decode a GTFS-rt protobuf payload into
-//! the overview view (delays, vehicles) a dispatcher or rider reads.
-//! The domain code lives in the shared `transit-rt` library — the
-//! monolith keeps no copy; every host (web, runner, a future server
-//! leg) decodes through the same bytes.
+//! The seam over transit-rt. An rt trip id is a model trip id; an imported
+//! network's `Boundary` gives the published stop_sequence numbering, and
+//! is optional.
 //!
-//! It also owns the JOIN the dispatcher actually asks for: over the
-//! NETWORK document (the kernel's, the same identity every network
-//! consumer holds) and, for an imported network, its `Boundary` (the
-//! published stop_sequence numbering rt updates name),
-//! `trip_progress` / `late_trips` / `live` answer over the network's
-//! own trips — an rt trip id IS a model trip id.
-//!
-//! The rt payload is EPHEMERAL: snapshots are polled every few
-//! seconds, never persisted; decode registers each snapshot in the
-//! kernel under its content hash (idempotent — the same bytes are the
-//! same snapshot) so later ops can address it, and `live` registers
-//! the live document it mints, so in an assembly the board and the
-//! router read it by hash without it crossing to the host and back.
-//!
-//! GTFS-rt is also the serialization of the agency's service alerts:
-//! `encode_alerts` writes the service alerts document (transit-alerts)
-//! as an Alerts feed and registers it as a snapshot, so `live` reads it
-//! as a rider's app would.
+//! * Snapshots are ephemeral: polled every few seconds and never
+//!   persisted. Each registers in the kernel under its content hash, so
+//!   the same bytes are the same snapshot.
+//! * `live` registers the live document where it mints it, so in an
+//!   assembly the board and the router read it by hash and it never
+//!   crosses to the host and back. No capability joins rt again.
+//! * GTFS-rt is also the agency's alerts' serialization. `encode_alerts`
+//!   registers the feed it writes as a snapshot, so `live` reads the
+//!   agency's alerts as a rider's app does.
 
 #![forbid(unsafe_code)]
 

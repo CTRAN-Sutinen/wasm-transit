@@ -1,34 +1,20 @@
-//! cap-divert — the operator-edit authoring capability.
+//! cap-divert: what does this operator edit amount to over the network?
+//! (OPS.md has the ops.)
 //!
-//! One question: **what does this operator edit amount to?** An edit
-//! is a diversion or a whole-trip cancel (D-45; the edit document's
-//! payloads, D-102). A diversion draft (route, pattern, anchors, the
-//! interior stops the detour still serves, a traced path, added time,
-//! dates) is answered over the NETWORK: the route's patterns and the
-//! default one, each stop's role, the skips in effect, the alignment
-//! the detour is drawn against, the traced path and its length, and
-//! what keeps the draft from being a record. A cancel names a trip
-//! (one instance or all) on one date the trip runs. The edit
-//! document's records list as the list names them (diversion rows and
-//! cancel rows), and each reports what it amounts to on the network
-//! (its validation report: a record the network cannot answer moves
-//! nothing). Proposing a diversion, cancelling a trip, retiring a
-//! record (the tombstone), and restoring one are the edit document's
-//! next states — the envelope rules (rev, stamp, status) every writer
-//! follows.
+//! An operator edit is a diversion or a whole-trip cancel (D-45, D-102).
+//! The seam over transit-dispatch (the draft over the network) and
+//! transit-sync (the record envelope).
 //!
-//! Every op takes the edit document whole (`edits`) and answers the
-//! next one tagged (D-115), so a host persists or posts the answer as
-//! given; another version is refused naming both
-//! (`cap_abi::Current`). Reading a received document is
-//! cap-sync's `read_edits`.
-//!
-//! The host owns the documents (wholesale-replaced) and the clock
-//! and ids (`now_ms`, `record_id` — hosts own time and randomness).
-//! The domain code lives in transit-dispatch (the draft over the
-//! network) and transit-sync (the record envelope); this module is
-//! the seam. Converging two edit documents is cap-sync's question —
-//! never this module's.
+//! * A record the network cannot answer is reported, never rejected, and
+//!   moves nothing in a day view.
+//! * Every op takes the edit document whole and answers the next one
+//!   tagged (D-115), so a host persists or posts it as given. Another
+//!   version is refused naming both (`cap_abi::Current`); a write's base
+//!   is a `cap_abi::Base`, which refuses a copy read ahead read-only
+//!   (D-186).
+//! * The host owns the clock and ids (`now_ms`, `record_id`).
+//! * Converging two edit documents is cap-sync's question, which the
+//!   server hosts without a network.
 
 #![forbid(unsafe_code)]
 

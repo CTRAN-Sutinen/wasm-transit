@@ -1,34 +1,24 @@
-//! cap-board — the board capability.
+//! cap-board: when does service leave this stop? (OPS.md has the ops.)
 //!
-//! One question: **when does service leave this stop?** — asked at
-//! three granularities: one stop (a station pin or bay with nothing
-//! of its own answers its POOLED walking group — the model's own
-//! concept), realtime-first when a LIVE document is supplied, the
-//! same stop grouped by route and destination for its display, and a
-//! personal saved set (the WATCHLIST document: a personal multi-stop
-//! board is the same question asked over a personal document).
+//! The seam over transit-dispatch. It answers at one stop (a stop with
+//! nothing of its own answers its pooled walking group), grouped by route
+//! and destination for a stop's display, or over a rider's watchlist (v1
+//! or v2; cap-migrate carries the chain). It reads the kernel's network,
+//! edits, live document (cap-rt's, by hash), and watchlist.
 //!
-//! Every answer is one MATERIALIZED DAY — `materialize(net,
-//! date)`, patched with the edits in force on that date: the kernel's
-//! held day (this crate's `day`: `transit_dispatch::day_of`, held under `cap_abi::kernel::DAY`), a pure function of the network,
-//! the edits, and the date — no GTFS expansion, one materialization
-//! per (network, edits, date) however many boards ask. The domain code
-//! lives in the shared transit-dispatch library; this module is the
-//! seam.
-//!
-//! The documents it reads are the kernel's, registered by its loads
-//! and content-addressed like everywhere on the bus:
-//! * **network** — the same identity cap-network's import produces
-//!   and cap-analysis consumes (the module is the hash authority);
-//! * **edits** — the operator edit document, wholesale-replaced by
-//!   the host (a record the network cannot answer is reported by
-//!   cap-divert's `reports`, and simply moves nothing here);
-//! * **live** — THE live document (transit-live), minted by cap-rt
-//!   from an rt snapshot in model vocabulary; the board reads its
-//!   predictions and alerts and classifies under its window — no host
-//!   joins rt;
-//! * **watchlist** — the personal document, in the version this
-//!   build reads (its migration is cap-migrate's).
+//! * Every answer is computed here, never in the host: pooling, order,
+//!   status, names, the sign's destination, skipped visits, and alerts.
+//! * The board ops read the kernel's held day (`transit_dispatch::day_of`
+//!   under `cap_abi::kernel::DAY`): one materialization for each
+//!   (network, edits, date), however many boards ask. No GTFS expansion;
+//!   the arch gate forbids a GTFS layer.
+//! * The grouped board's look-ahead for a stopped group materializes the
+//!   later days itself and does not hold them, because a week of days
+//!   would push the held days out.
+//! * An edit record the network cannot answer moves nothing here
+//!   (cap-divert's `reports` names it).
+//! * Each row carries its trip instance's address (trip, start, and its
+//!   date when asked at a moment), so a click-through needs no join.
 
 #![forbid(unsafe_code)]
 

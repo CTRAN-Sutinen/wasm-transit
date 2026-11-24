@@ -1,37 +1,24 @@
-//! cap-sync — the sync capability.
+//! cap-sync: what is the converged state of this edit document? (OPS.md
+//! has the ops.)
 //!
-//! One question: **what is the converged state of this edit
-//! document?** The sync protocol is deliberately LWW per record id
-//! plus tombstones (the terminal authority is the agency scheduling
-//! system: propose → review → accept). The ops are that document's
-//! lifecycle facets: `sync_edits` merges a client document with the
-//! server's and transitions drafts to submitted; `read_edits`
-//! reads a received/stored document at the receive boundary (an
-//! older version is the migration capability's to bring forward);
-//! `compact_edits` is the D-57 tombstone-retention commit. The
-//! disruptions log (D-190, D-197) is the record of that document, kept
-//! by the log capability (cap-log): `log_records` answers the document
-//! as the log's records (one `edit_record` for each record, and the
-//! document's own record), `log_document` assembles the document from
-//! the fold's records, and `log_revert` answers the records a revert
-//! writes back, stamped to win the merge (D-193). `receive` writes
-//! the disruptions log whole (D-228). The host
-//! owns both documents (wholesale-replaced, JS/store-owned) and the
-//! clock (`now_ms` is the only route; hosts own time), and clamps the
-//! incoming clock at receive (D-56). transit-sync is the domain
-//! library — the semilattice merge is property-tested there; this
-//! module is the seam. Answers carry the canonical `document` bytes
-//! and their `document_hash` (the module is the hash authority), so a
-//! host stores exact bytes and never mints identity.
+//! The seam over transit-sync, whose merge is property-tested. The
+//! protocol is LWW per record id plus tombstones, on purpose: the final
+//! authority is the agency's scheduling system (propose, review, accept).
 //!
-//! Validation is NOT here: edit records validate against the
-//! NETWORK at load_edits — every model-side module's registration
-//! answer (reported, never rejected — the sync contract). A second
-//! answer here would be two answers to one question on the bus.
-//! The module is stateless: no registries, no persistence —
-//! document storage is the host's, and the sync store's design
-//! (the log's objects, their create-if-absent — docs/FORMATS.md) is
-//! the host discipline's, never a module's.
+//! * The host owns the documents and the clock (`now_ms`), and the receive
+//!   path clamps a client's clock to the host's (D-56).
+//! * Answers carry the canonical bytes and their hash; the module is the
+//!   hash authority, so a host never mints identity.
+//! * `read_edits` reads the current version only; an older one is
+//!   cap-migrate's. `receive` writes the disruptions log whole (D-228),
+//!   and `compact` skips a tombstone that another log's held record names
+//!   (D-57, D-231). A revert's records are stamped to win the merge
+//!   (D-193).
+//! * Validation is not here. Edit records are judged against the network
+//!   at `load_edits`, reported and never rejected (cap-divert's
+//!   `reports`); a second answer would be two answers to one question.
+//! * Stateless. How the store writes the log's objects is the host's
+//!   discipline (docs/FORMATS.md), never a module's.
 
 #![forbid(unsafe_code)]
 

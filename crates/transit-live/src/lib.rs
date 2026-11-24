@@ -1,26 +1,25 @@
-//! transit-live — THE live document.
+//! transit-live: the live document, one rt moment in model vocabulary
+//! (version 2).
 //!
-//! GTFS-rt speaks the published feed's vocabulary (its trip ids,
-//! its stop_sequence numbers, a frequency run by start_time); the
-//! model speaks its own (a trip instance is a `(trip, start)` pair —
-//! the trip ids are the same). The live document is the rt snapshot
-//! RESOLVED into model vocabulary once, at the boundary (cap-rt
-//! mints it from the snapshot and the network, with the import's
-//! boundary for the stop numbering), so every model-side consumer —
-//! the board, the runcut, the map — reads delays by trip instance and
-//! never re-joins rt by hand. No host computes a delay: parity between the browser, the
-//! runner, and the Go server holds by construction.
+//! cap-rt resolves an rt snapshot into it once, at the boundary, so every
+//! consumer reads delays by trip instance and never joins rt by hand. No
+//! host computes a delay, so parity holds by construction. Pure data plus
+//! its rules; nothing here reads GTFS (arch gate).
 //!
-//! The document carries the ON-TIME WINDOW it was classified under,
-//! so every consumer classifies the same way (one window, never a
-//! threshold per view). It also carries the SERVICE ALERTS in force at
-//! that moment, their informed entities resolved to routes, stops, and
-//! trip instances of the network, so a reader asks "does this alert
-//! touch this visit?" in model vocabulary. It says what does not run
-//! — a cancelled trip instance, a skipped stop — so every reader asks
-//! one question, [`LiveDay::runs`], before it shows or rides a visit.
-//! Pure data plus the classification, alert-matching and runs rules;
-//! nothing here reads GTFS.
+//! * A delay's date is as the feed states it; an absent date is the
+//!   current service day, as GTFS-rt reads it. Each reader asks for its
+//!   own date (`LiveDay::on`).
+//! * Every status is classified under the one on-time window the document
+//!   records, never a threshold per view. Any earliness is early by
+//!   default, because a bus that leaves early is a missed bus.
+//! * What does not run (a cancelled or deleted trip instance, a skipped
+//!   stop) is asked through one rule, [`LiveDay::runs`]. It is no row on
+//!   any board, with no mark, and the router never boards there: a live
+//!   cancel shown at its time misled riders (D-45, D-73, D-100..D-102).
+//!   Cover, hold, and swap are CAD/AVL's day, not edits (D-212).
+//! * Each alert in force holds one scope per informed entity. One entity's
+//!   fields join with AND; all absent is the agency. A stop id matches as
+//!   written, so a station's id selects no departure at its bays (D-221).
 
 pub mod load;
 

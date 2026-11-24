@@ -22,4 +22,4 @@ Scope:
 
 Done when: `just test` passes with no `parse_date` or `haversine_m`
 left outside the shared helpers, the date laws are in the helper's
-tests, and `docs/architecture/crates/` names the helper.
+tests, and the crate comments name the helper.

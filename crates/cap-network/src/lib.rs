@@ -1,32 +1,20 @@
-//! cap-network — the network-codec capability module.
+//! cap-network: the network codec capability (OPS.md has the ops).
 //!
-//! The second capability extracted from the MONOLITH (after
-//! analysis): the codec that turns a GTFS feed into an authored
-//! network document (the planner's bootstrap) and back (the publish
-//! path). The domain code lives in the shared `transit-codec`
-//! library; a planner's bundle ships this module, a rider's never
-//! hears of it.
+//! It turns a GTFS feed into an authored network document (`import`, the
+//! planner's start) and back (`export`, the publish path), over
+//! transit-codec. A rider's bundle never links it.
 //!
-//! The documents it reads are the kernel's, registered by its loads
-//! and content-addressed like everywhere on the bus:
-//! * **feed** — the raw GTFS zip bytes; the content hash IS the
-//!   document identity (the same in every module, so a host can load
-//!   one zip anywhere and assert they agree);
-//! * **network** — the authored document, registered under the hash
-//!   of its canonical serialization; every op addresses it by hash,
-//!   never by carrying the whole document per request;
-//! * **boundary** — an import's residue (what the feed's bytes carry
-//!   that the document does not); an export names it to write the
-//!   imported numbering back.
-//!
-//! What it mints registers where it was minted: an import's network
-//! and boundary, an export's feed — each answered by hash, so a host
-//! chains on without sending them back in.
-//!
-//! Only the planner persona authors networks — but this module's
-//! write op (export) is the publish path: an authored document in, a
-//! spec-shaped GTFS zip out, deterministic bytes so the produced
-//! artifact has one identity everywhere.
+//! * Every document is the kernel's, by content hash: the feed (its zip
+//!   bytes), the network (its canonical serialization), and the boundary
+//!   (what the feed carries that the document does not; an export that
+//!   names it writes the imported numbering back).
+//! * What an op makes registers where it is made and is answered by hash,
+//!   so a host chains on without sending it back.
+//! * Export bytes are deterministic, so a published feed has one identity
+//!   everywhere.
+//! * `publishable` and cap-plans' `pick` run one check
+//!   (transit-network `publish_check`; D-76), and `document`'s bytes are
+//!   the bytes a pick stores.
 
 #![forbid(unsafe_code)]
 

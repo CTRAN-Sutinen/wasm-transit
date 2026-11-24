@@ -1,24 +1,17 @@
-//! cap-directory — the directory capability.
+//! cap-directory: what exists in the network? (OPS.md has the ops.)
 //!
-//! One question: **what exists in the network?** — the stops (with
-//! their walking-group structure, by name or nearest a point), the
-//! routes (short and long names), and one route's
-//! patterns with their ordered stops (list → detail). The pickers
-//! and the names join read here; they are MODEL questions, never
-//! feed reads. A route runs in directions, and each direction's
-//! stop sequences are its patterns, each with its own ordered
-//! stops — that is what a diversion editor anchors against — and
-//! where each entity is on the map (focus). The planner's lists ask
-//! here too: rows of any kind narrowed by a filter (entities), and a
-//! route's composition with each pattern trips' trip count and its
-//! patterns by direction (route_detail), a stop's serving routes
-//! (stop_detail), and the timetable — one route, one direction, one
-//! service type, every trip across the direction's patterns.
+//! The seam for the pickers, the names join, the map's focus, and the
+//! planner's lists and timetable over transit-network. These are model
+//! questions, never feed reads; the feed's own line reads `load_feed` and
+//! cap-gtfs. The host computes no number.
 //!
-//! The document it reads is the kernel's, content-addressed like
-//! everywhere on the bus:
-//! * **network** — the same identity cap-network's import produces
-//!   and cap-analysis consumes (the module is the hash authority).
+//! * Stop search matches the sign's own words, never an alias: exact,
+//!   then an abbreviation, then a typo (D-48).
+//! * `stops_near` answers a station once, as its walking group, at its
+//!   nearest member's distance. Given a point's walks (cap-streets
+//!   `access`), the places a walk reaches come first by walk, then the
+//!   rest by distance (D-34).
+//! * Every row that names a route carries its long name.
 
 #![forbid(unsafe_code)]
 

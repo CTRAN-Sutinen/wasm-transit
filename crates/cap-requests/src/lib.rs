@@ -1,23 +1,12 @@
-//! cap-requests — the stop requests capability.
+//! cap-requests: what work has been asked for at a stop, and where is it?
+//! (OPS.md has the ops.)
 //!
-//! One question: **what work has been asked for at a stop, and where is
-//! it?** The stop requests document (transit-requests; D-159) holds the
-//! planning team's requests — a new stop, a reinstall, a relocation or
-//! removal, a repair, a temporary stop — each a record by id tracking
-//! the work order the agency's work order system opens for it.
-//! `validate` answers what a write must pass: every refusal, naming its
-//! request and problem, or the canonical document and its hash (the
-//! module is the hash authority; a host stores exactly those bytes).
-//! `requests_for` answers a stop's requests over a document the
-//! kernel's `load_stop_requests` registered, and `list` the work across
-//! every stop (by status and job, with every request counted by
-//! status); `put` answers the next
-//! document with one request placed by id, checked as a write is; and
-//! `vocabulary` answers the lists a request's answers come from, and
-//! `record_work_order` puts what the work order system answered on a
-//! request (D-165). The
-//! domain code lives in the shared `transit-requests` library; the
-//! module writes nothing.
+//! The seam over transit-requests (D-159). The module is the hash
+//! authority: `validate` answers every refusal or the canonical document
+//! and its hash, and a host stores exactly those bytes. `work_order_call`
+//! says what to send the work order system; the host makes the call, and
+//! `record_work_order` keeps the answer (D-165). The stops log holds the
+//! requests: cap-stops' `receive` writes them (D-197).
 
 #![forbid(unsafe_code)]
 

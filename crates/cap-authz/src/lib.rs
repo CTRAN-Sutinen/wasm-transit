@@ -1,17 +1,17 @@
-//! cap-authz — the authorization capability.
+//! cap-authz: may this identity perform this action on this pointer?
+//! (OPS.md has the ops.)
 //!
-//! One question: **may this identity perform this action on this
-//! pointer?** Authentication is the IdP's — the host verifies the JWT
-//! (signature via JWKS or a pinned key, iss/aud/exp, D-60) and reads
-//! the roles claim (D-59). This module owns only the decision:
-//! `authorize` evaluates the policy document the host passes per call
-//! (the store's `policy` pointer, D-61) and answers fail-closed — no
-//! policy, no subject, or no matching rule is a deny, never an allow.
+//! Authentication is the IdP's: the host verifies the JWT (D-60) and reads
+//! the roles claim (D-59). This module owns only the decision, over the
+//! policy document (kind `policy`, D-61) that the host pushes on each call.
 //!
-//! The module is stateless: no registries, no persistence — like
-//! cap-plans, the host owns the document and pushes it per call.
-//! Authorization is never cached across calls; the policy document's
-//! hash is the cache key if a host wants one.
+//! * The verdict is fail-closed: no policy, no subject, or no matching
+//!   rule is a deny. It never depends on rule order. transit-authz holds
+//!   the property tests.
+//! * `validate` is the policy's check in the kind table (D-202). A policy
+//!   that grants no role a write on the policy is accepted with a warning.
+//! * Stateless, never cached across calls. The policy's hash is the cache
+//!   key if a host wants one.
 
 #![forbid(unsafe_code)]
 

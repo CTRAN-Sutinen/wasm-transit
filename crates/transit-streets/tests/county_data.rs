@@ -9,7 +9,7 @@
 // is respected on real digitized geometry (NW 10TH AVE is `>`
 // northbound; the southbound trip must loop through the grid, never
 // the segment). It prints the document's JSON size — the number the
-// browser pays to hold it (docs/architecture/crates/transit-streets.md).
+// browser pays to hold it (crates/transit-streets/src/lib.rs).
 
 #[test]
 fn county_export_parses_and_respects_one_ways() {

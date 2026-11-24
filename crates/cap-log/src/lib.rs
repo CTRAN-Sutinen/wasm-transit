@@ -1,30 +1,15 @@
-//! cap-log: the log capability (D-190, D-197).
+//! cap-log: what does this write add to the log, and what does the log
+//! hold? (D-190, D-197; OPS.md has the ops.)
 //!
-//! One question: **what does this write add to the log, and what does
-//! the log hold?** A log is the record of one consistency domain, an
-//! entry for each write. This capability never reads a record. A record
-//! is a JSON value named by its kind and its id, in its kind's version.
-//! The capability that owns a kind turns its document into records and
-//! records back into its document (cap-stops and cap-requests
-//! `log_records`, `log_document`). So one entry may change the records
-//! of two capabilities, and no capability calls another.
-//!
-//! - `compose` answers the entry for one write: the records that differ
-//!   from the fold, each with its hash as stored before. A record the
-//!   write changes that an entry its writer did not read changed too
-//!   answers the overlap, and no entry.
-//! - `fold` folds stored entries after a checkpoint into the records by
-//!   kind, and quarantines an entry it cannot read or apply.
-//! - `revert` answers the entry that writes back the states before an
-//!   entry. A record the entry created leaves the fold (D-198). A kind
-//!   whose merge would undo that gives the records to write back
-//!   instead (`written`, from the kind's capability, over the `states`
-//!   the revert answers).
-//! - `close_gap` answers the entry with no changes that closes a gap.
-//!
-//! A record's hash is the canonical hash of the record as stored
-//! (`cap_abi::canonical_hash`). The module is stateless: the host
-//! stores the entries and checkpoints and gives them back in order.
+//! The seam over transit-log. It never reads a record; the capability that
+//! owns a kind splits and joins its document (`log_records`,
+//! `log_document`), so one entry may change two capabilities' records and
+//! no capability calls another. A write is checked against the records it
+//! changes, not the whole log. Stateless: the host stores entries and
+//! checkpoints and gives them back in order. The server keeps the
+//! disruptions, stops, and plans logs through it and folds and reverts
+//! every log with it; the alerts and notes logs are written by their own
+//! receive ops.
 
 #![forbid(unsafe_code)]
 

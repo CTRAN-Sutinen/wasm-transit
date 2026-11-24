@@ -1,22 +1,24 @@
-//! cap-author — the authoring capability.
+//! cap-author: what does this network become after these edits? (OPS.md
+//! has the ops.)
 //!
-//! One question: **what does this network become after these
-//! edits?** A planner's change — retime a schedule, add a stop, fork
-//! the plan into the next pick — is a list of typed edits
-//! (`transit_network::NetworkEdit`) applied atomically to a
-//! registered document (the kernel's). The answer is the NEXT
-//! document under its content hash, registered so the next change
-//! chains by hash, with
-//! its validation issues and warnings: the authoring loop in one op.
-//! The last document is never touched; the host wholesale-replaces
-//! its copy (JS owns the documents).
+//! The seam over transit-network's edits. `apply` takes typed edits,
+//! atomically, and answers the next document under its hash, registered so
+//! the next change chains by hash, with its issues and warnings. The last
+//! document is never touched; every host, the service-design UI included,
+//! sends edits and adopts the answer. With `work_rules_hash`, a block's
+//! waits are judged under the work rules (D-9).
 //!
-//! The domain code (the edit vocabulary, the referential refusals)
-//! lives in transit-network; this module is the seam. With a
-//! `work_rules_hash`, a block's waits are judged against the recovery
-//! the work rules require (D-9: the rules win; without them, the
-//! smallest authored layover at each terminal). Same identity
-//! as every capability: the module is the hash authority.
+//! * A redraw names its reach, one pattern or every pattern on the shared
+//!   alignment, and answers what it touched, so a fix for one variant
+//!   never moves the others silently (D-11).
+//! * A timetable gesture changes only the one service type it names,
+//!   because a combination's members are separate authored types; the UI
+//!   warns when others run with it (D-8).
+//! * A fork with a period end carries each weekly type still running in
+//!   the calendar's last week to that end, because otherwise a fork runs
+//!   nothing until each type is extended (13 edits on C-TRAN). Then the
+//!   fork's calendar is cut to its period; every type stays (D-41, D-104,
+//!   D-112, D-138).
 
 #![forbid(unsafe_code)]
 

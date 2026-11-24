@@ -1,22 +1,11 @@
-//! cap-notes: the notes capability.
+//! cap-notes: what has the agency noted about this? (D-214; OPS.md has the
+//! ops.)
 //!
-//! One question: **what has the agency noted about this?** The notes
-//! document (transit-notes; D-214) holds the agency's internal notes. A
-//! note names a trip instance, an edit record, a service alert, or a
-//! stop. Anyone reads the notes. They never go to riders.
-//!
-//! - `validate` answers what a write must pass: every refusal, naming
-//!   its note and problem, or the canonical document and its hash. The
-//!   module is the hash authority; a host stores exactly those bytes.
-//! - `write` answers the next document with one note written or edited,
-//!   stamped with the writer and the time that the host gives.
-//! - `on` answers a target's notes, oldest first.
-//! - `between` answers the notes written in a time span, newest first.
-//! - `log_records` and `log_document` turn the document into the notes
-//!   log's records and back.
-//!
-//! The domain code lives in the shared `transit-notes` library. The
-//! module writes nothing.
+//! The seam over transit-notes. The module is the hash authority:
+//! `validate` answers every refusal or the canonical document and its
+//! hash, and a host stores exactly those bytes. A note is stamped with the
+//! writer and time the host gives; `receive` (D-228) stamps each write
+//! with the entry header's writer and clock, never the page's.
 
 #![forbid(unsafe_code)]
 

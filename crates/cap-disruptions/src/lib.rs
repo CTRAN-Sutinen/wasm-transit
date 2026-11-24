@@ -1,23 +1,9 @@
-//! cap-disruptions: the disruptions capability.
+//! cap-disruptions: what is disrupted on a day, and does an alert explain
+//! it? (D-213, D-218; OPS.md has the ops.)
 //!
-//! One question: **what is disrupted on a day, and does an alert explain
-//! it?** (D-213, D-218). transit-disruptions is the library. A
-//! disruption comes from the edit document (a diversion or a trip
-//! cancel), the live feed (a trip it cancels), or the stops document (a
-//! suspended stop), and each is listed as its document gives it.
-//!
-//! - `today` answers the day by route: each route with a disruption or a
-//!   late trip, each disruption with the names a rider uses, the alerts
-//!   that explain it, and its latest note; and how many routes have
-//!   neither. A filter answers one route or one stop.
-//! - `gaps` answers what no alert explains, with what an alert about
-//!   each starts from.
-//!
-//! - `start_alert` answers what a new alert starts from: for a gap, its
-//!   effect, the riders it informs, and what it explains, and the stop
-//!   the rider preview opens at.
-//!
-//! The module writes nothing.
+//! The seam over transit-disruptions. It reads the network, the edit
+//! document, the live document, the stops, the service alerts, and the
+//! notes, each by hash, and writes nothing.
 
 #![forbid(unsafe_code)]
 

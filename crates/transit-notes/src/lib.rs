@@ -1,24 +1,19 @@
-//! The notes document (D-214): the agency's internal notes about its
-//! day of service.
+//! The notes document (D-214, D-217): the agency's internal notes about its
+//! day of service, in place of dispatch's email. cap-notes is the seam.
 //!
-//! A note names its target: a trip instance (trip, service date,
-//! start), a record of the edit document, a service alert, or a stop. A
-//! trip that the live feed cancels is a trip instance, so a note can
-//! name it. Anyone can read the notes. They never go to riders: no
-//! GTFS-rt feed and no rider page reads them.
-//!
-//! A note carries who wrote it and when, and who last edited it and
-//! when. The writer is the verified sign-in subject that the host gives
-//! the write. The time is the host's clock, in Unix seconds. So the
-//! notes read with no access to the log.
-//!
-//! Nothing is deleted. An edit replaces the note's text, and the log
-//! keeps every earlier state. A note's target never changes.
-//!
-//! [`Notes::write`] writes one note, new or edited. [`Notes::checked`] is
-//! what a write must pass. It refuses only what makes a note wrong
-//! (D-152). The notes do not read the network: a note on an id the
-//! network does not hold is a note, as written.
+//! * A note names its target: a trip instance (a trip the feed cancels is
+//!   one), an edit record, a service alert, or a stop. The target never
+//!   changes. The notes do not read the network: a note on an unknown id
+//!   stands as written.
+//! * Anyone reads the notes, without signing in. They never go to riders:
+//!   no GTFS-rt feed and no rider page reads them.
+//! * A note carries who wrote it and when, and who last edited it. The
+//!   host gives the verified sign-in subject and its own clock; a page
+//!   never names the writer. So the notes read without access to the log.
+//! * A write is one note ([`Notes::write`]), so two people who note at
+//!   once never conflict. An edit replaces the text, the log keeps the
+//!   earlier state, and nothing is deleted.
+//! * [`Notes::checked`] refuses only what makes a note wrong (D-152).
 
 #![forbid(unsafe_code)]
 

@@ -1,18 +1,26 @@
-//! transit-plans — the service-plan chain, as a shared library.
+//! transit-plans: the service-plan chain and the published plan set.
+//! cap-plans is the seam.
 //!
-//! Service changes are PICKS: agencies implement a few a year at
-//! defined dates. transit-network owns ONE plan's document; the chain
-//! over MANY of them — resolution ("which plan is in force on a
-//! date"), governing periods, and validity — is cross-document
-//! domain logic and lives here, the same standing as transit-sync's
-//! cross-record merge. The chain is DERIVED, never stored: a pick's
-//! date is a target that moves while the pick is in development, and
-//! the chain recomputes.
+//! Service changes are picks, a few a year at set dates. transit-network
+//! owns one plan's document; the chain over many of them is cross-document
+//! logic and lives here.
 //!
-//! Unversioned plans (fresh imports, empty id) are standalone
-//! imports — never chain members: they do not resolve and are never
-//! flagged. The cap-plans capability dispatches through this
-//! library; every host gets the same answers.
+//! * The chain (which pick is in force, each pick's governing period, the
+//!   chain's invariants) is derived, never stored, deterministic, and
+//!   order-insensitive, because a pick's date moves while it is in
+//!   development. An unversioned plan (a fresh import) is never a chain
+//!   member. `period_in` places a pick by id, so its own date wins.
+//! * The published plan set (`PublishedPlans`, kind `plans`) is canonical
+//!   in (effective_from, id) order. `publish` gives the next set or every
+//!   reason it refuses, including a pick dated before today (D-76). A
+//!   retired pick is kept as the tombstone and never governs (D-75).
+//!   "In use" is the pick in force and every later one.
+//! * Frozen versions (`FrozenVersions`, kind `frozen_versions`; D-191)
+//!   hold each network version the agency froze, with its purpose. A
+//!   freeze puts nothing in force. `adopt` is `publish` of a frozen
+//!   version, so every network in a published set is a frozen version. A
+//!   migrated version pins its source (`from_network_hash`, D-232). A pick
+//!   names the stops log entry its adoption read (`stops_seq`).
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};

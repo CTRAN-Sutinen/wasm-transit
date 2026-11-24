@@ -1,35 +1,32 @@
 //! transit-log: the append-only log of the agency's record (D-190,
-//! D-197).
+//! D-197). cap-log is the seam.
 //!
-//! A log is the record of one consistency domain. Each entry is one
-//! transaction: each record it changed, with the record's hash before
-//! and its new state, whole. The current state is the fold of the
-//! entries. A mistake is fixed by a new entry (a revert), so the truth
-//! before the mistake stays in the record.
+//! A log is one consistency domain. Each entry (`log_entry`) is one
+//! transaction: its place (`log`, `seq`), writer, time, module, intent
+//! (with the idempotency `key`, and the device's `claimed_at_ms` for a
+//! write that waited, D-222), and each record changed, with its hash
+//! before and its new state whole. The current state is the fold; a
+//! `log_checkpoint` is the fold up to an entry. A mistake is fixed by a new
+//! entry (a revert), so the truth before it stays.
 //!
-//! This crate never reads a record. A record is a JSON value named by
-//! its kind (`stop`, `stop_request`) and its id, in its kind's version.
-//! The capability that owns a kind turns its document into records and
-//! records back into its document ([`split`], [`join`]). So one log can
-//! hold the kinds of two capabilities, and one entry can change both.
+//! This crate never reads a record. A record is JSON named by kind and id.
+//! The owning capability splits its document into records and joins them
+//! back ([`split`], [`join`]; fields outside the collection are kept), so
+//! one log can hold two capabilities' kinds and one entry can change both.
 //!
-//! - [`compose`] answers the entry for one write: the records that
-//!   differ from the fold, each `before` filled from the fold.
-//! - [`overlap`] names a record a write changes that an entry its
-//!   writer did not read changed too (D-189).
-//! - [`apply`] applies an entry, all or none, checking each `before`.
-//! - [`fold`] folds stored entries after a checkpoint, and quarantines
-//!   an entry it cannot read or apply.
-//! - [`revert`] answers the changes that write back the states before an
-//!   entry. A record the entry created leaves the fold (D-198). A kind
-//!   whose merge would undo that writes back its own records instead
-//!   ([`revert_states`], [`revert_with`]).
-//!
-//! A change's `before` is the hash of the record as the entry that wrote
-//! it stored it, never of a migrated copy (D-197). The hash is the
-//! caller's (cap-log passes the canonical hash), so the crate is pure.
-//! An idempotency key in an entry's intent lands once: a write whose key
-//! the fold holds answers the entry that holds it.
+//! - [`compose`] answers the entry for one write; [`overlap`] names a
+//!   record that an entry the writer did not read changed too (D-189).
+//! - [`apply`] is all or none, checking each `before`. [`fold`]
+//!   quarantines an entry it cannot read or apply.
+//! - [`revert`] writes back the states before an entry, and a record the
+//!   entry created leaves the fold (D-198). A kind whose merge would undo
+//!   that writes its own records ([`revert_states`], [`revert_with`]).
+//! - `receive` is every write's last step, shared by cap-log and every
+//!   capability's receive op (D-228); `Received` is a receive op's whole
+//!   answer. A key the fold holds lands once and answers its entry.
+//! - A `before` hashes the record as stored, never a migrated copy. The
+//!   hash function is the caller's (`cap_abi::record_hash`), so the crate
+//!   is pure.
 
 
 pub mod receive;

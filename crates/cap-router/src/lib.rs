@@ -1,25 +1,20 @@
-//! cap-router — the trip-planning capability module.
+//! cap-router: how do I get from here to there? (OPS.md has the ops.)
 //!
-//! Planning composes over the NETWORK document and the EFFECTIVE
-//! DAY, like every model-side capability: the network and the edit
-//! document are the kernel's (registered by its loads, under their
-//! content hashes), and a plan answers by hash pair + date. The day
-//! itself is the kernel's held day — transit-dispatch's composition,
-//! materialize then patch with the edits in force — never a private
-//! calendar expansion (Law 2). A LIVE document (cap-rt's) makes the
-//! plan ride each trip instance's predicted times where the document
-//! states them. The RAPTOR graph is a derived entry
-//! (`cap_abi::kernel::GRAPH`) per (network, edits, live, date, walks),
-//! built on first use; a rider whose bundle stops at "know when the
-//! bus comes" never downloads this module's planning code.
+//! The seam over transit-router. It plans over the network and the
+//! kernel's held day (transit-dispatch's composition: materialize, then
+//! patch with the edits in force), never a private calendar expansion.
+//! A rider bundle that only shows departures never links this module.
 //!
-//! The question is one — how do I get from here to there — at its
-//! facets: leaving at a time (`plan`), arriving by a time
-//! (`plan_arrive_by`: the latest departure; with no deadline, the
-//! last bus home), and the diversion delta (`plan_compare`: the same
-//! query over the patched day and the unpatched one — one
-//! materialization apart, no second document — with the rider's
-//! notice whenever the diversion changes the trip).
+//! * A live document (cap-rt's) makes a plan ride predicted times.
+//! * A walk table (cap-streets' `walks`) makes transfers walk the streets;
+//!   one derived for another network is refused. Without one, transfers
+//!   are straight lines.
+//! * The RAPTOR graph is a derived entry (`cap_abi::kernel::GRAPH`) for
+//!   each (network, edits, live, date, walks), built on first use. Only
+//!   the graphs for the newest live document stay.
+//! * `plan_compare` reads the unpatched day at the same predictions, one
+//!   materialization apart, and gives the rider's notice. The browser
+//!   plans only through it; the host shows the notice's text.
 
 #![forbid(unsafe_code)]
 

@@ -1,24 +1,25 @@
-//! What a document says about itself (D-62, D-115): its kind and its
-//! version, inside it, so a copy anywhere — a blob, an export, a file
-//! another tool reads — names both without the app
-//! (docs/FORMATS.md, "Versions").
+//! What a document says about itself (D-62, D-115): its kind and version,
+//! inside it, so any copy names both without the app. The kinds and their
+//! versions are in docs/FORMATS.md, "Versions".
 //!
-//! - [`kind_tag!`] declares a kind's tag: a field that always writes
-//!   the kind's name, reads an absent one as itself, and refuses a
-//!   document naming another kind.
-//! - [`Version<N>`] is a version field whose absence reads as `N` —
-//!   for a kind whose untagged copies are that version.
-//! - [`Versioned`] is what a reader needs to refuse another version
-//!   at its load, naming both ([`parse_versioned`]), and to read
-//!   one version ahead for one release ([`Ahead`], D-79, D-186).
-//! - [`Extra`] is a record's fields that this build does not know,
-//!   kept as written (D-167).
-//! - [`references`] reads the references a kind's schema declares
+//! - [`kind_tag!`] declares a kind's tag: always written; an absent one
+//!   reads as the kind; another kind is refused.
+//! - [`Version<N>`] is a version field whose absence reads as `N`.
+//! - [`Versioned`] refuses another version at load, naming both
+//!   ([`parse_versioned`]). For one release a kind may read the next
+//!   version ([`Ahead`], D-79, D-186): the owning crate's `step_down` is
+//!   lossless and writable, or else the copy is read-only and a write over
+//!   it is refused. A write's base reads through `cap_abi::Base` or
+//!   `Kind::require_writable` (docs/FORMATS.md, "Rolling a version back").
+//! - [`Extra`] keeps a record's unknown fields through a read and a write
+//!   (D-167). Values (a point, a time pair) carry none. Every load and
+//!   receive op names the unknown fields it met.
+//! - [`references`] reads the references a schema declares
 //!   (`x-references`, D-232).
-//! - [`Load`] is how the kernel loads a kind: each library implements it
-//!   for its own kind (D-239).
-//! - [`document`] is a document's identity (the canonical hash, RFC 8785)
-//!   and its versioned read, which each kind's load uses.
+//! - [`Load`] is how the kernel loads a kind; each library implements it
+//!   in its `src/load.rs` (D-239).
+//! - [`document`] is identity and read: the canonical hash (RFC 8785) and
+//!   the versioned read of JSON or gzipped JSON.
 
 #![forbid(unsafe_code)]
 

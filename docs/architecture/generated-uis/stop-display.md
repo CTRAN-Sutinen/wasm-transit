@@ -1,29 +1,15 @@
 # stop-display
 
-`stop-display` (`src/uis/stop-display/`) is the screen at a stop, a
-passenger information display. It has three full-screen layouts over one
-`grouped_board` answer:
-
-- A transit center: the groups as a list, each time naming its bay, and
-  the alerts beside it.
-- A single route: one group fills the screen, its type scaled to it.
-  This is for the stop that one route serves.
-- Several routes: a street stop's two or three routes, each a
-  full-width band that shares the screen's height, its type scaled to
-  the band.
-
-The alerts slot is always on screen. Any layout shows any stop. The stop
-and the layout live in the page's URL
-(`?stop=<id>&layout=center|route|routes`), so a screen reopens on its
-stop. Without a stop, the setup picks both. The UI boots from the
-server's published network (`servedNetwork`, bytes it never parses; or a
-zip). It reads `GET /edits` and the deployment's live feeds
-(`public/live-feeds.json`, kit's `fetchFeed`). It polls them and the
-clock every 20 s. Its groups include the previous date's after-midnight
-trips (`previous`). It follows the deployment and works offline
-([updates-offline.md](updates-offline.md)). A new build applies itself
-at a poll while the server answers and the setup is closed. Its
-questions and session are its `ui.json`.
+`stop-display` (`src/uis/stop-display/`) is the screen at a stop: a
+passenger information display over one `grouped_board` answer, in three
+full-screen layouts (a transit center, a single route, several routes).
+The alerts slot is always on screen. The stop and the layout live in the
+URL, so a screen reopens on its stop. It boots from the published
+network or a zip, reads the edits and the deployment's live feeds, and
+includes the previous date's after-midnight trips. It works offline
+([updates-offline.md](../updates-offline.md)) and applies a new build
+only while the server answers and the setup is closed. Its inputs and
+session are its `ui.json`.
 
 Its failure table.
 

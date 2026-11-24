@@ -1,6 +1,6 @@
 //! The router over a walk table: a plan's transfers walk the streets.
 //!
-//! The intent (docs/architecture/crates/transit-streets.md, the walk table): with a
+//! The intent (crates/transit-streets/src/lib.rs, the walk table): with a
 //! walk table, the router's footpaths ARE the table's walks — every
 //! walk between two of the network's stops at the table's seconds,
 //! and nothing else (no straight-line pair survives, and a walk naming

@@ -1,61 +1,27 @@
 # ride-now
 
-`ride-now` (`src/uis/ride-now/`) is a full-bleed map with a panel over
-it. The panel is a card at the left on a wide screen, and a sheet over
-the bottom of the map on a phone. The live pill and the alerts button
-are in the corner. The map draws every stop and every live bus. A bus is
-colored by its status, points its bearing, and is labeled with its
-route. A tapped bus, stop, or spot opens it.
+`ride-now` (`src/uis/ride-now/`) is the rider's app: a full-bleed map of
+every stop and live bus, with a panel (a card on a wide screen, a sheet
+on a phone) that moves through Home (search, places near, saved and
+recent stops), one stop's live board, one bus's trip, the routes,
+Getting there, and the alerts in force.
 
-The panel follows the rider through these views:
+- A trip's end is a stop, an address, the rider's location, or a spot
+  on the map. A point end plans as a router place over cap-streets
+  `access`, and a dropped pin is named by the geocoder's nearest address
+  (D-37). A trip asked for "now" is asked again on each poll.
+- It boots from the published network or a hand-loaded zip, then loads
+  the published streets and walks in the background. Until they land,
+  or where none is published, walks are straight lines. A hand-loaded
+  zip walks no streets.
+- Addresses come from the geocoder the manifest lists. The host sends
+  only the typed text and a near point, shows the answer as given, and
+  keeps no query ([web.md](../web.md), "External services").
+- Boards include the previous date's after-midnight trips. It installs
+  as an app and offers a new build ([updates-offline.md](../updates-offline.md)).
 
-- **Home**: the type-ahead, the places near the rider or a tapped spot,
-  saved stops, and recent stops.
-  - The type-ahead finds stops. It also finds addresses and places when
-    the server runs a geocoder. A picked address is a spot, "Near 1400
-    NE 136th Ave".
-  - "Get directions" and "Routes" start from here.
-  - Each place near the rider or a tapped spot shows its next
-    departures. When the server publishes the streets, the nearest
-    places are ordered by the walk along the streets.
-- **One stop**: its live board. A picked departure draws its route,
-  marks its bus, and offers to track it.
-- **One bus**: its trip stop by stop. The stop it heads to is marked.
-  The map follows it.
-- **The routes and one route**: the route's directions' variants as
-  line diagrams. Its buses stay bright on the map, and the rest dim.
-- **Getting there**: the ends, the time, and the itinerary.
-  - Each end is a type-ahead, or the rider's location, or chosen on the
-    map. "Choose on map" is per end: the next tap sets it. The tap
-    sets a stop. With the streets published, it sets any spot. A
-    dropped pin is named by the geocoder's nearest address (D-37).
-  - An address typed in an end's field is a point end the same way.
-  - "Directions here" on a tapped spot does the same.
-  - A point end plans as a router place over cap-streets `access`. Its
-    walks are drawn along the streets.
-  - The time is leave now, leave at, arrive by, or the last bus.
-  - The itinerary is a timeline, drawn on the map.
-- **The alerts in force**.
-
-The UI boots from the server's published network (`servedNetwork`,
-bytes it never parses; or a zip that the rider loads). Then it loads the
-server's `/streets` and `/walks` in the background (`servedStreets`,
-`servedWalks`). Until they land, or where none is published, walks are
-straight lines and trips run stop to stop. A hand-loaded zip walks no
-streets, because the walk table walks the published network. The UI
-reads the edit document from `GET /edits`. It reads the live feeds that
-the deployment names in `public/live-feeds.json` (the rider may set
-their own; kit's `fetchFeed`). It polls both and the clock every 30 s.
-A trip asked for "now" is re-asked on each poll. Its boards include the
-previous date's after-midnight trips (`previous`). It follows the
-deployment and installs as an app ([updates-offline.md](updates-offline.md)).
-A new build is offered as "a new version is ready".
-
-Addresses come from the geocoder that the manifest lists (read once on
-boot; [web.md](web.md), "External services"). The host sends the typed
-text and the near point or the rider's. It shows Pelias's answer as
-given. A point that it answers keeps the name it was shown with. Nothing
-keeps the query. Its questions and session are its `ui.json`.
+It reads the edits and the deployment's live feeds (or the rider's own)
+every 30 s. Its inputs and session are its `ui.json`.
 
 Its failure table.
 

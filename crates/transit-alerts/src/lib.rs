@@ -1,28 +1,33 @@
 //! The service alerts document and the alert templates document
-//! (D-206..D-210).
-//!
-//! A service alert is what the agency tells riders: its cause, effect,
-//! and severity, its text in each language, when to show it (the
-//! communication periods) and when service is affected (the impact
-//! periods), and what it is about (the informed entities), all in the
-//! network's ids. Dispatch and the communications staff write alerts,
-//! and every team reads the one list (D-207). GTFS-rt is the alerts'
-//! serialization: transit-rt encodes the published ones as an Alerts
+//! (D-206..D-210, D-216). cap-alerts is the seam; transit-rt writes the
 //! feed.
 //!
-//! Each document is a set of records by id, changed by replacing a
-//! record whole. Nothing is deleted. An alert that will not go out is
-//! `retired`, and an alert that ends gets its end ([`ServiceAlerts::end`]).
-//! The log keeps every state of every record, and who wrote it.
+//! An alert is what the agency tells riders: cause, effect, severity, its
+//! texts in every language, communication and impact periods (Unix
+//! seconds; the host converts local times, D-205), and informed entities
+//! in the network's ids. Every field an entity names must match; an entity
+//! with none is the whole agency. Rules:
 //!
-//! [`ServiceAlerts::checked`] is what a write must pass. It refuses only
-//! what makes a record wrong (D-152). [`ServiceAlerts::flags`] is what a
-//! person is told about a record that passes: an id the network does
-//! not have, or a missing translation.
-//!
-//! [`fill`] writes a template's standard language with its blanks
-//! filled in. What is in force that no alert explains is
-//! transit-disruptions' gap list (D-218).
+//! * An alert is its own record in its own document, not a payload of the
+//!   edit document, because an alert changes no service; the board and
+//!   router patch the day from edits only.
+//! * GTFS-rt is its serialization, both ways. The record keeps every
+//!   translation; the live document carries one (D-20).
+//! * Dispatch and the communications staff write, and every team reads one
+//!   list (D-207). There is no review step: the write role publishes at
+//!   once, and the log records who wrote what.
+//! * An alert explains a disruption by naming it (`explains`): an edit
+//!   record, a stop's suspension, or a trip instance the live feed
+//!   cancels, because on C-TRAN the feed is where cancels come from
+//!   (D-213). Nothing writes an alert from a disruption. What no alert
+//!   explains is transit-disruptions' gap list (D-218).
+//! * Records change whole, by id. Nothing is deleted: `retired`, or an end
+//!   ([`ServiceAlerts::end`]). The chain from v1 is in `version`.
+//! * [`ServiceAlerts::checked`] refuses only what makes a record wrong
+//!   (D-152); [`ServiceAlerts::flags`] tells a person of an unknown id or
+//!   a missing translation.
+//! * A template's blanks are filled by [`fill`], so names and dates read
+//!   the same in every alert. A blank it cannot fill stays and is named.
 
 #![forbid(unsafe_code)]
 

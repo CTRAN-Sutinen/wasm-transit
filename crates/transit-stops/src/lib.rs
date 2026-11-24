@@ -1,39 +1,68 @@
 //! The stops document (D-153, D-154, D-157).
 //!
-//! A stop has a life of its own: planned, permitted, built, in service,
-//! suspended for a while, retired — on a timeline set by permits and
-//! construction, not by service plans, which only read it (D-157).
-//! Every stop is a list of dated events, oldest first — `planned`,
-//! `permitted`, `built`, `in_service`, `suspended`, `moved`, `changed`,
-//! `retired` — and nothing in the document means "today". A stop on a date is its
-//! events applied in order up to that date ([`Stops::stop_on`]); a
-//! temporary event (`until`) applies only while it lasts, so the state
-//! before it returns on its `until`. Every reader asks this library —
-//! the stop on a date, and whether a trip serves it ([`Stops::served`])
-//! — never the raw list, so a finer grain than a service day (D-148)
-//! changes these functions and not their callers.
+//! A stop has a life of its own, on a timeline set by permits and
+//! construction, not by the service plans, which only read it (D-157). A
+//! stop is a list of dated events, oldest first: `planned`, `permitted`,
+//! `built`, `in_service` (forward only; a stage may be skipped),
+//! `suspended`, `moved`, `changed`, and `retired` (the end; every later
+//! event is refused). Its id lasts through a move (D-145). Nothing in the
+//! document means "today". A stop on a date is its events applied in order
+//! ([`Stops::stop_on`]); a temporary event applies until its `until`.
+//! Every reader asks this library (the stop on a date, [`Stops::served`]),
+//! never the raw list, so a finer grain than a service day (D-148)
+//! changes these functions and not their callers. Only `in_service` is
+//! served.
 //!
-//! A correction edits the event that was wrong (the store keeps the
-//! earlier version of the document); a real change adds an event.
+//! Writes:
 //!
-//! [`Stops::checked`] is what a write must pass: each refusal names
-//! its stop, its event, and its problem. A document that passes is
-//! canonical as it stands — stops by id, each stop's events in the
-//! date order its writer gave — so its bytes, and so its hash, do not
-//! depend on how a writer ordered its keys. What this repo does not
-//! know (another tool's field, the agency's own amenity names and site
-//! questions) is kept through a read and a write.
+//! * A correction edits the wrong event; a real change adds an event.
+//! * Each event has an id unique in its stop (D-166). [`Stops::identified`]
+//!   gives an id from the stop and the event's content, so one event has
+//!   one id in every copy. Every write identifies before it checks.
+//! * [`Stops::checked`] is what a write must pass; each refusal names its
+//!   stop, event, and problem. A passing document is canonical as it
+//!   stands, so its hash does not depend on key order.
+//! * Fields this repo does not know (another tool's field, an agency's
+//!   amenity or question) are kept through a read and a write (D-167).
+//! * The surveyor is the signed-in writer, set by the receive path
+//!   ([`Stops::attribute_surveys`]), never a name the page sent (D-158).
+//! * Attachments are named by sha256 hash and media type, never a URL
+//!   (D-162).
 //!
-//! A stop's site survey (D-158) is details like any other: the answers
-//! to the site questions ([`SITE`]), its references to other systems
-//! (D-160), and on the event that records it, who surveyed.
+//! The site survey (D-158, D-160, D-163) is C-TRAN's Service Stop
+//! Worksheet. It is part of the stop's details, set by events like any
+//! detail. A core question ([`SITE`]) takes only an answer of its kind;
+//! the agency's own questions are kept and not checked. A part's type is
+//! an answer and its id is a reference (`refs`); parts are not records of
+//! their own unless they come to move between stops. The survey never
+//! asks what a schedule says. GTFS has no place for the answers, so
+//! export and import leave them alone. Amenities are true, false, or
+//! absent (not recorded), named as OpenStreetMap does where it can (D-154).
 //!
-//! The stops document sits beside the plans: every plan refers to a
-//! stop by its id, and a fork never copies it (D-147). This crate
-//! depends on transit-requests only for [`request_rule`], the rule of a
-//! request's reference to its stop, and on transit-network only for
-//! [`stop_record`], the join of a
-//! network and this document. The network does not depend on this crate.
+//! The joins with other crates. This crate depends on transit-network only
+//! for [`stop_record`] and on transit-requests only for [`request_rule`];
+//! the network does not depend on stops. The stops document sits beside the
+//! plans, and a fork never copies it (D-147).
+//!
+//! * [`request_rule`] (D-233, D-238): an open request needs a stop not
+//!   retired on the write's date; a closed one accepts any state; the
+//!   request that a `retired` event names is exempt. It matches every
+//!   stop state, so a new state does not compile until the rule judges
+//!   it. cap-stops' `receive` refuses as of what the writer read and warns
+//!   as of now.
+//! * A pick governs from its date to the next live published pick
+//!   (`pick_period`). `visit_warnings` warns of a stop a pick visits that
+//!   is not in service for that period; a suspension warns only if it
+//!   covers the whole period or has no end (D-157, D-228).
+//! * A feed's stops apply (D-150, D-151). Import records each difference
+//!   as an event dated the feed's first service date, naming the feed,
+//!   because that is the only date a feed states and a bad feed is fixed
+//!   by a correct one. "Unlisted" means in service or suspended that day.
+//!   A difference that would break a stop's history is unapplied, for a
+//!   person to check; a retired stop that the feed lists is always
+//!   unapplied. Export writes a stop that changes inside its dates as one
+//!   row per version sharing its `stop_code`: the last keeps the id, an
+//!   earlier one is `<id>@<first date>`, and import reads that back.
 
 #![forbid(unsafe_code)]
 

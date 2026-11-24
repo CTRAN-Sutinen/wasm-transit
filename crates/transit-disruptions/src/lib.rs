@@ -1,24 +1,24 @@
-//! What is disrupted on a day, and whether an alert explains it
-//! (D-213, D-218).
+//! What is disrupted on a day, and whether an alert explains it (D-213,
+//! D-218). cap-disruptions is the seam.
 //!
-//! A disruption is a change to the day's service from one of three
-//! documents:
+//! A disruption comes from one of three documents: the edit document (a
+//! submitted or accepted diversion or cancel in force; a draft is not yet
+//! anyone's news), the live document (a trip instance the feed cancels),
+//! or the stops document (a suspended stop).
 //!
-//! - the edit document: a submitted or accepted diversion or trip
-//!   cancel in force on the day (a draft is not yet anyone's news);
-//! - the live document: a trip instance that the live feed cancels;
-//! - the stops document: a stop suspended on the day.
-//!
-//! Each is listed as its document gives it. A trip that both the edit
-//! document and the live feed cancel is listed twice, once from each,
-//! and no rule picks one. Each disruption carries the names a rider
-//! uses (the route, the trip's first stop and start, the stops it takes
-//! away), the alerts that explain it, and its latest note.
-//!
-//! [`disruptions`] is the list. [`gaps`] is what no alert explains, with
-//! what an alert about each starts from. [`today`] is the day by route:
-//! each route with a disruption or a late trip, and how many routes have
-//! neither.
+//! * Each source's disruptions are listed as given, with their origin. A
+//!   trip that two sources cancel is listed twice, and no rule picks one.
+//!   The feed is where C-TRAN's cancels come from (D-213), and customer
+//!   service answers from one list.
+//! * Each disruption carries the names a rider uses (route, start, first
+//!   stop, headsign, the stops taken away), so a page needs no join. A
+//!   closed stop is where the stops document puts it that day.
+//! * [`disruptions`] is the list, [`gaps`] what no alert explains (and what
+//!   an alert about each starts from), and [`today`] the day by route. A
+//!   suspended stop is listed on every route that serves it.
+//! * These answers are this crate's, not cap-alerts', because an alerts op
+//!   that read the live document and the notes would break the split rule
+//!   (crates/AGENTS.md; D-215).
 
 #![forbid(unsafe_code)]
 

@@ -1,21 +1,27 @@
-//! transit-sync — the sync document and its pure operations.
+//! transit-sync: the sync document and its pure operations. cap-sync is the
+//! seam the Go server calls; cap-divert is the authoring seam.
 //!
-//! The principle this crate encodes: **the document is the contract**.
-//! Both sides of any synchronization (browser wasm, transit-server, a
-//! future agency ops service) hold the same serializable structures,
-//! so agreement is about document identity, not about shared mutable
-//! state.
+//! The document is the contract: every host holds the same structures, so
+//! agreement is about document identity, not shared mutable state. The
+//! feed artifact is immutable and content-addressed ([`FeedManifest`]).
+//! The operator's edit document belongs to the dispatcher and lives here,
+//! not in the GTFS codec.
 //!
-//! Ownership layering (see the project README):
-//!
-//! * the *feed artifact* is immutable and content-addressed — a
-//!   [`FeedManifest`] points at the authoritative one;
-//! * *operator edits* are documents: keyed by id, whole-record,
-//!   last-writer-wins per id, deleted by retirement (tombstone), not
-//!   by mutation.
-//!
-//! Everything here is pure: types plus functions over them. No I/O,
-//! no clocks — callers stamp `updated_at`/`rev` when they mutate.
+//! * An edit record carries exactly one payload: a `Diversion` or a
+//!   `TripCancel` (one instance or all, on one date; D-45, D-101). An
+//!   absent payload is omitted from the bytes.
+//! * Records are keyed by id, whole, last-writer-wins per id, and retired
+//!   (a tombstone), never removed. `merge` is a property-tested
+//!   semilattice. No CRDT, on purpose.
+//! * Pure: callers stamp `updated_at` and `rev`; `submit` takes the host's
+//!   clock.
+//! * `read_document` reads a received document in this build's version,
+//!   dropping and counting records that do not parse or lack exactly one
+//!   payload.
+//! * A revert of the disruptions log writes each record back, or retires
+//!   one the write created, at the next rev and the host's clock, so it
+//!   wins the merge over a copy a page still holds (`revert_record`,
+//!   D-193).
 
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};

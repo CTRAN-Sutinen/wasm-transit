@@ -1,17 +1,34 @@
-//! Planner analysis: the questions a network planner asks, answered
-//! from an authored document on one service date — at the network
-//! level (how much service runs), the route level (span, frequency,
-//! trips), and the stop level (what serves this corner, how often) —
-//! plus coverage against an imported weighted layer — people, jobs,
-//! households, points or polygons ("what share of the jobs does this
-//! network serve? with frequent service? what does a proposal gain
-//! and lose?"; the `coverage` module).
+//! Planner analysis: the questions a network planner asks of an authored
+//! document, at the network, route, and stop level, plus coverage against
+//! a weighted layer (`coverage`). cap-analysis wraps it.
 //!
-//! All of it is computed here, in the artifact, never in a host:
-//! the same numbers everywhere is the point. Stats are best-effort
-//! by design — a document mid-edit can carry broken services, and
-//! analysis must still answer for the parts that work (validation
-//! is the gate that blocks; this never is).
+//! Everything is computed here, never in a host, so every host has the
+//! same numbers. Stats are best-effort: a document mid-edit can carry
+//! broken services, and analysis still answers for the parts that work.
+//! Validation gates; analysis never does.
+//!
+//! Rules other code depends on:
+//!
+//! * A service group is a service combination: the types that run on the
+//!   same dates, shown with those dates and pooled only there. No
+//!   representative day stands in, because pooling types that never run
+//!   together overcounted C-TRAN's trips (2,130 against 1,774). Any rule
+//!   that groups, labels, or ranks combinations ("weekday", "regular") is
+//!   the user's call (D-55).
+//! * Frequencies use the trips' own gaps, never regularized. "Frequent"
+//!   counts departures only, so a terminal where nobody boards is never
+//!   frequent (D-6; `a_terminal_nobody_boards_at_is_never_frequent`).
+//! * Coverage takes any layer of points or polygons with any numeric
+//!   weight and a planner's label, because the system has no opinion on
+//!   what a planner weights (D-47, D-97). A polygon's weight spreads over
+//!   its area on a lattice (D-98), and every answer states its
+//!   resolution. A comparison names its two sides (D-99).
+//! * The worklist's findings are keyed, so a plan reads each as new,
+//!   moved, resolved, or watched against its baseline (D-136). Waits and
+//!   near misses: D-133, D-134; day types: D-137.
+//! * A transfer point is the feed's flag, never inferred (D-10).
+//!
+//! Regression numbers on C-TRAN: tests/regression_test.
 
 use std::collections::{BTreeMap, BTreeSet};
 

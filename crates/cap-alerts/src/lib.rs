@@ -1,24 +1,11 @@
-//! cap-alerts: the service alerts capability.
+//! cap-alerts: what is the agency telling riders? (OPS.md has the ops.)
 //!
-//! One question: **what is the agency telling riders?** The service
-//! alerts document (transit-alerts; D-206) holds the agency's alerts in
-//! the network's ids. Dispatch and the communications staff write them,
-//! and every team reads the one list (D-207).
-//!
-//! - `validate` answers what a write must pass: every refusal, naming
-//!   its alert and problem, or the canonical document and its hash. The
-//!   module is the hash authority; a host stores exactly those bytes.
-//! - `put` and `end` answer the next document, checked as a write is.
-//! - `list` answers the agency's list at a moment.
-//! - `flags` answers what a person is told about alerts that pass: an
-//!   id the network does not have, or a missing translation.
-//! - What no alert explains is cap-disruptions' `gaps` (D-218).
-//! - `validate_templates`, `put_template`, and `fill` are the agency's
-//!   standard language with blanks (D-210).
-//!
-//! The domain code lives in the shared `transit-alerts` library. The
-//! module writes nothing. cap-rt's `encode_alerts` writes the document
-//! as a GTFS-rt Alerts feed.
+//! The seam over transit-alerts (D-206, D-207, D-210). The module is the
+//! hash authority: `validate` answers every refusal or the canonical
+//! document and its hash, and a host stores exactly those bytes. `receive`
+//! writes the alerts log whole (D-228), and an older document comes
+//! forward in the op. What no alert explains is cap-disruptions' `gaps`
+//! (D-218). cap-rt reads and writes the document as an Alerts feed.
 
 #![forbid(unsafe_code)]
 

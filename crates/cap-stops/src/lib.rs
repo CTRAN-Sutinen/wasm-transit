@@ -1,36 +1,21 @@
-//! cap-stops — the stops capability.
+//! cap-stops: what is a stop on a date? (OPS.md has every op.)
 //!
-//! One question: **what is a stop, on a date?** The stops document
-//! (transit-stops; D-153) holds every stop as a list of dated events —
-//! planned, permitted, built, in_service, suspended, moved, changed,
-//! retired — and
-//! nothing in it means "today". `validate` answers what a write must
-//! pass: every refusal, naming its stop, event, and problem, or the
-//! canonical document and its hash (the module is the hash authority;
-//! a host stores exactly those bytes). `stops_on` and `stop` answer
-//! stops as their events make them on a date, over a document the
-//! kernel's `load_stops` registered (refused there unless `validate`
-//! would pass it), and `stops_near` the stops nearest a point on a date
-//! (the field's "which stop am I at?"). `seed` starts a stops document from a network's
-//! stops (transit-stops's `stop_record`), and `add_event` places one
-//! edit and checks it. A pick only reads the document (D-157):
-//! `read_records` gives it each stop's record on its first date, and
-//! `visit_warnings` tells its planner of the stops it visits that are
-//! not in service on its dates. `read_pick` and `export_pick` ask the
-//! same over the pick's own period, which the published plan set gives
-//! (retired picks bound nothing), so no host derives it. GTFS out and in carry the stops'
-//! history (D-150, D-151): `export_versions` gives cap-network's export
-//! one stop per version, and `import_events` records a feed's
-//! differences as events. `questions` answers what a site survey asks
-//! (D-158): the core site questions and amenity names; and
-//! `attribute_surveys` names the signed-in writer as the surveyor of
-//! every survey a write adds (the receive path's, before `validate`).
-//! `receive` writes the stops log whole (D-228): the stops document and
-//! the stop requests document are one log, because one entry can change
-//! a stop and the request it carries out. So the module also links
-//! `transit-requests`, and registers stop requests documents.
-//! The domain code lives in the shared `transit-stops` library; the
-//! module writes nothing.
+//! The seam over transit-stops. Rules that the ops share:
+//!
+//! * The module is the hash authority. `validate` answers every refusal,
+//!   or the canonical document and its hash, and the kernel's
+//!   `load_stops` registers only what `validate` would pass. A host stores
+//!   exactly those bytes.
+//! * A pick only reads the stops document (D-157). The ops that take a
+//!   pick's period derive it from the published plan set, so no host
+//!   does. A plan copies a stop's record (`records`, `take_stops`; D-173)
+//!   and never writes the document.
+//! * GTFS out and in carry the stops' history (D-150, D-151). Amenities,
+//!   site answers, and references are the document's alone.
+//! * `receive` writes the stops log whole (D-197, D-228). The stops and
+//!   the stop requests are one log, because one entry can change a stop
+//!   and the request it carries out, so this module also links
+//!   transit-requests. Surveys are attributed before any check.
 
 #![forbid(unsafe_code)]
 

@@ -1,51 +1,25 @@
 # disruptions
 
 `disruptions` (`src/uis/disruptions/`) answers what is disrupted today,
-and whether an alert explains it (cap-disruptions, D-213, D-218). A bar
-across the top holds the date and clock, the views (Status, Alerts,
-Dispatch),
-whether the times are live, and sign-in. Below it, a panel sits beside
-a large map that is always on screen.
+and whether an alert explains it (cap-disruptions, D-213, D-218), for
+dispatch, communications, and customer service. Its views are Status
+(the day by route), Alerts (the gaps and the agency's alerts), and
+Dispatch (late trips, detours, cancels, and today's notes), beside a map
+that is always on screen.
 
-- **Status**: the search, then each affected route as a card. A search
-  pick narrows the day to one route or one stop (a station with its
-  bays). A route's badge picks the route.
-- **Alerts**: the disruptions no alert explains, each starting an
-  alert, and the agency's alerts in force, upcoming, drafts, and ended.
-- **Dispatch**: the trips late now, the detours, the cancelled trips
-  (from the edit document and the live feed, each as given), and
-  today's notes, newest first.
-- **A disruption opened**: what it is and where it came from, the next
-  trip, whether an alert explains it, the stops it takes away, and its
-  notes, oldest first. A cancelled trip shows its every stop and draws
-  its path as scheduled: the edit document's cancel takes the trip out
-  of the patched day. A note is added or edited there (notes `write`,
-  sent as its intent to `POST /logs/notes`; the server names the writer
-  and the time, and the note keeps the id it was made with).
+- An alert is written beside what riders will see of it (a board
+  preview over rt `encode_alerts` and `live`). Started from a gap, it
+  carries the gap's effect, riders, and what it explains. A template
+  fills its texts (alerts `fill`).
+- Every write (an alert, a note) is sent as its intent to its log. The
+  server names the writer and the time. A `409` means another person
+  changed the same record since the page read it.
+- A cancelled trip still shows every stop and its path as scheduled.
+- Every frame reads one clock: the last poll, or the write's.
 
-An alert is written on half the page, beside what riders see of it
-(AlertReach). The day's map is set aside while it is open. "Starts
-now" tells riders from the moment the alert is saved: the start is
-stamped then. Started from a gap, it carries the gap's effect, the riders it
-informs, and what it explains, and it is told from now with no end. A
-template fills its cause, effect, severity, and texts (alerts `fill`
-over the alert's routes, stops, and dates). Alerts `put` checks it as
-it is edited. Save draft and Publish put it and send the put as its
-intent to `POST /logs/alerts`. A `409` means another person changed the
-same alert since the page read it; a change to another alert does not
-refuse it. End alert ends it at the host's clock (alerts `end`, the time
-in its arguments). Preview shows one stop's board
-with the alert on it (alerts `put`, rt `encode_alerts`, rt `live`,
-board `stop_board`), and downloads the feed's `.pb` file. The list is then read once the
-end's second has passed, because a period holds through its end. Every
-node reads one clock: the page's last poll, or the write's.
-
-The page reads the deployment's network, the edit document (`GET
-/edits`), the stops, the service alerts, and the notes (by the
-manifest's hashes, each read again only when its hash moves), and the
-deployment's live feeds. It polls them and the clock every 30 s while
-it is visible. The view, the pick, and the open disruption live in the
-URL hash. Its questions and session are its `ui.json`.
+It reads the network, edits, stops, alerts, and notes by the manifest's
+hashes (again only when a hash moves) and the live feeds, every 30 s
+while visible. Its inputs and session are its `ui.json`.
 
 Its failure table.
 

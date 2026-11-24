@@ -1,35 +1,29 @@
-//! transit-router — trip planning over the network model.
+//! transit-router: RAPTOR trip planning over the network model's day.
 //!
-//! Implements RAPTOR (Round-Based Public Transit Optimized Routing,
-//! Delling et al. 2012) in its simplest form: given an origin, a
-//! departure time and a service date, compute the earliest arrival at
-//! every stop using at most `k` transit legs, then reconstruct the
-//! itinerary that achieves it — and the same rounds backward in time
-//! for arrive-by: the latest departure that still arrives by a
-//! deadline (by the service day's end when none is given: the last
-//! bus home). An origin or destination is a stop or a place off the
-//! network, named by its walks to the stops near it.
+//! Pure and GTFS-free: it takes the network, a materialized day (plain or
+//! effective, the caller's choice), and optionally the live document. No
+//! I/O, clock, or calendar. [`network`] builds the routing network (an
+//! edited trip rides its own pattern), [`raptor`] runs the rounds,
+//! [`walk_path`] draws walk legs, and [`notice`] is the one place that
+//! tells a rider about a compared plan.
 //!
-//! The crate is deliberately pure: it consumes the network document
-//! plus a MATERIALIZED DAY (the model's own trips — plain or
-//! effective, the caller's composition) and, optionally, the LIVE
-//! document (each trip instance then rides at its predicted times
-//! where the document states them), builds a routing network,
-//! answers queries. No I/O, no clocks, no calendars — times are
-//! seconds since service-day midnight, matching every other seam.
+//! Rules:
 //!
-//! Layout:
-//! * [`network`] — the model's day (+ live predictions) → routing
-//!   network: trip patterns (grouped by actual stop sequence, so
-//!   edited trips ride their own patterns), per-pattern time arrays
-//!   with each visit's delay and headsign, footpath graph.
-//! * [`raptor`] — a plan's ends (stops, places), the round-based
-//!   searches, and itinerary reconstruction (legs carry the route's names, the sign at the
-//!   boarding visit, and which times are predicted).
-//! * [`walk_path`] — where a walk leg runs: through its stops, and
-//!   along the streets from or to a place.
-//! * [`notice`] — what a rider is told about a compared plan (the
-//!   diverted day against the unpatched one).
+//! * With a live document, an instance rides its predicted times where
+//!   stated, clamped so a trip never runs backwards. A cancelled trip or
+//!   a skipped stop is not in the world planned over.
+//! * A plan's end is a stop or a place off the network (named by its walks
+//!   to nearby stops). A direct walk between the ends wins ties (D-33).
+//! * Arrive-by runs the same rounds backward; with no deadline it answers
+//!   the last bus home.
+//! * An itinerary is door to door (D-40, D-92): it leaves at the first
+//!   boarding minus the walk before it, and "leave in N min" is the
+//!   board's `wait` rule. Only `Itinerary::new` derives these, because
+//!   host arithmetic over legs would put an answer outside the module.
+//! * Transfers are straight-line footpaths (300 m at 1.3 m/s) until
+//!   `with_walks` replaces them with exactly a walk table's walks (D-32).
+//! * A plan's legs bound rides, never walks. With its arrival and rides
+//!   fixed, it then walks the least it can (D-35).
 
 pub mod network;
 pub mod notice;

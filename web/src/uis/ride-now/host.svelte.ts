@@ -518,7 +518,7 @@ const request = answerGraph(
         const answer = await ask("board", "watchlist_board", {
           watchlist_hash: watchlist,
           network_hash: network,
-          edits_hash: edits,
+          edits_hash: edits ?? undefined,
           date: today(),
           from_secs: nowSecs(),
           previous: previousDay(),

@@ -1,33 +1,17 @@
-//! cap-migrate — the migration capability.
+//! cap-migrate: what is this older document in the version this build
+//! reads? (OPS.md has the ops.)
 //!
-//! One question: **what is this older document in the version this
-//! build reads?** Every authored kind's chain is kept forever (D-66),
-//! in the library crate that owns the kind — one pure step per version
-//! (`vN → vN+1`), total over valid vN, preserving every record id,
-//! reporting every loss. This module wraps those chains as one op, so
-//! a consumer reads the current version only and never carries an old
-//! chain; a host assembles it only when an older document needs it
-//! (the receive boundaries: the server store, a browser's restore,
-//! `caps-run --load` — docs/FORMATS.md, "Versions").
+//! Every authored kind's chain is kept forever in the library that owns
+//! the kind (D-66): one pure step per version, keeping every record id and
+//! reporting every loss. This module wraps the chains as one op, so a
+//! consumer reads the current version only and refuses any other at load.
+//! A host links it only where an older document arrives: the server's
+//! receive and startup, a browser's restore, `caps-run --load`
+//! (docs/FORMATS.md, "Versions").
 //!
-//! The chains:
-//!
-//! * `network` (transit-network): v1 — every untagged shape, pre-trip
-//!   and pre-alignment included — → v2, tagged.
-//! * `edit_records` (transit-sync): v1, the bare array → v2, the
-//!   tagged document.
-//! * `watchlist` (transit-rider): v1 notes and colors → v2 labels,
-//!   the colors dropped and reported.
-//! * `service_alerts` (transit-alerts): v1 → v2, where `explains` gains
-//!   a trip instance (D-216). Every v1 document is a v2 document.
-//! * `stop_requests` (transit-requests): v1 → v2, where a request's
-//!   `routes` stop being a reference into the network (D-234). Every
-//!   v1 document is a v2 document.
-//!
-//! Migration never destroys: the answer is a NEW document (its own
-//! hash); the caller keeps the old bytes. A document at or past the
-//! target is refused — a newer document is never re-emitted by an
-//! older reader. The module is stateless.
+//! Migration never destroys: the answer is a new document with its own
+//! hash, and the caller keeps the old bytes. A document at or past the
+//! target is refused, so an older reader never writes a newer document.
 
 #![forbid(unsafe_code)]
 

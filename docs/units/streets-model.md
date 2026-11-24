@@ -4,7 +4,7 @@ Streets are model data, not exogenous files. The streets document is
 on the bus like the network: an import reads it from street layers
 (the agency's GIS export, TIGER, OSM), and its identity is the hash of
 the model, never of the file it came from
-(`docs/architecture/crates/transit-streets.md` and cap-streets). The
+(`crates/transit-streets/src/lib.rs` and cap-streets). The
 server publishes it and its walk table, the store keeps both
 (`docs/FORMATS.md`), and ride-now walks them
 (`docs/architecture/generated-uis/ride-now.md`).

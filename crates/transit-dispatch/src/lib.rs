@@ -1,23 +1,48 @@
-//! transit-dispatch — the materialized day's views, in model
-//! vocabulary.
+//! transit-dispatch: the materialized day's views, in model vocabulary.
 //!
-//! The day's questions (when service leaves a stop, what one
-//! vehicle's chain of work is, which vehicles and service keys
-//! are out) are answered over the NETWORK document — never over a
-//! GTFS expansion. The day is [`transit_network::materialize`]
-//! applied to one service date; operator edits (their own
-//! document, transit-sync) PATCH that materialized day. This library
-//! keeps no cache: a day ([`day_of`]) is a pure function of the
-//! network, the edits, and the date. The kernel holds each day that a
-//! capability computes, under [`day_key`] (`cap_abi::kernel::DAY`), so
-//! the capabilities that read one day share one copy. A day is cheap
-//! because it is one day, not a calendar.
+//! The day's questions (what leaves a stop, one vehicle's chain of work,
+//! which vehicles and service keys are out) are answered over the network
+//! document, never a GTFS expansion; an arch gate forbids a GTFS layer.
+//! The day is [`transit_network::materialize`] for one date, patched by
+//! the operator's edits. A day ([`day_of`]) is a pure function of the
+//! network, the edits, and the date. This library keeps no cache; the
+//! kernel holds each day under [`day_key`] (`cap_abi::kernel::DAY`), so
+//! capabilities that read one day share one copy. The `Day` holds the
+//! unpatched day beside the patched one. Times are seconds after the
+//! service-day anchor; past 86400 is after midnight.
 //!
-//! This is shared domain code, off the wire: several capabilities
-//! (the board, the runcut, the calendar, the diversion editor) sit over
-//! the same library. Everything here is pure and total. Times are
-//! seconds after the service-day anchor; values past 86400 are
-//! legitimate after-midnight trips.
+//! Rules other code depends on:
+//!
+//! * Edits act on the day, never the calendar. A cancel takes out one trip
+//!   instance and leaves every other trip whole; its trip must exist and
+//!   run that instance.
+//! * The board is realtime-first and ordered by when the bus leaves. A
+//!   visit the live document cancels or skips is no row (D-73). The
+//!   departures that the day's edits took away are listed as `skipped`,
+//!   with the edit that did it (D-100). A stop with nothing of its own
+//!   pools its walking group.
+//! * [`wait`] is the one rule for a wait: due, then whole minutes under an
+//!   hour, then the clock time.
+//! * The grouped board keeps every group that serves the stop that day,
+//!   in route sort order, then id, then destination. A group with nothing
+//!   left shows its next departure within seven days, each day patched by
+//!   its own edits and never the live feed, because one weekly cycle
+//!   covers every regular pattern (D-42; tests/next_service_law_test).
+//!   The days come through a closure, so the capability chooses where
+//!   they come from.
+//! * The board at a moment (`stop_board_at`) also lists the previous
+//!   date's departures still to leave: a GTFS time past 24:00 belongs to
+//!   the date its trip started. Each date reads its own edits and live
+//!   instances, and every row names its date. The instant counts the
+//!   date's true length (23, 24, or 25 h) (tests/overnight_law_test).
+//! * An alert reaches a departure when every field its scope names
+//!   matches, or when it names the stop and no route or trip. A trip scope
+//!   speaks on its date only. Over a held day it also reaches the skipped
+//!   departures (tests/alert_reach_law_test).
+//! * Where service runs today: a diverted trip's line is the alignment to
+//!   the first kept stop, the traced detour, then the alignment from the
+//!   last kept stop. A skip-only diversion keeps the alignment.
+//! * `layover_remaining_secs` goes negative when a connection is eaten.
 
 pub mod divert;
 pub mod geometry;

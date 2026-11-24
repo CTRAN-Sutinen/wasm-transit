@@ -202,8 +202,8 @@ your report what you updated.
      provisional, with its pins. Mark the ones the user settled as
      Decided, with their answer.
    - When a decided entry is built, its reasoning moves into the Why of
-     its topic (`docs/architecture/<topic>.md`), and the entry keeps
-     the record. A decision is a durable record. Never delete one.
+     its topic (`docs/architecture/<topic>.md`), or into the crate
+     comment where it governs one crate, and the entry keeps the record. A decision is a durable record. Never delete one.
    - Delete fixed findings in `docs/QA-FINDINGS.md`. Reword the ones
      the change answers in part. Update the reference hashes that a
      dogfood session measured again.
@@ -217,7 +217,11 @@ your report what you updated.
    - The justfile: the comment above each recipe that the change
      touches, and the gate comments.
    - The TS bindings (`just types`).
-4. **The comments.** Module and crate doc comments, the API notes in
+4. **The comments.** A crate's `//!` comment is its only description
+   outside the code: what it answers, the rules other code depends on,
+   and why, in one line each with the decision id. It never restates
+   a signature, a field list, or a walkthrough of a function, and it
+   names a law test rather than repeating it. Module and crate doc comments, the API notes in
    law-test headers, and the web glue's comments. A comment that
    describes a retired type, op, field, or address misleads the next
    reader as much as a stale doc does.

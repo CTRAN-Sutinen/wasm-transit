@@ -432,7 +432,9 @@ any code. Delete it when the UI lands.
    the browser on the real feed (`just serve testdata/ctran-gtfs.zip`).
    Check its numbers against the runner session's. Record the session
    in the descriptor's `session` field. Describe the UI in its own file,
-   `generated-uis/<id>.md`, and add its link to "The UIs today". The
+   `generated-uis/<id>.md`: its purpose, the rules its code does not
+   show (with their decision ids), and its failure table, not a tour
+   of its controls, and add its link to "The UIs today". The
    file opens with the line "`<id>` (`src/uis/<id>/`) …", which the
    failure-table gate reads. Give it
    a short plain-language entry in the guide (`docs/guide/apps.md`).
@@ -456,8 +458,8 @@ refuses a UI directory without its page (`vite.config.js`). The picker's spec
 
 ## The UIs today
 
-Each UI has one file in `generated-uis/`: its layout, its host, and its
-failure table. The failure-table gate reads them (`tools/failure-tables.mjs`).
+Each UI has one file in `generated-uis/`: its purpose, the rules its
+code does not show, and its failure table. The failure-table gate reads them (`tools/failure-tables.mjs`).
 
 - [service-design](generated-uis/service-design.md)
 - [service-change](generated-uis/service-change.md)

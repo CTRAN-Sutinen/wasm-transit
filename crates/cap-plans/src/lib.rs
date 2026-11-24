@@ -1,23 +1,19 @@
-//! cap-plans — the plan-chain capability.
+//! cap-plans: which service plan governs a date? (OPS.md has the ops.)
 //!
-//! One question: **which service plan governs a date?** — over the
-//! plan set a planner holds (resolve / validate / periods) and over
-//! the PUBLISHED plan set the server's plans log holds (publish and
-//! adopt answer its next canonical document; in_force answers the pick
-//! and network a client loads; in_use answers the picks whose networks
-//! the server brings forward at startup). The plans log also holds the
-//! frozen versions (freeze, D-191); log_records and log_document turn
-//! both documents into the log's records and back. A pick written
-//! to the plans log is checked here too (`pick`, D-237): the network's
-//! publish check (transit-network), and the stops it reads on its
-//! first date (transit-stops), in the same op as the entry. The domain
-//! code (resolution, governing periods, chain validity) lives in the
-//! shared `transit-plans` library — the cross-document counterpart
-//! of transit-sync's merge; this module is the seam. The plan set
-//! comes inline: the host owns it (a JS-owned document) and pushes
-//! its distilled metadata per call, and the chain is derived on every
-//! answer, never stored. A pick's network and the stops document
-//! register on the kernel's loads.
+//! The seam over transit-plans. The host owns the plan set and pushes its
+//! metadata on each call; the chain is derived on every answer, never
+//! stored. The server's plans log holds the published plan set and the
+//! frozen versions (D-191), and `publish` answers canonical bytes the
+//! server stores as given.
+//!
+//! * `pick` is the server's whole write of a pick, in one op (D-237): the
+//!   network's publish check (as cap-network's `publishable`), the stops
+//!   it reads on its first date, the freeze, and the adoption. So this
+//!   module also links transit-network and transit-stops, and their
+//!   documents register on the kernel's loads.
+//! * `receive` writes the plans log whole (D-228). A publish is a freeze
+//!   and an adoption in one call.
+//! * Ops that judge "today" take the host's date.
 
 #![forbid(unsafe_code)]
 

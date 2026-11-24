@@ -65,13 +65,13 @@ you updated.
 |---|---|
 | The three architecture laws | `crates/AGENTS.md` (arch gates in `just test` enforce them) |
 | Architecture, one file for each topic | `docs/architecture/` (its README indexes them) |
-| A library | its `//!` crate comment, and `docs/architecture/crates/<crate>.md` (indexed in `crates.md`) |
-| A capability | `crates/cap-<id>/OPS.md` (`node tools/caps-run.mjs tools <id>` prints it), and `docs/architecture/crates/cap-<id>.md` where it has more |
+| A library | its `//!` crate comment |
+| A capability | `crates/cap-<id>/OPS.md` (`node tools/caps-run.mjs tools <id>` prints it), and its `//!` crate comment |
 | cap-abi, the modules, the assemblies | `docs/architecture/bus.md`, `docs/architecture/registry.md` |
 | The document kinds and formats at rest | `crates/cap-abi/src/kinds.rs`, `docs/FORMATS.md` |
 | The server and the capabilities it hosts | `docs/architecture/server.md` |
 | The HTTP contract (each route's bodies and answers) | `server/openapi.json`, held to the server by Go tests |
-| The web and the generated UIs | `docs/architecture/web.md`, `docs/architecture/generated-uis.md` (one file for each UI in `generated-uis/`) |
+| The web and the generated UIs | `docs/architecture/web.md`, `docs/architecture/generated-uis.md` (one file for each UI in `generated-uis/`: its purpose, its rules, and its failure table) |
 | Writing, traceability, gotchas, the sweep | `docs/CONVENTIONS.md` |
 | Testing and dogfood QA | `docs/TESTING.md` |
 | Each recipe | the comment above it in the justfile |

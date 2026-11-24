@@ -1,16 +1,16 @@
-//! The one distance between two coordinates (D-250;
-//! `docs/architecture/crates/transit-geo.md`).
+//! The one distance between two coordinates (D-250). It depends on no other
+//! crate, so any library can use it.
 //!
-//! - [`distance_m`] is the great-circle distance in meters on a sphere
-//!   of the mean earth radius (haversine). Every library that reports a
-//!   distance or compares one with a radius uses it, so two answers
-//!   about the same two points agree.
+//! - [`distance_m`] is the great-circle distance in meters on a sphere of
+//!   the mean earth radius, 6,371,000 m (haversine). Every library that
+//!   reports a distance or compares one with a radius uses it, so two
+//!   answers about the same two points agree. It ends in `2·asin(√a)`, as
+//!   the libraries that used it before wrote it, so their answers keep the
+//!   same bytes.
 //! - [`METERS_PER_DEGREE`] and [`meters_per_degree_lon`] are the local
-//!   frame on the same sphere: for code that must work in flat
-//!   coordinates (a grid, a projection onto a segment, an area). Within
-//!   5 km, the frame agrees with [`distance_m`] to 0.1%.
-//!
-//! The crate depends on no other crate, so any library can use it.
+//!   frame on the same sphere, for code that must work in flat coordinates
+//!   (a projection onto a segment, a grid, an area). Within 5 km it agrees
+//!   with [`distance_m`] to 0.1%.
 
 /// The mean earth radius in meters.
 pub const EARTH_RADIUS_M: f64 = 6_371_000.0;

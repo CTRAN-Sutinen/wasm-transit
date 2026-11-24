@@ -1,8 +1,9 @@
 # Architecture reference
 
 This directory is the architecture reference. It has one file for each
-topic, and each topic has only one home. The detail for each crate, the
-server, the web, and the bus is here and in no other place.
+topic, and each topic has only one home. The detail for the server, the
+web, and the bus is here and in no other place. A crate's detail is its
+own `//!` crate comment.
 
 Related documents:
 
@@ -24,7 +25,7 @@ Related documents:
 | File | What it covers |
 |---|---|
 | [agency-data.md](agency-data.md) | Who owns the data (the agency). Applications are interfaces. Reads are open, and the receive path governs writes. |
-| [crates.md](crates.md) | The index of the crates, from the bottom up. Each library, and each capability with detail beyond its `OPS.md`, has one file in `crates/`, with its Why |
+| [crates.md](crates.md) | Where a crate is described: its own `//!` crate comment, and a capability's `OPS.md` |
 | [bus.md](bus.md) | The capability bus: one module interface, documents named by hash, linked assemblies, and the rules the bus depends on |
 | [hosts.md](hosts.md) | What a host is (an upstream, a working copy, the modules, a clock), the rules every host keeps, and the three ways the hosts differ |
 | [server.md](server.md) | The Go host: its routes, the documents it publishes, sign-in, and publishing picks |

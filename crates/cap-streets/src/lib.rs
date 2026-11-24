@@ -1,26 +1,19 @@
-//! cap-streets — the street-graph capability module.
+//! cap-streets: where along the streets? (OPS.md has the ops.)
 //!
-//! One question: where along the streets? Snap a point to the nearest
-//! street, route between two positions along the graph — so a traced
-//! detour, or a pattern drawn the same way, is STREET GEOMETRY, never
-//! freehand chords — and how long a rider walks along them: between
-//! a network's stops (the walk table the router plans transfers
-//! over), and from any point to the stops near it (the ends of a trip
-//! from anywhere). A route names the streets it follows, and the bus
-//! profile's streets to confirm (D-26). The domain code lives in the shared
-//! `transit-streets` library (the streets document, its import, the
-//! graph).
+//! The seam over transit-streets: snap, route along the graph (so a traced
+//! detour or a drawn pattern is street geometry), and walks between a
+//! network's stops or from a point to the stops near it (D-26 for the bus
+//! profile).
 //!
-//! The streets document is the HOST's, like every document. `import`
-//! reads a street layer (GeoJSON lines) into the canonical document,
-//! registers it, and answers it with its hash; the kernel's
-//! `load_streets` registers a document the host already holds. THE
-//! MODULE IS THE HASH AUTHORITY: the hash is the canonical document's,
-//! so the same streets from another file are the same hash. Every
-//! query addresses it. The graphs over a document (the street graph
-//! for snap and route, the walking graph for walks) are derived
-//! entries, built on first use (`cap_abi::kernel::STREET_GRAPH`,
-//! `WALK_GRAPH`). The module writes nothing.
+//! * The streets document is the host's. The module is the hash
+//!   authority: the hash is the canonical document's, so the same streets
+//!   from another file are one hash, and `load_streets` refuses a
+//!   document that is not canonical.
+//! * The street graph and the walking graph are derived entries
+//!   (`cap_abi::kernel::STREET_GRAPH`, `WALK_GRAPH`), each built on first
+//!   use, so a host that only walks never builds the street graph.
+//! * `route` answers empty across a gap in the graph, and the caller
+//!   falls back to a straight line.
 
 #![forbid(unsafe_code)]
 

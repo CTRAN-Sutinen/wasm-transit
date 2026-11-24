@@ -1,37 +1,18 @@
-//! cap-runcut — the runcut capability.
+//! cap-runcut: what does this vehicle do today? (OPS.md has the ops.)
 //!
-//! One question: **what does this vehicle do today?** — at three
-//! granularities: the day's blocks LIST (which vehicles are out —
-//! the index facet), one block's authored CHAIN with the layover
-//! ripple (the detail facet), and one trip instance's EFFECTIVE
-//! stops on the date (the trip detail the map's click-through
-//! reads). Blocks and layovers are
-//! model state GTFS never had: the runcut is authored, and a
-//! diverted trip ending later eats into the vehicle's next
-//! layover, as does a trip the live document predicts ends late —
-//! the connection-health ripple is IN the answer.
+//! The seam over transit-dispatch and transit-runs. It reads the same
+//! documents and the same held day as cap-board, plus the `work_rules`
+//! kind; no GTFS expansion, and the arch gate forbids a GTFS layer.
 //!
-//! Every answer is one MATERIALIZED DAY — `materialize(net,
-//! date)`, patched with the edits in force on that date: the kernel's
-//! held day (this crate's `day`: `transit_dispatch::day_of`, held under `cap_abi::kernel::DAY`); no GTFS expansion. The domain
-//! code lives in the shared transit-dispatch library; this module is
-//! the seam.
-//!
-//! The documents it reads are the kernel's, registered by its loads
-//! and content-addressed like everywhere on the bus:
-//! * **network** — the same identity cap-network's import produces
-//!   and cap-analysis consumes (the module is the hash authority);
-//! * **edits** — the operator edit document, wholesale-replaced by
-//!   the host;
-//! * **live** — cap-rt's live document (the snapshot in model
-//!   vocabulary), which the chain's ripple reads;
-//! * **work_rules** — the rules work is cut under (transit-runs): the
-//!   recovery a wait requires and the route pairs a vehicle may
-//!   interline, which the recovery view and the suggested blocking
-//!   read. Blocking is where cutting the work begins (D-46): the
-//!   suggestion answers which vehicles the trips no block carries
-//!   need, as blocks the planner adopts (author `apply` over its
-//!   edits) or edits.
+//! * Blocks and layovers are authored model state that GTFS never had. A
+//!   diverted trip that ends later eats into the vehicle's next layover,
+//!   and a trip the live document predicts ends late does too; that
+//!   prediction wins over the edits' ripple (D-18).
+//! * A block whose every trip is skipped or cannot be represented is not
+//!   offered: the hole shows as a hole.
+//! * Blocking is where cutting the work begins (D-46): `recovery` and
+//!   `suggest_blocks` answer under the work rules, and author `apply`
+//!   adopts the suggestion's edits.
 
 #![forbid(unsafe_code)]
 

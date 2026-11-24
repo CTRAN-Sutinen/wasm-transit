@@ -1,18 +1,30 @@
-//! The streets model: the street network as a document, its import,
-//! and the routing graph over it.
+//! The streets model: the street network as a document, its import, and
+//! the routing graph over it. Open work: docs/units/streets-model.md.
 //!
-//! The document ([`Streets`], `model.rs`) is the model; a street
-//! layer (an agency GIS export, TIGER, OSM — GeoJSON lines) is a
-//! serialization read into it by [`geojson::import`] at the boundary.
-//! The graph ([`StreetNetwork`]) is built from the document, and its
-//! queries answer the needs that run on streets: a detour traced
-//! between waypoints, a pattern drawn the same way, the distance by
-//! road. A trace ROUTES along the streets, so committed geometry is
-//! street geometry, never freehand chords.
+//! The document ([`Streets`]) is the model. A street layer (an agency GIS
+//! export, TIGER, or OSM, as GeoJSON lines) is a serialization read by
+//! [`geojson::import`]; no other code reads a layer's properties. Which
+//! source a deployment loads is its choice: an agency's roads give
+//! scheduling parity, OSM gives sidewalks (D-25). Pure: cap-streets
+//! registers documents by hash, and hosts keep them.
 //!
-//! Pure and stateless: no I/O, no clock, no shared state — the
-//! cap-streets capability registers documents under their content
-//! hash, hosts keep the documents.
+//! * The document is canonical (two-ways in canonical direction, ways
+//!   sorted and unique), so its hash is the streets', not a file's.
+//! * Classes come from `CFCC`, `MTFCC`, or OSM `highway`, and leave out
+//!   lines that are not streets (D-30, D-103).
+//! * A snapped address is valid for one streets hash, so a trace commits
+//!   geometry, never an address, and a network never depends on a streets
+//!   document. A trace routes along streets, never freehand chords.
+//!   Routing is one-way aware; turn restrictions wait for data.
+//! * A bus may be drawn on any class and is never refused. Unknown and
+//!   path-like classes are named for a planner to confirm, because a
+//!   planner judges a grey-area road and the data cannot (D-26).
+//! * Walking allows every class but motorway, ramp, and unknown, and
+//!   ignores one-way. Default 1.3 m/s, at most ten minutes. Walks are
+//!   symmetric. The walk table is derived from a streets document and a
+//!   network and names both hashes. A point walks as a stop there would
+//!   (`walks_from`). Walking quality is the source's: C-TRAN's roads
+//!   cannot carry it (QAF-85).
 
 pub mod bus;
 pub mod geojson;

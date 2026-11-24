@@ -1,5 +1,5 @@
 //! The previous service day's after-midnight trips
-//! (docs/architecture/crates/cap-board.md). GTFS times past 24:00 belong to the service
+//! (crates/cap-board/src/lib.rs). GTFS times past 24:00 belong to the service
 //! date the trip started on: at 00:30 on Saturday, Friday's 24:45
 //! departure leaves in 15 minutes. A board answers its date and, when
 //! the host gives the same instant on the previous date's clock

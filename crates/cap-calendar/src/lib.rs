@@ -1,25 +1,14 @@
-//! cap-calendar — the calendar capability.
+//! cap-calendar: which service keys run on a date, and its reverse, on
+//! which dates one service type runs (OPS.md has the ops).
 //!
-//! One question: **which service keys run on this date?** — often
-//! several at once (a regular pattern plus an exception-added
-//! service) — and its reverse, **when does one service type
-//! run?**. Both answers come from the EFFECTIVE day, not the
-//! calendar rules alone: a key whose every trip is skipped by
-//! edits (or was never representable in the model) is not running,
-//! however its calendar reads — the same honesty as the runcut
-//! view's empty hole.
-//!
-//! The day is `materialize(net, date)`, patched with the edits in
-//! force on that date — the kernel's held day
-//! (this crate's `day`: `transit_dispatch::day_of`, held under `cap_abi::kernel::DAY`); no GTFS expansion. The domain code lives
-//! in the shared transit-dispatch library; this module is the seam.
-//!
-//! The documents it reads are the kernel's, registered by its loads
-//! and content-addressed like everywhere on the bus:
-//! * **network** — the same identity cap-network's import produces
-//!   and cap-analysis consumes (the module is the hash authority);
-//! * **edits** — the operator edit document, wholesale-replaced by
-//!   the host.
+//! Both answers read the effective day, not the calendar rules: the
+//! network materialized for the date and patched by the edits in force
+//! (the kernel's held day, `transit_dispatch::day_of` under
+//! `cap_abi::kernel::DAY`). A key whose every trip is skipped or cannot be
+//! represented is not running, whatever its calendar says; the runcut
+//! view's hole keeps the same rule. It reads the same documents and day as
+//! cap-board. There is no GTFS expansion here, and the arch gate forbids a
+//! GTFS layer.
 
 #![forbid(unsafe_code)]
 

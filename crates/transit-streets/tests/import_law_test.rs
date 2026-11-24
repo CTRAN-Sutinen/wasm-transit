@@ -1,7 +1,7 @@
 //! The streets import laws: a street layer (GeoJSON lines) in, the
 //! canonical streets document out.
 //!
-//! The intent they encode (docs/architecture/crates/transit-streets.md):
+//! The intent they encode (crates/transit-streets/src/lib.rs):
 //!
 //! * **Streets are a model, not a file.** The document's identity is
 //!   the streets, so what does not change the streets does not change

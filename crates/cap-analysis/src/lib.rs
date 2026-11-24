@@ -1,19 +1,12 @@
-//! cap-analysis — the analysis capability module: what do the numbers
-//! of an authored network say?
+//! cap-analysis: what do an authored network's numbers say? (OPS.md has
+//! the ops.)
 //!
-//! The analysis functions (network stats, service-type overview and
-//! detail, coverage of a weighted layer) live in `transit-analysis`,
-//! shared as a library under this module.
-//!
-//! The documents it reads are the kernel's, content-addressed like
-//! everywhere on the bus: an authored network (the JSON document)
-//! under its canonical hash, a weighted layer under the hash of its
-//! bytes (the kernel's `load_layer` answers its features and the
-//! numeric fields it can be read by; a coverage op names the field and
-//! the planner's label), and every op addresses them
-//! by hash — never by carrying the whole document per request.
-//! Composition is through documents: a network produced by the network
-//! capability is read here by the SAME hash the producer returned.
+//! The seam over transit-analysis. It reads the kernel's networks (by
+//! canonical hash) and weighted layers (by the hash of their bytes).
+//! `load_layer` answers a layer's features and the numeric fields it can
+//! be read by, and a coverage op names the field and the planner's label
+//! (D-97). A network another capability made is read by the same hash its
+//! maker returned.
 
 #![forbid(unsafe_code)]
 

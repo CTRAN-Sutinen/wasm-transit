@@ -194,9 +194,8 @@ capability crate ("Bus rules", below). Two Node checks also run:
 
 ## The capabilities
 
-Each capability is described by its `OPS.md`. A capability with more
-detail than that has one file in `crates/`, and [crates.md](crates.md)
-lists them.
+Each capability is described by its `OPS.md`, and by its `//!` crate
+comment for the rules its ops share ([crates.md](crates.md)).
 
 ## Bus rules
 

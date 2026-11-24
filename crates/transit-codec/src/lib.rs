@@ -1,42 +1,45 @@
-//! transit-codec — the network codec, as a shared library.
+//! transit-codec: GTFS to the network and back, over the whole GTFS
+//! Schedule spec.
 //!
-//! GTFS ⇄ network: [`import`] reads a whole-spec [`Feed`] into an
-//! authored network document (the planner's bootstrap), and
-//! [`export`] writes a document back as a feed (the publish path).
-//! The cap-network module dispatches through it — the same codec,
-//! gated once. GTFS-the-format stays out of transit-network by
-//! design; this crate is the only place the two meet.
+//! [`import`] reads a whole-spec [`Feed`] into an authored network
+//! document (the planner's start), and [`export`] writes it back (the
+//! publish path). cap-network wraps it. This crate is the only place GTFS
+//! and transit-network meet. `Feed` keeps every file and column as the
+//! text the feed carried, and writes deterministic zip bytes.
 //!
-//! The trip is the unit both ways: a feed's trips ARE the network's
-//! trips — the agency's ids, every scheduled time, frequency trips as
-//! frequency trips, block membership by trip. Patterns are stop
-//! sequences along an alignment (route, direction, stops, exactness
-//! flags, shape); how long a trip takes is the trip's own business.
+//! The mapping:
 //!
-//! What a document cannot hold and the feed's own bytes need lives
-//! in the [`Boundary`] — the import's serialization residue (the
-//! feed's stop_sequence and shape_pt_sequence numbering, a frequency
-//! trip's stop_times base). An authored document exports with `Boundary::default()`.
+//! * A feed's trips are the network's trips: the agency's ids, every time
+//!   exactly (offsets from the first arrival), frequency trips as
+//!   frequency trips, blocks by trip. A shape is an alignment under its
+//!   own id, run or not.
+//! * A pattern is one (route, direction, stops, exactness, shape, and what
+//!   each stop row says). A row is exact when it has both times and does
+//!   not say `timepoint=0`. A row that is not a stop at a time makes a
+//!   demand-responsive trip. Everything else reads into its model home
+//!   and writes back value for value (`extras`, `values`).
+//! * The [`Boundary`] is what the bytes need and the document cannot hold:
+//!   sequence numbering, a frequency trip's base, a made agency id, which
+//!   file names a fare network, and services written as dates. An
+//!   authored document exports with `Boundary::default()`.
+//! * A service id is a service type: its calendar row and its exceptions.
+//!   A service written as dates alone (C-TRAN's whole calendar) imports
+//!   as the weekly rule its dates read as, because otherwise a fork would
+//!   carry nothing. A weekday qualifies at 4+ dates and three quarters of
+//!   its occurrences; the dates stay exact through added and removed
+//!   exceptions, and the export writes dates again, after a fork too
+//!   (D-105, D-111; [`read_weekly_rule`]; tests/dated_calendar_law_test).
+//! * Each pattern gets one all-day profile from its earliest trip; each
+//!   layover is the observed gap. The planner re-authors from there.
+//! * `direction_id` becomes the route's directions, named by the commonest
+//!   headsign. The export invents no headsign.
+//! * A transfer point is the feed's own flag; nothing infers one.
+//! * What the model cannot hold is an `ImportNote`, never silence.
 //!
-//! Conventions of the mapping:
-//!
-//! * a GTFS service_id is a service type id, its calendar row the
-//!   rule's weekday flags and range, its calendar_dates rows the
-//!   rule's exceptions — except a service published as dates alone
-//!   (no weekday flagged, every row an added date), whose weekly rule
-//!   is read out of its dates where one reads (D-105, D-111:
-//!   [`read_weekly_rule`]) and which exports as dates again;
-//! * a trip's times are offsets from its first arrival: a one-start
-//!   trip starts there, a frequency trip's instances start on its
-//!   bands;
-//! * a stop row is exact (the pattern's timepoint) when it carries
-//!   both times and does not say `timepoint=0`;
-//! * a shape is an alignment under its own id (every shape, run or
-//!   not, with its published distances), and a trip's `shape_id` is
-//!   the alignment its pattern runs;
-//! * transfer-point flags come from transfers.txt (a stop named by a
-//!   possible transfer, where at least two routes meet) and do not
-//!   cross back (GTFS declares transfers pairwise).
+//! Laws: the import is valid over spec-valid feeds (import_prop_test),
+//! keeps the trips (trip_import_law_test), `import ∘ export` is a fixpoint
+//! (codec_prop_test), and the whole spec round-trips one law per file
+//! (spec_round_trip_test). C-TRAN regressions: import_regression_test.
 
 pub mod feed;
 pub use feed::{base64_encode, Feed, FeedError, FeedInfo, FeedSummary};

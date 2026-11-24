@@ -1,26 +1,27 @@
-//! The stop requests document (D-159).
+//! The stop requests document (D-159), at version 2 (D-234; the chain from
+//! v1 is in `version`). cap-requests is the seam, and it depends on no
+//! other model crate.
 //!
-//! The planning team's submissions for work at a stop — C-TRAN's Bus
-//! Stop Sign & Shelter Installation Worksheet: a new stop, a reinstall,
-//! a relocation or removal, a repair or improvement, a temporary stop.
-//! A request is not a work order: it is the agency's own record, and it
-//! tracks the work order the agency's work order system opens for it
-//! (its system, id, link, and status as last read). Each request is a
-//! record by id, changed by replacing it whole ([`StopRequests::put`]);
-//! nothing is deleted — a request that will not go ahead is
-//! `cancelled`, the tombstone.
+//! A request is the planning team's submission for work at a stop: C-TRAN's
+//! Bus Stop Sign & Shelter Installation Worksheet. It is its own record,
+//! not an event on the stop, because the work has its own life (drafted,
+//! submitted, ordered, completed, `cancelled` as the tombstone) and is not
+//! a fact about the stop. Records change whole by id
+//! ([`StopRequests::put`]); nothing is deleted.
 //!
-//! A request concerns one stop, by the stops document's lasting id
-//! (a new stop's id once it is planned); the stop's own life stays the
-//! stops document's (D-157), whose `built`, `moved`, or `retired` event
-//! names the request it came from. A new stop's intended routes and
-//! direction are the request's: no schedule serves it yet.
-//!
-//! [`StopRequests::checked`] is what a write must pass, refusing only
-//! what makes a request wrong (D-152), each refusal naming its request.
-//! A document that passes is canonical as it stands — requests by id —
-//! and what this repo does not know is kept through a read and a write.
-//! This crate depends on no other model crate.
+//! * A request is not a work order. It tracks the work order the agency's
+//!   system opens (system, id, link, status as last read), shown as given
+//!   and never decided here.
+//! * Fields are the worksheet's, free where it is free (the utilities are
+//!   the agency's own list). [`StopRequests::checked`] refuses only what
+//!   makes a request wrong (D-152).
+//! * A new stop's intended routes and direction are the request's, as
+//!   names, because no schedule serves the stop yet.
+//! * A request names its stop, and the stop's event names the request it
+//!   carries out. Both live in the stops log, so completing a request and
+//!   adding its stop's event is one entry (D-197). The existence check
+//!   judges both references (docs/FORMATS.md, "References").
+//! * A passing document is canonical as it stands; unknown fields are kept.
 
 #![forbid(unsafe_code)]
 

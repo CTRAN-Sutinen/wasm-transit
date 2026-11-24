@@ -30,6 +30,8 @@ Each row has these fields:
 
 A trip's final visit is an arrival, never a row.
 
+Every board op takes `previous`: the previous date at the same instant, from the host's clock. With it, the op also answers that date's after-midnight departures that have not left, and each such row names its date.
+
 `wait` has three forms:
 
 - Due, under a minute.

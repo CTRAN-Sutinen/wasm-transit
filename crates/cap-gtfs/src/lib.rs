@@ -1,20 +1,12 @@
-//! cap-gtfs — the GTFS capability module.
+//! cap-gtfs: the feed document's own question, its identity
+//! (`feed_info`; OPS.md has the op).
 //!
-//! One subject: the FEED document. The kernel registers a GTFS
-//! static zip under the CONTENT HASH of its bytes (`load_feed`, which
-//! answers what the feed contains at a glance — its summary); this
-//! capability answers the feed's own question: its identity
-//! (`feed_info.txt` — version, publisher). It has no ops that author
-//! anything — "only planners write networks, everything else
-//! imports" is enforced by the Request enum, not by convention — and
-//! no day views, no pickers, no names join: those are MODEL questions
-//! and answer over the NETWORK document (cap-board / cap-runcut /
-//! cap-calendar for the day, cap-directory for what exists — the
-//! bus's one-answer law: a duplicate feed-side answer is deleted, not
-//! kept).
-//!
-//! The TS types that cross the boundary are generated into
-//! `types/cap_gtfs/`.
+//! The kernel registers a GTFS zip under the hash of its bytes
+//! (`load_feed`, which answers its summary). This capability authors
+//! nothing; the `Request` enum holds that. Day views, pickers, and the
+//! names join answer over the network document in other capabilities,
+//! because the bus has one answer for each question. Its charter is
+//! closed: parse and give the identity over transit-codec's `Feed`.
 
 #![forbid(unsafe_code)]
 
