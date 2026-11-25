@@ -22,8 +22,13 @@ use crate::Linked;
 
 use cap_abi::kernel::Load;
 
-fn lanes(caps: &[Linked], id: &str) -> (fn(&str) -> String, fn(u32, &[u8]) -> String) {
-    let linked = caps.iter().find(|c| c.declared.id == id).unwrap_or_else(|| panic!("capability {id} is not linked"));
+/// The one capability that answers the op and declares the kind.
+fn lanes(caps: &[Linked], op: &str, reads: &str) -> (fn(&str) -> String, fn(u32, &[u8]) -> String) {
+    let found: Vec<&Linked> = caps
+        .iter()
+        .filter(|c| c.declared.ops.iter().any(|o| o == op) && c.declared.documents.contains(&reads))
+        .collect();
+    let [linked] = found[..] else { panic!("{} capabilities answer {op} over a {reads}, not one", found.len()) };
     (linked.declared.invoke, linked.declared.invoke_bytes)
 }
 
@@ -56,7 +61,8 @@ pub fn real_output(caps: &[Linked]) {
     let mut promised = std::collections::BTreeMap::<String, String>::new();
     for cap in manifest["capabilities"].as_array().unwrap() {
         let id = cap["id"].as_str().unwrap();
-        let (invoke, invoke_bytes) = lanes(caps, id);
+        let linked = caps.iter().find(|c| c.declared.id == id).unwrap_or_else(|| panic!("capability {id} is not linked"));
+        let (invoke, invoke_bytes) = (linked.declared.invoke, linked.declared.invoke_bytes);
         let reads: Vec<&str> = cap["documents"].as_array().map(|d| d.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
         for (name, kind) in &loads {
             let load = manifest["kernel_ops"].as_array().unwrap().iter().find(|op| op["name"] == *name);
@@ -120,8 +126,8 @@ pub fn soak(caps: &[Linked]) {
     };
     let zip = std::fs::read(&feed).unwrap_or_else(|e| panic!("{feed}: {e}"));
     let locks = Locks::read();
-    let (network, network_bytes) = lanes(caps, "network");
-    let (plans, _) = lanes(caps, "plans");
+    let (network, network_bytes) = lanes(caps, "import", "feed");
+    let (plans, _) = lanes(caps, "publish", "network");
 
     let loaded = ok(network_bytes(transit_codec::Feed::CODE, &zip), "load the feed");
     let import = ok(network(&json!({"op": "import", "feed_hash": loaded["feed_hash"]}).to_string()), "import");
@@ -141,7 +147,7 @@ pub fn soak(caps: &[Linked]) {
 
     let mut failures = Vec::new();
     let mut checked = Vec::new();
-    for (what, answer) in [("network.import", &import), ("plans.publish", &publish)] {
+    for (what, answer) in [("import", &import), ("publish", &publish)] {
         for (key, problems) in locks.check(answer) {
             if !problems.is_empty() {
                 failures.push(format!("{what}: its {key} document does not match its schema: {}", problems.join("; ")));

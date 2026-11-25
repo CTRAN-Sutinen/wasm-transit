@@ -207,6 +207,11 @@
         "op": "validate",
         "answer": "stops_hash"
       },
+      "pick": {
+        "seq": "stops_seq",
+        "export": "export_pick"
+      },
+      "feed_events": "import_events",
       "receive": "stops",
       "module": "stops",
       "validate": "validate",
@@ -638,7 +643,7 @@
       "versions": [
         {
           "version": 1,
-          "schema": "sha256:b11c729a662455ff551fc0fc456683e2474216539fff1357a7872c231783c803"
+          "schema": "sha256:c1088c1af8d7abffcb6319cb3db9ead16ab6f443a497f5ee73063543d2dcea29"
         }
       ],
       "write": "server",

@@ -97,7 +97,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [names-declared-once.md](names-declared-once.md) | each capability and kind named once: a gate on identifiers holds it (blocked: D-254) |
+| [names-declared-once.md](names-declared-once.md) | each capability and kind named once: the test capability and test kind that prove a new one changes no other file |
 | [shapes-from-rust.md](shapes-from-rust.md) | every answer's shape from its Rust type: the answer schemas, coded refusals that no host matches by text, and the HTTP contract generated with its prose in one overlay |
 | [reference-rules.md](reference-rules.md) | the rules between records: each reference's rule at both ends, and the transitions that pin or warn |
 | [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are one clean `just e2e` run, the findings it closes, and the release gates |

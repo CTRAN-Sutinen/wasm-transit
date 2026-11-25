@@ -515,7 +515,7 @@ mod tests {
         // The kernel does not take out the load of a kind that the
         // capability does not read.
         assert_eq!(ok(invoke(&[&A], r#"{"op":"load_watch","document":{}}"#))["cap"], "a");
-        let missing = invoke(&[&B], r#"{"op":"load_watch","stops":[]}"#);
+        let missing = invoke(&[&B], r#"{"op":"load_watch","pages":[]}"#);
         assert!(missing.contains("missing field `document`"), "{missing}");
         let about = ok(invoke_bytes(&[&A, &B], OP_ABOUT, b""));
         assert_eq!(about["capabilities"][1], serde_json::json!({ "id": "b", "documents": ["fence", "watch"] }));

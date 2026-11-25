@@ -5,7 +5,7 @@
 #[path = "../src/bin/common/gates.rs"]
 mod gates;
 
-use gates::{capability_name_violations, dependency_violations, kernel_closure_violations, state_violations, unsafe_violation, Package};
+use gates::{capability_name_violations, dependency_violations, kernel_closure_violations, kind_name_violations, routed_kinds, state_violations, unsafe_violation, Package};
 
 fn package(name: &str, deps: &[&str]) -> Package {
     let deps: Vec<String> = deps.iter().map(|d| d.to_string()).collect();
@@ -210,4 +210,25 @@ fn a_list_that_names_a_capability_fails() {
     let found = capability_name_violations("crates/cap-abi/Cargo.toml", toml, &ids);
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].contains("cap-board"), "{found:?}");
+}
+
+// Gate 6 (D-254): a kind with a `post` route or a `work_order` is named
+// nowhere in the plumbing, by its name in a literal, its load op, or its
+// hash fields. A kind the server serves on a route of its own is not
+// gated, and neither is a comment.
+#[test]
+fn the_plumbing_names_no_routed_kind() {
+    let table = serde_json::json!({"kinds": [
+        {"store_kind": "notes", "tag": "notes", "post": {"path": "/notes", "op": "write", "answer": "notes_hash"}, "load": {"op": "load_notes", "code": 274}},
+        {"store_kind": "stop_requests", "tag": "stop_requests", "work_order": {"method": "POST", "path": "/x", "call": "c", "record": "r"}, "load": {"op": "load_stop_requests", "code": 271}},
+        {"store_kind": "network_document", "tag": "network", "load": {"op": "load_network", "code": 256}},
+    ]});
+    let routed = routed_kinds(&table);
+    assert_eq!(routed.len(), 2, "{routed:?}");
+    let clean = "head := s.store.Head(\"network\")\n// the notes log, the stop_requests document, load_notes\nx := e.StoreKind";
+    assert_eq!(kind_name_violations("server/x.go", clean, &routed), Vec::<String>::new());
+    let broken = "l := s.keptLogOf(\"notes\")\nh := loaded.notes_hash\ncode := op(\"load_stop_requests\")\nk := `stop_requests`";
+    let found = kind_name_violations("server/x.go", broken, &routed);
+    assert_eq!(found.len(), 4, "{found:?}");
+    assert!(found[0].contains("the notes kind") && found[3].contains("the stop_requests kind"), "{found:?}");
 }

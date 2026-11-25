@@ -101,10 +101,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the kind table names no log for "+e.StoreKind, http.StatusNotFound)
 		return
 	}
-	hashField := e.StoreKind + "_hash"
-	if e.Post != nil {
-		hashField = e.Post.Answer
-	}
+	hashField := e.hashField()
 	_, doc, found, err := s.keptHead(e.StoreKind)
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)

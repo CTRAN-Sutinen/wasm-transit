@@ -50,7 +50,7 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
     use cap_abi::kernel::{self, kind, loader, Cap};
     use cap_abi::registry::{OP_EVICT, OP_HELD};
     static EXAMPLE: Cap = Cap {
-        id: "board",
+        id: "example",
         json: |_| String::new(),
         bytes: |_, _| String::new(),
         documents: &[loader::<transit_network::Network>, loader::<transit_rt::RtOverview>],
@@ -516,7 +516,10 @@ fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<D
         });
         serde_json::to_value(set).ok()
     });
-    let walks_example = run_examples(caps, "streets", "walks").and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
+    let walks_example = caps
+        .iter()
+        .find(|c| c.declared.ops.iter().any(|op| op == "walks"))
+        .and_then(|c| run_examples(caps, c.declared.id, "walks")).and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
         kind::<transit_network::Network>(net.map(|n| n.derived.clone()), Some(migrate_network)),
         kind::<transit_codec::Boundary>(net.map(|n| n.boundary.clone()), None),

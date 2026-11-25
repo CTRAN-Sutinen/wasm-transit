@@ -343,16 +343,19 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	w.Write(zipBytes)
 }
 
-// exportedPick runs cap-stops export_pick first when a stops document
+// exportedPick runs the pick kind's export first when its document
 // exists, so a stop whose record changes inside the pick's dates is one
 // stop per version (D-151). The cache key is the network hash and the
-// stops hash, because the bytes never change for those two.
+// document's hash, because the bytes never change for those two.
 func (s *server) exportedPick(ctx context.Context, networkHash string, set []byte) ([]byte, error) {
-	stopsHash, stops, haveStops, err := "", []byte(nil), false, error(nil)
-	if stopsHash, stops, haveStops, err = s.keptHead("stops"); err != nil {
-		return nil, err
+	e := s.pickKind()
+	docHash, doc, haveDoc, err := "", []byte(nil), false, error(nil)
+	if e != nil {
+		if docHash, doc, haveDoc, err = s.keptHead(e.StoreKind); err != nil {
+			return nil, err
+		}
 	}
-	key := networkHash + "|" + stopsHash
+	key := networkHash + "|" + docHash
 	s.feedMu.Lock()
 	defer s.feedMu.Unlock()
 	if zipBytes, ok := s.feedCache[key]; ok {
@@ -369,9 +372,9 @@ func (s *server) exportedPick(ctx context.Context, networkHash string, set []byt
 		return nil, fmt.Errorf("an instance for the export: %w", err)
 	}
 	defer inst.Close(ctx)
-	if haveStops {
-		if blob, err = stopsVersions(ctx, inst.As("stops"), blob, stops, set); err != nil {
-			return nil, fmt.Errorf("the stops' history: %w", err)
+	if haveDoc {
+		if blob, err = pickHistory(ctx, inst.As(e.Module), e, blob, doc, set); err != nil {
+			return nil, fmt.Errorf("the %s history: %w", e.StoreKind, err)
 		}
 	}
 	host := inst.As("network")
@@ -399,23 +402,21 @@ func (s *server) exportedPick(ctx context.Context, networkHash string, set []byt
 	return zipBytes, nil
 }
 
-func stopsVersions(ctx context.Context, host *WasmHost, network, stops, set []byte) ([]byte, error) {
+func pickHistory(ctx context.Context, host *WasmHost, e *kindEntry, network, doc, set []byte) ([]byte, error) {
 	var loadedNet struct {
 		NetworkHash string `json:"network_hash"`
 	}
 	if err := host.InvokeBytes(ctx, opLoadNetwork, network, &loadedNet); err != nil {
 		return nil, fmt.Errorf("the pick's network: %w", err)
 	}
-	var loadedStops struct {
-		StopsHash string `json:"stops_hash"`
-	}
-	if err := host.InvokeBytes(ctx, opLoadStops, stops, &loadedStops); err != nil {
-		return nil, fmt.Errorf("the stops document: %w", err)
+	var loaded map[string]any
+	if err := host.InvokeBytes(ctx, e.Load.Code, doc, &loaded); err != nil {
+		return nil, fmt.Errorf("the %s document: %w", e.StoreKind, err)
 	}
 	var out struct {
 		Network json.RawMessage `json:"network"`
 	}
-	if err := host.Invoke(ctx, map[string]any{"op": "export_pick", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "published": orNull(set)}, &out); err != nil {
+	if err := host.Invoke(ctx, map[string]any{"op": e.Pick.Export, "network_hash": loadedNet.NetworkHash, e.hashField(): loadedHash(loaded), "published": orNull(set)}, &out); err != nil {
 		return nil, err
 	}
 	return out.Network, nil

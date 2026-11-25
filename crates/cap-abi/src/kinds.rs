@@ -51,6 +51,10 @@ pub struct Store {
     pub log: Option<Log>,
     pub post: Option<Post>,
     pub work_order: Option<WorkOrder>,
+    pub pick: Option<Pick>,
+    /// The checking capability's op that records the differences between
+    /// an imported feed and the kind, through the kind's log (D-150).
+    pub feed_events: Option<&'static str>,
     /// The capability that checks a write, and its op.
     pub check: Option<(&'static str, &'static str)>,
     pub merge: Merge,
@@ -94,6 +98,16 @@ pub struct WorkOrder {
     pub path: &'static str,
     pub call: &'static str,
     pub record: &'static str,
+}
+
+/// A pick reads the kind. An adoption registers the kind's head and names
+/// the seq of its log it read as the `seq` argument (D-191). A pick's
+/// export runs the checking capability's `export` op over the network and
+/// the head (D-151).
+#[derive(Debug, Clone, Copy)]
+pub struct Pick {
+    pub seq: &'static str,
+    pub export: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -160,7 +174,7 @@ impl Declaration {
         merge: Merge,
         read: Read,
     ) -> Self {
-        self.store = Some(Store { kind, write, route, pointers, log: None, post: None, work_order: None, check: None, merge, read });
+        self.store = Some(Store { kind, write, route, pointers, log: None, post: None, work_order: None, pick: None, feed_events: None, check: None, merge, read });
         self
     }
 
@@ -195,6 +209,20 @@ impl Declaration {
     const fn work_orders(mut self, method: &'static str, path: &'static str, call: &'static str, record: &'static str) -> Self {
         if let Some(store) = &mut self.store {
             store.work_order = Some(WorkOrder { method, path, call, record });
+        }
+        self
+    }
+
+    const fn picked(mut self, seq: &'static str, export: &'static str) -> Self {
+        if let Some(store) = &mut self.store {
+            store.pick = Some(Pick { seq, export });
+        }
+        self
+    }
+
+    const fn feed_events(mut self, op: &'static str) -> Self {
+        if let Some(store) = &mut self.store {
+            store.feed_events = Some(op);
         }
         self
     }
@@ -252,7 +280,9 @@ pub static KINDS: &[Declaration] = &[
         .checked("stops", "validate")
         .logged("stops", &[("stop", "stops")])
         .received("stops")
-        .posted("/stops", "validate", "stops_hash", &[]),
+        .posted("/stops", "validate", "stops_hash", &[])
+        .picked("stops_seq", "export_pick")
+        .feed_events("import_events"),
     Declaration::new("stop_requests", "stop_requests", "transit_requests::StopRequests", "transit-requests")
         .loaded("stop_requests", "load_stop_requests", 271)
         .stored("stop_requests", Route, "POST /stop-requests, POST /logs/stops", &["stop_requests"], Merge::Log, Open)

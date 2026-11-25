@@ -23,11 +23,9 @@ func (c *configList) String() string     { return strings.Join(*c, ",") }
 func (c *configList) Set(v string) error { *c = append(*c, v); return nil }
 
 var pathSettings = map[string]bool{
-	"dist": true, "wasm": true, "feed": true, "network-wasm": true,
-	"streets": true, "streets-wasm": true, "edits": true, "migrate-wasm": true, "store-cache": true,
-	"plans-wasm": true, "requests-wasm": true, "stops-wasm": true,
-	"authz-wasm": true, "alerts-wasm": true, "notes-wasm": true, "log-wasm": true,
-	"modules": true, "oidc-key": true, "policy": true,
+	"dist": true, "wasm": true, "feed": true,
+	"streets": true, "edits": true, "store-cache": true,
+	"oidc-key": true, "policy": true,
 	"geocoder-policy": true, "export": true, "live-feeds": true,
 }
 

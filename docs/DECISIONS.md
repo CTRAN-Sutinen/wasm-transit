@@ -302,9 +302,9 @@ first, and open only the entries you need.
 | [D-245](decisions/D-245.md) | Does a failed input stop the answers that read it? | encoded | nothing |
 | [D-246](decisions/D-246.md) | When does a page read a failed input again? | encoded | nothing |
 | [D-247](decisions/D-247.md) | Do the staff pages follow the deployment's network as it moves? | encoded | nothing |
-| [D-248](decisions/D-248.md) | D-239 costs each module 2 to 5 percent: keep it? | unanswered | `names-declared-once.md` (the release gate at the unit's end) |
+| [D-248](decisions/D-248.md) | D-239 costs each module 2 to 5 percent: keep it? | decided; built | nothing |
 | [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | decided | nothing |
 | [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
 | [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |
 | [D-253](decisions/D-253.md) | What shape does a coded refusal take in a module's answer? | decided | `shapes-from-rust.md` (the refusal codes) |
-| [D-254](decisions/D-254.md) | Which kinds may the server and the engine name? | unanswered | `names-declared-once.md` item 1 (the gate) |
+| [D-254](decisions/D-254.md) | Which kinds may the server and the engine name? | decided; built | nothing |

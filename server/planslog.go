@@ -59,17 +59,17 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose, from strin
 		args["from_network_hash"] = from
 	}
 	loads := []hostLoad{{opLoadNetwork, body}}
-	if adopt {
-		// The adoption names the stops log entry that it read (D-191).
-		if seq := s.stopsSeqRead(); seq > 0 {
-			args["stops_seq"] = seq
+	if e := s.pickKind(); adopt && e != nil {
+		// The adoption names the entry of the kind's log that it read (D-191).
+		if seq := s.keptSeq(e.StoreKind); seq > 0 {
+			args[e.Pick.Seq] = seq
 		}
-		_, stops, found, err := s.keptHead("stops")
+		_, doc, found, err := s.keptHead(e.StoreKind)
 		if err != nil {
 			return out, nil, err
 		}
 		if found {
-			loads = append(loads, hostLoad{opLoadStops, stops})
+			loads = append(loads, hostLoad{e.Load.Code, doc})
 		}
 	}
 	seq, _, got, refusal, err := s.receiveLog(ctx, nil, l, logWrite{writer: writer, op: op, argsHash: store.HashOf(body)}, receiveCall{
@@ -141,13 +141,6 @@ func (s *server) receivePlans(ctx context.Context, l *keptLog, w logWrite, ops [
 		return 0, &logRefusal{http.StatusUnprocessableEntity, map[string]any{"issues": got.Refused.Refusals}}, nil
 	}
 	return seq, refusal, nil
-}
-
-func (s *server) stopsSeqRead() int64 {
-	if s.store == nil {
-		return 0
-	}
-	return s.keptSeq("stops")
 }
 
 func (s *server) handleFreeze(w http.ResponseWriter, r *http.Request) {

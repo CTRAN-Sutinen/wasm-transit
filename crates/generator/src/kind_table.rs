@@ -92,6 +92,15 @@ pub struct KindEntry {
     /// answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_order: Option<WorkOrderEntry>,
+    /// What a pick does with the kind: on an adoption, the argument that
+    /// names the seq of the kind's log it read; on an export, the checking
+    /// capability's op over the network and the kind's head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pick: Option<PickEntry>,
+    /// The checking capability's op that records an imported feed's
+    /// differences from the kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_events: Option<String>,
     /// The capability whose `receive` op writes the kind's log (D-228).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receive: Option<String>,
@@ -129,6 +138,12 @@ pub struct PostEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PickEntry {
+    pub seq: String,
+    pub export: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkOrderEntry {
     pub method: String,
     pub path: String,
@@ -161,6 +176,8 @@ pub fn kinds() -> Vec<KindEntry> {
                 records: s.log.map(|l| l.records.iter().map(|(k, c)| RecordEntry { kind: k.to_string(), collection: c.to_string() }).collect()).unwrap_or_default(),
                 post: s.post.map(|p| PostEntry { path: p.path.into(), op: p.op.into(), answer: p.answer.into(), echo: p.echo.iter().map(|e| e.to_string()).collect() }),
                 work_order: s.work_order.map(|w| WorkOrderEntry { method: w.method.into(), path: w.path.into(), call: w.call.into(), record: w.record.into() }),
+                pick: s.pick.map(|p| PickEntry { seq: p.seq.into(), export: p.export.into() }),
+                feed_events: s.feed_events.map(Into::into),
                 receive: s.log.and_then(|l| l.receive).map(Into::into),
                 intent: s.log.filter(|l| !l.intent).map(|_| false),
                 module: s.check.map(|(m, _)| m.into()),

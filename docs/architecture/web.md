@@ -122,7 +122,9 @@ File ownership:
 A host asks `ask(capability, op, args)`. The request types are
 generated, and so is the map from each capability to its request and
 answer (`src/types/caps.ts`, from the `crates/cap-*` directories, by
-`just types`). The engine names no capability. Every `*_hash` argument takes a `Doc`: a document version
+`just types`). The engine names no capability, and no kind that the
+kind table routes generically (`docs/architecture/bus.md`, "Each name
+is declared once"). Every `*_hash` argument takes a `Doc`: a document version
 with its kind, its value or bytes, the document it is read over, and the
 hash its server pins.
 

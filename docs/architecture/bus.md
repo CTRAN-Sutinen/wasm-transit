@@ -241,8 +241,28 @@ fixture.
 4. Assembly independence (`crates/cap-abi/independence.mjs`, with its
    broken fixture in `independence.test.mjs`). Every worked example
    gives the same answer from the capability alone and inside each
-   UI's assembly, in either order of its capabilities. A shared
-   derived entry is only a cache, never a dependency.
+   UI's assembly and the server's, in either order of its
+   capabilities. A shared derived entry is only a cache, never a
+   dependency.
+
+**Each name is declared once.** A new op changes only its capability's
+crate, and a new capability is a new crate directory: the generator,
+the server's assembly, and the engine's op map find it there. Two more
+arch gates hold this, each with its broken fixture in
+`arch_gates_test.rs`:
+
+- The generator, cap-abi, and the root `Cargo.toml` name no
+  capability's crate (`cap_<id>`). The gates' own lists are the
+  exception.
+- The kernel, the server, the runner, and the engine name no kind that
+  the kind table routes generically: a kind with a `post` route or a
+  `work_order`. Its name in a string literal, its load op, and its hash
+  fields count, and comments do not. They read such a kind from the
+  table: each way it differs from another kind is a named field in its
+  line (`docs/FORMATS.md`, "The kind table"). A kind the server imports,
+  publishes, or serves on a route of its own (the network, the streets,
+  the plans, the edits, the policy) is a server feature, and the server
+  may name it.
 
 **The module computes a document's hash.** A host does not compute it.
 The canonical form is RFC 8785, so another tool can check an identity.

@@ -38,7 +38,9 @@ type kindEntry struct {
 	// POST /logs/<log>.
 	Intent    *bool          `json:"intent,omitempty"`
 	Post      *kindPost      `json:"post,omitempty"`
-	WorkOrder *kindWorkOrder `json:"work_order,omitempty"`
+	WorkOrder  *kindWorkOrder `json:"work_order,omitempty"`
+	Pick       *kindPick      `json:"pick,omitempty"`
+	FeedEvents string         `json:"feed_events,omitempty"`
 	Load      *struct {
 		Op   string `json:"op"`
 		Code uint32 `json:"code"`
@@ -56,19 +58,40 @@ type kindWorkOrder struct {
 	Record string `json:"record"`
 }
 
-// workOrderKind is the kind whose records go to the work order system,
-// or nil.
-func (s *server) workOrderKind() *kindEntry {
+type kindPick struct {
+	Seq    string `json:"seq"`
+	Export string `json:"export"`
+}
+
+// kindWhere is the first kind the table names that has the field, or nil.
+func (s *server) kindWhere(has func(*kindEntry) bool) *kindEntry {
 	t, err := s.kindTable()
 	if err != nil {
 		return nil
 	}
 	for i := range t.Kinds {
-		if t.Kinds[i].WorkOrder != nil {
+		if has(&t.Kinds[i]) {
 			return &t.Kinds[i]
 		}
 	}
 	return nil
+}
+
+func (s *server) workOrderKind() *kindEntry {
+	return s.kindWhere(func(e *kindEntry) bool { return e.WorkOrder != nil })
+}
+
+// pickKind is the kind a pick reads (kindPick).
+func (s *server) pickKind() *kindEntry {
+	return s.kindWhere(func(e *kindEntry) bool { return e.Pick != nil && e.Load != nil })
+}
+
+// hashField names the kind's document in an op's arguments and answers.
+func (e *kindEntry) hashField() string {
+	if e.Post != nil {
+		return e.Post.Answer
+	}
+	return e.StoreKind + "_hash"
 }
 
 type kindPost struct {

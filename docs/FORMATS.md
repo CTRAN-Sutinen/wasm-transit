@@ -463,6 +463,14 @@ entry is one kind the store keeps, by its store kind (the envelope's
   which the receive op runs to write the answer. The server serves the
   route, and offers it in the manifest's services, only for the kind
   that names it.
+- `pick` is what a pick does with the kind: on an adoption, the
+  argument (`seq`) that names the seq of the kind's log it read, with
+  the kind's head registered; on an export, the checking capability's
+  `export` op over the network and the head, so a record that changes
+  inside the pick's dates is one record per version.
+- `feed_events` is the checking capability's op that records the
+  differences between an imported feed and the kind, through the kind's
+  log.
 - `references` are the fields that name other records or things, each
   with its target, from the current version's schema (D-232; "References",
   below).

@@ -8,7 +8,8 @@
 // service-design host, because one UI never imports another's files.
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, readManifest, served, servedNetworkValue, stopWarnings, withStopVersions, Doc, type DeploymentManifest } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, readManifest, served, servedNetworkValue, Doc, type DeploymentManifest } from "../../engine";
+import { stopWarnings, withStopVersions } from "../picks";
 import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabelAt, inputGraph, inputLabel, installApp, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type Reader } from "../kit";
 import descriptor from "./ui.json";
 

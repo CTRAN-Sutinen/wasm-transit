@@ -204,8 +204,9 @@ pub fn state_violations(file: &str, source: &str) -> Vec<String> {
     out
 }
 
-/// Gate 5. Comments do not count, and `#` is a comment in a `.toml`
-/// (D-243).
+/// Gate 5. A capability's crate. Its bare id is not matched: ids such as
+/// `requests` and `alerts` are also field names. Comments do not count,
+/// and `#` is a comment in a `.toml` (D-243).
 pub fn capability_name_violations(file: &str, source: &str, ids: &[String]) -> Vec<String> {
     let comment = if file.ends_with(".toml") { "#" } else { "//" };
     let mut out = Vec::new();
@@ -219,5 +220,58 @@ pub fn capability_name_violations(file: &str, source: &str, ids: &[String]) -> V
     }
     out.sort();
     out.dedup();
+    out
+}
+
+fn quotes(code: &str, word: &str) -> bool {
+    ['"', '\'', '`'].iter().any(|q| code.contains(&format!("{q}{word}{q}")))
+}
+
+/// The identifiers of a kind that the kind table routes generically: a
+/// `post` route answered by its log's receive op, or a `work_order` route
+/// (D-254). The plumbing reads such a kind from the table.
+#[derive(Debug)]
+pub struct RoutedKind {
+    pub kind: String,
+    /// Names that count as a string literal.
+    pub names: Vec<String>,
+    /// Identifiers that count anywhere in code: the load op, the hash
+    /// fields.
+    pub words: Vec<String>,
+}
+
+pub fn routed_kinds(table: &serde_json::Value) -> Vec<RoutedKind> {
+    table["kinds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|k| !k["post"].is_null() || !k["work_order"].is_null())
+        .map(|k| {
+            let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+            let kind = text(&k["store_kind"]);
+            let mut names = vec![kind.clone(), text(&k["tag"])];
+            let mut words = vec![text(&k["load"]["op"]), text(&k["post"]["answer"]), format!("{kind}_hash"), format!("{}_hash", text(&k["tag"]))];
+            names.retain(|n| !n.is_empty());
+            names.dedup();
+            words.retain(|w| !w.is_empty() && w != "_hash");
+            words.sort();
+            words.dedup();
+            RoutedKind { kind, names, words }
+        })
+        .collect()
+}
+
+/// Gate 6. The kernel, the server, the runner, and the engine name no kind
+/// that the table routes generically. Comments do not count.
+pub fn kind_name_violations(file: &str, source: &str, kinds: &[RoutedKind]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (n, line) in source.lines().enumerate() {
+        let code = line.split("//").next().unwrap_or_default();
+        for k in kinds {
+            if k.names.iter().any(|name| quotes(code, name)) || k.words.iter().any(|w| names_crate(code, w)) {
+                out.push(format!("{file}:{}: names the {} kind — the kind table routes it, so the plumbing reads it from the table", n + 1, k.kind));
+            }
+        }
+    }
     out
 }

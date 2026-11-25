@@ -11,7 +11,6 @@ import type { Holding } from "./types/cap_abi/Holding";
 import type { Caps } from "./types/caps";
 import type { Boundary } from "./types/Boundary";
 import type { Network } from "./types/Network";
-import type { NetworkWarning } from "./types/NetworkWarning";
 import type { PublishedPlan } from "./types/cap_plans/PublishedPlan";
 import type { PublishedPlans } from "./types/cap_plans/PublishedPlans";
 import type { WalkTable } from "./types/WalkTable";
@@ -606,19 +605,6 @@ export async function served(kind: Kind, opts: ReadOptions = {}): Promise<Doc | 
   const pin = (await manifestOf(opts))[`${kind}_hash`];
   if (typeof pin !== "string") return null;
   return new Doc(kind, { bytes: await blobGz(pin, opts.signal) }, { pin });
-}
-
-// A pick only reads the stops document (D-157).
-export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null, stops: Doc | null): Promise<NetworkWarning[]> {
-  if (!stops || !(await available("stops"))) return [];
-  return (await ask("stops", "read_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined })).warnings;
-}
-
-// Matches what the server's GET /feed exports for a pick (D-151, D-157).
-export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null, stops: Doc | null): Promise<Doc<Network>> {
-  if (!stops || !(await available("stops"))) return network;
-  const out = await ask("stops", "export_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined });
-  return out.network_hash === network.hash ? network : produced("network", out.network, "stops", out.network_hash);
 }
 
 export async function servedStreets(opts: ReadOptions = {}): Promise<Doc | null> {

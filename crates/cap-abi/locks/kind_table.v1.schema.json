@@ -3,6 +3,13 @@
     "KindEntry": {
       "description": "One kind the store keeps.",
       "properties": {
+        "feed_events": {
+          "description": "The checking capability's op that records an imported feed's\ndifferences from the kind.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "intent": {
           "description": "False when a page never writes the kind's log by intent (absent:\nit does, or the kind is in no log).",
           "type": [
@@ -37,6 +44,17 @@
             "string",
             "null"
           ]
+        },
+        "pick": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PickEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What a pick does with the kind: on an adoption, the argument that\nnames the seq of the kind's log it read; on an export, the checking\ncapability's op over the network and the kind's head."
         },
         "pointers": {
           "description": "The pointers it heads (`*` ends a prefix).",
@@ -178,6 +196,21 @@
           "type": "string"
         }
       ]
+    },
+    "PickEntry": {
+      "properties": {
+        "export": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "export"
+      ],
+      "type": "object"
     },
     "PostEntry": {
       "description": "The write route of a kind names the path, the op that takes the request\nbody as its arguments, the answer field that names the document after\nthe write, and the body fields that the answer repeats.",
