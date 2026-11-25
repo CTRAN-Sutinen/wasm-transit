@@ -97,8 +97,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [names-declared-once.md](names-declared-once.md) | each capability and kind named once: the test capability and test kind that prove a new one changes no other file |
-| [shapes-from-rust.md](shapes-from-rust.md) | every answer's shape from its Rust type: the answer schemas, coded refusals that no host matches by text, and the HTTP contract generated with its prose in one overlay |
+| [refusal-codes.md](refusal-codes.md) | the refusals a host acts on (an evicted document, a newer version, a log that moved) carry a stable code; no host matches an error's text, and a gate holds it |
 | [reference-rules.md](reference-rules.md) | the rules between records: each reference's rule at both ends, and the transitions that pin or warn |
 | [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are one clean `just e2e` run, the findings it closes, and the release gates |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
@@ -115,6 +114,14 @@ work; a group is only a way to find them.
 
 Ideas with a direction but no unit yet. Scope one into a file
 before starting it.
+
+- **The HTTP contract, generated** — each answer type derives
+  `JsonSchema`, and `server/openapi.json` is generated from the mux,
+  the kind table, those schemas, and one hand-written overlay for the
+  prose and the answers Go composes (D-249). A gate fails a hand edit.
+  Start it when an outside system first calls the HTTP API, or when
+  hand edits to the contract become a recurring cost. It needs a
+  declaration of which op answers each route, which does not exist yet.
 
 - **Registry search** — a derived artifact (purpose + op docs +
   worked examples embedded; ranking carries evidence): an agent

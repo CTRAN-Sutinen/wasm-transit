@@ -458,3 +458,46 @@ pub fn load_feed() -> serde_json::Value {
 pub fn load_network(network: impl serde::Serialize) -> serde_json::Value {
     load("load_network", "network", network)
 }
+
+/// A capability and a kind that no other file names. The generator's
+/// `new_names_test` takes them as it takes real ones, which shows that a new
+/// name costs no line anywhere else.
+pub mod new_names {
+    use cap_abi::kernel::{Cap, Declared};
+    use cap_abi::kinds::{Declaration, Merge, Read, Write};
+
+    pub const KIND: Declaration = Declaration::new("test_kind", "test_kind", "", "fixtures")
+        .stored("test_kind", Write::Route, "POST /test-kind, POST /logs/test_log", &["test_kind"], Merge::Log, Read::Open)
+        .checked("testcap", "validate")
+        .logged("test_log", &[("test_record", "records")])
+        .received("testcap")
+        .posted("/test-kind", "validate", "test_kind_hash", &[]);
+
+    fn json(text: &str) -> String {
+        let op = serde_json::from_str::<serde_json::Value>(text).ok().and_then(|v| v["op"].as_str().map(str::to_string));
+        match op.as_deref() {
+            Some(op @ ("validate" | "receive")) => format!(r#"{{"ok":{{"op":"{op}"}}}}"#),
+            _ => r#"{"error":"unknown op"}"#.to_string(),
+        }
+    }
+
+    fn bytes(_: u32, _: &[u8]) -> String {
+        r#"{"error":"no bulk ops"}"#.to_string()
+    }
+
+    pub static CAP: Cap = Cap { id: "testcap", json, bytes, documents: &[] };
+
+    pub fn declared() -> Declared {
+        Declared {
+            id: "testcap",
+            invoke: json,
+            invoke_bytes: bytes,
+            ops: vec!["validate".into(), "receive".into()],
+            documents: vec![],
+            consumes: &[],
+            speaks: &[],
+            migrates: &[],
+            docs: "# testcap\n\nChecks and receives the test kind.\n\n## validate\n\nChecks a test document.\n\n## receive\n\nWrites the test log.\n",
+        }
+    }
+}

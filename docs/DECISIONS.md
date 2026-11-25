@@ -298,7 +298,7 @@ first, and open only the entries you need.
 | [D-241](decisions/D-241.md) | What must hold before a split runs? | unanswered | `log-boundaries.md` item 3 (the split) |
 | [D-242](decisions/D-242.md) | What runs a move of a log's boundary, and when? | unanswered | `log-boundaries.md` item 3 |
 | [D-243](decisions/D-243.md) | In which order does the manifest list the capabilities and their ops? | encoded | nothing |
-| [D-244](decisions/D-244.md) | What does the kind-name gate match, and do the per-capability module flags retire? | decided | nothing |
+| [D-244](decisions/D-244.md) | What does the kind-name gate match, and do the per-capability module flags retire? | decided; built | nothing |
 | [D-245](decisions/D-245.md) | Does a failed input stop the answers that read it? | encoded | nothing |
 | [D-246](decisions/D-246.md) | When does a page read a failed input again? | encoded | nothing |
 | [D-247](decisions/D-247.md) | Do the staff pages follow the deployment's network as it moves? | encoded | nothing |
@@ -306,5 +306,5 @@ first, and open only the entries you need.
 | [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | decided | nothing |
 | [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
 | [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |
-| [D-253](decisions/D-253.md) | What shape does a coded refusal take in a module's answer? | decided | `shapes-from-rust.md` (the refusal codes) |
+| [D-253](decisions/D-253.md) | What shape does a coded refusal take in a module's answer? | decided | nothing |
 | [D-254](decisions/D-254.md) | Which kinds may the server and the engine name? | decided; built | nothing |

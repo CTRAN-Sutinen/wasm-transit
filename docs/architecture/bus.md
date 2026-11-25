@@ -264,6 +264,12 @@ arch gates hold this, each with its broken fixture in
   the plans, the edits, the policy) is a server feature, and the server
   may name it.
 
+`crates/generator/tests/new_names_test.rs` is the proof. A test
+capability and a test kind, declared only in `fixtures::new_names`, pass
+the kind list's checks (`cap_abi::kinds::problems`), take their place in
+the kind table and the server's assembly, pass the gate, and answer
+through the kernel's dispatch.
+
 **The module computes a document's hash.** A host does not compute it.
 The canonical form is RFC 8785, so another tool can check an identity.
 `JSON.stringify` is not that form, because it keeps keys in the order

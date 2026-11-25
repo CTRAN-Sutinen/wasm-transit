@@ -23,7 +23,8 @@ use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, Migra
 #[path = "../../cap-abi/src/bin/common/assemblies.rs"]
 mod common;
 mod schema_lock;
-mod kind_table;
+pub mod kind_table;
+pub use common::server_capabilities;
 pub mod checks;
 pub mod doc_check;
 use fixtures::*;
@@ -136,12 +137,12 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
 
 /// The generator refuses an OPS.md whose heading is not the capability's id,
 /// or whose ops are not exactly its `Request` enum's.
-struct CapDocs {
-    purpose: String,
-    ops: Vec<(String, String)>,
+pub struct CapDocs {
+    pub purpose: String,
+    pub ops: Vec<(String, String)>,
 }
 
-fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
+pub fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
     let text = module.docs;
     let place = format!("crates/cap-{}/OPS.md", module.id);
     let mut sections: Vec<(String, Vec<&str>)> = Vec::new();

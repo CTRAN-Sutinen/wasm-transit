@@ -4,19 +4,18 @@ A fact lives at the narrowest scope that it covers
 (`docs/architecture/README.md`; `docs/CONVENTIONS.md`, "What to
 write"). The architecture docs still hold detail that one file, one
 route, or one generated list covers. This unit runs after
-`names-declared-once.md` and `shapes-from-rust.md`, because it
-describes what they build.
+`refusal-codes.md`, because it describes what that builds.
 
 ## Scope
 
-1. **Route behavior into the overlay.** `docs/architecture/server.md`,
+1. **Route behavior into the contract.** `docs/architecture/server.md`,
    "The routes", describes each route's behavior. What a caller sees
    moves into the operation's description in
-   `server/openapi.overlay.json`. What only the code sees moves to the
+   `server/openapi.json`. What only the code sees moves to the
    comment of the Go file that does it. The section keeps what spans
    routes, and points to the contract.
 2. **The manifest's fields.** 13 of its 25 fields have no description
-   in the contract. Write them in the overlay, and replace server.md's
+   in the contract. Write them there, and replace server.md's
    field-by-field `/manifest` list with a pointer.
 3. **One file's design, beside its file.** A section of
    `docs/architecture/` that describes one file (its heading names the
@@ -33,12 +32,11 @@ describes what they build.
    `docs/guide/first-change.md`, `docs/TESTING.md`, `bus.md`
    ("Answers": the refusal codes), `web.md` (recovery by code),
    `server.md` (the one assembly, its instances, and the coded answer),
-   `registry.md`, `release-artifacts.md` ("The HTTP contract":
-   generated, and where its prose lives), the justfile's comments on
-   `caps` and `http-lock`, `DEPLOYMENTS-SERVER.md` (the one flag), and
-   `AGENTS.md`'s row for the HTTP contract describe what the other two
-   units built. `docs/CONVENTIONS.md` ("Gotchas") says that a host
-   never branches on an error's text.
+   `registry.md`, the justfile's comment on `caps`, and
+   `DEPLOYMENTS-SERVER.md` (the one flag) describe what
+   `names-declared-once.md` and `refusal-codes.md` built.
+   `docs/CONVENTIONS.md` ("Gotchas") says that a host never branches on
+   an error's text.
 6. **The writing rules in the developer documents.** Apply "Use these
    words" and "The faults to remove" to `AGENTS.md`,
    `crates/AGENTS.md`, `docs/` (not `docs/decisions/`, which hold the

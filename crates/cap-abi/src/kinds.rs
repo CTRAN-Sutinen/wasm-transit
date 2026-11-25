@@ -156,16 +156,16 @@ pub enum Merge {
 }
 
 impl Declaration {
-    const fn new(name: &'static str, tag: &'static str, library: &'static str, owner: &'static str) -> Self {
+    pub const fn new(name: &'static str, tag: &'static str, library: &'static str, owner: &'static str) -> Self {
         Declaration { name, tag, library, owner, load: None, store: None }
     }
 
-    const fn loaded(mut self, id: &'static str, op: &'static str, code: u32) -> Self {
+    pub const fn loaded(mut self, id: &'static str, op: &'static str, code: u32) -> Self {
         self.load = Some(KernelLoad { id, op, code });
         self
     }
 
-    const fn stored(
+    pub const fn stored(
         mut self,
         kind: &'static str,
         write: Write,
@@ -178,56 +178,56 @@ impl Declaration {
         self
     }
 
-    const fn checked(mut self, module: &'static str, op: &'static str) -> Self {
+    pub const fn checked(mut self, module: &'static str, op: &'static str) -> Self {
         if let Some(store) = &mut self.store {
             store.check = Some((module, op));
         }
         self
     }
 
-    const fn received(mut self, capability: &'static str) -> Self {
+    pub const fn received(mut self, capability: &'static str) -> Self {
         if let Some(Store { log: Some(log), .. }) = &mut self.store {
             log.receive = Some(capability);
         }
         self
     }
 
-    const fn no_intent(mut self) -> Self {
+    pub const fn no_intent(mut self) -> Self {
         if let Some(Store { log: Some(log), .. }) = &mut self.store {
             log.intent = false;
         }
         self
     }
 
-    const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
+    pub const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
         if let Some(store) = &mut self.store {
             store.post = Some(Post { path, op, answer, echo });
         }
         self
     }
 
-    const fn work_orders(mut self, method: &'static str, path: &'static str, call: &'static str, record: &'static str) -> Self {
+    pub const fn work_orders(mut self, method: &'static str, path: &'static str, call: &'static str, record: &'static str) -> Self {
         if let Some(store) = &mut self.store {
             store.work_order = Some(WorkOrder { method, path, call, record });
         }
         self
     }
 
-    const fn picked(mut self, seq: &'static str, export: &'static str) -> Self {
+    pub const fn picked(mut self, seq: &'static str, export: &'static str) -> Self {
         if let Some(store) = &mut self.store {
             store.pick = Some(Pick { seq, export });
         }
         self
     }
 
-    const fn feed_events(mut self, op: &'static str) -> Self {
+    pub const fn feed_events(mut self, op: &'static str) -> Self {
         if let Some(store) = &mut self.store {
             store.feed_events = Some(op);
         }
         self
     }
 
-    const fn logged(mut self, name: &'static str, records: &'static [(&'static str, &'static str)]) -> Self {
+    pub const fn logged(mut self, name: &'static str, records: &'static [(&'static str, &'static str)]) -> Self {
         if let Some(store) = &mut self.store {
             store.log = Some(Log { name, receive: None, records, intent: true });
         }
@@ -347,57 +347,85 @@ pub fn by_load(id: &str) -> Option<&'static Declaration> {
     KINDS.iter().find(|k| k.load.is_some_and(|l| l.id == id))
 }
 
+/// What makes a kind list wrong: two lines with one name, tag, load,
+/// code, or store kind; a load that is not a kernel op; a route with no
+/// receive op; a pointer kind that no module checks; a log whose kinds
+/// disagree. Empty for a list the server and the generator can take.
+pub fn problems(kinds: &[Declaration]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut once = |what: &str, value: String, line: &str| {
+        if !seen.insert((what.to_string(), value.clone())) {
+            out.push(format!("{line}: another line has the {what} {value}"));
+        }
+    };
+    for k in kinds {
+        once("name", k.name.to_string(), k.name);
+        if !k.tag.is_empty() {
+            once("tag", k.tag.to_string(), k.name);
+        }
+        if let Some(l) = k.load {
+            once("load", l.id.to_string(), k.name);
+            once("op", l.op.to_string(), k.name);
+            once("code", l.code.to_string(), k.name);
+        }
+        if let Some(s) = k.store {
+            once("store kind", s.kind.to_string(), k.name);
+        }
+    }
+    for k in kinds {
+        if let Some(l) = k.load {
+            if l.code < crate::kernel::KERNEL_OPS || [257, 258, crate::kernel::OP_ABOUT].contains(&l.code) {
+                out.push(format!("{}: the load code {} is not a free kernel op", k.name, l.code));
+            }
+        }
+        let Some(s) = k.store else { continue };
+        if let Some(post) = s.post {
+            if !s.log.is_some_and(|l| l.receive.is_some()) {
+                out.push(format!("{}: {} needs a receive op", k.name, post.path));
+            }
+            if !s.route.contains(post.path) {
+                out.push(format!("{}: the route's words do not name {}", k.name, post.path));
+            }
+        }
+        if s.write == Pointer && s.check.is_none() {
+            out.push(format!("{}: the server refuses a pointer write that no module checks", k.name));
+        }
+        if let Some(log) = s.log {
+            if !matches!(s.merge, Merge::Log | Lww) {
+                out.push(format!("{}: a log's records merge one by one", k.name));
+            }
+            // One entry can change records of each kind (D-232).
+            let others: Vec<Log> = kinds.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name).collect();
+            if !others.iter().all(|o| o.receive == log.receive && o.intent == log.intent) {
+                out.push(format!("the {} log's kinds disagree on its receive op or its intent", log.name));
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
 
     #[test]
-    fn each_name_tag_load_store_kind_and_code_is_one_line() {
-        let mut seen = BTreeSet::new();
-        for k in KINDS {
-            assert!(seen.insert(("name", k.name.to_string())), "two lines name {}", k.name);
-            if !k.tag.is_empty() {
-                assert!(seen.insert(("tag", k.tag.to_string())), "two lines carry the tag {}", k.tag);
-            }
-            if let Some(l) = k.load {
-                assert!(seen.insert(("load", l.id.to_string())), "two lines fill {}", l.id);
-                assert!(seen.insert(("op", l.op.to_string())), "two lines load by {}", l.op);
-                assert!(seen.insert(("code", l.code.to_string())), "two lines load by code {}", l.code);
-                assert!(l.code >= crate::kernel::KERNEL_OPS, "{}: a load is a kernel op", k.name);
-                assert!(![257, 258, crate::kernel::OP_ABOUT].contains(&l.code), "{}: {} is the registry's or about's", k.name, l.code);
-            }
-            if let Some(s) = k.store {
-                assert!(seen.insert(("store", s.kind.to_string())), "two lines store {}", s.kind);
-            }
-        }
+    fn the_kind_list_has_no_problems() {
+        assert_eq!(problems(KINDS), Vec::<String>::new());
     }
 
     #[test]
-    fn a_kind_s_own_route_is_answered_by_its_log_s_receive_op() {
-        for k in KINDS {
-            let Some(s) = k.store else { continue };
-            if let Some(post) = s.post {
-                assert!(s.log.is_some_and(|l| l.receive.is_some()), "{}: {} needs a receive op", k.name, post.path);
-                assert!(s.route.contains(post.path), "{}: the route's words name {}", k.name, post.path);
-            }
-        }
-    }
-
-    #[test]
-    fn a_pointer_kind_is_checked_and_a_logged_kind_merges_by_record() {
-        for k in KINDS {
-            let Some(s) = k.store else { continue };
-            if s.write == Pointer {
-                assert!(s.check.is_some(), "{}: the server refuses a pointer write that no module checks", k.name);
-            }
-            if let Some(log) = s.log {
-                assert!(matches!(s.merge, Merge::Log | Lww), "{}: a log's records merge one by one", k.name);
-                // One entry can change records of each kind (D-232).
-                let mut others = KINDS.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name);
-                assert!(others.clone().all(|o| o.receive == log.receive), "the {} log has one receive op", log.name);
-                assert!(others.all(|o| o.intent == log.intent), "the {} log's kinds agree on intent", log.name);
-            }
+    fn a_broken_list_has_each_problem() {
+        let broken = [
+            Declaration::new("a", "a", "", "").loaded("a", "load_a", 12).stored("a", Pointer, "POST /x", &["a"], Replace, Open),
+            Declaration::new("a", "b", "", "").stored("b", Route, "POST /b", &[], Merge::Log, Open).logged("l", &[]).posted("/c", "v", "b_hash", &[]),
+            Declaration::new("c", "c", "", "").stored("c", Route, "", &[], Replace, Open).logged("l", &[]).received("x"),
+        ];
+        let found = problems(&broken);
+        for want in ["another line has the name a", "not a free kernel op", "needs a receive op", "do not name /c", "no module checks", "merge one by one", "disagree"] {
+            assert!(found.iter().any(|p| p.contains(want)), "{want}: {found:?}");
         }
     }
 }

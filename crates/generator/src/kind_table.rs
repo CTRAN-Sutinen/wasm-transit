@@ -161,8 +161,11 @@ pub struct LoadEntry {
 /// The entries have no versions and no references. gen-manifest adds those
 /// from the locked schemas.
 pub fn kinds() -> Vec<KindEntry> {
-    cap_abi::kinds::KINDS
-        .iter()
+    kinds_of(cap_abi::kinds::KINDS)
+}
+
+pub fn kinds_of(list: &[cap_abi::kinds::Declaration]) -> Vec<KindEntry> {
+    list.iter()
         .filter_map(|k| {
             let s = k.store?;
             Some(KindEntry {

@@ -67,10 +67,7 @@ fn server_assembly(root: &Path, known: &[String]) -> Assembly {
     let path = root.join("server/capabilities.json");
     let own: Vec<String> =
         serde_json::from_slice(&fs::read(&path).expect("server/capabilities.json reads")).expect("a list of capability ids");
-    let kinds = cap_abi::kinds::KINDS.iter().filter_map(|k| k.store).flat_map(|s| {
-        s.check.map(|(cap, _)| cap.to_string()).into_iter().chain(s.log.and_then(|l| l.receive).map(str::to_string))
-    });
-    let caps: BTreeSet<String> = own.into_iter().chain(kinds).collect();
+    let caps = server_capabilities(own, cap_abi::kinds::KINDS);
     for cap in &caps {
         assert!(known.contains(cap), "{}: no capability {cap:?}", path.display());
     }
@@ -80,6 +77,13 @@ fn server_assembly(root: &Path, known: &[String]) -> Assembly {
         about: "the server's capabilities (server/capabilities.json, and each one the kind list names), linked into one module".to_string(),
         caps: caps.into_iter().collect(),
     }
+}
+
+pub fn server_capabilities(own: Vec<String>, kinds: &[cap_abi::kinds::Declaration]) -> BTreeSet<String> {
+    let named = kinds.iter().filter_map(|k| k.store).flat_map(|s| {
+        s.check.map(|(cap, _)| cap.to_string()).into_iter().chain(s.log.and_then(|l| l.receive).map(str::to_string))
+    });
+    own.into_iter().chain(named).collect()
 }
 
 pub fn assemblies(root: &Path) -> Vec<Assembly> {
