@@ -12,10 +12,10 @@ to match the implementation, so the tests certified the bug. The rules:
 - **Derive each law from the stated intent.** Use the user's directive,
   the GTFS spec, and the architecture laws. Never use what the code
   currently does. A law test's header names what it pins and where
-  the intent lives: a decision id, a GTFS spec section, or an
-  `OPS.md` section. Quote the intent only when no decision file holds
-  it. Each law is one line on its test. The header does not restate
-  the decision, the op contract, or the API.
+  the intent lives: a GTFS spec section, an `OPS.md` section, or a
+  decision id while its entry exists (`docs/DECISIONS.md`, "The
+  rules"). Each law is one line on its test, in the user's intent. The
+  header does not restate the op contract or the API.
 - **Independent oracles.** Recompute a law's expected answer from the
   generated input. Use code that shares nothing with the implementation
   (`docs/CONVENTIONS.md`, native tests first).

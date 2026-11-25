@@ -1,8 +1,7 @@
 # The registry and the runner
 
-The registry has two roles. It holds the modules that agents and people
-run (this section). It also holds the published schema of every document
-kind ("Document schemas", below).
+The registry holds the modules that agents and people run, and the
+published schema of every document kind ("Document schemas", below).
 
 The registry (`registry/`) is published by every `just caps`. `just
 registry` runs the gates first. The registry holds immutable blobs, one
@@ -18,12 +17,12 @@ holds:
 `wasm-fast` is the iteration loop's build. A gated publish refuses it.
 
 `caps-run` recomputes the source digest on every run. It says on stderr
-when the registry was published from another tree. In a session, it says
-so once for each registry. `just test` gates the agreement.
+when the registry was published from another tree, once for each
+registry in a session. `just test` gates the agreement.
 
-The registry is the artifact that agents and humans pull sandboxed
-compute from. `tools/caps-run.mjs` verifies blob bytes against the
-pinned hash. It runs ops behind a worker-termination wall-clock guard
+Agents and people pull sandboxed compute from the registry.
+`tools/caps-run.mjs` verifies blob bytes against the pinned hash. It
+runs ops behind a wall-clock guard that terminates the worker
 (`--timeout`).
 
 A session runs its steps in command-line order. It may span
@@ -34,14 +33,14 @@ module the same way. `--as` names results, so references survive
 reordering.
 
 A session holds each result as the module's JSON text. It parses one
-only when a reference reaches into it. A parsed real-size answer is
-millions of objects, and every later collection re-marks them.
+only when a reference reaches into it, because a parsed real-size
+answer is millions of objects that every later collection re-marks.
 
 A session can last across commands. `--session NAME` saves each result
 named with `--as` in the session's store, and a later command with the
 same `--session` reaches those results by name. So a later command
 loads an imported network from the store instead of importing the feed
-again. On C-TRAN, the later command answers a board in about 0.5 s.
+again.
 
 - The store is `.caps-sessions/<name>/` in the tree (gitignored), or
   the directory that `CAPS_RUN_SESSIONS` names. It holds `index.json`
@@ -53,7 +52,7 @@ again. On C-TRAN, the later command answers a board in about 0.5 s.
   command. The same name twice in one command is still an error.
 - A command saves its named results only when every step succeeds.
 - Each command makes new module instances. A stored document registers
-  itself: when an op answers `unknown <kind> <hash>: <load op> first`,
+  itself. When an op answers `unknown <kind> <hash>: <load op> first`
   and the session holds that document under that hash, the runner loads
   it through the kind's kernel load and runs the op again. The result
   line lists it in `registered`. So `$net.network_hash` is enough, and a
@@ -89,7 +88,7 @@ The format and replay are in `tools/journal.mjs`.
   instance for each capability. `--single` makes every call run that
   way, which checks assembly independence on the journal.
 - When a call asks for a document that another instance registered or
-  minted, replay registers it in the asking instance first, as a page's
+  created, replay registers it in the asking instance first, as a page's
   linked assembly shares it. Assembly independence makes the answer the
   same (`docs/architecture/bus.md`, "Bus rules"). A document that never
   left a linked assembly cannot cross, and replay says so.
@@ -99,10 +98,6 @@ The format and replay are in `tools/journal.mjs`.
 - `--module CAP=FILE` replays the capability against a candidate
   module. To replace a module, replay the journals that use it against
   the candidate.
-
-On C-TRAN, a session that imports the feed and then asks the board,
-the directory, and the router journals 9 calls, keeps 3.8 MB of
-gzipped requests, and replays in about 5 s.
 
 **The clock.** The runner reads the clock in the agency's zone, never
 the machine's (D-175). `$TODAY` is the agency's service date, and
@@ -121,9 +116,7 @@ runner and the pages give the same date at the same instant.
 `{"omitted": {"kind": "network", "schema_version": 2, "bytes": …}}`.
 A document is any object that carries `kind` and `schema_version`
 ("Every document says what it is", in [bus.md](bus.md)). The session
-keeps the whole document, so references still reach it. On C-TRAN, an
-import and `service_types_overview` print 3.3 KB with `--brief`, and
-9.6 MB without it.
+keeps the whole document, so references still reach it.
 
 **Discovery.** `caps-run tools <capability>` prints every op with its
 full description and worked example. The examples carry whole fixture
@@ -135,26 +128,25 @@ documents, so the analysis catalog is about 100 KB.
 - `caps-run tools <capability> <op>` prints one op in full: its
   description and its example request and answer.
 
-Registry records and the browser manifest are both generated by
-gen-manifest (`just caps`), the generator's binary that gen-assemblies
-writes. One
-source gives the contracts, and two surfaces read them.
+gen-manifest (`just caps`) generates the registry records and the
+browser manifest. One source gives the contracts, and two surfaces read
+them.
 
 A capability's agent context is its purpose and each op's description.
-It lives in the `OPS.md` beside its crate. It is Markdown that an agent
-edits like any doc. The generator reads it. The generator refuses an
-`OPS.md` whose op sections are not the capability's ops. The generator
-computes the worked examples. Nobody writes them by hand.
+It lives in the `OPS.md` beside its crate, as Markdown that an agent
+edits like any doc. The generator refuses an `OPS.md` whose op sections
+are not the capability's ops. The generator computes the worked
+examples, and nobody writes them by hand.
 
 An op description is paragraphs and lists. A line that starts with `- `
 is a list item, and a line indented by two spaces that starts with `- `
 is an item under it. The runner prints the text as written, and the
 docs site renders the lists. An op that takes a tagged union of edits
 (`apply` in author) gives one item for each edit, with its arguments and
-its rule. It does not give one long paragraph.
- `just test`
-gates the runner itself. The fixture feed hash is stable, so registry or
-fixture drift fails the gate.
+its rule, not one long paragraph.
+
+`just test` gates the runner itself. The fixture feed hash is stable, so
+registry or fixture drift fails the gate.
 
 ## The docs site
 
@@ -216,16 +208,14 @@ only the site's own `.html` files and listens on loopback only.
   tree. The raw JSON of both is in a closed block.
 
 Apart from the two traces and the bucket stories, the site has no
-content of its own. To
-change a page, edit the
-capability's `OPS.md`, or a crate's `description` in its `Cargo.toml`,
-and run `just caps`. `tools/docs-site.test.mjs` runs in `just test`. It
-checks that every capability, op, kernel op, and document kind has its
-place, and that no local link is broken. It also checks the
-architecture page against the same sources: every crate and every
-dependency is drawn, every line points left, every read is drawn, and
-every link of a UI is marked, every kind in the kind table is on the
-bucket map, and the code that each trace step and each bucket step
+content of its own. To change a page, edit the capability's `OPS.md`, or
+a crate's `description` in its `Cargo.toml`, and run `just caps`.
+`tools/docs-site.test.mjs` runs in `just test`. It checks that every
+capability, op, kernel op, and document kind has its place, and that no
+local link is broken. It also checks the architecture page against the
+same sources: every crate, dependency, read, and link of a UI is drawn
+and marked, every line points left, every kind in the kind table is on
+the bucket map, and the code that each trace step and each bucket step
 names still exists.
 
 ## Document schemas
@@ -247,12 +237,10 @@ schema lock"). It then copies the locks out:
   checked-in copy, `crates/cap-abi/kinds.json`, differs from it. A
   document type whose tag has no line stops the run too.
 
-The index holds, per kind and version: the `tag` the document carries,
-its bus `kind`, its `store_kind` (the store envelope's kind, when the
-store persists it), its `schema_version`, whether this build writes it
-(`written`), the crate that owns it (`owner`), the files' paths and
-hashes, and the registry's evidence. The docs site shows the version each kind
-writes.
+The index holds, for each kind and version, the document's tag, its bus
+`kind`, its `store_kind` (the store envelope's kind, when the store
+persists it), whether this build writes it (`written`), its owner crate,
+the files' paths and hashes, and the registry's evidence.
 
 A reader maps a blob's envelope (`kind`, `schema_version`) to its schema
 in that index (`docs/FORMATS.md`). `server/reader_test.go` checks every

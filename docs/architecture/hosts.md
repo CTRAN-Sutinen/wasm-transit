@@ -10,8 +10,8 @@ do: I/O, storage, and the clock. There are three hosts:
 - caps-run, the agent runner (`tools/caps-run.mjs`;
   [registry.md](registry.md)).
 
-The hosts share only the modules. So the rules that every host keeps
-are written here, once. Each host's own file holds its detail.
+The hosts share only the modules, so this file states the rules that
+every host keeps. Each host's own file holds its detail.
 
 ## The parts of a host
 
@@ -46,7 +46,7 @@ Each upstream answers two kinds of read:
 - **A head by name** (the `manifest`, a pointer, a log's head). A head
   names the hash of the current document.
 
-The server answers the same read paths as an export. So one version of
+The server answers the same read paths as an export, so one version of
 the page code reads from either upstream. Writes go only to the
 server, on its own paths (for example `POST /edits`,
 `POST /logs/<log>`, and `POST /plans`).
@@ -64,7 +64,7 @@ A host does four things, and no others:
   create a write answers.
 
 A host applies no domain rule. A value that a rule changes on its way
-between two ops is a third op. The steps of a write are one receive
+between two ops needs a third op. The steps of a write are one receive
 op, which answers the entry and the head it depends on. A call to an
 adjacent system splits in three: an op answers what to send, the host
 makes the call, and an op records the answer (D-228).
@@ -97,7 +97,7 @@ makes the call, and an op records the answer (D-228).
 The hosts differ in three ways. Each difference is a design decision.
 
 - **Authority.** The bucket is the record. A server copy and a
-  device's copy are working copies. The receive path runs only on the
+  device's copy are working copies. The write path runs only on the
   server, which checks every write before the bucket takes it
   ([agency-data.md](agency-data.md)).
 - **Writes while the upstream does not answer.** The server refuses
@@ -117,9 +117,9 @@ The hosts differ in three ways. Each difference is a design decision.
   (`server/hostcontract_test.go`), and the browser over the server
   (`web/src/uis/host-contract.test.mjs`). Each must give the same
   state: current, stale with the upstream's age, or failed.
-- A live feed that answers with old data is not detected (QAF-129).
+- A live feed that answers with old data goes undetected (QAF-129).
   An input can name the age past which it is old (`old_after_s`), and
-  no live feed names one yet.
+  no live feed names one.
 - The browser hosts apply no domain rule, and a gate holds it: no host
   tests a record's status. Each rule is one op, asked the same way by
   the server, the engine, and caps-run: a pick's period and what it
@@ -133,19 +133,16 @@ The hosts differ in three ways. Each difference is a design decision.
 - The server runs single-capability modules, and composes a flow that
   needs two capabilities in Go.
 
-The open work is [ui-host-inputs.md](../units/ui-host-inputs.md),
-[kind-registration.md](../units/kind-registration.md), and
-[server-assembly.md](../units/server-assembly.md).
+The open work is [ui-host-inputs.md](../units/ui-host-inputs.md) and
+[names-declared-once.md](../units/names-declared-once.md).
 
 ## Why
 
 ### One set of rules for every host (this file)
 - **Holds:** the server, the browser, and caps-run keep the rules
-  above. Their differences are the three listed, and no others.
-- **Because:** the hosts share only the modules. A rule that each
-  host's file states for itself drifts. A reader who learns the rules
-  once can read any host. A difference that is not named looks like a
-  defect, or hides one.
+  above. Their differences are the three listed.
+- **Because:** a rule that each host's file states for itself drifts,
+  and an unnamed difference looks like a defect or hides one.
 - **Rejected:** shared host code. The server is Go and the browser is
   TypeScript, and the modules are the only code that every host runs.
 

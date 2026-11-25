@@ -26,9 +26,9 @@ The export refuses a non-empty directory. It also refuses `-store`,
 because the export takes the feed's import, not a store's picks. A new
 schedule is a new export (D-131).
 
-The bundle's paths are the ones the server answers. So the pages are
-the same bytes on either. The server serves every UI from `web/dist`.
-Service design runs only there. `go test`'s
+The bundle's paths are the ones the server answers, so the pages are
+the same bytes on either. The server serves every UI from `web/dist`,
+and service design runs only there. `go test`'s
 `TestTheExportIsWhatTheServerServes` pins the bundle byte for byte
 against the server.
 
@@ -106,9 +106,9 @@ keeps the last zip in Cache Storage (`gtfs-feed`). A device therefore
 boots offline on that zip. The feed must answer with CORS.
 
 This mode has costs. Every device imports the feed (C-TRAN: ~2.7 s, a
-~187 MB network module). No walk
-table between stops ships, because the walk table derives from the
-network, and only the page has the network. A street layer still ships.
+~187 MB network module). No walk table between stops ships, because the
+walk table derives from the network, and only the page has the
+network. A street layer still ships.
 
 `web/e2e/static-feed-url.spec.mjs` pins the boot, the daily check, and
 the offline use of the last zip. A changed zip is adopted at the next
@@ -129,10 +129,9 @@ Change it only with the user, and only after you read **Because**.
   on their own. Service design runs only with the server. The bundle's
   paths match the server's (`manifest`, `blobs/<hash>[.gz]`). So the
   page code is one.
-- **Because:** Deployment flexibility is the point. An agency can run
-  the rider apps on any static host. Each UI is its own product, with
-  its own release cadence. Reading the server's layout keeps the server
-  a first-class option, not a fork ([README.md](README.md), "Deployment
+- **Because:** an agency can run the rider apps on any static host,
+  and each UI is its own product with its own release cadence. Reading
+  the server's layout keeps the server a first-class option, not a fork ([README.md](README.md), "Deployment
   shapes").
 - **Rejected:** one bundle of every UI (ships service design where it
   cannot run).
@@ -145,10 +144,10 @@ Change it only with the user, and only after you read **Because**.
   failed check, it checks again an hour later. The page keeps the last
   zip in Cache Storage. It adopts a changed zip without a reload. With a
   server, pages never parse GTFS.
-- **Because:** A fully serverless deployment should not need a redeploy
-  for each new feed. The import costs every device time and memory,
-  and there is no walk table between stops. The cost was accepted for
-  that mode only.
+- **Because:** a serverless deployment should not need a redeploy for
+  each new feed. The import costs every device time and memory, and
+  there is no walk table between stops. Only this mode accepts that
+  cost.
 - **Rejected:** a scheduled re-export and redeploy; a Cloudflare Worker
   cron running the import.
 - **Decided:** D-132. **Pinned:** `web/e2e/static-feed-url.spec.mjs`,

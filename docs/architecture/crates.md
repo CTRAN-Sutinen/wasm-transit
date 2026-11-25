@@ -8,4 +8,6 @@ depends on which (`architecture.html`).
 
 ## Every module
 
-Every module is the raw rustc output of an assembly crate with the same four flat exports. There is no wasm-bindgen. Do not reintroduce host glue.
+Every module is the raw rustc output of an assembly crate. It has the
+same four flat exports, with no wasm-bindgen and no host glue
+([bus.md](bus.md), "The kernel: cap-abi").

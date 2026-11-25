@@ -1,12 +1,11 @@
 # Decisions
 
-This is the durable record of the questions put to the user and
-their answers. When an agent hits a decision that the user's intent,
-the GTFS spec, and the architecture laws leave open, the agent writes
-it down and does not build on an answer it picked (AGENTS.md,
-"Clarify, don't assume"). The entry names the work the decision
-blocks, so the rest of the work can go ahead while the decision is
-reviewed.
+This file holds the open questions put to the user, and the answers
+that are not built yet. When an agent hits a decision that the user's
+intent, the GTFS spec, and the architecture rules leave open, it writes
+the question down and does not build on an answer that it picked
+(AGENTS.md, "Clarify, don't assume"). The entry names the work that it
+blocks, so the rest of the work can go ahead.
 
 Each entry is one file, `docs/decisions/D-N.md`. This file holds the
 rules and the summary, which links to each entry. Read the summary
@@ -22,47 +21,41 @@ first, and open only the entries you need.
   Topic: the area it belongs to (for example, Service design).
   State: Unanswered | Encoded provisionally | Decided
   Answer: (Decided only) the user's answer, dated, in their words.
-  Context: (open entries) what the intent, the spec, and the code
-    say, briefly.
-  Options: (open entries) each answer and what it costs; mark the one
-    the code encodes (if any).
-  Pinned by: the laws, tests, and specs that hold the answer.
-  Why: (decided entries) the topic file and the heading, under its
-    "Why", that holds the reasoning and the alternatives considered.
-  Blocks: the units, findings, or laws that cannot proceed or be
-    deleted until it is decided. "Nothing" is a valid answer.
+  Context: what the intent, the spec, and the code say, briefly.
+  Options: each answer and what it costs. Mark the one the code
+    encodes, if any.
+  Pinned by: the property tests and specs that hold the answer.
+  Blocks: the units, findings, or tests that cannot proceed until it
+    is decided. "Nothing" is a valid answer.
   ```
 
-- **A decided entry is the record, not the reasoning.** When an entry
-  is decided, its Context and Options move into the "Why" section of
-  the architecture topic it shapes (`docs/architecture/<topic>.md`),
-  rewritten in the present tense with the alternatives named, and the
-  entry keeps its question, the answer in the user's words, its pins,
-  what it blocks, and a `Why:` pointer. An open entry (unanswered or
-  encoded provisionally) keeps its Context and Options: the question
-  is still in front of the user. So does a decided entry whose work is
-  not built yet: its reasoning moves to the topic's Why in the change
-  that builds it.
-
 - **State.** *Unanswered* means nothing is built on any answer, and
-  the work it blocks waits. *Encoded provisionally* means an agent
-  had to pick an answer to land a law. The laws that pin that
-  answer are named, and a different decision rewrites them.
-- **Blocked work names its decision.** A unit or finding that
-  waits on a decision says `Blocked: D-N`. Work that does not name
-  one is free to start.
-- **A decided entry stays — decisions are a durable record, never
-  deleted.** Its state becomes *Decided* and its Answer line records
-  what the user said and when. In the same change, the answer goes
-  into the law that pins it and the doc that owns its topic
-  (`docs/architecture/`, `docs/units/`, `docs/QA-FINDINGS.md`),
-  and the `Blocked: D-N` lines are removed. A later answer that
-  reverses one is a new entry naming the entry it replaces; the old
-  entry's state says so.
+  the work it blocks waits. *Encoded provisionally* means an agent had
+  to pick an answer to land a property test. The tests that pin that
+  answer are named, and a different answer rewrites them. *Decided*
+  records the user's answer, dated, in their words.
+- **Blocked work names its decision.** A unit or finding that waits
+  on a decision says `Blocked: D-N`. Work that names none is free to
+  start.
+- **A built decision leaves this record.** In the change that builds a
+  decided answer, or in a later change that confirms it is built, its
+  substance moves to its homes, and the entry is deleted with its
+  summary row. Git keeps the entry.
+  - The property goes in the test that pins it, stated in one line.
+  - The rule, its reason, and each rejected alternative (one line
+    each) go in the doc or code comment that owns the topic
+    (`docs/CONVENTIONS.md`, "What to write").
+  - Every citation of the id goes in the same change. Find them with
+    `rg -n -w 'D-N'`.
+- **Cite an id only while its entry exists.** A doc, comment, or test
+  that states a rule says it in its own words, and cites the id only
+  while the question is open or the answer is not built.
+- **A reversed answer is a new entry.** It names the entry it
+  replaces, and the replaced entry is deleted in the same change.
 - **The summary has one row for each entry.** A new entry adds its
   row in the same change. A change of state or of what it blocks
   updates the row and the entry together.
-- IDs are never reused; the next new decision is **D-253**.
+- IDs are never reused. The next new decision is **D-254**.
 
 ## Summary
 
@@ -236,7 +229,6 @@ first, and open only the entries you need.
 | [D-171](decisions/D-171.md) | How does a UI at its own URL reach the server, and how is it rolled back? | decided | nothing |
 | [D-172](decisions/D-172.md) | Where do the server's settings live? | decided | nothing |
 | [D-173](decisions/D-173.md) | How does a stop the stops app made reach a plan? | decided | nothing |
-| [D-174](decisions/D-174.md) | How are code comments and the developer documents written? | decided; replaced by D-252 | nothing |
 | [D-175](decisions/D-175.md) | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
 | [D-176](decisions/D-176.md) | Does a user's own selection assemble capabilities at wire time? | decided | nothing |
 | [D-177](decisions/D-177.md) | What does a journal keep, and where? | encoded provisionally | nothing |
@@ -306,12 +298,12 @@ first, and open only the entries you need.
 | [D-241](decisions/D-241.md) | What must hold before a split runs? | unanswered | `log-boundaries.md` item 3 (the split) |
 | [D-242](decisions/D-242.md) | What runs a move of a log's boundary, and when? | unanswered | `log-boundaries.md` item 3 |
 | [D-243](decisions/D-243.md) | In which order does the manifest list the capabilities and their ops? | encoded | nothing |
-| [D-244](decisions/D-244.md) | What does the kind-name gate match, and do the per-capability module flags retire? | unanswered | `kind-registration.md` item 4 |
+| [D-244](decisions/D-244.md) | What does the kind-name gate match, and do the per-capability module flags retire? | decided | nothing |
 | [D-245](decisions/D-245.md) | Does a failed input stop the answers that read it? | encoded | nothing |
 | [D-246](decisions/D-246.md) | When does a page read a failed input again? | encoded | nothing |
 | [D-247](decisions/D-247.md) | Do the staff pages follow the deployment's network as it moves? | encoded | nothing |
-| [D-248](decisions/D-248.md) | D-239 costs each module 2 to 5 percent: keep it? | unanswered | `kind-registration.md` (the release gate at the unit's end) |
-| [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | unanswered | `http-contract-generated.md` item 4 |
+| [D-248](decisions/D-248.md) | D-239 costs each module 2 to 5 percent: keep it? | unanswered | `names-declared-once.md` (the release gate at the unit's end) |
+| [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | decided | nothing |
 | [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
 | [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |
-| [D-252](decisions/D-252.md) | Which writing rules do code comments and the developer documents follow? | decided | nothing |
+| [D-253](decisions/D-253.md) | What shape does a coded refusal take in a module's answer? | decided | `shapes-from-rust.md` (the refusal codes) |

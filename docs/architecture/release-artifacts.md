@@ -1,33 +1,32 @@
 # Release artifacts
 
-A module's hash is its identity everywhere. The manifest pins it. The
-HTTP cache and the service worker keep it forever. A client downloads a
-module again only when its hash moves. So the bytes are a function of
-the tree alone. A change moves only the modules it touches.
+A module's hash is its identity everywhere. The manifest pins it, and
+the HTTP cache and the service worker keep it forever. A client
+downloads a module again only when its hash moves. The bytes are a
+function of the tree alone, and a change moves only the modules it
+touches.
 
 - **The toolchain is pinned.** `rust-toolchain.toml` names the Rust
   release and the wasm target. `Cargo.lock` pins every dependency, and
   the modules build `--locked`. Go is pinned by `server/go.mod`. npm is
   pinned by `web/package-lock.json`. The registry's evidence records the
-  toolchain that ran: `toolchain` holds the pin, rustc's release, commit
-  and LLVM, and cargo. A gated publish (`just registry`) refuses a
+  toolchain that ran. A gated publish (`just registry`) refuses a
   compiler other than the pin. Upgrading the toolchain is a change of
-  its own. So is upgrading a serialization dependency (serde,
-  serde_json). Make either change in the pin or the lockfile. It can
-  move every module's hash. A serde change can also move every
-  document's canonical bytes. That is a version change for every
-  document of the kind.
+  its own, and so is upgrading a serialization dependency (serde,
+  serde_json). Either can move every module's hash. A serde change can
+  also move every document's canonical bytes, which is a version change
+  for every document of the kind.
 - **The build names no machine.** `just _modules` (run by `just caps`)
-  remaps the cargo home to `/cargo`. It remaps the tree to `/src`. So a
-  panic location carries no home directory.
+  remaps the cargo home to `/cargo` and the tree to `/src`, so a panic
+  location carries no home directory.
 - **Reproducible, gated.** `just reproducible` is a gate of `just
-  registry`. It builds a copy of the tree at another path. It uses
-  another cargo home and its own target directory. It fails unless every
-  module matches byte for byte.
+  registry`. It builds a copy of the tree at another path, with another
+  cargo home and its own target directory. It fails unless every module
+  matches byte for byte.
 - **One build per assembly.** Cargo unifies a dependency's features
   across every package that one build selects. So the assemblies build
-  one at a time. A feature that one capability asks for moves only the
-  modules that carry that capability.
+  one at a time, and a feature that one capability asks for moves only
+  the modules that carry that capability.
 - **The kernel's closure.** Every module links the kernel. So every
   library the kernel requires is in every module's closure. A code
   change moves only the modules whose linked code it changes. A
@@ -38,32 +37,33 @@ the tree alone. A change moves only the modules it touches.
   read that kind. The generator is a crate of its own,
   `crates/generator`, that only its generated binary (gen-manifest)
   depends on, and so are its fixtures (`crates/fixtures`), so what they
-  need besides is in no module's closure. `arch-gates` enforces both
-  (gates 1 and 4, `crates/cap-abi/src/bin/common/gates.rs`).
+  need is in no module's closure. `arch-gates` enforces both (gates 1
+  and 4, `crates/cap-abi/src/bin/common/gates.rs`).
 - **Every build is kept (D-80).** In store mode the server commits the
   release in `-dist` to the store's `build` pointer. Every file is a
   blob. A build document names the files and the modules the server
   hosts (docs/FORMATS.md, "Builds"). The server serves the pages from
-  the head. The manifest pins it (`build_hash`). `-dist` is read like a
-  source. Its listing is re-checked at most every 2 s, and a changed tree
-  is committed when its build is new to the log (D-118). The basemap
-  (`basemap.pmtiles`, `basemap-assets/`) is map data, not the release. It
-  stays with `-dist`. A store's log holds every build it ever served,
-  whole. GC keeps a logged build's files.
+  the head, and the manifest pins it (`build_hash`). The server re-checks
+  `-dist`'s listing at most every 2 s, and commits a changed tree when
+  its build is new to the log (D-118). The basemap (`basemap.pmtiles`,
+  `basemap-assets/`) is map data and stays with `-dist`. The log holds
+  every build the store ever served, whole, and GC keeps a logged
+  build's files.
 - **Rolling code back is a pointer move.** `POST /builds` moves the
-  pointer to a build the log holds. The manifest moves with it. On the
-  pages' next poll, they find the old build's service worker. They apply
-  it as they apply any build ([updates-offline.md](updates-offline.md)).
-  `e2e/deploy-rollback.spec.mjs` pins it. A build the log already holds
-  is never re-imported. So a restart on the release that a rollback left
-  in `-dist` keeps the rollback. Moving forward is the same `POST`. The
-  server's own modules are retained in each build (`server`). A running
+  pointer to a build the log holds, and the manifest moves with it. On
+  their next poll, the pages find the old build's service worker and
+  apply it as they apply any build
+  ([updates-offline.md](updates-offline.md)).
+  `e2e/deploy-rollback.spec.mjs` pins it. The server never re-imports a
+  build the log holds, so a restart on the release that a rollback left
+  in `-dist` keeps the rollback. Moving forward is the same `POST`.
+  Each build retains the server's own modules (`server`), and a running
   server keeps the modules it started on. Rolling the server back means
   deploying its previous image, so its Go code and its modules roll back
-  together (D-81). Newer Go never runs on older modules: an op's shape
-  is private to the image that ships it. Either
-  rollback works only when the build rolled back to reads what the newer
-  build wrote (D-79).
+  together (D-81). Newer Go never runs on older modules, because an op's
+  shape is private to the image that ships it. Either rollback works
+  only when the build rolled back to reads what the newer build wrote
+  (D-79).
 
 ## The HTTP contract
 
@@ -109,8 +109,6 @@ contract (D-81).
   releases: the first marks it, and the second removes it once no
   deployed part sends or reads it. `just http-lock` writes the lock
   again after the gate passes. Run it when a release ships.
-- **The server rolls back by its image.** Its Go code and its modules
-  roll back together, so the server's own op calls never cross a build.
 
 ## Each UI at its own URL
 
@@ -175,6 +173,6 @@ Change it only with the user, and only after you read **Because**.
 
 ### A UI's host routes the data paths; each UI's builds are in the store (`-ui-dist`, `build.<id>`, `POST /builds?ui=`, `tools/ui-deploy.mjs`)
 - **Holds:** a UI's host serves its bundle and forwards the data paths to the server, so the page is same-origin with its data. The server sends no CORS headers. Each UI's bundle is a build on `build.<id>`, and a UI rolls back by moving that pointer and deploying the build again.
-- **Because:** the pages already use relative paths that a static bundle and the server share, so the pages need no change, and no page carries a server's address. Same-origin keeps the bearer token away from cross-origin requests, keeps the rider pages' policy at `connect-src 'self'`, and needs no allow-list that drifts from the deployment. Keeping each UI's builds in the store keeps one record for code and data: one backup and one verification, and no coupling to one hosting provider's version history.
+- **Because:** the pages already use relative paths that a static bundle and the server share, so the pages need no change, and no page carries a server's address. Same-origin keeps the bearer token away from cross-origin requests, keeps the rider pages' policy at `connect-src 'self'`, and needs no allow-list that drifts from the deployment. Keeping each UI's builds in the store keeps one record for code and data, with no coupling to one hosting provider's version history.
 - **Rejected:** the bundle names the server's URL, and the server answers cross-origin from an allow-list (every fetch takes a base, every write sends a preflight, and each page's policy names the server). The UI host's own versions as the record of its builds (the builds then live with each provider, outside the agency's bucket).
 - **Decided:** D-171. **Pinned:** `web/e2e/ui-origins.spec.mjs`, `server/builds_test.go` (`TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone`), `server/store/build_test.go` (`TestAUIsLoggedBuildsKeepTheirFilesThroughGC`).

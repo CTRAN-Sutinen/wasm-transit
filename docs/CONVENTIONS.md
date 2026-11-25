@@ -118,7 +118,7 @@ tells a reader something that the code cannot show them:
 - a reason that a maintainer needs to avoid a wrong change;
 - a unit, or the range of a value;
 - an invariant or a limit that other code depends on;
-- an outside constraint: a spec, a host, a user's decision (its id);
+- an outside constraint: a spec, a host, or a user's decision;
 - behavior that a caller would not expect from the name and the
   signature.
 
@@ -143,10 +143,14 @@ reword a comment that should not exist.
     or function whose answer an op returns, so those carry no doc
     comments that repeat it.
   - An HTTP route's bodies and answers live in `server/openapi.json`.
-  - The design of a part lives in its `docs/architecture/` file, and
-    one generated UI's rules in `docs/architecture/generated-uis/`.
-  - A decision's reasoning lives in its decision file. A comment that
-    stays for another reason keeps the decision id.
+  - A fact lives at the narrowest scope that it covers. The design of
+    one file or package lives in that file's header or package
+    comment. What spans parts lives in its `docs/architecture/` file,
+    and one generated UI's rules in `docs/architecture/generated-uis/`.
+  - An open decision's question and options live in its decision
+    file. Cite its id only while the entry exists (`docs/DECISIONS.md`,
+    "The rules"). A built answer is stated in its home, in its own
+    words.
 - A test file's header names what the tests pin and where the intent
   lives, in one or two lines (`docs/TESTING.md`, "Laws first"). A test
   states its property in one line. Do not narrate steps that the test

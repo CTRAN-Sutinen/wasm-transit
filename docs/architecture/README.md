@@ -1,20 +1,19 @@
 # Architecture reference
 
-This directory is the architecture reference. It has one file for each
-topic, and each topic has only one home. The detail for the server, the
-web, and the bus is here and in no other place. A crate's detail is its
-own `//!` crate comment.
+This directory holds what spans the system: how the parts fit, the
+failure model, and the invariants that cross components. It has one
+file for each topic. A fact lives at the narrowest scope that it
+covers, so detail that one file, package, or crate covers lives with
+that code: a crate's `//!` comment, a Go package or file comment, a TS
+file header, a capability's `OPS.md`, or a route's description in
+`server/openapi.json`.
 
 Related documents:
 
 - The root `AGENTS.md` holds a map of the repo, which points to the
   home of each part, and the ownership rules.
-- `crates/AGENTS.md` states the three architecture laws. Update it
-  together with these files. The laws are:
-  1. The network is the core data model.
-  2. No module rebuilds the old all-in-one module.
-  3. Each module answers one need. The set of modules for a user is
-     chosen when the modules are assembled, not when they are designed.
+- `crates/AGENTS.md` states the three architecture rules. Update it
+  together with these files.
 - `docs/units/` holds the open work, one file for each unit. These
   files describe only what the code does now.
 - [The guide](../guide/README.md) is the plain-language introduction
@@ -24,7 +23,7 @@ Related documents:
 
 | File | What it covers |
 |---|---|
-| [agency-data.md](agency-data.md) | Who owns the data (the agency). Applications are interfaces. Reads are open, and the receive path governs writes. |
+| [agency-data.md](agency-data.md) | Who owns the data (the agency). Applications are interfaces. Reads are open, and the write path governs writes. |
 | [crates.md](crates.md) | Where a crate is described: its own `//!` crate comment, and a capability's `OPS.md` |
 | [bus.md](bus.md) | The capability bus: one module interface, documents named by hash, linked assemblies, and the rules the bus depends on |
 | [hosts.md](hosts.md) | What a host is (an upstream, a working copy, the modules, a clock), the rules every host keeps, and the three ways the hosts differ |
@@ -38,9 +37,9 @@ Related documents:
 | [registry.md](registry.md) | The capability registry and the agent runner |
 | [release-artifacts.md](release-artifacts.md) | Reproducible builds, kept builds, rollback, the HTTP contract, and each UI at its own URL |
 
-Each topic file says what the code does, in the present tense. When the
-reason for a design is not clear from what it does, the topic's **Why**
-section gives the reason and the alternatives that were considered.
+Each topic file says what the code does. When the reason for a design is
+not clear from what it does, the topic's **Why** section gives the
+reason and the alternatives that were considered.
 
 ## Deployment shapes
 
@@ -66,11 +65,11 @@ code serves both.
 
 ## Built for the outage
 
-A transit agency keeps running when its technology fails. It has
-fallback procedures. This project is designed the same way. Each
-part is designed for the outage it will have, not only to be
-available. For each failure, the design states three things: what still
-works, what each person does instead, and how the part recovers.
+A transit agency keeps running when its technology fails, and it has
+fallback procedures. Each part of this project is designed for the
+outage it will have, not only to be available. For each failure, the
+design states what still works, what each person does instead, and how
+the part recovers.
 
 - **Every copy but the bucket is a working copy.** A server copy, a
   page's cache, and an exported bundle can each be lost, and nothing

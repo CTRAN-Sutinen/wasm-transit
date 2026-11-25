@@ -56,7 +56,7 @@ that is the codec's (step 7).
    codec. The export carries internal data and is served only under
    policy.
 
-Where the runs ops go is a Law 3 question, judged when step 1 lands:
+Where the runs ops go is a rule 3 question, judged when step 1 lands:
 the runcut's question is "what does this vehicle do today", and a
 run is a person's work. The runs cut is most likely its own
 capability over the same documents.

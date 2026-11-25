@@ -76,10 +76,9 @@ Do not commit. Git is the user's.
      `docs/decisions/`, with its row in `docs/DECISIONS.md`. Mark it
      provisional, with its pins. Mark an entry that the user settled as
      Decided, with the answer.
-   - When a decided entry is built, move its reasoning into the Why of
-     its topic (`docs/architecture/<topic>.md`), or into the crate
-     comment when it governs one crate. The entry keeps the record.
-     Never delete a decision entry.
+   - When a decided entry is built, move its substance to its homes
+     and delete the entry, its summary row, and every citation of its
+     id (`docs/DECISIONS.md`, "The rules").
    - Delete fixed findings in `docs/QA-FINDINGS.md`. Reword a finding
      that the change answers in part. Update the reference hashes that
      a dogfood session measured again.

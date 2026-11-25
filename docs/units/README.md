@@ -97,20 +97,19 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [server-assembly.md](server-assembly.md) | the server links one assembly, as a UI does, with authz and each import in instances of their own |
+| [names-declared-once.md](names-declared-once.md) | each capability and kind named once: the server links one assembly with one flag, the engine's op map and the write routes come from the declarations, and a gate on identifiers holds it |
+| [shapes-from-rust.md](shapes-from-rust.md) | every answer's shape from its Rust type: the answer schemas, coded refusals that no host matches by text, and the HTTP contract generated with its prose in one overlay |
+| [reference-rules.md](reference-rules.md) | the rules between records: each reference's rule at both ends, and the transitions that pin or warn |
 | [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are one clean `just e2e` run, the findings it closes, and the release gates |
-| [kind-registration.md](kind-registration.md) | a document kind declared once: a gate on where a kind's name appears, the server's and the engine's plumbing, and the kind lists in the docs generated; the references between records checked, as of what the writer read |
-| [capability-declared-once.md](capability-declared-once.md) | a capability declared once, in its crate: the gate that holds it, and the last docs |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
-| [http-contract-generated.md](http-contract-generated.md) | the HTTP contract generated from the mux, the kind table, and the answer types, with its prose in one overlay; a gate fails a hand edit |
-| [refusal-codes.md](refusal-codes.md) | the refusals a host acts on (an evicted document, a newer version, a log that moved) carry a stable code; no host matches an error's text, and a gate holds it |
 | [shared-dates-and-distance.md](shared-dates-and-distance.md) | the service date parsed and written by one helper, and the network's distance through transit-geo; blocked on D-251 |
 
 ### The documents
 
 | unit | what it is |
 |---|---|
-| [plain-comments.md](plain-comments.md) | the developer documents brought to the writing rules that the code comments now follow |
+| [prose-at-scope.md](prose-at-scope.md) | each fact at the narrowest scope: route behavior into the contract's overlay, one file's design beside its file, generated lists for hand lists, and the writing rules in the developer documents |
+| [retire-decisions.md](retire-decisions.md) | the decided, built entries retired into their homes, and the provisional entries reviewed with the user |
 
 ## Queued, not yet scoped
 
@@ -124,7 +123,7 @@ before starting it.
   recurs, crystallize it; until then improvisations are findings.
   The session journal (`docs/architecture/registry.md`, "The
   journal") already records each session's calls.
-- **Law 3 re-cuts** — a split costs no network copy now (a page's
+- **Rule 3 re-cuts** — a split costs no network copy now (a page's
   capabilities share one registry): cap-analysis into service
   numbers, headways, coverage, and connections; cap-directory into
   the directory (lists and details), the timetable, and focus, with

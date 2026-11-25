@@ -1,7 +1,8 @@
 package main
 
-// The derived documents (D-199; docs/architecture/storage.md, "Derived
-// documents"; docs/FORMATS.md, "Derivations"):
+// The server derives these documents (D-199; docs/architecture/storage.md,
+// "The derived documents are in the record"; docs/FORMATS.md,
+// "Derivations").
 //
 //	network, boundary  cap-network's import of the GTFS zip (source.feed)
 //	streets            cap-streets' import of the street layer (source.streets)

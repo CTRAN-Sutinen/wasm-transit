@@ -1,11 +1,11 @@
 # AGENTS.md: the crates
 
-Three laws govern everything in this directory. If a design breaks one
-of them, the design is wrong. Do not change the law to fit the design.
-The mechanics behind the laws (the kernel, the loads, the day entry,
+Three rules govern everything in this directory. If a design breaks one
+of them, the design is wrong. Do not change the rule to fit the design.
+The mechanics behind the rules (the kernel, the loads, the day entry,
 the declarations) are in `docs/architecture/bus.md`.
 
-## Law 1: the network is the core data model
+## Rule 1: the network is the core data model
 
 GTFS is a serialization for sharing data with other systems. Nothing
 new goes into GTFS. Code on the model side does not read a
@@ -15,34 +15,30 @@ serialization.
   layer, import, and export), cap-gtfs and cap-network (the boundary
   capabilities), and cap-rt (rt trip ids resolve against the network
   there, with the import's stop numbering).
-- The charter of cap-gtfs is closed. It parses, exports, and answers
-  primitive boundary queries. Add nothing else.
-- **"Network or feed" is never a design choice.** Capabilities on the
-  model side compose over the network document, named by its content
-  hash, and its day views. Do not present composition over the feed as
-  an option, a trade-off, or an open question. Write no new code that
-  composes over the feed. No plan may open the question again.
+- cap-gtfs parses, exports, and answers primitive boundary queries.
+  Add nothing else to it.
+- Capabilities on the model side compose over the network document,
+  named by its content hash, and its day views, never over the feed.
+  This is settled. Do not offer the feed as an option.
 - Operator edits, rt joins, analysis, and dispatch views work in the
   model's vocabulary: network, service type, pattern trips, walking
   group, and materialized trip. Route ids and stop ids cross the
   boundary. GTFS types and row shapes do not.
-- Streets follow the same rule. A street layer (an agency GIS export,
-  TIGER, or OSM) is a serialization. Only `transit_streets::geojson`
-  reads it, into the streets document. A network never refers to a
-  streets document or a graph position.
+- A street layer (an agency GIS export, TIGER, or OSM) is a
+  serialization too. Only `transit_streets::geojson` reads it, into the
+  streets document. A network never refers to a streets document or a
+  graph position.
 - TODS (the operations plan), TIDES (the history of operations, read
   and never written), and GTFS-rt (the live picture, and the
   serialization of the edit document and the service alerts document)
   follow the same rule. Their row shapes stay at the boundary (D-124,
   D-126, D-127, D-128, D-206).
 
-## Law 2: do not rebuild the monolith inside a module
+## Rule 2: do not rebuild the monolith inside a module
 
-The monolith was one artifact that answered every op. It is gone. A
-capability that builds it again with hash-keyed registries has the
-same defect.
-
-Reject these on sight:
+A monolith is one artifact that answers every op. A capability that
+builds one with hash-keyed registries has the same defect. Reject
+these:
 
 - A whole GTFS feed written where a day is enough. For example,
   `transit_codec::export` inside a capability. That function is the
@@ -58,16 +54,16 @@ day, never the calendar. The kernel holds the effective day once for
 each (network, edits, date), so every capability that reads the day
 finds the same day (`docs/architecture/bus.md`).
 
-## Law 3: one need for each module
+## Rule 3: one need for each module
 
 A capability module is one need, as one unit. Examples: "see the
 departures at a stop", "watch one vehicle's connections", and "plan a
 trip".
 
-The persona or bundle comes together in a generated UI: the ops its
-`ui.json` lists. It never comes together in a module's design. Do not
-design a module around who will use it. Do not merge ops because the
-same users wire them together.
+A persona's set of ops comes together in a generated UI (the ops its
+`ui.json` lists), never in a module's design. Do not design a module
+around who will use it. Do not merge ops because the same users wire
+them together.
 
 Linking assembles the bytes of the capabilities that a UI lists into
 one binary, at build time. Linking merges no surface. Each capability
@@ -75,7 +71,7 @@ keeps its crate, its `Request` enum, and its manifest entry, and can
 still be retired alone (`docs/architecture/bus.md`, "Bus rules"; D-77,
 D-176).
 
-Reject these on sight:
+Reject these:
 
 - Ops that serve different needs in one module, because one persona
   downloads them together. An example is a rider's board behind an
@@ -86,9 +82,8 @@ Reject these on sight:
   day machinery is a library's job (transit-dispatch).
 
 Registration belongs to the kernel. Each document kind's load is a
-kernel op, never in a capability's `Request`. Authoring ops mint
-documents and register them where they mint them. A reader has no
-authoring op.
+kernel op, never in a capability's `Request`. An authoring op creates
+a document and registers it. A reader has no authoring op.
 
 ### The cut: the criteria every capability must pass
 
@@ -109,8 +104,6 @@ that fails one criterion is a bundle or a duplicate.
    not belong, however related it is.
 5. **Valuable alone.** The capability is worth assembling by itself.
    If it only feeds another capability, it is an op of that capability.
-   Capabilities never call capabilities. Composition is through
-   documents only.
 6. **No two answers to one question** in the whole manifest. Delete a
    duplicate answer in the change that makes it obsolete. Never keep it
    for compatibility.
@@ -120,31 +113,26 @@ that fails one criterion is a bundle or a duplicate.
 
 ### The split: when a module stops growing
 
-Judge the cut again at every change to a module, not only when it is
-made. A module that conforms when it is made can become a bundle one op
-at a time. Any one of these triggers makes a split the answer to "where
-does the next op go". Split in the change that trips the trigger.
+Judge the cut again at every change to a module. A module that
+conforms when it is made can become a bundle one op at a time. Any one
+of these triggers makes a split the answer to "where does the next op
+go". Split in the change that trips the trigger.
 
 1. **The second cluster.** The module's ops fall into groups that share
-   neither documents nor response vocabulary. One cluster is a family
-   of facets. Two clusters are one module that holds two questions. The
-   next op added to either cluster is the first op of the new module.
+   neither documents nor response vocabulary. The next op added to
+   either group is the first op of the new module.
 2. **The second document.** An op takes a document that none of the
    module's other ops take. One such op is a facet. The second one
    composes a question this module does not otherwise answer. Those
    ops go to the module of the need that composes them.
 3. **The near neighbor.** An op answers inside another module's
-   question. Criterion 6 applies to answers that move toward each
-   other, not only to duplicates that start that way. When the next op
-   moves either module toward the other's answer, delete one of the
-   pair in that change.
+   question. When the next op moves either module toward the other's
+   answer, delete one of the pair in that change (criterion 6).
 
 ## Where new things go
 
-Always use the extraction pattern, in this order:
-
 1. **Library first.** Put the domain logic in a library crate, with its
-   law tests.
+   property tests.
 2. **Capability second.** Write a thin module over the library: its
    `OPS.md` (the purpose, and one `##` section for each op), its
    `capability!` declaration, and a worked example for each op in
@@ -152,7 +140,7 @@ Always use the extraction pattern, in this order:
    and the generator refuses any other. `docs/guide/first-change.md`
    walks through one.
 
-A new domain op is a library and a capability, never host code.
+A new domain op is never host code.
 
 A capability is a documented namespace for one need, not a wall in the
 domain. Its crate may link any library. A question that spans kinds is
@@ -167,34 +155,16 @@ the kernel does not change (D-239). What a capability derives from
 documents is a library's pure function, held by the kernel as a cache,
 never a dependency.
 
-Capabilities never call capabilities. A capability crate depends only
-on cap-abi and libraries. Only a generated assembly (`assemblies/`)
-links capabilities.
+Capabilities never call capabilities, and compose only through
+documents. A capability crate depends only on cap-abi and libraries.
+Only a generated assembly (`assemblies/`) links capabilities.
 
 ## Enforcement
 
-`just test` checks laws 1 and 2 and the linking rule. The gates are:
-
-- `arch-gates`, over the dependency graph: a capability depends only on
-  cap-abi and libraries; only assemblies and the generator's binary
-  depend on capabilities; only the codec's homes read transit-codec;
-  the kernel depends on transit-version alone.
-- `arch-gates`, over the source: the generator, the kernel, and their
-  manifests name no capability; every capability crate has
-  `#![forbid(unsafe_code)]` and no static or `thread_local` of its own;
-  `transit_codec::export` appears only in the codec's homes; no library
-  reads a clock, randomness, or the environment.
-- The registry constructor is private to the kernel (`compile_fail`
-  doctests).
-- Every worked example gives the same answer alone and inside each UI's
-  assembly (`crates/cap-abi/independence.mjs`).
-
-Each gate fails on a broken fixture in its own test
-(`crates/cap-abi/tests/arch_gates_test.rs`, `independence.test.mjs`).
-`docs/architecture/bus.md`, "Bus rules", has the detail.
-
-Law 3 is a review gate. The criteria above are the checklist: each op
-of every new module must name one need.
+`just test` checks rules 1 and 2 and the linking rule, with the arch
+gates, the `compile_fail` doctests on the registry, and the assembly
+independence check (`docs/architecture/bus.md`, "Bus rules"). Rule 3
+is a review gate, and the criteria above are its checklist.
 
 If a gate fails your change, read this file again. Do not widen the
 gate.

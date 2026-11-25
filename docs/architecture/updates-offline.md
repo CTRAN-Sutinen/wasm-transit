@@ -14,8 +14,7 @@ They share one lifecycle (D-63, D-65):
   by its ETag) and the pick in force on the agency's date. A republish
   moves the pin. So does a new pick, or the date crossing a pick's
   effective date. Only a moved pin reads the network again. The host
-  adopts the new network quietly, and the page stays on screen. The
-  host names its keep-set, so the old network leaves every module. A
+  adopts the new network quietly, and the page stays on screen. The host names its keep list, so the old network leaves every module. A
   zip loaded by hand stops the page following.
 - **A build waits, then applies.** The build writes the service worker
   (`web/service-worker.js` → `dist/sw.js`, by `vite.config.js`'s plugin).
@@ -39,10 +38,10 @@ They share one lifecycle (D-63, D-65):
   (`installApp`, before anything on the page is unsaved). It also
   applies it when the rider accepts "a new version is ready."
 
-  A staff page applies it the same way, and shows "A new version is
-  ready" as soon as the build has downloaded (kit's `onBuildReady`).
-  The person applies it with Reload, which waits while a form or a task
-  is open. The outbox is on the device, so a reload keeps every write
+  A staff page applies it the same way. It shows "A new version is
+  ready" once the build has downloaded (kit's `onBuildReady`). The
+  person applies it with Reload, which waits while a form or a task is
+  open. The outbox is on the device, so a reload keeps every write
   that waits.
 
   A display applies it itself at a poll. It does so only while the
@@ -53,10 +52,9 @@ They share one lifecycle (D-63, D-65):
 
   A document another build wrote also makes the page look at once
   (`web/src/versions.ts`, D-79). A module refuses a version newer than
-  it reads, or the server refuses a write over a copy it reads ahead
+  it reads, or the server refuses a write over a copy that it reads ahead
   read-only. The engine and `writeFetch` pass every such refusal on,
-  and `installApp` asks the browser for the deployment's worker. The
-  page then applies the build by its rule above.
+  and `installApp` asks the browser for the deployment's worker. The page then applies the build by the rule above.
 
   A page another tab moved past counts as one with a build waiting. The
   worker keeps the previous build's shell beside the current one. So a
@@ -66,8 +64,8 @@ They share one lifecycle (D-63, D-65):
   it keeps them forever. These files are hashed assets, modules,
   `blobs/<hash>`, and `blobs/<hash>.gz`. It answers the published
   documents and config from the network. If the network fails, it
-  answers with the last copy, marked `X-Served-From: last-copy`. These
-  documents are `manifest`, `network/document`, `network/boundary`,
+  answers with the last copy, marked `X-Served-From: last-copy`. The
+  published documents are `manifest`, `network/document`, `network/boundary`,
   `streets`, `walks`, `live-feeds.json`, and the basemap's glyphs and
   sprites.
 
@@ -83,12 +81,12 @@ They share one lifecycle (D-63, D-65):
   documents it pins at once, so the banner follows the server's
   answer. The disruptions page keeps its own last good edit document
   (kit's `readHeadKept`, in IndexedDB), and labels it with the time the
-  server last confirmed it. A page never shows an old answer as
+  server last confirmed it.   A page never shows an old answer as
   current.
 - **The outbox (D-189).** A staff page's write that cannot reach the
   server waits on the device, in order, and is sent when the server
   answers. The server stays the authority on writes.
-  - `src/outbox.ts` is the core, and its laws are `outbox.test.mjs`.
+  - `src/outbox.ts` is the core, and `outbox.test.mjs` holds its properties.
     `src/outbox.svelte.ts` keeps the list in IndexedDB (`outbox/<ui>`),
     and sends through `writeFetch`.
   - A write is made when the person saves, with an idempotency key.
@@ -124,41 +122,41 @@ They share one lifecycle (D-63, D-65):
   under a prefix caches as one at the root. The map's tiles
   (`basemap.pmtiles`, range requests) are not cached.
 
-The e2e runs every other spec with service workers blocked. `page.route`
-never sees what a worker answers. `e2e/deploy-builds.spec.mjs` allows
+The e2e runs every other spec with service workers blocked, because
+`page.route` never sees what a worker answers. `e2e/deploy-builds.spec.mjs` allows
 workers on its own server. It publishes a new build by rewriting that
 server's copy of `sw.js`. `e2e/offline-staff.spec.mjs` allows them on a
 store-mode server of its own, and takes the browser's network away for
 an outage.
 
 Layouts are hand-placed Svelte, and ship with each UI's build (D-176).
+Frontend conventions are in `docs/CONVENTIONS.md`.
 
-Frontend conventions and gotchas: `docs/CONVENTIONS.md`.
+
 
 ## Why
 
-Each entry covers one choice that the design depends on. Its heading
-names the code the choice governs. **Holds** is what must stay true.
-Change it only with the user, and only after you read **Because**.
+Each entry covers one choice that the design depends on, headed by the
+code it governs. **Holds** is what must stay true. Change it only with
+the user, after you read **Because**.
 
 ### A new build waits, then applies (`sw.js`, `buildWaiting`, `installApp`, `applyBuild`)
-- **Holds:** A new build downloads in the background and waits. A
+- **Holds:** a new build downloads in the background and waits. A
   rider's page applies it at the next cold start or navigation, or when
   the rider accepts. A display applies it itself at a poll. It does so
   only while the deployment answers and its setup is closed. Nothing
   applies over unsaved device data. A new network re-pins with no
   reload.
-- **Because:** These are web apps with real update semantics. A display
-  stays open for weeks. A rider's tab stays open for days. If the page
-  waits for a person to reload, an old page can meet documents it may
-  not read. Applying only while the deployment answers means an outage
+- **Because:** a display stays open for weeks, and a rider's tab stays
+  open for days. If the page waits for a person to reload, an old page
+  can meet documents it may not read. Applying only while the deployment answers means an outage
   never reloads a working display into an empty one.
 - **Rejected:** reloading as soon as new code appears (reloads under the
   rider); waiting for a manual reload.
 - **Decided:** D-63.
 
 ### Offline at launch (`"offline": true` in `ui.json`, the service worker's caches)
-- **Holds:** Ride-now and the stop display install and boot offline. The
+- **Holds:** ride-now and the stop display install and boot offline. The
   shell and modules are precached. Content-addressed files are kept
   forever. The manifest and config are kept as the last copy. Offline, a
   board answers from the schedule and says so. Live feeds and the edit
@@ -170,7 +168,7 @@ Change it only with the user, and only after you read **Because**.
   the network. The bus worker asks for `caps/manifest.json?ui=<id>`. The
   shell's copy names one build's modules. A page outside the shell that
   read it after the next build would ask for modules that are gone.
-- **Because:** A rider at a stop with no signal is the case that
+- **Because:** a rider at a stop with no signal is the case that
   local-first serves. Content-addressed files can be cached forever.
   They do not go stale. A cached prediction replayed as live would be
   wrong.
@@ -178,10 +176,10 @@ Change it only with the user, and only after you read **Because**.
 - **Decided:** D-65.
 
 ### Staff pages work offline and queue their writes (`"offline": true`, `src/outbox.ts`, `POST /logs/<log>`)
-- **Holds:** Every staff page installs and boots offline like a rider
+- **Holds:** every staff page installs and boots offline like a rider
   page. Between the moments it needs the server, the server being away
   does not stop the work. A write that cannot reach the server waits on
-  the device and is sent through the same receive path when it answers.
+  the device and is sent through the same write path when it answers.
   Nothing the person saved is lost or written twice, and nothing is
   dropped without a word.
 - **Because:** "There is a difference between needing a server
@@ -194,10 +192,10 @@ Change it only with the user, and only after you read **Because**.
 - **Decided:** D-189, D-222.
 
 ### A staff page's assembly is cached on first use (`"precache_assembly": false`)
-- **Holds:** In a build of every UI, the shell precaches the rider
+- **Holds:** in a build of every UI, the shell precaches the rider
   pages' assemblies only. A staff page's assembly is kept by the worker
   the first time the page loads it.
-- **Because:** Every install downloads the shell. A rider's phone must
+- **Because:** every install downloads the shell. A rider's phone must
   not download about 70 MB of planner modules. A staff page is opened
   online at least once before it is used offline.
 - **Cost accepted:** a staff page never opened online does not boot
@@ -207,13 +205,13 @@ Change it only with the user, and only after you read **Because**.
 - **Decided:** D-223 (provisional).
 
 ### Costs are measured, not budgeted (`just perf`)
-- **Holds:** No page has a fixed memory or time budget. `just perf`
+- **Holds:** no page has a fixed memory or time budget. `just perf`
   measures what each step costs, and a person weighs a change's cost
   against what it adds. Memory that does not level off while a page
   stays open is wrong for every deployment. The stop display runs on a
   Raspberry Pi 4. Ride-now targets browsers, with no minimum device.
   The page does not poll while hidden.
-- **Because:** Deployments and features change. A fixed number would
+- **Because:** deployments and features change. A fixed number would
   fail a feature that is worth its cost on one deployment and not on
   another. What is always wrong is use that is out of control. Most
   phones handle a properly optimized page.
