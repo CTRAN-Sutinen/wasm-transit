@@ -1,4 +1,4 @@
-//! A combination is what a rider gets on a day (D-55). Types that never
+//! A combination is what a rider gets on a day. Types that never
 //! share a day are never pooled. C-TRAN's 1-WKDY/30 and /31 run in
 //! successive periods, so they meet 1-WKDY in two combinations, never in
 //! one. A dated exception is a combination of its own.
@@ -64,7 +64,7 @@ fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
     out
 }
 
-/// An imported feed picks on this date (D-140).
+/// An imported feed picks on this date.
 pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
     service_combinations(network)
         .iter()
@@ -73,7 +73,7 @@ pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
         .min()
 }
 
-/// One `set_plan` effective from the first service date (D-140, D-228).
+/// One `set_plan` effective from the first service date.
 /// Empty when the document has a plan id already, or runs no service.
 pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::NetworkEdit> {
     if !network.plan.id.is_empty() {

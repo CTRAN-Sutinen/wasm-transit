@@ -1,4 +1,4 @@
-//! A feed may publish weekly service as dates alone (D-105). The import reads
+//! A feed may publish weekly service as dates alone. The import reads
 //! the weekly rule out of the dates, and the export writes the dates back.
 //! D-111 sets the threshold. The numbers below tag the checks.
 //!
@@ -267,8 +267,8 @@ fn a_flagged_or_removing_calendar_is_read_as_written() {
 }
 
 #[test]
-fn the_ctran_shapes_read_as_the_decision_says() {
-    // The shapes that D-105 names, measured on C-TRAN's feed.
+fn the_ctran_shapes_read_as_the_rule_says() {
+    // The shapes that C-TRAN's feed shows, measured on C-TRAN's feed.
     let span = |from: NaiveDate, to: NaiveDate, days: &[u32]| {
         let mut out = BTreeSet::new();
         let mut d = from;

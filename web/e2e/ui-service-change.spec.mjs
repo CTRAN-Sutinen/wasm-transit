@@ -12,7 +12,7 @@ async function startPlan(page) {
   await page.getByRole("button", { name: /Plan & calendar/ }).click();
   await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
   await expect(page.getByTestId("plan-select")).toHaveValue(/plan-/, { timeout: 10_000 });
-  // A feed imports as a draft pick on its first service date (D-140).
+  // A feed imports as a draft pick on its first service date.
   const imported = page.getByTestId("plan-list").getByTestId("pick-row").filter({ hasText: "sample-gtfs" });
   await expect(imported).toContainText("2026-01-01");
   await expect(imported).toContainText("draft");
@@ -20,7 +20,7 @@ async function startPlan(page) {
   await page.getByTestId("fork-date").fill("2026-11-02");
   await page.getByRole("button", { name: "Fork" }).click();
   await expect(page.getByTestId("status")).toContainText('Started "Spring"');
-  // Nothing is compared until the planner chooses a plan on the Proposal (D-141).
+  // Nothing is compared until the planner chooses a plan on the Proposal.
   await expect(page.locator("header.bar").getByTestId("base-select")).toHaveCount(0);
   await page.getByRole("button", { name: /Proposal/ }).click();
   await expect(page.getByTestId("base-select")).toHaveValue("");
@@ -262,7 +262,7 @@ test("plans, keys, routes and blocks: each control lands somewhere", async ({ pa
   await expect(plans).not.toContainText("Spring 2027");
 });
 
-// A published pick is read-only (D-139). The server on :8084 is shared with
+// A published pick is read-only. The server on :8084 is shared with
 // published-picks and deploy-updates, which run first. The test retires the pick.
 test.describe("a published pick", () => {
   test.use({ baseURL: "http://127.0.0.1:8084" });

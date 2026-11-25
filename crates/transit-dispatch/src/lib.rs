@@ -11,11 +11,10 @@
 //! * Edits act on the day, never the calendar. A cancel takes out one trip
 //!   instance and leaves every other trip whole. The trip must exist and run
 //!   that instance.
-//! * A visit that the live document cancels or skips is no row (D-73). Edits
+//! * A visit that the live document cancels or skips is no row. Edits
 //!   that take a departure away list it as `skipped` (D-100).
 //! * A stopped group's next departure comes through a closure, so the
-//!   capability chooses where the days come from (D-42;
-//!   tests/next_service_law_test).
+//!   capability chooses where the days come from (tests/next_service_law_test).
 //! * The board at a moment (`stop_board_at`) reads each date's own edits and
 //!   live instances, and counts the date's true length (23, 24, or 25 h)
 //!   (tests/overnight_law_test).
@@ -325,7 +324,7 @@ fn wait_after(at_secs: u32, from: i64) -> Wait {
 
 /// A departure the edits took away from this stop, and why: the diversion that
 /// skips the stop, or the cancel that takes the trip out. A live-feed
-/// cancellation is not listed here (D-100, D-73).
+/// cancellation is not listed here (D-100).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct SkippedVisit {

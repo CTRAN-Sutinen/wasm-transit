@@ -1,6 +1,6 @@
 <script lang="ts">
   /// Nothing is added up here. The trip's span is door to door and comes from
-  /// the router (D-40).
+  /// the router.
   import type { Itinerary } from "../types/Itinerary";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { clock, clockText, delayText, durationText, leaveText, routeColor, walkText } from "./rideFormat";

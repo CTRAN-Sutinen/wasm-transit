@@ -1,4 +1,4 @@
-// The staff pages offline and their outbox (D-189; docs/architecture/updates-offline.md,
+// The staff pages offline and their outbox (docs/architecture/updates-offline.md,
 // "Offline"; web/src/outbox.ts). The spec takes the browser's network away with
 // context.setOffline while the server keeps running. The server on :8095 is a
 // store-mode server over a copy of the build.
@@ -64,7 +64,8 @@ test("the disruptions page through an outage: a note and an alert wait, a reload
   // person who does not wait.
   await context.setOffline(false);
   await page.getByTestId("sync-send").click({ timeout: 2_000 }).catch(() => {});
-  await expect(page.getByTestId("sync-status")).toHaveCount(0, { timeout: 30_000 });
+  // Well inside the 30 s poll: a sent write reads the manifest at once (QAF-133).
+  await expect(page.getByTestId("sync-status")).toHaveCount(0, { timeout: 10_000 });
   const notes = await entries(request, "notes");
   const alerts = await entries(request, "alerts");
   expect(notes).toHaveLength(1);

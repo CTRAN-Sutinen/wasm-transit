@@ -1,4 +1,4 @@
-//! `pick` is the server's whole write of a pick (D-237). It runs the
+//! `pick` is the server's whole write of a pick. It runs the
 //! network's publish check, reads the stops that the pick uses on its first
 //! date, freezes the pick, and adopts it. So this module also links
 //! transit-network and transit-stops, and their documents register on the
@@ -165,7 +165,7 @@ fn answered(next: Result<PublishedPlans, Vec<PlanIssue>>) -> Result<(Vec<PlanIss
 
 /// A published set in another version is refused, naming both versions. This
 /// holds a typed request from a native host to the rule that the JSON entry
-/// point gets through `Current` or `Base` (D-186).
+/// point gets through `Current` or `Base`.
 fn spoken(published: &PublishedPlans) -> Result<(), cap_abi::Refusal> {
     use transit_version::Versioned;
     cap_abi::speaks(PublishedPlans::KIND, published.schema_version(), PublishedPlans::READS)
@@ -402,13 +402,13 @@ fn pick(
 ) -> Result<Option<serde_json::Value>, cap_abi::Refusal> {
     let network_hash = loaded.get("network_hash").ok_or("a pick writes the network the host registered (load_network), and none was")?;
     // A network read one version ahead is stored in this build's version. A
-    // read-only one is refused (D-186).
+    // read-only one is refused.
     let network = kind::<transit_network::Network>().require_writable(network_hash)?;
     let check = transit_network::publish_check(&network);
     if !check.publishes() {
         return Ok(Some(serde_json::json!({ "issues": check.issues, "refusals": check.refusals })));
     }
-    // A pick takes each stop's record on its first date (D-157), and the
+    // A pick takes each stop's record on its first date, and the
     // warnings of the stops it visits that are out of service in its period.
     let mut stop_warnings = Vec::new();
     let mut read = None;

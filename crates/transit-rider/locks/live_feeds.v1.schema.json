@@ -19,7 +19,7 @@
     "kind": {
       "$ref": "#/$defs/LiveFeedsKind",
       "default": "live_feeds",
-      "description": "A copy without the kind tag and version is this kind, version 1 (D-115)."
+      "description": "A copy without the kind tag and version is this kind, version 1."
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",

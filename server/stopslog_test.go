@@ -1,6 +1,6 @@
 package main
 
-// The stops log over HTTP (D-190, D-197, D-198; logkinds.go, cap-stops
+// The stops log over HTTP (D-190; logkinds.go, cap-stops
 // receive). The properties a writer relies on:
 //
 //  1. Two writers who change different stops both land. A writer who
@@ -255,7 +255,7 @@ func TestARestartServesTheSameStopsAndARevertPutsThemBack(t *testing.T) {
 	}
 	back, stops := stopsDocNow(t, s2)
 	if back != before || stops["NEW"] != nil {
-		t.Fatalf("A back, and the stop the entry created out of the document (D-198): %s vs %s", back, before)
+		t.Fatalf("A back, and the stop the entry created out of the document: %s vs %s", back, before)
 	}
 	if code, _, resp := httpPost(t, base2+"/logs/stops/revert", `{"seq":`+itoa(seq)+`}`); code != http.StatusConflict {
 		t.Fatalf("a second revert of the same entry: %d %s", code, resp)
@@ -295,7 +295,7 @@ func TestAGapInTheStopsLogStopsWritesUntilItsCauseIsNamed(t *testing.T) {
 	}
 }
 
-// An old v1 stop_requests pointer seeds the log at the current version (D-234).
+// An old v1 stop_requests pointer seeds the log at the current version.
 func TestAnOldV1RequestsPointerSeedsTheLogAtTheCurrentVersion(t *testing.T) {
 	bucket := store.NewMemory()
 	v1 := []byte(`{"kind":"stop_requests","schema_version":1,"requests":{"R-1":{"stop":"6124","job":"repair_improve","status":"submitted","routes":["37"]}}}`)

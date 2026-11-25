@@ -4,7 +4,7 @@
 //	store verify [-wasm M] <url>   read the whole store; exit 1 on the first break.
 //	                              Each log's checkpoints are compared with the
 //	                              fold of their entries, by cap-log (-wasm)
-//	store gc [-grace D] <url>     collect orphan blobs (D-117), with the
+//	store gc [-grace D] <url>     collect orphan blobs, with the
 //	                              collector's own delete-capable credentials
 //	store dump <url> <dir>        write every object to a folder, to read the
 //	                              store with no object storage tools: each at
@@ -113,7 +113,7 @@ func main() {
 }
 
 // logModule loads cap-log on first use, so a store with no checkpoint and
-// no existence check needs no module (D-197).
+// no existence check needs no module.
 type logModule struct {
 	ctx  context.Context
 	path string

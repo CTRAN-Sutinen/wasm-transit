@@ -1,6 +1,6 @@
 //! Identity and the versioned read of a document live here, beside
 //! [`crate::Versioned`]. Each kind's library reads and hashes its own kind
-//! in its [`crate::Load`] (D-239). The kernel re-exports these functions
+//! in its [`crate::Load`]. The kernel re-exports these functions
 //! (`cap_abi::canonical_hash` and the others).
 
 use crate::jcs;
@@ -11,7 +11,7 @@ pub fn content_hash(bytes: &[u8]) -> String {
 }
 
 
-/// Streams the canonical bytes (RFC 8785, D-169, [`jcs`]) into the digest, so
+/// Streams the canonical bytes (RFC 8785, [`jcs`]) into the digest, so
 /// hashing never holds a copy of the document. The result equals hashing
 /// [`canonical_bytes`].
 pub fn canonical_hash<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, String> {
@@ -49,7 +49,7 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
 }
 
 /// Reads the build's version, or the next one where the kind reads ahead
-/// (`Versioned::AHEAD`, D-186). A copy read ahead is noted for
+/// (`Versioned::AHEAD`). A copy read ahead is noted for
 /// [`noting_read`]. The document is never parsed and re-emitted
 /// (docs/FORMATS.md, "Versions").
 pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, crate::Refusal>

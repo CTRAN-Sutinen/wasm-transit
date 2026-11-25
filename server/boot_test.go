@@ -1,6 +1,6 @@
 package main
 
-// Pins boot sources (D-118). Every read that lands is committed as the
+// Pins boot sources. Every read that lands is committed as the
 // head of source.feed or source.streets, so a replacement process with
 // only the bucket serves the same manifest even when the source does not
 // answer.

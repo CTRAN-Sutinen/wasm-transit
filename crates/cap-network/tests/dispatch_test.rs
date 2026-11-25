@@ -243,7 +243,7 @@ fn import_answers_the_networks_timezone() {
     assert_eq!(timezone.as_deref(), network.timezone());
 }
 
-/// The fixture's weekday calendar starts Thursday 2026-01-01 (D-140).
+/// The fixture's weekday calendar starts Thursday 2026-01-01.
 #[test]
 fn import_answers_the_first_service_date() {
     let (feed_hash, _) = load_fixture();
@@ -254,7 +254,7 @@ fn import_answers_the_first_service_date() {
     assert_eq!(first_service_date, transit_network::first_service_date(&network).map(|d| d.to_string()));
 }
 
-/// A pick that runs no service in its period is refused (D-76).
+/// A pick that runs no service in its period is refused.
 #[test]
 fn publishable_answers_what_refuses_a_pick() {
     let mut doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();

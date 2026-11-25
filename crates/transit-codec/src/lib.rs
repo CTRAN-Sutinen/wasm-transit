@@ -14,7 +14,7 @@
 //! * A service written as dates alone imports as the weekly rule that its
 //!   dates read as, because otherwise a fork would carry nothing. The dates
 //!   stay exact through added and removed exceptions, and the export writes
-//!   dates again, after a fork too (D-105, D-111; [`read_weekly_rule`]).
+//!   dates again, after a fork too (D-111; [`read_weekly_rule`]).
 //! * The export invents no headsign.
 
 pub mod feed;
@@ -83,7 +83,7 @@ pub struct Boundary {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub fare_networks_on_routes: bool,
-    /// D-105. The export writes these services back as dates, under the
+    /// The export writes these services back as dates, under the
     /// calendar.txt row they had (zero flags), if any.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>")]
@@ -106,7 +106,7 @@ pub const WEEKLY_MIN_DAYS: u32 = 4;
 /// occurrences between its first and last date.
 pub const WEEKLY_MIN_SHARE: (u32, u32) = (3, 4);
 
-/// D-105. The rule runs on exactly `dates`: one range over the qualifying
+/// The rule runs on exactly `dates`: one range over the qualifying
 /// weekdays, a removed date for each one it skips, and an added date for each
 /// other date. None when no weekday qualifies, so the service stays dated.
 pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
@@ -589,7 +589,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     }
     for (id, mut rule) in rules {
         rule.exceptions.sort_by_key(|e| e.date);
-        // D-105. The boundary keeps how the service was written.
+        // The boundary keeps how the service was written.
         let dated = rule.days == WeekdaySet::none()
             && !rule.exceptions.is_empty()
             && rule.exceptions.iter().all(|e| e.state == DayState::Added);
@@ -875,7 +875,6 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     for (id, st) in &net.service_types {
         let rule = &st.rule;
         let bit = |b: bool| Some(if b { "1" } else { "0" }.to_string());
-        // D-105.
         if let Some(dated) = boundary.dated_calendars.get(id) {
             if let Some((start, end)) = &dated.row {
                 let zero = || bit(false);
@@ -967,7 +966,7 @@ pub fn gtfs_direction(route: &transit_network::Route, id: &str) -> Option<u8> {
 }
 
 /// The inverse of [`gtfs_direction`]. A GTFS-rt alert's `direction_id`
-/// resolves through it (D-204).
+/// resolves through it.
 pub fn model_direction(route: &transit_network::Route, code: u32) -> Option<&transit_network::DirectionId> {
     route.directions.keys().find(|k| gtfs_direction(route, k).map(u32::from) == Some(code))
 }

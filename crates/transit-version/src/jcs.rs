@@ -1,5 +1,5 @@
 //! A document's canonical bytes under RFC 8785, the JSON Canonicalization
-//! Scheme (D-169). Any implementation of the standard writes the same bytes
+//! Scheme. Any implementation of the standard writes the same bytes
 //! for the same value, so a document's identity can be checked in any
 //! language without this repo.
 //!

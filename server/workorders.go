@@ -1,8 +1,8 @@
 package main
 
-// The work order system (D-165) is the agency's own system, reached
+// The work order system is the agency's own system, reached
 // through an adapter so nothing here couples to it. The call splits in
-// three (D-228): the kind's `call` op answers what to send, this host
+// three: the kind's `call` op answers what to send, this host
 // makes the call, and its `record` op, through the kind's log
 // (logkinds.go), records the answer under the writer
 // `work-orders:<system>`. The kind table's `work_order` names the kind,
@@ -131,7 +131,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	held := call.Call
-	// An outbox's resend (D-189) with a key that landed gets the held
+	// An outbox's resend with a key that landed gets the held
 	// work order without asking the system, so a lost answer never opens
 	// a second work order.
 	if req.Key != "" {

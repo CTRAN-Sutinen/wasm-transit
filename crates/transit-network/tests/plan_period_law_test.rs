@@ -1,5 +1,5 @@
-//! `set_plan` with `through` carries the calendar into the fork (D-41, D-112,
-//! D-138; cap-author/OPS.md). The expected answers are recomputed from the
+//! `set_plan` with `through` carries the calendar into the fork (D-112;
+//! cap-author/OPS.md). The expected answers are recomputed from the
 //! generated calendars.
 //!
 //! 1. A weekly type that still runs at the calendar's end runs on every date
@@ -102,7 +102,7 @@ fn weekly(rule: &CalendarRule) -> bool {
     (w.mon || w.tue || w.wed || w.thu || w.fri || w.sat || w.sun) && !rule.ranges.is_empty()
 }
 
-/// A flagged day and a range that starts by the period's end (D-138).
+/// A flagged day and a range that starts by the period's end.
 fn weekly_by(rule: &CalendarRule, through: NaiveDate) -> bool {
     weekly(rule) && rule.ranges.iter().any(|r| r.start <= through)
 }
@@ -130,7 +130,7 @@ proptest! {
         prop_assert_eq!(next.plan.effective_from, Some(d(from)));
         prop_assert_eq!(next.service_types.len(), net.service_types.len());
 
-        // D-112, D-138: a date past `through` leaves the fork's calendar, so it
+        // D-112: a date past `through` leaves the fork's calendar, so it
         // does not count toward the calendar's end.
         let calendar_end = net
             .service_types

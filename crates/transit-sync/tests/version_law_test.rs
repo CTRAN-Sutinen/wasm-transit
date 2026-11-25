@@ -1,4 +1,4 @@
-//! The edit document's version rules (D-62, D-66, D-115; docs/FORMATS.md,
+//! The edit document's version rules (docs/FORMATS.md,
 //! "Versions").
 
 use serde_json::{json, Value};

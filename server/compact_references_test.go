@@ -1,7 +1,7 @@
 package main
 
 // Pins that tombstone compaction skips a retired edit record that another
-// log's record names, and drops one that nothing names (D-231).
+// log's record names, and drops one that nothing names.
 
 import (
 	"encoding/json"

@@ -1,5 +1,5 @@
 //! Properties of coverage over a weighted layer, against independent oracles
-//! (D-47, D-6, D-55, D-99). `transit_analysis::coverage` is the oracle for
+//! (D-99). `transit_analysis::coverage` is the oracle for
 //! a combination's pooled answers.
 
 use std::io::Write;

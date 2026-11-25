@@ -89,7 +89,7 @@ fn the_edit_document_walks_propose_retire_restore() {
     assert_eq!((edits.records[0].status, edits.records[0].rev), (EditStatus::Draft, 4));
 }
 
-/// The answer is the next document itself, tagged (D-115).
+/// The answer is the next document itself, tagged.
 #[test]
 fn every_answer_is_the_tagged_document_in_this_version() {
     let hash = load();

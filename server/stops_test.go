@@ -1,6 +1,6 @@
 package main
 
-// Pins the stops document in store mode (D-152, D-153, D-157).
+// Pins the stops document in store mode.
 
 import (
 	"archive/zip"
@@ -146,7 +146,7 @@ func TestStopsWritesAreValidated(t *testing.T) {
 	}
 }
 
-// Pins D-157.
+// A stops write republishes nothing and changes no pick.
 func TestAStopsWriteChangesNoPick(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07")); code != 200 {
@@ -171,7 +171,7 @@ func TestAStopsWriteChangesNoPick(t *testing.T) {
 }
 
 // Pins that a published pick reads each stop's record on its first date
-// and warns of a visited stop that is not in service (D-157).
+// and warns of a visited stop that is not in service.
 func TestAPublishedPickReadsTheStops(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	raw, _ := json.Marshal(seededStops(t))
@@ -215,7 +215,7 @@ func TestAPublishedPickReadsTheStops(t *testing.T) {
 }
 
 // Pins that a new survey names the writer, not the name the page sent,
-// and a held survey keeps its own (D-158).
+// and a held survey keeps its own.
 func TestASurveyNamesTheWriter(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	seed := seededStops(t)
@@ -269,7 +269,7 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 }
 
 // Pins that GET /feed writes a stop moved inside the pick's period as one
-// stops.txt row per version (D-151). The version in force on the last
+// stops.txt row per version. The version in force on the last
 // dates keeps the stop's id, and the earlier one is `<id>@<first date>`.
 func TestTheFeedCarriesTheStopsHistory(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
@@ -324,7 +324,7 @@ func TestTheFeedCarriesTheStopsHistory(t *testing.T) {
 
 // Pins that a feed that differs from the stops document records an event
 // on its first service date, written as `import:feed`, and one that does
-// not differ writes nothing (D-150).
+// not differ writes nothing.
 func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	raw, _ := json.Marshal(seededStops(t))

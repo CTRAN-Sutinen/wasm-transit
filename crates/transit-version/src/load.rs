@@ -1,6 +1,6 @@
 //! Each library implements [`Load`] for its own kind, so the kernel keeps one
 //! registry for each type without knowing the kinds, and depends on no domain
-//! library (D-239). The read and the hash in [`crate::document`] are
+//! library. The read and the hash in [`crate::document`] are
 //! generic, so they compile once, in the library. One assembly then carries
 //! one copy of each kind's reader however many capabilities read the kind.
 //! The generator checks each impl's constants against the kind's line in

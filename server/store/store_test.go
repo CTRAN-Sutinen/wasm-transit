@@ -419,7 +419,7 @@ func TestGCSettlesTheTrashACrashedPassLeft(t *testing.T) {
 	})
 }
 
-// Pins D-117.
+// A serving store never deletes.
 func TestAServingStoreNeverDeletes(t *testing.T) {
 	b := NewMemory()
 	s := NewServing(b)

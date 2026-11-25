@@ -1,6 +1,6 @@
 //! Version 1 gave each stop a note and an optional color. Its migration step
 //! makes the note the label, drops each color, and reports each drop. The
-//! chain stays forever (D-66), and the kernel registers the current version
+//! chain stays forever, and the kernel registers the current version
 //! only (`cap_abi::kernel::WATCHLIST`).
 //!
 //! A copy with no tags names its version as `"version": "vN"`. A copy of v2

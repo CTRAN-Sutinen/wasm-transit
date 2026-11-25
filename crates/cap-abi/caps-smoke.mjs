@@ -510,7 +510,7 @@ assert(
   olderEdits.error && olderEdits.error.message.includes("edit_records v1") && olderEdits.error.message.includes("migrate"),
   "a consumer refuses a bare edit array (v1) at the load, naming the migration",
 );
-/// An edit document in the version the modules read (D-62, D-115).
+/// An edit document in the version the modules read.
 const editDoc = (records) => ({ kind: "edit_records", schema_version: 2, records });
 const routerEdits = router.invoke({
   op: "load_edits", edits: editDoc([
@@ -1454,7 +1454,7 @@ for (const asm of manifest.assemblies) {
   }
 }
 
-// A pick reads the stops document over its own period (D-228), with the
+// A pick reads the stops document over its own period, with the
 // same answer alone and linked, and the same warning as the server's
 // publish (server/stops_test.go, TestAPublishedPickReadsTheStops). B retires
 // inside the period, A is renamed before it, and a retired pick bounds

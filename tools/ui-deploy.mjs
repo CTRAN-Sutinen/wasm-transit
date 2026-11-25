@@ -1,5 +1,5 @@
-// The deploy tool for a UI at its own URL (D-171;
-// docs/architecture/release-artifacts.md, "Each UI at its own URL").
+// The deploy tool for a UI at its own URL
+// (docs/architecture/release-artifacts.md, "Each UI at its own URL").
 // It writes one of the UI's logged builds out to a directory, for the
 // UI's host to serve. The server keeps every build of the UI on the
 // store's build.<id> pointer (-ui-dist). By default the tool writes the

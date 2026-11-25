@@ -1,4 +1,4 @@
-//! Which states of a stop each state of a request needs (D-233, D-238).
+//! Which states of a stop each state of a request needs (D-233).
 //!
 //! The existence check (transit-log) judges only that the stop is held. This
 //! rule judges its state. The write path refuses a write that breaks the

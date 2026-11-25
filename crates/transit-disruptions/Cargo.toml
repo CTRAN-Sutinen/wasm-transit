@@ -1,6 +1,6 @@
 [package]
 name = "transit-disruptions"
-description = "What is disrupted on a day, and whether an alert explains it (D-213, D-218): the edit document's diversions and cancels, the live feed's cancels, and the suspended stops, each as its document gives it, with the names a rider uses, the alerts that explain it, and its latest note; the gap list; and the day by route. Pure and stateless."
+description = "What is disrupted on a day, and whether an alert explains it (D-213): the edit document's diversions and cancels, the live feed's cancels, and the suspended stops, each as its document gives it, with the names a rider uses, the alerts that explain it, and its latest note; the gap list; and the day by route. Pure and stateless."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

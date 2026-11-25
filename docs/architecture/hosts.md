@@ -67,7 +67,7 @@ A host applies no domain rule. A value that a rule changes on its way
 between two ops needs a third op. The steps of a write are one receive
 op, which answers the entry and the head it depends on. A call to an
 adjacent system splits in three: an op answers what to send, the host
-makes the call, and an op records the answer (D-228).
+makes the call, and an op records the answer.
 
 ## The rules every host keeps
 
@@ -105,7 +105,7 @@ The hosts differ in three ways. Each difference is a design decision.
   write in its outbox on the device, and sends it when the server
   answers. A rider page writes only its own documents on the device.
 - **The clock.** The server's clock stamps the record. The time a
-  device gives is a claim, kept beside the stamp (D-222).
+  device gives is a claim, kept beside the stamp.
 
 ## Where a host does not keep these rules
 
@@ -152,4 +152,3 @@ The open work is [ui-host-inputs.md](../units/ui-host-inputs.md).
   choice belongs to the person, so it may be host code.
 - **Rejected:** a rule that counts copies of host code. It finds a
   rule written twice, and misses a rule written once.
-- **Decided:** D-228.

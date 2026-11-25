@@ -101,14 +101,14 @@ export function inputLabel(state: InputState | undefined): string {
 }
 
 // For a head with no hash to pin it, such as GET edits. The age is the
-// server's (`X-Store-Stale`, `X-Store-As-Of`; D-119).
+// server's (`X-Store-Stale`, `X-Store-As-Of`).
 export async function readHead(url: string, signal: AbortSignal, absent: number[] = []): Promise<Answered<string> | null> {
   const resp = await fetchOrFail(url, signal);
   const text = resp.ok ? await resp.text() : "";
   return headAnswer({ status: resp.status, header: (name) => resp.headers.get(name), text }, absent, Date.now());
 }
 
-// The device keeps the copy so a staff page boots offline (D-189). It
+// The device keeps the copy so a staff page boots offline. It
 // throws only when the device keeps no copy either.
 export async function readHeadKept(ui: string, url: string, signal: AbortSignal, absent: number[] = []): Promise<Answered<string> | null> {
   const key = `held/${ui}/${url}`;
@@ -136,9 +136,9 @@ function failedOf(resp: Response): ReadFailed {
 }
 
 // The service worker (web/service-worker.js, written to dist/sw.js by the
-// build) precaches a new build and leaves it waiting (D-63, D-65). The page
+// build) precaches a new build and leaves it waiting. The page
 // decides when to apply it: a rider's or staff page at the next cold start
-// or navigation, or when the person accepts it (D-189), and a display at its
+// or navigation, or when the person accepts it, and a display at its
 // next poll while the server answers. A page never applies a build over
 // unsaved device data.
 
@@ -211,8 +211,8 @@ async function readBuild(): Promise<void> {
   document.documentElement.dataset.build = build;
 }
 
-// The deployment's live feeds (live-feeds.json beside the page, D-39) are
-// fetched directly, because the agency's feeds serve HTTPS with CORS (D-67).
+// The deployment's live feeds (live-feeds.json beside the page) are
+// fetched directly, because the agency's feeds serve HTTPS with CORS.
 // A dev config whose feeds send no CORS header names the dev server's relay
 // as `proxy` (`-rt-proxy`, off by default).
 

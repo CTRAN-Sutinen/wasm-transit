@@ -79,7 +79,7 @@ export function waitText(wait: Wait): string {
   }
 }
 
-/// Follows the board's wait rule (D-40).
+/// Follows the board's wait rule.
 export function leaveText(wait: Wait): string {
   switch (wait.kind) {
     case "due":
@@ -96,7 +96,7 @@ export function durationText(secs: number): string {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 }
 
-/// Follows the board's `next` (D-42).
+/// Follows the board's `next`.
 export function nextText(next: NextService): string {
   const at = clockText(next.departure_secs);
   return next.days_ahead === 1 ? `Next: ${at} tomorrow` : `Next: ${next.weekday} ${at}`;

@@ -300,7 +300,7 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
 }
 
 /// The Elbow carries no class, so it is `unknown` and the default profile
-/// asks to confirm it (D-26).
+/// asks to confirm it.
 #[test]
 fn a_route_names_its_streets_and_the_ones_to_confirm() {
     let (streets_hash, _, _) = load_elbow();

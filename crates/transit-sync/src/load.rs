@@ -4,7 +4,7 @@ pub struct EditsLoaded {
 }
 
 /// Validation against a network is a question (cap-divert `reports`), never
-/// the load's (D-239).
+/// the load's.
 impl transit_version::Load for crate::EditDocument {
     const ID: &'static str = "edits";
     const NAME: &'static str = "edits";

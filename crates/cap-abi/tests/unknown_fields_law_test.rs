@@ -1,4 +1,4 @@
-//! Every authored kind keeps the fields it does not know (D-167). Properties:
+//! Every authored kind keeps the fields it does not know. Properties:
 //!
 //! 1. Every record's schema takes unknown fields (`additionalProperties:
 //!    true`). A value type (`VALUES`) takes none.

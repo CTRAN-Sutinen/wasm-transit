@@ -85,7 +85,7 @@
   import Unavailable from "../../components/Unavailable.svelte";
   import { today } from "../kit";
 
-  // A published pick cannot change (D-139). It forks.
+  // A published pick cannot change. It forks.
   const openRow = $derived(sc.plans.find((p) => p.key === sc.activeKey));
   const framed = $derived(!!openRow && !openRow.published && !!openRow.id);
   const locked = $derived(

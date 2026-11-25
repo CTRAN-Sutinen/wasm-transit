@@ -275,7 +275,7 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(dated["on"], first);
     assert_eq!(dated["added"][0]["event"]["on"], first);
 
-    // A feed named on the import is named on every event it records (D-150).
+    // A feed named on the import is named on every event it records.
     let named = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "feed": "sha256:feed"}));
     assert_eq!(named["added"][0]["event"]["from_feed"], "sha256:feed");
     let shown = ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:feed"}));
@@ -283,7 +283,7 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:other"}))["events"], json!([]));
 }
 
-/// An answer outside its kind is refused at `add_event`, and named (D-158).
+/// An answer outside its kind is refused at `add_event`, and named.
 #[test]
 fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     let q = ok(json!({ "op": "questions" }));
@@ -310,7 +310,7 @@ fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     assert!(bad["stops_hash"].is_null());
 }
 
-/// A new survey names `by`, and a held one keeps its own (D-158).
+/// A new survey names `by`, and a held one keeps its own.
 #[test]
 fn attribute_surveys_names_the_writer() {
     let held = ok(json!({ "op": "load_stops", "stops": sample() }));
@@ -325,7 +325,7 @@ fn attribute_surveys_names_the_writer() {
     assert!(err(json!({ "op": "attribute_surveys", "stops_hash": "sha256:00", "stops": next, "by": "x" })).len() > 0);
 }
 
-/// `validate` and the kernel's load name an unknown field and keep it (D-167).
+/// `validate` and the kernel's load name an unknown field and keep it.
 #[test]
 fn validate_flags_an_unknown_field_and_keeps_it() {
     let mut newer = sample();
@@ -343,7 +343,7 @@ fn validate_flags_an_unknown_field_and_keeps_it() {
 }
 
 /// The document assembled from its records is the same document, under the
-/// same hash (D-197).
+/// same hash.
 #[test]
 fn the_document_and_its_log_records_round_trip() {
     let valid = ok(json!({"op": "validate", "stops": sample()}));
@@ -385,7 +385,7 @@ fn a_correction_of_an_event_changed_since_is_a_conflict() {
     assert!(stale["stops"].is_null());
 }
 
-/// `read_pick` and `export_pick` agree with the explicit-date ops (D-228).
+/// `read_pick` and `export_pick` agree with the explicit-date ops.
 #[test]
 fn a_pick_reads_the_stops_over_the_period_the_published_set_gives() {
     let mut pick = sample_network_value();
@@ -424,7 +424,7 @@ fn a_pick_reads_the_stops_over_the_period_the_published_set_gives() {
     assert!(none.get("period").is_none() && none["warnings"] == json!([]) && none["network_hash"] == plain);
 }
 
-/// A write that says the stop is new is refused a held id (D-228).
+/// A write that says the stop is new is refused a held id.
 #[test]
 fn a_new_stop_is_refused_a_held_id_and_the_vocabulary_lists_the_statuses() {
     let network_hash = sample_network()["network_hash"].clone();
@@ -642,8 +642,7 @@ fn a_request_already_broken_can_still_be_changed_or_cancelled() {
     assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "cancelled: {got}");
 }
 
-/// A completed request and a stop's own retiring request are not named
-/// (D-238).
+/// A completed request and a stop's own retiring request are not named.
 #[test]
 fn request_warnings_names_each_open_request_on_a_stop_retired_that_day() {
     let stops = ok(json!({"op": "load_stops", "stops": stops_with_b(Some("2026-10-01"))}))["stops_hash"].clone();

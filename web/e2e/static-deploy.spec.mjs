@@ -1,4 +1,4 @@
-// Static deployments, one per UI (D-131; docs/architecture/static-deployment.md).
+// Static deployments, one per UI (docs/architecture/static-deployment.md).
 // A plain file server (e2e/static-server.mjs) on :8087 serves the exports of
 // ride now (/ride/) and the stop display (/display/), with no Go server. A
 // third export, the stop display over the overnight feed, waits beside them for
@@ -23,7 +23,7 @@ test.use({
   permissions: ["geolocation"],
 });
 
-/// D-67 asks the agency's feed host to allow CORS.
+// A static deployment needs the agency's feed host to allow CORS.
 async function feeds(page) {
   await page.route("http://feeds.test/**", (route) =>
     route.fulfill({

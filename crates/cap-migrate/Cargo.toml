@@ -1,6 +1,6 @@
 [package]
 name = "cap-migrate"
-description = "The migration capability: bring an older document forward to the version this build reads. Every authored kind's chain, kept forever (D-66); pure, deterministic, every loss reported. Consumers read the current version only and never carry old chains."
+description = "The migration capability: bring an older document forward to the version this build reads. Every authored kind's chain, kept forever; pure, deterministic, every loss reported. Consumers read the current version only and never carry old chains."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,7 +15,7 @@ transit-rider = { path = "../transit-rider" }
 transit-alerts = { path = "../transit-alerts" }
 transit-requests = { path = "../transit-requests" }
 cap-abi = { path = "../cap-abi" }
-# The worked examples' fixtures, for the `examples` feature only (D-235).
+# The worked examples' fixtures, for the `examples` feature only.
 fixtures = { path = "../fixtures", optional = true }
 
 [features]

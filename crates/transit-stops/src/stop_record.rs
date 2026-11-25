@@ -1,4 +1,4 @@
-//! How a pick reads the stops document (D-153, D-157). A pick never writes
+//! How a pick reads the stops document. A pick never writes
 //! it.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -59,7 +59,7 @@ pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network 
     next
 }
 
-/// A plan takes a stop from these records (D-173).
+/// A plan takes a stop from these records.
 pub fn records(stops: &Stops, ids: &[String], on: NaiveDate) -> BTreeMap<String, Stop> {
     ids.iter().filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found)))).collect()
 }
@@ -168,7 +168,7 @@ fn fmt_date(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
-/// An id `<id>@<date>` is a version of `<id>` (D-151).
+/// An id `<id>@<date>` is a version of `<id>`.
 fn made_base(id: &str) -> Option<(&str, NaiveDate)> {
     let (head, tail) = id.rsplit_once('@')?;
     Some((head, parse(tail)?))
@@ -334,8 +334,8 @@ pub struct ImportedStops {
     pub unapplied: Vec<String>,
 }
 
-/// `on` is the feed's first service date, the only date a feed states
-/// (D-150). This function never writes the document.
+/// `on` is the feed's first service date, the only date a feed states.
+/// This function never writes the document.
 pub fn import_events(stops: &Stops, feed: &Network, on: NaiveDate) -> ImportedStops {
     import(stops, feed, on, None)
 }

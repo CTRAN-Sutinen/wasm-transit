@@ -69,7 +69,7 @@ drops documents. The code and the technical documents call it the
 **kernel**.
 
 **Decision.** A question the project's owner has been asked, recorded
-in [DECISIONS.md](../DECISIONS.md) with a number such as `D-77`. The
+in [DECISIONS.md](../DECISIONS.md) with a number such as `D-111`. The
 record is kept for good, with the answer and its date.
 
 **Deployment.** One running copy of an app (or of the server) for

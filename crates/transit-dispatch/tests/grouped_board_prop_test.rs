@@ -1,5 +1,5 @@
-//! `grouped_board` (crates/cap-board/OPS.md "grouped_board"; D-23, D-24,
-//! D-73). The oracle recomputes each answer from the generated schedule (start
+//! `grouped_board` (crates/cap-board/OPS.md "grouped_board"; D-23, D-24).
+//! The oracle recomputes each answer from the generated schedule (start
 //! + offset + the live delay) and shares nothing with the board.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -308,7 +308,7 @@ proptest! {
 
     /// There is one group per route and destination that leaves the stop at any
     /// time of the day, however late it is asked and however many of its trips
-    /// are cancelled (D-73). A pattern ending here makes no group.
+    /// are cancelled. A pattern ending here makes no group.
     #[test]
     fn the_groups_are_the_days_routes_and_destinations((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);

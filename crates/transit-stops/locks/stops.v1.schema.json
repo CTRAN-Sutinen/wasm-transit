@@ -2,7 +2,7 @@
   "$defs": {
     "Attachment": {
       "additionalProperties": true,
-      "description": "The deployment names the bucket, the server hands out the link, and only\na signed-in person may read the file (D-162).",
+      "description": "The deployment names the bucket, the server hands out the link, and only\na signed-in person may read the file.",
       "properties": {
         "caption": {
           "type": [
@@ -44,7 +44,7 @@
           "additionalProperties": {
             "type": "boolean"
           },
-          "description": "`true` is there, `false` is checked and not there, and absent is not\nrecorded (D-154). The agency's own names beside [`AMENITIES`] are\nkept and not checked.",
+          "description": "`true` is there, `false` is checked and not there, and absent is not\nrecorded. The agency's own names beside [`AMENITIES`] are\nkept and not checked.",
           "type": "object"
         },
         "attachments": {
@@ -54,7 +54,7 @@
           "type": "array"
         },
         "code": {
-          "description": "The number on the sign. It is not unique (D-151).",
+          "description": "The number on the sign. It is not unique.",
           "type": [
             "string",
             "null"
@@ -76,7 +76,7 @@
           ]
         },
         "from_feed": {
-          "description": "The id (hash) of the feed that an import recorded this event from\n(D-150). A person's own event has none.",
+          "description": "The id (hash) of the feed that an import recorded this event from.\nA person's own event has none.",
           "type": [
             "string",
             "null"
@@ -154,7 +154,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "Ids in other systems, by system or part name (`sign`, `tms`, `gis`).\nKept and not checked (D-160).",
+          "description": "Ids in other systems, by system or part name (`sign`, `tms`, `gis`).\nKept and not checked.",
           "type": "object"
         },
         "replaces": {
@@ -165,7 +165,7 @@
           "x-references": "stop"
         },
         "request": {
-          "description": "The id of the stop request that this event carries out (D-159). Not\nchecked here, because the requests are their own document.",
+          "description": "The id of the stop request that this event carries out. Not\nchecked here, because the requests are their own document.",
           "type": [
             "string",
             "null"
@@ -176,7 +176,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "A survey may contradict the agency's other data. It is kept as given\n(D-158, D-161).",
+          "description": "A survey may contradict the agency's other data. It is kept as given\n(D-161).",
           "type": "object"
         },
         "spoken_name": {
@@ -193,7 +193,7 @@
           ]
         },
         "surveyed_by": {
-          "description": "Marks the event as a site survey, dated the day of the survey\n(D-158).",
+          "description": "Marks the event as a site survey, dated the day of the survey.",
           "type": [
             "string",
             "null"
@@ -283,7 +283,7 @@
         },
         "type": "array"
       },
-      "description": "The key stays the same through a move (D-145).",
+      "description": "The key stays the same through a move.",
       "type": "object"
     }
   },

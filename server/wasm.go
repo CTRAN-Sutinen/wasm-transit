@@ -1,7 +1,7 @@
 package main
 
 // Only package wasmhost touches the module ABI. Everything above it
-// speaks typed Go values. The server runs one module (`-wasm`, D-227) as
+// speaks typed Go values. The server runs one module (`-wasm`) as
 // the instances docs/architecture/server.md names: the long-lived one,
 // authz's own, and a fresh one for each import or publish.
 

@@ -1,4 +1,4 @@
-//! A plan takes a stop from the stops document (D-173, D-228). The ops are
+//! A plan takes a stop from the stops document. The ops are
 //! in cap-stops' OPS.md (`records`, `take_stops`).
 
 use chrono::NaiveDate;

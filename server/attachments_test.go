@@ -1,6 +1,6 @@
 package main
 
-// Attachments (D-162). Reading needs a signed-in person when sign-in is
+// Attachments. Reading needs a signed-in person when sign-in is
 // on.
 
 import (

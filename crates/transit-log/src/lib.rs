@@ -1,4 +1,4 @@
-//! The append-only log of the agency's record (D-190, D-197). The op
+//! The append-only log of the agency's record (D-190). The op
 //! contracts are in `crates/cap-log/OPS.md`.
 //!
 //! This crate never reads a record. A record is JSON named by kind and id.
@@ -41,7 +41,7 @@ pub struct Intent {
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// A claim beside the host's `at_ms`, never the entry's time (D-222).
+    /// A claim beside the host's `at_ms`, never the entry's time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claimed_at_ms: Option<u64>,
     #[serde(flatten)]
@@ -400,7 +400,7 @@ pub fn revert_with(states: &[RevertState], written: &[Written], hash: Hash) -> R
     Ok(out)
 }
 
-/// A record that the entry created leaves the fold (D-198).
+/// A record that the entry created leaves the fold.
 pub fn revert(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<Change>, String> {
     revert_with(&revert_states(before, head, entry, hash)?, &[], hash)
 }
@@ -434,7 +434,7 @@ pub fn join(template: Value, field: &str, records: &BTreeMap<String, Value>, as_
 }
 
 /// The document with its collection emptied, which keeps its tags and the
-/// fields this build does not know (D-167), is recorded under this id.
+/// fields this build does not know, is recorded under this id.
 pub const DOCUMENT_ID: &str = "document";
 
 pub fn document_records(document: &Value, field: &str, record_kind: &str, document_kind: &str, version: u32) -> Result<Vec<KindRecords>, String> {
@@ -475,7 +475,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! Pins the log (D-190, D-197, D-198):
+    //! Pins the log (D-190):
     //!
     //! 1. Folding the entries of a sequence of writes gives the records of
     //!    the last write.
@@ -490,7 +490,7 @@ mod tests {
     //!    record that a later entry changed refuses it.
     //! 7. One entry may change records of two kinds.
     //! 8. `split` and `join` are inverse over a collection, and a
-    //!    document's fields outside its collection (D-167) survive its
+    //!    document's fields outside its collection survive its
     //!    records and its assembly.
     //! 9. A write overlaps the entries that its writer did not read exactly
     //!    when one of them changed a record that the write changes.
@@ -683,7 +683,7 @@ mod tests {
         let back = revert(&before, &fold, &e, &hash).unwrap();
         let mut after = fold.clone();
         apply(&mut after, &Entry::new(header(3, None), back, Some(2)), &hash).unwrap();
-        assert_eq!(records_of(&after, "stop"), records_of(&before, "stop"), "A back to 1, B out of the fold (D-198)");
+        assert_eq!(records_of(&after, "stop"), records_of(&before, "stop"), "A back to 1, B out of the fold");
 
         // A later entry changed A, so a second revert of entry 2 is refused.
         let refused = revert(&before, &after, &e, &hash).unwrap_err();

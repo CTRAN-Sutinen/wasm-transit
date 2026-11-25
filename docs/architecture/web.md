@@ -184,24 +184,23 @@ documents:
   forks.
 - `publishedPlanSet` and `publishedPickValue` are the planner's
   timeline. They return every published pick, and one pick's network as
-  a value. The page fetches them gzipped and decompresses them (D-139).
+  a value. The page fetches them gzipped and decompresses them.
 - `served(kind)` returns one of the deployment's logged documents (the
   stops, the stop requests, the service alerts, the alert templates, the
   notes) by the manifest's `<kind>_hash`, as bytes the page never parses
-  (D-153, D-206, D-214). `kind` is the kernel's id for the kind
+  (D-206). `kind` is the kernel's id for the kind
   (`crates/cap-abi/src/kinds.rs`).
 - `stopWarnings` returns the warnings of the stops that a plan visits
   and that are not in service over its period. It asks cap-stops
   `read_pick`, which derives the period from the published plan set.
 - `servedFeed` returns the agency's feed as the deployment imported it:
   the manifest's `network_hash`, with `feed_hash` as its id. The stops
-  page uses it to show the feed's recorded changes (D-150).
+  page uses it to show the feed's recorded changes.
 - `withStopVersions` returns a plan with the stops' history over its
   period. It asks cap-stops `export_pick`, which derives the period from
   the published plan set. Each stop's record is on its pick date, and a
   stop whose record changes inside the period becomes one stop per
-  version. An export carries this, as the server's `GET /feed` does
-  (D-151, D-157).
+  version. An export carries this, as the server's `GET /feed` does.
 
 **Dropped documents.** A module may drop what it holds ("The bus
 worker", below). Asking for a dropped document gives the module's
@@ -258,7 +257,7 @@ A generated UI's page runs one module instance: its linked assembly (the
 manifest's `assemblies`). The assembly holds every capability that the
 page uses, over one kernel registry. So a document registers once per
 page and crosses between capabilities by hash without leaving the
-instance (D-77). A capability that the assembly does not link runs alone
+instance. A capability that the assembly does not link runs alone
 in its own module instance. When the assembly does not load, every
 capability runs alone.
 
@@ -310,7 +309,7 @@ assembly, which holds the network once.
 
 ## Signing in
 
-A page reads without signing in (D-58). A write carries the signed-in
+A page reads without signing in. A write carries the signed-in
 person's token. `src/signin.svelte.ts` is the pages' one sign-in. The
 pages are a public single-page client of the agency's provider. The
 manifest's `auth` names the issuer, the client id, and the scopes (the
@@ -323,7 +322,7 @@ endpoint. The tab's session storage keeps the tokens, and the page
 refreshes them with the refresh token.
 
 A read that needs the signed-in person (an attachment) goes through
-`readFetch` (D-162). Every page write goes through the page's outbox,
+`readFetch`. Every page write goes through the page's outbox,
 which sends it with `writeFetch` (`POST /logs/<log>`, `/stops`,
 `/plans`, `/stop-requests/work-order`, `/attachments`;
 [updates-offline.md](updates-offline.md), "The outbox"). A 401 holds
@@ -334,7 +333,7 @@ person signed in. Only a provider's refusal signs them out.
 it: the stops page's header, and beside Publish on the planner pages.
 
 The server's policy decides who may write, and the server's reading of
-the token names the person on a record (D-163).
+the token names the person on a record.
 
 ## External services
 
@@ -402,32 +401,28 @@ with the user, after you read **Because**.
 - **Holds:** there is no other shell. Every page is a generated UI that asks only through the engine. A capability that no UI reads waits on the bus for one (caps-run reads it meanwhile). It is never read by a page outside the engine.
 - **Because:** one op caller lets the gates prove parity and journal every op. A page that calls modules directly is outside both.
 - **Rejected:** migrating the original persona-tabbed app onto the engine; keeping it on the gate's allowlist.
-- **Decided:** D-69.
 
 ### The geocoder is an oracle the host calls (`/geocode`, `services.geocoder`, `ride-now` place search)
 - **Holds:** geocoding is an external service, not a document on the bus. Place search finds the network's stops and whatever the deployment's geocoder answers (addresses, streets, venues, places). The host follows the oracle contract in "External services" above.
 - **Because:** an op's answer depends only on the point, however the point was given (typed, tapped, located). So the geocoder only makes input easier. A gazetteer capability would rebuild a geocoder (interpolation, fuzzy matching, ranking, places) inside a module, and keeping places current is the hard part. The query policy is the deployment's, so every host asks the same question.
 - **Cost accepted:** no address search offline or where no geocoder runs. Typed addresses reach whoever runs the geocoder. Answers drift with its data, so nothing durable keeps a query, only the point and the name shown.
 - **Rejected:** a gazetteer document on the bus; leaving external answers to each host's judgment.
-- **Decided:** D-27, D-36, D-38. **Pinned:** `server/geocode_test.go`, `web/e2e/published-network.spec.mjs` ("ride now searches addresses through the geocoder"), the `--ask` runner gate.
+- **Pinned:** `server/geocode_test.go`, `web/e2e/published-network.spec.mjs` ("ride now searches addresses through the geocoder"), the `--ask` runner gate.
 
 ### Live feeds are named in a static file (`live-feeds.json`, kit's `readLiveFeeds`)
 - **Holds:** a deployment's GTFS-rt feeds are named in `live-feeds.json` beside the page, not in the manifest's `services`.
 - **Because:** the rider pages must run as plain static files with no sync server ([static-deployment.md](static-deployment.md)). So their default feeds cannot depend on a server-built document.
 - **Rejected:** `services.live` in the server's manifest.
-- **Decided:** D-39.
 
 ### The pages use only widely available web features (the live-feeds panel in `LiveFeeds.svelte`)
 - **Holds:** a page uses only features that are Baseline widely available: 30 months in every major browser. A newer feature waits until it has been available that long. The pages ship no polyfill. The live-feeds panel is a plain element with its own dialog habits: opening moves focus in, Escape closes it and returns focus to the pill, and a press outside it closes it. About 30 lines.
 - **Because:** the rider pages run on riders' own phones, and many are old. A polyfill is one more dependency to keep, and a fallback is a second code path that no one tests on the device that needs it. The Popover API does the same three things natively. It is Baseline since 2025-01-27, so it is newly available until mid-2027.
 - **Rejected:** Popover with a small fallback; Popover with a polyfill (`@oddbird/popover-polyfill`); a named browser floor.
-- **Decided:** D-135.
 
 ### A UI's flows are code, run by the answer graph (`src/uis/answers.ts`, `answerGraph` in `src/uis/kit.ts`, each `host.svelte.ts`)
 - **Holds:** a host declares its flows as `AnswerNode`s in TypeScript. The answer graph schedules them, and knows nothing about transit. A UI's layout is its `Shell.svelte`. Both ship with the UI's build. There is no flow or layout document.
 - **Because:** a node's body builds op arguments from host state. As data, that needs an expression language that the host interprets, which moves the host's code into a JSON dialect and takes no logic out of the host. A layout document would put product code into the agency's record. It would then need versions, migrations, a write path, and a second rollback beside the UI's own.
 - **Rejected:** flow maps as data in a UI manifest, interpreted by the engine; layouts as documents over a component catalog.
-- **Decided:** D-176.
 
 ### A failure belongs to its frame (`FrameState`, each host's `frames`)
 - **Holds:** the answer graph keeps why each frame has no answer: unassembled, starved, unread (an input it requires fails, and the page holds nothing of it), or failed. A host declares a node's capabilities, its inputs, and what it clears, and keeps no failure state of its own. Every other frame answers.
@@ -437,7 +432,7 @@ with the user, after you read **Because**.
 
 ### A UI's inputs are declared as data, and read by the kit (`src/uis/inputs.ts`, each `ui.json`'s `inputs`)
 - **Holds:** a UI declares each document and feed it reads from outside the page in its `ui.json`: where it comes from, how often it is read, its time limit, what the page keeps when a read fails, its age, and the failure-table rows it fails as. The host gives each a reader. The kit reads them all with one poll while the page is visible. It stops a read at its time limit, and a read answers a document, none kept, or a failure since a time.
-- **Because:** every row of a failure table is an input that fails, so the inputs are where a page's resilience is decided. Each host wrote its own readers and poll, and chose what to keep and what to say. A read had no time limit, and the engine answered null both for none kept and for a failed read (QAF-131), so an outage looked like an empty deployment. A declaration holds only values, with no expression, so it is data, unlike a flow (D-176). The failure-table gate and the docs site read it.
+- **Because:** every row of a failure table is an input that fails, so the inputs are where a page's resilience is decided. Each host wrote its own readers and poll, and chose what to keep and what to say. A read had no time limit, and the engine answered null both for none kept and for a failed read (QAF-131), so an outage looked like an empty deployment. A declaration holds only values, with no expression, so it is data, unlike a flow. The failure-table gate and the docs site read it.
 - **Rejected:** a time limit and a label written into each host's readers; the declarations as TypeScript that the docs site parses.
 - **Pinned:** `web/src/uis/inputs.test.mjs`, `web/src/uis/host-contract.test.mjs`, `tools/failure-tables.test.mjs`, the `reads-outside-inputs` web gate, e2e `ui-stop-display` "a server that never answers the edit document turns the label to stale within the read's time limit", e2e `ui-stops` "a stops document whose read fails says so…".
 
@@ -445,4 +440,4 @@ with the user, after you read **Because**.
 - **Holds:** the glyphs and sprites are fetched once into `web/public/basemap-assets/` (gitignored). They are read from there when present, else from protomaps.github.io.
 - **Because:** a stop display that loses its uplink would otherwise lose every map label. Installs are the user's job, so the repo does not vendor them.
 - **Rejected:** vendoring the assets into the repo; keeping the network fetch as a known offline limit.
-- **Decided:** D-49. **Pinned:** `web/e2e/basemap-assets.spec.mjs`.
+- **Pinned:** `web/e2e/basemap-assets.spec.mjs`.

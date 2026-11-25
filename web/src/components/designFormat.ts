@@ -49,7 +49,7 @@ export function issueWords(item: object): { kind: string; detail: string } {
       // `after_trip` is the trip's place in the block, counted from 0.
       return { kind, detail: `Block ${f.block}: the wait after trip number ${Number(f.after_trip) + 1} of the block is ${mins(secs("gap_secs"))} min; ${mins(secs("required_secs"))} min is required there.` };
     case "stop_not_in_service": {
-      // The stops document's status over the plan's dates (D-157).
+      // The stops document's status over the plan's dates.
       const status = typeof f.status === "string" ? f.status.replace(/_/g, " ") : "not there yet";
       const when = typeof f.until === "string" ? `from ${f.from} until ${f.until}` : `from ${f.from} on`;
       return { kind, detail: `The plan stops at ${f.stop}, which is ${status} ${when}, as the stops record has it.` };

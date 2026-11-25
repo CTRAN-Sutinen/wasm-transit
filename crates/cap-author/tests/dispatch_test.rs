@@ -57,7 +57,7 @@ fn changes_chain_by_hash_and_report_the_result() {
         ]
     );
 
-    // D-138.
+    // A fork's calendar is its period: the ranges outside it go.
     assert!(network.service_types["weekday"].rule.ranges.is_empty());
     let Response::Apply { warnings, .. } = apply(
         &pick,
@@ -90,7 +90,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     };
     assert_eq!(again, pick, "the same change of the same document is the same document");
 
-    // D-41.
+    // A fork to a period end carries each weekly type to that end.
     let Response::Apply { network, warnings, .. } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
@@ -111,7 +111,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     assert_eq!(warnings, vec![NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 }]);
 }
 
-/// D-11.
+/// A redraw reports the patterns it touched.
 #[test]
 fn a_redraw_reports_the_patterns_it_touched() {
     let base = load(network());
@@ -177,7 +177,7 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// D-9. Work rules win over the terminal's floor.
+/// Work rules win over the terminal's floor.
 #[test]
 fn work_rules_judge_the_waits_of_the_next_document() {
     let base = load(network());
@@ -207,7 +207,7 @@ fn work_rules_judge_the_waits_of_the_next_document() {
     assert!(err.message.contains("load_work_rules"), "{err}");
 }
 
-/// D-228.
+/// A feed is stamped as a pick once.
 #[test]
 fn stamp_pick_stamps_a_feed_once() {
     let base = load(network());

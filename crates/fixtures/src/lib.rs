@@ -1,4 +1,4 @@
-//! The fixtures that the worked examples read (D-235). The generator, a
+//! The fixtures that the worked examples read. The generator, a
 //! capability's `examples` feature, or a dev-dependency may name this crate.
 //! No module's closure holds it (arch gates,
 //! `cap-abi/src/bin/common/gates.rs`).
@@ -154,7 +154,7 @@ pub fn live_example() -> Option<(transit_live::LiveDay, String)> {
     Some((live, live_hash))
 }
 
-/// A stops document (D-153, D-154, D-157): one stop in service, given
+/// A stops document: one stop in service, given
 /// amenities, suspended for a while, then moved; one planned, then
 /// permitted.
 pub fn fixture_stops() -> transit_stops::Stops {
@@ -182,7 +182,7 @@ pub const ALERTS_NOW: u64 = 1_792_756_800;
 
 /// The alerts are route 10's detour at stop C (English and Spanish, explaining
 /// the fixture's diversion), route 40's reduced service in one direction for a
-/// day, and trip t10's 08:00 instance, which the live feed cancels (D-216).
+/// day, and trip t10's 08:00 instance, which the live feed cancels.
 pub fn fixture_alerts() -> transit_alerts::ServiceAlerts {
     serde_json::from_value(serde_json::json!({
         "kind": "service_alerts", "schema_version": 2,

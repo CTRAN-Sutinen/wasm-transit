@@ -1,6 +1,6 @@
 // The published network (docs/architecture/server.md). Rider pages read each
-// document by the hash the manifest pins, the layout a static host serves too
-// (D-131). The server on :8083 publishes the fixture feed, the walking
+// document by the hash the manifest pins, the layout a static host serves too.
+// The server on :8083 publishes the fixture feed, the walking
 // fixture's streets, and the walk table. It runs no geocoder, so spots stay
 // "Dropped pin". The geocoder specs list one and answer /geocode themselves.
 
@@ -223,7 +223,7 @@ test("the stop display boots from the published network", async ({ page }) => {
 test("service design opens the published network as a plan", async ({ page }) => {
   await page.goto("/service-design.html");
 
-  // HOL runs no trip, so it is in no combination (D-55).
+  // HOL runs no trip, so it is in no combination.
   await expect(page.getByTestId("group-select").locator("option")).toHaveCount(2, { timeout: 10_000 });
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
   await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(2);

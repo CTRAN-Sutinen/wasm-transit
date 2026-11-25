@@ -45,5 +45,5 @@ What a policy write must pass. The sync server asks this before it commits `POST
 - `warnings` are consequences a person should see, and never refuse: a policy that grants no role a write on the policy (`no_policy_writer`), which nobody could change again but by a new seed.
 - With no issue, the answer is the canonical document and its `document_hash`. The server stores exactly these bytes.
 
-A field the policy carries that this build does not know is kept, and named in `unknown_fields` (D-167). A policy in a newer version is refused, naming both versions.
+A field the policy carries that this build does not know is kept, and named in `unknown_fields`. A policy in a newer version is refused, naming both versions.
 

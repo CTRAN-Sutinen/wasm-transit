@@ -21,7 +21,7 @@ impl transit_version::Versioned for WorkRules {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct WorkRules {
-    /// A copy without a kind tag reads as work rules (D-115).
+    /// A copy without a kind tag reads as work rules.
     #[serde(default)]
     #[ts(type = "\"work_rules\"")]
     pub kind: WorkRulesKind,
@@ -35,11 +35,11 @@ pub struct WorkRules {
     /// The most specific rule answers. Specificity runs from route with
     /// service type, to route, to service type, to neither. With no rule,
     /// the terminal's floor applies, which is the smallest authored layover
-    /// there (D-9).
+    /// there.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<RecoveryRule>>")]
     pub recovery: Vec<RecoveryRule>,
-    /// Set per pair, in either order (D-46). A route follows itself. An
+    /// Set per pair, in either order. A route follows itself. An
     /// unlisted pair never interlines.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<RoutePair>>")]
@@ -144,8 +144,7 @@ pub struct MealBreak {
     pub extra: transit_version::Extra,
 }
 
-/// Pay is in time, not dollars, because operators' rates vary by seniority
-/// (D-51).
+/// Pay is in time, not dollars, because operators' rates vary by seniority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct Pay {

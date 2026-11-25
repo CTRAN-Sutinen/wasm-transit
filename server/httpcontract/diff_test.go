@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The compatibility gate (D-81): an older client's request is still
+// The compatibility gate: an older client's request is still
 // accepted, an older client still reads every response, and a removal
 // passes only after the lock marks it deprecated.
 

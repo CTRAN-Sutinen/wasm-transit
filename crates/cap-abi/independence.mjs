@@ -1,4 +1,4 @@
-// Assembly independence (D-77, docs/architecture/bus.md, "Bus rules").
+// Assembly independence (docs/architecture/bus.md, "Bus rules").
 // Every manifest worked example must answer the same from a capability
 // built alone and from inside each generated UI's linked assembly, in
 // either order of the assembly's capabilities. A derived entry that one
@@ -104,7 +104,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (!modules.has(entry.url)) modules.set(entry.url, readFileSync(entry.file ?? path.join(dist, "..", entry.url)));
     return shell(modules.get(entry.url));
   };
-  // The server's assembly (D-227) is checked as a UI's is. Its own about
+  // The server's assembly is checked as a UI's is. Its own about
   // op names its capabilities, in index order.
   const server = path.join(here, "../../web/pkg/server.wasm");
   const about = JSON.parse(shell(readFileSync(server)).invokeBytes(OP_ABOUT, Buffer.alloc(0)));

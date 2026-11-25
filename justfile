@@ -18,7 +18,7 @@ default:
 # ---------------------------------------------------------------
 
 # Build the modules and regenerate the capability manifest. Every
-# module is an ASSEMBLY (gen-assemblies writes assemblies/, D-77): each
+# module is an ASSEMBLY (gen-assemblies writes assemblies/): each
 # capability alone (module-<cap>: caps-run, agents, the registry's
 # blobs), each generated UI's capabilities linked into one module over
 # one kernel registry (module-ui-<id>: the page loads it), and the
@@ -44,7 +44,7 @@ caps:
     # beside the modules (every capability, with its worked examples).
     CAPS_PROFILE="$profile" cargo run --quiet -p gen-manifest
     mkdir -p web/pkg
-    # The server's one module (D-227): gen-assemblies links it from
+    # The server's one module: gen-assemblies links it from
     # server/capabilities.json and the capabilities the kind list names.
     rm -f web/pkg/cap_*.wasm
     cp "target/wasm32-unknown-unknown/$profile/module_server.wasm" web/pkg/server.wasm
@@ -230,7 +230,7 @@ _host-tests:
     # locked schemas. It reads the manifest `just caps` just wrote.
     cargo test
     node crates/cap-abi/caps-smoke.mjs
-    # ASSEMBLY INDEPENDENCE (D-77): every worked example answers alike
+    # ASSEMBLY INDEPENDENCE: every worked example answers alike
     # from the capability alone and inside each UI's linked assembly,
     # in either order of its capabilities — a shared derived entry is
     # only a cache, never a dependency. The check's broken fixture
@@ -274,7 +274,7 @@ _host-tests:
     # first.
     node --test web/src/refusals.test.mjs
     node --test web/src/error-text.test.mjs
-    # The outbox (web/src/outbox.ts; D-189): writes in order, the same
+    # The outbox (web/src/outbox.ts): writes in order, the same
     # key on every attempt, a network failure or a 5xx waiting, a 401
     # holding the outbox, a refusal held with its reasons, a reload
     # keeping what waits, and the device's time as a claim.
@@ -370,7 +370,7 @@ _host-tests:
       --op '{"op":"active_services","network_hash":"$load_network.network_hash","date":"$TODAY"}' \
       | grep '"op":"active_services"' > /dev/null
     # The runner reads the clock in the agency's zone, never the
-    # machine's (D-175). From Tokyo and from Honolulu, $TODAY is the
+    # machine's. From Tokyo and from Honolulu, $TODAY is the
     # date that web/src/clock.ts gives in the network's zone
     # (America/Montreal). --tz names another zone. With no zone known,
     # $TODAY fails.
@@ -523,7 +523,7 @@ _host-tests:
       --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep '"layover_remaining_secs":300' > /dev/null
-    # Blocking where cutting the work begins (D-46, D-9): the work
+    # Blocking where cutting the work begins: the work
     # rules registered, the recovery view under them, the suggested
     # blocking of the trips no block carries, adopted through author
     # `apply` under the same rules (no layover_infeasible), and the
@@ -540,7 +540,7 @@ _host-tests:
       --cap runcut --as adopted --op '{"op":"load_network","network":"$a.network"}' \
       --as fleet --op '{"op":"fleet_summary","network_hash":"$adopted.network_hash","date":"2026-10-23"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const s = ok("s").suggestion; if (!ok("rec").recovery.waits.length || ok("a").issues.some((i) => i.layover_infeasible) || ok("fleet").summary.peak_vehicles !== s.peak_vehicles) process.exit(1)'
-    # The stops capability (D-153, D-157): a document validated,
+    # The stops capability: a document validated,
     # registered under the hash validate answered (its events carry the
     # ids validate would give them, D-166), and read on a date —
     # suspended while its suspension lasts, in service again on its
@@ -553,7 +553,7 @@ _host-tests:
       --as back --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-07-01"}' \
       --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"in_service","lat":45,"lon":-122},{"on":"2027-01-02","event":"in_service"}]}}}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "suspended" || ok("back").stop.status !== "in_service" || ok("bad").refusals[0]?.problem.kind !== "already_in_service") process.exit(1)'
-    # The stop requests capability (D-159): the first request begins the
+    # The stop requests capability: the first request begins the
     # document, put answers it under the hash load_stop_requests and
     # validate answer, a stop's requests read back, the work across every
     # stop listed by status and counted, and a request at
@@ -565,7 +565,7 @@ _host-tests:
       --as work --op '{"op":"list","requests_hash":"$first.requests_hash","statuses":["submitted"]}' \
       --as bad --op '{"op":"put","requests_hash":"$first.requests_hash","id":"R-1","request":{"stop":"6124","job":"repair_improve","status":"ordered"}}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("first").requests_hash || ok("mine").requests[0]?.id !== "R-1" || ok("work").requests[0]?.id !== "R-1" || ok("work").counts[0]?.requests !== 1 || ok("bad").refusals[0]?.problem.kind !== "no_work_order") process.exit(1)'
-    # The first stops document begins from a network (D-157): the sample
+    # The first stops document begins from a network: the sample
     # network's stops seeded, then one edit placed and checked — stop A
     # suspended on 2026-10-23 reads suspended that day, and is the nearest
     # stop to its own point (stops_near, the field's "which stop am I at?").
@@ -702,7 +702,7 @@ _host-tests:
       --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"edits":{"kind":"edit_records","schema_version":2,"records":[]},"record_id":"e1","now_ms":1000}' \
       --op '{"op":"reports","network_hash":"$load_network.network_hash","edits":"$prop.edits"}' \
       | grep '"valid":true' > /dev/null
-    # A trip cancel, chained (D-45): divert cancels the 08:00 t10 on
+    # A trip cancel, chained: divert cancels the 08:00 t10 on
     # the Friday into an empty edit document, and the board in the
     # same session lists its visit at A cancelled — never a row
     # (D-100). grep reads the whole answer (no -q).
@@ -722,7 +722,7 @@ _host-tests:
     #      whole-feed write never leaves the codec's homes.
     #   2. nobody reinvents the monolith inside a module.
     # Law 1a, and the rule that keeps capabilities from calling
-    # capabilities once they link into one binary (D-77): the
+    # capabilities once they link into one binary: the
     # dependency graph from `cargo metadata`, deny by default — a
     # capability depends only on cap-abi and libraries, only the
     # generated assemblies depend on capabilities, and only the
@@ -820,7 +820,7 @@ _host-tests:
         "" \
         "$(grep -rlE 'WebAssembly\.|transit_invoke' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/bus\.worker\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "loads or calls a module outside the bus worker; ask through the engine (src/engine.ts)"
-    # W0e: a host applies no domain rule (D-228; docs/architecture/hosts.md):
+    # W0e: a host applies no domain rule (docs/architecture/hosts.md):
     # it never tests a record's lifecycle status. The ops answer which
     # plan is published and which stop is retired.
     ratchet status-test-in-host \
@@ -862,7 +862,7 @@ _host-tests:
     # (server/compile_test.go; WASM_TEST_CACHE=off compiles afresh).
     cd server && go test -race ./...
 
-# A UI at its own URL (D-171; docs/architecture/release-artifacts.md,
+# A UI at its own URL (docs/architecture/release-artifacts.md,
 # "Each UI at its own URL"; DEPLOYMENTS-SERVER.md): one of the UI's
 # logged builds (build.<id>, from the server's -ui-dist), written out
 # to OUT for the UI's host. The head unless BUILD names one. OUT must be
@@ -872,7 +872,7 @@ _host-tests:
 ui-deploy server ui out build="":
     node tools/ui-deploy.mjs "{{ server }}" "{{ ui }}" "{{ out }}" {{ if build == "" { "" } else { quote(build) } }}
 
-# The HTTP contract's lock (D-81; docs/architecture/release-artifacts.md,
+# The HTTP contract's lock (docs/architecture/release-artifacts.md,
 # "The HTTP contract"): server/openapi.json copied to
 # server/openapi.lock.json once the compatibility gate passes. Run it
 # when a release ships, never to make a breaking change pass.
@@ -882,7 +882,7 @@ http-lock:
 
 # The documents' schema lock (docs/FORMATS.md, "The schema lock"):
 # freeze a new version of a kind, or record an added optional field or
-# an added reference declaration in the same version (D-167, D-232),
+# an added reference declaration in the same version (D-232),
 # into the owning crate's locks/. It refuses every other change: that
 # one needs a version bump. It also writes the checked-in kind table
 # (crates/cap-abi/kinds.json) from the kind list (crates/cap-abi/src/
@@ -990,14 +990,14 @@ population:
 #
 # The feed and street layer are a path (resolved relative to the repo
 # root, wherever you run just from), an http(s) URL, or bucket:<key>
-# (the object inputs/<key> in the store's bucket) — D-118.
+# (the object inputs/<key> in the store's bucket).
 serve feed="" streets="" publisher="" addr="":
     #!/usr/bin/env bash
     set -e
     # The settings are server/dev.toml, then server/local.toml if you
     # keep one (your feed, store, sign-in, geocoder — copy
     # local.example.toml); the arguments here beat both. A URL or
-    # bucket:<key> source passes as given (D-118); a path is resolved
+    # bucket:<key> source passes as given; a path is resolved
     # from the repo root.
     src() { case "$1" in http://*|https://*|bucket:*) echo "$1" ;; *) realpath -m "$1" ;; esac; }
     args=(-config dev.toml)
@@ -1015,7 +1015,7 @@ serve feed="" streets="" publisher="" addr="":
 build-ui ui: caps types
     cd web && npm run typecheck && UI={{ ui }} npx vite build
 
-# One UI as a static deployment (D-131; docs/architecture/static-deployment.md; the operator's guide is DEPLOYMENTS.md):
+# One UI as a static deployment (docs/architecture/static-deployment.md; the operator's guide is DEPLOYMENTS.md):
 # the server boots on the feed (and the street layer, if given) exactly
 # as `just serve` does, writes the bundle into OUT, and exits — that
 # UI's page, `manifest`, and every published document as blobs/<hash>
@@ -1042,8 +1042,8 @@ export ui out feed streets="" publisher="": (build-ui ui)
     if [ -n "$live" ]; then args+=(-live-feeds "$live"); fi
     exec go run . "${args[@]}"
 
-# One UI as a static deployment that follows the agency's GTFS URL
-# (D-132): the same bundle as `just export`, but the manifest names the
+# One UI as a static deployment that follows the agency's GTFS URL:
+# the same bundle as `just export`, but the manifest names the
 # feed's URL and no network is imported — each page fetches the zip,
 # imports it itself, and checks the URL once a day, so a new feed needs
 # no redeploy. The URL must answer with CORS. A street layer still ships
@@ -1074,7 +1074,7 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
 #                                    web/pkg/kinds.json; empty: none), with the
 #                                    entry that broke it, and the records in a
 #                                    version newer than K reads (unjudged)
-#   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's
+#   just store gc [-grace 168h] <url>  collect orphans — the collector's
 #                                    own delete-capable credentials
 #   just store dump <url> <dir>      write every object to a folder (each at
 #                                    <dir>/<key>, a blob's envelope beside it), to
@@ -1112,7 +1112,7 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     cp -r web/pkg/schemas server/kodata/pkg/schemas
     cp -r web/dist server/kodata/dist
     # Each UI's own bundle, for -ui-dist <id>=/var/run/ko/dist-ui/<id>
-    # (each UI at its own URL, D-171).
+    # (each UI at its own URL).
     for ui in ride-now stop-display stops service-change service-design; do
         cp -r "web/dist-ui/$ui" "server/kodata/dist-ui/$ui"
     done
@@ -1254,7 +1254,7 @@ basemap bbox maxzoom="15":
 # SIL OFL, sprites derive from MIT tangrams/icons — the licenses ride
 # along). The map probes for them beside the tiles and reads labels
 # from there, so a display that loses its uplink loses no label; without
-# them the style reads protomaps.github.io (D-49, option 2). Rebuild the
+# them the style reads protomaps.github.io (option 2). Rebuild the
 # frontend afterwards (`just build`). A re-run at the same pin is a no-op.
 #
 #   just basemap-assets

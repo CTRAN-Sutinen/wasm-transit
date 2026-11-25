@@ -1,4 +1,4 @@
-//! `draw_alignment` (D-11; cap-author/OPS.md). `one` gives the pattern a new
+//! `draw_alignment` (cap-author/OPS.md). `one` gives the pattern a new
 //! alignment. `all` redraws the shared alignment, so every pattern on it moves.
 //! Every change is reported in `touched`. The expected answers are recomputed
 //! from the generated input.
@@ -249,7 +249,7 @@ fn the_edit_reads_from_json() {
     )
     .unwrap();
     assert!(matches!(edit, NetworkEdit::DrawAlignment { redraw: Redraw::All, id: None, .. }));
-    // The scope has no default (D-11).
+    // The scope has no default.
     assert!(serde_json::from_str::<NetworkEdit>(
         r#"{"edit":"draw_alignment","pattern":"p0","points":[{"lat":45.0,"lon":-122.0},{"lat":45.1,"lon":-122.1}]}"#
     )

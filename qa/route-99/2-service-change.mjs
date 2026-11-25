@@ -1,5 +1,5 @@
 // Step 2, the service-change app: fork a plan, build route 99 from the
-// stops record (D-173), block its trips, and publish to take effect today.
+// stops record, block its trips, and publish to take effect today.
 //
 //   node tools/ui-shot.mjs service-change --hash '#stage=calendar' \
 //     --steps qa/route-99/2-service-change.mjs --out .qa/route-99/sc.png

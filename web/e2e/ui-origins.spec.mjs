@@ -1,4 +1,4 @@
-// Each UI at its own URL (D-171; docs/architecture/release-artifacts.md, "Each
+// Each UI at its own URL (docs/architecture/release-artifacts.md, "Each
 // UI at its own URL"). One store-mode server with sign-in on keeps each UI's
 // bundle as its own build. Each host (e2e/static-server.mjs, forward=) serves
 // the build that tools/ui-deploy.mjs wrote. One UI rolls back alone. The ports

@@ -44,7 +44,7 @@
     "kind": {
       "$ref": "#/$defs/PolicyKind",
       "default": "policy",
-      "description": "A copy without a kind tag reads as a policy (D-115)."
+      "description": "A copy without a kind tag reads as a policy."
     },
     "rules": {
       "default": [],

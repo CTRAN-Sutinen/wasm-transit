@@ -13,7 +13,7 @@ import (
 	"rustwasm/server/store"
 )
 
-// Pins builds (D-80, D-63; docs/architecture/release-artifacts.md). The
+// Pins builds (docs/architecture/release-artifacts.md). The
 // manifest pins `build_hash`, and the pages follow the pinned build.
 
 const syncWasmPath = testWasm
@@ -188,7 +188,7 @@ func TestOnlyALoggedBuildIsMovedTo(t *testing.T) {
 }
 
 // Pins that a UI's bundle (-ui-dist) is a build on build.<id>, and
-// POST /builds?ui=<id> moves only that pointer (D-171).
+// POST /builds?ui=<id> moves only that pointer.
 func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 	stops, change := t.TempDir(), t.TempDir()
 	writeDist(t, stops, map[string]string{"index.html": "stops", "stops.html": "<p>stops A</p>", "sw.js": "stops A", "basemap.pmtiles": "map data"})

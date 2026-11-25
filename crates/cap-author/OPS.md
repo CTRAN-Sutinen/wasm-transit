@@ -121,7 +121,7 @@ Timetable gestures. These address a route and a direction, and a service type fo
 
 ## stamp_pick
 
-What is an imported feed as a pick? `stamp_pick` stamps the registered network as a pick (D-140): one `set_plan` edit under `id` and `name`, effective from the feed's first service date (the earliest date any service type with trips runs).
+What is an imported feed as a pick? `stamp_pick` stamps the registered network as a pick: one `set_plan` edit under `id` and `name`, effective from the feed's first service date (the earliest date any service type with trips runs).
 
 A document that is a pick already (it carries a plan id) is not stamped. Neither is a feed that runs no service, because it has no date. It comes back as it was, and `stamped` is false.
 

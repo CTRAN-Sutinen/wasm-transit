@@ -1,11 +1,11 @@
 # stops
 
 `stops` (`src/uis/stops/`) holds every stop's own life, apart from the
-service plans, which only read it (D-157), and the work asked for at the
-stops (D-159). Its views are Stops (a map or table by status on the
+service plans, which only read it, and the work asked for at the
+stops. Its views are Stops (a map or table by status on the
 date read, and the stops nearest the device), Work (every request as a
-table), and Feed review (what the agency's feed did to the stops record,
-D-150). A stop, a survey, and a request each open as a page.
+table), and Feed review (what the agency's feed did to the stops record).
+A stop, a survey, and a request each open as a page.
 
 - A stop changes only by an event. A change offers only what the stop
   may become that day, and a wrong event is corrected, not added to.
@@ -14,17 +14,17 @@ D-150). A stop, a survey, and a request each open as a page.
   service change.
 - The page has no GTFS control. A feed loaded into a draft plan is a
   draft, and this page never records it.
-- A survey (D-158) is the Service Stop Worksheet. It starts from what
+- A survey is the Service Stop Worksheet. It starts from what
   the stop records and saves as one `changed` event. The server names
-  the surveyor (D-163). A half-filled survey is kept on the device
+  the surveyor. A half-filled survey is kept on the device
   until saved or discarded.
-- A request (D-159) moves through drafted, submitted, work order open,
+- A request moves through drafted, submitted, work order open,
   and completed, with one next step for its status. Where the
   deployment connects a work order system, the server's adapter opens
-  and reads the work order; otherwise it is entered by hand (D-165).
-  An open request on a stop retired today says so (D-238).
+  and reads the work order; otherwise it is entered by hand.
+  An open request on a stop retired today says so.
 - Photos and drawings are named by hash where the deployment keeps
-  attachments (D-162), and read with the signed-in person's token.
+  attachments, and read with the signed-in person's token.
 - A clicked point is kept to six decimals; a typed point is saved as
   typed; the device's fix is a start, never the measurement.
 - Every write is checked by the page's op and again by the server

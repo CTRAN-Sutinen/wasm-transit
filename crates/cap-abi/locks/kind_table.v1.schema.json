@@ -78,7 +78,7 @@
           "$ref": "#/$defs/Read"
         },
         "receive": {
-          "description": "The capability whose `receive` op writes the kind's log (D-228).",
+          "description": "The capability whose `receive` op writes the kind's log.",
           "type": [
             "string",
             "null"
@@ -243,7 +243,7 @@
       "oneOf": [
         {
           "const": "open",
-          "description": "Anyone reads the kind by hash (`/blobs/<hash>`; D-152).",
+          "description": "Anyone reads the kind by hash (`/blobs/<hash>`).",
           "type": "string"
         },
         {
@@ -361,7 +361,7 @@
     "kind": {
       "$ref": "#/$defs/KindTableKind",
       "default": "kind_table",
-      "description": "The kind tag (D-115): `\"kind_table\"`."
+      "description": "The kind tag: `\"kind_table\"`."
     },
     "kinds": {
       "description": "Each kind the store keeps, by its store kind.",

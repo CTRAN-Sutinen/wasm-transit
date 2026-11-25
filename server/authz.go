@@ -1,7 +1,7 @@
 package main
 
 // The host verifies the bearer JWT and the cap-authz module decides
-// (docs/architecture/server.md; D-58..D-61). Every write is denied when
+// (docs/architecture/server.md). Every write is denied when
 // there is no valid token or no matching rule. A verified subject becomes
 // the store log's `writer`.
 
@@ -35,8 +35,8 @@ type oidcConfig struct {
 	jwksURL    string
 	audience   string
 	keyFile    string // pinned PEM public key (used when jwksURL is empty, or as bootstrap)
-	rolesClaim string // dotted claim path, default "roles" (D-59)
-	nameClaim  string // dotted claim path to the person's name, default "name" (D-158)
+	rolesClaim string // dotted claim path, default "roles"
+	nameClaim  string // dotted claim path to the person's name, default "name"
 	clientID   string // the pages' public client (PKCE), published in the manifest
 	scope      string // the scopes a page asks for
 }
@@ -230,14 +230,13 @@ type identity struct {
 	Sub   string   `json:"sub"`
 	Roles []string `json:"roles"`
 	// Name is the configured name claim (-oidc-name-claim), else the sub.
-	// A record names the person by it (a survey's surveyor, D-158).
+	// A record names the person by it (a survey's surveyor).
 	Name string `json:"-"`
 }
 
 const clockLeeway = 60 * time.Second
 
-// verifyJWT accepts RS256 and ES256 only, so `none` and HS* tokens fail
-// (D-60).
+// verifyJWT accepts RS256 and ES256 only, so `none` and HS* tokens fail.
 func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -436,7 +435,7 @@ func (s *server) authorize(r *http.Request, id *identity, action, pointer string
 	return true, resp.Decision.Reason
 }
 
-// protectWrite leaves reads public (D-58), except the pointer log, which
+// protectWrite leaves reads public, except the pointer log, which
 // carries writer identities. That read needs read on the pointer, and
 // the writers stay redacted unless the identity holds an "audit" rule.
 // pointerOf names the pointer. With auth disabled, everything passes.
@@ -574,7 +573,7 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 // handlePermissions is the only client-readable form of the policy. The
 // policy document itself is never served: /blobs answers 404 for kind
-// "policy" (D-61).
+// "policy".
 func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
@@ -617,8 +616,8 @@ func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp.Effective)
 }
 
-// seedPolicy commits the -policy source (D-118) as the `policy` pointer
-// when it does not exist yet (D-61). Later changes are ordinary CAS
+// seedPolicy commits the -policy source as the `policy` pointer
+// when it does not exist yet. Later changes are ordinary CAS
 // commits.
 func (s *server) seedPolicy(policyFile string) {
 	if s.store == nil || policyFile == "" {
@@ -640,7 +639,7 @@ func (s *server) seedPolicy(policyFile string) {
 	log.Printf("policy seeded into the store from %s", policyFile)
 }
 
-// nameOf prefers the verified token's name claim (D-158).
+// nameOf prefers the verified token's name claim.
 func nameOf(r *http.Request, fallback string) string {
 	if id, ok := r.Context().Value(identityKey).(*identity); ok && id != nil && id.Name != "" {
 		return id.Name

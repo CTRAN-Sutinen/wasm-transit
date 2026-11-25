@@ -8,7 +8,7 @@ an alert, and its preview are built and walked on C-TRAN
 `docs/architecture/generated-uis/disruptions.md`). This unit holds what is left.
 
 Vehicle assignments and trip coverage are not here. CAD/AVL holds
-them (D-122, D-212). The page stays one workspace for dispatch,
+them. The page stays one workspace for dispatch,
 communications, and customer service until it is clearly overloaded
 (D-209).
 
@@ -68,7 +68,7 @@ server does not answer.
 - Dispatch's late list shows a bus twice when its block's next trip is
   also late (QAF-127).
 - Dispatch's notes name their subject by id (QAF-128).
-- Partial cancels (D-45).
+- Partial cancels.
 
 ## Done when
 

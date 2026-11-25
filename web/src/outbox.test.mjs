@@ -1,4 +1,4 @@
-// Pins the outbox (src/outbox.ts; D-189) while the server is away.
+// Pins the outbox (src/outbox.ts) while the server is away.
 //
 // 1. Writes are sent in the order they were made. A write that cannot
 //    reach the server (a network failure, a 503) keeps waiting, and

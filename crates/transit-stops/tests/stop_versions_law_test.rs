@@ -1,4 +1,4 @@
-//! GTFS export and import with the stops' history (D-150, D-151, D-157). The
+//! GTFS export and import with the stops' history. The
 //! ops are in cap-stops' OPS.md (`export_versions`, `import_events`).
 
 use chrono::NaiveDate;
@@ -240,7 +240,7 @@ fn unlisted_names_only_the_stops_a_feed_should_list() {
     assert_eq!(imported.unlisted, vec!["S".to_string(), "Z".to_string()]);
 }
 
-/// `import_feed` equals `import_events` apart from `from_feed` (D-150).
+/// `import_feed` equals `import_events` apart from `from_feed`.
 #[test]
 fn an_import_names_its_feed_on_every_event_it_records() {
     let net = fixture();

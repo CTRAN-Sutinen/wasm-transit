@@ -29,12 +29,12 @@ A log's boundary moves by a seal and a start entry
 The entry, the checkpoint, the commit, and the six rules are built:
 cap-log keeps the disruptions log and the stops log (`docs/FORMATS.md`,
 "The logs"; `docs/architecture/storage.md`). Each later log is kept by
-cap-log too, and each of its kinds' capabilities answers its records
-(D-197). The plans log holds the published plan set and the frozen
+cap-log too, and each of its kinds' capabilities answers its records.
+The plans log holds the published plan set and the frozen
 versions, and the server freezes and adopts through it (D-191;
 `docs/architecture/storage.md`). The documents the server derives from
-its inputs are stored in the record when they are made (D-199;
-`docs/FORMATS.md`, "Derivations"). The kind table governs every
+its inputs are stored in the record when they are made
+(`docs/FORMATS.md`, "Derivations"). The kind table governs every
 write, and the store describes itself (D-202, D-203; `docs/FORMATS.md`,
 "The kind table", "The store describes itself").
 

@@ -1,6 +1,6 @@
 package main
 
-// Attachments (D-162) live in a bucket of their own (-attachments), each
+// Attachments live in a bucket of their own (-attachments), each
 // object named by its content hash and created only if absent. A record
 // names a file by hash, never a URL. The store's `gc` never touches this
 // bucket. Reading needs a signed-in person whenever sign-in is on. Adding

@@ -3,7 +3,7 @@
 //
 // The selection (plan, baseline, service group, route, direction, stop, hour
 // window) lives in the URL hash, so a view can be bookmarked. A service group
-// is a combination of service types that run together (D-55).
+// is a combination of service types that run together.
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, load, produced, publishedPlanSet, readManifest, served, servedNetworkValue, Doc, type DeploymentManifest } from "../../engine";
@@ -13,7 +13,7 @@ import descriptor from "./ui.json";
 
 import { resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting } from "../../outbox.svelte";
-// Each document registers once in the page's one linked module (D-77).
+// Each document registers once in the page's one linked module.
 assemble("service-design");
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
@@ -76,7 +76,7 @@ export const sd = $state({
   warnings: [] as NetworkWarning[],
   groups: [] as ServiceGroup[],
   group: "",
-  /// One member of the group. Gestures stay per service type (D-8), and the panel warns what else runs with it (D-95).
+  /// One member of the group. Gestures stay per service type, and the panel warns what else runs with it (D-95).
   editType: "",
   hourly: null as HourlyTrips[] | null,
   dayStats: null as NetworkStats | null,
@@ -133,7 +133,7 @@ function groupMembers(): string[] {
   return selectedGroup()?.members ?? [];
 }
 
-/// Every date that a combination holds runs exactly its members (D-55), so its first date works as an address.
+/// Every date that a combination holds runs exactly its members, so its first date works as an address.
 function groupDay(): string {
   return selectedGroup()?.dates[0] ?? "";
 }
@@ -157,7 +157,7 @@ function syncPlanRows(): void {
 /// The health node adopts these instead of registering the authored document in cap-network to ask again.
 const authoredHealth = new WeakMap<Network, { issues: NetworkError[]; warnings: NetworkWarning[] }>();
 
-/// The planner's reading of the layer: the weight field and what it means (D-47).
+/// The planner's reading of the layer: the weight field and what it means.
 export type LayerInfo = { features: number; points: number; polygons: number; fields: LayerField[]; field: string; label: string };
 let layer: Doc | null = null;
 
@@ -336,7 +336,7 @@ const request = answerGraph(
       },
     },
     {
-      // Runs under the terminals' recovery floors, since this UI loads no work rules (D-46).
+      // Runs under the terminals' recovery floors, since this UI loads no work rules.
       id: "runcut.suggest_blocks",
       frame: "Vehicles",
       needs: ["document.active", "group"],
@@ -564,7 +564,7 @@ const request = answerGraph(
         const { issues, warnings } =
           authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
         sd.issues = issues;
-        // Stops that the plan visits and that are not in service over its period also warn, as the stops document records them (D-157).
+        // Stops that the plan visits and that are not in service over its period also warn, as the stops document records them.
         sd.warnings = [...warnings, ...(await stopWarnings(docOf(doc), heldPlans, heldStops))];
       },
     },
@@ -805,7 +805,7 @@ export function setCompare(key: string): Promise<void> {
   return select("compare");
 }
 
-/// The fork is the active document under a new plan frame (a set_plan edit). `through` is the period's last day: the edit carries every weekly calendar to it (D-41).
+/// The fork is the active document under a new plan frame (a set_plan edit). `through` is the period's last day: the edit carries every weekly calendar to it.
 export async function fork(name: string, effectiveFrom: string, through = ""): Promise<void> {
   const doc = active();
   if (!doc || !name.trim() || !effectiveFrom) {
@@ -970,7 +970,7 @@ export async function redoChange(): Promise<void> {
   await adopt(next, null, "Redone.");
 }
 
-/// A gesture acts on one service type (D-8), the member the panel names.
+/// A gesture acts on one service type, the member the panel names.
 function where() {
   return { route: sd.route, direction: sd.direction ?? undefined, service_type: sd.editType };
 }
@@ -996,7 +996,7 @@ export async function publishPlan(): Promise<void> {
   if (!doc) return;
   sd.published = null;
   sd.publishRefused = [];
-  // The publish runs when it is sent, against the published plans as they are then (D-189). While the server does not answer, it waits on this device.
+  // The publish runs when it is sent, against the published plans as they are then. While the server does not answer, it waits on this device.
   await act("Publish", () => {}, async () => {
     const outcome = await queueWrite({ url: "plans", body: doc, label: `Publish "${doc.plan?.name ?? "plan"}"` });
     if (outcome.state === "waiting") {
@@ -1022,7 +1022,7 @@ export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   await act("Export", () => (sd.exported = ""), async () => {
-    // the export carries the stops' history over the plan's period (D-151, D-157)
+    // the export carries the stops' history over the plan's period
     const out = await ask("network", "export", { network_hash: await withStopVersions(docOf(doc), heldPlans, heldStops) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));
     const link = document.createElement("a");

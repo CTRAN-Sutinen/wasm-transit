@@ -387,7 +387,7 @@ fn rejects_broken_runcut() {
         n.blocks.get_mut("b1").unwrap().trips[1].trip = "t0900".into();
     }), UnknownBlockTrip { trip, .. } if trip == "t0900"));
     // The wait is under the 3 h recovery that the terminal's floor requires
-    // (the only layover there, D-9).
+    // (the only layover there).
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].secs = 3 * 3600;
     }), LayoverInfeasible { .. }));
@@ -552,7 +552,7 @@ fn warnings_name_what_validity_lets_through() {
     assert!(validation_warnings(&pick).is_empty(), "{:?}", validation_warnings(&pick));
 }
 
-/// D-76. Every other warning publishes, and issues never do.
+/// Every other warning publishes, and issues never do.
 #[test]
 fn a_pick_with_no_service_in_its_period_is_refused_publication() {
     use transit_network::{publish_refusals, validation_warnings, NetworkWarning};

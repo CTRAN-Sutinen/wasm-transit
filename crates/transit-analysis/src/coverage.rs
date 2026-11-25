@@ -6,10 +6,10 @@
 //! both resolutions.
 //!
 //! Served is any visit. Frequent counts departures only, so a terminal where
-//! nobody boards is never frequent (D-6).
+//! nobody boards is never frequent.
 //!
 //! `type_coverage` and `unserved_points` pool a combination's authored service
-//! with no date (D-55). [`coverage`], the calendar view, is the oracle for
+//! with no date. [`coverage`], the calendar view, is the oracle for
 //! their
 //! properties.
 //!

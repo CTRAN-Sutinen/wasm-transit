@@ -1,5 +1,5 @@
 //! The published plan set (kind `plans`): one canonical document, one byte
-//! sequence for one set of picks, and a chain it holds is valid (D-75, D-76).
+//! sequence for one set of picks, and a chain it holds is valid.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -31,7 +31,7 @@ fn published(steps: &[(PlanInfo, String)]) -> PublishedPlans {
 #[test]
 fn the_empty_set_carries_its_version_and_resolves_nothing() {
     let set = PublishedPlans::empty();
-    assert_eq!(set.schema_version, PUBLISHED_SCHEMA_VERSION, "D-62: the version travels inside the document");
+    assert_eq!(set.schema_version, PUBLISHED_SCHEMA_VERSION, "the version travels inside the document");
     assert!(set.plans.is_empty());
     assert_eq!(in_force(&set, date("2026-11-05")).unwrap(), None);
 }

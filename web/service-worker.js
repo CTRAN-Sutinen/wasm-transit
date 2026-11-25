@@ -1,4 +1,4 @@
-// The offline pages' service worker (D-63, D-65, D-189). The lifecycle is
+// The offline pages' service worker. The lifecycle is
 // in docs/architecture/updates-offline.md. `npm run build` writes it to
 // dist/sw.js with BUILD, SHELL, and OFFLINE above this text
 // (vite.config.js), so every build is a byte-different worker.
@@ -10,7 +10,7 @@
 // share, because their bytes never change.
 //
 // Paths are read relative to the scope, so a deployment under a prefix (a
-// static host's /ride/, D-131) matches as one at the root.
+// static host's /ride/) matches as one at the root.
 
 /* global BUILD, SHELL, OFFLINE */
 

@@ -26,7 +26,7 @@ pub struct RecoveryAt<'a> {
     pub terminal: &'a str,
 }
 
-/// For each terminal, the smallest authored layover that waits there (D-9).
+/// For each terminal, the smallest authored layover that waits there.
 /// A layover waits at its `at`, else at the last stop of the trip before it.
 pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     let ends = trip_ends(network);
@@ -46,7 +46,7 @@ pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     floors
 }
 
-/// Every reader applies this rule (D-9). The requirement of the policy wins.
+/// Every reader applies this rule. The requirement of the policy wins.
 /// Otherwise a pair with an authored layover requires the floor at the
 /// terminal. Any other pair is judged for order only.
 pub fn required_recovery(
@@ -499,7 +499,7 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
 }
 
 /// A pick that runs no service in its period would hand every rider an empty
-/// schedule (D-76). Every other warning publishes. Issues never publish.
+/// schedule. Every other warning publishes. Issues never publish.
 pub fn publish_refusals(network: &Network) -> Vec<NetworkWarning> {
     validation_warnings(network)
         .into_iter()

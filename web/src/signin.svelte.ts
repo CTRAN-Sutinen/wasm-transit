@@ -1,4 +1,4 @@
-// The authorization code flow with PKCE (D-58; docs/architecture/web.md,
+// The authorization code flow with PKCE (docs/architecture/web.md,
 // "Signing in"). Tokens live in this tab's session storage and nowhere
 // else. The server's policy decides who may write, not this file.
 
@@ -133,7 +133,7 @@ async function accessToken(): Promise<string | null> {
     return next.access;
   } catch (e) {
     // A provider that did not answer leaves the person signed in, and a
-    // write waits in the outbox until a refresh succeeds (D-189).
+    // write waits in the outbox until a refresh succeeds.
     if (e instanceof Refused) signOut();
     return null;
   }
@@ -152,7 +152,7 @@ export async function writeFetch(url: string, init: RequestInit): Promise<Respon
   return resp;
 }
 
-// For attachments (D-162). A 401 means sign in to see it.
+// For attachments. A 401 means sign in to see it.
 export async function readFetch(url: string): Promise<Response> {
   const token = await accessToken();
   return fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : {});

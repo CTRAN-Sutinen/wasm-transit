@@ -2,14 +2,12 @@
 
 The paper forms the planning team fills for a stop move into the
 stops app. The Service Stop Worksheet is the stop's **site survey**,
-answered on a phone or tablet at the stop (D-158, D-160;
-the crate comment in `crates/transit-stops/src/lib.rs`;
+answered on a phone or tablet at the stop (the crate comment in `crates/transit-stops/src/lib.rs`;
 `docs/architecture/generated-uis/stops.md`). The Bus Stop Sign &
 Shelter Installation Worksheet is a **stop request**: the planning team's submission, a record of its own that tracks the work order the agency's work order
-system opens for it (D-159; the crate comment in `crates/transit-requests/src/lib.rs`). Photos and the site drawing are
-**attachments** in a bucket of their own, named by content hash
-(D-162). The stop's lifecycle stays the stops document's (D-157;
-`crates/transit-stops/src/lib.rs`; the stops page in
+system opens for it (the crate comment in `crates/transit-requests/src/lib.rs`). Photos and the site drawing are
+**attachments** in a bucket of their own, named by content hash.
+The stop's lifecycle stays the stops document's (`crates/transit-stops/src/lib.rs`; the stops page in
 `docs/architecture/generated-uis/stops.md`); a request is work, not a fact
 about the stop.
 
@@ -26,7 +24,7 @@ about the stop.
    otherwise than these, both are shown as given and the difference
    flagged (D-161).
 2. **The work order system's real adapter**, written from its OpenAPI
-   spec (the user brings it, D-165) behind the server's adapter
+   spec (the user brings it) behind the server's adapter
    interface (`server/workorders.go`); the stub, the fallback with none
    configured, and the page's controls are built
    (`docs/architecture/adjacent-systems.md`).

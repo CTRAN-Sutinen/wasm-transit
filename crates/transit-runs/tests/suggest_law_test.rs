@@ -1,4 +1,4 @@
-//! Suggested blocking (D-46). Every unassigned trip is in exactly one
+//! Suggested blocking. Every unassigned trip is in exactly one
 //! suggested block or named as unplaceable. Every wait is at one place,
 //! interlines only a pair that the rules allow, and is at least the required
 //! recovery. Adopting the edits keeps the authored blocks, validates clean,

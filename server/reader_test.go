@@ -268,7 +268,7 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	}
 }
 
-// The derived documents (D-199) read back with no module.
+// The derived documents read back with no module.
 func TestStoredDerivationsReadWithoutTheModules(t *testing.T) {
 	bucket := store.NewMemory()
 	s := derivedServer(t, bucket, writeLayer(t))

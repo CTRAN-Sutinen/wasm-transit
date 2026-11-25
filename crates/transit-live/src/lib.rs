@@ -2,8 +2,8 @@
 //! records. What does not run (a cancelled or deleted trip instance, a skipped
 //! stop) is asked through [`LiveDay::runs`] alone. A board shows no row for
 //! it and the router never boards there, because a live cancel shown at its
-//! time misled riders (D-45, D-73, D-100..D-102). Cover, hold, and swap are
-//! CAD/AVL's day, not edits (D-212). A stop id matches as written, so a
+//! time misled riders (D-100..D-102). Cover, hold, and swap are
+//! CAD/AVL's day, not edits. A stop id matches as written, so a
 //! station's id selects no departure at its bays (D-221).
 
 pub mod load;
@@ -115,7 +115,7 @@ pub struct LiveVehicle {
 #[ts(export)]
 pub struct AlertScope {
     pub route: Option<String>,
-    /// A model direction of `route` (D-204). Present only with `route`.
+    /// A model direction of `route`. Present only with `route`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub direction: Option<String>,

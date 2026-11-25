@@ -17,7 +17,7 @@
       "type": "object"
     },
     "AlignmentPoint": {
-      "description": "The distance is present where the publisher gave one, in the units of the\npattern stops. The fields are in canonical key order (RFC 8785, D-169), so\nthe canonical bytes stream in one pass.",
+      "description": "The distance is present where the publisher gave one, in the units of the\npattern stops. The fields are in canonical key order (RFC 8785), so\nthe canonical bytes stream in one pass.",
       "properties": {
         "distance": {
           "format": "double",
@@ -1892,7 +1892,7 @@
     },
     "Trip": {
       "additionalProperties": true,
-      "description": "`times[i]` is the time at `pattern.stops[i]`. The fields are in canonical\nkey order (RFC 8785, D-169), so the canonical bytes stream in one pass.",
+      "description": "`times[i]` is the time at `pattern.stops[i]`. The fields are in canonical\nkey order (RFC 8785), so the canonical bytes stream in one pass.",
       "properties": {
         "bikes": {
           "type": [
@@ -2324,7 +2324,7 @@
     "schema_version": {
       "$ref": "#/$defs/NetworkVersion",
       "default": 1,
-      "description": "A document without one is version 1 (D-62)."
+      "description": "A document without one is version 1."
     },
     "service_types": {
       "additionalProperties": {

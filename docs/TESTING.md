@@ -75,8 +75,8 @@ when the UI shows it) before you call it done. `just e2e` passes
 Playwright's arguments through: one spec (`just e2e
 e2e/ui-stops.spec.mjs`) or one test by name (`-g`) runs alone. The
 release modules, the bytes the registry publishes, run when a unit is
-done: `just test-release`, `just e2e-release`, `just check-release`
-(D-236). Two more things keep the loop short without testing less:
+done: `just test-release`, `just e2e-release`, `just check-release`.
+Two more things keep the loop short without testing less:
 
 - Dependencies are optimized in dev and test builds
   (`[profile.dev.package."*"]` in `Cargo.toml`). The workspace's own
@@ -118,7 +118,7 @@ and before a release.
      records: ids, times, edits that keep them, and documents written
      before trips were stored.
    - `transit-network`'s `combination_law_test` holds that every date
-     with service is in exactly one service combination (D-55).
+     with service is in exactly one service combination.
    - `transit-analysis`'s `analysis_prop_test` holds that a
      combination's pooled numbers are the service on each of its dates.
    - `transit-codec`'s `import_prop_test` holds that the imported
@@ -133,7 +133,7 @@ and before a release.
      independent of the parser.
    - `transit-codec`'s `dated_calendar_law_test` holds that a service
      published as dates alone imports as the weekly rule its dates read
-     as, and exports as dates again (D-105).
+     as, and exports as dates again.
    - `transit-plans`'s chain tests hold the service-plan chain laws:
      resolution, windows, validity, and order-insensitivity.
    - transit-dispatch's `dispatch_laws_test` holds the diversion and
@@ -141,7 +141,7 @@ and before a release.
    - `transit-network`'s `recovery_law_test` holds that a block's wait
      is judged against the recovery required there. The work rules'
      requirement wins, else the terminal's floor. The wait is never
-     judged against its own authored layover (D-9).
+     judged against its own authored layover.
    - `transit-runs`'s `work_rules_test` holds the work-rule document:
      every rule is optional, the most specific rule wins, and order is
      not identity.
@@ -320,8 +320,8 @@ and before a release.
    (`docs/units/web-conformance.md`).
 8. **Dogfood on real data.** Work that a user workflow reads is
    dogfooded through that workflow on the C-TRAN feed: a `caps-run`
-   session or a UI walk that does what a person doing QA would do
-   (D-196). Fixture-scale gates do not catch real-data defects. Work
+   session or a UI walk that does what a person doing QA would do.
+   Fixture-scale gates do not catch real-data defects. Work
    that no workflow reads directly (the store, a log) is held by its
    laws, contract runs, and the e2e of the pages that read it. A change to a document's shape also runs `just soak`, whose
    schema part checks what the C-TRAN feed's import and publish answer
@@ -335,8 +335,8 @@ The founding C-TRAN session found four real defects that fixture gates
 missed. A 64 KiB output truncation was one of them. The session earned
 these rules:
 
-- **A dogfood session mirrors a person doing QA in a user workflow**
-  (D-196). Capabilities map to user workflows, so a capability is
+- **A dogfood session mirrors a person doing QA in a user workflow.**
+  Capabilities map to user workflows, so a capability is
   dogfooded through the workflow that uses it, on real data, before
   that workflow's work is done. It is not required because the work is
   a capability. A session runs against

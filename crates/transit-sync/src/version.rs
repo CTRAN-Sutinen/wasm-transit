@@ -1,5 +1,5 @@
 //! Version 1 is the bare array of records, which carries no tag. Each
-//! migration step stays forever (D-66), keeps every record, and reports every
+//! migration step stays forever, keeps every record, and reports every
 //! loss as a [`MigrationNote`].
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

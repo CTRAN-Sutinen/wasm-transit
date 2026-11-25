@@ -1,5 +1,5 @@
-//! cap-requests wraps transit-requests (D-159). The stops log holds the
-//! requests, and cap-stops' `receive` writes them (D-197).
+//! cap-requests wraps transit-requests. The stops log holds the
+//! requests, and cap-stops' `receive` writes them.
 
 #![forbid(unsafe_code)]
 

@@ -9,7 +9,7 @@ import (
 )
 
 // ErrUnavailable covers the network, a timeout, the provider's 5xx, and
-// refused credentials (D-119). A read with a cached answer serves it,
+// refused credentials. A read with a cached answer serves it,
 // labelled stale. A write is refused, never acknowledged, and the caller
 // says so (503).
 var ErrUnavailable = errors.New("store: the bucket is not answering")

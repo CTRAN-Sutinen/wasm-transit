@@ -1,7 +1,7 @@
 {
   "$defs": {
     "PickStatus": {
-      "description": "Republishing a retired pick's id restores it (D-75).",
+      "description": "Republishing a retired pick's id restores it.",
       "enum": [
         "published",
         "retired"
@@ -61,7 +61,7 @@
     "kind": {
       "$ref": "#/$defs/PlansKind",
       "default": "plans",
-      "description": "A copy without a kind tag reads as the plans document (D-115)."
+      "description": "A copy without a kind tag reads as the plans document."
     },
     "plans": {
       "items": {

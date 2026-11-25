@@ -4,16 +4,17 @@
 //!
 //! - A service group is a combination of the types that run on the same dates.
 //!   Its numbers pool only over those dates, and no representative day stands
-//!   in (D-55).
+//!   in.
 //! - Frequencies use the trips' own gaps. "Frequent" counts departures only, so
-//!   a terminal where nobody boards is never frequent (D-6;
-//!   `a_terminal_nobody_boards_at_is_never_frequent`).
+//!   a terminal where nobody boards is never frequent
+//!   (`a_terminal_nobody_boards_at_is_never_frequent`). Counting arrivals
+//!   would call a terminal frequent that no rider can leave from.
 //! - Coverage takes any layer with any numeric weight and a planner's label
-//!   (D-47, D-97). A polygon's weight spreads over a lattice (D-98), and a
+//!   (D-97). A polygon's weight spreads over a lattice (D-98), and a
 //!   comparison names its two sides (D-99).
 //! - Worklist findings are keyed, so a plan reads each as new, moved, resolved,
 //!   or watched (D-136; D-133, D-134, D-137).
-//! - A transfer point is the feed's flag, never inferred (D-10).
+//! - A transfer point is the feed's flag, never inferred.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1426,7 +1427,7 @@ pub struct ResolvedFindings {
 #[ts(export)]
 pub struct NetworkFindings {
     pub group: String,
-    /// Every date that the combination holds answers alike (D-55), so this is
+    /// Every date that the combination holds answers alike, so this is
     /// the first.
     pub date: String,
     pub holes: Vec<HoleRow>,

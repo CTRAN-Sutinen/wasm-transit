@@ -1,6 +1,6 @@
 package main
 
-// The disruptions log (D-190, D-197; docs/FORMATS.md, "The logs"). In
+// The disruptions log (D-190; docs/FORMATS.md, "The logs"). In
 // store mode the edit document is the fold of the log's entries. The
 // receive op writes it (logkinds.go; cap-sync `receive`), and the host
 // decides nothing.
@@ -17,7 +17,7 @@ import (
 const disruptionsLog = "disruptions"
 
 // While the bucket does not answer, it answers the fold this process
-// holds, stale (D-119).
+// holds, stale.
 func (s *server) disruptionsNow() (document []byte, head store.Head, err error) {
 	l := s.keptLog(disruptionsLog)
 	if l == nil {
@@ -44,7 +44,7 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	var f *logFold
 	switch r.URL.Path {
 	case "/logs/plans/revert":
-		// A pick is corrected by republishing or retiring it (D-75, D-76).
+		// A pick is corrected by republishing or retiring it.
 		http.Error(w, "the plans log has no revert: republish a pick to correct it, or retire it (POST /plans, /plans/retire)", http.StatusMethodNotAllowed)
 		return
 	default:

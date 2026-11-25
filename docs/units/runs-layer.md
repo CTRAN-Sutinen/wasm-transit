@@ -3,8 +3,8 @@
 Cut blocks into operator runs under the work rules (`docs/ROADMAP.md`
 7). The layer lives beside the network (D-16): its documents and
 library are its own (`transit-runs`), and it reads the network by
-hash. The work-rule document (`work_rules`, D-50), required recovery
-(D-9), and suggested blocking (D-46) are on the bus
+hash. The work-rule document (`work_rules`), required recovery
+, and suggested blocking are on the bus
 (`crates/transit-runs/src/lib.rs` and cap-runcut). The runs cut
 itself is what is left. It closes QAF-11, QAF-12, QAF-14, and QAF-15.
 

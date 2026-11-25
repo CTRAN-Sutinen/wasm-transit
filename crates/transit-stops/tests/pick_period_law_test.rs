@@ -1,5 +1,5 @@
-//! A pick's period, and what a pick reads of the stops over it (D-157,
-//! D-228). The ops are in cap-stops' OPS.md (`read_pick`, `export_pick`).
+//! A pick's period, and what a pick reads of the stops over it.
+//! The ops are in cap-stops' OPS.md (`read_pick`, `export_pick`).
 
 use chrono::NaiveDate;
 use transit_network::Network;

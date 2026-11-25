@@ -11,14 +11,14 @@ consolidates, or removes a stop, and no gesture redraws a line.
 
 A stop's own record and lifecycle — creating it, moving it, its
 details, suspending and retiring it — are the stops page's
-(the stops page, `docs/architecture/generated-uis/stops.md`; D-157), never this page's:
+(the stops page, `docs/architecture/generated-uis/stops.md`), never this page's:
 a plan only says which stops its service visits.
 
 1. **A station's bays on its card.** The card names a bay's station,
    but a station's card does not list its bays: `stop_detail` answers
    them (the host does not filter the stop list for them).
 2. **A moved stop's visits.** When a pick reads a stop's new point
-   (D-157: publishing and exporting read each stop's record), one library function
+   (publishing and exporting read each stop's record), one library function
    measures where the stop falls along each pattern's line that visits
    it, re-measures those visits, and warns where the line is now far
    from the stop.
@@ -38,12 +38,13 @@ a plan only says which stops its service visits.
 5. **Redrawing a line** on the Route stage's map: waypoints traced
    along the streets (cap-streets `snap` / `route`, the published
    streets registered as ride-now registers them), the streets to
-   confirm shown first (D-26), committed with author `draw_alignment`
-   (one pattern or every pattern on the line, D-11), and the patterns it
+   confirm shown first, committed with author `draw_alignment`
+   (one pattern or every pattern on the line), and the patterns it
    touched shown. `draw_alignment` re-measures each stop along the new
    line and warns where a stop is now far from it; the stage offers to
    stop serving it or opens it on the Stops stage. With no streets
-   document the line is drawn freehand (D-31). What a longer or shorter
+   document, or a street the data lacks, the line is drawn freehand. A
+   streets edit document beside the plan is not built. What a longer or shorter
    line does to running time: nothing. The stage shows the change in
    length, and the planner uses `adjust_running_time` (D-143). The trace, the
    streets to confirm, and the commit are on the bus (cap-streets

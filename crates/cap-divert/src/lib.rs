@@ -1,5 +1,5 @@
 //! A write's base is a `cap_abi::Base`, which refuses a copy read ahead
-//! read-only (D-186).
+//! read-only.
 
 #![forbid(unsafe_code)]
 

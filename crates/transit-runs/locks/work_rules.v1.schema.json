@@ -23,7 +23,7 @@
     },
     "Pay": {
       "additionalProperties": true,
-      "description": "Pay is in time, not dollars, because operators' rates vary by seniority\n(D-51).",
+      "description": "Pay is in time, not dollars, because operators' rates vary by seniority.",
       "properties": {
         "guarantee_secs": {
           "description": "A run is paid at least this long.",
@@ -211,7 +211,7 @@
   "description": "An empty document is `{\"kind\":\"work_rules\",\"schema_version\":1}`.",
   "properties": {
     "interline": {
-      "description": "Set per pair, in either order (D-46). A route follows itself. An\nunlisted pair never interlines.",
+      "description": "Set per pair, in either order. A route follows itself. An\nunlisted pair never interlines.",
       "items": {
         "$ref": "#/$defs/RoutePair"
       },
@@ -220,7 +220,7 @@
     "kind": {
       "$ref": "#/$defs/WorkRulesKind",
       "default": "work_rules",
-      "description": "A copy without a kind tag reads as work rules (D-115)."
+      "description": "A copy without a kind tag reads as work rules."
     },
     "name": {
       "type": "string"
@@ -236,7 +236,7 @@
       ]
     },
     "recovery": {
-      "description": "The most specific rule answers. Specificity runs from route with\nservice type, to route, to service type, to neither. With no rule,\nthe terminal's floor applies, which is the smallest authored layover\nthere (D-9).",
+      "description": "The most specific rule answers. Specificity runs from route with\nservice type, to route, to service type, to neither. With no rule,\nthe terminal's floor applies, which is the smallest authored layover\nthere.",
       "items": {
         "$ref": "#/$defs/RecoveryRule"
       },

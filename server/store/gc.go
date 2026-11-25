@@ -14,7 +14,7 @@ type GCReport struct {
 	Kept     int `json:"kept"`     // candidates whose delete the bucket refused (retention)
 }
 
-// GC is the offline collector (D-117; `store gc`). It runs beside live
+// GC is the offline collector (`store gc`). It runs beside live
 // servers with its own delete-capable credentials. A pass (store.tla):
 //
 //  1. settles any trash that a crashed pass left (step 4);

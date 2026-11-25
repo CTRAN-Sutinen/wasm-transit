@@ -66,7 +66,7 @@
           ]
         },
         "direction": {
-          "description": "A model direction of `route` (D-204). Present only with `route`.",
+          "description": "A model direction of `route`. Present only with `route`.",
           "type": [
             "string",
             "null"

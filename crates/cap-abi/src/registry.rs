@@ -47,7 +47,7 @@ struct Entries<T: ?Sized> {
     map: BTreeMap<String, Entry<T>>,
 }
 
-/// A capability that declares a registry of its own does not compile (D-77):
+/// A capability that declares a registry of its own does not compile:
 ///
 /// ```compile_fail
 /// use cap_abi::registry::{Registry, Retain};

@@ -8,7 +8,7 @@ pub struct LayerLoaded {
 }
 
 /// The hash is of the bytes, because the coverage op chooses the weight
-/// property later (D-47, D-239).
+/// property later.
 impl transit_version::Load for crate::WeightedLayer {
     const ID: &'static str = "layer";
     const NAME: &'static str = "layer";

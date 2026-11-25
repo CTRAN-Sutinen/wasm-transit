@@ -232,7 +232,7 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     let saturday = board.rows.iter().find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(SAT)).unwrap();
     assert_eq!(saturday.delay_secs, Some(120), "it is Saturday's instance");
 
-    // A cancel stating Friday takes Friday's instance off (D-73). A cancel
+    // A cancel stating Friday takes Friday's instance off. A cancel
     // stating no date does not.
     let board = stop_board_at(&net, &at, "X", 10, Some(&live(vec![late_live(Some(FRI), 0, true)])));
     assert!(friday_late(&board).is_none());

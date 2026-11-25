@@ -1,4 +1,4 @@
-//! A stop's site survey (D-158, D-160, D-161), from C-TRAN's Service Stop
+//! A stop's site survey (D-161), from C-TRAN's Service Stop
 //! Worksheet. `stops_law_test.rs` checks the fold of site answers against its
 //! oracle. The ops are in cap-stops' OPS.md (`questions`,
 //! `attribute_surveys`).
@@ -231,7 +231,7 @@ fn nothing_but_surveyors_changes_and_twice_is_once() {
     assert_eq!(Stops::default().attribute_surveys(fresh, "rosa.ortiz").stops["n"][0].surveyed_by.as_deref(), Some("rosa.ortiz"));
 }
 
-/// The stops document keeps the request id as given (D-159).
+/// The stops document keeps the request id as given.
 #[test]
 fn an_event_names_its_request() {
     let built = Event { request: Some("R-2027-014".into()), ..Event { event: EventKind::Built, on: Some(date(3)), ..Event::default() } };
@@ -243,7 +243,7 @@ fn an_event_names_its_request() {
 }
 
 /// An attachment with a hash or media type of another shape, or a day that is
-/// not a date, is refused and named (D-162).
+/// not a date, is refused and named.
 #[test]
 fn an_event_names_its_attachments_by_hash() {
     let hash = format!("sha256:{}", "ab".repeat(32));

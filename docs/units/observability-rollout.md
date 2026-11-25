@@ -2,7 +2,7 @@
 
 Nothing reports what production runs or whether a change hurt it.
 Stop displays stay open for weeks with no one watching them, and under
-D-63 every display applies a new build at its next poll, so a bad
+the update lifecycle every display applies a new build at its next poll, so a bad
 build reaches every stop at once. Publishing a pick has the same blast
 radius: it reaches every rider at midnight on its date. This unit
 makes each deployed part report what it runs and whether it is

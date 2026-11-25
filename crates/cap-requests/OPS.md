@@ -121,7 +121,7 @@ The lists that a request's answers come from. The op reads no document.
 
 ## log_records
 
-What does the stops log hold of this document? `log_records` answers the stop requests document `requests_hash` as records of kind `stop_request`, one for each request, by its id (D-197). The answer is `next`: those records, and the document's own record, of kind `stop_requests` and id `document`: the document with its collection empty (a valid document with no records), so a field outside the collection that this build does not know is kept (D-167). Each names the document's version. The log capability composes an entry from it, so a request completed and its stop's event added can be one entry.
+What does the stops log hold of this document? `log_records` answers the stop requests document `requests_hash` as records of kind `stop_request`, one for each request, by its id. The answer is `next`: those records, and the document's own record, of kind `stop_requests` and id `document`: the document with its collection empty (a valid document with no records), so a field outside the collection that this build does not know is kept. Each names the document's version. The log capability composes an entry from it, so a request completed and its stop's event added can be one entry.
 
 ## log_document
 

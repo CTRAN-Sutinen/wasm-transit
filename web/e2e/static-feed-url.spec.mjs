@@ -1,4 +1,4 @@
-// A serverless deployment that follows the agency's GTFS URL (D-132). Each
+// A serverless deployment that follows the agency's GTFS URL. Each
 // page imports the zip itself and checks the URL once a day. The server on
 // :8088 serves the feed at /feeds/feed.zip with CORS, and the manifest names it
 // by another origin (localhost against 127.0.0.1), as an agency's feed host is.

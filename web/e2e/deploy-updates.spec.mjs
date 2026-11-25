@@ -1,6 +1,6 @@
 // An open page re-pins a new network in force without a reload, and the old
 // network leaves every module, so linear memory plateaus
-// (docs/architecture/updates-offline.md, D-63). The server on :8084 is pinned
+// (docs/architecture/updates-offline.md). The server on :8084 is pinned
 // to 2026-08-01. The spec publishes its own pick, dated between the other
 // specs' picks so the page's date resolves to it.
 

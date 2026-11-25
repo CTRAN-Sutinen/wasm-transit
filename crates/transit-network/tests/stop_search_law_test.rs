@@ -1,4 +1,4 @@
-//! Stop search (D-48; thresholds D-91; cap-directory/OPS.md, `stops`).
+//! Stop search (thresholds D-91; cap-directory/OPS.md, `stops`).
 //! "vancouver
 //! mall" finds the stops whose sign says "Van Mall". There are no authored
 //! aliases.

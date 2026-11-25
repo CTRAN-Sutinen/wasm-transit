@@ -1,5 +1,5 @@
 // What the planner's UIs read of the stops document for a pick. The
-// server's GET /feed exports a pick the same way (D-151, D-157).
+// server's GET /feed exports a pick the same way.
 
 import { ask, available, produced, type Doc } from "../engine";
 import type { Network } from "../types/Network";

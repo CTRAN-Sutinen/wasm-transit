@@ -1,7 +1,7 @@
 package main
 
 // The write path keeps unknown fields, flags them in X-Unknown-Fields, and
-// never refuses them (D-167). A write with none sends no header.
+// never refuses them. A write with none sends no header.
 
 import (
 	"encoding/json"

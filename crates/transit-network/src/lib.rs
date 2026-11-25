@@ -19,9 +19,9 @@
 //! Other code depends on these rules.
 //!
 //! * Every date with service is in exactly one service combination, so
-//!   types that never share a day are never pooled (D-55, D-94).
+//!   types that never share a day are never pooled (D-94).
 //! * `required_recovery` is the only rule for the recovery that a wait
-//!   needs (D-9).
+//!   needs.
 //! * `signs::visit_destination` is the only rule for where a bus is going.
 //!   Every board row and itinerary leg reads it.
 //! * A transfer point is a flag on a stop. It covers the walking group of
@@ -30,10 +30,10 @@
 //! * An edit ([`apply_edits`]) answers the next document and never changes
 //!   the last. A kept trip keeps its id and blocks. A new trip is
 //!   unassigned. A fork to a period end carries each weekly calendar that
-//!   still runs in its last week to that end (D-41, D-112).
+//!   still runs in its last week to that end (D-112).
 //! * Validation issues gate. Warnings never gate.
 //! * There are no authored stop aliases, because people would keep them by
-//!   hand. A geocoder covers everyday names (D-36, D-48, D-91).
+//!   hand. A geocoder covers everyday names (D-91).
 
 pub mod demand;
 pub mod combinations;

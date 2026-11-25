@@ -1,4 +1,4 @@
-//! The rule from a stop request to its stop (D-233, D-238). The rule is
+//! The rule from a stop request to its stop (D-233). The rule is
 //! documented in `request_rule.rs`.
 
 use chrono::NaiveDate;

@@ -6,11 +6,12 @@ over one selection held in a context bar and the URL hash.
 
 - A service group is a combination of service types that run together,
   shown with its dates. A day-scoped frame asks on its first date, and
-  any of its dates answers alike (D-55).
+  any of its dates answers alike.
 - A timetable gesture acts on one service type of the group. The panel
-  names it and warns what else runs with it (D-8, D-95).
+  names it and warns what else runs with it (D-95). No "same as, except"
+  relation links one type to another.
 - The proposal shows readiness in words, the stops a plan visits that
-  are not in service over its period (D-157), the export with the
+  are not in service over its period, the export with the
   stops' history, and publishing the pick (D-74). A frequency target
   waits on D-54; hours against a budget wait on D-108.
 - With no stored plan, the server's `/network` is the Base network.

@@ -95,7 +95,7 @@ func TestAWriteIsJudgedAsOfTheSeqItsWriterRead(t *testing.T) {
 	}
 }
 
-// Retiring a stop that an open request names warns with the request (D-238). A
+// Retiring a stop that an open request names warns with the request. A
 // request then written on that stop is refused with the rule's reason.
 func TestRetiringAStopWarnsOfTheOpenRequestThatNamesIt(t *testing.T) {
 	s, base := newStopsLogServer(t, store.NewMemory())

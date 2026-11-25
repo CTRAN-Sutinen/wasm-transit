@@ -1,7 +1,7 @@
 package main
 
 // The static bundle uses the paths that the server answers, so a page
-// reads either deployment through one layout (D-131).
+// reads either deployment through one layout.
 
 import (
 	"encoding/json"
@@ -119,7 +119,7 @@ func (s *server) export(dir, liveFeeds string) error {
 			Proxy string `json:"proxy"`
 		}
 		if json.Unmarshal(feeds, &config) == nil && config.Proxy != "" {
-			log.Printf("export: live-feeds.json names the relay %q, which a static host does not serve — pass the deployment's own with -live-feeds (D-67)", config.Proxy)
+			log.Printf("export: live-feeds.json names the relay %q, which a static host does not serve — pass the deployment's own with -live-feeds", config.Proxy)
 		}
 	}
 	var pages []string

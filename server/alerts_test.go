@@ -1,6 +1,6 @@
 package main
 
-// Service alerts and alert templates in store mode (D-206, D-210). A stale
+// Service alerts and alert templates in store mode (D-206). A stale
 // write is refused, the manifest pins each head, /blobs serves each by
 // hash, and both land in the alerts log.
 
@@ -70,7 +70,7 @@ func TestAlertsWritesAreValidatedAndLogged(t *testing.T) {
 			t.Fatalf("the %s blob: %d kind=%q", kind, code, hdr.Get("X-Document-Kind"))
 		}
 	}
-	// A writer one version behind posts v1; it lands as v2 (D-216).
+	// A writer one version behind posts v1; it lands as v2.
 	v1 := alert("Route 10 detour, still")
 	v1["kind"], v1["schema_version"] = "service_alerts", 1
 	code, out = post("/service-alerts", "alerts", alertsHash, v1)

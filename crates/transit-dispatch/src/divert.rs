@@ -203,7 +203,7 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
 }
 
 /// A cancel of a trip that does not run on the date takes nothing away, so it
-/// is refused (D-45). `id` is the domain id that the host creates.
+/// is refused. `id` is the domain id that the host creates.
 pub fn cancel_of(
     network: &Network,
     id: &str,

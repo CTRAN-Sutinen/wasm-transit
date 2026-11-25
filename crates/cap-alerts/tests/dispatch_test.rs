@@ -124,7 +124,7 @@ fn the_documents_round_trip_through_the_log_records() {
     assert!(err(json!({ "op": "log_document", "kind": "stops", "records": {} })).contains("stops"));
 }
 
-/// A log written at v1 assembles as the v2 document (D-216).
+/// A log written at v1 assembles as the v2 document.
 #[test]
 fn records_stored_at_version_1_assemble_as_version_2() {
     let mut v1 = sample();

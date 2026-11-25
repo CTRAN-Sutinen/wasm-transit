@@ -559,7 +559,7 @@ fn build(feed: &SpecFeed) -> Builder {
         }
         // A weekly service published as dates alone, as C-TRAN does:
         // a zero-flag calendar row, every Monday and Wednesday of March
-        // to May an added date but for one, and a Saturday (D-105: the
+        // to May an added date but for one, and a Saturday (the
         // import reads its weekly rule; it must come back as dates).
         let mut row: Row = vec![("service_id", s("3"))];
         for name in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] {

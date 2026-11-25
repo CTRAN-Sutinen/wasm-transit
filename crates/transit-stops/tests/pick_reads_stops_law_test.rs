@@ -1,4 +1,4 @@
-//! What a pick reads of the stops document (D-157). The ops are in
+//! What a pick reads of the stops document. The ops are in
 //! cap-stops' OPS.md (`read_records`, `visit_warnings`).
 
 use chrono::NaiveDate;

@@ -1,7 +1,7 @@
 //! The migration chain has one pure step for each version (`vN` to `vN+1`),
-//! total over valid vN, and it preserves every record id (D-66). A document
+//! total over valid vN, and it preserves every record id. A document
 //! with no `schema_version` is version 1: that covers every shape written
-//! before the tag (D-62, D-115). Each loss is a [`MigrationNote`]. The
+//! before the tag. Each loss is a [`MigrationNote`]. The
 //! migration capability wraps the chain.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

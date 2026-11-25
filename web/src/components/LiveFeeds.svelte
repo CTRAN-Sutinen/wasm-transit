@@ -27,7 +27,7 @@
     draft = { ...urls };
   });
 
-  /// The panel is a plain element, not the Popover API (D-135). Opening moves
+  /// The panel is a plain element, not the Popover API. Opening moves
   /// focus into it, Escape returns focus to the pill, and a press outside closes it.
   async function toggle() {
     open = !open;

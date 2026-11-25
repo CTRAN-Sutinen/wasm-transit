@@ -1,6 +1,6 @@
 [package]
 name = "transit-notes"
-description = "The notes document (D-214): the agency's internal notes about a trip instance, an edit record, a service alert, or a stop. A note written and edited, what a write must pass, a target's notes, and a time span's notes. Pure and stateless."
+description = "The notes document: the agency's internal notes about a trip instance, an edit record, a service alert, or a stop. A note written and edited, what a write must pass, a target's notes, and a time span's notes. Pure and stateless."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

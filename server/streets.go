@@ -61,7 +61,7 @@ type loadedStreets struct {
 	walks   servedDoc
 }
 
-// D-118. In store mode a boot whose layer and network the store already
+// In store mode a boot whose layer and network the store already
 // derived from reads the stored documents and runs no module (derived.go).
 type streetsSource struct {
 	src  *source

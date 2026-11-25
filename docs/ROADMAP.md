@@ -48,7 +48,7 @@ agency could run.
   pages load the pick in force.
 
 The planner publishes from the service-design UI (or `caps-run --post`).
-The planner retires a pick that has not taken effect (D-75). The server
+The planner retires a pick that has not taken effect. The server
 serves the pick in force as GTFS (`GET /feed`).
 
 **Needs:** nothing. It runs. A deployment beyond localhost follows
@@ -78,10 +78,10 @@ module-composition thesis.
 - Blocks and layovers in the model.
 - Feasibility checks that judge the recovery required at each terminal.
   The work rules set that recovery. Without a work rule, the terminal's
-  floor sets it (D-9).
+  floor sets it.
 - The recovery view.
 - Suggested blocking of unassigned trips under the work rules, with the
-  peak it needs (D-46; no deadheads yet).
+  peak it needs (no deadheads yet).
 - The street graph with routing.
 - Service-type analysis.
 
@@ -95,7 +95,7 @@ module-composition thesis.
 times did each pattern actually need, by time band." The planner can
 carry that evidence into the next pick's timing profiles. The history
 stays with the systems that own it. This repo consumes TIDES and never
-produces it (D-128).
+produces it.
 
 **Why.** Measure → plan → publish → measure. No scheduling product
 closes this loop while it runs local-first. It is the most defensible
@@ -124,7 +124,7 @@ does this network serve?") deserves an answer that survives scrutiny.
 
 - The streets document and its graph.
 - The walk table (walking along the streets, between stops).
-- Weighted layers for points and polygons (D-47).
+- Weighted layers for points and polygons.
 - Coverage ops, already parameterized.
 
 **Needs:** a walkshed op over the walking graph
@@ -138,7 +138,7 @@ walking (QAF-85).
   UI re-plans when a new snapshot breaks the rider's connection.
 - **PWA / offline:** every generated UI installs and works offline, and
   a staff page's writes wait on the device until the server answers
-  (D-65, D-189; `docs/architecture/updates-offline.md`).
+  (`docs/architecture/updates-offline.md`).
 
 ## 6. The data plane: module composition
 
@@ -164,7 +164,7 @@ reaches them.
 **Exists already:**
 
 - Blocks and layovers, and the block chain with the layover ripple.
-- The work-rule document: run rules and pay, every rule optional (D-50).
+- The work-rule document: run rules and pay, every rule optional.
 - The sync document's LWW-per-record discipline (a bid is shared state).
 
 **Needs:**

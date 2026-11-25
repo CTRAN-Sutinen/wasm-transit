@@ -2,10 +2,10 @@
 // that it writes into `st` is an op's answer, adopted as given.
 //
 // A write, a work order, or a photo made while the server does not answer waits
-// on the device, in order, and is sent when it answers (D-189).
+// on the device, in order, and is sent when it answers.
 //
 // A stop's life (planned, permitted, built, in service, suspended, retired) is
-// managed here, apart from the service plans, which only read it (D-157). Each
+// managed here, apart from the service plans, which only read it. Each
 // change is one event, sent as its intent (POST /logs/stops). The deployment's
 // write path runs it again over the stops it holds. With no stops document
 // yet, the page reads the stops of the network that runs today, and the first
@@ -21,7 +21,7 @@ import descriptor from "./ui.json";
 import { readFetch, resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
 
-// Each document registers once in the page's one linked module (D-77).
+// Each document registers once in the page's one linked module.
 assemble("stops");
 import type { Event } from "../../types/Event";
 import type { Network } from "../../types/Network";
@@ -84,9 +84,9 @@ export const st = $state({
   workStops: [] as StopOn[],
   workStatuses: [] as string[],
   workJobs: [] as string[],
-  /// Null when none is connected. A work order is then entered by hand (D-165).
+  /// Null when none is connected. A work order is then entered by hand.
   workOrders: null as string | null,
-  /// Null when the deployment keeps none (D-162).
+  /// Null when the deployment keeps none.
   attachments: null as string | null,
   feed: null as null | { on: string; recorded: { stop: string; event: Event }[]; unlisted: string[]; unapplied: string[] },
   /// Bumped whenever this device's survey drafts change.
@@ -223,7 +223,7 @@ const request = answerGraph(
       },
     },
     {
-      // The rule is judged on the agency's today (D-238), the day a write would be judged on, not the date read.
+      // The rule is judged on the agency's today, the day a write would be judged on, not the date read.
       id: "stops.request_warnings",
       frame: "Requests",
       needs: ["document.stops", "document.requests", "open"],
@@ -468,7 +468,7 @@ export async function boot(): Promise<void> {
 
 const POLL_MS = 30_000;
 
-/// A write names the seq (the manifest's log_seqs), so the server checks it against the records it changes (D-189).
+/// A write names the seq (the manifest's log_seqs), so the server checks it against the records it changes.
 let stopsSeq: number | undefined;
 
 export function setView(view: View): Promise<void> {
@@ -689,7 +689,7 @@ async function settled(outcome: Outcome, what: "stops" | "requests"): Promise<bo
   return false;
 }
 
-/// Per stop. A survey draft is never shared and never sent (D-158).
+/// Per stop. A survey draft is never shared and never sent.
 const draftKey = (stopId: string) => `stops.survey-draft.${stopId}`;
 
 export function readDraft(stopId: string): SurveyDraft | null {
@@ -780,7 +780,7 @@ export async function workOrder(id: string, action: "open" | "refresh"): Promise
   say(action === "open" ? "Opening a work order…" : "Reading the work order's status…");
   try {
     // The key lets a resend whose answer was lost land once: the
-    // server answers the work order the request holds (D-189).
+    // server answers the work order the request holds.
     const outcome = await queueWrite({ url: st.workOrders.replace(/^\//, ""), body: { request: id, action }, keyed: true, label: `${action === "open" ? "Open a work order" : "Read the work order"}: ${id}` });
     if (outcome.state === "waiting") return say(outbox.needsSignIn ? "Sign in to reach the work order system. The request waits on this device." : "The work order system is asked when the server answers.");
     if (outcome.state === "held") {
@@ -806,7 +806,7 @@ export type Attachment = { hash: string; type: string; name?: string; caption?: 
 
 const ATTACHMENT_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"];
 
-/// The file is named by the hash of its bytes, as the deployment names it, and queued in the outbox before the write that names it (D-162, D-189).
+/// The file is named by the hash of its bytes, as the deployment names it, and queued in the outbox before the write that names it.
 export async function addAttachment(file: File): Promise<Attachment | null> {
   if (!st.attachments) return null;
   const type = (file.type || "").toLowerCase();

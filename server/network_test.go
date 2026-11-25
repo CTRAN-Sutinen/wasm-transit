@@ -306,7 +306,7 @@ func mustRequest(t *testing.T, url, header, value string) *http.Request {
 }
 
 // Without the store, the manifest ETag names what it pins and stays the same
-// while nothing moved, so a poll costs a 304 (D-63).
+// while nothing moved, so a poll costs a 304.
 func TestTheManifestRevalidatesWithoutTheStore(t *testing.T) {
 	base := networkServer(t, "../web/e2e/fixtures/sample-gtfs.zip")
 	get := func(etag string) *http.Response {

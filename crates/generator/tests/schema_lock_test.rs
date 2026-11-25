@@ -209,7 +209,7 @@ fn a_field_that_changes_the_bytes_fails() {
     assert!(freeze(&changed, &v1_lock()).is_err());
 }
 
-/// D-167.
+/// An added optional field needs no version bump.
 #[test]
 fn an_added_optional_field_is_recorded_in_the_same_version() {
     let added = kind::<added_optional::Thing>("thing", 1, Some(example(1)), None);

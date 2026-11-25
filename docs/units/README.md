@@ -14,7 +14,7 @@ archive — nothing here records what is finished.
   before the file is deleted.
 - **Grades are not merged.** On the bus (module + tests), the UI
   reads it, and dogfooded on real data (the user workflow it serves,
-  as a person doing QA would run it; D-196) are three claims. A unit
+  as a person doing QA would run it) are three claims. A unit
   whose work is on the bus but not read by a UI or not dogfooded
   stays open, edited down to the missing grade. An op that no UI
   plans to read is not open work.
@@ -97,7 +97,6 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [refusal-codes.md](refusal-codes.md) | the refusals a host acts on (an evicted document, a newer version, a log that moved) carry a stable code; no host matches an error's text, and a gate holds it |
 | [reference-rules.md](reference-rules.md) | the rules between records: each reference's rule at both ends, and the transitions that pin or warn |
 | [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are one clean `just e2e` run, the findings it closes, and the release gates |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
@@ -108,7 +107,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [prose-at-scope.md](prose-at-scope.md) | each fact at the narrowest scope: route behavior into the contract's overlay, one file's design beside its file, generated lists for hand lists, and the writing rules in the developer documents |
-| [retire-decisions.md](retire-decisions.md) | the decided, built entries retired into their homes, and the provisional entries reviewed with the user |
+| [retire-decisions.md](retire-decisions.md) | the provisional decision entries reviewed with the user, and retired once built |
 
 ## Queued, not yet scoped
 
@@ -153,7 +152,7 @@ before starting it.
   from a GTFS zip or a stops file, and saved to a file. Edits made with
   no signal already wait on the device and are run again over the
   deployment's document when it answers, each checked, and the ones
-  that no longer fit are listed (D-189).
+  that no longer fit are listed.
 - **A database beside the logs** — only when one of D-190's two needs
   arrives: data that must be deletable, or throughput that a log
   cannot carry (the bid is the likely first). It is fed from the logs,

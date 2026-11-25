@@ -1,7 +1,7 @@
 // The stop display's perf baseline (docs/TESTING.md, "Performance
 // baselines"). It uses the real feed, the agency's recorded live feeds
 // replayed one snapshot per poll, and a display left running at a transit
-// center, the screen that D-64 puts on a Raspberry Pi 4. It has no budget
+// center, a screen that runs on a Raspberry Pi 4. It has no budget
 // (D-187).
 //
 //   1. Boot with the routes layout and the stop picked by name.

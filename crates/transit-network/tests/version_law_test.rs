@@ -1,4 +1,4 @@
-//! The network document's versions (D-62, D-66, D-115; docs/FORMATS.md,
+//! The network document's versions (docs/FORMATS.md,
 //! "Versions"). The v1 shapes before trips and alignments are pinned in
 //! trip_law_test.rs and alignment_law_test.rs.
 

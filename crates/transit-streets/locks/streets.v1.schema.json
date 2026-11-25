@@ -5,7 +5,7 @@
       "type": "integer"
     },
     "StreetClass": {
-      "description": "A mode profile decides what each mode may use (D-26). The import does\nnot (D-30).",
+      "description": "A mode profile decides what each mode may use. The import does\nnot (D-30).",
       "enum": [
         "motorway",
         "primary",

@@ -154,7 +154,7 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
 }
 
-/// Every v1 document is a v2 document, so an untagged copy reads (D-234).
+/// Every v1 document is a v2 document, so an untagged copy reads.
 #[test]
 fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
     use transit_requests::StopRequests;

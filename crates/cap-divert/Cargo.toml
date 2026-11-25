@@ -13,7 +13,7 @@ transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
 cap-abi = { path = "../cap-abi" }
-# The worked examples' fixtures, for the `examples` feature only (D-235).
+# The worked examples' fixtures, for the `examples` feature only.
 fixtures = { path = "../fixtures", optional = true }
 
 [features]

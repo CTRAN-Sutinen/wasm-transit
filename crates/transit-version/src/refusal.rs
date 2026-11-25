@@ -19,7 +19,7 @@ pub enum RefusalCode {
     /// `load` and asks again.
     UnknownDocument { kind: String, hash: String, load: String },
     /// A newer build wrote the document. `read` is true when this build read
-    /// it one version ahead and refused only a write over it (D-186).
+    /// it one version ahead and refused only a write over it.
     NewerVersion { kind: String, found: u32, reads: u32, read: bool },
 }
 

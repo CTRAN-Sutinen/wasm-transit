@@ -1,6 +1,6 @@
 package main
 
-// Holds the server to server/openapi.json (D-81). TestMain replaces
+// Holds the server to server/openapi.json. TestMain replaces
 // http.DefaultTransport, so every request and response a test sends is
 // checked against the contract. A whole run (no -run or -skip) must also
 // reach every operation. `just http-lock` refreshes

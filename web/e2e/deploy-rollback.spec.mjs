@@ -1,4 +1,4 @@
-// Build pointer and rollback (D-80, D-63; docs/architecture/release-artifacts.md).
+// Build pointer and rollback (docs/architecture/release-artifacts.md).
 // The server on :8086 runs on its own copy of the build. The spec publishes
 // release B by rewriting that copy's sw.js, which carries the build's identity.
 

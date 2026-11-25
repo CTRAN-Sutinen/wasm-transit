@@ -100,7 +100,7 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     assert!(err.message.contains("plans v99") && err.message.contains("reads v1"), "{err}");
 }
 
-/// A pick that took effect is refused with its reason (D-75).
+/// A pick that took effect is refused with its reason.
 #[test]
 fn retire_answers_the_next_set_or_why_not() {
     let h = format!("sha256:{}", "cd".repeat(32));
@@ -364,7 +364,7 @@ fn a_pick_brought_forward_pins_the_version_it_came_from() {
 }
 
 /// The stored network carries each stop's record on its first date, and the
-/// warnings name a stop that is out of service in the period (D-157).
+/// warnings name a stop that is out of service in the period.
 #[test]
 fn an_adopted_pick_reads_the_stops_document() {
     let network_hash = registered_pick(fall_2026());

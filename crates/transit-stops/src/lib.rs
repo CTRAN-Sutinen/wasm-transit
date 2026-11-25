@@ -1,18 +1,28 @@
-//! The stops document (D-153, D-154, D-157). Service plans only read it.
+//! The stops document. A stop's life is its own, and service plans only read
+//! it. A closure reaches a pick only as the planner's choice that service
+//! stops visiting the stop, and a pick that visits a stop not in service gets
+//! a warning, never a refusal.
+//!
+//! The stored form is plain JSON: one record per stop, each a list of dated
+//! events. Nothing in the document means "today". A stop on a date is its
+//! events applied in order up to that date. A correction edits the wrong
+//! event, and a real change adds one, so a survey fix differs from a move.
+//! GeoJSON has one point and no time for each feature, so a record would go
+//! stale after a dated change or split into a feature for each period.
 //!
 //! Readers ask this library (the stop on a date, [`Stops::served`]), never
-//! the raw event list. So a finer grain than a service day (D-148) changes
+//! the raw event list. So a finer grain than a service day changes
 //! these functions and not their callers.
 //!
 //! Every write identifies before it checks ([`Stops::identified`],
 //! [`Stops::checked`]). A passing document is canonical, so its hash does
 //! not depend on key order. Fields this repo does not know are kept through
-//! a read and a write (D-167). The surveyor is the signed-in writer, set by
-//! the write path ([`Stops::attribute_surveys`]), never a name the page sent
-//! (D-158). Attachments are named by sha256 hash and media type, never a
-//! URL (D-162).
+//! a read and a write. The surveyor is the signed-in writer, set by
+//! the write path ([`Stops::attribute_surveys`]), never a name the page sent.
+//! Attachments are named by sha256 hash and media type, never a
+//! URL.
 //!
-//! The site survey (D-158, D-160, D-163) is C-TRAN's Service Stop
+//! The site survey is C-TRAN's Service Stop
 //! Worksheet. It is part of the stop's details. A core question ([`SITE`])
 //! takes only an answer of its kind, and the agency's own questions are
 //! kept and not checked. GTFS has no place for the answers, so export and
@@ -21,7 +31,7 @@
 //! This crate depends on transit-network only for [`stop_record`] and on
 //! transit-requests only for [`request_rule`]. The network does not depend
 //! on stops. The stops document sits beside the plans, and a fork never
-//! copies it (D-147).
+//! copies it.
 
 #![forbid(unsafe_code)]
 
@@ -59,9 +69,9 @@ pub struct Stops {
     #[serde(default)]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
-    /// The key stays the same through a move (D-145).
+    /// The key stays the same through a move.
     pub stops: BTreeMap<String, Vec<Event>>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -103,19 +113,18 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub note: Option<String>,
-    /// Marks the event as a site survey, dated the day of the survey
-    /// (D-158).
+    /// Marks the event as a site survey, dated the day of the survey.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub surveyed_by: Option<String>,
-    /// The id of the stop request that this event carries out (D-159). Not
+    /// The id of the stop request that this event carries out. Not
     /// checked here, because the requests are their own document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[schemars(extend("x-references" = "stop_request"))]
     pub request: Option<String>,
-    /// The id (hash) of the feed that an import recorded this event from
-    /// (D-150). A person's own event has none.
+    /// The id (hash) of the feed that an import recorded this event from.
+    /// A person's own event has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[schemars(extend("x-references" = "feed"))]
@@ -129,7 +138,7 @@ pub struct Event {
 }
 
 /// The deployment names the bucket, the server hands out the link, and only
-/// a signed-in person may read the file (D-162).
+/// a signed-in person may read the file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Attachment {
@@ -259,7 +268,7 @@ pub struct Details {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent: Option<String>,
-    /// The number on the sign. It is not unique (D-151).
+    /// The number on the sign. It is not unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub code: Option<String>,
@@ -297,18 +306,18 @@ pub struct Details {
     #[ts(optional)]
     pub street_access: Option<bool>,
     /// `true` is there, `false` is checked and not there, and absent is not
-    /// recorded (D-154). The agency's own names beside [`AMENITIES`] are
+    /// recorded. The agency's own names beside [`AMENITIES`] are
     /// kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, bool>>")]
     pub amenities: BTreeMap<String, bool>,
     /// A survey may contradict the agency's other data. It is kept as given
-    /// (D-158, D-161).
+    /// (D-161).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, String>>")]
     pub site: BTreeMap<String, String>,
     /// Ids in other systems, by system or part name (`sign`, `tms`, `gis`).
-    /// Kept and not checked (D-160).
+    /// Kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, String>>")]
     pub refs: BTreeMap<String, String>,
@@ -325,8 +334,8 @@ pub enum Answer {
 
 const YES_NO: &[&str] = &["yes", "no"];
 
-/// The core site questions, in the order of C-TRAN's Service Stop Worksheet
-/// (D-158). The worksheet's stop number, point, lift access, and amenities
+/// The core site questions, in the order of C-TRAN's Service Stop Worksheet.
+/// The worksheet's stop number, point, lift access, and amenities
 /// are fields of [`Details`], not questions. A part's type is an answer
 /// here, and its id is in `refs`. What a schedule says (the routes, a time
 /// point, the neighboring stops) is never asked.
@@ -375,9 +384,9 @@ impl Answer {
     }
 }
 
-/// The core amenity names (D-154). Seven are OpenStreetMap's keys on a
+/// The core amenity names. Seven are OpenStreetMap's keys on a
 /// `highway=bus_stop`. OpenStreetMap has no stop key for `bicycle_parking`
-/// and `boarding_pad`, so they are this document's. The site survey (D-158)
+/// and `boarding_pad`, so they are this document's. The site survey
 /// adds `rear_boarding_pad`, `seat` (a seat that is not a bench), and
 /// `post`.
 pub const AMENITIES: [&str; 12] = [
@@ -679,14 +688,14 @@ impl Stops {
         out
     }
 
-    /// `_secs` is not read at a service day's grain (D-148). It stays so
+    /// `_secs` is not read at a service day's grain. It stays so
     /// that a finer grain changes this function and not its callers.
     pub fn served(&self, id: &str, date: NaiveDate, _secs: u32) -> bool {
         self.stop_on(id, date).is_some_and(|s| s.status == Status::InService)
     }
 
     /// An event added to a held stop is an ordinary write, so the writer
-    /// states the intent "new" (D-228).
+    /// states the intent "new".
     pub fn refuse_taken(&self, id: &str) -> Option<Refusal> {
         self.stops.contains_key(id).then(|| Refusal { stop: id.to_string(), event: None, problem: Problem::StopExists })
     }
@@ -723,7 +732,7 @@ impl Stops {
     }
 
     /// A correction edits the wrong event, and the store keeps the earlier
-    /// version (D-153). A write passes `checked` after it.
+    /// version. A write passes `checked` after it.
     pub fn correct_event(&self, id: &str, index: usize, event: Option<Event>) -> Option<Stops> {
         let mut next = self.clone();
         let events = next.stops.get_mut(id)?;
@@ -770,7 +779,7 @@ impl Stops {
     }
 
     /// A client's name is never kept. A survey it sent, or a held one it
-    /// rewrote, is the writer's (D-158). Attributing twice changes nothing.
+    /// rewrote, is the writer's. Attributing twice changes nothing.
     pub fn attribute_surveys(&self, mut next: Stops, by: &str) -> Stops {
         for (id, events) in next.stops.iter_mut() {
             let mut held: Vec<&Event> = self.stops.get(id).map(|v| v.iter().collect()).unwrap_or_default();

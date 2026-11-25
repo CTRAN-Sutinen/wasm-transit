@@ -100,7 +100,7 @@ The format and replay are in `tools/journal.mjs`.
   the candidate.
 
 **The clock.** The runner reads the clock in the agency's zone, never
-the machine's (D-175). `$TODAY` is the agency's service date, and
+the machine's: a machine set to Tokyo read C-TRAN's Wednesday services on a Tuesday. `$TODAY` is the agency's service date, and
 `$NOW_SECS` counts seconds from noon minus 12 hours on that date. Both
 come from `web/src/clock.ts`, the browser's own service clock, so the
 runner and the pages give the same date at the same instant.

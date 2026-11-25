@@ -1,6 +1,6 @@
 [package]
 name = "cap-log"
-description = "The log capability: an append-only log of the agency's record, kind-agnostic (D-190, D-197). compose answers one write's entry, fold folds entries into records and a checkpoint, revert answers the entry that writes back the states before an entry, close_gap the entry that closes a gap. transit-log is the library; each kind's capability turns its document into records and back."
+description = "The log capability: an append-only log of the agency's record, kind-agnostic (D-190). compose answers one write's entry, fold folds entries into records and a checkpoint, revert answers the entry that writes back the states before an entry, close_gap the entry that closes a gap. transit-log is the library; each kind's capability turns its document into records and back."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ serde_json = { workspace = true }
 ts-rs = { workspace = true }
 transit-log = { path = "../transit-log" }
 cap-abi = { path = "../cap-abi" }
-# The worked examples' fixtures, for the `examples` feature only (D-235).
+# The worked examples' fixtures, for the `examples` feature only.
 fixtures = { path = "../fixtures", optional = true }
 
 [features]

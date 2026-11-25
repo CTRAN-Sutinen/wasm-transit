@@ -1,5 +1,5 @@
 //! The gates keep "capabilities never call capabilities" true after the
-//! capabilities link into one binary (D-77, `docs/architecture/bus.md`,
+//! capabilities link into one binary (`docs/architecture/bus.md`,
 //! "Bus rules"). `arch-gates` runs them in `just test`, and
 //! `crates/cap-abi/tests/arch_gates_test.rs` breaks each one on a fixture.
 
@@ -15,7 +15,7 @@ pub struct Package {
     pub name: String,
     pub deps: Vec<String>,
     pub required: Vec<String>,
-    /// Only these may name the fixtures (D-235).
+    /// Only these may name the fixtures.
     pub examples: Vec<String>,
 }
 
@@ -31,7 +31,7 @@ pub enum Class {
     /// reach it as data.
     Generator,
     GeneratorBinary,
-    /// No module links it (D-235).
+    /// No module links it.
     Fixtures,
 }
 
@@ -60,8 +60,7 @@ pub fn class(name: &str) -> Option<Class> {
 /// does. The generator and its fixtures compute the examples of the codec.
 pub const CODEC_HOMES: &[&str] = &["transit-codec", "cap-gtfs", "cap-network", "cap-rt", "transit-rt", "generator", "fixtures"];
 
-/// Gate 1 denies by default. The kernel depends on transit-version alone
-/// (D-239), and so does the network. Only [`CODEC_HOMES`] and the assemblies
+/// Gate 1 denies by default. The kernel depends on transit-version alone, and so does the network. Only [`CODEC_HOMES`] and the assemblies
 /// that link them read the GTFS layer.
 pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
     let mut out = Vec::new();
@@ -91,7 +90,7 @@ pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
             }
             if own == Class::Kernel && dep_class == Class::Library && dep != "transit-version" {
                 out.push(format!(
-                    "cap-abi depends on {dep}: the kernel knows no kind and depends on transit-version alone; the kind's library implements transit_version::Load (D-239)"
+                    "cap-abi depends on {dep}: the kernel knows no kind and depends on transit-version alone; the kind's library implements transit_version::Load"
                 ));
             }
             if package.name == "transit-network" && dep != "transit-version" {
@@ -228,8 +227,12 @@ fn quotes(code: &str, word: &str) -> bool {
 }
 
 /// The identifiers of a kind that the kind table routes generically: a
-/// `post` route answered by its log's receive op, or a `work_order` route
-/// (D-254). The plumbing reads such a kind from the table.
+/// `post` route answered by its log's receive op, or a `work_order` route.
+/// The plumbing reads such a kind from the table. A kind that the server
+/// imports, publishes, or serves on a route of its own is the server's
+/// feature, and the server and the engine may name it. The gate matches
+/// identifiers, not words, because kind names (`stops`, `notes`) are common
+/// words.
 #[derive(Debug)]
 pub struct RoutedKind {
     pub kind: String,

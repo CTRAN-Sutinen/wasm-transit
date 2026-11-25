@@ -1,6 +1,6 @@
-//! The IdP authenticates the identity. The host verifies the JWT (D-60) and
-//! reads the roles claim (D-59). This module owns only the decision, over
-//! the policy document (kind `policy`, D-61) that the host pushes on each
+//! The IdP authenticates the identity. The host verifies the JWT and
+//! reads the roles claim. This module owns only the decision, over
+//! the policy document (kind `policy`) that the host pushes on each
 //! call, and the module never caches across calls. `validate` is the
 //! policy's check in the kind table (D-202). transit-authz holds the
 //! property tests.

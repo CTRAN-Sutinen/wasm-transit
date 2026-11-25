@@ -188,7 +188,7 @@ func TestOneFlagNamesTheModule(t *testing.T) {
 	serverFlags(all)
 	all.VisitAll(func(f *flag.Flag) {
 		if f.Name == "modules" || strings.HasSuffix(f.Name, "-wasm") {
-			t.Errorf("-%s: the server's one module (-wasm) replaces each capability's flag (D-227)", f.Name)
+			t.Errorf("-%s: the server's one module (-wasm) replaces each capability's flag", f.Name)
 		}
 	})
 	dir := t.TempDir()

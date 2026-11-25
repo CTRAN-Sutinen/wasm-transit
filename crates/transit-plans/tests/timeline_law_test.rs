@@ -1,4 +1,4 @@
-//! The timeline over device plans and the published set (D-228). Rows are
+//! The timeline over device plans and the published set. Rows are
 //! every device plan, then each published pick the device does not hold. A
 //! retired pick is no row. A device plan is published when its id is a
 //! published pick's or it is `served`.

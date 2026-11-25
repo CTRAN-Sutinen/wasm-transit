@@ -4,7 +4,7 @@ package main
 // bucket outage. Restarting cannot fix the bucket.
 //
 // /readyz answers 200 "degraded" while the bucket does not answer but
-// the cached heads serve labelled reads (D-119, D-224). Every instance
+// the cached heads serve labelled reads (D-224). Every instance
 // shares the bucket, so taking them all out of rotation would turn a
 // write outage into a read outage. It answers 503 "unavailable" when
 // the store has no cached head, and 503 "draining" once shutdown has

@@ -32,7 +32,7 @@ serialization.
   and never written), and GTFS-rt (the live picture, and the
   serialization of the edit document and the service alerts document)
   follow the same rule. Their row shapes stay at the boundary (D-124,
-  D-126, D-127, D-128, D-206).
+  D-126, D-127, D-206).
 
 ## Rule 2: do not rebuild the monolith inside a module
 
@@ -68,8 +68,7 @@ them together.
 Linking assembles the bytes of the capabilities that a UI lists into
 one binary, at build time. Linking merges no surface. Each capability
 keeps its crate, its `Request` enum, and its manifest entry, and can
-still be retired alone (`docs/architecture/bus.md`, "Bus rules"; D-77,
-D-176).
+still be retired alone (`docs/architecture/bus.md`, "Bus rules").
 
 Reject these:
 
@@ -146,12 +145,12 @@ A capability is a documented namespace for one need, not a wall in the
 domain. Its crate may link any library. A question that spans kinds is
 one op of the capability whose need it answers, and that op links each
 kind's library. A host never composes it from two answers, and applies
-no domain rule (`docs/architecture/hosts.md`; D-226, D-228).
+no domain rule (`docs/architecture/hosts.md`).
 
 A capability declares no state. The documents it reads are the
 kernel's kinds. A new kind is a line in the kind list
 (`cap_abi::kinds`) and a `transit_version::Load` in its library, and
-the kernel does not change (D-239). What a capability derives from
+the kernel does not change. What a capability derives from
 documents is a library's pure function, held by the kernel as a cache,
 never a dependency.
 

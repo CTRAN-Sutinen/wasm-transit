@@ -1,4 +1,4 @@
-//! Reading one version ahead (D-79, D-186; docs/FORMATS.md, "Rolling a
+//! Reading one version ahead (docs/FORMATS.md, "Rolling a
 //! version back"). The tests use fixture kinds, because no real kind has a
 //! next version.
 

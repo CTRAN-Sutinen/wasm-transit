@@ -94,8 +94,7 @@ func (s *server) readEdits(raw json.RawMessage) (records json.RawMessage, docume
 }
 
 // mergeEdits clamps the client's clock to the server's (D-56). The answer
-// carries the fields that the client's records have and this build lacks
-// (D-167).
+// carries the fields that the client's records have and this build lacks.
 func (s *server) mergeEdits(clientRaw, serverRaw json.RawMessage, nowMs int64) (document string, hash string, unknown []string, err error) {
 	clientRec, _, _, _, err := s.readEdits(clientRaw)
 	if err != nil {

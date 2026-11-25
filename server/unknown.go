@@ -1,6 +1,6 @@
 package main
 
-// A write may carry fields that this build does not know (D-167). Every
+// A write may carry fields that this build does not know. Every
 // authored kind keeps them, so a writer on an older build does not drop
 // what a newer one wrote. The write path never refuses one. It flags
 // the field for a person.

@@ -86,7 +86,7 @@
   const canUntil = $derived(chosen === "suspended" || chosen === "move" || fixing?.event === "suspended" || fixing?.event === "moved");
 
   function details(): Details {
-    // Set only what changed, since every detail changes by an event (D-153).
+    // Set only what changed, since every detail changes by an event.
     const out: Details = {};
     if (dName.trim() && dName.trim() !== (stop?.name ?? "")) out.name = dName.trim();
     if (dCode.trim() && dCode.trim() !== (stop?.code ?? "")) out.code = dCode.trim();

@@ -1,4 +1,4 @@
-//! Pins planning over a live document (D-73). The properties:
+//! Pins planning over a live document. The properties:
 //!
 //! 1. An empty live document gives the schedule-only plan.
 //! 2. A live plan arrives when the schedule-only plan of the predicted world
@@ -10,7 +10,7 @@
 //! 4. A late bus makes a connection that the schedule misses, and misses one
 //!    that the schedule makes.
 //! 5. A cancelled trip is never ridden, and a skipped stop is never boarded or
-//!    alighted at (D-73). The live plan is the schedule plan of the world
+//!    alighted at. The live plan is the schedule plan of the world
 //!    without them.
 
 use chrono::NaiveDate;

@@ -1,7 +1,7 @@
 //! A capability cannot declare a registry, because the constructor is
 //! private to this crate. Every capability in an assembly reads the same
-//! `Arc`, so a document registers once (D-77). The kernel names no kind:
-//! each kind's library implements `transit_version::Load` (D-239).
+//! `Arc`, so a document registers once. The kernel names no kind:
+//! each kind's library implements `transit_version::Load`.
 //!
 //! The kernel takes a load out before any capability decodes the request,
 //! so no `Request` has a load op.
@@ -45,7 +45,7 @@ pub struct AboutCap {
 pub const KERNEL_OPS: u32 = 256;
 
 /// The document keeps the unknown fields, and the write path flags them for
-/// a person. The list is absent when every field is known (D-167).
+/// a person. The list is absent when every field is known.
 #[derive(Serialize)]
 struct LoadAnswer<A> {
     op: &'static str,
@@ -110,7 +110,7 @@ impl<T: Load> Kind<T> {
     }
 
     /// Like [`Self::require`], for the base of a write. It refuses a copy
-    /// that was read one version ahead through a read-only step (D-186).
+    /// that was read one version ahead through a read-only step.
     pub fn require_writable(&self, hash: &str) -> Result<Arc<T>, transit_version::Refusal>
     where
         T: transit_version::Versioned,
@@ -123,7 +123,7 @@ impl<T: Load> Kind<T> {
     }
 
     /// The registry holds a document read ahead stepped down, under its
-    /// stored identity (D-186).
+    /// stored identity.
     pub fn read_ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
         self.registry.ahead(hash)
     }
@@ -162,7 +162,7 @@ impl<T: Load> Kind<T> {
                     crate::noting_read(|| transit_version::noting_unknown(|| T::parse(bytes)));
                 let document = document?;
                 // A copy read ahead keeps the identity that it is stored
-                // under (D-186).
+                // under.
                 let hash = match &ahead {
                     Some(read) => read.hash.clone(),
                     None => document.canonical().unwrap_or_else(|| Err(format!("{}: a JSON kind answers its canonical hash", T::ID)))?,

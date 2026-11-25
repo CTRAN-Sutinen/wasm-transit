@@ -150,7 +150,7 @@ fn alerts_from_several_snapshots_are_one_set() {
     assert_eq!(day.alerts.len(), 1);
 }
 
-/// A `direction_id` needs a `route_id` (D-204). Route 40 runs directions 0
+/// A `direction_id` needs a `route_id`. Route 40 runs directions 0
 /// and 1, and route 10 runs direction 0 only.
 #[test]
 fn a_direction_scopes_the_alert_to_that_direction_of_its_route() {

@@ -1,4 +1,4 @@
-//! Required recovery is separate from slack (D-9; cap-author/OPS.md,
+//! Required recovery is separate from slack (cap-author/OPS.md,
 //! `apply`). A layover is judged against the recovery required where the
 //! vehicle waits: the policy's requirement when given, else the smallest
 //! authored layover at that terminal (`recovery_floors`). Slack above the
@@ -158,7 +158,7 @@ proptest! {
         }
     }
 
-    /// D-9. The policy wins over the derived floor in both directions.
+    /// The policy wins over the derived floor in both directions.
     #[test]
     fn a_policy_requirement_wins_over_the_floor(required in 0u32..3000, cut in 0u32..=2400) {
         let mut net = network();

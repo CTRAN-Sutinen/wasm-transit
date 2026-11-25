@@ -31,7 +31,7 @@ func orNull(doc []byte) json.RawMessage {
 
 // warnings holds the network's warnings, then the stops it visits that
 // are not in service. unknownFields names the fields that this build
-// does not know (D-167).
+// does not know.
 type pickWritten struct {
 	planID        string
 	networkHash   string
@@ -40,7 +40,7 @@ type pickWritten struct {
 	unknownFields []string
 }
 
-// writePick writes one `pick` op of cap-plans' receive (D-237). It
+// writePick writes one `pick` op of cap-plans' receive. It
 // stores the network as the head of plan.<id> before the entry, so a
 // frozen version is always stored. The routes checked the write rule.
 // An error is the server's fault, and a refusal is the writer's.

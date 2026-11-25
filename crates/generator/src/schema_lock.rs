@@ -2,7 +2,7 @@
 //! a kind (docs/FORMATS.md, "The schema lock"): `<tag>.v<N>.schema.json`,
 //! `<tag>.v<N>.example.json` (canonical bytes, RFC 8785), and the index
 //! `<tag>.lock.json` with the hash of each file. [`freeze`] writes a new
-//! version or an added optional field (D-167) and refuses every other
+//! version or an added optional field and refuses every other
 //! change. gen-manifest runs [`check`] and [`freeze`]. The test is
 //! `crates/generator/tests/schema_lock_test.rs`.
 
@@ -106,7 +106,7 @@ impl fmt::Display for Drift {
             Drift::SchemaChanged { tag, version, additive: true } => write!(
                 f,
                 "{tag} v{version}: the schema changed, and the frozen example still reads to the same bytes \
-                 (an added optional field, D-167). Run `just schema-lock` to record it in the same version."
+                 (an added optional field). Run `just schema-lock` to record it in the same version."
             ),
             Drift::SchemaChanged { tag, version, additive: false } => {
                 write!(f, "{tag} v{version}: the serde type changed in a way the frozen example shows. {BUMP}")

@@ -13,7 +13,7 @@ import (
 const retryAfterSecs = 5
 
 // fail answers 503 with Retry-After for an unavailable bucket, because nothing
-// was written and the client resends (D-119). Other errors use code.
+// was written and the client resends. Other errors use code.
 func fail(w http.ResponseWriter, err error, code int) {
 	if errors.Is(err, store.ErrUnavailable) {
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSecs))
@@ -40,7 +40,7 @@ func answerFailed(w http.ResponseWriter, e wasmhost.ModuleError, code int, prefi
 	http.Error(w, prefix+e.Message, code)
 }
 
-// X-Store-As-Of is when the bucket last confirmed the head, in Unix ms (D-119).
+// X-Store-As-Of is when the bucket last confirmed the head, in Unix ms.
 func labelStale(w http.ResponseWriter, heads ...store.Head) {
 	for _, h := range heads {
 		if h.Stale {

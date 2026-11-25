@@ -482,7 +482,7 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
 }
 
 /// Adopting the answer's edits makes a document whose fleet peak is the
-/// answer's (D-46).
+/// answer's.
 #[test]
 fn a_suggestion_adopts_into_the_fleet_it_names() {
     let mut cleared = derived_network();

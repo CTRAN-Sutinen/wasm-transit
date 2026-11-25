@@ -1,4 +1,4 @@
-//! Editing the stops document by adding one event (D-153, D-157, D-228).
+//! Editing the stops document by adding one event.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;

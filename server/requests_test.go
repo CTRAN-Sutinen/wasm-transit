@@ -1,6 +1,6 @@
 package main
 
-// Pins D-159 in store mode: cap-requests validates a write, a stale
+// The stop requests in store mode: cap-requests validates a write, a stale
 // write is refused, the manifest pins the head, and a raw pointer commit
 // is refused.
 
@@ -61,7 +61,7 @@ func TestStopRequestsWritesAreValidated(t *testing.T) {
 	}
 }
 
-// Pins D-165. With no adapter the server answers 501 and the manifest
+// With no adapter the server answers 501 and the manifest
 // offers nothing. With the stub, opening a work order writes its
 // reference on the request, with the system as the writer, and reading
 // its status writes the status and the day it was read.
@@ -153,7 +153,7 @@ func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.R
 }
 
 // A resend whose key landed gets the held work order, and the system is not
-// asked to open a second one (D-189).
+// asked to open a second one.
 func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)

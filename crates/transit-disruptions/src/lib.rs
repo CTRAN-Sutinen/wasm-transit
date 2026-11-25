@@ -1,8 +1,8 @@
-//! What is disrupted on a day, and whether an alert explains it (D-213, D-218).
+//! What is disrupted on a day, and whether an alert explains it (D-213).
 //!
 //! These answers live here, not in cap-alerts, because an alerts op that read
 //! the live document and the notes would break the split rule
-//! (crates/AGENTS.md; D-215).
+//! (crates/AGENTS.md).
 
 #![forbid(unsafe_code)]
 

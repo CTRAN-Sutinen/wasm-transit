@@ -103,7 +103,7 @@ export const dz = $state({
 });
 
 // A write names these seqs, so the server checks it against the records it
-// changes (D-189) and each reference it adds against what the page read
+// changes and each reference it adds against what the page read
 // (D-233).
 let logSeqs: Record<string, number> = {};
 
@@ -580,7 +580,7 @@ const readers: Record<string, Reader<any>> = {
     adopt: (u: Partial<LiveUrls> | null) => void (urls = u ?? {}),
   },
   network: {
-    // Only a moved pin reads the network again (D-63).
+    // Only a moved pin reads the network again.
     read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
       if (!manifest) throw new Error("the deployment's manifest is not read");
       const pin = await servedNetworkPin(today(), { manifest, signal });
@@ -844,8 +844,7 @@ export function saveAlert(publish: boolean): Promise<boolean> {
   );
 }
 
-// The time is the person's act, so it travels in the write's arguments
-// (D-222).
+// The time is the person's act, so it travels in the write's arguments.
 export function endAlert(id: string): Promise<boolean> {
   if (!alerts) return Promise.resolve(false);
   const doc = alerts;
@@ -915,7 +914,7 @@ async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<bool
 }
 
 // Notes are written as their intent (POST /logs/notes), and the server
-// names the writer and the time (D-214).
+// names the writer and the time.
 
 // The note keeps the id it was made with through every resend.
 export async function writeNote(target: NoteTarget, text: string, id: string | null = null): Promise<boolean> {

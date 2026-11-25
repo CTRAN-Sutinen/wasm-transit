@@ -118,7 +118,7 @@ pub enum NetworkError {
     },
 
     /// The wait after trip `after_trip` is shorter than the recovery required
-    /// where the vehicle waits (D-9). An authored layover longer than the
+    /// where the vehicle waits. An authored layover longer than the
     /// requirement is slack.
     #[error("block {block}: {gap_secs} s after trip {after_trip}, under the {required_secs} s recovery required there")]
     LayoverInfeasible {
@@ -147,7 +147,7 @@ pub enum NetworkWarning {
     /// The calendar ranges that a fork inherited end before the pick starts.
     /// `plan_name` is the name, not the generated id.
     NoServiceInPlanPeriod { plan_name: String, effective_from: String },
-    /// The stops document records the status (D-157). `status` is none when
+    /// The stops document records the status. `status` is none when
     /// the stop is not there yet. A suspension counts only when it covers the
     /// whole period of the pick or has no end.
     StopNotInService {

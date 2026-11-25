@@ -39,9 +39,9 @@ Judge one plan against another
 | # | op(s) | state |
 |---|---|---|
 | 1 | plans `resolve` / `periods` | answered (PickTimeline); the plan under review is chosen, never forked here |
-| 2 | analysis `service_groups`, `service_type_compare`; runcut `suggest_blocks` | answered (GroupTable, GroupLedger): each group a combination of the types that run together, with its date spans (D-55); peak vehicles from the authored blocks and the trips no block carries chained in (D-46); no dollar cost (D-51); hours against a budget, Blocked: D-108 |
+| 2 | analysis `service_groups`, `service_type_compare`; runcut `suggest_blocks` | answered (GroupTable, GroupLedger): each group a combination of the types that run together, with its date spans; peak vehicles from the authored blocks and the trips no block carries chained in; no dollar cost; hours against a budget, Blocked: D-108 |
 | 3 | analysis `hourly_trips` (on the group's first date; every date of a combination answers alike) | answered (DayProfile) |
-| 4 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap) for the selected group, over any weighted layer, points or polygons, its field and label the planner's (D-47) |
+| 4 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap) for the selected group, over any weighted layer, points or polygons, its field and label the planner's |
 | 5 | analysis `route_overlap` | answered (CorridorTable); whether departures are spread along a shared segment has no op |
 | 6 | analysis `longest_waits` | answered: every stop ranked by its longest wait in the hour window (LongestWaits, D-134) |
 | 7 | none | data gap: no ridership (D-53: to be built in, later); adherence history is `docs/ROADMAP.md` 3, read as TIDES (D-127) |

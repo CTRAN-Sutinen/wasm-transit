@@ -12,7 +12,7 @@ async function importFixture(page) {
   await page.goto("/service-design.html");
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
   await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
-  // HOL runs no trip, so it is in no group (D-55).
+  // HOL runs no trip, so it is in no group.
   await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(2, { timeout: 10_000 });
 }
 
@@ -28,7 +28,6 @@ test("service design chains its views over a plan, a fork, and a change", async 
 
   await page.keyboard.press("2");
   await expect(page.getByTestId("group-ledger")).toContainText("Trips");
-  // D-46.
   await expect(page.getByTestId("ledger-vehicles")).toContainText("2");
   await expect(page.getByTestId("ledger-vehicles")).toContainText("1 blocked + 1 suggested");
   await expect(page.getByTestId("day-profile")).toBeVisible();
@@ -47,7 +46,7 @@ test("service design chains its views over a plan, a fork, and a change", async 
   const gestures = page.getByTestId("gestures");
   await expect(gestures).toContainText("Fork it into a plan");
   await expect(gestures).toContainText("D-54");
-  // A gesture changes one service type of the group (D-8).
+  // A gesture changes one service type of the group.
   await expect(page.getByTestId("gesture-scope")).toContainText("Changes the trips of");
   await expect(page.getByTestId("sibling-warning")).toHaveCount(0);
 
@@ -146,7 +145,7 @@ test("a change says what it did, in a planner's words", async ({ page }) => {
   await expect(page.getByTestId("export-refused")).toContainText("Not exported");
 
   // After the hold, the bus makes the trip. What is left is the recovery that
-  // the block's authored layover asks for (D-9).
+  // the block's authored layover asks for.
   await readiness.getByRole("button", { name: "Hold trip t20 until 8:25" }).click();
   await expect(readiness).not.toContainText("arrives at 8:25");
   await expect(readiness).toContainText("the wait after trip number 1 of the block is 0 min; 10 min is required there");
@@ -163,7 +162,7 @@ test("a change says what it did, in a planner's words", async ({ page }) => {
 });
 
 test("a fork past the calendar carries its weekly service through its period", async ({ page }) => {
-  // The fixture's calendar ends 2026-12-31 (D-41). A pick in 2027 forked without
+  // The fixture's calendar ends 2026-12-31. A pick in 2027 forked without
   // a period end runs nothing. With one, the fork carries every weekly calendar
   // to it.
   await importFixture(page);
@@ -175,7 +174,7 @@ test("a fork past the calendar carries its weekly service through its period", a
   await page.keyboard.press("6");
   await expect(page.getByTestId("readiness")).toContainText(/no service in plan period/i);
 
-  // A fork keeps only its period's dates (D-138), so the carrying fork starts
+  // A fork keeps only its period's dates, so the carrying fork starts
   // again from the base.
   await page.keyboard.press("1");
   await page.getByTestId("plan-list").locator("tr", { hasText: "the base every fork copies" }).getByRole("button", { name: "Open" }).click();
@@ -219,7 +218,7 @@ test("hubs and coverage answer around a station and a layer", async ({ page }) =
   await page.keyboard.press("3");
   await page.getByTestId("layer-input").setInputFiles(path.join(fixtures, "population.geojson"));
   const panel = page.getByTestId("coverage-panel");
-  // Coverage is the selected group's (D-55).
+  // Coverage is the selected group's.
   const group = page.getByTestId("group-coverage");
   await expect(group).toContainText("Served by WK");
   await expect(page.getByTestId("coverage-dates")).toContainText("2026-01-01 – 2026-12-31");
@@ -229,11 +228,11 @@ test("hubs and coverage answer around a station and a layer", async ({ page }) =
   await expect(group).toContainText("Served by SUN");
   await page.getByTestId("group-select").selectOption("WK");
   await expect(group).toContainText("Served by WK");
-  // The answer states its resolution (D-47).
+  // The answer states its resolution.
   await expect(page.getByTestId("layer-field")).toHaveValue("POP");
   await expect(page.getByTestId("layer-resolution")).toContainText("Points about");
 
-  // A polygon layer carries two weights (D-47).
+  // A polygon layer carries two weights.
   await page.getByTestId("layer-input").setInputFiles(path.join(fixtures, "jobs-areas.geojson"));
   await expect(panel).toContainText("2 polygons");
   await page.getByTestId("layer-field").selectOption("jobs");
@@ -246,7 +245,7 @@ test("hubs and coverage answer around a station and a layer", async ({ page }) =
 
 test("a capability that fails to load fails its frames, not the page", async ({ page }) => {
   // The linked assembly's failure is every capability's, so each falls back to
-  // its own module (D-77). The analysis module fails too.
+  // its own module. The analysis module fails too.
   await page.route(/\/caps\/(ui-service-design|analysis)-[0-9a-f]+\.wasm$/, (route) => route.abort());
   await page.goto("/service-design.html");
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
@@ -309,7 +308,7 @@ test("a plan stored under the old field names restores in the current shape", as
   await expect(timetable.locator("tbody tr")).toHaveCount(3);
   await expect(timetable.locator("tbody tr").first()).toContainText("08:00");
 
-  // The device keeps the stored set before the migrated plan overwrites it (D-66).
+  // The device keeps the stored set before the migrated plan overwrites it.
   const kept = await page.evaluate(
     () =>
       new Promise((resolve, reject) => {

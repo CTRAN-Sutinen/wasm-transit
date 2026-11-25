@@ -1,6 +1,6 @@
 package main
 
-// The /rt feed proxy is a dev convenience (D-67). It is off unless -rt-proxy
+// The /rt feed proxy is a dev convenience. It is off unless -rt-proxy
 // asks for it, so a server beyond localhost is never an open relay by default.
 
 import (

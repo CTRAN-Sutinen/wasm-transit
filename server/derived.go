@@ -1,6 +1,6 @@
 package main
 
-// The server derives these documents (D-199; docs/architecture/storage.md,
+// The server derives these documents (docs/architecture/storage.md,
 // "The derived documents are in the record"; docs/FORMATS.md,
 // "Derivations").
 //

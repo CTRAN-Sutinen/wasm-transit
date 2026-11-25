@@ -1,4 +1,4 @@
-// The runner knows nothing about transit (D-176). A node name, a field, or a
+// The runner knows nothing about transit. A node name, a field, or a
 // rule of the domain here is a leak. The file imports nothing, so its
 // properties run under `node --test`.
 

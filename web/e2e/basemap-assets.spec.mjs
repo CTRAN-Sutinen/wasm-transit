@@ -1,5 +1,5 @@
 // The basemap style reads glyphs and sprites from `basemap-assets/` when
-// `just basemap-assets` installed them, else from protomaps.github.io (D-49).
+// `just basemap-assets` installed them, else from protomaps.github.io.
 // The spec stubs the assets and skips without a local basemap.pmtiles.
 
 import { test, expect } from "@playwright/test";

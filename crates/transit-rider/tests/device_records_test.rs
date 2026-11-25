@@ -1,6 +1,6 @@
 //! The recent places and the rider's live-feed URLs each write their kind and
 //! version, read a copy with neither as v1, refuse another kind, and keep an
-//! unknown field (D-167; docs/FORMATS.md, "Versions").
+//! unknown field (docs/FORMATS.md, "Versions").
 
 use serde_json::json;
 use transit_rider::device::{LiveFeeds, RecentPlaces};

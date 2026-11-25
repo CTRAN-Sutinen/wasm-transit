@@ -1,9 +1,9 @@
-// The stops UI (src/uis/stops, D-157; D-158 surveys, D-159 and D-165 requests,
-// D-150 feed review, D-189 and D-233 and D-238 offline and warnings). The server
+// The stops UI (src/uis/stops: surveys, requests, feed review, offline, and
+// warnings; D-233). The server
 // on :8084 runs the durable store, which a stops write needs (POST /stops). No
 // stops document exists until the first change seeds it from the network
 // running today (cap-stops `seed`). The sign-in tests use a server on :8090
-// with sign-in on and a stand-in provider on :8089 (D-58, D-163).
+// with sign-in on and a stand-in provider on :8089.
 
 import { test, expect } from "@playwright/test";
 
@@ -155,7 +155,6 @@ test("a stop's site survey: one page of sections, kept as a draft, checked, summ
   await page.getByTestId("survey-surface-concrete").click();
   await page.getByTestId("survey-amenity-rear_boarding_pad-yes").click();
   await page.getByTestId("survey-ref-sign").fill("S-1180");
-  // D-162.
   await page.getByTestId("survey-attachments-file").setInputFiles({ name: "approach.png", mimeType: "image/png", buffer: PNG });
   await expect(page.getByTestId("survey-attachments").getByTestId("attachment-img")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("textbox", { name: "Caption for approach.png" }).fill("approaching");
@@ -363,7 +362,7 @@ test("the stops' map is kept on the way to a stop and back, and the stops read a
 });
 
 test("what the agency's feed did to the stops record: reviewed, each stop linked", async ({ page, request }) => {
-  // D-150: a change that names its feed, and a stop that the feed does not list.
+  // A change that names its feed, and a stop that the feed does not list.
   const manifest = await (await request.get("/manifest")).json();
   const doc = await (await request.get(`/blobs/${manifest.stops_hash}`)).json();
   doc.stops.A.push({ on: "2026-11-21", event: "changed", name: "Main & First", from_feed: manifest.feed_hash });
@@ -381,7 +380,7 @@ test("what the agency's feed did to the stops record: reviewed, each stop linked
   await expect(page.getByTestId("stop-card")).toContainText("Old Mill");
 });
 
-// A pick only reads the stops (D-157). The stops record is the one this server
+// A pick only reads the stops. The stops record is the one this server
 // keeps, begun from its network when none exists.
 test("a pick published over a retired stop carries the warning", async ({ page, request }) => {
   const manifest = await (await request.get("/manifest")).json();

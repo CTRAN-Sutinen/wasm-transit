@@ -44,7 +44,7 @@
     "kind": {
       "$ref": "#/$defs/RecentPlacesKind",
       "default": "recent_places",
-      "description": "A copy without the kind tag and version is this kind, version 1 (D-115)."
+      "description": "A copy without the kind tag and version is this kind, version 1."
     },
     "places": {
       "items": {

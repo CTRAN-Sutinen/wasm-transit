@@ -2,7 +2,7 @@
   "$defs": {
     "Attachment": {
       "additionalProperties": true,
-      "description": "The deployment names the bucket, the server hands out the link, and only\na signed-in person may read the file (D-162).",
+      "description": "The deployment names the bucket, the server hands out the link, and only\na signed-in person may read the file.",
       "properties": {
         "caption": {
           "type": [
@@ -182,7 +182,7 @@
           ]
         },
         "routes": {
-          "description": "A new stop's intent, because no schedule serves it yet. The routes are\nnames the planner writes, not references into the network, because a\nroute can be one that no pick runs yet (D-234). `direction` is one of\n[`DIRECTIONS`].",
+          "description": "A new stop's intent, because no schedule serves it yet. The routes are\nnames the planner writes, not references into the network, because a\nroute can be one that no pick runs yet. `direction` is one of\n[`DIRECTIONS`].",
           "items": {
             "type": "string"
           },
@@ -285,7 +285,7 @@
     "kind": {
       "$ref": "#/$defs/StopRequestsKind",
       "default": "stop_requests",
-      "description": "A copy without a version reads as v2, since every v1 document is a v2\ndocument. A tagged v1 is brought forward by cap-migrate (D-115)."
+      "description": "A copy without a version reads as v2, since every v1 document is a v2\ndocument. A tagged v1 is brought forward by cap-migrate."
     },
     "requests": {
       "additionalProperties": {

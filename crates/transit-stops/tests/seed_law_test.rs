@@ -1,4 +1,4 @@
-//! The seed of a stops document from a network (D-153, D-157).
+//! The seed of a stops document from a network.
 
 use transit_stops::stop_record::seed;
 use transit_network::Network;

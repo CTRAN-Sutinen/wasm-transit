@@ -1,7 +1,7 @@
-// The rules are in docs/architecture/updates-offline.md, "The outbox"
-// (D-189). This is the pure core. It never reads a write's ops.
+// The rules are in docs/architecture/updates-offline.md, "The outbox".
+// This is the pure core. It never reads a write's ops.
 // A log's write sends `read_seqs`, the other logs' seqs that the page read.
-// A write that waited also carries `claimed_at_ms` (D-222).
+// A write that waited also carries `claimed_at_ms`.
 
 // A route's body is JSON, with the key added when `keyed`, or a file sent
 // as it is (`contentType`).

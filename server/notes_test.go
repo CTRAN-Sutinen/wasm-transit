@@ -1,6 +1,6 @@
 package main
 
-// Pins D-214 in store mode: cap-notes writes each note with the verified
+// Pins the notes log in store mode: cap-notes writes each note with the verified
 // writer and the server's clock, the same text again lands no entry, and
 // the manifest pins the head.
 

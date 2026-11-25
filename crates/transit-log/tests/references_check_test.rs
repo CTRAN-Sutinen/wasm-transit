@@ -184,7 +184,7 @@ fn an_entry_touches_the_references_it_wrote_and_the_targets_it_changed() {
     assert_eq!(other.iter().map(|b| b.id.as_str()).collect::<Vec<_>>(), vec!["n2"], "a target in another log");
 }
 
-/// A record in a version newer than the table reads (D-186) is listed as
+/// A record in a version newer than the table reads is listed as
 /// unjudged and never as broken.
 #[test]
 fn a_record_newer_than_the_table_reads_is_unjudged_and_never_broken() {
@@ -289,7 +289,7 @@ fn the_receive_op_refuses_as_of_the_read_and_warns_as_of_now() {
     assert!(landed.entry.is_some() && landed.broken.is_empty() && landed.references.is_empty(), "the stops log is not judged: {landed:?}");
 }
 
-/// `named` is what compaction keeps (D-231). A filtered path names only its
+/// `named` is what compaction keeps. A filtered path names only its
 /// own kind.
 #[test]
 fn named_is_every_target_a_held_record_names_in_any_state() {

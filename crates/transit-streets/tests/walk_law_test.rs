@@ -1,6 +1,6 @@
 //! Pins the walk table and the walks from a point against an oracle that
 //! rebuilds the walking graph with its own snap and Dijkstra
-//! (`crates/cap-streets/OPS.md` "walks" and "access", D-25, D-26).
+//! (`crates/cap-streets/OPS.md` "walks" and "access").
 //!
 //! The oracle accepts the walk from any of several equally near positions,
 //! because the nearest street is not unique where two lines overlap without

@@ -1,6 +1,6 @@
 # Adjacent systems
 
-The dispatcher's day is out of scope (D-122): sick calls, extra-board
+The dispatcher's day is out of scope: sick calls, extra-board
 fills, swaps, and which person and vehicle are on a run today.
 CAD/AVL, workforce management, and the agency's scheduling system hold
 it. The runs and the bid are planned here (`docs/ROADMAP.md` 7), and the
@@ -10,11 +10,11 @@ repo's documents and writes into its records. The data is the agency's,
 whichever system holds it (`docs/architecture/agency-data.md`). Each
 fact has one home. The agency's documents in its store hold the
 network, picks, plans, policy, the authored detours and cancels, and
-dispatch's internal notes (D-214). The adjacent system's own rows hold
+dispatch's internal notes. The adjacent system's own rows hold
 a sick call, an extra-board fill, a swap, and a vehicle assignment. So
 whether a trip is covered (a vehicle on its block, an operator on its
-run) is the adjacent system's answer, and no op here computes it
-(D-212). A cancel that CAD/AVL publishes in GTFS-rt is read as the
+run) is the adjacent system's answer, and no op here computes it.
+A cancel that CAD/AVL publishes in GTFS-rt is read as the
 feed gives it (D-213). The interface has two directions.
 
 **Out to an adjacent system**
@@ -54,7 +54,7 @@ feed gives it (D-213). The interface has two directions.
    served for audit joins, and this repo never branches on it. An
    oracle's label follows the same rule.
 
-**The work order system** (D-159, D-165) is reached the other way. The
+**The work order system** is reached the other way. The
 server calls it through an adapter (`server/workorders.go`), and nothing
 else here couples to the system. A stop request tracks the work order it
 opens. The adapter opens one for a submitted request and reads its
@@ -85,7 +85,6 @@ the user, after you read **Because**.
   This repo's data is published and acted on as whole documents. One
   home per fact keeps audits answerable.
 - **Rejected:** a row store in this repo for daily operations.
-- **Decided:** D-122.
 
 ### Coverage is the adjacent systems' answer (the disruptions UI's questions, cap-divert's edits)
 - **Holds:** no op answers whether a trip is covered, which vehicle is
@@ -99,9 +98,8 @@ the user, after you read **Because**.
   moves a bus. runcut `block_trips` answers against the planned block,
   which is right for planning and not for today's assignments.
 - **Rejected:** coverage from the planned blocks and the live
-  positions, with an operator half from the runs layer (D-15); cover,
+  positions, with an operator half from the runs layer; cover,
   hold, and swap as edit kinds.
-- **Decided:** D-212 (it replaces D-15).
 
 ### The work order system is behind an adapter, and optional (`server/workorders.go`, `-work-orders`)
 - **Holds:** the server reaches the agency's work order system only
@@ -113,4 +111,3 @@ the user, after you read **Because**.
   The agency picks when to wire it, from the system's OpenAPI spec.
 - **Rejected:** calling the system's API straight from the pages;
   requiring it for requests to work.
-- **Decided:** D-159, D-165.

@@ -1,5 +1,5 @@
-// App build and offline lifecycle (docs/architecture/updates-offline.md,
-// D-63, D-65). The server on :8085 serves a copy of the build, and the spec
+// App build and offline lifecycle (docs/architecture/updates-offline.md).
+// The server on :8085 serves a copy of the build, and the spec
 // publishes a new build by rewriting that copy's sw.js. A byte-different
 // worker is a new build to the browser. Only this spec allows service workers.
 
@@ -109,7 +109,7 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
   }
 });
 
-// A staff page works offline (D-189). Its assembly stays out of the shell, so
+// A staff page works offline. Its assembly stays out of the shell, so
 // a rider's install never fetches a planner's modules (D-223). The worker
 // keeps the assembly on first use, hash-named.
 test("a staff page's assembly is kept on first use, not precached", async ({ page }) => {
@@ -134,7 +134,7 @@ test("a staff page's assembly is kept on first use, not precached", async ({ pag
   await expect.poll(() => cached("ui-service-change-"), { timeout: 20_000 }).toEqual(["content-addressed"]);
 });
 
-// A staff page applies a new build only when the person accepts (D-189). A
+// A staff page applies a new build only when the person accepts. A
 // document that a newer build wrote makes the page look for the build at once.
 test("a staff page refused for its version gets the deployment's build, and applies it only when the person accepts", async ({ page }) => {
   const original = fs.readFileSync(swPath, "utf8");

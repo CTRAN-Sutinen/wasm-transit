@@ -313,7 +313,7 @@ func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 	}
 }
 
-// The server returns the modules' refusals as given (D-76).
+// The server returns the modules' refusals as given.
 func TestPublishRefusalsNameTheirReasons(t *testing.T) {
 	_, base := newPlansServer(t, store.NewMemory())
 	code, out := publishPick(t, base, fixtureNetwork(t, "spring-2027", "Spring", "2027-03-01"))
@@ -326,7 +326,7 @@ func TestPublishRefusalsNameTheirReasons(t *testing.T) {
 	}
 }
 
-// A pick that has not taken effect is retired (D-75). One that has is refused.
+// A pick that has not taken effect is retired. One that has is refused.
 func TestRetiringAPick(t *testing.T) {
 	s, base := newPlansServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {

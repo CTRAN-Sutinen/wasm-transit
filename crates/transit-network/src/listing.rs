@@ -411,7 +411,7 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
     out.into_iter().map(|(_, v)| v).collect()
 }
 
-/// D-55 defines the service combination. A pattern whose trips cannot
+/// A pattern whose trips cannot
 /// materialize, as in a document in the middle of an edit, contributes no
 /// trips, and validation names it.
 pub fn timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
@@ -725,7 +725,7 @@ pub fn stops_near_walked(
 }
 
 /// The variants run best first, because a picker lists matches in this order
-/// (D-48, D-91).
+/// (D-91).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NameMatch {
     Exact,

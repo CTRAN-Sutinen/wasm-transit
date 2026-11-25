@@ -159,7 +159,7 @@
           "type": "object"
         },
         {
-          "description": "A trip instance that the live feed cancels (D-216). Version 2.",
+          "description": "A trip instance that the live feed cancels. Version 2.",
           "properties": {
             "date": {
               "type": "string"

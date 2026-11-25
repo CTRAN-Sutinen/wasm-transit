@@ -1,5 +1,5 @@
-//! What is disrupted on a day, and whether an alert explains it (D-213,
-//! D-218; cap-disruptions/OPS.md). The feed's cancels are shown as the feed
+//! What is disrupted on a day, and whether an alert explains it (D-213;
+//! cap-disruptions/OPS.md). The feed's cancels are shown as the feed
 //! gives them, beside the edit document's, and no rule picks a winner.
 //!
 //! Over the e2e fixture network on Thursday 2026-11-19 (the WK service runs):

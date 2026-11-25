@@ -1,4 +1,4 @@
-// The disruptions UI (src/uis/disruptions; D-213, D-214, D-218). The server on
+// The disruptions UI (src/uis/disruptions; D-213). The server on
 // :8084 is the stops spec's, whose durable store the notes need (POST /notes).
 // The time is Friday 2026-10-23 at 07:55 in America/Montreal. The edit document
 // holds a detour of route 10 (C skipped) and a cancel of t30's 8:40. The trip

@@ -10,7 +10,7 @@ import { currentDocument, putDocument, restoreDocuments, type DocRecord } from "
 import { answerGraph, applyBuild, askOracle, buildWaiting, clockEvery, clockLabelAt, inputGraph, inputLabel, installApp, nowSecs, previousDay, readFeed, readHead, readLiveFeeds, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type LiveUrls, type Reader } from "../kit";
 import descriptor from "./ui.json";
 
-// Each document registers once in the page's one linked module (D-77).
+// Each document registers once in the page's one linked module.
 assemble("ride-now");
 import type { DirectWalk } from "../../types/DirectWalk";
 import type { End } from "../../types/End";
@@ -599,7 +599,7 @@ const readers: Record<string, Reader<any>> = {
     },
   },
   network: {
-    // Follows the deployment (a republish, a new pick, today crossing a pick's date; D-63). Only a moved pin reads the network again.
+    // Follows the deployment (a republish, a new pick, today crossing a pick's date). Only a moved pin reads the network again.
     read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
       if (byHand) return { value: byHand, key: byHand.pin };
       if (!manifest) throw new Error("the deployment's manifest is not read");
@@ -608,7 +608,7 @@ const readers: Record<string, Reader<any>> = {
       if (held?.pin === pin) return { value: held, key: pin };
       const served = await servedNetwork(today(), [...NETWORK_READERS], { manifest, signal });
       if (!served) return null;
-      // A deployment that names its GTFS URL: the zip's zone (D-132).
+      // A deployment that names its GTFS URL: the zip's zone.
       setAgencyZone(served.timezone);
       const now = (await servedNetworkPin(today(), { manifest, signal })) ?? pin;
       return { value: { network: served.network, boundary: served.boundary, pin: now }, key: now };

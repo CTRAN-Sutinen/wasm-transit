@@ -1,4 +1,4 @@
-//! A write's last step, shared by every receive op (D-228). The host stores
+//! A write's last step, shared by every receive op. The host stores
 //! the entry with a conditional create, and asks again over the new head
 //! when another write took the seq.
 
@@ -32,7 +32,7 @@ pub struct Write {
     #[schemars(skip)]
     pub now: Option<BTreeMap<String, crate::Records>>,
     /// "YYYY-MM-DD" in the agency's time zone, from the host's clock. A
-    /// reference rule reads a dated state on it (D-238). Absent means no rule
+    /// reference rule reads a dated state on it. Absent means no rule
     /// that needs a date is judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
@@ -78,8 +78,7 @@ impl Write {
 
 /// `entry` is absent when the write changes nothing, landed before, hit an
 /// overlap, a refusal, a moved head, or a conflict. `unknown_fields` names
-/// the fields that a written document carries and this build does not know
-/// (D-167).
+/// the fields that a written document carries and this build does not know.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct Received {

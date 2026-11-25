@@ -18,7 +18,7 @@ transitions.
 1. **A rule for each reference.** Each owning module states which
    target states each referrer state needs, with a justification for
    each refusal, and a law covers every state. The stop request's rule
-   for its stop is built (transit-stops `request_rule`, D-238). Its
+   for its stop is built (transit-stops `request_rule`). Its
    pattern holds for the next: a `match` with no wildcard over the
    target's states, a coverage law over a string lifecycle, the date
    in `write.today`, and the reason in `rule`. The rules for notes and

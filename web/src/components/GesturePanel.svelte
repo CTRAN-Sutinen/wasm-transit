@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// Every gesture acts on one service type, a member of the selected group (D-8).
+  /// Every gesture acts on one service type, a member of the selected group.
   /// The panel names what else runs with it, since those trips stay as they are (D-95).
   import Unavailable from "./Unavailable.svelte";
   import Combobox from "./Combobox.svelte";

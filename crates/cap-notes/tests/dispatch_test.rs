@@ -1,4 +1,4 @@
-//! Native dispatch tests for cap-notes without wasm (D-214, `OPS.md`).
+//! Native dispatch tests for cap-notes without wasm (`OPS.md`).
 //! `validate` and the kernel's load agree on one identity, and a refused
 //! document is refused at both with its reasons named. `write` stamps with
 //! what the host gives. The document round-trips through the log records,
@@ -78,7 +78,7 @@ fn a_targets_notes_and_a_spans_notes_answer_over_a_registered_document() {
     assert_eq!(ok(json!({ "op": "between", "from": 0, "to": 2000 }))["notes"], json!([]), "no document is an empty one");
 }
 
-/// The same document comes back under the same hash (D-197).
+/// The same document comes back under the same hash.
 #[test]
 fn the_document_round_trips_through_the_log_records() {
     let notes_hash = ok(json!({ "op": "load_notes", "notes": sample() }))["notes_hash"].clone();

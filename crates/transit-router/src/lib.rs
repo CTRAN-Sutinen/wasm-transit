@@ -5,7 +5,7 @@
 //!   The times are clamped so that a trip never runs backwards. A cancelled
 //!   trip or a skipped stop is not in the planned world.
 //! * A direct walk between the ends wins ties (D-33).
-//! * Only `Itinerary::new` derives the door-to-door values (D-40, D-92), so no
+//! * Only `Itinerary::new` derives the door-to-door values (D-92), so no
 //!   host does arithmetic over legs.
 //! * Transfers are straight-line footpaths until `with_walks` replaces them
 //!   with the walks of a walk table (D-32).

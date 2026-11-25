@@ -1,7 +1,7 @@
 package main
 
 // Pins that store verify folds each log's checkpoints through cap-log, and
-// a checkpoint that is not the fold is a break (D-197).
+// a checkpoint that is not the fold is a break.
 
 import (
 	"context"

@@ -63,7 +63,7 @@ just store-dev                               # SeaweedFS in podman: a store that
 just dev                                     # vite hot reload + the server
 just export ride-now out/ path/to/gtfs.zip [roads.geojson]   # or no server: one rider
                                              # app (ride-now, stop-display) as its own
-                                             # static site (D-131; LIVE_FEEDS= names its feeds)
+                                             # static site (LIVE_FEEDS= names its feeds)
 ```
 
 The server's settings are files, not a long command line. `just serve`,
@@ -160,7 +160,7 @@ With an OIDC IdP, writes authenticate: the server verifies bearer JWTs
 (JWKS or a pinned key, RS256/ES256 only) and asks the `cap-authz`
 module over a policy document (the store's `policy` pointer, seeded
 from the `-policy` source at first boot) — reads stay public, writes need a
-role the policy grants (D-58..D-61). For `just serve`, set `policy`
+role the policy grants. For `just serve`, set `policy`
 and the `[oidc]` table in `server/local.toml`
 (`server/local.example.toml` has an Entra example).
 

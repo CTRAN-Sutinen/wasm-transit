@@ -1,6 +1,6 @@
 //! [`geojson::import`] is the only code that reads a street layer's
 //! properties. Which source a deployment loads is its choice: an agency's
-//! roads give scheduling parity, and OSM gives sidewalks (D-25). Walking
+//! roads give scheduling parity, and OSM gives sidewalks. Walking
 //! quality is the source's, and C-TRAN's roads cannot carry it (QAF-85).
 
 pub mod bus;

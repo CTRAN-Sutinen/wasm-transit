@@ -1,4 +1,4 @@
-//! `next` of a stopped group (D-42; crates/cap-board/OPS.md "grouped_board"),
+//! `next` of a stopped group (crates/cap-board/OPS.md "grouped_board"),
 //! over generated weekly service, calendar ends, and diversions that take the
 //! stop away on some dates. The properties that OPS.md does not state:
 //!

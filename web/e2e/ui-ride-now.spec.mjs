@@ -3,7 +3,7 @@
 // (sample-rt.pb) put t10 at +120 s at A and +180 s at B, for every live feed
 // URL. The test serves the live feeds and the edit document, because the shared
 // e2e server holds other specs' edits. cap-router's
-// `a_cancelled_trip_is_never_ridden` pins that plans never ride a cancel (D-45).
+// `a_cancelled_trip_is_never_ridden` pins that plans never ride a cancel.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -80,7 +80,7 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await expect(first).toContainText("Main Station");
   await expect(first).toContainText("8:15");
 
-  // The type-ahead answers a typo (D-48).
+  // The type-ahead answers a typo.
   await page.getByLabel("stop name").fill("mian 2nd");
   await expect(page.getByRole("option").first()).toContainText("Main & 2nd");
   await page.getByLabel("stop name").fill("zebra crossing");
@@ -114,7 +114,7 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await expect(it).toContainText("8:02");
   await expect(it).toContainText("2 min late");
   await expect(it).toContainText("Arrive Main & 2nd at 8:13 am");
-  // Door to door (D-40).
+  // Door to door.
   await expect(trip.getByTestId("duration")).toHaveText("11 min");
   await expect(trip.getByTestId("leave")).toHaveText("Leave in 7 min");
   await expect(page.getByTestId("ride-map")).toHaveAttribute("data-legs", "1");
@@ -127,7 +127,7 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await trip.locator("input[type=time]").fill("08:35");
   await expect(it).toContainText("Arrive Main & 2nd at 8:30 am");
 
-  // One linked module answers every capability, and holds the network once (D-77).
+  // One linked module answers every capability, and holds the network once.
   const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
   const caps = await bus("caps");
   expect(caps).toEqual(expect.arrayContaining(["board", "directory", "rt", "router"]));
@@ -262,7 +262,7 @@ test("ride now lists a cancelled trip as cancelled, never as a departure", async
 });
 
 test("ride now refuses an edit document a newer build wrote, never reading it as its own", async ({ page }) => {
-  // After a rollback a page can meet data that a newer build wrote (D-79, D-186).
+  // After a rollback a page can meet data that a newer build wrote.
   // src/versions.test.mjs covers the refusal's request for the deployment's build.
   const posts = [];
   page.on("request", (request) => {
@@ -278,7 +278,7 @@ test("ride now refuses an edit document a newer build wrote, never reading it as
 
 test("ride now degrades frame by frame when a capability fails to load", async ({ page }) => {
   // The linked assembly's failure is every capability's, so each falls back to
-  // its own module (D-77). Two of those fail too.
+  // its own module. Two of those fail too.
   await page.route(/\/caps\/(ui-ride-now|board|router)-[0-9a-f]+\.wasm$/, (route) => route.abort());
   await open(page);
 
@@ -323,7 +323,6 @@ test("ride now explores the routes and tracks a bus", async ({ page }) => {
   await expect(stops.nth(1)).toContainText("8:13");
 });
 
-// D-119.
 test("ride now says how old detours are while the server's store is not answering", async ({ page }) => {
   await open(page, { staleAsOf: new Date("2026-10-23T07:40:00-04:00").getTime() });
   await expect(page.getByTestId("ride-stale")).toContainText("Detours as of 7:40");

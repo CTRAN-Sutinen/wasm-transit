@@ -1,5 +1,5 @@
 //! Pins the op contract of cap-router (`OPS.md`), including that a trip the
-//! edit document cancels (D-45) is never ridden.
+//! edit document cancels is never ridden.
 
 use serde_json::{json, Value};
 use transit_network::Network;

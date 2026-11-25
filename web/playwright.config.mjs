@@ -4,7 +4,7 @@ import path from "node:path";
 
 const buildsDist = path.join(os.tmpdir(), "transit-e2e-builds");
 const releasesDist = path.join(os.tmpdir(), "transit-e2e-releases");
-// D-131: the spec uploads a third export, the stop display over the
+// The spec uploads a third export, the stop display over the
 // overnight feed, over /display/ as a redeploy.
 const staticRoot = path.join(os.tmpdir(), "transit-e2e-static");
 const staticNext = path.join(os.tmpdir(), "transit-e2e-static-next");

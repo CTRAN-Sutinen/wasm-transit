@@ -23,8 +23,8 @@ import (
 	"rustwasm/server/store"
 )
 
-// In store mode the release in -dist is a build (D-80;
-// docs/architecture/release-artifacts.md). A build the log already
+// In store mode the release in -dist is a build
+// (docs/architecture/release-artifacts.md). A build the log already
 // holds is never re-imported. Moving to it is POST /builds, so a
 // restart on the release that a rollback left behind keeps the
 // rollback.
@@ -32,7 +32,7 @@ import (
 const buildPointer = "build"
 
 // Each -ui-dist bundle is a build of its own, committed to the pointer
-// build.<id> with no server modules (D-171).
+// build.<id> with no server modules.
 func uiBuildPointer(id string) string { return buildPointer + "." + id }
 
 func validUIID(id string) bool {
@@ -287,7 +287,7 @@ func (s *server) serveBuildFile(w http.ResponseWriter, r *http.Request, name str
 
 // handleBuilds moves the pointer to a logged build. Every file of a
 // logged build is retained, so the move is the whole rollback, and the
-// pages follow the manifest (D-63).
+// pages follow the manifest.
 func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)

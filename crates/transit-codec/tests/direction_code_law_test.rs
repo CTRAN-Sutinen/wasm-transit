@@ -1,4 +1,4 @@
-//! Model directions and GTFS's binary `direction_id` (D-204). The rule is on
+//! Model directions and GTFS's binary `direction_id`. The rule is on
 //! `gtfs_direction`.
 
 use proptest::prelude::*;

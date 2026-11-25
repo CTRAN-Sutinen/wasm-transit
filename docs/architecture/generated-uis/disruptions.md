@@ -1,7 +1,7 @@
 # disruptions
 
 `disruptions` (`src/uis/disruptions/`) answers what is disrupted today,
-and whether an alert explains it (cap-disruptions, D-213, D-218), for
+and whether an alert explains it (cap-disruptions, D-213), for
 dispatch, communications, and customer service. Its views are Status
 (the day by route), Alerts (the gaps and the agency's alerts), and
 Dispatch (late trips, detours, cancels, and today's notes), beside a map

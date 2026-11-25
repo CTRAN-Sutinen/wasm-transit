@@ -1,5 +1,5 @@
 //! `publishable` and cap-plans' `pick` run one check (transit-network
-//! `publish_check`; D-76), and `document`'s bytes are the bytes a pick stores.
+//! `publish_check`), and `document`'s bytes are the bytes a pick stores.
 
 #![forbid(unsafe_code)]
 
@@ -97,7 +97,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         Request::Document { network_hash } => {
             // A host stores this document, so the read is a write. A network
             // read one version ahead answers in this build's version. A
-            // read-only one is refused (D-186).
+            // read-only one is refused.
             let network = kind::<transit_network::Network>().require_writable(&network_hash)?;
             let document = cap_abi::canonical_bytes(&*network)?;
             let document_hash = content_hash(document.as_bytes());

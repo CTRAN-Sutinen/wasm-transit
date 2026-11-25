@@ -1,5 +1,5 @@
 //! The fields of one informed entity are ANDed, and an entity naming only the
-//! agency covers everything (D-204, D-221).
+//! agency covers everything (D-221).
 
 use transit_live::{AlertScope, LiveAlert, Visit};
 

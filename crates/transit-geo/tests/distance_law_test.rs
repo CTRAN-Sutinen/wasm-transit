@@ -1,4 +1,4 @@
-//! Properties of `distance_m` and the local frame (D-250).
+//! Properties of `distance_m` and the local frame.
 
 use proptest::prelude::*;
 use transit_geo::{distance_m, meters_per_degree_lon, EARTH_RADIUS_M, METERS_PER_DEGREE};

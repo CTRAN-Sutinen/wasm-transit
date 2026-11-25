@@ -122,7 +122,7 @@ export function dismissWarning(key: string): void {
 }
 
 // A rule's reference ends with the module's words for the target's state
-// (`rule`, D-238).
+// (`rule`).
 export function referenceWarning(r: BrokenReference): string {
   const words = (kind: string) => kind.replaceAll("_", " ");
   const what = words(r.kind);

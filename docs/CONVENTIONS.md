@@ -36,7 +36,7 @@ documentation sweep is the `doc-sweep` skill
   "Schedule" is not a model word. To a planner, a schedule or a
   timetable is one direction of a route under one service combination,
   across all its patterns. A service combination is the set of service
-  types that run together (D-55). The model calls that view the
+  types that run together. The model calls that view the
   derived `Timetable` (directory op `timetable`), so it does not use
   the word for the list of trips in one pattern. A document without
   stored trips is network v1, and cap-migrate brings it forward. Do
@@ -86,7 +86,7 @@ documentation sweep is the `doc-sweep` skill
   canonical bytes (`cap_abi::Canonical`) also stops being those bytes
   inside the tree. Runner gates search an answer's own fields in struct
   field order, and a carried document's keys in canonical order
-  (RFC 8785, D-169). A gate reads the whole answer
+  (RFC 8785). A gate reads the whole answer
   (`grep … > /dev/null`). Do not use `grep -q`: it stops at the first
   match and closes the pipe while the runner still writes, and the
   runner then fails with EPIPE.
@@ -132,7 +132,7 @@ reword a comment that should not exist.
 |---|---|---|---|
 | `/// The stops of the pattern, in order. Stops that the network lacks are skipped.` on a five-line `filter_map` | The body shows both. | `/// Seconds after the service-day anchor. Past 86400 is after midnight.` | A unit and a range that the type `u32` does not show. |
 | `//! Errors of the network model` on `error.rs` | The file name and the enum say it. | "The kernel holds each day, so capabilities that read one day share one copy." | A reason. Without it, someone adds a second cache. |
-| `/// This capability, as an assembly links it.` on `CAPABILITY` | It restates the name. | "Write files whole. The store has no append (D-113)." | An outside constraint and its decision. |
+| `/// This capability, as an assembly links it.` on `CAPABILITY` | It restates the name. | "Write files whole. The store has no append." | An outside constraint and its decision. |
 | "This shipped once: `streets_id` vs `streetsId`." | History. | "A camelCase cast compiles but reads `undefined` at runtime." | A behavior that a reader would not expect. |
 
 - Give each fact one home (AGENTS.md, "Keeping the documents
@@ -305,7 +305,7 @@ visible.
   block. `base.css` holds the tokens and the few class names that
   components render with. A style in a page's stylesheet goes away with
   that page, and the component then renders without it.
-- **Use only widely available web features** (D-135). A feature must
+- **Use only widely available web features**. A feature must
   be Baseline widely available, which means 30 months in every major
   browser. A newer feature waits. Add no polyfill. For this reason, the
   live-feeds panel handles Escape, an outside press, and focus itself.

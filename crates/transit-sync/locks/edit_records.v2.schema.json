@@ -159,7 +159,7 @@
     },
     "TripCancel": {
       "additionalProperties": true,
-      "description": "The boards list a cancelled trip among the visits that the edits of the\nday took away (D-100). It cancels the whole trip, never from a stop on\n(D-45).\nCover, hold, and swap belong to CAD/AVL (D-212).",
+      "description": "The boards list a cancelled trip among the visits that the edits of the\nday took away (D-100). It cancels the whole trip, never from a stop on.\nCover, hold, and swap belong to CAD/AVL.",
       "properties": {
         "date": {
           "format": "date",

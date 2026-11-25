@@ -1,5 +1,5 @@
 // Keyboard, focus, and preference gates for ride now that axe cannot see
-// (docs/units/web-conformance.md, scope 1; D-135 for the live-feeds dialog).
+// (docs/units/web-conformance.md, scope 1).
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";

@@ -51,9 +51,9 @@ store = "mem://"
 
 # --- Stops: photos and work orders --------------------------------------
 
-# The photos' own bucket (any store URL); unset, none are taken (D-162).
+# The photos' own bucket (any store URL); unset, none are taken.
 attachments = "mem://"
-# The work order system's adapter (D-165): unset, a request's work order
+# The work order system's adapter: unset, a request's work order
 # is entered by hand; stub:<name> is a stand-in that opens STUB-<request>.
 work-orders = "stub:Maintenance"
 
@@ -67,7 +67,7 @@ work-orders = "stub:Maintenance"
 
 # --- Live feeds ---------------------------------------------------------
 
-# The dev relay for live feeds that send no CORS header (D-67). Never on
+# The dev relay for live feeds that send no CORS header. Never on
 # in a deployment: it relays any URL for any caller.
 rt-proxy = true
 
@@ -75,9 +75,9 @@ rt-proxy = true
 
 # dist = "../web/dist"
 # With a store: each UI's own bundle (`just build-ui <id>`), committed to
-# the store's build.<id> pointer for the UI's own URL (D-171).
+# the store's build.<id> pointer for the UI's own URL.
 # ui-dist = "stops=../web/dist-ui/stops,service-change=../web/dist-ui/service-change"
-# The server's one module: its capabilities linked (D-227).
+# The server's one module: its capabilities linked.
 # wasm = "../web/pkg/server.wasm"
 # kinds = "../web/pkg/kinds.json"
 
@@ -91,7 +91,7 @@ rt-proxy = true
 # Instead of feed: the GTFS URL the exported pages fetch themselves.
 # feed-url = ""
 
-# --- Sign-in (D-58..D-61) -----------------------------------------------
+# --- Sign-in -----------------------------------------------
 
 # The authorization policy (JSON; a path, URL or bucket:<key>): who may
 # write what. Seeds the store's policy at first boot.

@@ -40,8 +40,7 @@ export function unknownDocument(value: unknown): string | null {
   return error?.code === "unknown_document" ? error.hash : null;
 }
 
-// A document that a newer build wrote, which asks for the deployment's build
-// (D-79, D-186).
+// A document that a newer build wrote, which asks for the deployment's build.
 export function newerVersion(value: unknown): { kind: string; version: number } | null {
   const error = moduleError(value);
   return error?.code === "newer_version" ? { kind: error.kind, version: error.found } : null;

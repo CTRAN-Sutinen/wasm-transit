@@ -100,7 +100,7 @@
 // An unresolvable reference fails the session.
 //
 // The host owns the clock and reads it in the agency's zone, never the
-// machine's (D-175). The zone is --tz ZONE, or else the zone of the last
+// machine's. The zone is --tz ZONE, or else the zone of the last
 // network the session saw (its operators' zone, or an import's
 // `timezone`). With no zone, $TODAY and $NOW_SECS fail.
 //   $TODAY             the agency's service date, "YYYY-MM-DD"
@@ -431,7 +431,7 @@ async function runSession() {
     return r.op;
   };
   // The host owns the clock, so $TODAY and $NOW_SECS resolve before the
-  // ops see them, in the agency's zone and never the machine's (D-175).
+  // ops see them, in the agency's zone and never the machine's.
   // Without --tz, the zone comes from the last network that the session
   // has seen: one that an op loads, one that an import or a document
   // answer names, or one that an earlier command saved.

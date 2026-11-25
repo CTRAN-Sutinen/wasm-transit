@@ -1,4 +1,4 @@
-//! The recovery view (D-9). A wait is short exactly when validation reports
+//! The recovery view. A wait is short exactly when validation reports
 //! the layover infeasible under the same rules. Slack is the gap less the
 //! requirement, and a pattern's totals are its waits' sums.
 

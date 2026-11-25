@@ -32,11 +32,11 @@ question 4.
    item 1). The import reads them where the layer has them.
 4. **The geography release.** The basemap and the streets document,
    built from one source snapshot and pinned together in the manifest
-   beside `feed_hash`. D-29: the area is whatever the agency's GIS
+   beside `feed_hash`. The area is whatever the agency's GIS
    exports.
 
 Geocoding is not this unit's: it is an external service the host
-calls (D-36; `docs/architecture/server.md`, `/geocode`).
+calls (`docs/architecture/server.md`, `/geocode`).
 
 ## Done when
 

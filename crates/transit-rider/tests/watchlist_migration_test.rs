@@ -1,4 +1,4 @@
-//! The watchlist's migration chain (D-66, D-115). The stop-id sequence stays
+//! The watchlist's migration chain. The stop-id sequence stays
 //! invariant across versions, because LWW merges stay well defined across
 //! clients at different versions only if migrations never touch the key
 //! space.

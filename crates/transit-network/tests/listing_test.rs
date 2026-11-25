@@ -339,7 +339,7 @@ fn a_timetable_trip_names_its_service_key() {
     }
 }
 
-/// D-158.
+/// A visit names the stops before and after it.
 #[test]
 fn a_visit_names_its_neighbours_and_the_distance_to_each() {
     {

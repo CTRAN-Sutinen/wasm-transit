@@ -62,9 +62,8 @@ impl Diversion {
 }
 
 /// The boards list a cancelled trip among the visits that the edits of the
-/// day took away (D-100). It cancels the whole trip, never from a stop on
-/// (D-45).
-/// Cover, hold, and swap belong to CAD/AVL (D-212).
+/// day took away (D-100). It cancels the whole trip, never from a stop on.
+/// Cover, hold, and swap belong to CAD/AVL.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TripCancel {
@@ -323,8 +322,7 @@ pub struct Envelope {
     pub produced_by: String,
 }
 
-/// A person sees these fields flagged. The write path never refuses them
-/// (D-167).
+/// A person sees these fields flagged. The write path never refuses them.
 pub fn unknown_fields(records: &[EditRecord]) -> Vec<String> {
     let mut names = std::collections::BTreeSet::new();
     for r in records {
@@ -357,7 +355,7 @@ pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<Edi
 }
 
 /// Like [`compact`], but a record whose id is in `keep` stays, because a live
-/// reference names it (D-231).
+/// reference names it.
 pub fn compact_keeping(records: &[EditRecord], now_ms: u64, horizon_ms: u64, keep: &std::collections::BTreeSet<String>) -> (Vec<EditRecord>, usize) {
     let horizon = now_ms.saturating_sub(horizon_ms);
     let mut dropped = 0;
@@ -390,8 +388,7 @@ pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_m
 
 /// An older document is refused with the op that brings it forward, and a
 /// newer one naming both versions. A document one version ahead is read down
-/// by a lossless step. A read-only step refuses the write (`Versioned::AHEAD`,
-/// D-186).
+/// by a lossless step. A read-only step refuses the write (`Versioned::AHEAD`).
 pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), transit_version::Refusal> {
     use transit_version::{ReadAs, Versioned};
     let found = version::schema_version_of(document)?;

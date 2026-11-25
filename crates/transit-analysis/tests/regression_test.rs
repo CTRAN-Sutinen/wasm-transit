@@ -146,7 +146,7 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(coverage.group, "WK");
     assert_eq!(coverage.members, ["WK"]);
     assert!((coverage.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
-    // C is a terminal, so only A's 100 reads frequent (D-6).
+    // C is a terminal, so only A's 100 reads frequent.
     assert!((coverage.frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6, "{coverage:?}");
 }
 

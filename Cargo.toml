@@ -9,7 +9,7 @@ members = [
     # The generator: the manifest, the registry, the schema lock, and the
     # kind table (a class of its own; no module links it).
     "crates/generator",
-    # The worked examples' fixtures (D-235; a class of its own).
+    # The worked examples' fixtures (a class of its own).
     "crates/fixtures",
     # The assembly crates (gen-assemblies, `just caps` — generated and
     # gitignored, assemblies/.gitkeep keeps the directory): the modules —
@@ -55,7 +55,7 @@ schemars = { version = "1", features = ["chrono04"] }
 # format) — sha256 is the hash everywhere (Rust, JS crypto.subtle,
 # Go crypto).
 sha2 = "0.10"
-# RFC 8785 canonical JSON (D-169): numbers as ECMAScript writes them.
+# RFC 8785 canonical JSON: numbers as ECMAScript writes them.
 ryu-js = "1"
 itoa = "1"
 wasm-bindgen = "0.2"

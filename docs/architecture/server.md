@@ -6,7 +6,7 @@ is scaffolding: HTTP, the manifest, and proxies. It makes no domain
 decision. It reads the feed's `feed_info.txt` version field, which is
 one boundary CSV field and so I/O.
 
-The server links one assembly, as each UI does (D-227):
+The server links one assembly, as each UI does:
 `module-server`, which `just caps` writes to `web/pkg/server.wasm`
 (`-wasm`; `kodata/pkg/server.wasm` in the image). gen-assemblies links
 the capabilities that `server/capabilities.json` lists (the ones the
@@ -52,7 +52,7 @@ What each capability does for the server:
 - cap-plans' `receive` op writes the plans log. It turns the published
   plan set and the frozen versions into the log's records and back, and
   answers the picks in use and in force. A pick's checks run in the same
-  op (`pick`, D-237): the network's publish check, and the stops it
+  op (`pick`): the network's publish check, and the stops it
   reads on its first date.
 - cap-stops' `receive` op writes the stops log: the stops document, the
   stop requests document, the work order system's answer, and the feed's
@@ -64,7 +64,7 @@ What each capability does for the server:
   feed of the alerts (D-124).
 - cap-notes' `receive` op writes the notes log. It stamps each note with
   the verified writer and the server's clock from the entry's header, so
-  a page never names who wrote a note (D-214).
+  a page never names who wrote a note.
 - cap-log keeps all five logs (disruptions, stops, plans, alerts, notes):
   the fold, a revert, a closed gap, and where a key landed. cap-sync,
   cap-stops, cap-requests, cap-plans, cap-alerts, and cap-notes turn
@@ -106,8 +106,8 @@ difference:
 
 A zip that a person loads by hand (the UIs' file input) still imports in
 the browser. So does a serverless deployment that names the agency's
-GTFS URL instead of a network (D-132;
-[static-deployment.md](static-deployment.md)).
+GTFS URL instead of a network
+(see [static-deployment.md](static-deployment.md)).
 
 **The deployment publishes the streets the same way.** The server reads
 the street layer once (`-streets`). It also derives the walk table
@@ -124,12 +124,12 @@ Trapeze roads (`sha256:48fe6c89…`):
   answer in ~14 ms.
 
 With `-store <url>` the server keeps the agency's record in object
-storage (D-113). [storage.md](storage.md) holds the engine, its
+storage. [storage.md](storage.md) holds the engine, its
 backends, the pointers, and the offline tools. `docs/FORMATS.md` holds
 the bytes at rest. A serving process opens the store with
-`store.OpenServing` and never deletes (D-117).
+`store.OpenServing` and never deletes.
 
-The server's inputs come from their sources (D-118). `-feed`,
+The server's inputs come from their sources. `-feed`,
 `-streets` and `-policy` each take one of these:
 
 - an http(s) URL
@@ -144,7 +144,7 @@ a source does not answer, the server serves the last read, else that
 pointer's head. A process is therefore disposable: a replacement that
 has the bucket and the same configuration serves the same manifest.
 
-While the bucket does not answer (D-119), the server serves the heads
+While the bucket does not answer, the server serves the heads
 and blobs it holds (a byte-bounded blob cache, because blobs are
 immutable). It labels each such read `X-Store-Stale` and
 `X-Store-As-Of`. No age makes a read fail. A read that the server holds
@@ -243,7 +243,7 @@ and the server's module's hash.
 ## The routes
 
 `server/openapi.json` holds the contract for each route: its method,
-parameters, bodies, and status codes (D-81). Go tests hold it to the
+parameters, bodies, and status codes. Go tests hold it to the
 real server, and a gate holds each change to expand, then contract
 ([release-artifacts.md](release-artifacts.md), "The HTTP contract").
 This section says what the server does behind each route, and gives a
@@ -282,7 +282,7 @@ body or an answer only where the behavior needs it.
   `-dist` ([release-artifacts.md](release-artifacts.md), "Each UI at
   its own URL").
 - `/rt?url=<encoded>` is a dev relay. The route exists only with
-  `-rt-proxy` (`server/dev.toml` turns it on; D-67). It fetches an
+  `-rt-proxy` (`server/dev.toml` turns it on). It fetches an
   http(s) feed (15 s timeout, 32 MB cap) and returns it with CORS
   headers, for a dev config whose feeds send no
   `Access-Control-Allow-Origin`. It relays any URL for any caller, so
@@ -294,7 +294,7 @@ body or an answer only where the behavior needs it.
   deployment's query policy (`-geocoder-policy`, default
   `server/geocoder.json`). It answers 404 when no geocoder is
   configured. The geocoder is an oracle, never a document on the bus
-  (D-36, D-38; [web.md](web.md), "External services").
+  ([web.md](web.md), "External services").
   The justfile's `geocoder-build` and `geocoder` recipes run a local
   Pelias.
 - `/manifest` holds the deployment's pins (`server/openapi.json` lists
@@ -303,7 +303,7 @@ body or an answer only where the behavior needs it.
   - `network_hash` and `boundary_hash` name the authoritative network
     and its boundary (the import's numbering).
   - `feed_url` appears in an export that names the feed instead
-    (D-132). The pages import that URL themselves.
+    The pages import that URL themselves.
   - `timezone` is the agency's zone. The server counts its today in
     this zone, and every page reads its clock in it.
   - `<store kind>_hash` and `log_seqs` pin each log's documents ("One
@@ -359,24 +359,24 @@ body or an answer only where the behavior needs it.
   with its envelope in headers (`publishedBlob` in `export.go`). A blob
   whose kind's read class is `restricted` (the policy) is never served:
   404.
-- **Authentication and authorization** (D-58..D-61). Any `-oidc-*` flag
+- **Authentication and authorization.** Any `-oidc-*` flag
   turns it on. Then the server verifies bearer JWTs:
   - The key is a JWKS (`-oidc-jwks-url`, cached by `kid`, refetched on
     an unknown kid) or a pinned PEM (`-oidc-key`).
   - Only RS256 and ES256 are accepted.
   - `iss` and `aud` must match exactly. `exp` and `nbf` have leeway.
 
-  Reads stay public (D-58). Before any write, the server asks the
+  Reads stay public. Before any write, the server asks the
   cap-authz, in its own instance, over the policy document. A
   write needs a role that the policy grants write on that pointer. The
   The verified `sub` is the store log's `writer`.
 
   The policy is the store's `policy` pointer. The server seeds it from
-  the `-policy` source at first boot (D-61). Later changes are
+  the `-policy` source at first boot. Later changes are
   authenticated CAS commits.
 
   `-oidc-name-claim` (dotted, default `name`) is the claim that a record
-  uses to name the person, for example a survey's surveyor (D-158). A
+  uses to name the person, for example a survey's surveyor. A
   token without it is named by its `sub`.
 
   `-oidc-client-id` is the pages' own public client at the provider
@@ -416,7 +416,7 @@ body or an answer only where the behavior needs it.
     else from the `-edits` file (writer `migrate:-edits`): the receive
     op's `migrate`. Then the tombstone compaction (D-57) runs as one
     entry (`sync compact`, writer `gc`). It skips a tombstone that a
-    held record of another log names (D-231), so the server gives it the
+    held record of another log names, so the server gives it the
     logs as the reference checks read them.
   - A page never writes the log by intent (`POST /logs/disruptions` is
     405): `POST /edits` is the client protocol.
@@ -476,17 +476,16 @@ body or an answer only where the behavior needs it.
   the version's purpose from `?purpose=` or `published`. The body is the
   pick's network in any serialization.
   - The whole write is one op of the plans log's receive op: `plans
-    pick` (D-237). cap-plans registers the network on its kernel load,
+    pick`. cap-plans registers the network on its kernel load,
     with the stops document beside it.
   - The op first answers what refuses the network as a pick: its issues,
     and a pick with no service in its period. cap-network's
     `publishable` answers the same, because both call transit-network's
     `publish_check`.
   - The op then freezes the pick and adopts it, and answers the entry,
-    or why it refuses the pick: the chain, or a pick dated before today
-    (D-76).
+    or why it refuses the pick: the chain, or a pick dated before today.
   - `POST /plans/retire` `{"id"}` retires a pick that has not taken
-    effect (D-75), as one entry of the plans log (`plans retire`).
+    effect, as one entry of the plans log (`plans retire`).
   - "Today" is the agency's date: the host clock read in the network's
     zone. The zone is the feed import's (cap-network), else the last
     published pick's, which the kernel's `load_network` answers beside
@@ -500,7 +499,7 @@ body or an answer only where the behavior needs it.
   - The plans log has no revert: a pick is corrected by its own rules. A
     page never writes it by intent (`POST /logs/plans` is 405), because
     a freeze stores its network first.
-  - With a stops document, the pick reads it before the freeze (D-157).
+  - With a stops document, the pick reads it before the freeze.
     It reads each stop's record on its first date (transit-stops
     `read_pick`, the function behind cap-stops `read_pick`), so the
     network that the server stores is the read one, whatever copy the
@@ -510,12 +509,12 @@ body or an answer only where the behavior needs it.
     until the next pick that is not retired. The server does not read
     the set's picks or their status.
   - The server never writes the stops document here.
-- `POST /stops` (store mode) writes the stops document (D-153):
+- `POST /stops` (store mode) writes the stops document:
   `{"from": "<the head read, or empty>", "stops": {...}}`.
   - The stops log's receive op (cap-stops `receive`, the op `stops
     validate`) first names the person who writes as the surveyor of
     every survey that the held document does not hold
-    (`attribute_surveys`, D-158). The name is never one that the client
+    (`attribute_surveys`). The name is never one that the client
     sent. It is the verified token's `-oidc-name-claim` (default
     `name`), else its `sub`. With auth off, it is the caller's
     `X-Writer` label, else `anonymous`.
@@ -524,20 +523,20 @@ body or an answer only where the behavior needs it.
     refuses it when `from` is not the document at the head. The manifest
     pins the document as `stops_hash`, and `/blobs` serves it.
   - A stops write changes no pick. A stop's life is its own, and a pick
-    only reads the document (D-157).
+    only reads the document.
   - The server refuses a raw pointer commit of the stops (400).
   - The first document arrives through this route (a page makes it with
     cap-stops `seed`).
   - The server records each new import of the agency's feed (`-feed`, at
     boot or when its bytes change) in a stops document that the store
-    holds (D-150: the feed applies, and the planner sees what it did).
+    holds: the feed applies, and the planner sees what it did.
     cap-stops `import_events` runs on the feed's first service date, and
     each event names the feed's hash. One entry of the stops log records
     them, and the writer is `import:feed`. The server records nothing
     when the feed differs in nothing (`recordFeed`, `stops.go`).
 - `POST /attachments` and `GET /attachments/<hash>` (`-attachments`, a
   bucket of its own: any store URL) carry the photos and drawings that
-  surveys and requests hold (D-162). The server creates each object
+  surveys and requests hold. The server creates each object
   `attachments/<hex>` only if it is absent, with its media type in the
   object's metadata.
   - A POST needs a write on the policy's `attachments` pointer.
@@ -549,7 +548,7 @@ body or an answer only where the behavior needs it.
 - `POST /stop-requests/work-order` (store mode, `-work-orders`; the
   stop requests' `work_order` in the kind table names the route and its
   ops) takes `{"request": "<id>", "action": "open"|"refresh"}`. The work order
-  system's adapter (D-165, [adjacent-systems.md](adjacent-systems.md))
+  system's adapter ([adjacent-systems.md](adjacent-systems.md))
   opens a work order for the request, or reads its status. cap-requests
   `work_order_call` answers what to send it (the request, or the work
   order the request holds), and the server reads nothing out of the
@@ -559,11 +558,11 @@ body or an answer only where the behavior needs it.
   log. The writer is `work-orders:<system>`.
   - A body with a `key` whose entry landed answers the request's work
     order, and the system is not asked again, so an outbox's resend
-    never opens a second one (D-189).
+    never opens a second one.
   - The manifest's `services.work_orders` offers the route only when an
     adapter is configured.
 - `POST /stop-requests` (store mode) writes the stop requests document
-  (D-159): `{"from": "<the head read, or empty>", "requests": {...}}`.
+: `{"from": "<the head read, or empty>", "requests": {...}}`.
   - The stops log's receive op (the op `requests validate`) validates
     it and answers its canonical bytes.
   - The server writes the change as one entry of the stops log, and
@@ -575,7 +574,7 @@ body or an answer only where the behavior needs it.
 - `/logs/stops` (store mode) is the stops log (cap-stops `receive`, "One
   path for a log"; `docs/FORMATS.md`, "The logs"). It holds the stops
   document and the stop requests document, because completing a request
-  and adding the stop's event is one transaction (D-197).
+  and adding the stop's event is one transaction.
   - `POST /logs/stops` `{"key", "ops": [{"cap", "op", "args"}],
     "read_seq", "claimed_at_ms"}` is the stops log's intent write
     ([storage.md](storage.md), "The intent write"). It runs each op over
@@ -593,7 +592,7 @@ body or an answer only where the behavior needs it.
   - `GET /logs/stops?since=`, `POST /logs/stops/revert`, and `POST
     /logs/stops/close-gap` work as the disruptions log's do, and need the
     `audit` rule on `stops`. A revert takes out of the document a record
-    the reverted entry created (D-198).
+    the reverted entry created.
   - Every write to the stops or the requests is one entry, whatever
     route sent it. The server folds the log at most once per 2 s and
     assembles each document from its records. It stores a checkpoint
@@ -601,7 +600,7 @@ body or an answer only where the behavior needs it.
     and no log gets entry 1 from their heads at startup (writer
     `migrate:stops`, the note naming each head). The pointers stay, read
     only.
-- **One path for a log** (`logkinds.go`; D-228) covers each log whose
+- **One path for a log** (`logkinds.go`) covers each log whose
   kinds the kind table names with a receiving capability (`receive`):
   the disruptions, stops, plans, alerts, and notes logs. The server
   reads the head, makes one call, and creates the entry.
@@ -643,8 +642,8 @@ body or an answer only where the behavior needs it.
     /logs/<log>/revert`) answers the same, through cap-log
     `references`. A check that cannot read a log refuses nothing.
   - Each write also carries its date in the agency's time zone
-    (`write.today`, `writeDate`), for the rules that read a dated state
-    (D-238): the stops log's receive op judges each request's stop by its
+    (`write.today`, `writeDate`), for the rules that read a dated state:
+    the stops log's receive op judges each request's stop by its
     status on that date. `writeDate` reads the zone of the feed already
     loaded and never loads the feed, because the feed's own import
     writes the stops log while the feed's lock is held. A rule's refusal
@@ -666,8 +665,8 @@ body or an answer only where the behavior needs it.
     /alert-templates` (`validate_templates`), `POST /stops` (`stops
     validate`), and `POST /stop-requests` (`requests validate`). A whole
     document over a head the writer did not read (`from`) is refused. An older service alerts document comes
-    forward in the op (D-216). A header names the fields that a document
-    carries and this build does not know (D-167).
+    forward in the op. A header names the fields that a document
+    carries and this build does not know.
   - A log that a page never writes by intent (the kind table's
     `intent: false`: the plans log, the disruptions log) answers `POST
     /logs/<log>` with 405. A log with an LWW kind (the edit document)
@@ -680,8 +679,7 @@ body or an answer only where the behavior needs it.
     `in_force` answers which pick).
   - With a stops document, cap-stops `export_pick` runs first over the
     pick's period, which the op derives from the published set. A stop
-    whose record changes inside the period is then one stop per version
-    (D-151).
+    whose record changes inside the period is then one stop per version.
   - The server keeps the result by the pick's network hash and the stops
     document's.
   - Before the first pick takes effect, it is the configured `-feed` zip
@@ -703,19 +701,18 @@ reading **Because**.
 - **Because:** the server and a page that have the same documents must answer the same bytes ([web.md](web.md), "Parity"). Go logic is a second implementation to keep in step.
 
 ### A write is one op (`logkinds.go`, `planslog.go` `writePick`)
-- **Holds:** each write the server takes is one op of its log's receive op. A pick's checks (the network's publish check, the stops it reads) run inside cap-plans' `pick`, which links their libraries (D-237). Go registers the documents and stores what the op made, and sequences no checks.
+- **Holds:** each write the server takes is one op of its log's receive op. A pick's checks (the network's publish check, the stops it reads) run inside cap-plans' `pick`, which links their libraries. Go registers the documents and stores what the op made, and sequences no checks.
 - **Because:** checks sequenced in Go are host logic, and the read-seq check (D-233) replays a write's check as one op. The cost is a larger single cap-plans module: it links transit-network and transit-stops.
 
 ### The server imports the feed; pages register the network (`network.go`, `feedSource`)
 - **Holds:** with a server, pages never parse GTFS. They register the imported network.
 - **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module. Registering the result costs ~0.45 s and ~9–12 MB.
-- **Exception:** a serverless deployment may have each page import the agency's GTFS URL (D-132; [static-deployment.md](static-deployment.md)).
+- **Exception:** a serverless deployment may have each page import the agency's GTFS URL ([static-deployment.md](static-deployment.md)).
 
 ### One module, fresh per import (`wasm.go`, `importFeed`, `streetsSource.Load`, `exportedPick`)
 - **Holds:** the server links one assembly, as each UI does. The long-lived instance holds the logs' heads and refreshes past a memory ceiling. An import, a publish, and a pointer write's check get a fresh instance, closed after. authz keeps its own instance. A boot whose documents the store holds imports nothing.
 - **Because:** one host shape for every host ([hosts.md](hosts.md)), and each document registered once in the server too. Wasm memory never shrinks, so closing an instance is the memory hygiene, and the refresh does the same for the instance that lives on. A trap in another capability must not take the fail-closed authz check with it.
-- **Rejected:** a module for each capability, with one flag each (D-78, replaced): eleven flags, a flow that needs two capabilities composed in Go across modules, and each long-lived module holding its own copy of a document.
-- **Decided:** D-227.
+- **Rejected:** a module for each capability, with one flag each: eleven flags, a flow that needs two capabilities composed in Go across modules, and each long-lived module holding its own copy of a document.
 
 ### Two ways to fetch a published document (`/network/document`, `/network/boundary`, `/streets`, `/walks`, `/blobs/<hash>`)
 - **Holds:** both stay. The routes serve the current document at a stable address, pinned by ETag (a 304 while unchanged). `/blobs/<hash>` serves a document by the hash that the manifest names. The pages read this one.
@@ -735,13 +732,11 @@ reading **Because**.
 - **Holds:** each input is a URL, `bucket:<key>`, or a dev path. With `-store`, the server commits each read (`source.feed`, `source.streets`).
 - **Because:** a process must be disposable. Its replacement, given the bucket and the same flags, serves the same manifest. Local files tie a deployment to one machine.
 - **Rejected:** the bucket only, with a separate import step.
-- **Decided:** D-118.
 
 ### Stale reads labelled, writes refused (`degraded.go`, `X-Store-Stale`)
 - **Holds:** while the bucket does not answer, the server serves cached heads and blobs labelled with their age. It refuses every write (503).
 - **Because:** blobs are immutable, so only a head can be stale. Reads peak during disruptions, when outages are likeliest. If the server acknowledged a write that the bucket has not taken, the write would be lost with the process. The browser keeps its documents and resends.
 - **Rejected:** failing reads past an age. Failing every request.
-- **Decided:** D-119.
 
 ### Public reads, authenticated writes (`authz.go`, `protectWrite`, `-oidc-*`, `-policy`)
 - **Holds:**
@@ -751,13 +746,11 @@ reading **Because**.
   - The roles' claim path is configurable.
   - The policy is a store document, seeded from a file at first boot and changed by audited commits.
 - **Because:** reads publish what riders need. Writes are the shared state. Symmetric or `none` algorithms would let anyone forge tokens. The claim's location is the IdP's. A file re-read per request would leave policy changes unaudited. A store-only policy needs a break-glass bootstrap.
-- **Decided:** D-58, D-59, D-60, D-61.
 
 ### Attachments live apart and are read only signed in (`attachments.go`, `-attachments`)
 - **Holds:** photos and drawings sit in a bucket of their own, and each object is named by its content hash. A record names a file only by that hash, never a URL. The server hands out the bytes to a signed-in person whenever sign-in is on, unlike every other read. Only `POST /attachments` adds a file, behind the write check on `attachments`. `/attachments/<hash>` is behind sign-in alone, so it only reads (405 for any other method).
 - **Because:** files are large, and their access and keeping differ from the documents'. A URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider). A hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people. The deployment is internal-facing, and its attachments are staff's to see.
 - **Rejected:** URLs in the records. Attachments among the store's blobs. Public reads.
-- **Decided:** D-162.
 
 ### A copy boots on its disk cache (`-store-cache`, `store/diskcache.go`)
 - **Holds:** a copy keeps the blobs, heads, entries, and checkpoints it read on its own disk. Started while the bucket does not answer, it serves them read-only, labelled stale, and `/readyz` answers `degraded`. The bucket wins the first time it answers. The flag is opt-in.
@@ -767,7 +760,7 @@ reading **Because**.
 
 ### Degraded is ready (`/readyz`, `health.go`)
 - **Holds:** `/readyz` stays 200 while the bucket does not answer and cached heads serve. `/healthz` reads nothing.
-- **Because:** every instance shares one bucket, so all of them would fail the check at once. A balancer that pulled them all would turn a write outage into a read outage, while the pages read the cached heads fine (D-119). Restarting a process cannot fix the bucket.
+- **Because:** every instance shares one bucket, so all of them would fail the check at once. A balancer that pulled them all would turn a write outage into a read outage, while the pages read the cached heads fine. Restarting a process cannot fix the bucket.
 
 ### The dev store is not a deployment mode (no `-store`)
 - **Holds:** without `-store`, the server warns at startup and keeps working. It does not refuse.
@@ -780,10 +773,9 @@ reading **Because**.
 ### `/rt` is a dev relay, off by default (`handleProxy`, `-rt-proxy`)
 - **Holds:** the route exists only with `-rt-proxy`, which binds localhost. Deployments fetch feeds directly.
 - **Because:** it fetches any URL for any caller. Beyond localhost it is an open relay into the server's network. Feeds are fixed at their source (HTTPS with CORS).
-- **Decided:** D-67.
 
 ### Picks: retired, not removed; never landing in the past (`POST /plans`, `/plans/retire`)
 - **Holds:** a retired pick stays in the set marked `retired` and never governs. The server refuses a pick with no service in its period. It refuses a new, restored, or moved pick dated before today. A correction under its own date always publishes.
 - **Because:** retirement is the tombstone everywhere (no hard deletes). A pick with no service would leave every rider page with a network that runs nothing on its date. A pick dated in the past would rewrite what the deployment says ran.
 - **Rejected:** removal from the set. Publishing with warnings only.
-- **Decided:** D-75, D-76. **Pinned:** `TestRetiringAPick`, `TestPublishRefusalsNameTheirReasons`.
+- **Pinned:** `TestRetiringAPick`, `TestPublishRefusalsNameTheirReasons`.

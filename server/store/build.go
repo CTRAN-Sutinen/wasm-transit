@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-// Builds (D-80; docs/FORMATS.md, "Builds"). GC (gc.go) and Verify
+// Builds (docs/FORMATS.md, "Builds"). GC (gc.go) and Verify
 // (verify.go) treat every file a build document names as named by its
 // record, so every build the log ever held stays whole and a rollback is
 // a pointer move to bytes that still exist. A store with no description

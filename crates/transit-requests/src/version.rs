@@ -1,7 +1,7 @@
-//! The migration chain is kept forever, one pure step for each version
-//! (D-66). A consumer reads the current version only.
+//! The migration chain is kept forever, one pure step for each version.
+//! A consumer reads the current version only.
 //!
-//! v1 to v2 (D-234): a request's `routes` are the planner's intent, not a
+//! v1 to v2: a request's `routes` are the planner's intent, not a
 //! reference into the network. Every v1 document is a v2 document, so the
 //! step changes only the version.
 //!

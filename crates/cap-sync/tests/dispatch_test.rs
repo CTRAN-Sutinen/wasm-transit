@@ -1,6 +1,6 @@
 //! Native dispatch tests for cap-sync over the e2e fixture's edit-record
 //! shape: LWW merge and submit, the clock clamp (D-56), read, compact (D-57),
-//! the disruptions log's records (D-190, D-197, D-193), and receive (D-228).
+//! the disruptions log's records (D-190, D-193), and receive.
 //! The merge's own properties live in transit-sync.
 
 use cap_sync::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
@@ -125,7 +125,7 @@ fn the_answer_carries_the_canonical_document_and_its_hash() {
         Response::SyncEdits { records, document, document_hash, .. } => {
             let doc = transit_sync::EditDocument::new(records.clone());
             assert_eq!(document, cap_abi::canonical_bytes(&doc).unwrap(), "canonical bytes: the tagged document");
-            // canonical (RFC 8785, D-169): keys sorted, the tags among them
+            // canonical (RFC 8785): keys sorted, the tags among them
             assert!(document.starts_with("{\"kind\":\"edit_records\",\"records\":[") && document.ends_with("],\"schema_version\":2}"), "{document}");
             assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap(), "the module answers the hash of the canonical bytes");
             assert!(document_hash.starts_with("sha256:"), "{document_hash}");
@@ -185,7 +185,7 @@ fn compact_edits_is_the_d57_tombstone_commit() {
     }
 }
 
-/// The server's own records are not flagged again (D-167).
+/// The server's own records are not flagged again.
 #[test]
 fn sync_edits_flags_the_clients_unknown_fields_and_keeps_them() {
     let mut client = serde_json::to_value(record("e1", EditStatus::Draft, 1, 10)).unwrap();
@@ -374,7 +374,7 @@ fn receive_answers_a_moved_head_and_compacts_over_the_head() {
     assert!(entry["changes"].as_array().unwrap().iter().any(|c| c["kind"] == "edit_record" && c["after"].is_null()), "the old tombstone leaves the document: {entry}");
 }
 
-/// D-231.
+/// A compaction skips a tombstone that a held record of another log names.
 #[test]
 fn receive_compact_keeps_a_tombstone_that_a_held_record_names() {
     let doc = transit_sync::EditDocument::new(vec![record("e1", EditStatus::Retired, 2, 1_000), record("e2", EditStatus::Retired, 2, 1_000)]);

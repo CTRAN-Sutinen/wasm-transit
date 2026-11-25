@@ -1,7 +1,7 @@
 //! cap-stops wraps transit-stops. A pick only reads the stops document
-//! (D-157), and a plan copies a stop's record and never writes it (D-173).
+//!, and a plan copies a stop's record and never writes it.
 //!
-//! `receive` writes the stops log whole (D-197, D-228). The stops and the
+//! `receive` writes the stops log whole. The stops and the
 //! stop requests are one log, because one entry can change a stop and the
 //! request it carries out. So this crate also links transit-requests.
 
@@ -207,7 +207,7 @@ pub enum Response {
         document_hash: String,
         document: String,
     },
-    /// RFC 8785 canonical bytes, so a host stores what the hash covers (D-169).
+    /// RFC 8785 canonical bytes, so a host stores what the hash covers.
     ReadRecords {
         network_hash: String,
         #[ts(as = "transit_network::Network")]
@@ -650,8 +650,7 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         next.extend(records);
         written.insert("stops".to_string(), now);
     } else if let (Some(op), Some(now)) = (heads.wrote_stops, heads.stops.clone()) {
-        // The signed-in writer is the surveyor, whatever name the client sent
-        // (D-158).
+        // The signed-in writer is the surveyor, whatever name the client sent.
         let by = by.as_deref().unwrap_or(&write.header.writer);
         let now = (*kind::<transit_stops::Stops>().require(&now)?).clone();
         let attributed = match &heads.held_stops {
@@ -695,7 +694,7 @@ struct Judged {
 }
 
 /// A request that is already broken before the write is not refused, so a
-/// person can still change or cancel it (D-233, D-238).
+/// person can still change or cancel it (D-233).
 fn judge_requests(
     write: &transit_log::Write,
     stops_before: Option<&String>,

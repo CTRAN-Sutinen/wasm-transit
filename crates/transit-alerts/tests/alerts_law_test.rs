@@ -1,6 +1,6 @@
 //! What a write must pass, what a person is told about a record that passes
-//! (D-152), ending an alert, the agency's list, and the template fill
-//! (D-206..D-210; cap-alerts/OPS.md). Over the e2e fixture network: routes
+//!, ending an alert, the agency's list, and the template fill
+//! (D-206, D-207, D-209; cap-alerts/OPS.md). Over the e2e fixture network: routes
 //! 10, 20, 40 (route 40 runs directions 0 and 1), stops A, B, C, and the
 //! station STN with bays SA and SB; trip t10 at 08:00.
 
@@ -265,7 +265,7 @@ fn the_fill_writes_names_and_dates_in_the_agencys_words() {
     assert_eq!(two.header[0].text, "Main & 1st and Main & 2nd");
 }
 
-/// The blanks fill from the alert's informed entities (D-228): each route and
+/// The blanks fill from the alert's informed entities: each route and
 /// stop once, in the order first informed, beside any the input names.
 #[test]
 fn the_fill_names_each_informed_route_and_stop_once() {

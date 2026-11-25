@@ -1,4 +1,4 @@
-//! Native dispatch tests for cap-log without wasm (D-190, D-197,
+//! Native dispatch tests for cap-log without wasm (D-190,
 //! `OPS.md`). The log's properties are in transit-log's tests.
 //!
 //! 1. `compose` answers an entry whose `before` is the canonical hash of
@@ -8,7 +8,7 @@
 //!    answers its entry.
 //! 3. One entry changes two kinds.
 //! 4. A revert writes back, and a record that the entry created leaves the
-//!    fold (D-198). A later change refuses it, and a kind's written records
+//!    fold. A later change refuses it, and a kind's written records
 //!    take the place of the states before.
 //! 5. A bad entry is quarantined and named, and a gap's entry needs a cause.
 //! 6. The entry's `seq` must follow the fold.
@@ -134,7 +134,7 @@ fn a_revert_writes_back_and_a_later_change_refuses_it() {
     assert_eq!(back["changes"], 2);
     log.entries.push(json!({"seq": 3, "text": back["entry"]}));
     let folded = log.fold();
-    assert_eq!(folded["records"]["stop"], json!({"A": {"version": 1, "value": [1]}}), "A back, N out of the fold (D-198)");
+    assert_eq!(folded["records"]["stop"], json!({"A": {"version": 1, "value": [1]}}), "A back, N out of the fold");
     let entry: Value = serde_json::from_str(back["entry"].as_str().unwrap()).unwrap();
     assert_eq!(entry["reverts"], 2);
     let refused = err(json!({"op": "revert", "log": "stops", "entries": log.entries, "target": 2, "header": header(4, None)}));

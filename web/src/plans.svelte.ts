@@ -1,6 +1,6 @@
 // The plan set is keyed by a store id. The sync identity inside a document
 // is `plan.id`, which is empty on unversioned imports. IndexedDB holds the
-// set as one `PlanSet` document (D-115), so plans survive reloads.
+// set as one `PlanSet` document, so plans survive reloads.
 
 import { get as idbGet, set as idbSet } from "idb-keyval";
 import { keepRecord } from "./documents.svelte";

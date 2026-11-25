@@ -1,6 +1,6 @@
 package main
 
-// The derived documents in the record (D-199).
+// The derived documents in the record.
 
 import (
 	"bytes"

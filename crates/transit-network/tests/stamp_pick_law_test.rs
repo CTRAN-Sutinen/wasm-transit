@@ -1,4 +1,4 @@
-//! An imported feed becomes a pick (D-140, D-228). A document that already
+//! An imported feed becomes a pick. A document that already
 //! carries a plan id, or runs no service, gets no stamp.
 
 use transit_network::{apply_edits, stamp_as_pick, first_service_date, Network, NetworkEdit};

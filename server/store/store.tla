@@ -9,7 +9,7 @@
    delete. Nothing is appended, renamed, overwritten, or locked.
 
    Model: one pointer, the writer processes in Procs sharing one bucket,
-   and one offline `store gc` (D-117) running beside them. Each process
+   and one offline `store gc` running beside them. Each process
    caches the head it last read (the cache may be stale — another
    process commits under it). A commit:
      1. PutBlob  — create blobs/<h> if absent (an existing blob, even an

@@ -43,7 +43,7 @@ func (f *flaky) List(ctx context.Context, p, a string) ([]ObjectInfo, error) {
 }
 
 // Pins that a store with a silent bucket serves cached heads labelled
-// stale and cached blobs, and refuses every write as unavailable (D-119).
+// stale and cached blobs, and refuses every write as unavailable.
 func TestABucketThatStopsAnsweringServesCachedHeadsLabelledStale(t *testing.T) {
 	f := &flaky{Backend: NewMemory()}
 	s := New(f)

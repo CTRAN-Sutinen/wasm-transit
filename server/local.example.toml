@@ -16,7 +16,7 @@ publisher = "C-TRAN"
 # A local Pelias geocoder (`just geocoder`).
 # geocoder = "http://127.0.0.1:4000"
 
-# Sign-in (D-58..D-61). With an issuer set, writes need a signed-in
+# Sign-in. With an issuer set, writes need a signed-in
 # person the policy lets write; the pages sign in with client-id.
 # policy = "../web/e2e/fixtures/signin-policy.json"
 # [oidc]

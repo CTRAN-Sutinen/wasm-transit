@@ -1,6 +1,6 @@
 //! A write is one note ([`Notes::write`]), so two people who note at once
-//! never conflict (D-214, D-217). [`Notes::checked`] refuses only what makes
-//! a note wrong (D-152).
+//! never conflict (D-217). [`Notes::checked`] refuses only what makes
+//! a note wrong.
 
 #![forbid(unsafe_code)]
 

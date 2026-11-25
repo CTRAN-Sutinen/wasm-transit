@@ -1,4 +1,4 @@
-//! `compact` skips a tombstone that another log's record names (D-57, D-231).
+//! `compact` skips a tombstone that another log's record names (D-57).
 //! Edit records are judged against the network at `load_edits` and reported,
 //! never rejected (cap-divert `reports`), so a second verdict here would be
 //! two answers to one question. The module holds no state. The host decides

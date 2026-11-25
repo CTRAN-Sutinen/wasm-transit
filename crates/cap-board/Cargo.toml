@@ -20,7 +20,7 @@ transit-live = { path = "../transit-live" }
 transit-alerts = { path = "../transit-alerts" }
 transit-rt = { path = "../transit-rt" }
 cap-abi = { path = "../cap-abi" }
-# The worked examples' fixtures, for the `examples` feature only (D-235).
+# The worked examples' fixtures, for the `examples` feature only.
 fixtures = { path = "../fixtures", optional = true }
 
 [features]

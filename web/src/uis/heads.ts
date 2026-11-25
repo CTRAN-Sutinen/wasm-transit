@@ -15,7 +15,7 @@ export function retryAfterMs(value: string | null, nowMs: number): number | null
   return Number.isFinite(at) ? Math.max(0, at - nowMs) : null;
 }
 
-// The age is the server's (`X-Store-Stale`, `X-Store-As-Of`; D-119), never
+// The age is the server's (`X-Store-Stale`, `X-Store-As-Of`), never
 // the time of this read.
 export function headAnswer(seen: Seen, absent: number[], nowMs: number): Answered<string> | null {
   if (absent.includes(seen.status)) return null;

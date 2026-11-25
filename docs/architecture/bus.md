@@ -11,12 +11,12 @@ kinds:
 - `module-<cap>` holds one capability alone. caps-run, agents, the
   registry's blobs, and the Go server run this kind.
 - `module-ui-<id>` links the capabilities of one generated UI into one
-  module (D-77). That UI's page loads it. A document registers once
+  module. That UI's page loads it. A document registers once
   for each page, and the shared code ships once.
 
 Linking joins bytes and merges no interface. Each capability keeps its
 crate, its `Request` enum, and its manifest entry. Linking happens at
-build time only. A user does not choose capabilities (D-176).
+build time only. A user does not choose capabilities.
 
 The assembly crates are in `assemblies/`. `gen-assemblies` generates
 them from the capability crates and from the `ops` list in each
@@ -91,7 +91,7 @@ KIND:FILE` and the pages' engine read that kind. The generator holds
 each load to its line: the line names the library type, and the type's
 id, op, and code are the line's.
 
-**Each library loads its own kind (D-239).** A kind's library
+**Each library loads its own kind.** A kind's library
 implements `transit_version::Load` for its type, in the library's
 `src/load.rs`. So cap-abi depends on no domain library, and an arch
 gate holds it to that.
@@ -109,6 +109,13 @@ would compile its own copy of that kind's reader. A UI assembly that
 links seven capabilities over the network would carry seven. A
 library's `parse` and `canonical` are plain functions, so each kind's
 reader is compiled once, in its library.
+
+Cost accepted: stable Rust compiles serde_json's reader and the canonical
+writer in each library that a module loads a kind from, about 45 KB for
+each library, 2 to 5 percent of a module. `-Zshare-generics` would merge
+them but needs nightly. A type-erased reader would slow the registration
+of a document, the hot path on every page. Generating the kernel's
+per-kind loads from the kind list would make the kernel a hub again.
 
 **The registries.** The kernel (`kernel.rs`) keeps one registry for
 each kind type, created the first time a capability or the routing
@@ -134,7 +141,7 @@ its RFC 8785 bytes, streamed into the digest). For a feed, a layer,
 and an rt payload, it is the content hash of the bytes. A load also
 answers what the host shows, such as a feed's summary or a layer's
 headcount. It names the fields that the document carries and this
-build does not know (`unknown_fields`, D-167), and answers nothing
+build does not know (`unknown_fields`), and answers nothing
 more when there are none.
 
 **Reading and creating documents.** A capability declares the kinds it
@@ -245,7 +252,7 @@ fixture.
    denies by default. A capability depends only on cap-abi and
    libraries. Only the generated assemblies depend on capabilities.
    The generator (`crates/generator`) reads the kernel, the libraries,
-   and the fixtures (`crates/fixtures`, D-235), and nothing depends on
+   and the fixtures (`crates/fixtures`), and nothing depends on
    either, so no module's closure holds them. Only the codec's homes
    read transit-codec. The test is
    `crates/cap-abi/tests/arch_gates_test.rs`.
@@ -353,17 +360,15 @@ Change it only with the user, and only after you read **Because**.
 The rules above are part of the design too. The entries below explain
 the rules whose reasons are not clear from the rules alone.
 
-### A capability is a documented namespace for one need (`capability!`, `OPS.md`; D-226)
+### A capability is a documented namespace for one need (`capability!`, `OPS.md`)
 - **Holds:** a capability is a set of ops, each answering a whole question over documents and a person's choices. It ships with its `OPS.md`, schemas, worked examples, and evidence. Its crate is thin and may link any library. The libraries own the domain and the kinds.
 - **Because:** parity needs a whole question answered in shared code. A wall around each capability's libraries pushed questions that span kinds out to the hosts, where each host wrote its own answer. Rule 3 and the extraction pattern already put the domain in libraries.
 - **Rejected:** a capability that a third party implements in place of ours. It is not designed for until a concrete need arises.
-- **Decided:** D-226.
 
 ### One linked module per page, one registry (`assembly!`, `cap_abi::registry::Registry`, `independence.mjs`)
 - **Holds:** a page's capabilities link into one module over one
   registry that the kernel owns. So each document is parsed and held
-  once for each page. The server links one assembly the same way
-  (D-227).
+  once for each page. The server links one assembly the same way.
 - **Because:** separate instances each parsed their own copy of the
   network. On C-TRAN each copy took about 9 to 12 MB and 300 ms, and
   the stop display held three. Linking took the stop display from
@@ -384,7 +389,6 @@ the rules whose reasons are not clear from the rules alone.
     selections. It also makes a UI's bytes differ for each user, so a
     UI is no longer one product that is deployed and rolled back
     alone.
-- **Decided:** D-77, D-176.
 
 ### The module verifies every pin by hashing (`canonical_hash`, kernel loads)
 - **Holds:** a module registers a document only under the hash it
@@ -392,20 +396,19 @@ the rules whose reasons are not clear from the rules alone.
   host's pin and never trusts it.
 - **Because:** only re-serializing proves that the bytes are canonical.
   If the module trusted a pin, a host could create an identity that no
-  module derived. With one registration for each page (D-77), the cost
+  module derived. With one registration for each page, the cost
   is one canonical hash for each document on each page.
 - **Rejected:**
   - trusting a pin for bytes that hash to it;
   - hashing once for each page and passing the identity on;
   - a strict canonical parser kept in step with serde.
-- **Decided:** D-71.
 
 ### The canonical form is RFC 8785 (`transit_version::jcs`, `canonical_hash`, `Canonical`)
 - **Holds:** a document's canonical bytes are RFC 8785's: keys sorted
   by UTF-16 code units, no whitespace, numbers as ECMAScript writes
   them. Its identity is their sha256.
 - **Because:** the agency owns the data, and any tool may read and
-  write it (D-146, D-152). With a standard form, a tool in any language
+  write it. With a standard form, a tool in any language
   computes the same identity for the same content, without this repo.
 - **Costs:** the writer sorts each object's keys, and wasm memory never
   shrinks back from a peak, so the writer holds no whole document. A
@@ -419,7 +422,6 @@ the rules whose reasons are not clear from the rules alone.
 - **Rejected:** serde's field order (only this repo's Rust reproduces
   it); buffering the whole document to sort it (megabytes of wasm
   memory, kept).
-- **Decided:** D-169.
 
 ### Every document says what it is (`kind`, `schema_version`, `transit-version`, `registry/schemas/`)
 - **Holds:** every persisted document is plain JSON (gzip allowed) or
@@ -432,8 +434,8 @@ the rules whose reasons are not clear from the rules alone.
   deployment. Two versions of the same content never share a hash.
 - **Rejected:** the version only in the store's envelope, because every
   other copy would then need a wrapper or a guess from its shape.
-- **Decided:** D-62, D-115. Who owns the data, and how a write is
-  governed, is in `docs/architecture/agency-data.md`.
+- **See also:** who owns the data, and how a write is governed, in
+  `docs/architecture/agency-data.md`.
 
 ### Migrations are kept forever, as a capability (`cap-migrate`, each owning library's chain)
 - **Holds:** the migration chain of every authored kind is kept
@@ -446,7 +448,6 @@ the rules whose reasons are not clear from the rules alone.
   a pure function with a frozen fixture, so keeping one costs one test.
 - **Rejected:** a support floor (a year, or N versions) that refuses
   older documents.
-- **Decided:** D-66.
 
 ### A release reads one version ahead (`Versioned::AHEAD`, `cap_abi::Base`, `Kind::require_writable`)
 - **Holds:** a format change ships in two releases. Release A reads vN
@@ -461,8 +462,8 @@ the rules whose reasons are not clear from the rules alone.
   emergency procedure (`store revert`), because it can lose edits; and
   one rule for every change, because most changes can step down
   without loss.
-- **Decided:** D-79, D-186. The rules are in docs/FORMATS.md, "Rolling
-  a version back".
+- **See also:** the rules in docs/FORMATS.md, "Rolling a version
+  back".
 
 ### The assembly crates are generated, never committed (`assemblies/`, `gen-assemblies`)
 - **Holds:** git ignores `assemblies/*`. A `.gitkeep` keeps the
@@ -470,4 +471,3 @@ the rules whose reasons are not clear from the rules alone.
 - **Because:** they are generated from each `ui.json`, as the TS
   bindings are. A committed copy would need a check that it is current.
 - **Rejected:** committing them with a `--check` gate.
-- **Decided:** D-85.

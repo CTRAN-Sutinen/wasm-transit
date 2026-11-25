@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// D-80, docs/FORMATS.md "Builds". Every build the `build` pointer ever
+// docs/FORMATS.md "Builds". Every build the `build` pointer ever
 // logged stays whole, so a rollback is a pointer move to bytes that still
 // exist.
 
@@ -71,7 +71,7 @@ func TestEveryLoggedBuildKeepsItsFilesThroughGC(t *testing.T) {
 	})
 }
 
-// A UI's builds are logged on build.<id> (D-171). GC and verify read a build by
+// A UI's builds are logged on build.<id>. GC and verify read a build by
 // its record's kind.
 func TestAUIsLoggedBuildsKeepTheirFilesThroughGC(t *testing.T) {
 	each(t, func(t *testing.T, b Backend, s *Store) {

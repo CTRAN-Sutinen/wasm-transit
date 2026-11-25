@@ -1,8 +1,7 @@
 package main
 
 // Authorization round trips with a test JWKS (RS256 and ES256): the
-// policy is fail-closed, reads are public, writes are role-gated
-// (D-58..D-61), and the verified subject lands in the log as `writer`.
+// policy is fail-closed, reads are public, writes are role-gated, and the verified subject lands in the log as `writer`.
 
 import (
 	"context"
@@ -535,7 +534,7 @@ func mustHead(t *testing.T, s *server, pointer string) string {
 	return head.Hash
 }
 
-// D-158 (-oidc-name-claim): the name is the configured claim, a nested
+// With -oidc-name-claim, the name is the configured claim, a nested
 // path, or the sub when the token has none.
 func TestAuthzNameIsTheConfiguredClaim(t *testing.T) {
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)

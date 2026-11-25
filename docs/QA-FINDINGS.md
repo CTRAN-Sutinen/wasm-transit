@@ -32,10 +32,10 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   https://gtfs-rt.c-tran.com/Alerts.
 - Network import: `sha256:e99a1cc1abe2ca8a719a96e3990cf657c17693ba
   8d4d43170bd82d88d8f2671c`, re-measured 2026-11-18 (the RFC 8785
-  canonical form, D-169: the same document as `d4b9b780…`, on which the
+  canonical form: the same document as `d4b9b780…`, on which the
   findings before 2026-11-18 were seen; the whole spec:
   every file round-trips; C-TRAN's dated calendars read as weekly
-  rules, D-105; findings before 2026-11-13 were seen on `c6847464…`;
+  rules; findings before 2026-11-13 were seen on `c6847464…`;
   findings before 2026-11-06 were seen on `2beddcb3…`, the import that kept them
   dated; findings from
   2026-10-27–28 were seen on `2e27c511…`, the import before stored
@@ -73,8 +73,8 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 - **QAF-44 MODEL GAP** — service types duplicate rather than
   relate: 4-NYE carries a full copy of 1-WKDY's pattern trips
   (identical starts on all four 006 patterns), so a weekday change
-  is mirrored by hand and silently misses New Year's Eve. D-8 keeps
-  no "same as, except" relation; the gesture panel's warning (D-95)
+  is mirrored by hand and silently misses New Year's Eve. No
+  "same as, except" relation exists; the gesture panel's warning (D-95)
   names the types that RUN with the edited one, but 4-NYE never runs
   with 1-WKDY (they share no date), so nothing tells the planner the
   copy exists. What is left: a read that names the types carrying
@@ -232,10 +232,10 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   `feed_version` 20260913-20270109.
 - **QAF-111 OP GAP** — a fork's "runs through" works only at the
   fork. Forked without it, the fork's calendar is cut to its period
-  (D-138), so a pick past the import's last date leaves every key
+, so a pick past the import's last date leaves every key
   with no range. Setting "runs through" afterwards (Change dates,
   the same `set_plan` with `through`) carries nothing, because no
-  weekly range is left to carry (D-41). The plan says it runs
+  weekly range is left to carry. The plan says it runs
   nothing, and the only way back is to delete it and fork again.
   Pin: 2026-11-13 C-TRAN, the service-change UI: fork picking
   2027-01-10 with "Runs through" empty, then Change dates, Runs
@@ -303,7 +303,7 @@ work rules, and the bid over them.
   The runs cut: `docs/units/runs-layer.md`.
 - **QAF-12 OP GAP** — the work rules have a home (the kernel's
   `work_rules` document: platform, spread, report and clear,
-  pieces, meals, relief points, pay — D-50), but nothing judges a
+  pieces, meals, relief points, pay), but nothing judges a
   run against them, so run legality cannot be validated.
   Pin: QAF-11's menu moves entirely with its assumed parameters;
   no op takes a run.
@@ -320,7 +320,7 @@ work rules, and the bid over them.
   local Pelias (`just geocoder-build`, pelias/docker `3dfa07d5`,
   portland-metro) answers addresses, venues, and places, but
   "4th plain & andresen" (autocomplete) and "NE 4th Plain Blvd & NE
-  Andresen Rd" (search) answer `[]` — D-27's intersections are not
+  Andresen Rd" (search) answer `[]` — intersections are not
   in its data. A rider types the corner a stop is named for.
   Pin: `/geocode/autocomplete?text=4th plain %26 andresen` and
   `/geocode/search?text=NE 4th Plain Blvd %26 NE Andresen Rd` →
@@ -390,7 +390,7 @@ work rules, and the bid over them.
   "The deployment publishes no stops yet." Disruptions says "The
   deployment publishes no network." Service design and service change
   say "Load a GTFS feed to begin.", and service change shows no
-  published picks. The staff pages are offline pages now (D-189): after
+  published picks. The staff pages are offline pages now: after
   a first load online, the worker answers these reads from its last
   copy, so the defect shows on a page never opened online, or when a
   blob the worker does not hold fails. When only the stops blob fails, the stops app shows

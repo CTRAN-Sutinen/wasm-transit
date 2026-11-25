@@ -22,13 +22,13 @@ transit_version::kind_tag!(
 /// The kind table of one build.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct KindTable {
-    /// The kind tag (D-115): `"kind_table"`.
+    /// The kind tag: `"kind_table"`.
     #[serde(default)]
     pub kind: KindTableKind,
     pub schema_version: u32,
     /// Each kind the store keeps, by its store kind.
     pub kinds: Vec<KindEntry>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     pub extra: transit_version::Extra,
 }
@@ -101,7 +101,7 @@ pub struct KindEntry {
     /// differences from the kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feed_events: Option<String>,
-    /// The capability whose `receive` op writes the kind's log (D-228).
+    /// The capability whose `receive` op writes the kind's log.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receive: Option<String>,
     /// False when a page never writes the kind's log by intent (absent:

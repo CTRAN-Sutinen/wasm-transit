@@ -1,4 +1,8 @@
-//! The chains live in the libraries that own each kind (D-66).
+//! The chains live in the libraries that own each kind. The
+//! capability stays whole, with every chain (about 0.8 MB in service
+//! design's assembly). It is cut by use when its size or a new chain makes
+//! the cost matter. Ride-now fetches it alone only for a stored watchlist
+//! older than its board reads.
 //! Migration never destroys, and an older reader never writes a newer
 //! document (docs/FORMATS.md, "Versions").
 
@@ -108,7 +112,7 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
     }
 }
 
-/// Hashes through the type (RFC 8785, D-169), as every module that loads the
+/// Hashes through the type (RFC 8785), as every module that loads the
 /// document does.
 fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), String> {
     fn typed<T: serde::de::DeserializeOwned + Serialize>(doc: &serde_json::Value) -> Result<(String, String), String> {
@@ -129,7 +133,7 @@ fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), St
 }
 
 /// An intermediate version has no type in this build, so it hashes as a JSON
-/// value (RFC 8785, D-169).
+/// value (RFC 8785).
 fn loose(doc: &serde_json::Value) -> Result<(String, String), String> {
     let text = cap_abi::canonical_bytes(doc)?;
     let hash = cap_abi::content_hash(text.as_bytes());

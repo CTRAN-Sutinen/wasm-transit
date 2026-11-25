@@ -1,6 +1,6 @@
 # Static deployment
 
-A rider UI deploys with no server, each on its own (D-131). Run
+A rider UI deploys with no server, each on its own. Run
 `just export <ui> OUT feed.zip [streets.geojson]` to build that one UI
 alone. The recipe first runs `just build-ui <ui>`, which runs
 `UI=<ui> vite build` and writes `web/dist-ui/<ui>/`. That folder holds
@@ -24,7 +24,7 @@ holds:
 
 The export refuses a non-empty directory. It also refuses `-store`,
 because the export takes the feed's import, not a store's picks. A new
-schedule is a new export (D-131).
+schedule is a new export.
 
 The bundle's paths are the ones the server answers, so the pages are
 the same bytes on either. The server serves every UI from `web/dist`,
@@ -92,7 +92,7 @@ server (`web/e2e/static-server.mjs`). The server runs ride-now under
 Each deployment carries only its own UI.
 
 A serverless deployment may follow the agency's GTFS URL instead of
-publishing a network (D-132). Run `just export-feed-url <ui> OUT URL
+publishing a network. Run `just export-feed-url <ui> OUT URL
 [streets.geojson]` (`-export` with `-feed-url`). It writes the same
 bundle. Its manifest names `feed_url` and no network.
 
@@ -135,7 +135,7 @@ Change it only with the user, and only after you read **Because**.
   shapes").
 - **Rejected:** one bundle of every UI (ships service design where it
   cannot run).
-- **Decided:** D-131. **Pinned:** `web/e2e/static-deploy.spec.mjs`,
+- **Pinned:** `web/e2e/static-deploy.spec.mjs`,
   `TestTheExportIsWhatTheServerServes`.
 
 ### A serverless deployment may follow the GTFS URL (`-feed-url`, `feed_url`, `importFollowed`, `followedPin`)
@@ -150,5 +150,5 @@ Change it only with the user, and only after you read **Because**.
   cost.
 - **Rejected:** a scheduled re-export and redeploy; a Cloudflare Worker
   cron running the import.
-- **Decided:** D-132. **Pinned:** `web/e2e/static-feed-url.spec.mjs`,
+- **Pinned:** `web/e2e/static-feed-url.spec.mjs`,
   `TestTheExportNamesAFeedURLAndImportsNothing`.

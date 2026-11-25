@@ -1,4 +1,4 @@
-//! A document names its kind and version inside it (D-62, D-115), so any copy
+//! A document names its kind and version inside it, so any copy
 //! says both without the app. The kinds and their versions are in
 //! docs/FORMATS.md, "Versions".
 
@@ -31,7 +31,7 @@ pub trait Versioned {
     fn version_in(value: &serde_json::Value) -> u32 {
         value.get(Self::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(Self::UNTAGGED, |v| v as u32)
     }
-    /// A format change ships in two releases (D-79, D-186). Release A reads
+    /// A format change ships in two releases. Release A reads
     /// vN and vN+1 and writes vN, and release B writes vN+1. So a rollback
     /// from B to A reads what B stored.
     const AHEAD: Option<(u32, Ahead)> = None;
@@ -91,7 +91,7 @@ pub fn write_refused(kind: &str, found: u32, reads: u32) -> Refusal {
     Refusal {
         message: format!(
             "{kind} v{found} was written by a newer build: this build reads it one version ahead of v{reads}, \
-             and does not write over it — move the deployment forward again to change it (D-186)"
+             and does not write over it — move the deployment forward again to change it"
         ),
         code: Some(RefusalCode::NewerVersion { kind: kind.into(), found, reads, read: true }),
     }
@@ -105,7 +105,7 @@ pub fn writes_over<T: Versioned>(found: u32, read: ReadAs) -> Result<(), Refusal
     }
 }
 
-/// The fields of a record that this build does not know (D-167). They stay
+/// The fields of a record that this build does not know. They stay
 /// as written through a read and a write, so a writer on an older build does
 /// not drop what a newer one wrote. Every record of an authored kind carries
 /// one, flattened into the record. A value (a point, a set of weekdays)
@@ -137,7 +137,7 @@ impl<'de> serde::Deserialize<'de> for Extra {
 }
 
 /// Returns the answer beside the names of the unknown fields that `read`
-/// met (D-167). A read outside it notes nothing.
+/// met. A read outside it notes nothing.
 pub fn noting_unknown<R>(read: impl FnOnce() -> R) -> (R, Vec<String>) {
     let outer = NOTED.with(|noted| noted.borrow_mut().replace(Default::default()));
     let answer = read();

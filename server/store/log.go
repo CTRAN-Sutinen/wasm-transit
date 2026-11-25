@@ -40,7 +40,7 @@ type LogHead struct {
 	// AsOfMs is when the bucket last confirmed the head (Unix ms).
 	AsOfMs int64 `json:"as_of_ms"`
 	// Stale means the bucket did not answer this read, so the head is the
-	// one that this process or its disk cache held at AsOfMs (D-119).
+	// one that this process or its disk cache held at AsOfMs.
 	Stale bool `json:"stale,omitempty"`
 }
 

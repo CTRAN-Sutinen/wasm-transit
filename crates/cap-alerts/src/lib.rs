@@ -341,7 +341,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             let (document_hash, document) = match kind.as_str() {
                 "service_alerts" => {
                     // The log keeps each record in the version it was written
-                    // in (D-216).
+                    // in.
                     let version = transit_alerts::ALERTS_VERSION;
                     let forward = |kind: &str, held: &transit_log::Held| -> Result<transit_log::Held, String> {
                         let value = transit_alerts::version::record_forward(kind, held.value.clone(), held.version)?;

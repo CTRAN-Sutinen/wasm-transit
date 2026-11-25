@@ -21,7 +21,7 @@ pub struct CapManifest {
     pub kernel_ops: Vec<KernelOp>,
     pub capabilities: Vec<Capability>,
     /// Each capability above is also built alone, at its `url`, for runners,
-    /// agents, and the server (D-77).
+    /// agents, and the server.
     #[serde(default)]
     pub assemblies: Vec<LinkedAssembly>,
 }

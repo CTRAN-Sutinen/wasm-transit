@@ -122,7 +122,7 @@ test("a cancelled trip leaves the group's times, and the group says so", async (
 });
 
 test("a route that has stopped for the day stays on the display", async ({ page }) => {
-  // The board's `next` gives the times (D-42). The display only formats them.
+  // The board's `next` gives the times. The display only formats them.
   await open(page, { query: "?stop=A&layout=route", at: "2026-10-23T23:00:00-04:00" });
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("Next: Sunday 9:00 am");
@@ -189,7 +189,7 @@ test("the display runs one linked module, holding the network once", async ({ pa
   await open(page, { query: "?stop=A&layout=routes" });
   await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toBeVisible({ timeout: 10_000 });
   const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
-  // Every capability the display asks answers in its linked assembly (D-77).
+  // Every capability the display asks answers in its linked assembly.
   for (const cap of await bus("caps")) expect(await bus("module", cap)).toBe("ui:stop-display");
   const networks = (await bus("held", "board")).held.filter((e) => e.kind === "network");
   expect(networks).toHaveLength(1);
@@ -261,7 +261,7 @@ test("a live feed that stops answering turns the board to the schedule, and the 
   await expect(page.getByTestId("display-live")).toContainText("Live");
 });
 
-// D-119. The server labels the edit document with X-Store-Stale and X-Store-As-Of.
+// The server labels the edit document with X-Store-Stale and X-Store-As-Of.
 test("a detour served while the server's store is not answering says its age", async ({ page }) => {
   let stale = true;
   const asOf = new Date("2026-10-23T07:40:00-04:00").getTime();
@@ -321,7 +321,7 @@ test("a server that never answers the edit document turns the label to stale wit
   await expect(page.getByTestId("display-stale")).toHaveCount(0, { timeout: 10_000 });
 });
 
-// D-67: a deployment names no relay, and /rt is a dev convenience. The test
+// A deployment names no relay, and /rt is a dev convenience. The test
 // swaps live-feeds.json on the client, but the server writes the policy from
 // the file on disk, which would refuse the invented host. These tests run
 // without the policy, and e2e/headers.spec.mjs runs the pages under it.

@@ -44,7 +44,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/DatedCalendar"
       },
-      "description": "D-105. The export writes these services back as dates, under the\ncalendar.txt row they had (zero flags), if any.",
+      "description": "The export writes these services back as dates, under the\ncalendar.txt row they had (zero flags), if any.",
       "type": "object"
     },
     "fare_networks_on_routes": {

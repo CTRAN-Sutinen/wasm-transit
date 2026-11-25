@@ -188,7 +188,7 @@ impl RouterNetwork {
         let mut pattern_map: HashMap<Vec<u32>, Vec<PatternTrip>> = HashMap::new();
         for trip in day {
             // What the live document says does not happen is not in the planned
-            // world (D-73). A cancelled instance is gone, and a skipped visit
+            // world. A cancelled instance is gone, and a skipped visit
             // is not a stop of the trip.
             let kept;
             let trip = match live {

@@ -1,5 +1,5 @@
 //! A trip that the rt feed cancels, or a stop that it skips, does not run
-//! there, and no reader shows or rides it (D-73, cap-rt/OPS.md `live`).
+//! there, and no reader shows or rides it (cap-rt/OPS.md `live`).
 //! `LiveDay::runs` is false for a cancelled instance and a skipped visit.
 
 use prost::Message;

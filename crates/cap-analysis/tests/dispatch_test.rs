@@ -682,7 +682,7 @@ fn unserved_points_answer_the_where() {
 }
 
 /// Each distinct set of types that run together is a row, and a type with no
-/// trips is in no group (D-55).
+/// trips is in no group.
 #[test]
 fn service_groups_answer_the_combinations() {
     let net = network(&[

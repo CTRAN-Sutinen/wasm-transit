@@ -26,8 +26,8 @@ It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). Th
 | # | op(s) | state |
 |---|---|---|
 | 1 | runcut `blocks`, `block_trips` | op exists; no structure summary, QAF-15 |
-| 2 | runcut `fleet_summary`, `suggest_blocks` | op exists: a proposal's vehicle need is `suggest_blocks`' added_vehicles (D-46); fleet summary per service type, QAF-3 |
-| 3 | author `apply` issues (`work_rules_hash`), runcut `recovery` | op exists: a wait is judged against the recovery required there, and the recovery view shows required vs slack (D-9) |
+| 2 | runcut `fleet_summary`, `suggest_blocks` | op exists: a proposal's vehicle need is `suggest_blocks`' added_vehicles; fleet summary per service type, QAF-3 |
+| 3 | author `apply` issues (`work_rules_hash`), runcut `recovery` | op exists: a wait is judged against the recovery required there, and the recovery view shows required vs slack |
 | 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`), runcut `suggest_blocks` | op exists: a suggested chaining, adopted through its edits |
 | 5 | none | gap: deadhead estimation over cap-streets (`docs/ROADMAP.md` 2, 6) |
 

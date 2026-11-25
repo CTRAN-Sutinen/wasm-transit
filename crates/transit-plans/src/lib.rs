@@ -3,7 +3,7 @@
 //! not depend on input order. An unversioned plan, a fresh import, is never a
 //! chain member. `period_in` places a pick by id, so its own date wins.
 //!
-//! A retired pick is the tombstone and never governs (D-75). A freeze puts
+//! A retired pick is the tombstone and never governs. A freeze puts
 //! nothing in force, and `adopt` is `publish` of a frozen version (D-191).
 
 use chrono::NaiveDate;
@@ -40,10 +40,9 @@ pub enum PlanIssue {
     DuplicateEffectiveDate { date: String, a: String, b: String },
     UnversionedPlan,
     UnknownPick { id: String },
-    /// A pick that has taken effect is corrected by republishing, not retired
-    /// (D-75).
+    /// A pick that has taken effect is corrected by republishing, not retired.
     PickTookEffect { id: String, effective_from: String },
-    /// A new, restored, or moved pick never lands before today (D-76). A pick
+    /// A new, restored, or moved pick never lands before today. A pick
     /// republished under its own date always publishes.
     PickDatedInPast { id: String, effective_from: String, today: String },
     FreezeWithoutPurpose,
@@ -146,7 +145,7 @@ impl transit_version::Versioned for PublishedPlans {
     }
 }
 
-/// Republishing a retired pick's id restores it (D-75).
+/// Republishing a retired pick's id restores it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 #[serde(rename_all = "snake_case")]
@@ -190,7 +189,7 @@ fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
 }
 
 /// `served` marks the deployment's feed, which production serves until a
-/// pick takes effect (D-228).
+/// pick takes effect.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 pub struct DevicePlan {
@@ -228,7 +227,7 @@ pub struct Timeline {
 }
 
 /// A device plan is published when its id is a published pick's, or when it
-/// is the deployment's feed. A retired pick is no row (D-228).
+/// is the deployment's feed. A retired pick is no row.
 pub fn timeline(device: &[DevicePlan], set: Option<&PublishedPlans>, today: NaiveDate) -> Result<Timeline, String> {
     let picks: Vec<&PublishedPlan> = set.map(|s| s.plans.iter().filter(|p| p.status == PickStatus::Published).collect()).unwrap_or_default();
     let mut rows: Vec<TimelineRow> = device
@@ -273,7 +272,7 @@ pub fn period_in(set: Option<&PublishedPlans>, pick: &PlanInfo) -> Option<String
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 pub struct PublishedPlans {
-    /// A copy without a kind tag reads as the plans document (D-115).
+    /// A copy without a kind tag reads as the plans document.
     #[serde(default)]
     #[ts(type = "\"plans\"")]
     pub kind: PlansKind,
@@ -290,7 +289,7 @@ impl PublishedPlans {
     }
 }
 
-/// A pick that is new, restored, or moved never lands before `today` (D-76).
+/// A pick that is new, restored, or moved never lands before `today`.
 /// A published pick republished under its own date, a correction to the pick
 /// in force, always does. Refused with every reason.
 pub fn publish(
@@ -338,7 +337,7 @@ pub fn publish(
 }
 
 /// Only a pick dated after `today` is retired. One that has taken effect is
-/// corrected by republishing it (D-75).
+/// corrected by republishing it.
 pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<PublishedPlans, Vec<PlanIssue>> {
     let Some(pick) = set.plans.iter().find(|p| p.id == id) else {
         return Err(vec![PlanIssue::UnknownPick { id: id.to_string() }]);

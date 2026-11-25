@@ -430,7 +430,7 @@
       "post": {
         "operationId": "postEdits",
         "summary": "Merge the client's edit document into the server's.",
-        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer. A field the written document carries that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -607,7 +607,7 @@
       "post": {
         "operationId": "postPointer",
         "summary": "Commit a document to a pointer (compare and swap).",
-        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. Every other write is governed by the kind table (-kinds, D-202): a kind it does not name is refused, a kind with its own route is refused naming the route (plans, network_document, plan.*, stops, stop_requests, build, the derived documents, and the rest), and a kind written by pointer (the policy) heads only its pointers and is checked by its module's validate op. The server stores the module's canonical bytes, produced by it. document_hash, when present, is asserted against the bytes sent. When sign-in is on, it needs write on the pointer. For edit_records, a field the client's records carry that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field.",
+        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. Every other write is governed by the kind table (-kinds, D-202): a kind it does not name is refused, a kind with its own route is refused naming the route (plans, network_document, plan.*, stops, stop_requests, build, the derived documents, and the rest), and a kind written by pointer (the policy) heads only its pointers and is checked by its module's validate op. The server stores the module's canonical bytes, produced by it. document_hash, when present, is asserted against the bytes sent. When sign-in is on, it needs write on the pointer. For edit_records, a field the client's records carry that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field.",
         "parameters": [
           {
             "name": "name",
@@ -864,7 +864,7 @@
       "get": {
         "operationId": "getDisruptionsLog",
         "summary": "Get the disruptions log's entries after a seq.",
-        "description": "Store mode only. Each entry is one write to the edit document (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the edits pointer, because each entry names its writer.",
+        "description": "Store mode only. Each entry is one write to the edit document (D-190), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the edits pointer, because each entry names its writer.",
         "parameters": [
           {
             "name": "since",
@@ -1220,7 +1220,7 @@
       "get": {
         "operationId": "getStopsLog",
         "summary": "Get the stops log's entries after a seq.",
-        "description": "Store mode only. Each entry is one write to the stops document or the stop requests document (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the stops pointer, because each entry names its writer.",
+        "description": "Store mode only. Each entry is one write to the stops document or the stop requests document (D-190), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the stops pointer, because each entry names its writer.",
         "parameters": [
           {
             "name": "since",
@@ -1325,7 +1325,7 @@
       "post": {
         "operationId": "writeStopsLog",
         "summary": "Write to the stops log: ops over the documents at the head, as one entry.",
-        "description": "Store mode only. Each op runs over the stops document or the stop requests document at the head, in order (stops: add_event, correct_event; requests: put, record_work_order), checked as a write is, and what they changed is written as one entry. A write sent again with its key lands once. The alerts and notes logs take the same intent write (D-189). When sign-in is on, each op needs the write rule on its document's pointer (stops, stop_requests).",
+        "description": "Store mode only. Each op runs over the stops document or the stop requests document at the head, in order (stops: add_event, correct_event; requests: put, record_work_order), checked as a write is, and what they changed is written as one entry. A write sent again with its key lands once. The alerts and notes logs take the same intent write. When sign-in is on, each op needs the write rule on its document's pointer (stops, stop_requests).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1372,7 +1372,7 @@
                   "claimed_at_ms": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp."
                   },
                   "read_seqs": {
                     "type": "object",
@@ -1573,7 +1573,7 @@
       "post": {
         "operationId": "revertStopsEntry",
         "summary": "Revert one entry of the stops log, as a new entry.",
-        "description": "Store mode only. cap-log answers the entry that writes back each record's state before entry `seq`; a record the entry created leaves the document (D-198). When sign-in is on, it needs the audit rule on the stops pointer.",
+        "description": "Store mode only. cap-log answers the entry that writes back each record's state before entry `seq`; a record the entry created leaves the document. When sign-in is on, it needs the audit rule on the stops pointer.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1821,7 +1821,7 @@
       "get": {
         "operationId": "getAlertsLog",
         "summary": "Get the alerts log's entries after a seq.",
-        "description": "Store mode only. Each entry is one write to the service alerts document or the alert templates document (D-206, D-210), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the service_alerts pointer, because each entry names its writer.",
+        "description": "Store mode only. Each entry is one write to the service alerts document or the alert templates document (D-206), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the service_alerts pointer, because each entry names its writer.",
         "parameters": [
           {
             "name": "since",
@@ -1946,7 +1946,7 @@
       "post": {
         "operationId": "writeAlertsLog",
         "summary": "Write to the alerts log: ops over the documents at the head, as one entry.",
-        "description": "Store mode only. Each op runs over the service alerts document or the alert templates document at the head, in order (alerts: put, end, put_template), checked as a write is, and what they changed is written as one entry (D-189). A write sent again with its key lands once. When sign-in is on, each op needs the write rule on its document's pointer (service_alerts, alert_templates).",
+        "description": "Store mode only. Each op runs over the service alerts document or the alert templates document at the head, in order (alerts: put, end, put_template), checked as a write is, and what they changed is written as one entry. A write sent again with its key lands once. When sign-in is on, each op needs the write rule on its document's pointer (service_alerts, alert_templates).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1992,7 +1992,7 @@
                   "claimed_at_ms": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp."
                   },
                   "read_seqs": {
                     "type": "object",
@@ -2193,7 +2193,7 @@
       "get": {
         "operationId": "getNotesLog",
         "summary": "Get the notes log's entries after a seq.",
-        "description": "Store mode only. Each entry is one write to the notes document (D-214), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the notes pointer, because each entry names its writer.",
+        "description": "Store mode only. Each entry is one write to the notes document, as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the notes pointer, because each entry names its writer.",
         "parameters": [
           {
             "name": "since",
@@ -2318,7 +2318,7 @@
       "post": {
         "operationId": "writeNotesLog",
         "summary": "Write to the notes log: ops over the notes document at the head, as one entry.",
-        "description": "Store mode only. Each op (notes: write) runs over the notes document at the head, in order, with the verified writer and the server's clock as `by` and `at`, and what they changed is written as one entry (D-189, D-214). A write sent again with its key lands once. When sign-in is on, it needs the write rule on the notes pointer.",
+        "description": "Store mode only. Each op (notes: write) runs over the notes document at the head, in order, with the verified writer and the server's clock as `by` and `at`, and what they changed is written as one entry. A write sent again with its key lands once. When sign-in is on, it needs the write rule on the notes pointer.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2364,7 +2364,7 @@
                   "claimed_at_ms": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp."
                   },
                   "read_seqs": {
                     "type": "object",
@@ -2561,7 +2561,7 @@
       "post": {
         "operationId": "publishPick",
         "summary": "Publish a plan's network as a pick.",
-        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans freezes the network and adopts it (D-191). The server commits the network to plan.<id>, then writes the freeze and the adoption as one entry of the plans log. ?purpose= says what the frozen version is (default \"published\"). When sign-in is on, it needs write on the plans pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans freezes the network and adopts it (D-191). The server commits the network to plan.<id>, then writes the freeze and the adoption as one entry of the plans log. ?purpose= says what the frozen version is (default \"published\"). When sign-in is on, it needs write on the plans pointer. A field the written document carries that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2857,7 +2857,7 @@
       "post": {
         "operationId": "writeStops",
         "summary": "Write the stops document.",
-        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer. A field the written document carries that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2992,7 +2992,7 @@
       "post": {
         "operationId": "writeStopRequests",
         "summary": "Write the stop requests document.",
-        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer. A field the written document carries that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3127,7 +3127,7 @@
       "post": {
         "operationId": "writeServiceAlerts",
         "summary": "Write the service alerts document.",
-        "description": "Store mode only. cap-alerts validates the document (validate). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the service_alerts pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "Store mode only. cap-alerts validates the document (validate). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the service_alerts pointer. A field the written document carries that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3262,7 +3262,7 @@
       "post": {
         "operationId": "writeAlertTemplates",
         "summary": "Write the alert templates document.",
-        "description": "Store mode only. cap-alerts validates the document (validate_templates). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the alert_templates pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "description": "Store mode only. cap-alerts validates the document (validate_templates). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the alert_templates pointer. A field the written document carries that this build does not know is kept, never refused. The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3397,7 +3397,7 @@
       "post": {
         "operationId": "writeNote",
         "summary": "Write one note, new or edited.",
-        "description": "Store mode only. The body is one note, not a whole document. cap-notes writes it over the notes document in force (write), stamped with the verified writer and the server's clock, so a page never names who wrote a note. The server records the next document as one entry of the notes log. The same text written again changes nothing. When sign-in is on, it needs write on the notes pointer. No GTFS-rt feed carries a note (D-214).",
+        "description": "Store mode only. The body is one note, not a whole document. cap-notes writes it over the notes document in force (write), stamped with the verified writer and the server's clock, so a page never names who wrote a note. The server records the next document as one entry of the notes log. The same text written again changes nothing. When sign-in is on, it needs write on the notes pointer. No GTFS-rt feed carries a note.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3548,7 +3548,7 @@
                   },
                   "key": {
                     "type": "string",
-                    "description": "The device's idempotency key (D-189): a resend whose key landed answers the work order the request holds, and the work order system is not asked again."
+                    "description": "The device's idempotency key: a resend whose key landed answers the work order the request holds, and the work order system is not asked again."
                   }
                 },
                 "required": [
@@ -4210,7 +4210,7 @@
             "name": "ui",
             "in": "query",
             "required": false,
-            "description": "A UI's id (a-z, 0-9, and -). The move is that UI's pointer, build.<id> (D-171).",
+            "description": "A UI's id (a-z, 0-9, and -). The move is that UI's pointer, build.<id>.",
             "schema": {
               "type": "string"
             }
@@ -5250,7 +5250,7 @@
       "get": {
         "operationId": "getPlansLog",
         "summary": "Get the plans log's entries after a seq.",
-        "description": "Store mode only. Each entry is one freeze, adoption, or retirement (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the plans pointer, because each entry names its writer.",
+        "description": "Store mode only. Each entry is one freeze, adoption, or retirement (D-190), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the plans pointer, because each entry names its writer.",
         "parameters": [
           {
             "name": "since",
@@ -6150,15 +6150,15 @@
           },
           "alert_templates_hash": {
             "type": "string",
-            "description": "The alert templates document (the alerts log's fold), store mode (D-210)."
+            "description": "The alert templates document (the alerts log's fold), store mode."
           },
           "notes_hash": {
             "type": "string",
-            "description": "The notes document (the notes log's fold), store mode (D-214)."
+            "description": "The notes document (the notes log's fold), store mode."
           },
           "log_seqs": {
             "type": "object",
-            "description": "The seq of each log's fold whose documents this manifest pins, store mode: a page sends it with a write to that log as read_seq (D-189).",
+            "description": "The seq of each log's fold whose documents this manifest pins, store mode: a page sends it with a write to that log as read_seq.",
             "properties": {
               "stops": {
                 "type": "integer"
@@ -6570,7 +6570,7 @@
       },
       "BrokenReferences": {
         "type": "array",
-        "description": "The broken references the write leaves, as of now (D-233): those it wrote broken, and those whose target it changed. Each names the referring record, its field (a JSON pointer inside the record), the declared target, the id it names, and the entry. A reference whose target is held, but in a state a rule does not accept, says why in `rule` (D-238). A warning for a person: the write landed. Absent when there are none.",
+        "description": "The broken references the write leaves, as of now (D-233): those it wrote broken, and those whose target it changed. Each names the referring record, its field (a JSON pointer inside the record), the declared target, the id it names, and the entry. A reference whose target is held, but in a state a rule does not accept, says why in `rule`. A warning for a person: the write landed. Absent when there are none.",
         "items": {
           "type": "object",
           "properties": {

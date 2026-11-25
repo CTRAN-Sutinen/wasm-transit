@@ -1,5 +1,5 @@
 //! A trip cancel in the edit document changes the effective day and the
-//! boards (D-45; the cancelled visit's listing, D-100).
+//! boards (the cancelled visit's listing, D-100).
 
 use chrono::NaiveDate;
 use proptest::prelude::*;

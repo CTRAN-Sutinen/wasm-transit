@@ -14,7 +14,7 @@ import (
 	"rustwasm/server/store"
 )
 
-// source is where a server reads one input (D-118): an http(s) URL,
+// source is where a server reads one input: an http(s) URL,
 // bucket:<key> (the object inputs/<key>), or a local path for dev. Every
 // read that lands is committed as the head of its pointer (source.feed,
 // source.streets). A source that does not answer serves the last read,

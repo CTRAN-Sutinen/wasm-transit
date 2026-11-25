@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// Backend is everything the engine may assume of an object store (D-113;
-// docs/architecture/storage.md). S3, Azure Blob and GCS all guarantee it,
+// Backend is everything the engine may assume of an object store
+// (docs/architecture/storage.md). S3, Azure Blob and GCS all guarantee it,
 // and an endpoint that breaks it is unfit for the store. Keys are
 // '/'-separated, and a backend scoped to a prefix strips it from every
 // key it answers.

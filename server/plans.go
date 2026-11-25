@@ -182,7 +182,7 @@ func (s *server) today() string {
 	return now.Format("2006-01-02")
 }
 
-// writeDate is today() for the reference rules of a log write (D-238).
+// writeDate is today() for the reference rules of a log write.
 // It never loads the feed, because the feed's own import writes the
 // stops log while Load holds its lock.
 func (s *server) writeDate() string {
@@ -345,7 +345,7 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 
 // exportedPick runs the pick kind's export first when its document
 // exists, so a stop whose record changes inside the pick's dates is one
-// stop per version (D-151). The cache key is the network hash and the
+// stop per version. The cache key is the network hash and the
 // document's hash, because the bytes never change for those two.
 func (s *server) exportedPick(ctx context.Context, networkHash string, set []byte) ([]byte, error) {
 	e := s.pickKind()

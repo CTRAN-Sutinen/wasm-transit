@@ -39,7 +39,7 @@ impl KindReferences {
     }
 }
 
-/// A warning, never a broken reference (D-186).
+/// A warning, never a broken reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct Unjudged {
@@ -253,7 +253,7 @@ pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, befo
     out
 }
 
-/// What compaction keeps (D-231). The existence check judges every held
+/// What compaction keeps. The existence check judges every held
 /// referrer, so a record that one names must stay in its fold.
 pub fn named(kinds: &[KindReferences], folds: &BTreeMap<String, Records>, target: &str) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();

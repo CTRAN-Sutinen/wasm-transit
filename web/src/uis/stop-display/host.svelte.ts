@@ -27,7 +27,7 @@ import {
 } from "../kit";
 import descriptor from "./ui.json";
 
-// Each document registers once in the page's one linked module (D-77).
+// Each document registers once in the page's one linked module.
 assemble("stop-display");
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
@@ -258,7 +258,7 @@ const readers: Record<string, Reader<any>> = {
     adopt: (u: Partial<LiveUrls> | null) => void (urls = u ?? {}),
   },
   network: {
-    // Follows the deployment (a republish, a new pick, today crossing a pick's date; D-63). Only a moved pin reads the network again.
+    // Follows the deployment (a republish, a new pick, today crossing a pick's date). Only a moved pin reads the network again.
     read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
       if (byHand) return { value: byHand, key: byHand.pin };
       if (!manifest) throw new Error("the deployment's manifest is not read");
@@ -267,7 +267,7 @@ const readers: Record<string, Reader<any>> = {
       if (held?.pin === pin) return { value: held, key: pin };
       const served = await servedNetwork(today(), [...NETWORK_READERS], { manifest, signal });
       if (!served) return null;
-      // A deployment that names its GTFS URL: the zip's zone (D-132).
+      // A deployment that names its GTFS URL: the zip's zone.
       setAgencyZone(served.timezone);
       // The pin of an imported zip is the network the page now holds.
       const now = (await servedNetworkPin(today(), { manifest, signal })) ?? pin;
@@ -357,7 +357,7 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
   }
 }
 
-/// Nobody is at a display to tap, so a waiting build applies itself (D-63). It applies only while the server answers (an outage never reloads a working display into an empty one) and never while the setup is open. It returns true when it applies. The page then reads nothing more, because the old build's worker hands over only when no request is in flight.
+/// Nobody is at a display to tap, so a waiting build applies itself. It applies only while the server answers (an outage never reloads a working display into an empty one) and never while the setup is open. It returns true when it applies. The page then reads nothing more, because the old build's worker hands over only when no request is in flight.
 function applyWaitingBuild(): boolean {
   const m = display.inputs.manifest;
   const answers = m?.kind === "answered" && m.asOfMs == null;

@@ -1,4 +1,4 @@
-//! The canonical form is RFC 8785 (D-169). The properties come from the
+//! The canonical form is RFC 8785. The properties come from the
 //! standard. The writer must agree with the `reference` below for any JSON
 //! value and for every real document, whatever order its fields are declared
 //! in.

@@ -40,8 +40,8 @@ web/public/caps/
 web/public/schemas/
 
 # The assembly crates (gen-assemblies, `just caps`): generated from the
-# capability crates and each web/src/uis/<id>/ui.json, never committed
-# (D-85). The .gitkeep keeps the directory, so the workspace glob
+# capability crates and each web/src/uis/<id>/ui.json, never committed.
+# The .gitkeep keeps the directory, so the workspace glob
 # (Cargo.toml `assemblies/*`) resolves in a fresh checkout.
 assemblies/*
 !assemblies/.gitkeep

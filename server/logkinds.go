@@ -1,13 +1,13 @@
 package main
 
 // A log whose kinds name a receiving capability is written through its
-// `receive` op (D-228; docs/architecture/server.md, "One path for a log").
+// `receive` op (docs/architecture/server.md, "One path for a log").
 // The host decides nothing: the op answers the entry and the documents it
 // wrote.
 //
 // A key that landed answers the entry that holds it, so a resend lands
 // once. A write is a 409 only when an entry after the page's `read_seq`
-// changed a record that the write changes (D-189).
+// changed a record that the write changes.
 
 import (
 	"context"
@@ -389,7 +389,7 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 		}
 		write := map[string]any{"header": map[string]any{"log": f.name, "seq": f.seq + 1, "writer": w.writer, "at_ms": time.Now().UnixMilli(), "intent": intent}}
 		// The write's date in the agency's zone is the date that a reference
-		// rule reads a dated state on (D-238).
+		// rule reads a dated state on.
 		write["today"] = s.writeDate()
 		if len(f.base) > 0 {
 			write["checkpoint"] = f.base

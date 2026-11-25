@@ -1,6 +1,6 @@
 package main
 
-// The static bundle (D-131; docs/architecture/static-deployment.md):
+// The static bundle (docs/architecture/static-deployment.md):
 // `-export DIR` writes files that the server serves at the same paths.
 // These tests pin the layout both share:
 //
@@ -215,7 +215,7 @@ func TestTheExportRefusesANonEmptyDirectory(t *testing.T) {
 }
 
 // The export names the feed URL, imports none, pins no network, and writes no
-// network blob (D-132).
+// network blob.
 func TestTheExportNamesAFeedURLAndImportsNothing(t *testing.T) {
 	s := exportServer(t)
 	s.feeder, s.streets = nil, nil

@@ -1,5 +1,5 @@
 //! Authentication is the IdP's. The host verifies the JWT (signature, iss,
-//! aud, exp; D-60). `authorize` fails closed: with no policy, no matching
+//! aud, exp). `authorize` fails closed: with no policy, no matching
 //! rule, or a malformed request, the answer is a deny. The host owns
 //! the token and the clock, and passes the policy document on each call.
 
@@ -29,7 +29,7 @@ impl Action {
     }
 }
 
-/// The subject and the roles from the configured claim path (D-59). Nothing
+/// The subject and the roles from the configured claim path. Nothing
 /// else is trusted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -79,7 +79,7 @@ impl transit_version::Versioned for Policy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Policy {
-    /// A copy without a kind tag reads as a policy (D-115).
+    /// A copy without a kind tag reads as a policy.
     #[serde(default)]
     #[ts(type = "\"policy\"")]
     pub kind: PolicyKind,

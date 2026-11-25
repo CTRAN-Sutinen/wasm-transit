@@ -64,7 +64,7 @@ func main() {
 		if s.attachments, err = store.OpenBackend(context.Background(), *f.attachmentsURL); err != nil {
 			log.Fatalf("attachments: %v", err)
 		}
-		log.Printf("attachments: %s (D-162)", *f.attachmentsURL)
+		log.Printf("attachments: %s", *f.attachmentsURL)
 	}
 	// The work order adapter loads before the store's first manifest,
 	// which offers it (services.work_orders).
@@ -73,7 +73,7 @@ func main() {
 		log.Fatal(woErr)
 	}
 	if s.workOrders != nil {
-		log.Printf("work orders: the %s adapter (D-165)", s.workOrders.Name())
+		log.Printf("work orders: the %s adapter", s.workOrders.Name())
 	}
 	if *f.uiDist != "" && *f.storeURL == "" {
 		log.Fatalf("-ui-dist commits each UI's bundle to the store: it needs -store")
@@ -229,7 +229,7 @@ func (s *server) serve(ln net.Listener, srv *http.Server, drain time.Duration) e
 }
 
 // /rt is a route only with -rt-proxy. A deployment's pages fetch the
-// agency's feeds directly (D-67).
+// agency's feeds directly.
 func (s *server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	if s.rtProxy {
@@ -286,7 +286,7 @@ type server struct {
 	streets   *streetsSource // nil when no street layer is configured
 	publisher string
 	geocoder  *geocoder // nil when no geocoder is configured
-	// The GTFS URL an export names for the pages to fetch (D-132). A
+	// The GTFS URL an export names for the pages to fetch. A
 	// server imports its own feed, so it is "".
 	feedURL string
 
@@ -342,7 +342,7 @@ type server struct {
 	builds        buildState
 	buildEvery    time.Duration
 	serverModules map[string]string
-	// Each UI's bundle commits to its own build.<id> pointer (D-171).
+	// Each UI's bundle commits to its own build.<id> pointer.
 	uiDists []*uiDist
 }
 
@@ -435,7 +435,7 @@ const (
 )
 
 // handleProxy relays any http(s) URL for any caller, so the server binds
-// localhost when -rt-proxy is on (D-67).
+// localhost when -rt-proxy is on.
 func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")
 	if raw == "" {
@@ -486,7 +486,7 @@ type Manifest struct {
 	BoundaryHash string `json:"boundary_hash,omitempty"`
 	// A serverless deployment that follows the agency's GTFS URL
 	// (-export with -feed-url) publishes no network. Each page fetches the
-	// zip, imports it, and checks it daily (D-132).
+	// zip, imports it, and checks it daily.
 	FeedURL     string            `json:"feed_url,omitempty"`
 	FeedHash    string            `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip it was imported from
 	FeedVersion *string           `json:"feed_version,omitempty"`
@@ -494,10 +494,10 @@ type Manifest struct {
 	WalksHash   string            `json:"walks_hash,omitempty"`   // the walk table GET /walks serves
 	WasmHash    string            `json:"wasm_hash"`              // sha256 of the module this server runs
 	AuthzHash   string            `json:"authz_hash,omitempty"`   // sha256 of the module authz runs in, when auth is on
-	PolicyHash  string            `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
+	PolicyHash  string            `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode
 	Logged      map[string]string `json:"-"`
 	// The seq of each log's fold that this manifest pins. A page sends it
-	// with a write as read_seq (D-189).
+	// with a write as read_seq.
 	LogSeqs     map[string]int64 `json:"log_seqs,omitempty"`
 	BuildHash   string           `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt int64            `json:"generated_at"`
@@ -555,7 +555,7 @@ func (m *Manifest) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// Writes need a token and reads stay public (D-58).
+// Writes need a token and reads stay public.
 type ManifestAuth struct {
 	Issuer   string `json:"issuer"`
 	ClientID string `json:"client_id"`
@@ -671,7 +671,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.store == nil {
 		// The dev store serves the manifest as built. The ETag names what it
-		// pins, so an open page's poll is a 304 while nothing moved (D-63).
+		// pins, so an open page's poll is a 304 while nothing moved.
 		etag := `"` + manifestKeyOf(manifest) + `"`
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "no-cache")
@@ -703,7 +703,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 			}
 			_, _, err = s.store.CAS("manifest", from, body, env, "", "server", time.Now().UnixMilli())
 			if errors.Is(err, store.ErrUnavailable) {
-				break // D-119: serve the cached manifest below, labelled
+				break // serve the cached manifest below, labelled
 			}
 			if err != nil {
 				var ce *store.ConflictError

@@ -46,7 +46,7 @@ pub struct Alignment {
 }
 
 /// The distance is present where the publisher gave one, in the units of the
-/// pattern stops. The fields are in canonical key order (RFC 8785, D-169), so
+/// pattern stops. The fields are in canonical key order (RFC 8785), so
 /// the canonical bytes stream in one pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -551,7 +551,7 @@ pub struct StopOffset {
 }
 
 /// `times[i]` is the time at `pattern.stops[i]`. The fields are in canonical
-/// key order (RFC 8785, D-169), so the canonical bytes stream in one pass.
+/// key order (RFC 8785), so the canonical bytes stream in one pass.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Trip {
@@ -661,7 +661,7 @@ pub struct Network {
     #[serde(default)]
     #[ts(type = "\"network\"")]
     pub kind: crate::version::NetworkKind,
-    /// A document without one is version 1 (D-62).
+    /// A document without one is version 1.
     #[serde(default = "crate::version::NetworkVersion::untagged")]
     #[ts(type = "number")]
     pub schema_version: crate::version::NetworkVersion,

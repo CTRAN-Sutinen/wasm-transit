@@ -231,7 +231,7 @@ func (s *slow) List(ctx context.Context, p, a string) ([]ObjectInfo, error) {
 	return s.Backend.List(ctx, p, a)
 }
 
-// A call past its timeout is a bucket that does not answer (D-119).
+// A call past its timeout is a bucket that does not answer.
 func TestASlowBucketPastTheTimeoutIsABucketThatDoesNotAnswer(t *testing.T) {
 	call, create := callTimeout, createTimeout
 	callTimeout, createTimeout = 50*time.Millisecond, 50*time.Millisecond

@@ -1,6 +1,6 @@
 package main
 
-// Degraded mode (D-119): while the bucket does not answer, reads carry
+// Degraded mode: while the bucket does not answer, reads carry
 // X-Store-Stale and X-Store-As-Of, and every write is a 503 with Retry-After.
 // The write lands once the bucket answers.
 

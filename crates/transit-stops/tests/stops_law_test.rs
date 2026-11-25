@@ -1,4 +1,4 @@
-//! The stops document (D-153, D-154, D-157). The ops are in cap-stops'
+//! The stops document. The ops are in cap-stops'
 //! OPS.md (`validate`, `stops_on`, `stops_near`, `correct_event`). An oracle
 //! answers each detail as the last active event that sets it, a different
 //! reading of the same rule as `Stops::stop_on`.

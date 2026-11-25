@@ -32,7 +32,7 @@ pub struct Declaration {
 }
 
 /// The generator checks that the constants of the library type's
-/// `transit_version::Load` impl equal these (D-239).
+/// `transit_version::Load` impl equal these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KernelLoad {
     pub id: &'static str,
@@ -53,7 +53,7 @@ pub struct Store {
     pub work_order: Option<WorkOrder>,
     pub pick: Option<Pick>,
     /// The checking capability's op that records the differences between
-    /// an imported feed and the kind, through the kind's log (D-150).
+    /// an imported feed and the kind, through the kind's log.
     pub feed_events: Option<&'static str>,
     /// The capability that checks a write, and its op.
     pub check: Option<(&'static str, &'static str)>,
@@ -64,7 +64,7 @@ pub struct Store {
 #[derive(Debug, Clone, Copy)]
 pub struct Log {
     pub name: &'static str,
-    /// The capability whose `receive` op writes the log (D-228). Absent
+    /// The capability whose `receive` op writes the log. Absent
     /// while the server still sequences the log's writes itself.
     pub receive: Option<&'static str>,
     /// Each record kind, with the document field that holds its collection:
@@ -88,10 +88,10 @@ pub struct Post {
     pub echo: &'static [&'static str],
 }
 
-/// The kind's records are sent to the work order system (D-165) through
+/// The kind's records are sent to the work order system through
 /// this route. The checking capability's `call` op answers what to send,
 /// the server makes the call, and its `record` op, through the kind's
-/// log, writes the answer (D-228).
+/// log, writes the answer.
 #[derive(Debug, Clone, Copy)]
 pub struct WorkOrder {
     pub method: &'static str,
@@ -103,7 +103,7 @@ pub struct WorkOrder {
 /// A pick reads the kind. An adoption registers the kind's head and names
 /// the seq of its log it read as the `seq` argument (D-191). A pick's
 /// export runs the checking capability's `export` op over the network and
-/// the head (D-151).
+/// the head.
 #[derive(Debug, Clone, Copy)]
 pub struct Pick {
     pub seq: &'static str,
@@ -128,7 +128,7 @@ pub enum Write {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Read {
-    /// Anyone reads the kind by hash (`/blobs/<hash>`; D-152).
+    /// Anyone reads the kind by hash (`/blobs/<hash>`).
     Open,
     /// The server does not serve the kind by hash. A client reads only
     /// its own projection.

@@ -1,4 +1,4 @@
-//! The stop requests document (D-159, D-152). The ops are in cap-requests'
+//! The stop requests document. The ops are in cap-requests'
 //! OPS.md. A request is the planning team's own record, and the system tracks
 //! a reference to the external work order.
 
@@ -203,7 +203,7 @@ proptest! {
     }
 }
 
-/// An ordered, completed, or cancelled request keeps its status (D-165).
+/// An ordered, completed, or cancelled request keeps its status.
 #[test]
 fn a_work_order_lands_on_its_request() {
     let held = doc(vec![
@@ -228,7 +228,7 @@ fn a_work_order_lands_on_its_request() {
     assert!(held.record_work_order("zz", wo("WO-9", "open")).is_none());
 }
 
-/// Another shape of attachment name is refused (D-162).
+/// Another shape of attachment name is refused.
 #[test]
 fn a_request_names_its_attachments_by_hash() {
     let hash = format!("sha256:{}", "cd".repeat(32));
@@ -269,8 +269,7 @@ fn the_work_order_call_says_what_to_send_for_a_request() {
     assert!(held.work_order_call("r1", "close").is_err());
 }
 
-/// A v1 document is a v2 document, so the step changes only the version
-/// (D-234).
+/// A v1 document is a v2 document, so the step changes only the version.
 #[test]
 fn a_v1_document_is_a_v2_document() {
     use transit_requests::version;

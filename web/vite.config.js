@@ -25,8 +25,8 @@ const input = {
   ...Object.fromEntries(uis.map((id) => [id, `${id}.html`])),
 };
 
-// `UI=<id> vite build` writes dist-ui/<id>/ for `just export <id> …`
-// (D-131). It holds only that page and what it runs: the capability
+// `UI=<id> vite build` writes dist-ui/<id>/ for `just export <id> …`.
+// It holds only that page and what it runs: the capability
 // manifest, its linked assembly, each of its capabilities alone (the
 // fallback when the assembly does not load, D-88), live-feeds.json, the
 // schemas, and the basemap files only when the page imports
@@ -73,7 +73,7 @@ function oneUi(id) {
   };
 }
 
-// Writes web/service-worker.js to <outDir>/sw.js (D-63, D-65). The shell is
+// Writes web/service-worker.js to <outDir>/sw.js. The shell is
 // the pages of every UI whose ui.json says `"offline": true`, every hashed
 // asset, the capability manifest, and those UIs' linked assemblies. BUILD
 // hashes the shell's bytes, so a build that changes any of them is a
@@ -117,7 +117,7 @@ function serviceWorker() {
 
 export default defineConfig({
   // Relative, so a deployment can serve the pages from any path, such as a
-  // static host's prefix (/ride/, D-131).
+  // static host's prefix (/ride/).
   base: "./",
   plugins: [svelte(), ...(only ? [oneUi(only)] : []), serviceWorker()],
   build: only
@@ -127,8 +127,8 @@ export default defineConfig({
   worker: { format: "es" },
   server: {
     // `npm run dev` proxies the sync server's routes (server/main.go).
-    // `/rt` is the feed relay for feeds that send no CORS header (D-67;
-    // `just dev` runs the server with -rt-proxy). A route that begins with
+    // `/rt` is the feed relay for feeds that send no CORS header
+    // (`just dev` runs the server with -rt-proxy). A route that begins with
     // ^ is a pattern. `^/stops$` matches the document's writes and not the
     // stops page, `/stops.html`.
     proxy: Object.fromEntries(

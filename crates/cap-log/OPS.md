@@ -2,7 +2,7 @@
 
 What does this write add to the log, and what does the log hold? A log is the record of one consistency domain (D-190): an entry for each write, and the current state the fold of the entries. A mistake is fixed by a new entry, so the truth before it stays in the record (library: transit-log).
 
-The capability never reads a record. A record is a JSON value named by its kind (`stop`, `stop_request`) and its id, in its kind's version. The capability that owns a kind turns its document into records and records back into its document (`log_records`, `log_document`). So one entry may change the records of two capabilities, and no capability calls another (D-197).
+The capability never reads a record. A record is a JSON value named by its kind (`stop`, `stop_request`) and its id, in its kind's version. The capability that owns a kind turns its document into records and records back into its document (`log_records`, `log_document`). So one entry may change the records of two capabilities, and no capability calls another.
 
 A change's `before` is the canonical hash of the record as the entry that wrote it stored it, never of a migrated copy. The module is stateless: the host stores each entry at `logs/<log>/entries/<seq>.json` and each checkpoint at `logs/<log>/checkpoints/<seq>.json`, and gives them back in order.
 
@@ -14,7 +14,7 @@ The host gives the `header`: the log, the `seq` it will create (the fold's `seq`
 
 The answer is the entry's canonical bytes, or no entry when nothing changed. When the fold holds the write's key, the write landed before: the answer is no entry and `landed`, the entry that holds it. So an outbox's resend lands once.
 
-`unread` are the stored entries after the fold the writer read (the log's seq it names, `read_seq`), as the host read them. A record the write changes that one of them changed too answers no entry and `overlap`: the record's kind and id, and the latest such entry. A person settles it. A change to another record is no overlap, so a write is checked against the records it changes, never the whole log. A key that landed answers before an overlap. The intent's `claimed_at_ms` is the device's clock when the person made a write that waited: the entry keeps it as a claim beside the host's `at_ms` (D-222).
+`unread` are the stored entries after the fold the writer read (the log's seq it names, `read_seq`), as the host read them. A record the write changes that one of them changed too answers no entry and `overlap`: the record's kind and id, and the latest such entry. A person settles it. A change to another record is no overlap, so a write is checked against the records it changes, never the whole log. A key that landed answers before an overlap. The intent's `claimed_at_ms` is the device's clock when the person made a write that waited: the entry keeps it as a claim beside the host's `at_ms`.
 
 ## fold
 
@@ -26,7 +26,7 @@ The answer is the last `seq`, the `records` by kind and id (each `{version, valu
 
 ## revert
 
-Answer the entry that reverts entry `target`. Each record that entry changed goes back to its state before the entry. A record the entry created leaves the fold, and the log keeps every state of it (D-198).
+Answer the entry that reverts entry `target`. Each record that entry changed goes back to its state before the entry. A record the entry created leaves the fold, and the log keeps every state of it.
 
 The revert is refused, naming the record, when a later entry changed one of those records: a person decides what it becomes.
 
@@ -46,7 +46,7 @@ A reference path names a field of the kind's document (`/requests/*/stop`). Its 
 
 A target is judged when it is a record kind that a log keeps and that log's fold is given. A record the fold holds exists in any state: retired is a state, and the rules of each reference judge states. The network's things, a trip instance, a document or an attachment by hash, an entry by seq, and an external thing are not judged here. Each broken reference names the referring record (`log`, `kind`, `id`), the `field` in it (a JSON pointer inside the record), the `target`, and the id it `names`, in (log, kind, id, field) order.
 
-A referring record in a version newer than the kind table reads (after a rollback, D-186) is not judged: the table's declarations may not be its fields. The answer lists it in `unjudged` (its log, kind, id, `version`, and the version the table `reads`), a warning, never a broken reference.
+A referring record in a version newer than the kind table reads (after a rollback) is not judged: the table's declarations may not be its fields. The answer lists it in `unjudged` (its log, kind, id, `version`, and the version the table `reads`), a warning, never a broken reference.
 
 With `entries` (each log's stored entries, `{seq, text}`), each broken reference also names the `entry` that broke it: the later of the entry that last wrote the referring record and the entry that last changed the target. In one log the later is the higher seq; across two logs it is the later clock. A target never written names the referrer's entry. `store verify` asks it this way.
 

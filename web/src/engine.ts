@@ -341,7 +341,7 @@ const inspection = {
 if (typeof window !== "undefined") window.__bus = inspection;
 export type Inspection = typeof inspection;
 
-// The sync server and a static host serve one layout (D-131). Paths are
+// The sync server and a static host serve one layout. Paths are
 // relative to the page, so a deployment may live under a prefix. Every pin
 // is the manifest's, never a response header's.
 export type DeploymentManifest = {
@@ -413,7 +413,7 @@ async function manifestOf(opts: ReadOptions): Promise<DeploymentManifest> {
   return opts.manifest ?? (await readManifest(opts.signal)).manifest;
 }
 
-// With no server to import the feed (D-132), the page fetches the zip,
+// With no server to import the feed, the page fetches the zip,
 // imports it in its own assembly, and checks the URL once a day. Cache
 // Storage keeps the last zip, so a device boots offline on the schedule it
 // had.
@@ -509,7 +509,7 @@ async function pickInForce(date: string, manifest: DeploymentManifest, signal?: 
 
 // An open page compares this with its network on each poll and re-pins
 // when it moved: a republish, a new pick, or the date crossing a pick's
-// effective date (D-63).
+// effective date.
 export async function servedNetworkPin(date: string, opts: ReadOptions = {}): Promise<string | null> {
   const manifest = await manifestOf(opts);
   const pick = await pickInForce(date, manifest, opts.signal);
@@ -549,13 +549,13 @@ export async function servedNetwork(
   return { network, boundary };
 }
 
-// Writes need a token and reads stay public (D-58).
+// Writes need a token and reads stay public.
 export async function deploymentAuth(opts: ReadOptions = {}): Promise<{ issuer: string; client_id: string; scope: string } | null> {
   return (await manifestOf(opts)).auth ?? null;
 }
 
 // The id is the zip's hash (`feed_hash`), which the stops page compares
-// the stops record with (D-150).
+// the stops record with.
 export async function servedFeed(readers: CapId[], opts: ReadOptions = {}): Promise<{ network: Doc<Network>; id: string } | null> {
   let cap: CapId | null = null;
   for (const c of readers.length ? readers : (["network"] as CapId[])) if (!cap && (await available(c))) cap = c;
@@ -583,7 +583,7 @@ export async function servedNetworkValue(signal?: AbortSignal): Promise<{
   };
 }
 
-// Every published pick, earlier, in force, and later alike (D-139).
+// Every published pick, earlier, in force, and later alike.
 export async function publishedPlanSet(opts: ReadOptions = {}): Promise<PublishedPlans | null> {
   const plansHash = (await manifestOf(opts)).plans_hash;
   return plansHash ? blobJson<PublishedPlans>(plansHash, opts.signal) : null;

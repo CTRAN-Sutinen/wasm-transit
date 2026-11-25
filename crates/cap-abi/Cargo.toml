@@ -13,7 +13,7 @@ ts-rs = { workspace = true }
 schemars = { workspace = true }
 # No domain library: each kind's library implements
 # `transit_version::Load`, and the kernel keeps one registry for each
-# type (D-239). An arch gate holds the kernel to transit-version alone.
+# type. An arch gate holds the kernel to transit-version alone.
 
 [dev-dependencies]
 proptest = "1"

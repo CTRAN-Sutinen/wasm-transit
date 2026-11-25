@@ -189,7 +189,7 @@ macro_rules! assembly {
 }
 
 
-// The library of each kind reads and hashes its own kind (D-239).
+// The library of each kind reads and hashes its own kind.
 pub use transit_version::document::{
     canonical_bytes, canonical_hash, content_hash, is_gzip, noting_read, parse_document, parse_versioned, read_versioned,
     versioned, ReadAhead,
@@ -257,7 +257,7 @@ impl<T> std::ops::Deref for Current<T> {
 }
 
 /// Reads like [`Current`], and also refuses a copy read ahead through a
-/// read-only step (D-186).
+/// read-only step.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(transparent)]
 pub struct Base<T>(pub T);
@@ -275,7 +275,7 @@ where
     }
 }
 
-/// Also return the fields that this build does not know (D-167).
+/// Also return the fields that this build does not know.
 pub fn read_base<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), Refusal> {
     let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<Base<T>>(doc));
     Ok((read.map_err(|e| stashed().unwrap_or_else(|| e.to_string().into()))?.0, unknown))
@@ -338,7 +338,7 @@ thread_local! {
 }
 
 /// A `validate` answers these fields, so the write path flags them for a
-/// person. The list is empty outside [`answer`] (D-167).
+/// person. The list is empty outside [`answer`].
 pub fn request_unknown_fields() -> Vec<String> {
     REQUEST_UNKNOWN.with(|noted| noted.borrow().clone())
 }

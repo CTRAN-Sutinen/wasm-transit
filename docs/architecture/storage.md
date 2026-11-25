@@ -27,7 +27,7 @@ With `-store <url>` the server keeps the record in object storage.
 The URL takes one of four forms: `s3://bucket/prefix` (S3 or an
 S3-compatible endpoint, named by `?endpoint=`), `azblob://container/prefix`,
 `gs://bucket/prefix`, or `mem://`, which is gone when the process exits. The agency chooses the
-provider, and the engine favors none (D-113, D-116).
+provider, and the engine favors none.
 
 The engine (`server/store/`) runs over one small backend interface
 (`backend.go`: get, stat, create-if-absent, list from a key, delete).
@@ -69,8 +69,8 @@ against one store's address (an operator's own bucket).
   writes the cache back to the bucket, and the bucket wins the first
   time it answers ([server.md](server.md), "The disk cache").
 - **Nothing serving deletes.** A serving process opens the store with
-  `store.OpenServing`. It creates, reads and lists. It never deletes
-  (D-117). The offline tools are in `server/cmd/store` (`just store …`).
+  `store.OpenServing`. It creates, reads and lists. It never deletes.
+  The offline tools are in `server/cmd/store` (`just store …`).
   `gc` collects orphans with its own delete-capable credentials.
 
 The `manifest` pointer is the root. Publishing is one CAS on it. The
@@ -94,7 +94,7 @@ Only a frozen version is adopted, and the pick names the stops log
 entry it read (`stops_seq`). So every network that was ever in force is
 in the record, with the proposals that led to it.
 
-**The derived documents are in the record** (D-199). The server reads
+**The derived documents are in the record**. The server reads
 two inputs, the GTFS zip and the street layer, and commits each read
 to `source.feed` and `source.streets`. A module makes documents from
 them: cap-network imports the network and its boundary, and cap-streets
@@ -126,19 +126,19 @@ and the document is the fold).
 | Collections: records by id, many writers | stops, stop requests | frequent, one record at a time | without bound | log (`stops`) |
 | Collections: records by id, many writers | service alerts, alert templates | frequent, one record at a time | without bound | log (`alerts`) |
 | Collections: records by id, many writers | notes | frequent, one record at a time | without bound | log (`notes`) |
-| Attachments: binary | photos and site drawings (D-162) | per record | steady | a bucket of their own, named by hash |
+| Attachments: binary | photos and site drawings | per record | steady | a bucket of their own, named by hash |
 | Event tables: many rows, append only | none (heartbeats keep only the latest; TIDES, AVL and APC are not held) | n/a | n/a | n/a |
 
 A document suits artifacts and config but not a collection. Each commit
 stores the whole collection again, so the bucket grows with the
-collection's size times its commits (D-121's measurements), and two
+collection's size times its commits, and two
 writers who change different records conflict. A log stores only what
 each write changed.
 
 ## Every object explains itself
 
 Every persisted document carries its kind and version inside it
-(D-115; [bus.md](bus.md), "Every document says what it is"). The blob's
+([bus.md](bus.md), "Every document says what it is"). The blob's
 envelope repeats them, so a reader maps any blob to its schema with no
 module. Each kind's JSON Schema and a worked example are published in
 the registry (`registry/documents.json`; [registry.md](registry.md)).
@@ -171,7 +171,7 @@ invariants, concurrency, and attribution ([agency-data.md](agency-data.md),
   hold it to that. The server treats the documents as opaque JSON. Each
   write that changes a record is one entry of the disruptions log. A mistake is fixed by a
   revert, which is a new entry (`POST /logs/disruptions/revert`).
-- **The intent write** (`POST /logs/<log>`, D-189) is how a page writes
+- **The intent write** (`POST /logs/<log>`) is how a page writes
   the stops log, the alerts log, and the notes log. The body is what the
   person asked for: `{key, ops, read_seq, read_seqs, claimed_at_ms}`.
   The server runs each op over the documents at the head, in order, so
@@ -195,7 +195,7 @@ invariants, concurrency, and attribution ([agency-data.md](agency-data.md),
     A reference that held then and is broken now lands, with a warning.
   - `claimed_at_ms` is the device's clock when the person made a write
     that waited. The entry keeps it in its intent, beside the server's
-    stamp, and no rule reads it as the record's time (D-222).
+    stamp, and no rule reads it as the record's time.
 - **Stops and stop requests** are one log, written by intent (stops
   `add_event`, `correct_event`; requests `put`, `record_work_order`).
   Two writers who change different stops both land. A correction of an
@@ -227,7 +227,7 @@ invariants, concurrency, and attribution ([agency-data.md](agency-data.md),
   is refused, and a pointer kind (the policy) is checked by its module
   (cap-authz `validate`), which answers the bytes stored.
 
-Permissions are set per pointer and action by the policy (D-58..D-61).
+Permissions are set per pointer and action by the policy.
 A role may write a pointer or not, with no finer grain. Reads are
 unrestricted except the policy itself and the logs' entries. The
 policy's blob is never served: its read class in the kind table is
@@ -242,7 +242,7 @@ rule.
 - A pointer's head (`/pointers/<name>`, `/manifest`, `/edits`) can be
   stale. While the bucket does not answer, a
   server serves the heads it holds, in memory or in its disk cache,
-  labelled with their age (D-119, D-224; [server.md](server.md)).
+  labelled with their age (D-224; [server.md](server.md)).
 - A pointer's log (`/pointers/<name>/log?since=`) is the change feed.
   It lists the commits after a hash the reader holds.
 - A log's entries (`/logs/disruptions?since=<seq>`,
@@ -275,7 +275,6 @@ is what must stay true. Change it only with the user, after reading
   the disk's failure is the store's failure. Online GC in every server
   races a commit over object storage, and it needs delete rights
   everywhere.
-- **Decided:** D-113, D-117.
 
 ### The record is documents in a bucket, not rows in a database (this file)
 - **Holds:** the record is immutable, self-describing objects in open
@@ -295,9 +294,8 @@ is what must stay true. Change it only with the user, after reading
 - **Rejected:** a relational database as the record. It adds a second
   durable service to run, back up, and migrate. Its at-rest format is the
   vendor's.
-- **Decided:** D-113, D-115, D-152.
 
-### An infrastructure choice is judged by its failures, not by its parts (this file; D-113, D-116)
+### An infrastructure choice is judged by its failures, not by its parts (this file)
 - **Holds:** a storage, infrastructure, or durability choice is weighed
   for an agency that runs 24/7 at moderate to low traffic, with high
   audit needs. Operational simplicity means that the part breaks
@@ -329,7 +327,7 @@ is what must stay true. Change it only with the user, after reading
   replayed, and a log is one timeline. The bucket gives durability,
   whole-object writes, conditional create, and strong consistency, so the
   engine adds only order and folding. A collection's storage grows with
-  what changed, not with its size times its commits (D-121).
+  what changed, not with its size times its commits.
 - **Costs:** the fold and the checkpoints are this repo's code. An ad-hoc
   question needs an export. Entries keep their versions forever, so the
   migration chain must stay complete. Data in the record cannot be
@@ -344,7 +342,7 @@ is what must stay true. Change it only with the user, after reading
   its writer is not in Go). Two needs reopen a database: data that must
   be deletable, or throughput that a log cannot carry. A database added
   then is fed from the logs.
-- **Decided:** D-190, D-121.
+- **Decided:** D-190.
 
 ### One log engine for every kind, and a revert takes out what it created (`crates/transit-log`, `crates/cap-log`, `server/caplog.go`)
 - **Holds:** cap-log never reads a record. A change is `{kind, version,
@@ -353,7 +351,7 @@ is what must stay true. Change it only with the user, after reading
   entry may hold the records of two kinds. A log that a receive op
   writes takes the whole write from one capability, which links each
   kind's library. The stops log's is cap-stops, which links
-  transit-requests (`crates/transit-log/src/receive.rs`; D-228). `before`
+  transit-requests (`crates/transit-log/src/receive.rs`). `before`
   hashes the record as stored. A revert takes a record the reverted entry created
   out of the document. A kind whose merge would undo that (the edit
   document's LWW) writes back its own records instead: stamped to win
@@ -361,7 +359,7 @@ is what must stay true. Change it only with the user, after reading
 - **Because:** completing a request and adding the stop's event is one
   transaction, and capabilities never call each other. A question that
   spans kinds is one op, in the capability whose need it answers, so
-  the write's steps are not sequenced in a host (D-228). The shared
+  the write's steps are not sequenced in a host. The shared
   library composes the entry and reads no record, so each receive op
   composes it the same way. A stop is one record, because
   an event's place among events on the same day is the order of writing.
@@ -375,10 +373,9 @@ is what must stay true. Change it only with the user, after reading
   asks cap-log twice, with cap-sync between.
 - **Rejected:** requests merged into cap-stops (one module, two needs:
   rule 3); the server sequencing a stops write between cap-stops and
-  cap-requests (a rule only that host applies: D-228); an event as a
+  cap-requests (a rule only that host applies); an event as a
   record (its order is not in its content); an engine of its own for
   each log (two engines to keep, and the same rules written twice).
-- **Decided:** D-197, D-198, D-228.
 
 ### The derived documents are stored when they are made (`server/derived.go`)
 - **Holds:** the network, the boundary, the streets, and the walk table
@@ -402,7 +399,7 @@ is what must stay true. Change it only with the user, after reading
   commit record would change format, and the import's notes would have
   no home); one root that names its documents, as a build does (gc and
   verify would follow one more kind of reference).
-- **Decided:** D-199. **Provisional:** D-200 (the derivation record).
+- **Provisional:** D-200 (the derivation record).
 
 ### Freezing and adopting are two acts in one log (`crates/transit-plans`, `crates/cap-plans` `receive`, `server/planslog.go`)
 - **Holds:** a freeze writes a network version to the record by hash,
@@ -416,7 +413,7 @@ is what must stay true. Change it only with the user, after reading
   "published" is not the same as "in force". The record must hold every
   proposal and every network that was ever in force. The pointer keeps
   each frozen network named, so gc keeps it while the log names it by
-  hash. A pick is corrected by its own rules (D-75, D-76): a revert of an
+  hash. A pick is corrected by its own rules: a revert of an
   adoption would put an older pick back in force without the chain's
   checks.
 - **Costs:** the frozen versions grow without bound, one small record
@@ -451,7 +448,7 @@ is what must stay true. Change it only with the user, after reading
   field that names a blob. `store verify` and `store gc` follow the
   marks, from blobs and from log records.
 - **Because:** the bucket is the agency's record, and it must be
-  readable with no app (D-115). A reader learns each document's schema,
+  readable with no app. A reader learns each document's schema,
   and the links between documents, from the bucket alone. gc keeps a
   blob that only a log names, and verify finds a reference to a missing
   blob.

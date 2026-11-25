@@ -1,6 +1,6 @@
 package main
 
-// The intent write over HTTP (D-189, D-222; logwrite.go), the properties
+// The intent write over HTTP (logwrite.go), the properties
 // an outbox relies on:
 //
 //  1. A resent write with its key lands once, even after another writer

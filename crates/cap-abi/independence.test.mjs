@@ -1,4 +1,4 @@
-// Pins D-77: a capability whose answer depends on what a neighbour computed
+// Pins assembly independence: a capability whose answer depends on what a neighbour computed
 // first fails the independence gate, and one that only caches passes.
 
 import { test } from "node:test";

@@ -1,4 +1,4 @@
-//! The bus profile (D-26) allows every class, because the planner judges a
+//! The bus profile allows every class, because the planner judges a
 //! street's class. It only names the classes that the data does not clearly
 //! allow a bus on, for the planner to confirm.
 

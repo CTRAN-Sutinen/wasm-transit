@@ -1,6 +1,6 @@
 package main
 
-// Pins the instances of the server's one module (D-227;
+// Pins the instances of the server's one module (
 // docs/architecture/server.md, "The instances"): authz answers through
 // a trap in the long-lived instance, an import's instance is gone after
 // the import, and a refresh answers every request with no wait and

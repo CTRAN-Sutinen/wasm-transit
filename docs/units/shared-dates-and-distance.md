@@ -2,7 +2,7 @@
 
 Goal: each library parses and writes the service date ("YYYY-MM-DD")
 through one helper, with one rule for what it accepts, and
-transit-network measures distance through transit-geo (D-250), as the
+transit-network measures distance through transit-geo, as the
 other libraries do.
 
 Blocked: D-251 (where the date helper lives, and whether

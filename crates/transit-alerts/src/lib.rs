@@ -1,5 +1,5 @@
-//! The service alerts document and the alert templates document (D-206..D-210,
-//! D-216).
+//! The service alerts document and the alert templates document (D-206, D-207,
+//! D-209).
 //!
 //! An alert is its own record in its own document, not a payload of the edit
 //! document, because an alert changes no service. The board and router patch
@@ -8,8 +8,10 @@
 //! The record keeps every translation, and the live document carries one
 //! (D-20). An alert can explain a trip instance that the live feed cancels,
 //! because on C-TRAN the feed is where cancels come from (D-213). Nothing
-//! writes an alert from a disruption. What no alert explains is
-//! transit-disruptions' gap list (D-218).
+//! writes an alert from a disruption. `explains` names the trip instance as a
+//! third kind of source. A separate field would give one idea two fields, and
+//! matching by the alert's entities would be a rule, not a recorded fact.
+//! What no alert explains is transit-disruptions' gap list.
 //!
 //! [`fill`] fills a template's blanks, so names and dates read the same in
 //! every alert. A blank that it cannot fill stays and is named.
@@ -121,7 +123,7 @@ pub struct ServiceAlerts {
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<2>,
     pub alerts: BTreeMap<String, ServiceAlert>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -165,7 +167,7 @@ pub struct ServiceAlert {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertSource>>")]
     pub explains: Vec<AlertSource>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -210,7 +212,7 @@ pub struct AlertEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub start_secs: Option<u32>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -228,7 +230,7 @@ pub enum AlertSource {
         #[schemars(extend("x-references" = "stop"))]
         stop: String,
     },
-    /// A trip instance that the live feed cancels (D-216). Version 2.
+    /// A trip instance that the live feed cancels. Version 2.
     #[schemars(extend("x-references" = "trip_instance"))]
     Trip { trip: String, date: String, start_secs: u32 },
 }

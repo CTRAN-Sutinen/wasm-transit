@@ -1,5 +1,5 @@
 //! The chain is derived from the plan set's metadata on every call, and
-//! does not depend on input order (D-75, D-76).
+//! does not depend on input order.
 
 use chrono::NaiveDate;
 use transit_plans::{periods, resolve, validate, PlanInfo};

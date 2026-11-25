@@ -83,7 +83,7 @@ fn the_vocabulary_is_the_librarys() {
     assert_eq!(v["open_statuses"], json!(["drafted", "submitted", "ordered"]));
 }
 
-/// An ordinary put replaces a held id (D-228).
+/// An ordinary put replaces a held id.
 #[test]
 fn a_new_request_is_refused_a_held_id() {
     let held = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "drafted" } }));
@@ -106,7 +106,7 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(run(json!({ "op": "validate", "requests": { "kind": "stops" } }))["error"]["message"].is_string());
 }
 
-/// An unknown request is an error (D-165).
+/// An unknown request is an error.
 #[test]
 fn a_work_order_is_recorded_on_its_request() {
     let held = ok(json!({ "op": "load_stop_requests", "requests": sample() }));
@@ -118,7 +118,7 @@ fn a_work_order_is_recorded_on_its_request() {
     assert!(run(json!({ "op": "record_work_order", "requests_hash": held["requests_hash"], "id": "nope", "work_order": { "id": "x" } }))["error"]["message"].is_string());
 }
 
-/// An unknown field is kept and flagged, never refused (D-167).
+/// An unknown field is kept and flagged, never refused.
 #[test]
 fn validate_flags_an_unknown_field_and_keeps_it() {
     let mut newer = sample();
@@ -131,7 +131,7 @@ fn validate_flags_an_unknown_field_and_keeps_it() {
     assert_eq!(document["requests"][&first]["permit_fee"], 125);
 }
 
-/// The document assembled from its records is the same document (D-197).
+/// The document assembled from its records is the same document.
 #[test]
 fn the_document_and_its_log_records_round_trip() {
     let v = ok(json!({ "op": "validate", "requests": sample() }));
@@ -156,8 +156,7 @@ fn the_document_and_its_log_records_round_trip() {
     assert_eq!(old["document_hash"], v["document_hash"]);
 }
 
-/// An `open` sends the request, and a `refresh` sends the held work order
-/// (D-228).
+/// An `open` sends the request, and a `refresh` sends the held work order.
 #[test]
 fn the_work_order_call_answers_what_to_send() {
     let held = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "submitted" } }));

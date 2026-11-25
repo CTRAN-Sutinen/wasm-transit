@@ -1,6 +1,8 @@
-//! `distance_m` ends in `2·asin(√a)`, as the libraries that used it before
-//! wrote it, so their answers keep the same bytes (D-250). Within 5 km the
-//! local frame agrees with it to 0.1%.
+//! One distance for every library: the great-circle distance on a sphere of
+//! the mean earth radius (6,371,000 m), so two libraries never disagree on how
+//! far two points are. `distance_m` ends in `2·asin(√a)`, as the libraries
+//! that used it before wrote it, so their answers keep the same bytes. Within
+//! 5 km the local frame agrees with it to 0.1%.
 
 pub const EARTH_RADIUS_M: f64 = 6_371_000.0;
 

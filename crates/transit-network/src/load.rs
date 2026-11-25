@@ -1,9 +1,8 @@
 //! The network's entry in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl (D-239).
+//! (`crates/cap-abi/src/kinds.rs`) names this impl.
 
 /// `timezone` is the time zone of the network's operator. A host reads its
-/// clock in that zone to get the date of the network (the "today" of a pick,
-/// D-237).
+/// clock in that zone to get the date of the network (the "today" of a pick).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NetworkLoaded {
     pub network_hash: String,

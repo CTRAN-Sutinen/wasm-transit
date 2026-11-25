@@ -55,7 +55,7 @@ pub enum Request {
         #[ts(optional)]
         previous: Option<Previous>,
     },
-    /// The next-run look-ahead never uses the live document (D-42).
+    /// The next-run look-ahead never uses the live document.
     GroupedBoard {
         network_hash: String,
         #[serde(default)]

@@ -38,8 +38,8 @@ type ReferenceFindings struct {
 	Module    string            `json:"module"`
 	Seqs      map[string]int64  `json:"seqs"`
 	Broken    []json.RawMessage `json:"broken"`
-	// Unjudged are records in a version newer than the kind table reads
-	// (D-186). They are a warning.
+	// Unjudged are records in a version newer than the kind table reads.
+	// They are a warning.
 	Unjudged []json.RawMessage `json:"unjudged,omitempty"`
 }
 
@@ -230,7 +230,7 @@ func VerifyChecking(ctx context.Context, b Backend, fold LogFolder, refs Referen
 }
 
 // manifestDocuments are the manifest's fields that name a document under
-// a pointer (D-199). Folds that logs keep and the modules' hashes are not
+// a pointer. Folds that logs keep and the modules' hashes are not
 // blobs, so verify does not look for them.
 var manifestDocuments = []string{
 	"feed_hash", "network_hash", "boundary_hash", "streets_hash", "walks_hash",

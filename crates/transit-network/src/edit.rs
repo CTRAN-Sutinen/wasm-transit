@@ -438,10 +438,10 @@ fn draw_alignment(
     Ok(created)
 }
 
-/// D-41 and D-112 decide how a fork carries the calendar forward.
+/// A fork carries each weekly calendar that still runs in its last week to the period's end.
 fn carry_calendars(net: &mut Network, through: NaiveDate) {
     // A range that starts after `through`, or a date past it, is outside the
-    // calendar of the fork (D-138). It must not make a type look closed or
+    // calendar of the fork. It must not make a type look closed or
     // still running.
     let in_time = |r: &DateRange| r.start <= through;
     let weekly = |rule: &CalendarRule| rule.days != WeekdaySet::none() && rule.ranges.iter().any(in_time);
@@ -471,7 +471,7 @@ fn carry_calendars(net: &mut Network, through: NaiveDate) {
     }
 }
 
-/// The calendar of a fork is its period (D-138).
+/// The calendar of a fork is its period.
 fn clip_calendars(net: &mut Network, from: Option<NaiveDate>, through: Option<NaiveDate>) {
     let inside = |d: NaiveDate| from.is_none_or(|f| d >= f) && through.is_none_or(|t| d <= t);
     for service_type in net.service_types.values_mut() {

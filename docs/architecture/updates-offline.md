@@ -3,8 +3,8 @@
 A page that reads the deployment's network follows it. A page whose
 `ui.json` says `"offline": true` installs as an app. Every generated UI
 is such a page: the rider pages (ride-now, the stop display) and the
-staff pages (service design, service change, stops, disruptions; D-189).
-They share one lifecycle (D-63, D-65):
+staff pages (service design, service change, stops, disruptions).
+They share one lifecycle:
 
 - **Data re-pins without a reload.** The page's network is one of its
   inputs ([generated-uis.md](generated-uis.md), kit's "The inputs"),
@@ -51,7 +51,7 @@ They share one lifecycle (D-63, D-65):
   is in flight.
 
   A document another build wrote also makes the page look at once
-  (`web/src/versions.ts`, D-79). A module refuses a version newer than
+  (`web/src/versions.ts`). A module refuses a version newer than
   it reads, or the server refuses a write over a copy that it reads ahead
   read-only. The engine and `writeFetch` pass every such refusal on,
   and `installApp` asks the browser for the deployment's worker. The page then applies the build by the rule above.
@@ -83,7 +83,7 @@ They share one lifecycle (D-63, D-65):
   (kit's `readHeadKept`, in IndexedDB), and labels it with the time the
   server last confirmed it.   A page never shows an old answer as
   current.
-- **The outbox (D-189).** A staff page's write that cannot reach the
+- **The outbox.** A staff page's write that cannot reach the
   server waits on the device, in order, and is sent when the server
   answers. The server stays the authority on writes.
   - `src/outbox.ts` is the core, and `outbox.test.mjs` holds its properties.
@@ -98,7 +98,7 @@ They share one lifecycle (D-63, D-65):
     named by the hash of its bytes, waits as its bytes, and is queued
     before the survey that names it, so it is sent first.
   - A write that waited carries `claimed_at_ms`, the device's time it
-    was made (D-222).
+    was made.
   - A network failure or a `5xx` keeps the write waiting, and the
     writes after it wait behind it. A `401` holds the outbox until the
     person signs in, and fails nothing. A token refresh that cannot
@@ -129,7 +129,7 @@ server's copy of `sw.js`. `e2e/offline-staff.spec.mjs` allows them on a
 store-mode server of its own, and takes the browser's network away for
 an outage.
 
-Layouts are hand-placed Svelte, and ship with each UI's build (D-176).
+Layouts are hand-placed Svelte, and ship with each UI's build.
 Frontend conventions are in `docs/CONVENTIONS.md`.
 
 
@@ -153,7 +153,6 @@ the user, after you read **Because**.
   never reloads a working display into an empty one.
 - **Rejected:** reloading as soon as new code appears (reloads under the
   rider); waiting for a manual reload.
-- **Decided:** D-63.
 
 ### Offline at launch (`"offline": true` in `ui.json`, the service worker's caches)
 - **Holds:** ride-now and the stop display install and boot offline. The
@@ -173,7 +172,6 @@ the user, after you read **Because**.
   They do not go stale. A cached prediction replayed as live would be
   wrong.
 - **Rejected:** the HTTP cache only, offline later.
-- **Decided:** D-65.
 
 ### Staff pages work offline and queue their writes (`"offline": true`, `src/outbox.ts`, `POST /logs/<log>`)
 - **Holds:** every staff page installs and boots offline like a rider
@@ -189,7 +187,6 @@ the user, after you read **Because**.
   and the key makes a resend land once.
 - **Rejected:** online only; offline with a write that fails while the
   server is away.
-- **Decided:** D-189, D-222.
 
 ### A staff page's assembly is cached on first use (`"precache_assembly": false`)
 - **Holds:** in a build of every UI, the shell precaches the rider
@@ -218,4 +215,4 @@ the user, after you read **Because**.
 - **Rejected:** fixed budgets for each page (40 MB for the display,
   80 MB for ride-now); a ratchet whose ceilings only come down; a named
   minimum phone.
-- **Decided:** D-64, D-187.
+- **Decided:** D-187.

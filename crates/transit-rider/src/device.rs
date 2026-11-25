@@ -16,7 +16,7 @@ transit_version::kind_tag!(
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_board/")]
 pub struct RecentPlaces {
-    /// A copy without the kind tag and version is this kind, version 1 (D-115).
+    /// A copy without the kind tag and version is this kind, version 1.
     #[serde(default)]
     #[ts(type = "\"recent_places\"")]
     pub kind: RecentPlacesKind,
@@ -49,7 +49,7 @@ pub struct RecentPlace {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_board/")]
 pub struct LiveFeeds {
-    /// A copy without the kind tag and version is this kind, version 1 (D-115).
+    /// A copy without the kind tag and version is this kind, version 1.
     #[serde(default)]
     #[ts(type = "\"live_feeds\"")]
     pub kind: LiveFeedsKind,

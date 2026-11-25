@@ -1,4 +1,4 @@
-// A plain static host for e2e/static-deploy.spec.mjs (D-131). It serves files
+// A plain static host for e2e/static-deploy.spec.mjs. It serves files
 // from a directory with a content type by extension, and does no content
 // negotiation, ETag, Range, compression, or routing, so a page that boots here
 // boots on any static host. Like Cloudflare Workers and Netlify, it sends the
@@ -10,7 +10,7 @@
 // `cors` adds `Access-Control-Allow-Origin: *`, as an agency's feed host sends
 // it (e2e/static-feed-url.spec.mjs).
 //
-// `forward=<server URL>` makes it a UI's own host (D-171; e2e/ui-origins.spec.mjs).
+// `forward=<server URL>` makes it a UI's own host (e2e/ui-origins.spec.mjs).
 // It serves the UI's bundle from <root> and forwards the data paths to the
 // server, so the page is same-origin with its data. The data paths are every
 // route of the server's HTTP contract (server/openapi.json, each path's

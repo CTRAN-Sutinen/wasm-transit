@@ -209,7 +209,7 @@ func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 	})
 }
 
-// A network that the server served and never stored is a break (D-199). An
+// A network that the server served and never stored is a break. An
 // older manifest is history.
 func TestVerifyChecksTheHeadManifestsDocuments(t *testing.T) {
 	eachBackend(t, func(t *testing.T, b Backend) {

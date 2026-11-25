@@ -58,7 +58,7 @@ pub struct Way {
     pub name: Option<String>,
 }
 
-/// A mode profile decides what each mode may use (D-26). The import does
+/// A mode profile decides what each mode may use. The import does
 /// not (D-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]

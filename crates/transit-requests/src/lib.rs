@@ -1,15 +1,14 @@
-//! The stop requests document (D-159), at version 2 (D-234; the chain from
+//! The stop requests document, at version 2 (the chain from
 //! v1 is in `version`).
 //!
 //! A request is its own record and not an event on the stop, because the
 //! work has its own life and is not a fact about the stop. It tracks the work
 //! order that the agency's system opens, shows it as given, and never decides
-//! it here. [`StopRequests::checked`] refuses only what makes a request wrong
-//! (D-152).
+//! it here. [`StopRequests::checked`] refuses only what makes a request wrong.
 //!
 //! A request names its stop, and the stop's event names the request it
 //! carries out. Both live in the stops log, so completing a request and
-//! adding its stop's event is one entry (D-197).
+//! adding its stop's event is one entry.
 
 #![forbid(unsafe_code)]
 
@@ -52,7 +51,7 @@ pub const MARKINGS: [&str; 4] = ["hub", "curb_mark", "stake", "other"];
 #[ts(export)]
 pub struct StopRequests {
     /// A copy without a version reads as v2, since every v1 document is a v2
-    /// document. A tagged v1 is brought forward by cap-migrate (D-115).
+    /// document. A tagged v1 is brought forward by cap-migrate.
     #[serde(default)]
     #[ts(type = "\"stop_requests\"")]
     pub kind: StopRequestsKind,
@@ -60,7 +59,7 @@ pub struct StopRequests {
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<2>,
     pub requests: BTreeMap<String, StopRequest>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -84,7 +83,7 @@ pub struct StopRequest {
     pub requested_on: Option<String>,
     /// A new stop's intent, because no schedule serves it yet. The routes are
     /// names the planner writes, not references into the network, because a
-    /// route can be one that no pick runs yet (D-234). `direction` is one of
+    /// route can be one that no pick runs yet. `direction` is one of
     /// [`DIRECTIONS`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
@@ -149,14 +148,14 @@ pub struct StopRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<Attachment>>")]
     pub attachments: Vec<Attachment>,
-    /// Fields this build does not know, kept as written (D-167).
+    /// Fields this build does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
 /// The deployment names the bucket, the server hands out the link, and only
-/// a signed-in person may read the file (D-162).
+/// a signed-in person may read the file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, rename = "RequestAttachment")]
 pub struct Attachment {
@@ -232,7 +231,7 @@ pub struct WorkOrder {
     pub extra: transit_version::Extra,
 }
 
-/// The host makes the call (D-228), and `record_work_order` records the
+/// The host makes the call, and `record_work_order` records the
 /// answer.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -309,7 +308,7 @@ impl StopRequests {
     }
 
     /// An ordinary `put` replaces the request held, so the writer states the
-    /// intent "new" (D-228).
+    /// intent "new".
     pub fn refuse_taken(&self, id: &str) -> Option<RequestRefusal> {
         self.requests.contains_key(id).then(|| RequestRefusal { request: id.to_string(), problem: RequestProblem::IdTaken })
     }
@@ -321,7 +320,7 @@ impl StopRequests {
         next
     }
 
-    /// A field that the answer lacks keeps the held one (D-165). A write
+    /// A field that the answer lacks keeps the held one. A write
     /// passes [`StopRequests::checked`] after it.
     pub fn record_work_order(&self, id: &str, answer: WorkOrder) -> Option<StopRequests> {
         let mut next = self.clone();

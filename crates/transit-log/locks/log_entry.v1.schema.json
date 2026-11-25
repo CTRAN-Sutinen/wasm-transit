@@ -44,7 +44,7 @@
           ]
         },
         "claimed_at_ms": {
-          "description": "A claim beside the host's `at_ms`, never the entry's time (D-222).",
+          "description": "A claim beside the host's `at_ms`, never the entry's time.",
           "format": "uint64",
           "minimum": 0,
           "type": [

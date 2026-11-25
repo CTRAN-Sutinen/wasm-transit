@@ -11,7 +11,7 @@ serde_json = { workspace = true }
 ts-rs = { workspace = true }
 transit-authz = { path = "../transit-authz" }
 cap-abi = { path = "../cap-abi" }
-# The worked examples' fixtures, for the `examples` feature only (D-235).
+# The worked examples' fixtures, for the `examples` feature only.
 fixtures = { path = "../fixtures", optional = true }
 
 [features]

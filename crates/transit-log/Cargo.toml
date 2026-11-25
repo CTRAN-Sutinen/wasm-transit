@@ -1,6 +1,6 @@
 [package]
 name = "transit-log"
-description = "The append-only log of the agency's record (D-190, D-197): entries of changed records, the fold, checkpoints, the revert, and the idempotency keys. Kind-agnostic and pure."
+description = "The append-only log of the agency's record (D-190): entries of changed records, the fold, checkpoints, the revert, and the idempotency keys. Kind-agnostic and pure."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

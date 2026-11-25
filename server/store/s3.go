@@ -53,7 +53,7 @@ func OpenBackend(ctx context.Context, raw string) (Backend, error) {
 		}
 		return NewGCS(ctx, u.Host, strings.Trim(u.Path, "/"))
 	default:
-		return nil, fmt.Errorf("store URL %q: want s3://, azblob://, gs:// or mem:// (the store lives in object storage, D-113)", raw)
+		return nil, fmt.Errorf("store URL %q: want s3://, azblob://, gs:// or mem:// (the store lives in object storage)", raw)
 	}
 }
 

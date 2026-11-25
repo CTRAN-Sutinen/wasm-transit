@@ -1,6 +1,6 @@
 package main
 
-// The host half of the logs that cap-log keeps (D-190, D-197;
+// The host half of the logs that cap-log keeps (D-190;
 // docs/FORMATS.md, "The logs"). The host orders and stores entries and
 // checkpoints, and treats every entry, checkpoint, record, and document
 // as opaque bytes. cap-log folds them and never reads a record.
@@ -57,7 +57,7 @@ type logFold struct {
 	stored int64
 	asOfMs int64
 	// stale means the bucket did not answer, so the head is the last one
-	// that this process or its disk cache confirmed (D-119).
+	// that this process or its disk cache confirmed.
 	stale       bool
 	quarantined map[int64]string
 	gaps        []int64
@@ -184,7 +184,7 @@ func errStaleHead(f *logFold) error {
 }
 
 // refreshLog keeps a loaded fold, and reports it stale, while the bucket
-// does not answer (D-119).
+// does not answer.
 func (s *server) refreshLog(f *logFold) (stale bool, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -203,7 +203,7 @@ type logRefusal struct {
 // readSeq, when set, is the log's seq that the writer read. A write is
 // refused (409) when it changes a record that a later entry changed.
 // claimedAtMs is the device's clock when the person made the write, 0 if
-// the writer gives none. It is a claim beside the server's stamp (D-222).
+// the writer gives none. It is a claim beside the server's stamp.
 type logWrite struct {
 	writer, op, argsHash, key, note string
 	readSeq                         *int64

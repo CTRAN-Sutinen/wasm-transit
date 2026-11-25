@@ -13,7 +13,7 @@ import (
 const opEvict = 257
 
 // recordFeed writes each difference between the feed and the kind's
-// document as an event on the feed's first service date (D-150). It
+// document as an event on the feed's first service date. It
 // writes nothing without a store or such a document, or when nothing
 // differs.
 func (s *server) recordFeed(ctx context.Context, feed *loadedFeed) error {

@@ -3,8 +3,8 @@
 A generated UI's host has three jobs, and shared code declares and
 runs each of them:
 
-- the answer graph (`web/src/uis/answers.ts`, D-176) runs its op answers;
-- the outbox (`web/src/outbox.ts`, D-189) runs its writes;
+- the answer graph (`web/src/uis/answers.ts`) runs its op answers;
+- the outbox (`web/src/outbox.ts`) runs its writes;
 - the inputs (`web/src/uis/inputs.ts`) read the documents and feeds
   from outside the page.
 
@@ -33,7 +33,7 @@ gates.
    in part: after a write is sent, a staff page reads the manifest at
    once. Pin that in `offline-staff`, then delete it, or reword it to
    what is left.
-5. **The release gates** (D-236): `just test-release` and
+5. **The release gates**: `just test-release` and
    `just e2e-release`, once items 3 and 4 pass.
 
 A live feed that answers with old data (QAF-129) is the finding's own

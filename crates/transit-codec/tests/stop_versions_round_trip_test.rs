@@ -1,4 +1,4 @@
-//! D-150, D-151. A pick exported with a stop moved inside its dates is a feed
+//! A pick exported with a stop moved inside its dates is a feed
 //! with one stops.txt row per version, sharing the stop's code. Importing that
 //! feed adds no event to the stops document.
 

@@ -124,7 +124,7 @@ that is deployed on its own. A deployment puts each UI at its own URL.
   bundle and routes the data paths to the server. The store keeps each
   UI's builds, and each UI rolls back alone
   ([release-artifacts.md](release-artifacts.md), "Each UI at its own
-  URL"; D-171).
+  URL").
 
 | UI | Runs without a server | Needs the server for |
 |---|---|---|

@@ -58,7 +58,7 @@ Shared by every generated UI:
     staff page that boots offline. `readLiveFeeds()` reads the live
     feeds that `live-feeds.json` names. `readFeed()` reads one live
     feed, directly or through the dev relay that the config's `proxy`
-    names (`/rt`, D-67). The engine reads the manifest and the documents
+    names (`/rt`). The engine reads the manifest and the documents
     it pins (`readManifest`, `servedNetwork`, `served`).
   - `askOracle()` asks an oracle that the manifest lists (the geocoder)
     on a person's action, with a time limit.
@@ -105,7 +105,7 @@ Shared by every generated UI:
     flight. The property tests are `src/uis/inputs.test.mjs`.
   - The answer graph (`src/uis/answers.ts`, through kit's
     `answerGraph`) runs each host's flows. A UI's flows are code, not
-    data (D-176). A host declares its answers as `AnswerNode`s: the
+    data. A host declares its answers as `AnswerNode`s: the
     inputs each reads, the frame that renders it, when that frame is on
     screen, the capabilities its ops ask (`caps`), a document it cannot
     answer without (`requires`), the inputs it cannot answer without
@@ -157,7 +157,7 @@ component's code:
 - Combobox carries its own styles. Its list floats over the page, and a
   pick gives the focus back, so the page's keys work.
 - Service design: GroupLedger shows the peak with the trips that no
-  block carries chained in (D-46). ContextBar marks its status line when
+  block carries chained in. ContextBar marks its status line when
   it is a refusal, an error, or a change that left issues. A network
   with no plan frame is the "Base network" in PlanList. Readiness shows
   the issues and warnings that network `validate` or cap-author give,

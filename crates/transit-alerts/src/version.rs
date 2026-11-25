@@ -1,5 +1,5 @@
-//! The chain is kept forever (D-66). Service alerts v1 to v2 added a trip
-//! instance to `explains` (D-216). The alerts log keeps each record in the
+//! The chain is kept forever. Service alerts v1 to v2 added a trip
+//! instance to `explains`. The alerts log keeps each record in the
 //! version it was written in, and [`record_forward`] brings one to the
 //! current version.
 

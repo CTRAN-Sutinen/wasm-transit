@@ -1,5 +1,5 @@
-//! The work-rule document (D-50). The recovery requirement (D-9) and
-//! interlining per route pair (D-46) drive blocking. The run rules are for
+//! The work-rule document. The recovery requirement and
+//! interlining per route pair drive blocking. The run rules are for
 //! the runs cut.
 
 use proptest::prelude::*;

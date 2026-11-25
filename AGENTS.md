@@ -5,7 +5,7 @@ GTFS-rt with Rust, and ships as **capability modules**: WebAssembly
 modules with the same four exports and no imports. The browser, Node,
 and Go (wazero) run the same documents under the same contracts. Each
 generated UI links the capabilities that it needs into one module at
-build time (D-77, D-176).
+build time.
 
 Three rules shape every change (`docs/architecture/README.md`):
 
@@ -79,7 +79,7 @@ recipe for the first time. Build and test through the recipes.
   shows. `just check` runs both.
 - The gates build the wasm-fast modules, which behave as the release
   modules do. The `-release` recipes take about an hour. Run them when
-  a unit is done, not for each change (D-236).
+  a unit is done, not for each change.
 - `node tools/caps-run.mjs` is the agent runner. `node tools/ui-shot.mjs
   <ui>` takes a screenshot of a UI with its status and page errors.
 
@@ -105,7 +105,7 @@ crates/cap-abi     the kernel: the kind list, the registries, the module macros,
 crates/cap-*       the capabilities: each one registers ops over its library
 crates/generator   writes the manifest, the registry, the schema locks, and the
                    kind table. No module links it.
-crates/fixtures    the worked examples' fixtures (D-235). No module links it.
+crates/fixtures    the worked examples' fixtures. No module links it.
 assemblies/        generated: the module crates that `just caps` builds
 server/            the Go and wazero host
 web/               the Svelte 5 and Vite frontend: one page for each generated UI
@@ -128,18 +128,18 @@ qa/, LRP/          the standing QA tests and the dogfood material
   of picks is derived, never stored.
 - **The sync store is object storage.** The engine assumes only
   whole-object writes and a conditional create
-  (`docs/architecture/storage.md`; D-113).
+  (`docs/architecture/storage.md`).
 - **Documents are open formats** that name their kind and version
-  (`docs/FORMATS.md`; D-115).
+  (`docs/FORMATS.md`).
 - **The agency owns the data.** Every write goes through a write path
   that checks shape, invariants, concurrency, and attribution
-  (`docs/architecture/agency-data.md`; D-146, D-152).
+  (`docs/architecture/agency-data.md`).
 - **Nothing is deleted from the bucket.** A log keeps every state of
-  every record (D-198). Where a kind is still a document, "delete"
+  every record. Where a kind is still a document, "delete"
   means `status: "retired"`.
 - **Schedules change by replacing the artifact.** The server imports a
   published zip once and publishes the network. A browser never parses
-  GTFS that the server has (`docs/architecture/server.md`; D-132).
+  GTFS that the server has (`docs/architecture/server.md`).
 - **Sync is LWW for each record id, with tombstones.** `POST /edits` is
   the whole client protocol (`docs/architecture/storage.md`).
 
@@ -168,7 +168,7 @@ qa/, LRP/          the standing QA tests and the dogfood material
 - **External services are sources, presentation, or oracles**
   (`docs/architecture/web.md`, "External services").
 - **Adjacent systems are out of scope**
-  (`docs/architecture/adjacent-systems.md`; D-122).
+  (`docs/architecture/adjacent-systems.md`).
 - **A new op starts in the library**, and the capability wraps it. A
   new op is never host code.
 

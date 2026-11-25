@@ -1,4 +1,4 @@
-//! Pins the notes document (D-214, `crates/cap-notes/OPS.md`): what a write
+//! Pins the notes document (`crates/cap-notes/OPS.md`): what a write
 //! must pass, a note written and edited, nothing deleted, a target's notes,
 //! and the notes of a time span.
 

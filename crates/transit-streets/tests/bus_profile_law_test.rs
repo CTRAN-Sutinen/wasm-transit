@@ -1,4 +1,4 @@
-//! Pins the bus profile (D-26, `crates/cap-streets/OPS.md` "route"):
+//! Pins the bus profile (`crates/cap-streets/OPS.md` "route"):
 //!
 //! 1. A route does not depend on street class.
 //! 2. A route names its streets in order. Their meters add up to the

@@ -1,4 +1,4 @@
-//! Service combinations (D-55, D-94, D-140): the service types that run
+//! Service combinations (D-94): the service types that run
 //! together on the same dates. The oracle walks every date and calls `runs_on`
 //! for each type.
 //!

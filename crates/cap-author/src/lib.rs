@@ -43,7 +43,7 @@ pub enum Response {
 }
 
 /// A network read one version ahead is refused here, because an edit writes
-/// the next document (D-186).
+/// the next document.
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
     kind::<transit_network::Network>().require_writable(network_hash)
 }

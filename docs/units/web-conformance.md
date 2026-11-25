@@ -3,7 +3,7 @@
 The generated UIs, held to WCAG 2.2 AA and to the platform's current
 practice (the `modern-web-guidance` corpus: accessibility, motion,
 tables, forms, performance, security) in both deployment shapes. The
-rider UIs come first: they are the MVP, deployed serverless (D-131),
+rider UIs come first: they are the MVP, deployed serverless,
 and riders are the public.
 
 The rider UIs and the picker are held by a gate in `just e2e`

@@ -335,7 +335,7 @@ proptest! {
     }
 
     /// `type_coverage` for a combination equals `coverage` on every date the
-    /// combination holds (D-55). Calendars carry exceptions, so a holiday is a
+    /// combination holds. Calendars carry exceptions, so a holiday is a
     /// combination of its own.
     #[test]
     fn type_coverage_agrees_with_coverage(
@@ -984,7 +984,7 @@ proptest! {
     }
 
     /// `schedule_texture` is keyed by the service combination, and starts pool
-    /// across every member that runs the pattern (D-55). The oracle recomputes
+    /// across every member that runs the pattern. The oracle recomputes
     /// the pooling independently.
     #[test]
     fn schedule_texture_matches_the_starts_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
@@ -1253,7 +1253,7 @@ proptest! {
         );
     }
 
-    /// The service groups are the combinations (D-55). The date-scoped
+    /// The service groups are the combinations. The date-scoped
     /// `network_stats` and `hourly_trips` on each date a combination holds
     /// equal its pooled numbers.
     #[test]

@@ -1,9 +1,9 @@
 # Store durability — the sync store on object storage
 
 The sync store (`server/store/`; the layout and protocol in
-`docs/FORMATS.md`, the model in `docs/architecture/storage.md`) runs over object storage — S3, Azure Blob, GCS (D-113) —
+`docs/FORMATS.md`, the model in `docs/architecture/storage.md`) runs over object storage — S3, Azure Blob, GCS —
 with offline GC, boot sources, and degraded mode. Which provider a
-deployment runs on is the operator's choice (D-116), and the operator
+deployment runs on is the operator's choice, and the operator
 checks it with `just store-contract URL`; the engine favors none. What
 is left: a backup the agency can restore. How each shape of data is laid out in the
 bucket — the edits among them — is [storage-model.md](storage-model.md).
@@ -33,7 +33,7 @@ Everything but the edit document is small: twenty pick revisions and a
 few street imports are well under 1 GB a year. The edit document is
 the one that grows. Stored whole per commit, as the `edits` pointer
 did, it reaches terabytes over a decade at a busy agency's edit rate. The disruptions
-log (D-121, D-190; `docs/FORMATS.md`, "The logs") stores only the
+log (D-190; `docs/FORMATS.md`, "The logs") stores only the
 changed records.
 
 ## Contract runs
@@ -53,7 +53,7 @@ suite against their own bucket (`just store-contract URL`).
 ## Scope
 
 1. **Restore, proved.** Where the copies go and how often is the
-   operator's choice, made with the provider's own tools (D-82):
+   operator's choice, made with the provider's own tools:
    bucket versioning and replication, a periodic copy to a second
    bucket, or both. The repo's part is that a copy works. Every object
    is create-only, so a copy taken records first, then the blobs they

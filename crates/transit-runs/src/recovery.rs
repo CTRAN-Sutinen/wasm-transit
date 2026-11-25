@@ -27,7 +27,7 @@ pub struct RecoveryWait {
     pub run_secs: u32,
     pub gap_secs: u32,
     /// `None` when nothing is required: no rule and no authored layover, or
-    /// the trips are not adjacent in the block (D-9).
+    /// the trips are not adjacent in the block.
     pub required_secs: Option<u32>,
     pub required_by: Option<RecoverySource>,
     /// Negative when the wait is short (validation's `layover_infeasible`).

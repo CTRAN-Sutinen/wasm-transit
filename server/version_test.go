@@ -17,7 +17,7 @@ import (
 	"rustwasm/server/store"
 )
 
-// The canonical bytes (RFC 8785, D-169) sort the keys, so the records sit
+// The canonical bytes (RFC 8785) sort the keys, so the records sit
 // between the two tags.
 func isCurrentEdits(body string) bool {
 	return strings.HasPrefix(body, `{"kind":"edit_records","records":[`) && strings.HasSuffix(strings.TrimSpace(body), `],"schema_version":2}`)

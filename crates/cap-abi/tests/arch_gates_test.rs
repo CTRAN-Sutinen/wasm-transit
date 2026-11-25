@@ -32,7 +32,7 @@ fn the_lawful_workspace_passes() {
 }
 
 /// Only the generator's binary depends on the generator, and a capability
-/// names the fixtures only through its `examples` feature (D-235).
+/// names the fixtures only through its `examples` feature.
 #[test]
 fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     let mut ws = lawful();
@@ -62,7 +62,7 @@ fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     }
 }
 
-/// The kernel depends on transit-version alone (D-239).
+/// The kernel depends on transit-version alone.
 #[test]
 fn a_kernel_that_depends_on_a_domain_library_fails() {
     let mut ws = lawful();
@@ -212,7 +212,7 @@ fn a_list_that_names_a_capability_fails() {
     assert!(found[0].contains("cap-board"), "{found:?}");
 }
 
-// Gate 6 (D-254): a kind with a `post` route or a `work_order` is named
+// Gate 6: a kind with a `post` route or a `work_order` is named
 // nowhere in the plumbing, by its name in a literal, its load op, or its
 // hash fields. A kind the server serves on a route of its own is not
 // gated, and neither is a comment.

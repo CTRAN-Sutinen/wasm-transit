@@ -1,4 +1,4 @@
-//! Pins the door-to-door times of an itinerary (D-40, D-24). The properties
+//! Pins the door-to-door times of an itinerary (D-24). The properties
 //! hold over generated feeds and places, for leave-at and arrive-by:
 //!
 //! 1. `leave_secs` is the first transit leg's `board_secs` minus every walk

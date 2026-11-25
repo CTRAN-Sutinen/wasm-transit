@@ -3,8 +3,8 @@
 //!
 //! `module-<cap>` links one capability alone, for caps-run, agents, and the
 //! registry's blobs. `module-ui-<id>` links the capabilities that the `ops`
-//! of a UI's `ui.json` name (D-77), in id order. `module-server` links the
-//! Go server's (D-227).
+//! of a UI's `ui.json` name, in id order. `module-server` links the
+//! Go server's.
 //! `assemblies/.gitkeep` keeps the directory, so the workspace glob resolves
 //! in a fresh checkout.
 

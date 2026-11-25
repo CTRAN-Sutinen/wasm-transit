@@ -1,4 +1,4 @@
-//! The log capability (D-190, D-197). `OPS.md` holds the op contracts. The
+//! The log capability (D-190). `OPS.md` holds the op contracts. The
 //! server keeps the disruptions, stops, and plans logs through it and folds
 //! and reverts every log with it. The alerts and notes logs are written by
 //! their own receive ops.

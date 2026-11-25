@@ -1,5 +1,5 @@
 // Package httpcontract compares server/openapi.json with the lock,
-// server/openapi.lock.json, the contract as last released (D-81).
+// server/openapi.lock.json, the contract as last released.
 //
 // The new contract must accept every request that the lock accepts, and
 // may answer only what the lock answers. A removal is a break unless the

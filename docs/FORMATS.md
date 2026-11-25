@@ -2,7 +2,7 @@
 
 This file is the at-rest contract of the sync store. The storage model
 is in `docs/architecture/storage.md`. Every document is an open format,
-and a reader needs no app to read it (D-115). A document is plain JSON,
+and a reader needs no app to read it. A document is plain JSON,
 or an external open format (GTFS, GTFS-rt, GeoJSON). Nothing here needs
 wasm to read. The blobs are plain bytes. The envelopes and log records
 are plain JSON. The hash is sha256.
@@ -38,7 +38,7 @@ against one the server writes, and the index lists them with the owner
 (`server/openapi.json`). Its shape is below.
 
 The store lives in object storage: S3 and S3-compatible, Azure Blob, or
-GCS (D-113). The store holds create-only objects in one bucket, under
+GCS. The store holds create-only objects in one bucket, under
 the store URL's prefix. The store URL is one of these:
 
 - `-store s3://bucket/prefix[?endpoint=…]`
@@ -54,7 +54,7 @@ Every key below is relative to that prefix:
 | `pointers/<name>/<seq>.json` | one commit record | serving processes (create only) |
 | `logs/<log>/entries/<seq>.json` | one entry of an append-only log | serving processes (create only) |
 | `logs/<log>/checkpoints/<seq>.json` | a log's fold up to an entry | serving processes (create only) |
-| `inputs/<key>` | an input servers boot from (`-feed bucket:<key>`, D-118) | the operator |
+| `inputs/<key>` | an input servers boot from (`-feed bucket:<key>`) | the operator |
 | `layout`, `README` | the layout's version and hash scheme, and the layout in plain words | serving processes (create only, once) |
 | `schemas/<tag>.v<N>/<hex>.json` | a locked schema, by its sha256 | serving processes (create only) |
 | `kinds/<hex>.json` | a build's kind table, by its sha256 | serving processes (create only) |
@@ -62,7 +62,7 @@ Every key below is relative to that prefix:
 
 No object is ever overwritten, appended to, or renamed. The engine
 assumes only the backend contract in `server/store/backend.go`. A
-serving process never deletes (D-117). Only `store gc` deletes, under
+serving process never deletes. Only `store gc` deletes, under
 its own credentials. A live store is never a local or network-mounted
 directory.
 
@@ -81,7 +81,7 @@ directory.
   host-owned documents (the manifest) with the same formula. No module
   ever claims their identity.
 - The canonical serialization of a document is RFC 8785, the JSON
-  Canonicalization Scheme (D-169): every object's keys sorted by their
+  Canonicalization Scheme: every object's keys sorted by their
   UTF-16 code units, no whitespace, numbers as ECMAScript writes them,
   and only `"`, `\`, and control characters escaped. So
   `sha256(canonical bytes)` is the document's identity on every host,
@@ -116,8 +116,7 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
   - the derived documents' `boundary`, `streets`, and `walks`, and
     their `derivation` records (see "Derivations")
   - the boot sources' `gtfs_feed` (a GTFS zip) and `street_layer`
-    (GeoJSON). These are external open formats, stored as read (D-115,
-    D-118).
+    (GeoJSON). These are external open formats, stored as read.
 
   `produced_by` on a `network_document` and a `boundary` is
   `cap-network@sha256:…`. On `streets` and `walks`, it is
@@ -163,11 +162,11 @@ Each commit is one record object,
   - `build` (each release committed from `-dist`, and each move;
     see "Builds").
   - `build.<id>` for each UI the server keeps (`-ui-dist`): each of
-    that UI's bundles, and each move (D-171).
+    that UI's bundles, and each move.
   - `source.feed` and `source.streets`. Each read of `-feed` and
     `-streets` whose bytes changed commits a record. The record's
-    `writer` is `import:<source>` (D-118). A `stops` commit of the
-    agency's feed's differences has the writer `import:feed` (D-150).
+    `writer` is `import:<source>`. A `stops` commit of the
+    agency's feed's differences has the writer `import:feed`.
 
   A server whose source does not answer at boot reads that pointer's
   head instead. So a replacement that has only the bucket and the same
@@ -180,13 +179,13 @@ Each commit is one record object,
 - `from` is the hash that the writer last saw. A commit lands only when
   the head's `to` equals it. An empty `from` means that the pointer must
   not exist yet. A failed CAS changes nothing.
-- `writer` is the verified JWT `sub` when authentication is on (D-58).
+- `writer` is the verified JWT `sub` when authentication is on.
   Otherwise it is the caller's label (`X-Writer`, default `anonymous`).
   It leaves the server only through the log endpoint, and only to
   `audit`-granted callers. Other callers get it redacted (an agent's
   choice, open as D-164).
 - `policy` (the field) stays null. The policy itself is the `policy`
-  pointer's blob (D-61). The server never serves that blob over HTTP
+  pointer's blob. The server never serves that blob over HTTP
   (`/blobs` 404s kind `policy`). Clients get the caller's
   projection from `GET /permissions` instead.
 
@@ -201,7 +200,7 @@ A commit is two creates and a check:
 A process caches each head. It reads at most 2 s behind another
 process's commit. A crash between the creates orphans the blob.
 
-`store gc <url>` (offline, D-117) collects orphans. An orphan is a blob
+`store gc <url>` (offline) collects orphans. An orphan is a blob
 that nothing names and that is older than the grace (7 days). A record
 names its `to` and `from`. A build's record names its files too (see
 "Builds"). A field that a stored schema marks `content-hash`, in a
@@ -266,7 +265,7 @@ module that owns the log's kinds computes. A mistake is fixed by a new
 entry, so the truth before the mistake stays in the record.
 
 The store has five logs. cap-log keeps them all (`log_entry`,
-`log_checkpoint`; D-197), and never reads a record. The capability that
+`log_checkpoint`), and never reads a record. The capability that
 owns each kind turns its document into records and back:
 
 - `disruptions`: the edit document (detours and trip cancels), whose
@@ -278,11 +277,11 @@ owns each kind turns its document into records and back:
   one log because publishing freezes a version and adopts it in one
   transaction. cap-plans answers both documents' records. The plans log
   has no `revert`: a pick is corrected by republishing it, or retired
-  before it takes effect (D-75).
+  before it takes effect.
 - `alerts`: the service alerts document and the alert templates
-  document (D-206, D-210). cap-alerts answers both documents' records
+  document (D-206). cap-alerts answers both documents' records
   (`service_alert`, `alert_template`).
-- `notes`: the notes document (D-214). cap-notes answers its records
+- `notes`: the notes document. cap-notes answers its records
   (`note`).
 
 An entry is `logs/<log>/entries/<seq, zero-padded to 20 digits>.json`,
@@ -309,7 +308,7 @@ because one entry may change the records of two capabilities:
   (the cause that a gap's entry names, or the heads a migration
   copied), and `claimed_at_ms` (the device's clock when the person
   made a write that waited on the device: a claim beside the entry's
-  `at_ms`, never its time; D-222).
+  `at_ms`, never its time).
 - `changes` holds each record that the entry changed, in kind and id
   order: `{kind, version, id, before, after}`. `version` is the version
   of the record's document kind. A record in that version is valid as
@@ -337,7 +336,7 @@ The records of each log:
 - Each document also has its own record: kind `edit_records`, `stops`,
   `stop_requests`, `plans`, or `frozen_versions`, id `document`, the document with its collection
   empty. It is a valid document of its kind and version. So a field
-  outside the collection that a build does not know is kept (D-167).
+  outside the collection that a build does not know is kept.
 
 A checkpoint is `logs/<log>/checkpoints/<seq>.json`, a `log_checkpoint`
 document. It holds every record by kind and id, each with its version,
@@ -362,7 +361,7 @@ The rules:
    the gap (`POST /logs/<log>/close-gap`).
 5. A revert is a new entry. It writes back each record's state before
    entry N. A record that entry N created leaves the document, and the
-   log keeps every state of it (D-198). The revert is refused when a
+   log keeps every state of it. The revert is refused when a
    later entry changed one of those records, because a person decides.
    In the disruptions log, cap-sync writes each record back with the
    next `rev` and the server's clock, so it wins the merge over a copy
@@ -444,8 +443,8 @@ entry is one kind the store keeps, by its store kind (the envelope's
 - `load` is the kernel's load of the kind, when a module reads it from
   the bus: its JSON op and its bulk op's code.
 - `receive` names the capability whose `receive` op writes the kind's
-  log: it runs a write's ops over the head and answers the entry
-  (D-228). Every kind of one log names the same one.
+  log: it runs a write's ops over the head and answers the entry.
+  Every kind of one log names the same one.
 - `intent` is `false` when a page never writes the kind's log by intent
   (`POST /logs/<log>` answers 405), and absent when it does. Only the
   kinds' routes write such a log: a freeze stores its network first, and
@@ -458,7 +457,7 @@ entry is one kind the store keeps, by its store kind (the envelope's
   `answer` field that names the document after the write, and the body
   fields it repeats (`echo`).
 - `work_order` is the route that sends the kind's records to the work
-  order system (D-165): its `method` and `path`, the checking
+  order system: its `method` and `path`, the checking
   capability's `call` op that answers what to send, and its `record` op,
   which the receive op runs to write the answer. The server serves the
   route, and offers it in the manifest's services, only for the kind
@@ -521,7 +520,7 @@ names the kind table's hash, the module's hash, and each log's seq, so
 it can be judged again after a release or a rollback.
 
 A referring record in a version newer than the kind table reads (after
-a rollback, D-186) is not judged, since the table's declarations may
+a rollback) is not judged, since the table's declarations may
 not be its fields. The check lists it as `unjudged`, a warning, and
 never as broken. A person's write that adds a reference to a record
 missing from every log as of the seqs its writer read (`read_seq`,
@@ -542,12 +541,12 @@ referrer state needs, with the reason for each refusal, and a law
 covers every state. A rule reads a dated state on the write's date in
 the agency's time zone, which the host gives with the write
 (`today`). The stops log judges a request's stop: an open request needs
-a stop that is not retired on that date (transit-stops `request_rule`,
-D-238). A rule's refusal and warning have the shape of a missing
+a stop that is not retired on that date (transit-stops `request_rule`).
+A rule's refusal and warning have the shape of a missing
 target's, with `rule`, the end of the sentence a page shows ("… names
 stop B, which was retired on 2026-10-01").
 
-Compaction never breaks a reference (D-231). The tombstone compaction
+Compaction never breaks a reference. The tombstone compaction
 (D-57) skips a retired record that a held record of any log names
 (transit-log `named`), in any state of the referrer, since the
 existence check judges every held referrer. The record leaves in a
@@ -563,7 +562,7 @@ process creates these objects, create only, at boot:
 - `README`: the layout in plain words.
 - `kinds/<hex>.json`: the build's kind table, by its sha256.
 - `schemas/<tag>.v<N>/<hex>.json`: each schema the table names, by its
-  sha256. An added optional field keeps its version (D-167), so one
+  sha256. An added optional field keeps its version, so one
   version can have more than one schema.
 
 An object that exists is never written again. A schema marks each field
@@ -581,7 +580,7 @@ with no description is read as before.
 
 ## Builds
 
-A release is a build (D-80). Every file that the pages load is a blob
+A release is a build. Every file that the pages load is a blob
 of kind `build_file` (its exact bytes, envelope
 `{"kind":"build_file","schema_version":1,"produced_by":"server"}`). A
 `build` document names the files, with the modules that the server
@@ -598,6 +597,13 @@ pointer logs every build that the server committed and every move
 (`POST /builds`). The manifest's `build_hash` is its head. A UI's
 bundle (`-ui-dist`) is a build of the same shape on `build.<id>`, with
 no `server` modules. Its host serves it at the UI's own URL.
+
+The server writes the `build` document in Go, and its identity is the
+bytes Go writes. Its schema is hand-written in `server/schemas/`, held
+to the Go type by a reflection test, and the manifest's schema is the
+HTTP contract's. No module types or hashes them: listing and hashing
+the files is host I/O. Typing them in Rust would change every
+committed build's hash once.
 
 A `build` blob is the one kind that names other blobs, and the store
 reads it. A build record names its document and every hash that the
@@ -616,7 +622,7 @@ order for each of its files.
 ## Derivations
 
 The server derives documents from its two inputs and stores them when
-it makes them (D-199):
+it makes them:
 
 | Input (pointer) | Module | Documents (pointers) | Derivation record |
 |---|---|---|---|
@@ -660,8 +666,8 @@ them to the Go type and to a record the server commits.
   lexicographically greater canonical record wins. The receive path
   clamps `updated_at = min(updated_at, now_ms)` (D-56). So the server
   clock bounds the order, and redelivery is idempotent.
-- An edit record carries exactly one payload, `diversion` or `cancel`
-  (D-45). The absent payload is omitted, never `null`. So a diversion
+- An edit record carries exactly one payload, `diversion` or `cancel`.
+  The absent payload is omitted, never `null`. So a diversion
   record's bytes, and every edit document's hash, are the ones they
   were before the cancel payload existed (D-101). The LWW unit is the
   whole record. A later write may replace a diversion with a cancel
@@ -677,7 +683,7 @@ them to the Go type and to a record the server commits.
 
 ## Versions
 
-Every document says what it is inside it (D-62, D-115). So a copy
+Every document says what it is inside it. So a copy
 anywhere names its kind and version without the app. A copy can be a
 blob, an export, or a file that another tool reads.
 
@@ -725,9 +731,9 @@ Every persisted kind, by what a version change does to it:
 | `kind_table` (a build's kind table) | generator (gen-manifest) | derived | `kind`, `schema_version` ("The kind table", above) |
 
 - A person writes *authored* kinds, and the system cannot re-derive
-  them. Their chains are kept forever (D-66). Every record of an
+  them. Their chains are kept forever. Every record of an
   authored kind keeps the fields this build does not know through a read
-  and a write (D-167), and its schema says so
+  and a write, and its schema says so
   (`"additionalProperties": true`). So an added optional field needs no
   new version, and a writer on an older build keeps it. A value (a
   point, a stop's two times, a set of weekdays) is not a record and
@@ -795,18 +801,18 @@ and the old bytes stay. It runs where a document arrives:
 A new version rolls out server first. The server's modules learn it
 first. They accept the old and the new version at receive and store the
 new one. The manifest then pins those modules, and clients follow the
-manifest (D-63). Every client gets its modules from that manifest, so
+manifest. Every client gets its modules from that manifest, so
 no client writes a version that the server does not read.
 
 ### Rolling a version back
 
-A format change ships in two releases (D-79). Release A reads vN and
+A format change ships in two releases. Release A reads vN and
 vN+1 and writes vN. Release B writes vN+1. So a rollback goes one
 release back, to a build that reads everything the store holds. The
 reader of vN+1 leaves in the release after B.
 
 Release A declares, in the kind's `Versioned`, the version it reads
-ahead and how (`AHEAD`, D-186). The crate that owns the kind keeps the
+ahead and how (`AHEAD`). The crate that owns the kind keeps the
 step down from vN+1 to vN (`step_down`), beside the migration step it
 reverses. The change is one of two kinds:
 
@@ -830,7 +836,7 @@ A page whose module refuses a document as newer, or whose write the
 server refuses for its version, asks for the deployment's build
 (`web/src/versions.ts`). A page with a service worker (ride-now, the
 stop display) looks for the new build at once. It applies the build by
-its own rule, as for any new build (D-63).
+its own rule, as for any new build.
 
 The emergency procedure is for a bad release A. It rolls the data back
 as well as the code, and an operator runs it by hand:
@@ -844,7 +850,7 @@ as well as the code, and an operator runs it by hand:
    commit. A pointer already at that head does not move.
 4. Read the commits the move dropped, which the tool lists: every log
    entry after that head. Each one names its writer and its document
-   by hash, and the documents stay in the store as plain JSON (D-115).
+   by hash, and the documents stay in the store as plain JSON.
    A person enters their content again by hand, in the older build.
    The tool also lists `references`: the records of every log that
    still name a dropped document by its hash (D-233; `-kinds` and
@@ -852,7 +858,7 @@ as well as the code, and an operator runs it by hand:
 
 The logs are not moved back this way. An entry of the disruptions log
 or the stops log is undone by its revert, and a pick in the plans log
-by republishing it or retiring it (D-75).
+by republishing it or retiring it.
 
 A backup restores into a build at least as new as the backup. An older
 build refuses its newer documents, naming both versions.
@@ -890,7 +896,7 @@ too. These are the failures:
 
 To change a kind, bump its version and add its migration step, then
 run `just schema-lock`. That freezes the new version and keeps the
-older ones. One change needs no bump (D-167): an added optional field
+older ones. One change needs no bump: an added optional field
 that writes nothing when it is absent. The frozen example then still
 reads to the same bytes. `just caps` fails until `just schema-lock`
 records the new schema in the same version. A corrected description
@@ -924,8 +930,9 @@ copies it. A static export carries the same files.
 
 Nothing was deployed before the lock, so each kind's baseline is the
 version it had then. The older versions of the network and the edit
-document have no lock. Their chains stay, and their own law tests pin
-them.
+document have no lock. Their chains stay, so that the migration
+machinery has real older versions to run on, and their own law tests
+pin them.
 
 The kernel's own version is separate from the documents' versions. It
 bumps only when an existing kernel op changes meaning. A new kernel op
@@ -966,10 +973,10 @@ the optional ones omitted when empty). Its envelope is
 `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 
 The `plans` document is the published plan set, with its version inside
-it (D-62). It is the plans log's fold, served by hash from `/blobs`; the
+it. It is the plans log's fold, served by hash from `/blobs`; the
 `plans` pointer's blobs are the same shape. The picks are in
 (effective_from, id) order. A retired pick stays in the set as the
-tombstone (D-75; `status` reads `published` when absent). A pick that an
+tombstone (`status` reads `published` when absent). A pick that an
 adoption put in force names the stops log entry it read (`stops_seq`):
 
 ```json

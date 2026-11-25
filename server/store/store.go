@@ -1,6 +1,6 @@
 // Package store is the content-addressed document store the sync server
 // keeps when run with -store (docs/architecture/storage.md, which holds
-// the key layout; D-113).
+// the key layout).
 //
 // The pointer is its highest record: there is no pointer object. A
 // commit creates the blob, then creates record N+1, which succeeds only
@@ -62,7 +62,7 @@ type LogEntry struct {
 }
 
 // While the bucket does not answer, a Head is the cached one, marked
-// Stale, as of the last time the bucket confirmed it (D-119, D-224).
+// Stale, as of the last time the bucket confirmed it (D-224).
 type Head struct {
 	Name     string   `json:"name"`
 	Hash     string   `json:"hash"` // "" when the pointer does not exist
@@ -136,14 +136,14 @@ func New(b Backend) *Store {
 }
 
 // NewServing refuses every delete and GC, whatever the credentials
-// allow. A compromised server then cannot erase history (D-117).
+// allow. A compromised server then cannot erase history.
 func NewServing(b Backend) *Store {
 	s := New(servingBackend{b})
 	s.serving = true
 	return s
 }
 
-var ErrServingNeverDeletes = errors.New("store: a serving process never deletes (D-117; run `store gc`)")
+var ErrServingNeverDeletes = errors.New("store: a serving process never deletes (run `store gc`)")
 
 type servingBackend struct{ Backend }
 
@@ -472,7 +472,7 @@ func (s *Store) Head(name string) (Head, bool, error) {
 		if !errors.Is(err, ErrUnavailable) || !p.loaded {
 			return Head{Name: name}, false, err
 		}
-		// The bucket did not answer, so serve the cached head, marked Stale (D-119).
+		// The bucket did not answer, so serve the cached head, marked Stale.
 		if p.seq == 0 {
 			return Head{Name: name, Stale: true, AsOfMs: p.probed.UnixMilli()}, false, nil
 		}
@@ -612,7 +612,7 @@ func (s *Store) Log(name, since string) (entries []LogEntry, found bool, err err
 }
 
 // Input reads inputs/<key>, which an operator places in the bucket.
-// The store never writes there (D-118).
+// The store never writes there.
 func (s *Store) Input(key string) ([]byte, ObjectInfo, error) {
 	if key == "" || strings.HasPrefix(key, "/") || strings.Contains(key, "..") {
 		return nil, ObjectInfo{}, fmt.Errorf("store: %q is not an input key", key)
