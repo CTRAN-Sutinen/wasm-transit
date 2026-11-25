@@ -91,7 +91,7 @@ struct Held {
 }
 
 impl Held {
-    fn of(d: &Documents) -> Result<Held, String> {
+    fn of(d: &Documents) -> Result<Held, cap_abi::Refusal> {
         Ok(Held {
             network: kind::<transit_network::Network>().require(&d.network_hash)?,
             edits: match &d.edits_hash {
@@ -130,7 +130,7 @@ impl Held {
     }
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Today { documents, route, stop } => {
             let held = Held::of(&documents)?;
@@ -152,7 +152,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: the disruptions read documents that register on the kernel's loads") }).to_string()
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: the disruptions read documents that register on the kernel's loads") } }).to_string()
 }
 
 #[cfg(feature = "examples")]

@@ -166,7 +166,7 @@ fn answered(next: Result<PublishedPlans, Vec<PlanIssue>>) -> Result<(Vec<PlanIss
 /// A published set in another version is refused, naming both versions. This
 /// holds a typed request from a native host to the rule that the JSON entry
 /// point gets through `Current` or `Base` (D-186).
-fn spoken(published: &PublishedPlans) -> Result<(), String> {
+fn spoken(published: &PublishedPlans) -> Result<(), cap_abi::Refusal> {
     use transit_version::Versioned;
     cap_abi::speaks(PublishedPlans::KIND, published.schema_version(), PublishedPlans::READS)
 }
@@ -181,7 +181,7 @@ fn frozen_records(frozen: &FrozenVersions) -> Result<Vec<transit_log::KindRecord
     transit_log::document_records(&doc, "versions", FROZEN_RECORD, FROZEN_DOCUMENT, transit_plans::FROZEN_SCHEMA_VERSION)
 }
 
-fn frozen_spoken(frozen: &FrozenVersions) -> Result<(), String> {
+fn frozen_spoken(frozen: &FrozenVersions) -> Result<(), cap_abi::Refusal> {
     use transit_version::Versioned;
     cap_abi::speaks(FrozenVersions::KIND, frozen.schema_version(), FrozenVersions::READS)
 }
@@ -191,7 +191,7 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
         .map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Resolve { plans, date } => {
             let parsed = parse_date(&date)?;
@@ -287,7 +287,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     let frozen: FrozenVersions = transit_log::assemble(template, document.as_ref(), "versions", &records, false)?;
                     cap_abi::canonical_bytes(&frozen)?
                 }
-                other => return Err(format!("the plans log holds no {other:?} document (plans, frozen_versions)")),
+                other => return Err(format!("the plans log holds no {other:?} document (plans, frozen_versions)").into()),
             };
             let document_hash = cap_abi::content_hash(document.as_bytes());
             Ok(Response::LogDocument { document, document_hash })
@@ -342,8 +342,8 @@ struct Made {
     answer: Option<serde_json::Value>,
 }
 
-fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<String, String>, made: &mut Made) -> Result<Option<serde_json::Value>, String> {
-    let issues = |issues: Vec<PlanIssue>| serde_json::to_value(issues).map(Some).map_err(|e| e.to_string());
+fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<String, String>, made: &mut Made) -> Result<Option<serde_json::Value>, cap_abi::Refusal> {
+    let issues = |issues: Vec<PlanIssue>| serde_json::to_value(issues).map(Some).map_err(|e| cap_abi::Refusal::from(e.to_string()));
     match intent {
         Intent::Pick { purpose, from_network_hash, adopt, today, stops_seq } => return pick(heads, loaded, made, purpose, from_network_hash, adopt, &today, stops_seq),
         Intent::Freeze { plan, network_hash, purpose } => {
@@ -399,7 +399,7 @@ fn pick(
     adopt: bool,
     today: &str,
     stops_seq: Option<u64>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, cap_abi::Refusal> {
     let network_hash = loaded.get("network_hash").ok_or("a pick writes the network the host registered (load_network), and none was")?;
     // A network read one version ahead is stored in this build's version. A
     // read-only one is refused (D-186).
@@ -423,7 +423,7 @@ fn pick(
     let document = cap_abi::canonical_bytes(network)?;
     let document_hash = cap_abi::content_hash(document.as_bytes());
     if read.is_none() && &document_hash != network_hash && kind::<transit_network::Network>().read_ahead(network_hash).is_none() {
-        return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
+        return Err(format!("registered under {network_hash} but serializes to {document_hash}").into());
     }
     let plan: PlanInfo = serde_json::to_value(&network.plan).and_then(serde_json::from_value).map_err(|e| format!("the pick's plan frame: {e}"))?;
     let issues = |issues: Vec<PlanIssue>| Ok(Some(serde_json::json!({ "issues": issues })));
@@ -459,7 +459,7 @@ fn pick(
     Ok(None)
 }
 
-fn given<T: serde::de::DeserializeOwned + transit_version::Versioned>(documents: &std::collections::BTreeMap<String, serde_json::Value>, kind: &str) -> Result<Option<T>, String> {
+fn given<T: serde::de::DeserializeOwned + transit_version::Versioned>(documents: &std::collections::BTreeMap<String, serde_json::Value>, kind: &str) -> Result<Option<T>, cap_abi::Refusal> {
     documents.get(kind).filter(|v| !v.is_null()).map(|v| cap_abi::read_base::<T>(v.clone()).map(|(doc, _)| doc)).transpose()
 }
 
@@ -468,7 +468,7 @@ fn receive(
     documents: std::collections::BTreeMap<String, serde_json::Value>,
     loaded: std::collections::BTreeMap<String, String>,
     ops: Vec<transit_log::OpCall>,
-) -> Result<Response, String> {
+) -> Result<Response, cap_abi::Refusal> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
@@ -485,7 +485,7 @@ fn receive(
         if call.cap != "plans" {
             return answer(transit_log::Received::failed(i, format!("{} {} is not a write to the plans log (plans: freeze, adopt, retire, pick, migrate)", call.cap, call.op)));
         }
-        match call.request::<Intent>().and_then(|intent| step(&mut heads, intent, &loaded, &mut made)) {
+        match call.request::<Intent>().map_err(Into::into).and_then(|intent| step(&mut heads, intent, &loaded, &mut made)) {
             Ok(None) => {}
             Ok(Some(refusals)) => return answer(transit_log::Received::refused(i, refusals)),
             Err(e) => return answer(transit_log::Received::failed(i, e)),
@@ -513,7 +513,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: the plan chain takes its metadata inline (resolve / validate / periods)") })
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: the plan chain takes its metadata inline (resolve / validate / periods)") } })
         .to_string()
 }
 

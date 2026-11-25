@@ -477,12 +477,12 @@ pub mod new_names {
         let op = serde_json::from_str::<serde_json::Value>(text).ok().and_then(|v| v["op"].as_str().map(str::to_string));
         match op.as_deref() {
             Some(op @ ("validate" | "receive")) => format!(r#"{{"ok":{{"op":"{op}"}}}}"#),
-            _ => r#"{"error":"unknown op"}"#.to_string(),
+            _ => r#"{"error":{"message":"unknown op"}}"#.to_string(),
         }
     }
 
     fn bytes(_: u32, _: &[u8]) -> String {
-        r#"{"error":"no bulk ops"}"#.to_string()
+        r#"{"error":{"message":"no bulk ops"}}"#.to_string()
     }
 
     pub static CAP: Cap = Cap { id: "testcap", json, bytes, documents: &[] };

@@ -166,7 +166,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: migrate takes its document inline")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: migrate takes its document inline")))
 }
 
 #[cfg(feature = "examples")]

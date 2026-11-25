@@ -12,11 +12,11 @@ impl transit_version::Load for crate::ServiceAlerts {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "alerts" };
     type Answer = ServiceAlertsLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let document: crate::ServiceAlerts = transit_version::parse_versioned(bytes).map_err(|e| format!("service alerts document: {e}"))?;
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        let document: crate::ServiceAlerts = transit_version::parse_versioned(bytes).map_err(|e| e.context("service alerts document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("service alerts document: {}", reasons.join("; "))
+            format!("service alerts document: {}", reasons.join("; ")).into()
         })
     }
 
@@ -43,11 +43,11 @@ impl transit_version::Load for crate::AlertTemplates {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "templates" };
     type Answer = AlertTemplatesLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let document: crate::AlertTemplates = transit_version::parse_versioned(bytes).map_err(|e| format!("alert templates document: {e}"))?;
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        let document: crate::AlertTemplates = transit_version::parse_versioned(bytes).map_err(|e| e.context("alert templates document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("alert templates document: {}", reasons.join("; "))
+            format!("alert templates document: {}", reasons.join("; ")).into()
         })
     }
 

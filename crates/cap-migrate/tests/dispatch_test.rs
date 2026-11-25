@@ -17,7 +17,7 @@ fn ok(request: Value) -> Value {
 
 fn err(request: Value) -> String {
     let out: Value = serde_json::from_str(&dispatch_json(&request.to_string())).unwrap();
-    out["error"].as_str().unwrap_or_else(|| panic!("expected an error: {out}")).to_string()
+    out["error"]["message"].as_str().unwrap_or_else(|| panic!("expected an error: {out}")).to_string()
 }
 
 fn v1_network() -> Value {

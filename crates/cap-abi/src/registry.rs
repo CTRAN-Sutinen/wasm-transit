@@ -95,8 +95,8 @@ impl<T: ?Sized> Registry<T> {
         self.lock().map.get(key).map(|entry| entry.value.clone())
     }
 
-    pub fn require(&self, hash: &str) -> Result<Arc<T>, String> {
-        self.get(hash).ok_or_else(|| format!("unknown {} {hash}: {} first", self.kind, self.load_op))
+    pub fn require(&self, hash: &str) -> Result<Arc<T>, transit_version::Refusal> {
+        self.get(hash).ok_or_else(|| transit_version::Refusal::unknown_document(self.kind, hash, self.load_op))
     }
 
     /// A document that is already held keeps its first copy and its age.
@@ -270,7 +270,14 @@ mod tests {
         docs.insert("sha256:a".into(), 1);
         docs.insert("sha256:b".into(), 2);
         assert_eq!(docs.evict(&keep(&["sha256:b"])), vec!["sha256:a".to_string()]);
-        assert_eq!(docs.require("sha256:a").unwrap_err(), "unknown network sha256:a: load_network first");
+        assert_eq!(
+            docs.require("sha256:a").unwrap_err().code,
+            Some(transit_version::RefusalCode::UnknownDocument {
+                kind: "network".into(),
+                hash: "sha256:a".into(),
+                load: "load_network".into()
+            })
+        );
         assert_eq!(*docs.require("sha256:b").unwrap(), 2);
     }
 
@@ -311,7 +318,7 @@ mod tests {
             evicted,
             r#"{"ok":{"dropped":[{"kind":"network","key":"n1"},{"kind":"edits","key":"e1"}],"held":[{"kind":"network","key":"n2"}]}}"#
         );
-        assert!(kernel(OP_EVICT, b"not json", registries).unwrap().starts_with(r#"{"error":"invalid request"#));
+        assert!(kernel(OP_EVICT, b"not json", registries).unwrap().starts_with(r#"{"error":{"message":"invalid request"#));
     }
 
     proptest! {

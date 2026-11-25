@@ -210,15 +210,15 @@ fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
 fn with_network<T>(
     network_hash: &str,
     f: impl FnOnce(&Network) -> Result<T, String>,
-) -> Result<T, String> {
-    f(&*kind::<transit_network::Network>().require(network_hash)?)
+) -> Result<T, cap_abi::Refusal> {
+    Ok(f(&*kind::<transit_network::Network>().require(network_hash)?)?)
 }
 
-fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
+fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
     kind::<transit_network::Network>().require(network_hash)
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::NetworkStats { network_hash, date, include_routes, include_stops, include_service_types } => {
             let parsed = parse_date(&date)?;
@@ -394,7 +394,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: analysis has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: analysis has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]

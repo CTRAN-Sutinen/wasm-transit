@@ -95,7 +95,7 @@ pub enum Response {
     },
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::SyncEdits { client, server, now_ms } => {
             let unknown_fields = transit_sync::unknown_fields(&client);
@@ -166,14 +166,14 @@ enum Intent {
 }
 
 /// Brings an older document forward first. `read_document` refuses it.
-fn read(doc: &serde_json::Value) -> Result<(Vec<transit_sync::EditRecord>, usize), String> {
+fn read(doc: &serde_json::Value) -> Result<(Vec<transit_sync::EditRecord>, usize), cap_abi::Refusal> {
     let older = transit_sync::version::schema_version_of(doc)? < transit_sync::SCHEMA_VERSION;
     let doc = if older { transit_sync::version::migrate_to(doc.clone(), transit_sync::SCHEMA_VERSION)?.0 } else { doc.clone() };
     let (read, dropped) = transit_sync::read_document(&doc)?;
     Ok((read.records, dropped))
 }
 
-fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<String, serde_json::Value>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<String, serde_json::Value>, ops: Vec<transit_log::OpCall>) -> Result<Response, cap_abi::Refusal> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
@@ -252,7 +252,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: the edit document is JSON (sync_edits)") })
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: the edit document is JSON (sync_edits)") } })
         .to_string()
 }
 

@@ -37,7 +37,7 @@ fn a_refused_document_names_each_reason_and_never_registers() {
     let v = ok(json!({ "op": "validate", "requests": bad }));
     assert_eq!(v["refusals"][0], json!({ "request": "R-1", "problem": { "kind": "no_work_order" } }));
     assert!(v["document"].is_null());
-    assert!(run(json!({ "op": "load_stop_requests", "requests": bad }))["error"].as_str().unwrap().contains("R-1"));
+    assert!(run(json!({ "op": "load_stop_requests", "requests": bad }))["error"]["message"].as_str().unwrap().contains("R-1"));
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn list_is_the_work_across_every_stop() {
     assert_eq!(some["requests"].as_array().unwrap().len(), 1);
     assert_eq!(some["requests"][0]["id"], "R-3");
     assert_eq!(some["counts"], all["counts"]);
-    assert!(run(json!({ "op": "list", "requests_hash": "sha256:00" }))["error"].is_string());
+    assert!(run(json!({ "op": "list", "requests_hash": "sha256:00" }))["error"]["message"].is_string());
 }
 
 #[test]
@@ -101,9 +101,9 @@ fn a_new_request_is_refused_a_held_id() {
 
 #[test]
 fn garbage_is_an_error_not_a_panic() {
-    assert!(run(json!({ "op": "nope" }))["error"].is_string());
-    assert!(run(json!({ "op": "requests_for", "requests_hash": "sha256:00", "stop": "a" }))["error"].is_string());
-    assert!(run(json!({ "op": "validate", "requests": { "kind": "stops" } }))["error"].is_string());
+    assert!(run(json!({ "op": "nope" }))["error"]["message"].is_string());
+    assert!(run(json!({ "op": "requests_for", "requests_hash": "sha256:00", "stop": "a" }))["error"]["message"].is_string());
+    assert!(run(json!({ "op": "validate", "requests": { "kind": "stops" } }))["error"]["message"].is_string());
 }
 
 /// An unknown request is an error (D-165).
@@ -115,7 +115,7 @@ fn a_work_order_is_recorded_on_its_request() {
     assert_eq!(out["refusals"], json!([]));
     assert_eq!(out["requests"]["requests"]["R-1"]["status"], "ordered");
     assert_eq!(out["requests"]["requests"]["R-1"]["work_order"]["id"], "STUB-R-1");
-    assert!(run(json!({ "op": "record_work_order", "requests_hash": held["requests_hash"], "id": "nope", "work_order": { "id": "x" } }))["error"].is_string());
+    assert!(run(json!({ "op": "record_work_order", "requests_hash": held["requests_hash"], "id": "nope", "work_order": { "id": "x" } }))["error"]["message"].is_string());
 }
 
 /// An unknown field is kept and flagged, never refused (D-167).
@@ -166,6 +166,6 @@ fn the_work_order_call_answers_what_to_send() {
     assert_eq!(open["call"], json!({ "action": "open", "request": { "stop": "N1", "job": "new", "status": "submitted" } }));
     let refresh = ok(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-1", "action": "refresh" }));
     assert_eq!(refresh["call"], json!({ "action": "refresh" }));
-    assert!(run(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-9", "action": "open" }))["error"].is_string());
-    assert!(run(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-1", "action": "close" }))["error"].is_string());
+    assert!(run(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-9", "action": "open" }))["error"]["message"].is_string());
+    assert!(run(json!({ "op": "work_order_call", "requests_hash": hash, "id": "R-1", "action": "close" }))["error"]["message"].is_string());
 }

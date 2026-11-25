@@ -11,7 +11,7 @@ impl transit_version::Load for crate::walking::WalkTable {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "walks" };
     type Answer = WalksLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
         transit_version::parse_versioned(bytes)
     }
 
@@ -40,8 +40,8 @@ impl transit_version::Load for crate::Streets {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "streets" };
     type Answer = StreetsLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let document: crate::Streets = transit_version::parse_versioned(bytes).map_err(|e| format!("streets document: {e}"))?;
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        let document: crate::Streets = transit_version::parse_versioned(bytes).map_err(|e| e.context("streets document"))?;
         document.validate().map_err(|e| format!("streets document: {}", e.0))?;
         Ok(document)
     }

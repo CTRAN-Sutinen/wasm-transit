@@ -142,7 +142,7 @@ fn ok(outcome: String) -> Value {
 
 fn err(outcome: String) -> String {
     let v: Value = serde_json::from_str(&outcome).unwrap();
-    v["error"].as_str().unwrap_or_else(|| panic!("expected an error, got {v}")).to_string()
+    v["error"]["message"].as_str().unwrap_or_else(|| panic!("expected an error, got {v}")).to_string()
 }
 
 #[test]

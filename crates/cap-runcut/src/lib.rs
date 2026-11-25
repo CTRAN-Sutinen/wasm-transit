@@ -89,7 +89,7 @@ pub enum Response {
     SuggestBlocks { suggestion: transit_runs::Suggestion },
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Blocks { network_hash, edits_hash, date } => {
             let day = day(&network_hash, edits_hash.as_deref(), &date)?;
@@ -153,7 +153,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the runcut has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: the runcut has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]
@@ -174,7 +174,7 @@ cap_abi::capability! {
     ],
 }
 
-fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
+fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
     let on = transit_dispatch::day_date(date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
     let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;

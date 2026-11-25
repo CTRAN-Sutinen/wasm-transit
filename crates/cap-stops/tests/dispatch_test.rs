@@ -14,7 +14,7 @@ fn ok(request: Value) -> Value {
 
 fn err(request: Value) -> String {
     let answer = run(request.clone());
-    answer["error"].as_str().unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+    answer["error"]["message"].as_str().unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
 }
 
 fn sample() -> Value {
@@ -111,7 +111,7 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(err(json!({"op": "load_stops", "stops": {"kind": "streets", "stops": {}}})).contains("stops document"));
     assert!(err(json!({"op": "nope"})).contains("invalid request"));
     let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(0, b"whatever")).unwrap();
-    assert!(bulk["error"].as_str().unwrap().contains("unknown bulk op"), "{bulk}");
+    assert!(bulk["error"]["message"].as_str().unwrap().contains("unknown bulk op"), "{bulk}");
 }
 
 fn sample_network_value() -> Value {
@@ -531,9 +531,9 @@ fn receive_answers_a_moved_head_a_conflict_and_another_log_s_op_with_no_entry() 
         "ops": [{"cap": "stops", "op": "correct_event", "args": {"stop_id": "6124", "event_id": event_id, "saw": "sha256:stale"}}] }));
     assert_eq!(conflict["conflict"], json!({"op": 0, "id": event_id}), "{conflict}");
     let other = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{"cap": "notes", "op": "write", "args": {}}] }));
-    assert!(other["failed"]["error"].as_str().unwrap().contains("not a write to the stops log"), "{other}");
+    assert!(other["failed"]["error"]["message"].as_str().unwrap().contains("not a write to the stops log"), "{other}");
     let none = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{"cap": "stops", "op": "add_event", "args": {"stop_id": "1", "event": {"on": "2027-01-01", "event": "planned", "lat": 45.0, "lon": -122.0}}}] }));
-    assert_eq!(none["failed"]["error"], "no stops document yet", "{none}");
+    assert_eq!(none["failed"]["error"]["message"], "no stops document yet", "{none}");
     for answer in [moved, conflict, other, none] {
         assert!(answer.get("entry").is_none(), "{answer}");
     }

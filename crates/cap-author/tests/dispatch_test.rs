@@ -14,7 +14,7 @@ fn load(network: Network) -> String {
     cap_abi::kernel::kind::<transit_network::Network>().register(network).unwrap().0
 }
 
-fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, String> {
+fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, cap_abi::Refusal> {
     dispatch(Request::Apply { network_hash: network_hash.into(), edits, work_rules_hash: None })
 }
 
@@ -130,9 +130,9 @@ fn a_redraw_reports_the_patterns_it_touched() {
 fn refusals_and_garbage_are_errors_not_panics() {
     let base = load(network());
     let err = apply(&base, vec![NetworkEdit::RemoveStop { id: "A".into() }]).unwrap_err();
-    assert!(err.contains("edit 0") && err.contains("visited by pattern"), "{err}");
+    assert!(err.message.contains("edit 0") && err.message.contains("visited by pattern"), "{err}");
     let err = apply("sha256:missing", vec![]).unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
 
     let out = dispatch_json(&format!(
         r#"{{"op":"apply","network_hash":"{base}","edits":[{{"edit":"set_name","name":"Renamed"}}]}}"#
@@ -161,7 +161,7 @@ fn gestures_report_what_they_created() {
     };
     assert_eq!(network.stops["s1"].name, "Depot");
     let err = apply(&network_hash, vec![NetworkEdit::RemoveTrip { trip: "ghost".into() }]).unwrap_err();
-    assert!(err.contains("edit 0") && err.contains("unknown trip"), "{err}");
+    assert!(err.message.contains("edit 0") && err.message.contains("unknown trip"), "{err}");
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn work_rules_judge_the_waits_of_the_next_document() {
         "{ruled:?}"
     );
     let err = dispatch(Request::Apply { network_hash: base, edits: vec![], work_rules_hash: Some("sha256:nope".into()) }).unwrap_err();
-    assert!(err.contains("load_work_rules"), "{err}");
+    assert!(err.message.contains("load_work_rules"), "{err}");
 }
 
 /// D-228.

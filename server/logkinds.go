@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 type logDoc struct {
@@ -42,6 +43,11 @@ type keptLog struct {
 
 // withModule runs `use` as the capability on the long-lived instance.
 // Only the logs' heads outlive the call (wasm.go, `sequence`).
+
+// errLogMoved is a write that found its log's head moved on every attempt.
+// A caller finds it with errors.Is, never by its text.
+var errLogMoved = errors.New("moved on every attempt")
+
 func (s *server) withModule(ctx context.Context, capability string, use func(*WasmHost) error) error {
 	return s.longLived().sequence(ctx, func(inst *Instance) error { return use(inst.As(capability)) })
 }
@@ -298,8 +304,8 @@ type received struct {
 		Current string `json:"current"`
 	} `json:"moved"`
 	Failed *struct {
-		Op    int    `json:"op"`
-		Error string `json:"error"`
+		Op    int                  `json:"op"`
+		Error wasmhost.ModuleError `json:"error"`
 	} `json:"failed"`
 	UnknownFields []string          `json:"unknown_fields"`
 	Heads         map[string]string `json:"heads"`
@@ -528,7 +534,7 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 		}
 		return f.seq, false, got, nil, nil
 	}
-	return 0, false, got, nil, fmt.Errorf("the %s log moved on every attempt", f.name)
+	return 0, false, got, nil, fmt.Errorf("the %s log %w", f.name, errLogMoved)
 }
 
 func writeRefused(w http.ResponseWriter, refusal *logRefusal) {
@@ -635,7 +641,7 @@ func (s *server) handleKeptRoute(w http.ResponseWriter, r *http.Request) {
 	if refusal != nil {
 		// An op that did not run is the request's 400.
 		if got.Failed != nil {
-			http.Error(w, k.StoreKind+": body: "+got.Failed.Error, http.StatusBadRequest)
+			answerFailed(w, got.Failed.Error, http.StatusBadRequest, k.StoreKind+": body: ")
 			return
 		}
 		if body, ok := refusal.body.(map[string]any); ok {

@@ -37,7 +37,7 @@ pub trait Load: Sized + Send + Sync + 'static {
     const RETAIN: Retain = Retain::Host;
     type Answer: serde::Serialize;
     /// Refuses a document that a write could not store.
-    fn parse(bytes: &[u8]) -> Result<Self, String>;
+    fn parse(bytes: &[u8]) -> Result<Self, crate::Refusal>;
     /// `None` for a byte form, whose identity is the hash of its bytes.
     fn canonical(&self) -> Option<Result<String, String>>;
     fn answer(&self, hash: String) -> Self::Answer;

@@ -152,7 +152,7 @@ fn a_route_row_carries_its_long_name() {
     assert_eq!((ten.name.as_str(), ten.long_name.as_deref()), ("10", Some("Downtown via Main")));
 }
 
-fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result<Vec<transit_network::listing::NearbyStop>, String> {
+fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result<Vec<transit_network::listing::NearbyStop>, cap_abi::Refusal> {
     dispatch(Request::StopsNear { network_hash: load_network(), lat, lon, limit, radius_m, walks: None }).map(|r| match r {
         Response::StopsNear { stops } => stops,
         _ => panic!("stops_near"),
@@ -173,9 +173,9 @@ fn stops_near_a_point_are_places_nearest_first() {
     assert!(near(45.5150, -73.5155, None, Some(500.0)).unwrap().iter().all(|r| r.distance_m <= 500.0));
     assert!(near(0.0, 0.0, None, Some(1000.0)).unwrap().is_empty());
 
-    assert!(near(91.0, 0.0, None, None).unwrap_err().contains("lat"));
-    assert!(near(0.0, 181.0, None, None).unwrap_err().contains("lon"));
-    assert!(near(0.0, 0.0, None, Some(-1.0)).unwrap_err().contains("radius"));
+    assert!(near(91.0, 0.0, None, None).unwrap_err().message.contains("lat"));
+    assert!(near(0.0, 181.0, None, None).unwrap_err().message.contains("lon"));
+    assert!(near(0.0, 0.0, None, Some(-1.0)).unwrap_err().message.contains("radius"));
     let bad = dispatch_json(r#"{"op":"stops_near","network_hash":"sha256:x","lat":"here","lon":0}"#);
     assert!(bad.contains("invalid request"), "{bad}");
 }
@@ -202,7 +202,7 @@ fn stops_near_with_walks_ranks_by_walk() {
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let err = dispatch(Request::Stops { network_hash: "sha256:missing".into(), query: None, limit: None }).unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");

@@ -252,7 +252,7 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::AttributeSurveys { stops_hash, stops, by } => {
             let stops = match stops_hash {
@@ -295,7 +295,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::StopsNear { stops_hash, date, lat, lon, limit, radius_m, statuses } => {
             let date = parse_date(&date)?;
             if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
-                return Err(format!("the point {lat}, {lon} is not on the earth"));
+                return Err(format!("the point {lat}, {lon} is not on the earth").into());
             }
             if radius_m.is_some_and(|r| !(r >= 0.0)) {
                 return Err("radius_m must not be negative".into());
@@ -547,7 +547,7 @@ fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
 const STOPS_LOG_OPS: &str = "stops: add_event, correct_event, validate, import_events, migrate; requests: put, record_work_order, validate, migrate";
 
 /// None when the op ran. Otherwise the answer that ends the write.
-fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Option<transit_log::Received>, String> {
+fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
     let refused = |refusals: &[Refusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
     let held = || heads.stops.clone().ok_or_else(|| "no stops document yet".to_string());
     match intent {
@@ -584,9 +584,9 @@ fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Optio
     Ok(None)
 }
 
-fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result<Option<transit_log::Received>, String> {
+fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
     let refused = |refusals: &[RequestRefusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
-    let held = |hash: &Option<String>| -> Result<StopRequests, String> {
+    let held = |hash: &Option<String>| -> Result<StopRequests, cap_abi::Refusal> {
         Ok(match hash {
             Some(h) => (*kind::<transit_requests::StopRequests>().require_writable(h)?).clone(),
             None => StopRequests::default(),
@@ -624,7 +624,7 @@ fn migrate(heads: &mut Heads, op: usize) -> Option<transit_log::Received> {
     None
 }
 
-fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>, by: Option<String>) -> Result<Response, String> {
+fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>, by: Option<String>) -> Result<Response, cap_abi::Refusal> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
@@ -633,9 +633,9 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
     let mut heads = Heads { held_stops: stops.clone(), stops, requests: given.get("stop_requests").cloned(), ..Default::default() };
     for (i, call) in ops.iter().enumerate() {
         let stepped = match call.cap.as_str() {
-            "stops" => call.request::<StopsIntent>().and_then(|intent| step_stops(&mut heads, intent, i)),
-            "requests" => call.request::<RequestsIntent>().and_then(|intent| step_requests(&mut heads, intent, i)),
-            _ => Err(format!("{} {} is not a write to the stops log ({STOPS_LOG_OPS})", call.cap, call.op)),
+            "stops" => call.request::<StopsIntent>().map_err(Into::into).and_then(|intent| step_stops(&mut heads, intent, i)),
+            "requests" => call.request::<RequestsIntent>().map_err(Into::into).and_then(|intent| step_requests(&mut heads, intent, i)),
+            _ => Err(format!("{} {} is not a write to the stops log ({STOPS_LOG_OPS})", call.cap, call.op).into()),
         };
         match stepped {
             Ok(None) => {}
@@ -702,7 +702,7 @@ fn judge_requests(
     requests_before: Option<&String>,
     stops_after: Option<&String>,
     requests_after: Option<&String>,
-) -> Result<Judged, String> {
+) -> Result<Judged, cap_abi::Refusal> {
     use transit_stops::request_rule::{request_rule, RuleBreak};
     let mut out = Judged::default();
     let (Some(on), Some(requests_after)) = (write.today.as_deref().and_then(|d| parse_date(d).ok()), requests_after) else { return Ok(out) };
@@ -768,7 +768,7 @@ pub fn dispatch_json(text: &str) -> String {
 /// A document registers on the kernel's `load_stops` (270) or
 /// `load_stop_requests` (271), so this crate has no bytes ops.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: a stops document registers on the kernel's load_stops") }).to_string()
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: a stops document registers on the kernel's load_stops") } }).to_string()
 }
 
 #[cfg(feature = "examples")]

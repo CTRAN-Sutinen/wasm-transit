@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 schemars = { workspace = true }
+ts-rs = { workspace = true }
 serde_json = { workspace = true }
 # A document's identity and its read (src/document.rs, src/jcs.rs): the
 # canonical hash streams into sha256; numbers are written as ECMAScript

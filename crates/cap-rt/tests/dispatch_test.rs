@@ -285,7 +285,7 @@ fn unknown_hashes_are_errors_not_panics() {
         trip_id: "t10".into(),
     })
     .unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
 
     let (network_hash, _) = load_fixture();
     let err = cap_rt::dispatch(cap_rt::Request::LateTrips {
@@ -295,7 +295,7 @@ fn unknown_hashes_are_errors_not_panics() {
         vp_hash: None,
     })
     .unwrap_err();
-    assert!(err.contains("unknown rt snapshot"), "{err}");
+    assert!(err.message.contains("unknown rt snapshot"), "{err}");
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         with_document: None,
     })
     .unwrap_err();
-    assert!(err.contains("needs a snapshot"), "{err}");
+    assert!(err.message.contains("needs a snapshot"), "{err}");
     let err = cap_rt::dispatch(cap_rt::Request::Live {
         network_hash,
         boundary_hash: Some("sha256:missing".into()),
@@ -375,7 +375,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         with_document: None,
     })
     .unwrap_err();
-    assert!(err.contains("unknown boundary"), "{err}");
+    assert!(err.message.contains("unknown boundary"), "{err}");
 }
 
 #[test]

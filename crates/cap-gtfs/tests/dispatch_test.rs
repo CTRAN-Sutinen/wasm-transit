@@ -46,10 +46,10 @@ fn unknown_hash_and_bad_input_are_errors_not_panics() {
         feed_hash: "sha256:deadbeef".into(),
     })
     .expect_err("unknown hash must error");
-    assert!(err.contains("unknown feed"));
+    assert!(err.message.contains("unknown feed"));
 
     let err = load_feed(b"not a zip");
-    assert!(err["error"].as_str().unwrap().contains("parse"), "garbage must error, not panic: {err}");
+    assert!(err["error"]["message"].as_str().unwrap().contains("parse"), "garbage must error, not panic: {err}");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn json_seam_round_trips_the_tagged_form() {
     assert_eq!(outcome["ok"]["feed_hash"], cap_abi::content_hash(&bytes));
 
     let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(r#"{"op": "nope"}"#)).unwrap();
-    assert!(bad["error"].as_str().unwrap().contains("invalid request"));
+    assert!(bad["error"]["message"].as_str().unwrap().contains("invalid request"));
 
     for retired in [
         "departures",
@@ -77,13 +77,13 @@ fn json_seam_round_trips_the_tagged_form() {
         ))
         .unwrap();
         assert!(
-            bad["error"].as_str().unwrap().contains("invalid request"),
+            bad["error"]["message"].as_str().unwrap().contains("invalid request"),
             "{retired} is retired: {bad}"
         );
     }
 
     let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke_bytes(9, b"")).unwrap();
-    assert!(bad["error"].as_str().unwrap().contains("unknown bulk op"));
+    assert!(bad["error"]["message"].as_str().unwrap().contains("unknown bulk op"));
 }
 
 #[test]

@@ -8,9 +8,11 @@ pub mod document;
 pub mod jcs;
 pub mod load;
 pub mod references;
+pub mod refusal;
 pub use document::{canonical_hash, parse_versioned};
 pub use load::{Form, Load, Retain};
 pub use references::{references, Reference};
+pub use refusal::{Refusal, RefusalCode};
 
 #[doc(hidden)]
 pub use schemars;
@@ -64,7 +66,7 @@ impl ReadAs {
     }
 }
 
-pub fn reads<T: Versioned>(found: u32) -> Result<ReadAs, String> {
+pub fn reads<T: Versioned>(found: u32) -> Result<ReadAs, Refusal> {
     match T::AHEAD {
         _ if found == T::READS => Ok(ReadAs::Current),
         Some((next, how)) if found == next => Ok(ReadAs::Ahead(how)),
@@ -74,22 +76,28 @@ pub fn reads<T: Versioned>(found: u32) -> Result<ReadAs, String> {
 
 /// An older copy names the op that migrates it. A newer copy is refused and
 /// never rewritten.
-pub fn refused(kind: &str, found: u32, reads: u32) -> String {
+pub fn refused(kind: &str, found: u32, reads: u32) -> Refusal {
     if found < reads {
-        format!("{kind} v{found}: this module reads v{reads} — bring it forward first (migrate.migrate, kind {kind:?})")
+        format!("{kind} v{found}: this module reads v{reads} — bring it forward first (migrate.migrate, kind {kind:?})").into()
     } else {
-        format!("{kind} v{found} is newer than this module, which reads v{reads}: a newer build wrote it (refused, never rewritten)")
+        Refusal {
+            message: format!("{kind} v{found} is newer than this module, which reads v{reads}: a newer build wrote it (refused, never rewritten)"),
+            code: Some(RefusalCode::NewerVersion { kind: kind.into(), found, reads, read: false }),
+        }
     }
 }
 
-pub fn write_refused(kind: &str, found: u32, reads: u32) -> String {
-    format!(
-        "{kind} v{found} was written by a newer build: this build reads it one version ahead of v{reads}, \
-         and does not write over it — move the deployment forward again to change it (D-186)"
-    )
+pub fn write_refused(kind: &str, found: u32, reads: u32) -> Refusal {
+    Refusal {
+        message: format!(
+            "{kind} v{found} was written by a newer build: this build reads it one version ahead of v{reads}, \
+             and does not write over it — move the deployment forward again to change it (D-186)"
+        ),
+        code: Some(RefusalCode::NewerVersion { kind: kind.into(), found, reads, read: true }),
+    }
 }
 
-pub fn writes_over<T: Versioned>(found: u32, read: ReadAs) -> Result<(), String> {
+pub fn writes_over<T: Versioned>(found: u32, read: ReadAs) -> Result<(), Refusal> {
     if read.read_only() {
         Err(write_refused(T::KIND, found, T::READS))
     } else {

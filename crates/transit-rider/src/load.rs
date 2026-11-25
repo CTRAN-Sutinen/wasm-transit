@@ -13,7 +13,7 @@ impl transit_version::Load for crate::watchlist::Watchlist {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "document" };
     type Answer = WatchlistLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
         transit_version::parse_versioned(bytes)
     }
 

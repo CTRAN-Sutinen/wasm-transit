@@ -9,7 +9,7 @@ use cap_router::{dispatch, invoke_bytes, Request, Response};
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 
-fn plan(network_hash: &str, date: &str) -> Result<Response, String> {
+fn plan(network_hash: &str, date: &str) -> Result<Response, cap_abi::Refusal> {
     dispatch(Request::Plan {
         network_hash: network_hash.into(),
         edits_hash: None,
@@ -44,7 +44,11 @@ fn graphs_are_bounded_and_follow_their_documents_out() {
     assert!(derived_len(&GRAPH) == 0 && kind::<transit_network::Network>().is_empty());
 
     assert_eq!(
-        plan(&network_hash, "2026-10-23").unwrap_err(),
-        format!("unknown network {network_hash}: load_network first")
+        plan(&network_hash, "2026-10-23").unwrap_err().code,
+        Some(cap_abi::RefusalCode::UnknownDocument {
+            kind: "network".into(),
+            hash: network_hash.clone(),
+            load: "load_network".into()
+        })
     );
 }

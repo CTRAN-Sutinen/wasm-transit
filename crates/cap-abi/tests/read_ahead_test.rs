@@ -102,11 +102,11 @@ fn a_build_reads_its_version_and_the_one_it_declares_ahead() {
 #[test]
 fn a_version_past_the_next_or_an_older_one_is_refused_as_before() {
     let newer = read_versioned::<Thing>(&bytes(&json!({"kind": "thing", "schema_version": 3, "title": "a"}))).unwrap_err();
-    assert!(newer.contains("thing v3 is newer") && newer.contains("reads v1"), "{newer}");
+    assert!(newer.message.contains("thing v3 is newer") && newer.message.contains("reads v1"), "{newer}");
     let plain = read_versioned::<Plain>(&bytes(&json!({"kind": "plain", "schema_version": 2, "name": "a"}))).unwrap_err();
-    assert!(plain.contains("plain v2 is newer") && plain.contains("reads v1"), "{plain}");
+    assert!(plain.message.contains("plain v2 is newer") && plain.message.contains("reads v1"), "{plain}");
     let older = cap_abi::speaks("thing", 0, 1).unwrap_err();
-    assert!(older.contains("migrate.migrate"), "{older}");
+    assert!(older.message.contains("migrate.migrate"), "{older}");
 }
 
 #[test]

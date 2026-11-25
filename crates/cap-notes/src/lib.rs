@@ -89,14 +89,14 @@ pub enum Response {
     },
 }
 
-fn held(hash: Option<&str>) -> Result<std::sync::Arc<Notes>, String> {
+fn held(hash: Option<&str>) -> Result<std::sync::Arc<Notes>, cap_abi::Refusal> {
     match hash {
         Some(h) => kind::<transit_notes::Notes>().require(h),
         None => Ok(std::sync::Arc::new(Notes::default())),
     }
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Validate { notes } => Ok(match notes.0.checked() {
             Ok(notes) => {
@@ -147,23 +147,23 @@ enum Intent {
     Write { id: String, target: NoteTarget, text: String },
 }
 
-fn receive(write: transit_log::Write, heads: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+fn receive(write: transit_log::Write, heads: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, cap_abi::Refusal> {
     let (by, at) = write.stamp();
     if let Some(seq) = write.landed()? {
         return Ok(Response::Receive(transit_log::Received::landed(seq)));
     }
     let mut hash = heads.get("notes").cloned();
-    let refused = |op, refusals: Vec<NoteRefusal>| -> Result<Response, String> {
+    let refused = |op, refusals: Vec<NoteRefusal>| -> Result<Response, cap_abi::Refusal> {
         Ok(Response::Receive(transit_log::Received::refused(op, serde_json::to_value(refusals).map_err(|e| e.to_string())?)))
     };
-    let failed = |op, error| Ok(Response::Receive(transit_log::Received::failed(op, error)));
+    let failed = |op, error: cap_abi::Refusal| Ok(Response::Receive(transit_log::Received::failed(op, error)));
     for (i, call) in ops.iter().enumerate() {
         if call.cap != "notes" {
-            return failed(i, format!("{} {} is not a write to the notes log (notes: write)", call.cap, call.op));
+            return failed(i, format!("{} {} is not a write to the notes log (notes: write)", call.cap, call.op).into());
         }
         let Intent::Write { id, target, text } = match call.request::<Intent>() {
             Ok(intent) => intent,
-            Err(e) => return failed(i, e),
+            Err(e) => return failed(i, e.into()),
         };
         let written = match dispatch(Request::Write { notes_hash: hash.clone(), id, target, text, by: by.to_string(), at }) {
             Ok(written) => written,
@@ -186,7 +186,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: a notes document registers on the kernel's load_notes") }).to_string()
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: a notes document registers on the kernel's load_notes") } }).to_string()
 }
 
 #[cfg(feature = "examples")]

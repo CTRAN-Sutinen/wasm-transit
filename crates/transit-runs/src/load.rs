@@ -12,9 +12,9 @@ impl transit_version::Load for crate::WorkRules {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "work_rules" };
     type Answer = WorkRulesLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let document: crate::WorkRules = transit_version::parse_versioned(bytes).map_err(|e| format!("work rules: {e}"))?;
-        document.checked().map_err(|e| format!("work rules: {e}"))
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        let document: crate::WorkRules = transit_version::parse_versioned(bytes).map_err(|e| e.context("work rules"))?;
+        document.checked().map_err(|e| format!("work rules: {e}").into())
     }
 
     fn canonical(&self) -> Option<Result<String, String>> {

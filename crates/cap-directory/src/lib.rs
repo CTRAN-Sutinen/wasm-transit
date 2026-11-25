@@ -139,7 +139,7 @@ pub enum Response {
 
 pub const STOPS_NEAR_LIMIT: u32 = 10;
 
-fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
+fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
     kind::<transit_network::Network>().require(network_hash)
 }
 
@@ -154,7 +154,7 @@ fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
     })
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Stops { network_hash, query, limit } => {
             let network = network_arc(&network_hash)?;
@@ -169,10 +169,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::StopsNear { network_hash, lat, lon, limit, radius_m, walks } => {
             if !(-90.0..=90.0).contains(&lat) {
-                return Err(format!("lat {lat} is not a latitude (-90..=90)"));
+                return Err(format!("lat {lat} is not a latitude (-90..=90)").into());
             }
             if !(-180.0..=180.0).contains(&lon) {
-                return Err(format!("lon {lon} is not a longitude (-180..=180)"));
+                return Err(format!("lon {lon} is not a longitude (-180..=180)").into());
             }
             if radius_m.is_some_and(|r| r.is_nan() || r < 0.0) {
                 return Err("radius_m must be a non-negative number of meters".into());
@@ -284,7 +284,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: directory has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: directory has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]

@@ -29,9 +29,9 @@ function instantiate(dependent) {
         const value = state.entry ?? (dependent ? "cold" : "warmed");
         return JSON.stringify({ ok: value });
       }
-      return '{"error":"unknown op"}';
+      return '{"error":{"message":"unknown op"}}';
     };
-    return { invoke: answer, invokeBytes: () => '{"error":"no bulk op"}' };
+    return { invoke: answer, invokeBytes: () => '{"error":{"message":"no bulk op"}}' };
   };
 }
 

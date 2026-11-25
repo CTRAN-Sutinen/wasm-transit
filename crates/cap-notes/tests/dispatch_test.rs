@@ -17,7 +17,7 @@ fn ok(request: Value) -> Value {
 
 fn err(request: Value) -> String {
     let answer = run(request.clone());
-    answer.get("error").and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+    answer.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
 }
 
 fn trip() -> Value {
@@ -50,7 +50,7 @@ fn a_refused_document_names_each_reason_and_never_registers() {
     let v = ok(json!({ "op": "validate", "notes": bad }));
     assert_eq!(v["refusals"][0], json!({ "note": "n1", "problem": { "kind": "blank_text" } }));
     assert!(v["document"].is_null());
-    assert!(run(json!({ "op": "load_notes", "notes": bad }))["error"].as_str().unwrap().contains("n1"));
+    assert!(run(json!({ "op": "load_notes", "notes": bad }))["error"]["message"].as_str().unwrap().contains("n1"));
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn the_document_round_trips_through_the_log_records() {
 fn garbage_is_an_error_not_a_panic() {
     assert!(err(json!({ "op": "on", "notes_hash": "sha256:nope", "target": trip() })).contains("sha256:nope"));
     assert!(err(json!({ "op": "write", "id": "n1" })).contains("missing field"));
-    assert!(run(json!({ "op": "load_notes", "notes": [1, 2] }))["error"].is_string());
+    assert!(run(json!({ "op": "load_notes", "notes": [1, 2] }))["error"]["message"].is_string());
 }
 
 fn header(seq: u64, key: Option<&str>) -> Value {
@@ -152,9 +152,9 @@ fn receive_answers_a_refused_op_with_no_entry() {
 fn receive_refuses_another_log_s_op_and_a_page_that_names_the_writer_is_not_believed() {
     let other = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{ "cap": "alerts", "op": "put", "args": {} }] }));
     assert_eq!(other["failed"]["op"], 0, "{other}");
-    assert!(other["failed"]["error"].as_str().unwrap().contains("not a write to the notes log"), "{other}");
+    assert!(other["failed"]["error"]["message"].as_str().unwrap().contains("not a write to the notes log"), "{other}");
     let unread = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{ "cap": "notes", "op": "write", "args": { "id": "n1" } }] }));
-    assert!(unread["failed"]["error"].as_str().unwrap().contains("notes write"), "arguments it cannot read: {unread}");
+    assert!(unread["failed"]["error"]["message"].as_str().unwrap().contains("notes write"), "arguments it cannot read: {unread}");
     let mut named = write_op("n1", "Called the rider.");
     named["args"]["by"] = json!("someone-else");
     let got = ok(json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [named] }));

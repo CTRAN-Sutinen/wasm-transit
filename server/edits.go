@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"rustwasm/server/store"
@@ -107,7 +106,7 @@ func (s *server) writeEdits(r *http.Request, client json.RawMessage, from *strin
 
 func editsRefused(w http.ResponseWriter, got received, refusal *logRefusal) {
 	if got.Failed != nil {
-		http.Error(w, got.Failed.Error, http.StatusBadRequest)
+		answerFailed(w, got.Failed.Error, http.StatusBadRequest, "")
 		return
 	}
 	writeRefused(w, refusal)
@@ -126,7 +125,7 @@ func editsWriteFailed(w http.ResponseWriter, err error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]any{"current": ce.Current, "seq": ce.Seq})
-	case strings.Contains(err.Error(), "moved on every attempt"):
+	case errors.Is(err, errLogMoved):
 		http.Error(w, "conflict: the disruptions log moved, retry", http.StatusConflict)
 	default:
 		fail(w, err, http.StatusBadRequest)

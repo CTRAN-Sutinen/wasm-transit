@@ -417,13 +417,13 @@ func (i *Instance) Fault(ctx context.Context) error {
 func decode(raw []byte, out any) error {
 	var outcome struct {
 		OK    json.RawMessage `json:"ok"`
-		Error *string         `json:"error"`
+		Error *ModuleError    `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &outcome); err != nil {
 		return fmt.Errorf("unparseable outcome: %w", err)
 	}
 	if outcome.Error != nil {
-		return fmt.Errorf("op failed: %s", *outcome.Error)
+		return &Refused{*outcome.Error}
 	}
 	if out == nil || len(outcome.OK) == 0 {
 		return nil

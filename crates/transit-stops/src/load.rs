@@ -12,11 +12,11 @@ impl transit_version::Load for crate::Stops {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "stops" };
     type Answer = StopsLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let document: crate::Stops = transit_version::parse_versioned(bytes).map_err(|e| format!("stops document: {e}"))?;
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        let document: crate::Stops = transit_version::parse_versioned(bytes).map_err(|e| e.context("stops document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("stops document: {}", reasons.join("; "))
+            format!("stops document: {}", reasons.join("; ")).into()
         })
     }
 

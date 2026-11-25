@@ -44,11 +44,11 @@ pub enum Response {
 
 /// A network read one version ahead is refused here, because an edit writes
 /// the next document (D-186).
-fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
+fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
     kind::<transit_network::Network>().require_writable(network_hash)
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Apply { network_hash, edits, work_rules_hash } => {
             let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
@@ -78,7 +78,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: author has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: author has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]

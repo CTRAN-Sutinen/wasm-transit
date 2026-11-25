@@ -30,7 +30,7 @@ fn ok(request: Value) -> Value {
 
 fn err(request: Value) -> String {
     let answer = run(request.clone());
-    answer["error"].as_str().unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+    answer["error"]["message"].as_str().unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
 }
 
 fn header(seq: u64, key: Option<&str>) -> Value {

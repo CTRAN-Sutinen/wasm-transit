@@ -19,6 +19,7 @@ import (
 	"net/http"
 
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 func orNull(doc []byte) json.RawMessage {
@@ -102,13 +103,20 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose, from strin
 	case err != nil:
 		return out, nil, err
 	case got.Failed != nil:
-		return out, nil, errors.New(got.Failed.Error)
+		return out, nil, &wasmhost.Refused{ModuleError: got.Failed.Error}
 	case got.Refused != nil:
 		// The 422 body is {issues, refusals} when the network does not
 		// publish, and {issues} for a plan issue.
 		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: got.Refused.Refusals}, nil
 	case refusal != nil:
 		if m, ok := refusal.body.(map[string]any); ok && refusal.status == http.StatusBadRequest {
+			if e, ok := m["error"].(wasmhost.ModuleError); ok {
+				if e.Code != "" {
+					body, _ := json.Marshal(map[string]wasmhost.ModuleError{"error": e})
+					return out, &publishRefusal{code: refusal.status, json: body}, nil
+				}
+				return out, &publishRefusal{code: refusal.status, text: e.Message}, nil
+			}
 			return out, &publishRefusal{code: refusal.status, text: fmt.Sprint(m["error"])}, nil
 		}
 		body, _ := json.Marshal(refusal.body)
@@ -136,7 +144,7 @@ func (s *server) receivePlans(ctx context.Context, l *keptLog, w logWrite, ops [
 	case err != nil:
 		return 0, nil, err
 	case got.Failed != nil:
-		return 0, nil, errors.New(got.Failed.Error)
+		return 0, nil, &wasmhost.Refused{ModuleError: got.Failed.Error}
 	case got.Refused != nil:
 		return 0, &logRefusal{http.StatusUnprocessableEntity, map[string]any{"issues": got.Refused.Refusals}}, nil
 	}

@@ -14,8 +14,8 @@ impl transit_version::Load for crate::RtOverview {
     const RETAIN: transit_version::Retain = transit_version::Retain::Last(8);
     type Answer = RtLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        crate::decode_overview(bytes)
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        Ok(crate::decode_overview(bytes)?)
     }
 
     fn canonical(&self) -> Option<Result<String, String>> {

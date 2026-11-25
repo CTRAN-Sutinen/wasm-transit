@@ -24,9 +24,17 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
 
-// The kernel's label for the kind is free text ("live document"). The load
-// op's name is exact.
-export const UNKNOWN_DOCUMENT = /^\{"error":"unknown (.+?) (sha256:[0-9a-f]{64}): (load_[a-z_]+) first"\}$/;
+// A module refuses a document that it does not hold with the unknown_document
+// code and its kind, hash, and load op (docs/architecture/bus.md, "Answers").
+export function unknownDocument(outcome) {
+  if (!outcome.startsWith('{"error"')) return null;
+  try {
+    const error = JSON.parse(outcome).error;
+    return error?.code === "unknown_document" ? error : null;
+  } catch {
+    return null;
+  }
+}
 
 export function sha256(bytes) {
   return "sha256:" + createHash("sha256").update(bytes).digest("hex");
@@ -39,7 +47,7 @@ export function journalWriter(dir, run) {
   const blobs = new Map();
   return {
     record({ instance, cap, module, call, op, payload, outcome }) {
-      if (UNKNOWN_DOCUMENT.test(outcome)) return;
+      if (unknownDocument(outcome)) return;
       const request = sha256(payload);
       blobs.set(request, payload);
       lines.push(JSON.stringify({ run, instance, cap, module, call, op, request, output: sha256(outcome) }));
@@ -139,16 +147,16 @@ export function replay({ dir, place, kernelLoads, stateOps = {} }) {
     const ask = () => (code === "json" ? instance.invokeRaw(payload) : instance.invokeBytes(code, payload));
     let text = ask();
     for (let tries = 0; tries < 8; tries++) {
-      const missing = UNKNOWN_DOCUMENT.exec(text);
-      const source = missing && documents.get(missing[2]);
+      const missing = unknownDocument(text);
+      const source = missing && documents.get(missing.hash);
       if (!source) break;
       const loaded = source.call === "json" ? instance.invokeRaw(source.payload) : instance.invokeBytes(source.call, source.payload);
-      if (!loaded.includes(missing[2])) break;
+      if (!loaded.includes(missing.hash)) break;
       text = ask();
     }
-    const missing = UNKNOWN_DOCUMENT.exec(text);
+    const missing = unknownDocument(text);
     if (missing) {
-      report.cannot.push({ ...where, why: `${missing[1]} ${missing[2]} never crossed to the journal's host` });
+      report.cannot.push({ ...where, why: `${missing.kind} ${missing.hash} never crossed to the journal's host` });
       return;
     }
     const aboutInstance = code === "json" ? stateNames.has(entry.op) : stateCodes.has(code & 0xffff);

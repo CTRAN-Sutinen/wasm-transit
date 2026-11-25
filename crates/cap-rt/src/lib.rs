@@ -86,23 +86,23 @@ pub enum Response {
     },
 }
 
-fn boundary_arc(hash: Option<&str>) -> Result<Arc<Boundary>, String> {
+fn boundary_arc(hash: Option<&str>) -> Result<Arc<Boundary>, cap_abi::Refusal> {
     match hash {
         Some(hash) => kind::<transit_codec::Boundary>().require(hash),
         None => Ok(Arc::new(Boundary::default())),
     }
 }
 
-fn snapshot_arc(rt_hash: &str) -> Result<Arc<RtOverview>, String> {
+fn snapshot_arc(rt_hash: &str) -> Result<Arc<RtOverview>, cap_abi::Refusal> {
     kind::<transit_rt::RtOverview>().require(rt_hash)
 }
 
-fn decode(bytes: &[u8]) -> Result<Response, String> {
+fn decode(bytes: &[u8]) -> Result<Response, cap_abi::Refusal> {
     let (rt_hash, overview) = kind::<transit_rt::RtOverview>().register_bytes(bytes)?;
     Ok(Response::Decode { overview: (*overview).clone(), rt_hash })
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Decode { bytes } => decode(&bytes),
         Request::TripProgress { network_hash, boundary_hash, rt_hash, trip_id } => {
@@ -166,7 +166,7 @@ pub fn dispatch_json(text: &str) -> String {
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     match op {
         OP_DECODE => cap_abi::outcome(decode(bytes)),
-        other => cap_abi::outcome::<()>(Err(format!("unknown bulk op {other}"))),
+        other => cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {other}"))),
     }
 }
 

@@ -77,7 +77,7 @@ export function independence({ manifest, fixtures = {}, instantiate }) {
   return { compared, answered, failures };
 }
 
-function shell(bytes) {
+export function shell(bytes) {
   const ex = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
   const call = (payload, enter) => {
     const ptr = ex.transit_alloc(payload.length);

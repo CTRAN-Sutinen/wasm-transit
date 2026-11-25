@@ -113,7 +113,7 @@
 // kernel load and runs the op again. The line lists it in `registered`.
 
 import { createHash, randomUUID } from "node:crypto";
-import { UNKNOWN_DOCUMENT, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
+import { unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -562,20 +562,18 @@ async function runSession() {
       for (const value of Object.values(resolved)) learnZone(value, result);
       result.text = module.invoke(resolved);
       for (let tries = 0; tries < 8; tries++) {
-        // The kernel's label for the kind is free text ("live document").
-        // The load op's name is exact.
-        const missing = UNKNOWN_DOCUMENT.exec(result.text);
-        const kind = missing && Object.values(kindLoads()).find((k) => k.name === missing[3])?.kind;
-        const document = kind && heldDocument(kind, missing[2]);
-        if (!document || loadCodes[missing[3]] === undefined) break;
-        const loaded = JSON.parse(module.invokeBytes(loadCodes[missing[3]], Buffer.from(JSON.stringify(document))));
+        const missing = unknownDocument(result.text);
+        const kind = missing && Object.values(kindLoads()).find((k) => k.name === missing.load)?.kind;
+        const document = kind && heldDocument(kind, missing.hash);
+        if (!document || loadCodes[missing.load] === undefined) break;
+        const loaded = JSON.parse(module.invokeBytes(loadCodes[missing.load], Buffer.from(JSON.stringify(document))));
         // A load names its hash field for the kind's short name
         // (`alerts_hash` for service_alerts), so match any hash field.
-        const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing[2]);
+        const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing.hash);
         if (!named) {
-          throw new Error(`registering ${kind} ${missing[2]}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
+          throw new Error(`registering ${kind} ${missing.hash}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
         }
-        (result.registered ??= []).push(`${kind} ${missing[2]}`);
+        (result.registered ??= []).push(`${kind} ${missing.hash}`);
         result.text = module.invoke(resolved);
       }
     }

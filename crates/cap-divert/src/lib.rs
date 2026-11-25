@@ -78,11 +78,11 @@ pub enum Response {
     Restore { edits: EditDocument },
 }
 
-fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
+fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
     kind::<transit_network::Network>().require(network_hash)
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     let next = |records| EditDocument::new(records);
     match request {
         Request::Draft { network_hash, draft } => {
@@ -140,7 +140,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: divert has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: divert has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]

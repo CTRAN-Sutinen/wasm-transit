@@ -392,7 +392,7 @@ pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_m
 /// newer one naming both versions. A document one version ahead is read down
 /// by a lossless step. A read-only step refuses the write (`Versioned::AHEAD`,
 /// D-186).
-pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), String> {
+pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), transit_version::Refusal> {
     use transit_version::{ReadAs, Versioned};
     let found = version::schema_version_of(document)?;
     let (records, dropped) = match transit_version::reads::<EditDocument>(found)? {

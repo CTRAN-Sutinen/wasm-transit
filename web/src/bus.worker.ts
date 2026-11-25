@@ -6,6 +6,7 @@ import type { CapManifest } from "./types/cap_abi/CapManifest";
 import type { Capability } from "./types/cap_abi/Capability";
 import type { LinkedAssembly } from "./types/cap_abi/LinkedAssembly";
 import type { BusRequest, BusReply, CapStatus, Route } from "./bus";
+import { unknownDocument } from "./refusals";
 
 type CapExports = {
   memory: WebAssembly.Memory;
@@ -154,15 +155,14 @@ async function reclaim(a: Assembled): Promise<boolean> {
 type Journal = { run: string; lines: (string | null)[]; blobs: Map<string, Uint8Array>; pending: Promise<void>[] };
 let journal: Journal | null = null;
 
-// The engine recovers from this refusal by registering the document, so
-// it is not journaled. The kernel's label for the kind is free text.
-const UNKNOWN_DOCUMENT = /^\{"error":"unknown (.+?) (sha256:[0-9a-f]{64}): (load_[a-z_]+) first"\}$/;
 // The engine writes `cap` (in a linked assembly) and `op` first.
 const OP_NAME = /^\{(?:"cap":"[a-z_]+",)?"op":"([a-z_]+)"/;
 
 function record(a: Assembled, cap: string, call: "json" | number, payload: Uint8Array, outcome: string): void {
   const j = journal;
-  if (!j || UNKNOWN_DOCUMENT.test(outcome)) return;
+  // The engine recovers from an unknown document by registering it, so it
+  // is not journaled.
+  if (!j || unknownDocument(outcome)) return;
   const slot = j.lines.push(null) - 1;
   const instance = `${j.run}/${a.key}@${a.resets}`;
   const op = call === "json" ? (OP_NAME.exec(new TextDecoder().decode(payload.subarray(0, 120)))?.[1] ?? null) : `bulk ${call}`;

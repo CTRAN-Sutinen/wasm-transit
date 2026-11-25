@@ -52,7 +52,7 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
 /// (`Versioned::AHEAD`, D-186). A copy read ahead is noted for
 /// [`noting_read`]. The document is never parsed and re-emitted
 /// (docs/FORMATS.md, "Versions").
-pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, String>
+pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, crate::Refusal>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
@@ -72,7 +72,7 @@ pub struct ReadAhead {
     pub hash: String,
 }
 
-pub fn read_versioned<T>(bytes: &[u8]) -> Result<(T, Option<ReadAhead>), String>
+pub fn read_versioned<T>(bytes: &[u8]) -> Result<(T, Option<ReadAhead>), crate::Refusal>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
@@ -86,10 +86,10 @@ where
         // version. A document in this version is only malformed.
         Err(typed) => match parse_value(bytes) {
             Ok(value) => match crate::reads::<T>(version_in::<T>(&value))? {
-                ReadAs::Current => Err(typed),
+                ReadAs::Current => Err(typed.into()),
                 ReadAs::Ahead(how) => ahead(value, how),
             },
-            Err(_) => Err(typed),
+            Err(_) => Err(typed.into()),
         },
     }
 }
@@ -105,7 +105,7 @@ pub fn value_hash(value: &serde_json::Value) -> Result<String, String> {
     canonical_hash(value)
 }
 
-fn ahead<T>(value: serde_json::Value, how: crate::Ahead) -> Result<(T, Option<ReadAhead>), String>
+fn ahead<T>(value: serde_json::Value, how: crate::Ahead) -> Result<(T, Option<ReadAhead>), crate::Refusal>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
@@ -129,20 +129,20 @@ pub fn noting_read<R>(read: impl FnOnce() -> R) -> (R, Option<ReadAhead>) {
     (answer, NOTED_READ.with(|noted| noted.take()))
 }
 
-pub fn versioned<T>(value: serde_json::Value) -> Result<T, String>
+pub fn versioned<T>(value: serde_json::Value) -> Result<T, crate::Refusal>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
     read_value::<T>(value).map(|(document, _)| document)
 }
 
-pub fn read_value<T>(value: serde_json::Value) -> Result<(T, Option<ReadAhead>), String>
+pub fn read_value<T>(value: serde_json::Value) -> Result<(T, Option<ReadAhead>), crate::Refusal>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
     match crate::reads::<T>(version_in::<T>(&value))? {
         crate::ReadAs::Current => {
-            serde_json::from_value(value).map(|document| (document, None)).map_err(|e| format!("invalid document: {e}"))
+            serde_json::from_value(value).map(|document| (document, None)).map_err(|e| format!("invalid document: {e}").into())
         }
         crate::ReadAs::Ahead(how) => ahead(value, how),
     }

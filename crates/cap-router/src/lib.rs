@@ -103,13 +103,13 @@ pub enum Response {
 }
 
 /// A walk table belongs to one network, and its stops mean nothing in another.
-fn walks_arc(walks_hash: &str, network_hash: &str) -> Result<Arc<WalkTable>, String> {
+fn walks_arc(walks_hash: &str, network_hash: &str) -> Result<Arc<WalkTable>, cap_abi::Refusal> {
     let table = kind::<transit_streets::walking::WalkTable>().require(walks_hash)?;
     if table.network_hash != network_hash {
         return Err(format!(
             "walk table {walks_hash} walks network {}, not {network_hash}",
             table.network_hash
-        ));
+        ).into());
     }
     Ok(table)
 }
@@ -125,7 +125,7 @@ fn graph(
     live_hash: Option<&str>,
     walks_hash: Option<&str>,
     date_str: &str,
-) -> Result<Arc<transit_router::RouterNetwork>, String> {
+) -> Result<Arc<transit_router::RouterNetwork>, cap_abi::Refusal> {
     // Parse the date first, so a bad date is a caller error and not a
     // missing-document error.
     let date = parse_date(date_str)?;
@@ -154,11 +154,11 @@ fn graph(
         if let Some(walks) = &walks {
             built = built.with_walks(walks);
         }
-        Ok(built)
+        Ok::<_, cap_abi::Refusal>(built)
     })
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::PlanArriveBy {
             network_hash, edits_hash, from, to, date, arrive_by_secs, max_legs, live_hash, walks_hash, direct,
@@ -251,7 +251,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the router has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: the router has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]
@@ -267,7 +267,7 @@ cap_abi::capability! {
     speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("live", &[1]), ("walks", &[1])],
 }
 
-fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
+fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
     let on = transit_dispatch::day_date(date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
     let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;

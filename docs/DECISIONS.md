@@ -306,5 +306,4 @@ first, and open only the entries you need.
 | [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | decided | nothing |
 | [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
 | [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |
-| [D-253](decisions/D-253.md) | What shape does a coded refusal take in a module's answer? | decided | nothing |
 | [D-254](decisions/D-254.md) | Which kinds may the server and the engine name? | decided; built | nothing |

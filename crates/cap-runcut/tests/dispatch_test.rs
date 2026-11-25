@@ -273,7 +273,7 @@ fn the_block_chain_ripples_under_a_live_prediction() {
         live_hash: Some("sha256:missing".into()),
     })
     .unwrap_err();
-    assert!(err.contains("unknown live document"), "{err}");
+    assert!(err.message.contains("unknown live document"), "{err}");
 }
 
 #[test]
@@ -389,7 +389,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         live_hash: None,
     })
     .unwrap_err();
-    assert!(err.contains("unknown edits"), "{err}");
+    assert!(err.message.contains("unknown edits"), "{err}");
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
@@ -478,7 +478,7 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
         work_rules_hash: Some("sha256:nope".into()),
     })
     .unwrap_err();
-    assert!(err.contains("load_work_rules"), "{err}");
+    assert!(err.message.contains("load_work_rules"), "{err}");
 }
 
 /// Adopting the answer's edits makes a document whose fleet peak is the

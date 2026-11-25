@@ -11,7 +11,7 @@ impl transit_version::Load for crate::Boundary {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "boundary" };
     type Answer = BoundaryLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
         transit_version::parse_versioned(bytes)
     }
 
@@ -38,8 +38,8 @@ impl transit_version::Load for crate::Feed {
     const FORM: transit_version::Form = transit_version::Form::Bytes;
     type Answer = FeedLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        crate::Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}"))
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        crate::Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}").into())
     }
 
     fn canonical(&self) -> Option<Result<String, String>> {

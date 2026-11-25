@@ -88,7 +88,7 @@ fn strings(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| s.to_string()).collect()
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Validate { requests } => {
             Ok(match requests.0.checked() {
@@ -184,7 +184,7 @@ pub fn dispatch_json(text: &str) -> String {
 /// A document registers on the kernel's `load_stop_requests` (271), so this
 /// crate has no bytes ops.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: a stop requests document registers on the kernel's load_stop_requests") }).to_string()
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: a stop requests document registers on the kernel's load_stop_requests") } }).to_string()
 }
 
 #[cfg(feature = "examples")]

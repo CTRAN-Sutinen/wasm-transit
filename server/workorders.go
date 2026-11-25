@@ -178,7 +178,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if refusal != nil {
 		if got.Failed != nil {
-			http.Error(w, got.Failed.Error, http.StatusBadRequest)
+			answerFailed(w, got.Failed.Error, http.StatusBadRequest, "")
 			return
 		}
 		if body, ok := refusal.body.(map[string]any); ok {

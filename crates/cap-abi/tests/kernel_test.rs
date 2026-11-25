@@ -32,7 +32,7 @@ fn outcomes_are_the_ok_or_error_envelope() {
     let ok: serde_json::Value = serde_json::from_str(&cap_abi::outcome(Ok::<_, String>(vec![1, 2]))).unwrap();
     assert_eq!(ok, serde_json::json!({ "ok": [1, 2] }));
     let err: serde_json::Value = serde_json::from_str(&cap_abi::outcome(Err::<(), _>("nope".to_string()))).unwrap();
-    assert_eq!(err, serde_json::json!({ "error": "nope" }));
+    assert_eq!(err, serde_json::json!({ "error": { "message": "nope" } }));
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn the_live_document_reads_v2_only() {
         "window": {"early_secs": 0, "late_secs": 300, "very_late_secs": 600}, "trips": [], "vehicles": [], "unmatched_trips": 0
     });
     let older = cap_abi::parse_versioned::<transit_live::LiveDay>(body.to_string().as_bytes()).unwrap_err();
-    assert!(older.contains("live v1") && older.contains("reads v2"), "{older}");
+    assert!(older.message.contains("live v1") && older.message.contains("reads v2"), "{older}");
     let mut current = body.clone();
     current["kind"] = serde_json::json!("live");
     current["schema_version"] = serde_json::json!(2);
@@ -97,7 +97,7 @@ fn the_live_document_reads_v2_only() {
     assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
     current["schema_version"] = serde_json::json!(3);
     let newer = cap_abi::parse_versioned::<transit_live::LiveDay>(current.to_string().as_bytes()).unwrap_err();
-    assert!(newer.contains("live v3") && newer.contains("reads v2"), "{newer}");
+    assert!(newer.message.contains("live v3") && newer.message.contains("reads v2"), "{newer}");
 }
 
 /// The check runs at the load, never deep inside an op.
@@ -111,15 +111,15 @@ fn a_network_load_refuses_other_versions_naming_both() {
     let root = doc.as_object_mut().unwrap();
     root.remove("schema_version");
     let older = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
-    assert!(older.contains("network v1") && older.contains(&format!("reads v{current}")) && older.contains("migrate"), "{older}");
+    assert!(older.message.contains("network v1") && older.message.contains(&format!("reads v{current}")) && older.message.contains("migrate"), "{older}");
 
     doc["schema_version"] = serde_json::json!(current + 1);
     // A newer document's shape may still parse, so its tag must refuse it.
     let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
-    assert!(newer.contains(&format!("network v{}", current + 1)) && newer.contains(&format!("reads v{current}")), "{newer}");
+    assert!(newer.message.contains(&format!("network v{}", current + 1)) && newer.message.contains(&format!("reads v{current}")), "{newer}");
     doc["stops"] = serde_json::json!("a shape this build does not know");
     let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
-    assert!(newer.contains(&format!("network v{}", current + 1)), "{newer}");
+    assert!(newer.message.contains(&format!("network v{}", current + 1)), "{newer}");
 }
 
 /// The derived kinds and the work rules gained their tags at v1, so an
@@ -136,7 +136,7 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
         newer[T::VERSION_FIELD] = serde_json::json!(T::READS + 1);
         let err = cap_abi::parse_versioned::<T>(newer.to_string().as_bytes()).unwrap_err();
         assert!(
-            err.contains(&format!("{} v{}", T::KIND, T::READS + 1)) && err.contains(&format!("reads v{}", T::READS)),
+            err.message.contains(&format!("{} v{}", T::KIND, T::READS + 1)) && err.message.contains(&format!("reads v{}", T::READS)),
             "{err}"
         );
         let mut other = written;
@@ -159,13 +159,13 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
 fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
     use transit_requests::StopRequests;
     let err = cap_abi::parse_versioned::<StopRequests>(br#"{"kind":"stop_requests","schema_version":1,"requests":{}}"#).unwrap_err();
-    assert!(err.contains("stop_requests v1") && err.contains("migrate"), "{err}");
+    assert!(err.message.contains("stop_requests v1") && err.message.contains("migrate"), "{err}");
     let untagged: StopRequests = cap_abi::parse_versioned(br#"{"requests":{}}"#).unwrap();
     assert_eq!(serde_json::to_value(&untagged).unwrap()["schema_version"], 2);
     let read: StopRequests = cap_abi::parse_versioned(br#"{"kind":"stop_requests","schema_version":2,"requests":{}}"#).unwrap();
     assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
     let err = cap_abi::parse_versioned::<StopRequests>(br#"{"kind":"stop_requests","schema_version":3,"requests":{}}"#).unwrap_err();
-    assert!(err.contains("stop_requests v3") && err.contains("reads v2"), "{err}");
+    assert!(err.message.contains("stop_requests v3") && err.message.contains("reads v2"), "{err}");
 }
 
 /// The watchlist gained its tags at v2. A copy from before them reads by
@@ -178,9 +178,9 @@ fn the_watchlist_reads_its_v2_from_before_the_tags_and_refuses_every_other_versi
     assert_eq!(written, serde_json::json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "home"}]}));
     for older in [r#"{"version":"v1","stops":[{"id":"A","note":"home"}]}"#, r#"{"version":"v1","stops":[]}"#] {
         let err = cap_abi::parse_versioned::<Watchlist>(older.as_bytes()).unwrap_err();
-        assert!(err.contains("watchlist v1") && err.contains("migrate"), "{older}: {err}");
+        assert!(err.message.contains("watchlist v1") && err.message.contains("migrate"), "{older}: {err}");
     }
     let err = cap_abi::parse_versioned::<Watchlist>(br#"{"kind":"watchlist","schema_version":3,"stops":[]}"#).unwrap_err();
-    assert!(err.contains("watchlist v3") && err.contains("reads v2"), "{err}");
+    assert!(err.message.contains("watchlist v3") && err.message.contains("reads v2"), "{err}");
     assert!(cap_abi::parse_versioned::<Watchlist>(br#"{"kind":"stops","schema_version":2,"stops":[]}"#).is_err());
 }

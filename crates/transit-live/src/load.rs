@@ -13,7 +13,7 @@ impl transit_version::Load for crate::LiveDay {
     const RETAIN: transit_version::Retain = transit_version::Retain::Last(4);
     type Answer = LiveLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
         transit_version::parse_versioned(bytes)
     }
 

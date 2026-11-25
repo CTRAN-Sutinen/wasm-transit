@@ -158,7 +158,7 @@ func TestAKeyLandsOnceAndARefusalNamesItsOp(t *testing.T) {
 	before := head
 	code, out := opsPost(t, base, "phone-9/42", op, map[string]any{"cap": "stops", "op": "correct_event",
 		"args": map[string]any{"stop_id": "C", "event_id": "e-none", "event": map[string]any{"event": "changed"}}})
-	if code != http.StatusBadRequest || out["op"] != float64(1) || !strings.Contains(out["error"].(string), "e-none") {
+	if code != http.StatusBadRequest || out["op"] != float64(1) || !strings.Contains(out["error"].(map[string]any)["message"].(string), "e-none") {
 		t.Fatalf("the second op is named: %d %v", code, out)
 	}
 	// A resend whose op would no longer pass over the head it changed still

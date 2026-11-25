@@ -63,12 +63,12 @@ function shell(exports) {
       Buffer.from(exports.memory.buffer, outPtr + 4, len).toString("utf8"),
     );
     exports.transit_free(outPtr, len + 4);
-    if (outcome.error) throw new Error("op error: " + outcome.error);
+    if (outcome.error) throw new Error("op error: " + outcome.error.message);
     return outcome.ok;
   };
   const invoke = (request) => {
     const outcome = raw(request);
-    if (outcome.error) throw new Error("op error: " + outcome.error);
+    if (outcome.error) throw new Error("op error: " + outcome.error.message);
     return outcome.ok;
   };
   const invokeBytes = (op, bytes) => {
@@ -136,16 +136,16 @@ const retiredOps = [
 ];
 for (const op of retiredOps) {
   const gone = gtfs.raw({ op, feed_hash: loadedGtfs.feed_hash });
-  assert(gone.error && gone.error.includes("invalid request"), `${op} is retired on gtfs`);
+  assert(gone.error && gone.error.message.includes("invalid request"), `${op} is retired on gtfs`);
 }
 
 const bad = gtfs.raw({ op: "nope" });
-assert(bad.error && bad.error.includes("invalid request"), "unknown ops error, never panic");
+assert(bad.error && bad.error.message.includes("invalid request"), "unknown ops error, never panic");
 const missing = gtfs.raw({
   op: "feed_info",
   feed_hash: "sha256:missing",
 });
-assert(missing.error && missing.error.includes("unknown feed"), "unknown hashes error, never panic");
+assert(missing.error && missing.error.message.includes("unknown feed"), "unknown hashes error, never panic");
 
 const analysis = shell(loadModule(byId.analysis));
 // A consumer refuses a pre-trip, untagged document (network v1) at the
@@ -193,7 +193,7 @@ const NETWORK_V1 = {
 };
 const refusedV1 = analysis.raw({ op: "load_network", network: NETWORK_V1 });
 assert(
-  refusedV1.error && refusedV1.error.includes("network v1") && refusedV1.error.includes("reads v2"),
+  refusedV1.error && refusedV1.error.message.includes("network v1") && refusedV1.error.message.includes("reads v2"),
   `a consumer refuses an older network at the load, naming both versions: ${JSON.stringify(refusedV1)}`,
 );
 const migrate = shell(loadModule(byId.migrate));
@@ -201,7 +201,7 @@ const NETWORK = migrate.invoke({ op: "migrate", kind: "network", document: NETWO
 assert(NETWORK.kind === "network" && NETWORK.schema_version === 2, "the migrated network names its kind and version");
 const newer = analysis.raw({ op: "load_network", network: { ...NETWORK, schema_version: 3 } });
 assert(
-  newer.error && newer.error.includes("network v3") && newer.error.includes("reads v2"),
+  newer.error && newer.error.message.includes("network v3") && newer.error.message.includes("reads v2"),
   "a consumer refuses a newer network at the load, naming both versions",
 );
 const loadedNet = analysis.invoke({ op: "load_network", network: NETWORK });
@@ -343,7 +343,7 @@ assert(
   "a network coverageDelta with itself gains and loses nothing: " + JSON.stringify(coverageDelta.comparison),
 );
 const unknownNet = analysis.raw({ op: "network_stats", network_hash: "sha256:missing", date: "2026-01-05" });
-assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknown hashes error, never panic");
+assert(unknownNet.error && unknownNet.error.message.includes("unknown network"), "unknown hashes error, never panic");
 
 const network = shell(loadModule(byId.network));
 const loadedNetCap = network.invokeBytes(OP_LOAD_FEED, feed);
@@ -394,9 +394,9 @@ const brokenHash = network.invoke({ op: "load_network", network: broken }).netwo
 const brokenIssues = network.invoke({ op: "validate", network_hash: brokenHash });
 assert(brokenIssues.issues.length > 0, "a referential break is reported");
 const refused = network.raw({ op: "export", network_hash: brokenHash });
-assert(refused.error && refused.error.includes("invalid network"), "export refuses invalid documents");
+assert(refused.error && refused.error.message.includes("invalid network"), "export refuses invalid documents");
 const unknownFeed = network.raw({ op: "import", feed_hash: "sha256:missing" });
-assert(unknownFeed.error && unknownFeed.error.includes("unknown feed"), "unknown hashes error, never panic");
+assert(unknownFeed.error && unknownFeed.error.message.includes("unknown feed"), "unknown hashes error, never panic");
 
 const rt = shell(loadModule(byId.rt));
 const rtPayload = readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb"));
@@ -410,7 +410,7 @@ assert(trip.stop_updates[0].departure_delay === 120, "t10 is +120 s at A");
 const vehicle = decoded.overview.vehicle_positions[0];
 assert(vehicle.label === "4201", "the vehicle label (the bus number) survives decode");
 const garbage = rt.raw({ op: "decode", bytes: [0xff, 0xff] });
-assert(garbage.error && /decode/.test(garbage.error), "garbage bytes are an error outcome, never a trap");
+assert(garbage.error && /decode/.test(garbage.error.message), "garbage bytes are an error outcome, never a trap");
 
 const loadedRt = rt.invoke({ op: "load_network", network: imported.network });
 assert(
@@ -442,7 +442,7 @@ const late = rt.invoke({
 assert(late.trips.length === 1 && late.trips[0].trip_id === "t10", "the ranked view finds the late trip");
 assert(late.trips[0].vehicle_label === "4201" && late.trips[0].has_position, "its bus is named and visible");
 const unknownJoin = rt.raw({ op: "trip_progress", network_hash: "sha256:missing", rt_hash: decoded.rt_hash, trip_id: "t10" });
-assert(unknownJoin.error && unknownJoin.error.includes("unknown network"), "unknown hashes error, never panic");
+assert(unknownJoin.error && unknownJoin.error.message.includes("unknown network"), "unknown hashes error, never panic");
 
 
 assert(byId.board && byId.runcut && byId.calendar, "manifest advertises board, runcut, and calendar");
@@ -502,12 +502,12 @@ assert(
 );
 const newerEdits = router.raw({ op: "load_edits", edits: { kind: "edit_records", schema_version: 3, records: [] } });
 assert(
-  newerEdits.error && newerEdits.error.includes("edit_records v3") && newerEdits.error.includes("reads v2"),
+  newerEdits.error && newerEdits.error.message.includes("edit_records v3") && newerEdits.error.message.includes("reads v2"),
   "a consumer refuses a newer edit document at the load, naming both versions",
 );
 const olderEdits = router.raw({ op: "load_edits", edits: [] });
 assert(
-  olderEdits.error && olderEdits.error.includes("edit_records v1") && olderEdits.error.includes("migrate"),
+  olderEdits.error && olderEdits.error.message.includes("edit_records v1") && olderEdits.error.message.includes("migrate"),
   "a consumer refuses a bare edit array (v1) at the load, naming the migration",
 );
 /// An edit document in the version the modules read (D-62, D-115).
@@ -583,7 +583,7 @@ assert(
   "arrive-by with no deadline answers the last bus home: t30 leaves 08:40",
 );
 const badRouter = router.raw({ op: "nope" });
-assert(badRouter.error && badRouter.error.includes("invalid request"), "unknown ops error, never panic");
+assert(badRouter.error && badRouter.error.message.includes("invalid request"), "unknown ops error, never panic");
 
 const stopBoard = (stop_id, from_secs, live_hash) =>
   board.invoke({
@@ -637,7 +637,7 @@ assert(
   "the realtime-first board keeps the late bus, expected 08:02",
 );
 const noSnapshot = rt.raw({ op: "live", network_hash: loadedRt.network_hash });
-assert(noSnapshot.error && noSnapshot.error.includes("needs a snapshot"), "live without a snapshot is a request error");
+assert(noSnapshot.error && noSnapshot.error.message.includes("needs a snapshot"), "live without a snapshot is a request error");
 
 const v1 = {
   version: "v1",
@@ -660,10 +660,10 @@ assert(
   "the dropped color is reported — never silent",
 );
 const againMigrate = migrate.raw({ op: "migrate", kind: "watchlist", document: migrated.document });
-assert(againMigrate.error && againMigrate.error.includes("nothing to migrate"), "re-migrating v2 errors, not panics");
+assert(againMigrate.error && againMigrate.error.message.includes("nothing to migrate"), "re-migrating v2 errors, not panics");
 const watchlistV1 = board.raw({ op: "load_watchlist", document: v1 });
 assert(
-  watchlistV1.error && watchlistV1.error.includes("watchlist v1") && watchlistV1.error.includes("migrate"),
+  watchlistV1.error && watchlistV1.error.message.includes("watchlist v1") && watchlistV1.error.message.includes("migrate"),
   "the board refuses v1 at the load, naming the migration",
 );
 const loadedWatch = board.invoke({ op: "load_watchlist", document: migrated.document });
@@ -694,7 +694,7 @@ const rulesA = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, 
 const rulesB = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, interline: [{ a: "10", b: "40" }, { a: "10", b: "20" }], recovery: [{ min_secs: 900 }] } });
 assert(rulesA.work_rules_hash === rulesB.work_rules_hash && rulesA.version === 1, "work rules: one document, one identity, however ordered");
 const refusedRules = runcut.raw({ op: "load_work_rules", work_rules: { version: 1, recovery: [{}] } });
-assert(refusedRules.error && refusedRules.error.includes("requires nothing"), "work rules that require nothing are refused at the load");
+assert(refusedRules.error && refusedRules.error.message.includes("requires nothing"), "work rules that require nothing are refused at the load");
 const recoveryView = runcut.invoke({ op: "recovery", network_hash: loadedRuncutNet.network_hash, date: DATE, work_rules_hash: rulesA.work_rules_hash });
 assert(
   recoveryView.recovery.waits.length === 1 && recoveryView.recovery.waits[0].required_secs === 900 && recoveryView.recovery.waits[0].slack_secs === -300,
@@ -1001,7 +1001,7 @@ assert(
 assert(dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "missing" }).detail === null, "an unknown stop has no composition");
 
 const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
-assert(unknownBoard.error && unknownBoard.error.includes("unknown network"), "unknown hashes error, never panic");
+assert(unknownBoard.error && unknownBoard.error.message.includes("unknown network"), "unknown hashes error, never panic");
 
 assert(byId.streets, "manifest advertises the streets capability");
 const streets = shell(loadModule(byId.streets));
@@ -1042,9 +1042,9 @@ assert(
 const nowhere = streets.invoke({ op: "snap", streets_hash: loadedStreets.streets_hash, lat: 44.0, lon: -70.0 });
 assert(nowhere.position === null, "no street nearby answers null, never an error");
 const unknownStreets = streets.raw({ op: "snap", streets_hash: "sha256:missing", lat: 0, lon: 0 });
-assert(unknownStreets.error && unknownStreets.error.includes("unknown street network sha256:missing: load_streets first"), "unknown hashes error, never panic");
+assert(unknownStreets.error && unknownStreets.error.message.includes("unknown street network sha256:missing: load_streets first"), "unknown hashes error, never panic");
 const garbageStreets = streets.raw({ op: "import", bytes: [0xff, 0xfe] });
-assert(garbageStreets.error && /street layer/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
+assert(garbageStreets.error && /street layer/.test(garbageStreets.error.message), "garbage bytes are an error outcome, never a trap");
 
 // The fixture has a residential street through the station's bays and a
 // motorway that no rider walks.
@@ -1073,7 +1073,7 @@ assert(
   "the plan walks the table's walk between the bays",
 );
 const foreignWalks = router.raw({ op: "plan", network_hash: loadedRouterNet.network_hash, from: "SA", to: "SB", date: DATE, depart_secs: 0, max_legs: 2, walks_hash: "sha256:missing" });
-assert(foreignWalks.error && foreignWalks.error.includes("load_walks first"), "an unknown walk table is an error, never a panic");
+assert(foreignWalks.error && foreignWalks.error.message.includes("load_walks first"), "an unknown walk table is an error, never a panic");
 const pin = { lat: 45.5152, lon: -73.5165 };
 const access = streets.invoke({ op: "access", streets_hash: walkStreets.streets_hash, network_hash: streetsNet.network_hash, point: pin });
 const reached = access.walks.map((w) => w.stop_id).join(" ");
@@ -1123,7 +1123,7 @@ assert(
 const empty = sync.invoke({ op: "sync_edits", client: [], server: [], now_ms: 0 });
 assert(empty.records.length === 0, "empty documents converge to empty");
 const garbageSync = sync.raw({ op: "sync_edits", client: "not a list", server: [], now_ms: 0 });
-assert(garbageSync.error && garbageSync.error.includes("invalid request"), "garbage requests are an error outcome, never a trap");
+assert(garbageSync.error && garbageSync.error.message.includes("invalid request"), "garbage requests are an error outcome, never a trap");
 
 // The answer carries the canonical document bytes and their hash. A host
 // stores those exact bytes and does not compute the hash itself
@@ -1175,7 +1175,7 @@ const badAction = authz.raw({
   identity: { sub: "a", roles: ["admin"] },
   action: "drop", pointer: "edits", policy,
 });
-assert(badAction.error && badAction.error.includes("unknown action"), "an unknown action is an error, never an allow");
+assert(badAction.error && badAction.error.message.includes("unknown action"), "an unknown action is an error, never an allow");
 
 const eff = authz.invoke({
   op: "effective",
@@ -1220,7 +1220,7 @@ assert(
   "every invariant violation is reported, never silent",
 );
 const garbagePlans = plans.raw({ op: "resolve", plans: [], date: "not a date" });
-assert(garbagePlans.error && garbagePlans.error.includes("invalid date"), "garbage dates are an error outcome, never a trap");
+assert(garbagePlans.error && garbagePlans.error.message.includes("invalid date"), "garbage dates are an error outcome, never a trap");
 
 assert(byId.author, "manifest advertises the author capability");
 const author = shell(loadModule(byId.author));
@@ -1243,7 +1243,7 @@ const firstStop = Object.keys(imported.network.stops).find((id) =>
   Object.values(imported.network.patterns).some((p) => p.stops.some((s) => s.stop === id)),
 );
 const refusedEdit = author.raw({ op: "apply", network_hash: authorNet.network_hash, edits: [{ edit: "remove_stop", id: firstStop }] });
-assert(refusedEdit.error && refusedEdit.error.includes("edit 0"), "a referenced stop is never hard-deleted out from under a pattern");
+assert(refusedEdit.error && refusedEdit.error.message.includes("edit 0"), "a referenced stop is never hard-deleted out from under a pattern");
 // A created id comes back in `created`, and a new timepoint keeps every
 // timing profile aligned.
 const gestured = author.invoke({
@@ -1332,9 +1332,9 @@ assert(retiredDoc.records[0].status === "retired" && retiredDoc.records[0].rev =
 const restoredDoc = divert.invoke({ op: "restore", edits: retiredDoc, record_id: "e9", now_ms: 7000 }).edits;
 assert(restoredDoc.records[0].status === "draft" && restoredDoc.records[0].rev === 3, "restore puts it back in force");
 const divertOlder = divert.raw({ op: "retire", edits: restoredDoc.records, record_id: "e9", now_ms: 8000 });
-assert(divertOlder.error && divertOlder.error.includes("migrate.migrate"), "an older edit document is refused naming the migration op");
+assert(divertOlder.error && divertOlder.error.message.includes("migrate.migrate"), "an older edit document is refused naming the migration op");
 const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, edits: editDoc([]), record_id: "x", now_ms: 1 });
-assert(unready.error && unready.error.includes("first stop"), "an unready draft is refused, naming why");
+assert(unready.error && unready.error.message.includes("first stop"), "an unready draft is refused, naming why");
 const cancelled = divert.invoke({
   op: "cancel", network_hash: divertNet.network_hash, edits: proposed, record_id: "c9",
   trip_id: "t10", date: DATE, now_ms: 8000,
@@ -1343,7 +1343,7 @@ assert(cancelled.length === 2 && cancelled[1].cancel.trip_id === "t10" && !("div
 const listed = divert.invoke({ op: "list", network_hash: divertNet.network_hash, edits: editDoc(cancelled) });
 assert(listed.rows.length === 1 && listed.cancels.length === 1 && listed.cancels[0].start_secs === 28800, "the list names a cancel apart");
 const notRunning = divert.raw({ op: "cancel", network_hash: divertNet.network_hash, edits: editDoc([]), record_id: "c", trip_id: "t10", date: "2026-10-25", now_ms: 1 });
-assert(notRunning.error && notRunning.error.includes("does not run"), "a cancel of a trip that does not run that day is refused");
+assert(notRunning.error && notRunning.error.message.includes("does not run"), "a cancel of a trip that does not run that day is refused");
 const cancelEdits = board.invoke({ op: "load_edits", edits: editDoc([cancelled[1]]) });
 const cancelledBoard = board.invoke({
   op: "stop_board", network_hash: loadedBoardNet.network_hash, edits_hash: cancelEdits.edits_hash,
@@ -1407,7 +1407,7 @@ for (const cap of manifest.capabilities) {
   const gone = board.invokeBytes(OP_EVICT, Buffer.from(JSON.stringify({ keep: [] })));
   assert(gone.dropped.length === 1 && gone.held.length === 0, "an unkept document drops");
   const asked = board.raw({ op: "stop_board", network_hash: net, stop_id: "A", date: DATE, from_secs: 0, limit: 3 });
-  assert(asked.error === `unknown network ${net}: load_network first`, "evicted-then-asked is the unknown-hash error");
+  assert(asked.error?.code === "unknown_document" && asked.error.hash === net && asked.error.load === "load_network", "evicted-then-asked is the unknown_document refusal");
   assert(board.invokeBytes(OP_LOAD_NETWORK, networkBytes).network_hash === net, "re-registering answers the same hash");
 }
 
@@ -1433,7 +1433,7 @@ for (const asm of manifest.assemblies) {
     `assembly ${asm.ui} links ${asm.capabilities.join(", ")}, in index order`,
   );
   const unnamed = linked.raw({ op: "routes", network_hash: "sha256:none" });
-  assert(unnamed.error?.includes("name the capability"), `assembly ${asm.ui} asks a request to name its capability`);
+  assert(unnamed.error?.message.includes("name the capability"), `assembly ${asm.ui} asks a request to name its capability`);
   if (asm.capabilities.includes("directory") && asm.capabilities.includes("network")) {
     const net = linked.invokeBytes(OP_LOAD_NETWORK, networkGzip).network_hash;
     assert(net === imported.network_hash, `assembly ${asm.ui} registers the network under the import's identity`);

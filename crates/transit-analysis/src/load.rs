@@ -17,8 +17,8 @@ impl transit_version::Load for crate::WeightedLayer {
     const FORM: transit_version::Form = transit_version::Form::Bytes;
     type Answer = LayerLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        crate::parse_layer(bytes)
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        Ok(crate::parse_layer(bytes)?)
     }
 
     fn canonical(&self) -> Option<Result<String, String>> {

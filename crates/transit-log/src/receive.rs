@@ -40,7 +40,7 @@ pub struct Write {
 }
 
 impl Write {
-    pub fn fold(&self) -> Result<Checkpoint, String> {
+    pub fn fold(&self) -> Result<Checkpoint, transit_version::Refusal> {
         let fold = match &self.checkpoint {
             None => Checkpoint::empty(&self.header.log),
             Some(v) => {
@@ -51,20 +51,20 @@ impl Write {
                 }
                 let c: Checkpoint = serde_json::from_value(v.clone()).map_err(|e| format!("invalid document: {e}"))?;
                 if c.log != self.header.log {
-                    return Err(format!("a checkpoint of the {} log, not the {} log", c.log, self.header.log));
+                    return Err(format!("a checkpoint of the {} log, not the {} log", c.log, self.header.log).into());
                 }
                 c
             }
         };
         if self.header.seq != fold.seq + 1 {
-            return Err(format!("the entry's seq is {}, and the fold is at {}", self.header.seq, fold.seq));
+            return Err(format!("the entry's seq is {}, and the fold is at {}", self.header.seq, fold.seq).into());
         }
         Ok(fold)
     }
 
     /// A receive op asks first, because the write's ops may no longer pass
     /// over the head they changed, and a resend answers where it landed.
-    pub fn landed(&self) -> Result<Option<u64>, String> {
+    pub fn landed(&self) -> Result<Option<u64>, transit_version::Refusal> {
         let Some(key) = &self.header.intent.key else { return Ok(None) };
         Ok(self.fold()?.keys.get(key).copied())
     }
@@ -151,8 +151,8 @@ impl Received {
         Received { refused: Some(Refused { op, refusals }), ..Default::default() }
     }
 
-    pub fn failed(op: usize, error: String) -> Self {
-        Received { failed: Some(Failed { op, error }), ..Default::default() }
+    pub fn failed(op: usize, error: impl Into<transit_version::Refusal>) -> Self {
+        Received { failed: Some(Failed { op, error: error.into() }), ..Default::default() }
     }
 
     pub fn conflict(op: usize, id: String) -> Self {
@@ -168,7 +168,8 @@ impl Received {
 #[ts(export)]
 pub struct Failed {
     pub op: usize,
-    pub error: String,
+    #[ts(type = "{ message: string, code?: string }")]
+    pub error: transit_version::Refusal,
 }
 
 /// Nothing is written, and the writer reads again.
@@ -186,7 +187,7 @@ pub struct Moved {
     pub current: String,
 }
 
-pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn Fn(&Entry) -> Result<String, String>) -> Result<Received, String> {
+pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn Fn(&Entry) -> Result<String, String>) -> Result<Received, transit_version::Refusal> {
     let fold = write.fold()?;
     // An unread entry that does not read is quarantined in the fold, so it
     // changed nothing that the write could overlap.

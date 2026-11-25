@@ -24,16 +24,16 @@ function fake(cap, scale = 1) {
     }
     if (request.op === "count") {
       if (!held.has(request.network_hash)) {
-        return JSON.stringify({ error: `unknown network document ${request.network_hash}: load_network first` });
+        return JSON.stringify({ error: { message: `unknown network document ${request.network_hash}: load_network first`, code: "unknown_document", kind: "network document", hash: request.network_hash, load: "load_network" } });
       }
       return JSON.stringify({ ok: { op: "count", n: request.n * scale } });
     }
-    return JSON.stringify({ error: "unknown op" });
+    return JSON.stringify({ error: { message: "unknown op" } });
   };
   return {
     module: `sha256:${cap}-${scale}`,
     invokeRaw: (bytes) => answer(JSON.parse(bytes.toString("utf8"))),
-    invokeBytes: (code, bytes) => (code === 256 ? answer({ op: "load_network" }) : JSON.stringify({ error: "bulk" })),
+    invokeBytes: (code, bytes) => (code === 256 ? answer({ op: "load_network" }) : JSON.stringify({ error: { message: "bulk" } })),
   };
 }
 

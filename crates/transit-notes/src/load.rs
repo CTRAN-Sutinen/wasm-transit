@@ -12,11 +12,11 @@ impl transit_version::Load for crate::Notes {
     const FORM: transit_version::Form = transit_version::Form::Json { field: "notes" };
     type Answer = NotesLoaded;
 
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let document: crate::Notes = transit_version::parse_versioned(bytes).map_err(|e| format!("notes document: {e}"))?;
+    fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+        let document: crate::Notes = transit_version::parse_versioned(bytes).map_err(|e| e.context("notes document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-            format!("notes document: {}", reasons.join("; "))
+            format!("notes document: {}", reasons.join("; ")).into()
         })
     }
 

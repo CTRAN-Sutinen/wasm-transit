@@ -73,7 +73,7 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
         late_limit: None,
         with_document: None,
     });
-    assert_eq!(asked.unwrap_err(), format!("unknown boundary {boundary_hash}: load_boundary first"));
+    assert_eq!(asked.unwrap_err().code, Some(cap_abi::RefusalCode::UnknownDocument { kind: "boundary".into(), hash: boundary_hash.clone(), load: "load_boundary".into() }));
     let (again, _) = kind::<transit_codec::Boundary>().register(transit_codec::import(&feed).boundary).unwrap();
     assert_eq!(again, boundary_hash);
 }

@@ -128,13 +128,13 @@ pub enum Response {
 
 use cap_abi::record_hash;
 
-fn checkpoint_of(log: &str, value: Option<serde_json::Value>) -> Result<Checkpoint, String> {
+fn checkpoint_of(log: &str, value: Option<serde_json::Value>) -> Result<Checkpoint, cap_abi::Refusal> {
     match value {
         None => Ok(Checkpoint::empty(log)),
         Some(v) => {
             let c: Checkpoint = cap_abi::versioned(v)?;
             if c.log != log {
-                return Err(format!("a checkpoint of the {} log, not the {log} log", c.log));
+                return Err(format!("a checkpoint of the {} log, not the {log} log", c.log).into());
             }
             Ok(c)
         }
@@ -145,7 +145,7 @@ fn parse<T: serde::de::DeserializeOwned>(what: &str, value: serde_json::Value) -
     serde_json::from_value(value).map_err(|e| format!("{what}: {e}"))
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Compose { checkpoint, header, next, unread } => {
             let header: Header = parse("header", header)?;
@@ -191,26 +191,26 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let header: Header = parse("header", header)?;
             let start = checkpoint_of(&log, checkpoint)?;
             if target <= start.seq {
-                return Err(format!("entry {target} is not after the checkpoint at {}", start.seq));
+                return Err(format!("entry {target} is not after the checkpoint at {}", start.seq).into());
             }
             let at = entries.iter().position(|e| e.seq == target).ok_or_else(|| format!("entry {target} is not in the entries given"))?;
             let before = transit_log::fold(start.clone(), &entries[..at], &record_hash)?;
             if before.fold.seq != target - 1 {
-                return Err(format!("the entries before {target} end at {}: the log has a gap", before.fold.seq));
+                return Err(format!("the entries before {target} end at {}: the log has a gap", before.fold.seq).into());
             }
             let head = transit_log::fold(start, &entries, &record_hash)?;
             if let Some(q) = head.quarantined.iter().find(|q| q.seq == target) {
-                return Err(format!("entry {target} is quarantined ({}): it changed nothing to revert", q.reason));
+                return Err(format!("entry {target} is quarantined ({}): it changed nothing to revert", q.reason).into());
             }
             if header.seq != head.fold.seq + 1 {
-                return Err(format!("the entry's seq is {}, and the log's head is {}", header.seq, head.fold.seq));
+                return Err(format!("the entry's seq is {}, and the log's head is {}", header.seq, head.fold.seq).into());
             }
             let entry = transit_log::read_entry(&log, &entries[at])?;
             let written: Vec<transit_log::Written> = parse("written", written.unwrap_or(serde_json::Value::Array(Vec::new())))?;
             let states = transit_log::revert_states(&before.fold, &head.fold, &entry, &record_hash)?;
             let changes = transit_log::revert_with(&states, &written, &record_hash)?;
             if changes.is_empty() {
-                return Err(format!("entry {target} changed no record"));
+                return Err(format!("entry {target} changed no record").into());
             }
             let n = changes.len();
             Ok(Response::Revert { entry: cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(target)))?, changes: n, states })
@@ -230,7 +230,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: the log is JSON (compose, fold)") }).to_string()
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: the log is JSON (compose, fold)") } }).to_string()
 }
 
 #[cfg(feature = "examples")]

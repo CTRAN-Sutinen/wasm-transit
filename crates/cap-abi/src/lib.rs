@@ -175,7 +175,7 @@ macro_rules! assembly {
         pub unsafe extern "C" fn transit_invoke(ptr: *const u8, len: usize) -> *mut u8 {
             write_result(match std::str::from_utf8(std::slice::from_raw_parts(ptr, len)) {
                 Ok(text) => $crate::kernel::invoke(CAPS, text),
-                Err(_) => r#"{"error":"invalid request: payload is not UTF-8"}"#.to_string(),
+                Err(_) => r#"{"error":{"message":"invalid request: payload is not UTF-8"}}"#.to_string(),
             })
         }
 
@@ -196,6 +196,7 @@ pub use transit_version::document::{
 };
 use transit_version::document::read_value;
 pub use transit_version::jcs;
+pub use transit_version::{Refusal, RefusalCode};
 
 /// A record that does not serialize gets a name that never equals a hash
 /// (D-190).
@@ -244,7 +245,7 @@ where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        versioned(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map(Current).map_err(serde::de::Error::custom)
+        versioned(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map(Current).map_err(stash)
     }
 }
 
@@ -266,18 +267,34 @@ where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let (document, read) = read_value::<T>(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom)?;
+        let (document, read) = read_value::<T>(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map_err(stash)?;
         if let Some(read) = read {
-            transit_version::writes_over::<T>(read.found, transit_version::ReadAs::Ahead(read.how)).map_err(serde::de::Error::custom)?;
+            transit_version::writes_over::<T>(read.found, transit_version::ReadAs::Ahead(read.how)).map_err(stash)?;
         }
         Ok(Base(document))
     }
 }
 
 /// Also return the fields that this build does not know (D-167).
-pub fn read_base<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), String> {
+pub fn read_base<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), Refusal> {
     let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<Base<T>>(doc));
-    Ok((read.map_err(|e| e.to_string())?.0, unknown))
+    Ok((read.map_err(|e| stashed().unwrap_or_else(|| e.to_string().into()))?.0, unknown))
+}
+
+thread_local! {
+    static STASHED: std::cell::RefCell<Option<Refusal>> = const { std::cell::RefCell::new(None) };
+}
+
+/// serde carries only text, so a deserializer that refuses a document keeps
+/// the refusal here, and the caller answers it with its code.
+fn stash<E: serde::de::Error>(refusal: Refusal) -> E {
+    let error = E::custom(&refusal.message);
+    STASHED.with(|stashed| *stashed.borrow_mut() = Some(refusal));
+    error
+}
+
+fn stashed() -> Option<Refusal> {
+    STASHED.with(|stashed| stashed.borrow_mut().take())
 }
 
 impl<T> std::ops::Deref for Base<T> {
@@ -289,7 +306,7 @@ impl<T> std::ops::Deref for Base<T> {
 
 /// For an older document, the error also names the op that migrates it. A
 /// newer document came from a newer build, and nothing rewrites it.
-pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), String> {
+pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), transit_version::Refusal> {
     if found == reads {
         Ok(())
     } else {
@@ -298,15 +315,19 @@ pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), String> {
 }
 
 /// A request that does not decode gives an error and does not panic.
-pub fn answer<Q: serde::de::DeserializeOwned, A: serde::Serialize>(
+pub fn answer<Q: serde::de::DeserializeOwned, A: serde::Serialize, E: Into<Refusal>>(
     text: &str,
-    dispatch: impl FnOnce(Q) -> Result<A, String>,
+    dispatch: impl FnOnce(Q) -> Result<A, E>,
 ) -> String {
+    stashed();
     let (request, unknown) = transit_version::noting_unknown(|| serde_json::from_str::<Q>(text));
     REQUEST_UNKNOWN.with(|noted| *noted.borrow_mut() = unknown);
     let answered = match request {
         Ok(request) => outcome(dispatch(request)),
-        Err(error) => outcome::<()>(Err(format!("invalid request: {error}"))),
+        Err(error) => match stashed() {
+            Some(refusal) => outcome::<(), Refusal>(Err(refusal.context("invalid request"))),
+            None => outcome::<(), String>(Err(format!("invalid request: {error}"))),
+        },
     };
     REQUEST_UNKNOWN.with(|noted| noted.borrow_mut().clear());
     answered
@@ -325,17 +346,17 @@ pub fn request_unknown_fields() -> Vec<String> {
 /// It serializes directly, because an intermediate `serde_json::Value` would
 /// copy the answer and change a document that the answer carries as its
 /// canonical bytes ([`Canonical`], docs/FORMATS.md).
-pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
+pub fn outcome<T: serde::Serialize, E: Into<Refusal>>(result: Result<T, E>) -> String {
     #[derive(serde::Serialize)]
     enum Outcome<T> {
         #[serde(rename = "ok")]
         Ok(T),
         #[serde(rename = "error")]
-        Error(String),
+        Error(Refusal),
     }
     let outcome = match result {
         Ok(value) => Outcome::Ok(value),
-        Err(error) => Outcome::Error(error),
+        Err(error) => Outcome::Error(error.into()),
     };
     serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
 }

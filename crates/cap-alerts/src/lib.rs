@@ -175,7 +175,7 @@ struct Heads {
     unknown_fields: Vec<String>,
 }
 
-fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option<transit_log::Received>, String> {
+fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
     let refused = |refusals: serde_json::Value| Ok(Some(transit_log::Received::refused(op, refusals)));
     match intent {
         Intent::Put { id, alert } => match dispatch(Request::Put { alerts_hash: heads.alerts.clone(), id, alert })? {
@@ -225,7 +225,7 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
     Ok(None)
 }
 
-fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
+fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, cap_abi::Refusal> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
@@ -237,7 +237,7 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
             let error = format!("{} {} is not a write to the alerts log (alerts: put, end, put_template, validate, validate_templates)", call.cap, call.op);
             return answer(transit_log::Received::failed(i, error));
         }
-        match call.request::<Intent>().and_then(|intent| step(&mut heads, intent, i, now)) {
+        match call.request::<Intent>().map_err(Into::into).and_then(|intent| step(&mut heads, intent, i, now)) {
             Ok(None) => {}
             Ok(Some(ended)) => return answer(ended),
             Err(e) => return answer(transit_log::Received::failed(i, e)),
@@ -255,14 +255,14 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
     answer(received)
 }
 
-fn held_alerts(hash: Option<&str>) -> Result<std::sync::Arc<ServiceAlerts>, String> {
+fn held_alerts(hash: Option<&str>) -> Result<std::sync::Arc<ServiceAlerts>, cap_abi::Refusal> {
     match hash {
         Some(h) => kind::<transit_alerts::ServiceAlerts>().require(h),
         None => Ok(std::sync::Arc::new(ServiceAlerts::default())),
     }
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Validate { alerts } => Ok(match alerts.0.checked() {
             Ok(alerts) => {
@@ -360,7 +360,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     let bytes = cap_abi::canonical_bytes(&templates)?;
                     (cap_abi::kernel::kind::<transit_alerts::AlertTemplates>().register(templates)?.0, bytes)
                 }
-                other => return Err(format!("log_document: {other:?} is not service_alerts or alert_templates")),
+                other => return Err(format!("log_document: {other:?} is not service_alerts or alert_templates").into()),
             };
             Ok(Response::LogDocument { document_hash, document })
         }
@@ -372,7 +372,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: an alerts or templates document registers on the kernel's load_service_alerts or load_alert_templates") }).to_string()
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: an alerts or templates document registers on the kernel's load_service_alerts or load_alert_templates") } }).to_string()
 }
 
 #[cfg(feature = "examples")]

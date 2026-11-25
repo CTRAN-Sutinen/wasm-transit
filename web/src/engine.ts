@@ -3,6 +3,7 @@
 // trip, or a stop here is a leak.
 
 import { noteRefusal } from "./versions";
+import { Refused, unknownDocument, type ModuleError } from "./refusals";
 import { ReadFailed } from "./uis/inputs";
 import { call, type Assembly, type Route } from "./bus";
 import type { Capability } from "./types/cap_abi/Capability";
@@ -164,19 +165,15 @@ async function invoke(
     "text" in call_ ? { type: "text", cap, text: call_.text, load } : { type: "bytes", cap, op: call_.op, bytes: call_.bytes, load },
   );
   if (reset) generations.set(route.module, (generations.get(route.module) ?? 0) + 1);
-  const outcome = JSON.parse(ok as string) as { ok: unknown } | { error: string };
+  const outcome = JSON.parse(ok as string) as { ok: unknown } | { error: ModuleError };
   if ("error" in outcome) {
+    const refused = new Refused(outcome.error);
     // A document that another build wrote asks for the deployment's build
     // (src/versions.ts).
-    noteRefusal(outcome.error);
-    throw new Error(outcome.error);
+    noteRefusal(refused);
+    throw refused;
   }
   return outcome.ok;
-}
-
-function unknownHash(error: unknown): string | null {
-  const match = /^unknown .+ (sha256:[0-9a-f]{64}): .+ first$/.exec(error instanceof Error ? error.message : "");
-  return match ? match[1] : null;
 }
 
 function docsOf(values: unknown[]): Doc[] {
@@ -197,7 +194,7 @@ async function recovering<T>(cap: CapId, docs: Doc[], attempt: () => Promise<T>)
     try {
       return await attempt();
     } catch (error) {
-      const hash = unknownHash(error);
+      const hash = unknownDocument(error);
       const dropped = hash ? docs.find((d) => d.hash === hash) : undefined;
       if (!dropped || tries > docs.length) throw error;
       dropped.forget(slot(cap));

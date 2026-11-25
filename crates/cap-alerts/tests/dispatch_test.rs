@@ -15,7 +15,7 @@ fn ok(request: Value) -> Value {
 
 fn err(request: Value) -> String {
     let answer = run(request.clone());
-    answer.get("error").and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+    answer.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
 }
 
 fn sample() -> Value {
@@ -50,7 +50,7 @@ fn a_refused_document_names_each_reason_and_never_registers() {
     let v = ok(json!({ "op": "validate", "alerts": bad }));
     assert_eq!(v["refusals"][0], json!({ "alert": "a1", "problem": { "kind": "no_entity" } }));
     assert!(v["document"].is_null());
-    assert!(run(json!({ "op": "load_service_alerts", "alerts": bad }))["error"].as_str().unwrap().contains("a1"));
+    assert!(run(json!({ "op": "load_service_alerts", "alerts": bad }))["error"]["message"].as_str().unwrap().contains("a1"));
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn a_template_is_checked_and_filled() {
 
 #[test]
 fn garbage_is_an_error_not_a_panic() {
-    assert!(run(json!({ "op": "no_such_op" }))["error"].is_string());
+    assert!(run(json!({ "op": "no_such_op" }))["error"]["message"].is_string());
     assert!(err(json!({ "op": "list", "alerts_hash": "sha256:none", "now": 0 })).contains("load_service_alerts"));
 }
 

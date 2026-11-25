@@ -158,21 +158,21 @@ fn export_refuses_invalid_documents() {
     let doc: transit_network::Network = serde_json::from_str(&broken).unwrap();
     let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(doc).unwrap().0;
     let err = dispatch(Request::Export { network_hash, boundary_hash: None }).unwrap_err();
-    assert!(err.contains("invalid network"), "{err}");
+    assert!(err.message.contains("invalid network"), "{err}");
 }
 
 #[test]
 fn unknown_hashes_are_errors_not_panics() {
     let err = dispatch(Request::Import { feed_hash: "sha256:missing".into() }).unwrap_err();
-    assert!(err.contains("unknown feed"), "{err}");
+    assert!(err.message.contains("unknown feed"), "{err}");
     let err = dispatch(Request::Validate { network_hash: "sha256:missing".into() }).unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
     let err = dispatch(Request::Export { network_hash: "sha256:missing".into(), boundary_hash: None }).unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
     let (feed_hash, _) = load_fixture();
     let Response::Import { network_hash, .. } = dispatch(Request::Import { feed_hash }).unwrap() else { panic!("import") };
     let err = dispatch(Request::Export { network_hash, boundary_hash: Some("sha256:missing".into()) }).unwrap_err();
-    assert!(err.contains("unknown boundary"), "{err}");
+    assert!(err.message.contains("unknown boundary"), "{err}");
 }
 
 #[test]
@@ -291,6 +291,6 @@ fn stored_plans_answers_a_set_and_refuses_a_newer_one() {
         &serde_json::json!({"op": "stored_plans", "document": {"kind": "plan_set", "schema_version": 2, "plans": {}}}).to_string(),
     ))
     .unwrap();
-    let error = refused["error"].as_str().unwrap_or_else(|| panic!("{refused}"));
+    let error = refused["error"]["message"].as_str().unwrap_or_else(|| panic!("{refused}"));
     assert!(error.contains("plan_set v2") && error.contains("reads v1"), "{error}");
 }

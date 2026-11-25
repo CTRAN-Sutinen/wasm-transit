@@ -472,6 +472,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -648,6 +653,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -1007,6 +1017,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -1128,6 +1143,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -1417,7 +1437,7 @@
                       "type": "integer"
                     },
                     "error": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/ModuleError"
                     }
                   }
                 }
@@ -1598,6 +1618,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -1719,6 +1744,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -2027,7 +2057,7 @@
                       "type": "integer"
                     },
                     "error": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/ModuleError"
                     }
                   }
                 }
@@ -2395,7 +2425,7 @@
                       "type": "integer"
                     },
                     "error": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/ModuleError"
                     }
                   }
                 }
@@ -2576,6 +2606,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -2736,6 +2771,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -2865,6 +2905,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -2996,6 +3041,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -3126,6 +3176,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -3255,6 +3310,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -3391,6 +3451,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -3517,6 +3582,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -4904,6 +4974,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -5064,6 +5139,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -5328,6 +5408,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -6531,6 +6616,57 @@
             "target",
             "names"
           ]
+        }
+      },
+      "ModuleError": {
+        "type": "object",
+        "description": "A module's error (docs/architecture/bus.md, \"Answers\"). A host acts on `code`, never on `message`. A coded refusal carries the fields of its code.",
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "unknown_document",
+              "newer_version"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "load": {
+            "type": "string"
+          },
+          "found": {
+            "type": "integer"
+          },
+          "reads": {
+            "type": "integer"
+          },
+          "read": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CodedRefusal": {
+        "type": "object",
+        "description": "A module's refusal that carries a code.",
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ModuleError"
+          }
         }
       }
     },

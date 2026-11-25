@@ -37,7 +37,7 @@ fn base(records: Vec<EditRecord>) -> Base<EditDocument> {
     Base(EditDocument::new(records))
 }
 
-fn propose(hash: &str, records: Vec<EditRecord>, draft: DiversionDraft, now_ms: u64) -> Result<Vec<EditRecord>, String> {
+fn propose(hash: &str, records: Vec<EditRecord>, draft: DiversionDraft, now_ms: u64) -> Result<Vec<EditRecord>, cap_abi::Refusal> {
     match dispatch(Request::Propose { network_hash: hash.into(), draft, edits: base(records), record_id: "e1".into(), now_ms })? {
         Response::Propose { edits } => Ok(edits.records),
         _ => panic!("propose"),
@@ -122,7 +122,7 @@ fn another_version_of_the_edit_document_is_refused_naming_both() {
 fn refusals_are_errors_never_panics() {
     let hash = load();
     let err = propose(&hash, vec![], DiversionDraft { first_kept_stop: None, ..draft() }, 1).unwrap_err();
-    assert!(err.contains("first stop"), "{err}");
+    assert!(err.message.contains("first stop"), "{err}");
     assert!(dispatch(Request::Retire { edits: base(vec![]), record_id: "nope".into(), now_ms: 1 }).is_err());
     assert!(dispatch(Request::Draft { network_hash: "sha256:nope".into(), draft: draft() }).is_err());
     assert!(dispatch_json("{not json").contains("\"error\""));
@@ -177,10 +177,10 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
     assert!(reports[0].valid && reports[0].affected_trips >= 1, "{reports:?}");
     assert!(!reports[1].valid, "an edit against an unknown route is reported invalid: {reports:?}");
     let err = dispatch(Request::Reports { network_hash: "sha256:missing".into(), edits: doc(vec![]) }).unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
 }
 
-fn cancel(hash: &str, records: Vec<EditRecord>, start_secs: Option<u32>, date: &str, now_ms: u64) -> Result<Vec<EditRecord>, String> {
+fn cancel(hash: &str, records: Vec<EditRecord>, start_secs: Option<u32>, date: &str, now_ms: u64) -> Result<Vec<EditRecord>, cap_abi::Refusal> {
     let request = Request::Cancel {
         network_hash: hash.into(),
         edits: base(records),
@@ -225,7 +225,7 @@ fn a_trip_cancel_walks_the_edit_document() {
     assert_eq!(edits.records[1].status, EditStatus::Retired);
 
     let err = cancel(&hash, vec![], None, "2026-11-26", 1).unwrap_err();
-    assert!(err.contains("does not run on 2026-11-26"), "Thanksgiving is removed: {err}");
+    assert!(err.message.contains("does not run on 2026-11-26"), "Thanksgiving is removed: {err}");
     let err = cancel("sha256:missing", vec![], None, "2026-10-23", 1).unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
+    assert!(err.message.contains("unknown network"), "{err}");
 }

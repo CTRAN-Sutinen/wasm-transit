@@ -223,7 +223,7 @@ fn the_board_reads_a_live_document() {
         live_hash: Some("sha256:missing".into()),
     })
     .unwrap_err();
-    assert!(err.contains("unknown live document"), "{err}");
+    assert!(err.message.contains("unknown live document"), "{err}");
 }
 
 #[test]
@@ -314,11 +314,11 @@ fn a_watchlist_from_before_the_tags_loads_as_its_version_or_is_refused() {
     assert_eq!(legacy["ok"]["version"], 2);
 
     let v1 = load_watchlist_json(&serde_json::json!({"version": "v1", "stops": [{"id": "A", "note": "home", "color": "blue"}]}));
-    let refused = v1["error"].as_str().unwrap_or_else(|| panic!("{v1}"));
+    let refused = v1["error"]["message"].as_str().unwrap_or_else(|| panic!("{v1}"));
     assert!(refused.contains("watchlist v1") && refused.contains("migrate"), "{refused}");
 
     let v3 = load_watchlist_json(&serde_json::json!({"kind": "watchlist", "schema_version": 3, "stops": []}));
-    let refused = v3["error"].as_str().unwrap_or_else(|| panic!("{v3}"));
+    let refused = v3["error"]["message"].as_str().unwrap_or_else(|| panic!("{v3}"));
     assert!(refused.contains("v3") && refused.contains("reads v2"), "{refused}");
 }
 
@@ -371,7 +371,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         live_hash: None,
     })
     .unwrap_err();
-    assert!(err.contains("unknown edits"), "{err}");
+    assert!(err.message.contains("unknown edits"), "{err}");
 
     let err = dispatch(Request::WatchlistBoard { previous: None,
         watchlist_hash: "sha256:missing".into(),
@@ -383,7 +383,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         live_hash: None,
     })
     .unwrap_err();
-    assert!(err.contains("unknown watchlist"), "{err}");
+    assert!(err.message.contains("unknown watchlist"), "{err}");
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");

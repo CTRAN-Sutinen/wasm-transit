@@ -59,7 +59,7 @@ pub enum Response {
     },
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Import { feed_hash } => {
             let feed = kind::<transit_codec::Feed>().require(&feed_hash)?;
@@ -102,7 +102,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let document = cap_abi::canonical_bytes(&*network)?;
             let document_hash = content_hash(document.as_bytes());
             if document_hash != network_hash && kind::<transit_network::Network>().read_ahead(&network_hash).is_none() {
-                return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
+                return Err(format!("registered under {network_hash} but serializes to {document_hash}").into());
             }
             Ok(Response::Document {
                 document,
@@ -125,7 +125,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the network codec has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: the network codec has no bulk op of its own")))
 }
 
 #[cfg(feature = "examples")]

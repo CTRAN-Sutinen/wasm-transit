@@ -49,7 +49,7 @@ fn migrating_the_current_version_is_refused() {
 #[test]
 fn reading_refuses_other_versions_naming_both() {
     let older = read_document(&v1()).unwrap_err();
-    assert!(older.contains("edit_records v1") && older.contains(&format!("reads v{SCHEMA_VERSION}")), "{older}");
+    assert!(older.message.contains("edit_records v1") && older.message.contains(&format!("reads v{SCHEMA_VERSION}")), "{older}");
     let newer = read_document(&json!({"kind": "edit_records", "schema_version": SCHEMA_VERSION + 1, "records": []})).unwrap_err();
-    assert!(newer.contains(&format!("v{}", SCHEMA_VERSION + 1)) && newer.contains(&format!("reads v{SCHEMA_VERSION}")), "{newer}");
+    assert!(newer.message.contains(&format!("v{}", SCHEMA_VERSION + 1)) && newer.message.contains(&format!("reads v{SCHEMA_VERSION}")), "{newer}");
 }

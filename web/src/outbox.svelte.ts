@@ -99,7 +99,7 @@ export async function discardWrite(key: string): Promise<void> {
 }
 
 export function heldReason(w: Waiting): string {
-  const body = (w.reasons ?? {}) as { refusals?: { problem?: { kind?: string } }[]; references?: BrokenReference[]; conflict?: string; error?: string };
+  const body = (w.reasons ?? {}) as { refusals?: { problem?: { kind?: string } }[]; references?: BrokenReference[]; conflict?: string; error?: string | { message?: string } };
   if (w.status === 409) return "Someone else changed this since you read it. Check it, then send it again or discard it.";
   if (w.status === 403) return "Your sign-in can't save this.";
   if (w.status === 422 && Array.isArray(body.references) && body.references.length) return body.references.map(referenceWarning).join(" ");
@@ -108,6 +108,7 @@ export function heldReason(w: Waiting): string {
     return kinds.length ? `Not saved: ${[...new Set(kinds)].join("; ")}.` : "The server refused it.";
   }
   if (typeof body.error === "string") return body.error;
+  if (typeof body.error?.message === "string") return body.error.message;
   if (typeof w.reasons === "string" && w.reasons.trim()) return w.reasons.trim();
   return `The server refused it (${w.status}).`;
 }

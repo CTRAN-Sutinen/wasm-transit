@@ -71,14 +71,14 @@ pub enum Response {
     Route { points: Vec<StreetPoint>, length_m: Option<f64>, streets: Vec<StreetUse>, to_confirm: Vec<StreetUse> },
 }
 
-fn graph(streets_hash: &str) -> Result<Arc<StreetNetwork>, String> {
+fn graph(streets_hash: &str) -> Result<Arc<StreetNetwork>, cap_abi::Refusal> {
     let streets = kind::<transit_streets::Streets>().require(streets_hash)?;
-    cap_abi::kernel::derive(&STREET_GRAPH, streets_hash, &[streets_hash], || Ok(StreetNetwork::build(&streets)))
+    cap_abi::kernel::derive(&STREET_GRAPH, streets_hash, &[streets_hash], || Ok::<_, String>(StreetNetwork::build(&streets)))
 }
 
-fn walking(streets_hash: &str) -> Result<Arc<WalkGraph>, String> {
+fn walking(streets_hash: &str) -> Result<Arc<WalkGraph>, cap_abi::Refusal> {
     let streets = kind::<transit_streets::Streets>().require(streets_hash)?;
-    cap_abi::kernel::derive(&WALK_GRAPH, streets_hash, &[streets_hash], || Ok(WalkGraph::new(&streets)))
+    cap_abi::kernel::derive(&WALK_GRAPH, streets_hash, &[streets_hash], || Ok::<_, String>(WalkGraph::new(&streets)))
 }
 
 fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32), String> {
@@ -93,11 +93,11 @@ fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32)
     Ok((speed_mps, max_walk_secs))
 }
 
-fn network_stops(network_hash: &str) -> Result<Vec<(String, f64, f64)>, String> {
+fn network_stops(network_hash: &str) -> Result<Vec<(String, f64, f64)>, cap_abi::Refusal> {
     Ok(kind::<transit_network::Network>().require(network_hash)?.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect())
 }
 
-fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, String> {
+fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, cap_abi::Refusal> {
     let (speed_mps, max_walk_secs) = pace(speed_mps, max_walk_secs)?;
     let walking = walking(streets_hash)?;
     let stops = network_stops(network_hash)?;
@@ -118,11 +118,11 @@ fn access(
     to: Option<StreetPoint>,
     speed_mps: Option<f64>,
     max_walk_secs: Option<u32>,
-) -> Result<Response, String> {
+) -> Result<Response, cap_abi::Refusal> {
     let (speed_mps, max_walk_secs) = pace(speed_mps, max_walk_secs)?;
     for p in std::iter::once(&point).chain(&to) {
         if !(p.lat.is_finite() && p.lon.is_finite() && p.lat.abs() <= 90.0 && p.lon.abs() <= 180.0) {
-            return Err(format!("point ({}, {}) is not on the globe", p.lat, p.lon));
+            return Err(format!("point ({}, {}) is not on the globe", p.lat, p.lon).into());
         }
     }
     let walking = walking(streets_hash)?;
@@ -136,14 +136,14 @@ fn access(
     Ok(Response::Access { walks, direct })
 }
 
-fn import(bytes: &[u8]) -> Result<Response, String> {
+fn import(bytes: &[u8]) -> Result<Response, cap_abi::Refusal> {
     let streets = transit_streets::geojson::import(bytes).map_err(|e| format!("street layer: {}", e.0))?;
     let (ways, segments, nodes) = streets.counts();
     let (streets_hash, streets) = kind::<transit_streets::Streets>().register(streets)?;
     Ok(Response::Import { streets_hash, streets: cap_abi::Canonical((*streets).clone()), ways, segments, nodes })
 }
 
-pub fn dispatch(request: Request) -> Result<Response, String> {
+pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Import { bytes } => import(&bytes),
         Request::Walks { streets_hash, network_hash, speed_mps, max_walk_secs } => {
@@ -175,7 +175,7 @@ pub fn dispatch_json(text: &str) -> String {
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     cap_abi::outcome(match op {
         OP_IMPORT => import(bytes),
-        other => Err(format!("unknown bulk op {other}")),
+        other => Err(format!("unknown bulk op {other}").into()),
     })
 }
 

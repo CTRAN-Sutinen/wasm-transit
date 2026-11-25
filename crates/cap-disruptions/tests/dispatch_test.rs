@@ -14,7 +14,7 @@ fn ok(request: Value) -> Value {
 
 fn err(request: Value) -> String {
     let answer = run(request.clone());
-    answer.get("error").and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+    answer.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
 }
 
 fn network_hash() -> Value {

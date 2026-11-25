@@ -430,7 +430,7 @@
       "post": {
         "operationId": "postEdits",
         "summary": "Merge the client's edit document into the server's.",
-        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer.",
+        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -471,6 +471,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -602,7 +607,7 @@
       "post": {
         "operationId": "postPointer",
         "summary": "Commit a document to a pointer (compare and swap).",
-        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. For other host-owned kinds it stores `document` verbatim. The server refuses the kinds and pointers that have their own route: plans, network_document, plan.*, stops, stop_requests, build, and build_file. X-Produced-By sets the envelope's producer for a verbatim kind (default server). X-Writer names the writer when sign-in is off. When sign-in is on, it needs write on the pointer.",
+        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. Every other write is governed by the kind table (-kinds, D-202): a kind it does not name is refused, a kind with its own route is refused naming the route (plans, network_document, plan.*, stops, stop_requests, build, the derived documents, and the rest), and a kind written by pointer (the policy) heads only its pointers and is checked by its module's validate op. The server stores the module's canonical bytes, produced by it. document_hash, when present, is asserted against the bytes sent. When sign-in is on, it needs write on the pointer. For edit_records, a field the client's records carry that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field.",
         "parameters": [
           {
             "name": "name",
@@ -649,6 +654,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -688,6 +698,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The kind's module refuses the document: its answer, with what makes it wrong (`issues`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The module's validate answer.",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -822,12 +859,1709 @@
         }
       }
     },
+    "/logs/disruptions": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getDisruptionsLog",
+        "summary": "Get the disruptions log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the edit document (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the edits pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisruptionsLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the edits pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/disruptions/revert": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "revertDisruptionsEntry",
+        "summary": "Revert one entry of the disruptions log, as a new entry.",
+        "description": "Store mode only. cap-log answers the entry, with each record cap-sync writes back: its state before entry `seq`, stamped to win the merge; a record the entry created is retired (D-193). When sign-in is on, it needs the audit rule on the edits pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The entry to revert."
+                  }
+                },
+                "required": [
+                  "seq"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the edits pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, or the log has no entry `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "cap-sync refuses the revert: a later entry changed one of its records, and the answer names it. A person decides.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/disruptions/close-gap": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "closeDisruptionsGap",
+        "summary": "Close a gap in the disruptions log with an entry that names the cause.",
+        "description": "Store mode only. A missing entry below the head stops writes to the log. This writes an entry with no changes at the missing seq, with the cause as its note. When sign-in is on, it needs the audit rule on the edits pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The missing entry."
+                  },
+                  "cause": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why the entry is missing."
+                  }
+                },
+                "required": [
+                  "seq",
+                  "cause"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry that closes the gap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N, \"cause\": \"…\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the edits pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The log has no gap at `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/stops": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getStopsLog",
+        "summary": "Get the stops log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the stops document or the stop requests document (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the stops pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopsLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "writeStopsLog",
+        "summary": "Write to the stops log: ops over the documents at the head, as one entry.",
+        "description": "Store mode only. Each op runs over the stops document or the stop requests document at the head, in order (stops: add_event, correct_event; requests: put, record_work_order), checked as a write is, and what they changed is written as one entry. A write sent again with its key lands once. The alerts and notes logs take the same intent write (D-189). When sign-in is on, each op needs the write rule on its document's pointer (stops, stop_requests).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key: a resend with the same key lands once."
+                  },
+                  "ops": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "cap": {
+                          "type": "string",
+                          "enum": [
+                            "stops",
+                            "requests"
+                          ]
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "object",
+                          "description": "The op's arguments, without the document's hash."
+                        }
+                      },
+                      "required": [
+                        "cap",
+                        "op"
+                      ]
+                    }
+                  },
+                  "read_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The log's seq whose documents the writer read (the manifest's log_seqs). A record the write changes that a later entry changed is a 409, and a change to another record is not."
+                  },
+                  "claimed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  },
+                  "read_seqs": {
+                    "type": "object",
+                    "description": "The seq of each other log whose documents the writer read (the manifest's log_seqs), by log name, each an integer. A reference the write adds to a record missing from those logs as of those seqs is refused, 422 with `references` (D-233). A log not named was read now."
+                  }
+                },
+                "required": [
+                  "ops"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry's seq and the documents after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "stops_hash": {
+                      "type": "string"
+                    },
+                    "stop_requests_hash": {
+                      "type": "string"
+                    },
+                    "landed": {
+                      "type": "boolean",
+                      "description": "The key landed before: no entry was written."
+                    },
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "stops_hash",
+                    "stop_requests_hash"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a write the log runs (text), or an op fails (JSON; `op` names it).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "$ref": "#/components/schemas/ModuleError"
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies a write an op needs.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A correction names an event another writer changed since (`conflict` is its id, `op` the op), or a record the write changes was changed by an entry after `read_seq` (`conflict` is its kind and id, and `overlap` names it and that entry).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "conflict": {
+                      "type": "string"
+                    },
+                    "overlap": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "seq"
+                      ]
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "description": "The log's head."
+                    }
+                  },
+                  "required": [
+                    "conflict"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A document is refused; `op` names the op when one refused it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "refusals": {},
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
+                  },
+                  "required": [
+                    "refusals"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/stops/revert": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "revertStopsEntry",
+        "summary": "Revert one entry of the stops log, as a new entry.",
+        "description": "Store mode only. cap-log answers the entry that writes back each record's state before entry `seq`; a record the entry created leaves the document (D-198). When sign-in is on, it needs the audit rule on the stops pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The entry to revert."
+                  }
+                },
+                "required": [
+                  "seq"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, or the log has no entry `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "cap-sync refuses the revert: a later entry changed one of its records, and the answer names it. A person decides.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/stops/close-gap": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "closeStopsGap",
+        "summary": "Close a gap in the stops log with an entry that names the cause.",
+        "description": "Store mode only. A missing entry below the head stops writes to the log. This writes an entry with no changes at the missing seq, with the cause as its note. When sign-in is on, it needs the audit rule on the stops pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The missing entry."
+                  },
+                  "cause": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why the entry is missing."
+                  }
+                },
+                "required": [
+                  "seq",
+                  "cause"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry that closes the gap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N, \"cause\": \"…\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The log has no gap at `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/alerts": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getAlertsLog",
+        "summary": "Get the alerts log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the service alerts document or the alert templates document (D-206, D-210), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the service_alerts pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The entries after `since`, the log's head, its gaps, its newest checkpoint, the entries the fold quarantined, and its documents' hashes.",
+                  "properties": {
+                    "log": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "log",
+                    "head",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the service_alerts pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "writeAlertsLog",
+        "summary": "Write to the alerts log: ops over the documents at the head, as one entry.",
+        "description": "Store mode only. Each op runs over the service alerts document or the alert templates document at the head, in order (alerts: put, end, put_template), checked as a write is, and what they changed is written as one entry (D-189). A write sent again with its key lands once. When sign-in is on, each op needs the write rule on its document's pointer (service_alerts, alert_templates).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key: a resend with the same key lands once."
+                  },
+                  "ops": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "cap": {
+                          "type": "string",
+                          "enum": [
+                            "alerts"
+                          ]
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "object",
+                          "description": "The op's arguments, without the document's hash."
+                        }
+                      },
+                      "required": [
+                        "cap",
+                        "op"
+                      ]
+                    }
+                  },
+                  "read_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The log's seq whose documents the writer read (the manifest's log_seqs). A record the write changes that a later entry changed is a 409, and a change to another record is not."
+                  },
+                  "claimed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  },
+                  "read_seqs": {
+                    "type": "object",
+                    "description": "The seq of each other log whose documents the writer read (the manifest's log_seqs), by log name, each an integer. A reference the write adds to a record missing from those logs as of those seqs is refused, 422 with `references` (D-233). A log not named was read now."
+                  }
+                },
+                "required": [
+                  "ops"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry's seq and the documents after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "service_alerts_hash": {
+                      "type": "string"
+                    },
+                    "alert_templates_hash": {
+                      "type": "string"
+                    },
+                    "landed": {
+                      "type": "boolean",
+                      "description": "The key landed before: no entry was written."
+                    },
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "service_alerts_hash",
+                    "alert_templates_hash"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a write the log runs (text), or an op fails (JSON; `op` names it).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "$ref": "#/components/schemas/ModuleError"
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies a write an op needs.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A record the write changes was changed by an entry after `read_seq`: `conflict` is its kind and id, and `overlap` names it and that entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "conflict": {
+                      "type": "string"
+                    },
+                    "overlap": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "seq"
+                      ]
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "description": "The log's head."
+                    }
+                  },
+                  "required": [
+                    "conflict"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A document is refused; `op` names the op when one refused it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "refusals": {},
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
+                  },
+                  "required": [
+                    "refusals"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/notes": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getNotesLog",
+        "summary": "Get the notes log's entries after a seq.",
+        "description": "Store mode only. Each entry is one write to the notes document (D-214), as the bucket holds it: a log_entry document. When sign-in is on, it needs the audit rule on the notes pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The entries after `since`, the log's head, its gaps, its newest checkpoint, the entries the fold quarantined, and its documents' hashes.",
+                  "properties": {
+                    "log": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "log",
+                    "head",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the notes pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "writeNotesLog",
+        "summary": "Write to the notes log: ops over the notes document at the head, as one entry.",
+        "description": "Store mode only. Each op (notes: write) runs over the notes document at the head, in order, with the verified writer and the server's clock as `by` and `at`, and what they changed is written as one entry (D-189, D-214). A write sent again with its key lands once. When sign-in is on, it needs the write rule on the notes pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key: a resend with the same key lands once."
+                  },
+                  "ops": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "cap": {
+                          "type": "string",
+                          "enum": [
+                            "notes"
+                          ]
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "object",
+                          "description": "The op's arguments, without the document's hash."
+                        }
+                      },
+                      "required": [
+                        "cap",
+                        "op"
+                      ]
+                    }
+                  },
+                  "read_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The log's seq whose documents the writer read (the manifest's log_seqs). A record the write changes that a later entry changed is a 409, and a change to another record is not."
+                  },
+                  "claimed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The device's clock when the person made the write, Unix epoch milliseconds: kept in the entry's intent as a claim beside the server's stamp (D-222)."
+                  },
+                  "read_seqs": {
+                    "type": "object",
+                    "description": "The seq of each other log whose documents the writer read (the manifest's log_seqs), by log name, each an integer. A reference the write adds to a record missing from those logs as of those seqs is refused, 422 with `references` (D-233). A log not named was read now."
+                  }
+                },
+                "required": [
+                  "ops"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry's seq and the documents after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "notes_hash": {
+                      "type": "string"
+                    },
+                    "landed": {
+                      "type": "boolean",
+                      "description": "The key landed before: no entry was written."
+                    },
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "notes_hash"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a write the log runs (text), or an op fails (JSON; `op` names it).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "$ref": "#/components/schemas/ModuleError"
+                    }
+                  }
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies a write an op needs.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A record the write changes was changed by an entry after `read_seq`: `conflict` is its kind and id, and `overlap` names it and that entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "conflict": {
+                      "type": "string"
+                    },
+                    "overlap": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "seq": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "seq"
+                      ]
+                    },
+                    "seq": {
+                      "type": "integer",
+                      "description": "The log's head."
+                    }
+                  },
+                  "required": [
+                    "conflict"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A document is refused; `op` names the op when one refused it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "integer"
+                    },
+                    "refusals": {},
+                    "references": {
+                      "$ref": "#/components/schemas/BrokenReferences"
+                    }
+                  },
+                  "required": [
+                    "refusals"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plans": {
       "x-mux": "/plans",
       "post": {
         "operationId": "publishPick",
         "summary": "Publish a plan's network as a pick.",
-        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans answers the next published set. The server commits the network to plan.<id> and then the set to plans. When sign-in is on, it needs write on the plans pointer.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans freezes the network and adopts it (D-191). The server commits the network to plan.<id>, then writes the freeze and the adoption as one entry of the plans log. ?purpose= says what the frozen version is (default \"published\"). When sign-in is on, it needs write on the plans pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -871,6 +2605,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -969,7 +2708,18 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": false,
+            "description": "What the frozen version is, in the agency's words. Absent: \"published\".",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/plans/retire": {
@@ -977,7 +2727,7 @@
       "post": {
         "operationId": "retirePick",
         "summary": "Retire a pick that has not taken effect.",
-        "description": "Store mode only. cap-plans answers the next set, with the pick kept as a tombstone. When sign-in is on, it needs write on the plans pointer.",
+        "description": "Store mode only. cap-plans answers the next set, with the pick kept as a tombstone, written as one entry of the plans log. When sign-in is on, it needs write on the plans pointer.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1021,6 +2771,11 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
               }
             }
           },
@@ -1055,7 +2810,7 @@
             }
           },
           "409": {
-            "description": "The plans pointer moved.",
+            "description": "The plans log moved on every attempt.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -1102,7 +2857,7 @@
       "post": {
         "operationId": "writeStops",
         "summary": "Write the stops document.",
-        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer.",
+        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1150,6 +2905,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -1232,7 +2992,7 @@
       "post": {
         "operationId": "writeStopRequests",
         "summary": "Write the stop requests document.",
-        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer.",
+        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1280,6 +3040,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -1357,6 +3122,406 @@
         }
       }
     },
+    "/service-alerts": {
+      "x-mux": "/service-alerts",
+      "post": {
+        "operationId": "writeServiceAlerts",
+        "summary": "Write the service alerts document.",
+        "description": "Store mode only. cap-alerts validates the document (validate). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the service_alerts pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The head the writer read. Empty on create."
+                  },
+                  "alerts": {
+                    "type": "object",
+                    "x-document": "service_alerts",
+                    "description": "The service alerts document."
+                  }
+                },
+                "required": [
+                  "alerts"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {from, alerts}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The service alerts document is no longer at `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-alerts refuses the document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alert-templates": {
+      "x-mux": "/alert-templates",
+      "post": {
+        "operationId": "writeAlertTemplates",
+        "summary": "Write the alert templates document.",
+        "description": "Store mode only. cap-alerts validates the document (validate_templates). The server records the canonical document as one entry of the alerts log. When sign-in is on, it needs write on the alert_templates pointer. A field the written document carries that this build does not know is kept, never refused (D-167). The response's X-Unknown-Fields header names each such field, and the server logs the write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The head the writer read. Empty on create."
+                  },
+                  "templates": {
+                    "type": "object",
+                    "x-document": "alert_templates",
+                    "description": "The alert templates document."
+                  }
+                },
+                "required": [
+                  "templates"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatesHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {from, templates}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The alert templates document is no longer at `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-alerts refuses the document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notes": {
+      "x-mux": "/notes",
+      "post": {
+        "operationId": "writeNote",
+        "summary": "Write one note, new or edited.",
+        "description": "Store mode only. The body is one note, not a whole document. cap-notes writes it over the notes document in force (write), stamped with the verified writer and the server's clock, so a page never names who wrote a note. The server records the next document as one entry of the notes log. The same text written again changes nothing. When sign-in is on, it needs write on the notes pointer. No GTFS-rt feed carries a note (D-214).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The note's id. A new id is a new note; a held id edits that note's text."
+                  },
+                  "target": {
+                    "type": "object",
+                    "description": "What the note is about: {kind: trip, trip, date, start_secs}, {kind: edit, id}, {kind: alert, id}, or {kind: stop, stop}. A held note's target never changes."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "The note's text. It is not blank."
+                  }
+                },
+                "required": [
+                  "id",
+                  "target",
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The notes document in force, and the note's id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotesHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {id, target, text}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-notes refuses the write: a blank text, a target that names no id, or another target for a held note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stop-requests/work-order": {
       "x-mux": "/stop-requests/work-order",
       "post": {
@@ -1380,6 +3545,10 @@
                       "open",
                       "refresh"
                     ]
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "The device's idempotency key (D-189): a resend whose key landed answers the work order the request holds, and the work order system is not asked again."
                   }
                 },
                 "required": [
@@ -1413,6 +3582,11 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
                 }
               }
             }
@@ -1922,8 +4096,8 @@
       "x-mux": "/builds",
       "post": {
         "operationId": "moveBuild",
-        "summary": "Move the build pointer to a build its log holds.",
-        "description": "Store mode only. The move is a rollback, or forward again. When sign-in is on, it needs write on the build pointer.",
+        "summary": "Move the build pointer, or one UI's, to a build its log holds.",
+        "description": "Store mode only. The move is a rollback, or forward again. Without ui, it moves the server's build pointer. With ui, it moves that UI's pointer (build.<id>) and nothing else. When sign-in is on, it needs write on the pointer it moves.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1961,7 +4135,7 @@
             }
           },
           "400": {
-            "description": "The body is not {\"build\": \"sha256:<hex>\"}.",
+            "description": "The body is not {\"build\": \"sha256:<hex>\"}, or ui is not a UI's id.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -1991,7 +4165,7 @@
             }
           },
           "404": {
-            "description": "No store is configured, or the build log holds no such build.",
+            "description": "No store is configured, or the pointer's log holds no such build.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2001,7 +4175,7 @@
             }
           },
           "409": {
-            "description": "The build pointer moved.",
+            "description": "The pointer moved.",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2030,7 +4204,18 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "ui",
+            "in": "query",
+            "required": false,
+            "description": "A UI's id (a-z, 0-9, and -). The move is that UI's pointer, build.<id> (D-171).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/feed": {
@@ -2196,7 +4381,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The blob's bytes. Content-Type is application/json for every blob kind, or application/gzip on request. Store blobs carry X-Document-Kind and X-Schema-Version. The ETag is the path's last segment, and the bytes cache forever.",
+            "description": "The blob's bytes. Content-Type is application/json for every blob kind, or application/gzip on request. Store blobs carry X-Document-Kind and X-Schema-Version. A blob whose schema the build serves carries Link: </schemas/<tag>.v<N>.schema.json>; rel=\"describedby\" (docs/FORMATS.md). The ETag is the path's last segment, and the bytes cache forever.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2738,6 +4923,562 @@
           }
         }
       }
+    },
+    "/plans/freeze": {
+      "x-mux": "/plans/freeze",
+      "post": {
+        "operationId": "freezeVersion",
+        "summary": "Freeze a network version into the record, with what it is.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, and cap-plans freezes it (D-191): the server commits the network to plan.<id>, then writes the frozen version as one entry of the plans log. Nothing is put in force. When sign-in is on, it needs write on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "x-document": "network",
+                "description": "The pick's network document."
+              }
+            },
+            "application/gzip": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "x-document": "network",
+                "description": "The network document, gzipped."
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version is frozen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansFrozen"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No purpose, a body that is not a network document, or a plan id that cannot name a pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publishing needs the store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plans log moved on every attempt.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-network refuses the network ({issues, refusals}), or cap-plans refuses the freeze ({issues}).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "cap-network refuses the network as a pick (issues and refusals), or cap-plans refuses the change (issues only).",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "refusals": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "issues"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": true,
+            "description": "What the version is, in the agency's words: a proposal for public comment, a board packet.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/plans/adopt": {
+      "x-mux": "/plans/adopt",
+      "post": {
+        "operationId": "adoptVersion",
+        "summary": "Put a frozen version in force from its date.",
+        "description": "Store mode only. The body names a frozen version by its network hash. cap-network checks the stored network, a stops document is read over it, and cap-plans adopts it (D-191). Only a frozen version is adopted. The adoption is one entry of the plans log, and the pick names the stops log entry it read (stops_seq). When sign-in is on, it needs write on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "network_hash": {
+                    "type": "string",
+                    "description": "A frozen version's network hash."
+                  }
+                },
+                "required": [
+                  "network_hash"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version is adopted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansPublished"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"network_hash\": \"<hash>\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publishing needs the store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plans log moved on every attempt.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-plans refuses the adoption ({issues}): the network is not frozen, or the pick would break the chain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "cap-network refuses the network as a pick (issues and refusals), or cap-plans refuses the change (issues only).",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "refusals": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "issues"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/plans": {
+      "x-mux": "/logs/",
+      "get": {
+        "operationId": "getPlansLog",
+        "summary": "Get the plans log's entries after a seq.",
+        "description": "Store mode only. Each entry is one freeze, adoption, or retirement (D-190, D-197), as the bucket holds it: a log_entry document. An entry that is not JSON is answered as its text in `unreadable`. When sign-in is on, it needs the audit rule on the plans pointer, because each entry names its writer.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The seq of the last entry the reader holds. Absent: from the first entry.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The most entries to answer (at most 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, and the log's head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "since is not a seq.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store), or the path names no log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs/plans/close-gap": {
+      "x-mux": "/logs/",
+      "post": {
+        "operationId": "closePlansGap",
+        "summary": "Close a gap in the plans log with an entry that names the cause.",
+        "description": "Store mode only. A missing entry below the head stops writes to the log. This writes an entry with no changes at the missing seq, with the cause as its note. When sign-in is on, it needs the audit rule on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The missing entry."
+                  },
+                  "cause": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why the entry is missing."
+                  }
+                },
+                "required": [
+                  "seq",
+                  "cause"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry that closes the gap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogWrite"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"seq\": N, \"cause\": \"…\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedRefusal"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) gives no audit rule on the stops pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The log has no gap at `seq`.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer, or the log has a gap. Nothing was written. The response carries Retry-After when the store does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2934,6 +5675,13 @@
           },
           "seq": {
             "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "What the kind's module accepts and names for a person (a policy nobody can change again). Absent when there is none."
           }
         },
         "required": [
@@ -2961,7 +5709,7 @@
       },
       "Refusals": {
         "type": "object",
-        "description": "The module's refusals. The write is not stored.",
+        "description": "The module's refusals. The write is not stored. A write refused for the references it adds to a record missing from what its writer read (D-233) has none, and names them in `references`.",
         "properties": {
           "refusals": {
             "type": [
@@ -2971,6 +5719,9 @@
             "items": {
               "type": "object"
             }
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -3017,6 +5768,10 @@
               "type": "object"
             },
             "description": "The network's warnings, then each visited stop not in service over the pick's period."
+          },
+          "seq": {
+            "type": "integer",
+            "description": "The plans log's entry."
           }
         },
         "required": [
@@ -3031,6 +5786,10 @@
         "properties": {
           "plans_hash": {
             "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "description": "The plans log's entry."
           }
         },
         "required": [
@@ -3042,6 +5801,9 @@
         "properties": {
           "stops_hash": {
             "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -3053,6 +5815,9 @@
         "properties": {
           "requests_hash": {
             "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
           }
         },
         "required": [
@@ -3105,6 +5870,10 @@
           },
           "work_order": {
             "$ref": "#/components/schemas/WorkOrder"
+          },
+          "landed": {
+            "type": "boolean",
+            "description": "The key landed before: the work order system was not asked again."
           }
         },
         "required": [
@@ -3358,14 +6127,56 @@
           "policy_hash": {
             "type": "string"
           },
+          "edit_records_hash": {
+            "type": "string",
+            "description": "The edit document (the disruptions log's fold), store mode (D-190)."
+          },
           "plans_hash": {
             "type": "string"
+          },
+          "frozen_versions_hash": {
+            "type": "string",
+            "description": "The frozen versions (the plans log's fold), store mode (D-191)."
           },
           "stops_hash": {
             "type": "string"
           },
           "stop_requests_hash": {
             "type": "string"
+          },
+          "service_alerts_hash": {
+            "type": "string",
+            "description": "The service alerts document (the alerts log's fold), store mode (D-206)."
+          },
+          "alert_templates_hash": {
+            "type": "string",
+            "description": "The alert templates document (the alerts log's fold), store mode (D-210)."
+          },
+          "notes_hash": {
+            "type": "string",
+            "description": "The notes document (the notes log's fold), store mode (D-214)."
+          },
+          "log_seqs": {
+            "type": "object",
+            "description": "The seq of each log's fold whose documents this manifest pins, store mode: a page sends it with a write to that log as read_seq (D-189).",
+            "properties": {
+              "stops": {
+                "type": "integer"
+              },
+              "alerts": {
+                "type": "integer"
+              },
+              "notes": {
+                "type": "integer"
+              },
+              "plans": {
+                "type": "integer"
+              },
+              "disruptions": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
           },
           "build_hash": {
             "type": "string"
@@ -3405,6 +6216,458 @@
           "wasm_hash",
           "generated_at"
         ]
+      },
+      "DisruptionsLog": {
+        "type": "object",
+        "description": "The disruptions log's entries after a seq, and its state.",
+        "properties": {
+          "log": {
+            "type": "string",
+            "const": "disruptions"
+          },
+          "head": {
+            "type": "integer",
+            "description": "The highest entry."
+          },
+          "gaps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            },
+            "description": "The missing entries below the head. Writes stop while there is one."
+          },
+          "checkpoint": {
+            "type": "integer",
+            "description": "The newest checkpoint's seq (0: none)."
+          },
+          "document": {
+            "type": "string",
+            "description": "The hash of the fold this server serves at GET /edits."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "entry": {
+                  "type": "object",
+                  "description": "The entry, a log_entry document."
+                },
+                "unreadable": {
+                  "type": "string",
+                  "description": "The entry's bytes, when they are not JSON."
+                }
+              },
+              "required": [
+                "seq"
+              ]
+            }
+          },
+          "quarantined": {
+            "type": "array",
+            "description": "The entries the fold did not apply, in seq order, each with the reason.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "seq",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "log",
+          "head",
+          "checkpoint",
+          "document",
+          "entries",
+          "quarantined"
+        ]
+      },
+      "LogWrite": {
+        "type": "object",
+        "description": "An entry written to a log.",
+        "properties": {
+          "log": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "reverts": {
+            "type": "integer"
+          },
+          "changes": {
+            "type": "integer"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
+          }
+        },
+        "required": [
+          "log",
+          "seq"
+        ]
+      },
+      "StopsLog": {
+        "type": "object",
+        "description": "The stops log's entries after a seq, and its state.",
+        "properties": {
+          "log": {
+            "type": "string",
+            "const": "stops"
+          },
+          "head": {
+            "type": "integer",
+            "description": "The highest entry."
+          },
+          "gaps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            },
+            "description": "The missing entries below the head. Writes stop while there is one."
+          },
+          "checkpoint": {
+            "type": "integer",
+            "description": "The newest checkpoint's seq (0: none)."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "entry": {
+                  "type": "object",
+                  "description": "The entry, a log_entry document."
+                },
+                "unreadable": {
+                  "type": "string",
+                  "description": "The entry's bytes, when they are not JSON."
+                }
+              },
+              "required": [
+                "seq"
+              ]
+            }
+          },
+          "quarantined": {
+            "type": "array",
+            "description": "The entries the fold did not apply, in seq order, each with the reason.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "seq",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "log",
+          "head",
+          "checkpoint",
+          "entries",
+          "quarantined"
+        ]
+      },
+      "PlansFrozen": {
+        "type": "object",
+        "description": "The frozen version.",
+        "properties": {
+          "plan_id": {
+            "type": "string"
+          },
+          "network_hash": {
+            "type": "string"
+          },
+          "frozen_versions_hash": {
+            "type": "string",
+            "description": "The frozen versions document, served at /blobs/<hash>."
+          },
+          "seq": {
+            "type": "integer",
+            "description": "The plans log's entry."
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            },
+            "description": "The network's warnings."
+          }
+        },
+        "required": [
+          "plan_id",
+          "network_hash",
+          "frozen_versions_hash",
+          "seq",
+          "warnings"
+        ]
+      },
+      "PlansLog": {
+        "type": "object",
+        "description": "The plans log's entries after a seq, and its state.",
+        "properties": {
+          "log": {
+            "type": "string",
+            "const": "plans"
+          },
+          "head": {
+            "type": "integer",
+            "description": "The highest entry."
+          },
+          "gaps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            },
+            "description": "The missing entries below the head. Writes stop while there is one."
+          },
+          "checkpoint": {
+            "type": "integer",
+            "description": "The newest checkpoint's seq (0: none)."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "entry": {
+                  "type": "object",
+                  "description": "The entry, a log_entry document."
+                },
+                "unreadable": {
+                  "type": "string",
+                  "description": "The entry's bytes, when they are not JSON."
+                }
+              },
+              "required": [
+                "seq"
+              ]
+            }
+          },
+          "quarantined": {
+            "type": "array",
+            "description": "The entries the fold did not apply, in seq order, each with the reason.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "seq",
+                "reason"
+              ]
+            }
+          },
+          "plans_hash": {
+            "type": "string",
+            "description": "The published plan set the fold holds (the manifest's plans_hash)."
+          },
+          "frozen_versions_hash": {
+            "type": "string",
+            "description": "The frozen versions the fold holds."
+          }
+        },
+        "required": [
+          "log",
+          "head",
+          "checkpoint",
+          "entries",
+          "quarantined"
+        ]
+      },
+      "AlertsHash": {
+        "type": "object",
+        "properties": {
+          "alerts_hash": {
+            "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
+          }
+        },
+        "required": [
+          "alerts_hash"
+        ]
+      },
+      "NotesHash": {
+        "type": "object",
+        "properties": {
+          "notes_hash": {
+            "type": "string",
+            "description": "The notes document in force."
+          },
+          "id": {
+            "type": "string",
+            "description": "The note's id."
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
+          }
+        },
+        "required": [
+          "notes_hash",
+          "id"
+        ]
+      },
+      "TemplatesHash": {
+        "type": "object",
+        "properties": {
+          "templates_hash": {
+            "type": "string"
+          },
+          "references": {
+            "$ref": "#/components/schemas/BrokenReferences"
+          }
+        },
+        "required": [
+          "templates_hash"
+        ]
+      },
+      "BrokenReferences": {
+        "type": "array",
+        "description": "The broken references the write leaves, as of now (D-233): those it wrote broken, and those whose target it changed. Each names the referring record, its field (a JSON pointer inside the record), the declared target, the id it names, and the entry. A reference whose target is held, but in a state a rule does not accept, says why in `rule` (D-238). A warning for a person: the write landed. Absent when there are none.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "log": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "field": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "names": {
+              "type": "string"
+            },
+            "rule": {
+              "type": "string",
+              "description": "Why the target's state breaks a rule of the kinds at both ends, as the end of a sentence: \"which \" + this (\"was retired on 2026-10-01\"). Absent: the target is missing."
+            },
+            "entry": {
+              "type": "object",
+              "properties": {
+                "log": {
+                  "type": "string"
+                },
+                "seq": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "required": [
+            "log",
+            "kind",
+            "id",
+            "field",
+            "target",
+            "names"
+          ]
+        }
+      },
+      "ModuleError": {
+        "type": "object",
+        "description": "A module's error (docs/architecture/bus.md, \"Answers\"). A host acts on `code`, never on `message`. A coded refusal carries the fields of its code.",
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "unknown_document",
+              "newer_version"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "load": {
+            "type": "string"
+          },
+          "found": {
+            "type": "integer"
+          },
+          "reads": {
+            "type": "integer"
+          },
+          "read": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CodedRefusal": {
+        "type": "object",
+        "description": "A module's refusal that carries a code.",
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ModuleError"
+          }
+        }
       }
     },
     "securitySchemes": {

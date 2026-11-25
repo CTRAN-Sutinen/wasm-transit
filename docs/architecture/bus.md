@@ -183,6 +183,23 @@ document a host stores, such as an import's network, carries the
 document's canonical bytes exactly (RFC 8785, `cap_abi::Canonical`;
 `docs/FORMATS.md`).
 
+An error is `{"error": {"message": "…"}}`. A refusal that a host acts on
+also carries `code` and its fields (`cap_abi::RefusalCode`):
+
+- `unknown_document {kind, hash, load}`: the module does not hold the
+  document. The host registers it with `load` and asks again.
+- `newer_version {kind, found, reads, read}`: a newer build wrote the
+  document, and the page asks for the deployment's build. `read` is true
+  when this build read it one version ahead and refused only a write
+  over it.
+
+A host branches on the code, never on the message, which is text for a
+person. The server answers a coded refusal as JSON, `{"error": {...}}`,
+and any other error as text. A gate in `just test` fails host code that
+matches an error's text, and `refusal-law.mjs` checks that every worked
+example that names a document refuses with `unknown_document` on a
+module that holds nothing.
+
 **Generators and gates.** gen-assemblies writes the assembly crates.
 arch-gates checks the dependency graph and the source of every
 capability crate ("Bus rules", below). Two Node checks also run:

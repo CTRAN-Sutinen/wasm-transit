@@ -237,6 +237,11 @@ _host-tests:
     # runs first.
     node --test crates/cap-abi/independence.test.mjs
     node crates/cap-abi/independence.mjs
+    # UNKNOWN_DOCUMENT BY CODE (docs/architecture/bus.md, "Answers"): every
+    # worked example that names a
+    # document, run on a module that holds nothing, refuses with the
+    # unknown_document code, its hash, and its load op.
+    node crates/cap-abi/refusal-law.mjs
     # The pages' service clock (web/src/clock.ts): the agency's date
     # and GTFS seconds (noon minus 12 h) in the agency's zone, never the
     # device's — across midnight and both 2026 clock changes, from a
@@ -262,10 +267,13 @@ _host-tests:
     # first.
     node --test tools/failure-tables.test.mjs
     node tools/failure-tables.mjs
-    # A refusal of a document another build wrote (web/src/versions.ts):
-    # the two texts transit-version writes, and nothing else, ask for
-    # the deployment's build (D-79, D-186).
-    node --test web/src/versions.test.mjs
+    # A module error read by its code (web/src/refusals.ts): an
+    # evicted document and a newer version are found whatever the message
+    # says, and only a newer version asks for the deployment's build. No
+    # host code matches an error's text, and the gate's broken fixture runs
+    # first.
+    node --test web/src/refusals.test.mjs
+    node --test web/src/error-text.test.mjs
     # The outbox (web/src/outbox.ts; D-189): writes in order, the same
     # key on every attempt, a network failure or a 5xx waiting, a 401
     # holding the outbox, a refusal held with its reasons, a reload
@@ -328,7 +336,7 @@ _host-tests:
       --load 258:/dev/null \
       --load 257:<(echo '{"keep":[]}') \
       --op '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":0,"limit":1}' \
-      | tr '\n' ' ' | grep -Eq '"held":\[\{"kind":"network".*"dropped":\[\{"kind":"network".*"error":"unknown network sha256:[0-9a-f]+: load_network first"'
+      | tr '\n' ' ' | grep -Eq '"held":\[\{"kind":"network".*"dropped":\[\{"kind":"network".*"error":\{"message":"unknown network sha256:[0-9a-f]+: load_network first","code":"unknown_document"'
     # The network capability's gate: the kernel's load_feed → import,
     # chained; the dropped single-stop trip must be REPORTED (never
     # silent).

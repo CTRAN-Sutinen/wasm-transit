@@ -90,7 +90,7 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: the policy document is JSON (authorize)") })
+    serde_json::json!({ "error": { "message": format!("unknown bulk op {op}: the policy document is JSON (authorize)") } })
         .to_string()
 }
 

@@ -289,10 +289,10 @@ pub struct Quarantined {
     pub reason: String,
 }
 
-pub fn read_entry(log: &str, stored: &Stored) -> Result<Entry, String> {
+pub fn read_entry(log: &str, stored: &Stored) -> Result<Entry, transit_version::Refusal> {
     let value: Value = serde_json::from_str(&stored.text).map_err(|e| format!("not JSON: {e}"))?;
     if value.get("kind").and_then(Value::as_str) != Some(EntryKind::KIND) {
-        return Err(format!("not a {} document", EntryKind::KIND));
+        return Err(format!("not a {} document", EntryKind::KIND).into());
     }
     let found = value.get("schema_version").and_then(Value::as_u64).unwrap_or(0);
     if found != u64::from(ENTRY_VERSION) {
@@ -300,10 +300,10 @@ pub fn read_entry(log: &str, stored: &Stored) -> Result<Entry, String> {
     }
     let entry: Entry = serde_json::from_value(value).map_err(|e| format!("not an entry: {e}"))?;
     if entry.log != log {
-        return Err(format!("an entry of the {} log, not the {log} log", entry.log));
+        return Err(format!("an entry of the {} log, not the {log} log", entry.log).into());
     }
     if entry.seq != stored.seq {
-        return Err(format!("the entry says seq {}, and its key says {}", entry.seq, stored.seq));
+        return Err(format!("the entry says seq {}, and its key says {}", entry.seq, stored.seq).into());
     }
     Ok(entry)
 }
@@ -322,9 +322,9 @@ pub fn fold(start: Checkpoint, entries: &[Stored], hash: Hash) -> Result<Folded,
             return Err(format!("entry {} comes after entry {}: the entries are not in order", stored.seq, fold.seq));
         }
         let log = fold.log.clone();
-        match read_entry(&log, stored).and_then(|e| apply(&mut fold, &e, hash)) {
+        match read_entry(&log, stored).and_then(|e| apply(&mut fold, &e, hash).map_err(Into::into)) {
             Ok(()) => {}
-            Err(reason) => quarantined.push(Quarantined { seq: stored.seq, reason }),
+            Err(reason) => quarantined.push(Quarantined { seq: stored.seq, reason: reason.message }),
         }
         fold.seq = stored.seq;
     }

@@ -42,7 +42,7 @@ fn the_seam_answers_the_chain() {
 #[test]
 fn garbage_and_bulk_bytes_are_errors_not_panics() {
     let err = dispatch(Request::Resolve { plans: vec![], date: "2026-13-01".into() }).unwrap_err();
-    assert!(err.contains("invalid date"), "{err}");
+    assert!(err.message.contains("invalid date"), "{err}");
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
@@ -95,9 +95,9 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     let mut newer = published;
     newer.schema_version = 99;
     let err = dispatch(Request::InForce { published: Current(newer.clone()), date: "2026-11-05".into() }).unwrap_err();
-    assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
+    assert!(err.message.contains("plans v99") && err.message.contains("reads v1"), "{err}");
     let err = dispatch(Request::InUse { published: Current(newer), today: "2026-11-05".into() }).unwrap_err();
-    assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
+    assert!(err.message.contains("plans v99") && err.message.contains("reads v1"), "{err}");
 }
 
 /// A pick that took effect is refused with its reason (D-75).
@@ -263,7 +263,7 @@ fn receive_answers_a_refused_adoption_with_its_issues_and_no_entry() {
     assert_eq!(got["refused"]["refusals"][0]["kind"], "not_frozen", "{got}");
     assert!(got.get("entry").is_none());
     let bad = answer(serde_json::json!({ "op": "receive", "write": { "header": header(1, None) }, "ops": [{"cap": "stops", "op": "add_event"}] }));
-    assert!(bad["failed"]["error"].as_str().unwrap().contains("not a write to the plans log"), "{bad}");
+    assert!(bad["failed"]["error"]["message"].as_str().unwrap().contains("not a write to the plans log"), "{bad}");
 }
 
 #[test]
@@ -386,5 +386,5 @@ fn a_freeze_alone_reads_no_stops_and_a_pick_needs_its_network() {
     assert_eq!(entry_kinds(&got), vec!["frozen_version", "frozen_versions"], "{got}");
     assert_eq!(got["made"][0]["document_hash"], network_hash, "a freeze stores the network as sent");
     let none = pick_write(serde_json::json!({}), serde_json::json!({"adopt": true, "today": "2026-01-01"}));
-    assert!(none["failed"]["error"].as_str().unwrap().contains("load_network"), "{none}");
+    assert!(none["failed"]["error"]["message"].as_str().unwrap().contains("load_network"), "{none}");
 }

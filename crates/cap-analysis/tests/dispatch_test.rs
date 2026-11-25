@@ -248,7 +248,7 @@ fn unknown_hashes_are_errors_not_panics() {
         include_service_types: true,
     })
     .expect_err("unknown hash");
-    assert!(err.contains("unknown network"));
+    assert!(err.message.contains("unknown network"));
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn a_network_compares_against_itself_as_unchanged() {
         network_hash: hash,
         members: vec!["0".into()],
     };
-    assert!(cap_analysis::dispatch(unknown).unwrap_err().contains("unknown network"));
+    assert!(cap_analysis::dispatch(unknown).unwrap_err().message.contains("unknown network"));
 }
 
 #[test]
@@ -293,7 +293,7 @@ fn json_seam_round_trips_the_tagged_form() {
 
     let bad: serde_json::Value =
         serde_json::from_str(&cap_analysis::invoke(r#"{"op": "nope"}"#)).unwrap();
-    assert!(bad["error"].as_str().unwrap().contains("invalid request"));
+    assert!(bad["error"]["message"].as_str().unwrap().contains("invalid request"));
 }
 
 #[test]
@@ -360,7 +360,7 @@ fn stop_gaps_answer_through_the_seam() {
         &serde_json::json!({ "op": "stop_gaps", "network_hash": hash, "date": "garbage", "stop_id": "s0" }).to_string(),
     ))
     .unwrap();
-    assert!(bad["error"].as_str().unwrap().contains("invalid date"));
+    assert!(bad["error"]["message"].as_str().unwrap().contains("invalid date"));
 }
 
 #[test]

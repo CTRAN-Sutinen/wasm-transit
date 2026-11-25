@@ -3,8 +3,7 @@
 A fact lives at the narrowest scope that it covers
 (`docs/architecture/README.md`; `docs/CONVENTIONS.md`, "What to
 write"). The architecture docs still hold detail that one file, one
-route, or one generated list covers. This unit runs after
-`refusal-codes.md`, because it describes what that builds.
+route, or one generated list covers.
 
 ## Scope
 
@@ -29,14 +28,10 @@ route, or one generated list covers. This unit runs after
    `storage.md`, `FORMATS.md`). Each points to the kind table, the
    manifest, or the registry's docs site instead.
 5. **The built state.** The doc-sweep skill, `crates/AGENTS.md`,
-   `docs/guide/first-change.md`, `docs/TESTING.md`, `bus.md`
-   ("Answers": the refusal codes), `web.md` (recovery by code),
-   `server.md` (the one assembly, its instances, and the coded answer),
-   `registry.md`, the justfile's comment on `caps`, and
-   `DEPLOYMENTS-SERVER.md` (the one flag) describe what
-   `names-declared-once.md` and `refusal-codes.md` built.
-   `docs/CONVENTIONS.md` ("Gotchas") says that a host never branches on
-   an error's text.
+   `docs/guide/first-change.md`, `docs/TESTING.md`, `server.md` (the
+   one assembly and its instances), `registry.md`, the justfile's
+   comment on `caps`, and `DEPLOYMENTS-SERVER.md` (the one flag)
+   describe the server's one assembly.
 6. **The writing rules in the developer documents.** Apply "Use these
    words" and "The faults to remove" to `AGENTS.md`,
    `crates/AGENTS.md`, `docs/` (not `docs/decisions/`, which hold the

@@ -119,7 +119,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         direct: None,
     })
     .expect_err("unknown hash");
-    assert!(err.contains("unknown network"));
+    assert!(err.message.contains("unknown network"));
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn json_seam_round_trips_the_tagged_form() {
 
     let outcome: serde_json::Value =
         serde_json::from_str(&cap_router::invoke_bytes(0, b"{}")).unwrap();
-    assert!(outcome["error"].as_str().unwrap().contains("unknown bulk op"));
+    assert!(outcome["error"]["message"].as_str().unwrap().contains("unknown bulk op"));
 }
 
 #[test]
@@ -350,7 +350,7 @@ fn a_live_plan_rides_the_predicted_times() {
         direct: None,
     })
     .expect_err("unknown live hash");
-    assert!(err.contains("unknown live document"), "{err}");
+    assert!(err.message.contains("unknown live document"), "{err}");
 }
 
 #[test]
@@ -475,7 +475,7 @@ fn walk_table(network_hash: &str, walk_secs: Option<u32>) -> transit_streets::wa
     }
 }
 
-fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<transit_router::Itinerary>, String> {
+fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<transit_router::Itinerary>, cap_abi::Refusal> {
     // The station's two bays are about 80 m apart and the day's first trip has
     // not left, so a walk between them beats waiting for a bus.
     cap_router::dispatch(cap_router::Request::Plan {
@@ -522,9 +522,9 @@ fn a_walk_table_is_the_plan_s_transfers() {
 
     let other = load_walks(walk_table("sha256:another-network", Some(300)));
     let err = plan_bays(&hash, Some(other)).expect_err("another network's table");
-    assert!(err.contains("walks network"), "{err}");
+    assert!(err.message.contains("walks network"), "{err}");
     let err = plan_bays(&hash, Some("sha256:missing".into())).expect_err("unknown table");
-    assert!(err.contains("load_walks first"), "{err}");
+    assert!(err.message.contains("load_walks first"), "{err}");
 }
 
 #[test]
@@ -553,7 +553,7 @@ fn a_plan_from_a_place_walks_from_it() {
     assert_eq!(direct["ok"]["itinerary"]["arrival_secs"], 5 * 3600 + 30, "walking straight there is sooner");
 
     let refused = plan(place("SA"), json!({}));
-    assert!(refused["error"].as_str().unwrap().contains("names a stop"), "{refused}");
+    assert!(refused["error"]["message"].as_str().unwrap().contains("names a stop"), "{refused}");
 }
 
 #[test]

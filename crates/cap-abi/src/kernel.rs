@@ -101,7 +101,7 @@ pub fn loader<T: Load>() -> &'static dyn Loader {
 }
 
 impl<T: Load> Kind<T> {
-    pub fn require(&self, hash: &str) -> Result<Arc<T>, String> {
+    pub fn require(&self, hash: &str) -> Result<Arc<T>, transit_version::Refusal> {
         self.registry.require(hash)
     }
 
@@ -111,7 +111,7 @@ impl<T: Load> Kind<T> {
 
     /// Like [`Self::require`], for the base of a write. It refuses a copy
     /// that was read one version ahead through a read-only step (D-186).
-    pub fn require_writable(&self, hash: &str) -> Result<Arc<T>, String>
+    pub fn require_writable(&self, hash: &str) -> Result<Arc<T>, transit_version::Refusal>
     where
         T: transit_version::Versioned,
     {
@@ -138,7 +138,7 @@ impl<T: Load> Kind<T> {
         Ok((hash, held))
     }
 
-    pub fn register_bytes(&self, bytes: &[u8]) -> Result<(String, Arc<T>), String> {
+    pub fn register_bytes(&self, bytes: &[u8]) -> Result<(String, Arc<T>), transit_version::Refusal> {
         let hash = crate::content_hash(bytes);
         if let Some(held) = self.registry.get(&hash) {
             return Ok((hash, held));
@@ -155,7 +155,7 @@ impl<T: Load> Kind<T> {
         self.registry.is_empty()
     }
 
-    fn load(&self, bytes: &[u8]) -> Result<(String, Arc<T>, Vec<String>), String> {
+    fn load(&self, bytes: &[u8]) -> Result<(String, Arc<T>, Vec<String>), transit_version::Refusal> {
         match T::FORM {
             Form::Json { .. } => {
                 let ((document, unknown_fields), ahead) =
@@ -179,7 +179,7 @@ impl<T: Load> Kind<T> {
         }
     }
 
-    fn answer(&self, loaded: Result<(String, Arc<T>, Vec<String>), String>) -> String {
+    fn answer(&self, loaded: Result<(String, Arc<T>, Vec<String>), transit_version::Refusal>) -> String {
         crate::outcome(loaded.map(|(hash, held, unknown_fields)| LoadAnswer { op: T::LOAD_OP, loaded: held.answer(hash), unknown_fields }))
     }
 }
@@ -216,10 +216,11 @@ impl<T: Load> Loader for Kind<T> {
     }
     fn load_json(&self, text: &str) -> String {
         let loaded = match T::FORM {
-            Form::Json { field: name } => field(text, name).and_then(|raw| self.load(raw.get().as_bytes())),
+            Form::Json { field: name } => field(text, name).map_err(Into::into).and_then(|raw| self.load(raw.get().as_bytes())),
             // A byte document in a JSON request is an array of numbers.
             Form::Bytes => field(text, "bytes")
                 .and_then(|raw| serde_json::from_str::<Vec<u8>>(raw.get()).map_err(|e| format!("invalid request: bytes: {e}")))
+                .map_err(Into::into)
                 .and_then(|bytes| self.load(&bytes)),
         };
         self.answer(loaded)
@@ -251,19 +252,19 @@ pub const WALK_GRAPH: Derivation = Derivation { name: "walk graph", keep: 4 };
 /// `inputs` are the hashes of the documents that the entry comes from. An
 /// evict that drops any of them drops the entry. `compute` must be a pure
 /// function of the documents that the key names.
-pub fn derive<T: Any + Send + Sync>(
+pub fn derive<T: Any + Send + Sync, E: Into<transit_version::Refusal>>(
     derivation: &Derivation,
     key: &str,
     inputs: &[&str],
-    compute: impl FnOnce() -> Result<T, String>,
-) -> Result<Arc<T>, String> {
+    compute: impl FnOnce() -> Result<T, E>,
+) -> Result<Arc<T>, transit_version::Refusal> {
     let full = format!("{}|{key}", derivation.name);
     if let Some(held) = DERIVED.get(&full) {
         if let Ok(value) = held.downcast::<T>() {
             return Ok(value);
         }
     }
-    let value = Arc::new(compute()?);
+    let value = Arc::new(compute().map_err(Into::into)?);
     DERIVED.insert_derived(full, inputs.iter().map(|s| s.to_string()).collect(), value.clone() as Arc<dyn Any + Send + Sync>);
     let prefix = format!("{}|", derivation.name);
     DERIVED.bound(derivation.keep, |key| key.starts_with(&prefix));
@@ -342,7 +343,7 @@ pub fn registries(caps: &[&Cap]) -> Vec<&'static dyn Held> {
 }
 
 fn error(message: String) -> String {
-    crate::outcome::<()>(Err(message))
+    crate::outcome::<(), String>(Err(message))
 }
 
 pub fn invoke(caps: &[&Cap], text: &str) -> String {
@@ -438,8 +439,8 @@ mod tests {
         const CODE: u32 = 900;
         const FORM: Form = Form::Json { field: "fence" };
         type Answer = FenceLoaded;
-        fn parse(bytes: &[u8]) -> Result<Self, String> {
-            plain(bytes)
+        fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+            Ok(plain(bytes)?)
         }
         fn canonical(&self) -> Option<Result<String, String>> {
             Some(crate::canonical_hash(self))
@@ -460,8 +461,8 @@ mod tests {
         const CODE: u32 = 901;
         const FORM: Form = Form::Json { field: "document" };
         type Answer = WatchLoaded;
-        fn parse(bytes: &[u8]) -> Result<Self, String> {
-            plain(bytes)
+        fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
+            Ok(plain(bytes)?)
         }
         fn canonical(&self) -> Option<Result<String, String>> {
             Some(crate::canonical_hash(self))
@@ -530,7 +531,7 @@ mod tests {
         let square = |n: u64| {
             *derive(&SQUARE, &n.to_string(), &["sha256:input"], || {
                 computed.set(computed.get() + 1);
-                Ok(n * n)
+                Ok::<_, String>(n * n)
             })
             .unwrap()
         };
@@ -544,7 +545,7 @@ mod tests {
         assert_eq!(computed.get(), 4);
         DERIVED.evict(&std::collections::BTreeSet::new());
         assert_eq!(derived_len(&SQUARE), 0);
-        assert!(derive::<u64>(&SQUARE, "x", &[], || Err("no".into())).is_err());
+        assert!(derive::<u64, String>(&SQUARE, "x", &[], || Err("no".into())).is_err());
         assert_eq!(derived_len(&SQUARE), 0);
     }
 
@@ -585,7 +586,7 @@ mod tests {
         const CODE: u32 = 902;
         const FORM: Form = Form::Json { field: "rated" };
         type Answer = RatedLoaded;
-        fn parse(bytes: &[u8]) -> Result<Self, String> {
+        fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
             crate::parse_versioned(bytes)
         }
         fn canonical(&self) -> Option<Result<String, String>> {
@@ -605,7 +606,7 @@ mod tests {
         assert_eq!(rated.require(&hash).unwrap().name, "a", "held stepped down, and read");
         assert_eq!(rated.read_ahead(&hash), Some((2, transit_version::Ahead::ReadOnly)));
         let refused = rated.require_writable(&hash).unwrap_err();
-        assert!(refused.contains("rated v2") && refused.contains("does not write over it"), "{refused}");
+        assert!(refused.message.contains("rated v2") && refused.message.contains("does not write over it"), "{refused}");
 
         let v1 = serde_json::json!({"kind": "rated", "schema_version": 1, "name": "b"});
         let (hash, _, _) = rated.load(&serde_json::to_vec(&v1).unwrap()).unwrap();

@@ -148,7 +148,7 @@ fn read_edits_reads_a_received_document_at_receive() {
 
     let v1 = doc["records"].clone();
     let refused = dispatch(Request::ReadEdits { document: v1 }).unwrap_err();
-    assert!(refused.contains("edit_records v1") && refused.contains("migrate"), "{refused}");
+    assert!(refused.message.contains("edit_records v1") && refused.message.contains("migrate"), "{refused}");
 
     match dispatch(Request::ReadEdits { document: doc }).unwrap() {
         Response::ReadEdits { records, dropped, schema_version, document, document_hash } => {
@@ -304,7 +304,7 @@ fn the_documents_own_fields_survive_its_records() {
 fn a_record_in_another_version_is_refused() {
     let records = BTreeMap::from([("e1".to_string(), Held { version: 3, value: serde_json::to_value(record("e1", EditStatus::Draft, 1, 1)).unwrap() })]);
     let refused = dispatch(Request::LogDocument { records, document: None }).unwrap_err();
-    assert!(refused.contains("e1") && refused.contains('3') && refused.contains('2'), "{refused}");
+    assert!(refused.message.contains("e1") && refused.message.contains('3') && refused.message.contains('2'), "{refused}");
 }
 
 #[test]
@@ -403,5 +403,5 @@ fn receive_migrate_records_the_head_and_another_log_s_op_fails() {
         "ops": [{ "cap": "sync", "op": "migrate" }] }));
     assert!(got["entry"].is_string(), "{got}");
     let other = ok(serde_json::json!({ "op": "receive", "write": { "header": receive_header(1) }, "ops": [{ "cap": "stops", "op": "add_event" }] }));
-    assert!(other["failed"]["error"].as_str().unwrap().contains("not a write to the disruptions log"), "{other}");
+    assert!(other["failed"]["error"]["message"].as_str().unwrap().contains("not a write to the disruptions log"), "{other}");
 }

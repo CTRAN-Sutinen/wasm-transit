@@ -158,7 +158,7 @@ fn the_reverse_read_names_a_types_dates() {
         to: "2026-11-03".into(),
     })
     .unwrap_err();
-    assert!(err.contains("invalid date"), "{err}");
+    assert!(err.message.contains("invalid date"), "{err}");
     let err = dispatch(Request::ServiceDates {
         network_hash: network_hash.clone(),
         edits_hash: Some("sha256:missing".into()),
@@ -167,7 +167,7 @@ fn the_reverse_read_names_a_types_dates() {
         to: "2026-11-03".into(),
     })
     .unwrap_err();
-    assert!(err.contains("unknown edits"), "{err}");
+    assert!(err.message.contains("unknown edits"), "{err}");
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         date: DATE.into(),
     })
     .unwrap_err();
-    assert!(err.contains("unknown edits"), "{err}");
+    assert!(err.message.contains("unknown edits"), "{err}");
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");

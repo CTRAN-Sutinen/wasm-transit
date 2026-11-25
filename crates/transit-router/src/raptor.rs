@@ -357,8 +357,10 @@ fn forward(
             }
         };
 
-        // Board at every marked position, not only the first. A later marked
-        // stop may allow an earlier trip that helps further downstream.
+        // Every trip, not only the earliest to depart: an overtaking trip (an
+        // express passing a local) leaves later and arrives earlier. A trip
+        // boards at its first catchable marked position, since boarding it
+        // later reaches nothing sooner.
         let mut pattern_seen = vec![false; net.patterns.len()];
         for &s in &marked_list {
             for &(pi, _) in &net.patterns_at_stop[s] {
@@ -369,28 +371,12 @@ fn forward(
                 let pattern = &net.patterns[pi as usize];
                 let len = pattern.stop_positions.len();
 
-                for p in 0..len - 1 {
-                    let board_stop = pattern.stop_positions[p] as usize;
-                    if !marked[board_stop] {
-                        continue;
-                    }
-                    let t = tau[k - 1][board_stop];
-                    if t == INF {
-                        continue;
-                    }
-                    // The earliest trip that departs this position at or after
-                    // the label. A linear scan is needed. Trips are sorted by
-                    // their first departure, but an overtaking trip (an express
-                    // passing a local) makes later positions non-monotonic.
-                    let mut best: Option<(usize, u32)> = None;
-                    for (ti, tr) in pattern.trips.iter().enumerate() {
-                        let dep = tr.departures[p];
-                        if dep >= t && best.is_none_or(|(_, d)| dep < d) {
-                            best = Some((ti, dep));
-                        }
-                    }
-                    let Some((ti, _)) = best else { continue };
-                    let trip = &pattern.trips[ti];
+                for (ti, trip) in pattern.trips.iter().enumerate() {
+                    let board = (0..len - 1).find(|&p| {
+                        let stop = pattern.stop_positions[p] as usize;
+                        marked[stop] && tau[k - 1][stop] != INF && trip.departures[p] >= tau[k - 1][stop]
+                    });
+                    let Some(p) = board else { continue };
                     for q in p + 1..len {
                         let alight_stop = pattern.stop_positions[q] as usize;
                         let label = Parent::Transit {
