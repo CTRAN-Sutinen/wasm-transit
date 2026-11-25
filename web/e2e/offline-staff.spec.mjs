@@ -64,7 +64,7 @@ test("the disruptions page through an outage: a note and an alert wait, a reload
   // person who does not wait.
   await context.setOffline(false);
   await page.getByTestId("sync-send").click({ timeout: 2_000 }).catch(() => {});
-  // Well inside the 30 s poll: a sent write reads the manifest at once (QAF-133).
+  // Well inside the 30 s poll: a sent write reads the manifest at once.
   await expect(page.getByTestId("sync-status")).toHaveCount(0, { timeout: 10_000 });
   const notes = await entries(request, "notes");
   const alerts = await entries(request, "alerts");

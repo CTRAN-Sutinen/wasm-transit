@@ -203,7 +203,7 @@ test("a stop whose routes cannot be read says so, never that no route stops ther
 });
 
 // A failed read of the stops document is never shown as a deployment with no
-// stops record, and the page never seeds the schedule's stops over it (QAF-131).
+// stops record, and the page never seeds the schedule's stops over it.
 test("a stops document whose read fails says so, never that the deployment publishes no stops yet", async ({ page }) => {
   const pin = "f".repeat(64);
   await page.route("**/manifest", async (route) => {

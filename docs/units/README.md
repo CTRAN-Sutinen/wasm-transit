@@ -98,7 +98,6 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [reference-rules.md](reference-rules.md) | the rules between records: each reference's rule at both ends, and the transitions that pin or warn |
-| [ui-host-inputs.md](ui-host-inputs.md) | a UI host's inputs declared and run by the kit: built, and `just test` passes; left are one clean `just e2e` run, the findings it closes, and the release gates |
 | [fewer-dependencies.md](fewer-dependencies.md) | the S3 and GCS clients on the Go standard library, Azure Blob out, the Rust build trimmed, and an allowlist gate for new dependencies |
 | [shared-dates-and-distance.md](shared-dates-and-distance.md) | the service date parsed and written by one helper, and the network's distance through transit-geo; blocked on D-251 |
 

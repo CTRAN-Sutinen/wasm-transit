@@ -1,5 +1,5 @@
 // A read answers a document, "none kept", or a failure, and never answers
-// null for both (QAF-131). The rules are in docs/architecture/web.md, "A
+// null for both. The rules are in docs/architecture/web.md, "A
 // UI's inputs are declared as data". The file imports nothing, so its
 // properties run under `node --test`.
 

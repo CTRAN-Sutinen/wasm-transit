@@ -131,8 +131,6 @@ The hosts differ in three ways. Each difference is a design decision.
   run in the plans log's receive op (cap-plans `pick`), which links the
   same library functions.
 
-The open work is [ui-host-inputs.md](../units/ui-host-inputs.md).
-
 ## Why
 
 ### One set of rules for every host (this file)

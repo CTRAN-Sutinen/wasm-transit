@@ -358,7 +358,7 @@ export type DeploymentManifest = {
 };
 
 // A read answers null when the deployment keeps no document, and throws
-// ReadFailed when the read fails (QAF-131). Each read takes the manifest
+// ReadFailed when the read fails. Each read takes the manifest
 // that the page holds, so one manifest read names every pin of one poll.
 
 export type ReadOptions = { signal?: AbortSignal; manifest?: DeploymentManifest };

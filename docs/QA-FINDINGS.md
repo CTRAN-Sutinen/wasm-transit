@@ -370,35 +370,6 @@ work rules, and the bid over them.
   Pin: seen in the code, 2026-11-19. To reproduce: serve one C-TRAN
   vehicle positions file as the deployment's feed for an hour; the
   pages show its buses as live.
-- **QAF-130 UI GAP** — a failed read of the edit document is silent on
-  the rider pages. Ride-now and the stop display keep the last good
-  edit document while they are open. They label it only when the
-  server says that its bucket is not answering (`X-Store-Stale`). When
-  the server does not answer at all, nothing says so. A rider page that
-  boots offline has no edit document. Its boards show the schedule
-  with no detours and no word that detours could not be read. (The
-  disruptions page labels its last copy with the time it read it.)
-  Pin: seen in the code, 2026-11-19. To reproduce: the stop display
-  booted offline from its worker (`e2e/deploy-builds.spec.mjs`) over a
-  deployment with a detour; the board shows no note.
-- **QAF-131 DEFECT** — the engine's reads of a served document answer
-  null both when the deployment keeps none and when the read fails
-  (`web/src/engine.ts`: `servedNetwork`, `servedNetworkValue`,
-  `served(kind)` for the stops and the other logged documents, and
-  `publishedPlanSet`). So the
-  pages report an outage as an empty deployment. The stops app says
-  "The deployment publishes no stops yet." Disruptions says "The
-  deployment publishes no network." Service design and service change
-  say "Load a GTFS feed to begin.", and service change shows no
-  published picks. The staff pages are offline pages now: after
-  a first load online, the worker answers these reads from its last
-  copy, so the defect shows on a page never opened online, or when a
-  blob the worker does not hold fails. When only the stops blob fails, the stops app shows
-  the stops seeded from today's network as if no record existed. The
-  server refuses a save over it with 409, so the record is safe.
-  Pin: seen in the code, 2026-11-19. To reproduce: the stops app with
-  `blobs/<stops_hash>.gz` failing; it shows "stops from the schedule
-  running today".
 
 - **QAF-132 DEFECT** — a fork made in the first moments after service
   change opens is lost without a word. The form clears and the plan
@@ -408,14 +379,6 @@ work rules, and the bid over them.
   `service-change.html` in a fresh profile, and at once open
   "Plan & calendar", fill a name and a date, and press Fork. The same
   steps after 1.5 s keep the fork.
-- **QAF-133 UI GAP** — a staff page says "Offline · data as of …" for
-  up to 30 s after the server answers again. The sent writes are
-  already confirmed ("A publish that waited on this device was
-  sent.") while the banner still says the page is offline, because
-  the page reads the manifest again only at its next poll.
-  Pin: seen on C-TRAN, 2026-11-20, on service change, disruptions, and
-  stops. To reproduce: stop the server, make a write, start the
-  server, and watch the banner for 30 s.
 
 ## Data the bus does not have
 
