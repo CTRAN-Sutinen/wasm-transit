@@ -1,9 +1,6 @@
-//! Laws for a network's timezone: the zone its service days are
-//! counted in. GTFS requires every agency in a dataset to share one
-//! `agency_timezone`, so a network has one zone or none: its operators'
-//! zone when they agree, and no answer when they have none or
-//! disagree (an invalid dataset; naming one of them would be a guess).
-//! Hosts read it to turn their clock into the agency's date.
+//! A network has one timezone or none. GTFS requires every agency in a
+//! dataset to share one `agency_timezone`. Operators that disagree make an
+//! invalid dataset, so the network names no zone.
 
 use transit_network::{operators::Operator, Network};
 

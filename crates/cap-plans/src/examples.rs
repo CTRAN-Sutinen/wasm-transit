@@ -1,7 +1,3 @@
-//! The plan chain's worked examples, under its `examples` feature. Each
-//! request runs over the fixture's two-pick chain. The generator runs them
-//! through this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::{json, Value};
 use transit_plans::{DevicePlan, FrozenVersions, PublishedPlans};
@@ -16,17 +12,13 @@ pub fn examples() -> Vec<Example> {
     let plan_set = fixtures::fixture_plan_set();
     let first = &plan_set[0];
     let today = fixtures::fixture_today();
-    // Both picks published over the fixture network.
     let published = plan_set.iter().fold(PublishedPlans::empty(), |set, plan| transit_plans::publish(&set, plan, &hash, today).unwrap_or(set));
-    // The first pick alone, as the plans log holds it.
     let one = transit_plans::publish(&PublishedPlans::empty(), first, &hash, today).expect("the first pick publishes");
     let records = transit_log::document_records(&serde_json::to_value(&one).expect("a document"), "plans", "pick", "plans", 1).expect("its records");
     let held = |k: &transit_log::KindRecords| -> serde_json::Map<String, Value> {
         k.records.iter().map(|(id, v)| (id.clone(), json!({ "version": k.version, "value": v }))).collect()
     };
     let frozen = transit_plans::freeze(&FrozenVersions::empty(), first, &hash, "board packet").expect("the first pick freezes");
-    // A device holding the fall pick and a draft; the winter pick is
-    // published and not on the device yet.
     let set: PublishedPlans = serde_json::from_value(json!({
         "kind": "plans", "schema_version": transit_plans::PUBLISHED_SCHEMA_VERSION,
         "plans": [
@@ -51,8 +43,6 @@ pub fn examples() -> Vec<Example> {
         ex("freeze", json!({ "op": "freeze", "frozen": null, "plan": first, "network_hash": hash, "purpose": "proposal for public comment" })),
         ex("adopt", json!({ "op": "adopt", "published": null, "frozen": frozen, "network_hash": hash, "today": "2026-01-01", "stops_seq": 3 })),
         ex("log_records", json!({ "op": "log_records", "published": one })),
-        // A publish in an empty plans log: the network frozen as the
-        // published pick, then adopted, in one entry.
         ex("receive", json!({ "op": "receive", "write": write, "ops": [
             { "cap": "plans", "op": "freeze", "args": { "plan": first, "network_hash": hash, "purpose": "the published pick" } },
             { "cap": "plans", "op": "adopt", "args": { "network_hash": hash, "today": "2026-01-01" } }

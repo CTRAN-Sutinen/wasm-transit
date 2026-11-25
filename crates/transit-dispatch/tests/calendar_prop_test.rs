@@ -1,7 +1,6 @@
 //! `active_services` and `service_dates` are one relation read in opposite
-//! directions (crates/cap-calendar/OPS.md "service_dates"), over every
-//! generated network and date window. The day fold is the oracle, computed
-//! independently per date.
+//! directions (crates/cap-calendar/OPS.md "service_dates"). The oracle is a
+//! day fold computed independently per date.
 //!
 //! 1. For every service type and date, `service_dates` names the date if and
 //!    only if `active_services` names the type.
@@ -21,8 +20,6 @@ use transit_network::{
 const YEAR_START: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
 const TYPES: [&str; 3] = ["WK", "SAT", "HOL"];
 
-/// An authored calendar rule: weekday flags, date ranges within the fixture
-/// year, and per-date exceptions.
 /// An exception always wins. An `Added` exception may sit outside every range.
 #[derive(Clone, Debug)]
 struct GenRule {
@@ -48,10 +45,8 @@ fn day(offset: u16) -> NaiveDate {
     YEAR_START + Duration::days(offset as i64)
 }
 
-/// The authored test network: one route, one pattern A→B→C, and one
-/// pattern-trips entry per service type up to `trips_per_type`.
-/// A generated rule may belong to a type that runs no trips; that type never
-/// runs, however its rule reads.
+/// A generated rule may belong to a type that runs no trips. That type never
+/// runs.
 fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
     let mut stops = std::collections::BTreeMap::new();
     for (id, name) in [("A", "Main & 1st"), ("B", "Main & 2nd"), ("C", "Main & 3rd")] {
@@ -165,7 +160,6 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// Laws 1 and 2 over a window, plus the honesty edges (3).
     #[test]
     fn service_dates_is_active_services_read_backwards(
         rules in proptest::collection::vec(gen_rule(), 3),
@@ -176,7 +170,6 @@ proptest! {
         let from = day(window_start);
         let to = day(window_start + 30);
 
-        // The oracle: the day fold, computed independently per date.
         let mut actives_by_date = Vec::new();
         for d in 0..=30 {
             let date = from + Duration::days(d);
@@ -185,14 +178,14 @@ proptest! {
         }
 
         for ty in TYPES {
-            // Law 1: per-date two-way agreement.
+            // Property 1.
             for d in 0..=30 {
                 let date = from + Duration::days(d);
                 let named = service_dates(&net, &[], ty, date, date).unwrap();
                 let listed = actives_by_date[d as usize].contains(&ty.to_string());
                 prop_assert_eq!(named.len(), listed as usize);
             }
-            // Law 2: the window answer equals the day-fold set.
+            // Property 2.
             let window = service_dates(&net, &[], ty, from, to).unwrap();
             let expect: Vec<NaiveDate> = (0..=30)
                 .map(|d| from + Duration::days(d))
@@ -201,8 +194,7 @@ proptest! {
             prop_assert_eq!(window, expect);
         }
 
-        // Law 3: unknown types and no-trips types answer empty. So does an
-        // inverted window.
+        // Property 3.
         prop_assert!(service_dates(&net, &[], "NOPE", from, to).unwrap().is_empty());
         if trips_per_type < 3 {
             let idle = TYPES[trips_per_type as usize];

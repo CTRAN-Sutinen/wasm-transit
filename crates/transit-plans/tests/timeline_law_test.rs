@@ -1,20 +1,7 @@
-//! The timeline's laws (D-228), before the implementation. A planning
-//! page lists the plans on its device and the picks the deployment
-//! published. The rules are one function, so no host writes them:
-//!
-//! * the rows are every plan on the device, in the order given, then
-//!   each published pick the device does not hold, in the set's order;
-//! * a retired pick is not a row of its own, and does not make a plan
-//!   published;
-//! * a device plan is published when its id is a published pick's id,
-//!   or when it is the deployment's feed (`served`): both are in
-//!   production and read-only;
-//! * a plan the device holds keeps its own name and date. A pick it
-//!   does not hold is a row with no key, not loaded, with the set's
-//!   name and date;
-//! * the chain is over every row that has an id: its periods, its
-//!   issues, and the pick in force on `today` from the published set
-//!   (none without a set, and none before the first pick's date).
+//! The timeline over device plans and the published set (D-228). Rows are
+//! every device plan, then each published pick the device does not hold. A
+//! retired pick is no row. A device plan is published when its id is a
+//! published pick's or it is `served`.
 
 use chrono::NaiveDate;
 use transit_plans::{timeline, DevicePlan, PlanIssue, PublishedPlans};
@@ -74,7 +61,6 @@ fn the_chain_covers_every_row_with_an_id() {
     assert_eq!(periods, vec![("fall", Some("2027-01-04")), ("winter", None)]);
     assert_eq!(t.in_force.as_deref(), Some("fall"));
     assert!(t.issues.is_empty());
-    // a duplicate date on the device is an issue of the chain
     let clash = [device("a", "p", "P", Some("2026-10-19"), false), device("b", "q", "Q", Some("2026-10-19"), false)];
     let t = timeline(&clash, None, day("2026-12-01")).unwrap();
     assert!(t.issues.iter().any(|i| matches!(i, PlanIssue::DuplicateEffectiveDate { .. })));

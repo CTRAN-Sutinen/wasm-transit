@@ -1,20 +1,13 @@
-//! Native dispatch tests for the board capability. These test the seam
-//! without wasm, over the real fixture-derived network. That is the same
-//! document cap-network's import produces from the e2e zip. The library
-//! carries the day-level detail in transit-dispatch's own suite. These pin
-//! the seam:
+//! Native dispatch tests for cap-board (`OPS.md`). They pin:
 //!
-//! 1. the network document's identity is the module's canonical
-//!    serialization (the same identity cap-analysis returns);
-//! 2. the board is the materialized day, with model vocabulary in the
-//!    rows and edits applied in force;
-//! 3. the station board pools the walking group. The grouped board (the
-//!    stop's display) holds the same rows by route and destination, three
-//!    per group unless asked;
-//! 4. the watchlist document migrates with loss reported, and both versions
+//! 1. the network document's identity is the module's canonical serialization;
+//! 2. the board is the materialized day, with the in-force edits applied;
+//! 3. the station board pools its walking group, and the grouped board holds
+//!    the same rows by route and destination;
+//! 4. an older watchlist version is refused at the load, and both versions
 //!    query the board;
-//! 5. invalid edit records are REPORTED at load, never rejected;
-//! 6. unknown hashes and garbage are errors, never panics.
+//! 5. an invalid edit record is reported at load and not rejected;
+//! 6. an unknown hash or garbage input is an error and never a panic.
 
 use cap_board::{dispatch, dispatch_bytes, dispatch_json, Request, Response, Watchlist};
 use proptest::prelude::*;
@@ -25,8 +18,6 @@ use transit_sync::{EditRecord, EditStatus};
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 
-/// The fixture-derived network document. Import is the codec, at the
-/// boundary. This module composes over the document it produces.
 fn derived_network() -> Network {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
     transit_codec::import(&feed).network
@@ -36,7 +27,6 @@ fn load_network() -> String {
     cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
 }
 
-/// The fixture's diversion: route 10 keeps A→B, skips C, +N s.
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     EditRecord {
         id: "e1".into(),
@@ -89,12 +79,9 @@ fn departures(network_hash: &str, edits_hash: Option<String>, stop_id: &str) -> 
 #[test]
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
-    // Every network-consuming module uses this formula: the canonical bytes
-    // (RFC 8785, D-169), hashed. One document, one truth.
     let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
-    // Idempotent: the same document loads to the same hash.
     assert_eq!(load_network(), hash);
 }
 
@@ -102,8 +89,6 @@ fn the_network_identity_is_the_modules_canonical_serialization() {
 fn the_board_is_the_materialized_day_model_vocabulary() {
     let net = derived_network();
     let network_hash = load_network();
-    // Route 10's schedule that runs on the fixture Friday. The test finds it
-    // in the document, reading the model.
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
     let (trip_id, start) = net
         .pattern_trips
@@ -128,19 +113,14 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
     assert_eq!(first.stop, "A", "the concrete stop the row leaves from");
     assert!(!first.destination.is_empty(), "the row says where the bus goes");
 
-    // The edit in force: the diverted trip still serves B, +300 s
-    // after its anchor; the rest of the board does not move.
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
 
-    // Every fixture trip through B ends there. An arrival is not a departure,
-    // so B's board is empty with or without the edit.
     assert!(
         departures(&network_hash, Some(edits_hash), "B").is_empty(),
         "trips terminating at B never appear on B's board"
     );
     assert!(departures(&network_hash, None, "B").is_empty());
 
-    // The skipped stop loses its service. Its board is empty.
     assert!(departures(&network_hash, None, "C").len() >= 1, "schedule-only, C is served");
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     assert!(
@@ -152,24 +132,16 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
 #[test]
 fn the_station_board_pools_the_walking_group() {
     let network_hash = load_network();
-    // The station pin has nothing of its own. It answers its bays' board
-    // (the fixture's shuttle), pooled. Rows are tagged with the bay.
     let pin = stop_board(&network_hash, None, "STN", 0, None);
     assert!(pin.pooled);
-    // t40 departs SA (ends SB), and t41 departs SB (ends SA). That is one
-    // departure per bay. The terminating visits are not rows.
     let bays: Vec<&str> = pin.rows.iter().map(|r| r.departure.stop.as_str()).collect();
     assert_eq!(bays, vec!["SA", "SB"], "rows name their bay, soonest first");
 
-    // A bay with departures of its own answers itself, unpooled.
     let bay = stop_board(&network_hash, None, "SA", 0, None);
     assert!(!bay.pooled);
     assert!(bay.rows.iter().all(|r| r.departure.stop == "SA"));
 }
 
-/// The display's board at the seam. The station pin's bays group by route
-/// and destination, three per group by default. The rows match the plain
-/// board.
 #[test]
 fn the_grouped_board_is_the_board_by_route_and_destination() {
     let network_hash = load_network();
@@ -195,9 +167,6 @@ fn the_grouped_board_is_the_board_by_route_and_destination() {
     assert_eq!(rows, stop_board(&network_hash, None, "STN", 0, None).rows);
 }
 
-/// A live document with route 10's first departure from A two
-/// minutes late, registered; answers its hash, the document, and the
-/// scheduled row it moves.
 fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_dispatch::BoardDeparture) {
     use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
     let row = departures(network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
@@ -229,9 +198,6 @@ fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_disp
     (live_hash, live, row)
 }
 
-/// The realtime-first board over a live document. The late bus scheduled
-/// before `from_secs` is still to come. Its expected time, delay, and
-/// status are given. The module classifies, and no host does.
 #[test]
 fn the_board_reads_a_live_document() {
     use transit_live::LiveStatus;
@@ -263,10 +229,8 @@ fn the_board_reads_a_live_document() {
 #[test]
 fn an_invalid_edit_record_moves_nothing() {
     let network_hash = load_network();
-    // A record whose anchors do not exist in the network is registered all
-    // the same. The sync contract makes the host own the document.
-    // cap-divert's reports say what is wrong with it. The day views find
-    // nothing to patch.
+    // The host owns the edit document, so a record with no anchors in the
+    // network still registers. The day patches nothing.
     let mut broken = record(EditStatus::Accepted, 60);
     broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
     let edits_hash = load_edits(&network_hash, vec![broken]);
@@ -277,20 +241,12 @@ fn an_invalid_edit_record_moves_nothing() {
     );
 }
 
-// ---------------------------------------------------------------------
-// The watchlist document is the personal parameter of the same question.
-// The board reads the current version. An older one is refused at the
-// load, and the refusal names the migration. Its laws are in transit-rider's
-// watchlist_migration_test.rs.
-// ---------------------------------------------------------------------
 
 fn watchlist() -> Watchlist {
     let stop = |id: &str, label: &str| cap_board::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
     Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
-/// The load's answer through the module's seam, as every host
-/// registers it.
 fn load_watchlist_json(document: &serde_json::Value) -> serde_json::Value {
     let request = serde_json::json!({ "op": "load_watchlist", "document": document }).to_string();
     serde_json::from_str(&cap_board::invoke(&request)).unwrap()
@@ -330,11 +286,8 @@ fn the_watchlist_board_answers_each_saved_stop_in_order() {
     assert_eq!(board[1].label, "work");
     assert!(board.iter().all(|s| s.board.rows.iter().all(|r| !r.departure.trip.is_empty())), "model-native rows");
 
-    // Loading is idempotent by content hash: same document, same
-    // hash, one registry entry.
     assert_eq!(load_watchlist(&watchlist()).0, hash);
 
-    // The board composes with the edits document like every board.
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     let patched = match dispatch(Request::WatchlistBoard { previous: None,
         watchlist_hash: hash,
@@ -355,29 +308,20 @@ fn the_watchlist_board_answers_each_saved_stop_in_order() {
 
 #[test]
 fn a_watchlist_from_before_the_tags_loads_as_its_version_or_is_refused() {
-    // A copy of v2 that names "version": "v2" is v2. It registers under the
-    // identity of the same document, tagged.
     let (tagged, _) = load_watchlist(&watchlist());
     let legacy = load_watchlist_json(&serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "home"}, {"id": "B", "label": "work"}]}));
     assert_eq!(legacy["ok"]["watchlist_hash"].as_str(), Some(tagged.as_str()), "{legacy}");
     assert_eq!(legacy["ok"]["version"], 2);
 
-    // A copy of v1 is an older version: refused, naming the migration.
     let v1 = load_watchlist_json(&serde_json::json!({"version": "v1", "stops": [{"id": "A", "note": "home", "color": "blue"}]}));
     let refused = v1["error"].as_str().unwrap_or_else(|| panic!("{v1}"));
     assert!(refused.contains("watchlist v1") && refused.contains("migrate"), "{refused}");
 
-    // A newer copy is refused naming both versions.
     let v3 = load_watchlist_json(&serde_json::json!({"kind": "watchlist", "schema_version": 3, "stops": []}));
     let refused = v3["error"].as_str().unwrap_or_else(|| panic!("{v3}"));
     assert!(refused.contains("v3") && refused.contains("reads v2"), "{refused}");
 }
 
-/// QAF-79: a watched stop answers the stop board. It asks the same question,
-/// with the personal document as a parameter, so the answer is the same. A
-/// live document gives predictions and status. The edits give skipped
-/// visits. A watched STATION pin pools its bays. Each stop's board equals
-/// `stop_board` asked with the same arguments.
 #[test]
 fn the_watchlist_board_is_the_stop_board() {
     let network_hash = load_network();
@@ -453,9 +397,6 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed into the model,
-    // with no request envelope. It answers what the JSON op answers.
-    // Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_board::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -470,8 +411,6 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// QAF-19 re-pin: the finding asked the board to check this. An unknown
-    /// stop is a lookup miss, so it gives an empty board, never an error.
     /// Errors are for hash addresses. A lowercase id cannot collide with the
     /// fixture's stops (A, B, C).
     #[test]
@@ -497,8 +436,6 @@ proptest! {
     }
 }
 
-/// QAF-75 at the seam. The board at a stop that the in-force diversion
-/// skips names what it skips and why. With no edits, it skips nothing.
 #[test]
 fn a_skipped_stop_answers_its_diversion() {
     let network_hash = load_network();
@@ -510,10 +447,6 @@ fn a_skipped_stop_answers_its_diversion() {
     assert!(stop_board(&network_hash, None, "C", 0, None).skipped.is_empty());
 }
 
-/// An alert's reach through the seam. Each entity is given as the feed
-/// carries it, with what it names and the departures it alone reaches.
-/// Route 10 at stop A is route 10 at A only. The station's own id reaches
-/// none at its bays.
 #[test]
 fn an_alert_reaches_each_entitys_departures_as_published() {
     let network_hash = load_network();

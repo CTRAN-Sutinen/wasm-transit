@@ -55,9 +55,9 @@ this file.
 
 **Finishing work.** Work is not done, and you do not report it as
 done, until its documentation is done. Before you report, run the
-documentation sweep in `docs/CONVENTIONS.md`, "The documentation
-sweep" (the `doc-sweep` skill runs it), and say in your report what
-you updated.
+documentation sweep (the `doc-sweep` skill,
+`.claude/skills/doc-sweep/SKILL.md`), and say in your report what you
+updated.
 
 ## Where the detail lives
 
@@ -72,7 +72,8 @@ you updated.
 | The server and the capabilities it hosts | `docs/architecture/server.md` |
 | The HTTP contract (each route's bodies and answers) | `server/openapi.json`, held to the server by Go tests |
 | The web and the generated UIs | `docs/architecture/web.md`, `docs/architecture/generated-uis.md` (one file for each UI in `generated-uis/`: its purpose, its rules, and its failure table) |
-| Writing, traceability, gotchas, the sweep | `docs/CONVENTIONS.md` |
+| Writing, traceability, gotchas | `docs/CONVENTIONS.md` |
+| The documentation sweep | `.claude/skills/doc-sweep/SKILL.md` |
 | Testing and dogfood QA | `docs/TESTING.md` |
 | Each recipe | the comment above it in the justfile |
 | The agent runner | the header of `tools/caps-run.mjs`, and `docs/architecture/registry.md` |
@@ -219,7 +220,7 @@ qa/, LRP/          the standing QA tests and the dogfood material
 
 ## Conventions
 
-- **Write at about 80% of ASD-STE100** in code comments and developer
+- **Follow the writing rules** in code comments and developer
   documents (`docs/CONVENTIONS.md`, "Writing"). The guide keeps ISO
   24495-1.
 - **Clarify, don't assume.** Ask before you build on an answer you

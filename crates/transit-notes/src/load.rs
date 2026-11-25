@@ -1,16 +1,9 @@
-//! The kernel's load of a notes document (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_notes` answers: the hash, and how many notes the document
-/// holds.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NotesLoaded {
     pub notes_hash: String,
     pub notes: u32,
 }
 
-/// Notes documents (the agency's internal notes, D-214), refused unless a
-/// write could store them, each refusal named.
 impl transit_version::Load for crate::Notes {
     const ID: &'static str = "notes";
     const NAME: &'static str = "notes document";

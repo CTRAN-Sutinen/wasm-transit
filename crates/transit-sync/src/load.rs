@@ -1,16 +1,10 @@
-//! The kernel's load of an edit document (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_edits` answers.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EditsLoaded {
     pub edits_hash: String,
 }
 
-/// Operator edit documents, which the host replaces whole, in the version
-/// this build reads. An older or newer one is refused at the load, naming
-/// both versions. Validation against a network is a question (cap-divert
-/// `reports`), never the load's.
+/// Validation against a network is a question (cap-divert `reports`), never
+/// the load's (D-239).
 impl transit_version::Load for crate::EditDocument {
     const ID: &'static str = "edits";
     const NAME: &'static str = "edits";

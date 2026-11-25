@@ -1,25 +1,10 @@
-//! transit-live: the live document, one rt moment in model vocabulary
-//! (version 2).
-//!
-//! cap-rt resolves an rt snapshot into it once, at the boundary, so every
-//! consumer reads delays by trip instance and never joins rt by hand. No
-//! host computes a delay, so parity holds by construction. Pure data plus
-//! its rules; nothing here reads GTFS (arch gate).
-//!
-//! * A delay's date is as the feed states it; an absent date is the
-//!   current service day, as GTFS-rt reads it. Each reader asks for its
-//!   own date (`LiveDay::on`).
-//! * Every status is classified under the one on-time window the document
-//!   records, never a threshold per view. Any earliness is early by
-//!   default, because a bus that leaves early is a missed bus.
-//! * What does not run (a cancelled or deleted trip instance, a skipped
-//!   stop) is asked through one rule, [`LiveDay::runs`]. It is no row on
-//!   any board, with no mark, and the router never boards there: a live
-//!   cancel shown at its time misled riders (D-45, D-73, D-100..D-102).
-//!   Cover, hold, and swap are CAD/AVL's day, not edits (D-212).
-//! * Each alert in force holds one scope per informed entity. One entity's
-//!   fields join with AND; all absent is the agency. A stop id matches as
-//!   written, so a station's id selects no departure at its bays (D-221).
+//! Every status is classified under the one on-time window that the document
+//! records. What does not run (a cancelled or deleted trip instance, a skipped
+//! stop) is asked through [`LiveDay::runs`] alone. A board shows no row for
+//! it and the router never boards there, because a live cancel shown at its
+//! time misled riders (D-45, D-73, D-100..D-102). Cover, hold, and swap are
+//! CAD/AVL's day, not edits (D-212). A stop id matches as written, so a
+//! station's id selects no departure at its bays (D-221).
 
 pub mod load;
 
@@ -27,33 +12,24 @@ use serde::{Deserialize, Serialize};
 use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use ts_rs::TS;
 
-/// The agency's on-time policy: how early and how late still count
-/// as on time, and where late becomes very late. A policy input, never
-/// a constant in a view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct OnTimeWindow {
-    /// Seconds early that still count as on time. Early is not on
-    /// time: the default (and an absent bound) is 0: a bus that
-    /// leaves before its time is a missed bus.
+    /// The default is 0, because a bus that leaves before its time is a
+    /// missed bus.
     #[serde(default)]
     #[ts(optional, as = "Option<u32>")]
     pub early_secs: u32,
-    /// Up to this many seconds late is on time.
     pub late_secs: u32,
-    /// Past this many seconds late is very late.
     pub very_late_secs: u32,
 }
 
 impl Default for OnTimeWindow {
-    /// Any earliness is early, one minute late is on time, five
-    /// minutes is very late.
     fn default() -> Self {
         OnTimeWindow { early_secs: 0, late_secs: 60, very_late_secs: 300 }
     }
 }
 
-/// A delay, classified under a window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -62,11 +38,9 @@ pub enum LiveStatus {
     OnTime,
     Late,
     VeryLate,
-    /// No delay is known: schedule only.
     NoPrediction,
 }
 
-/// The classification rule: the one place a delay becomes a status.
 pub fn classify(delay: Option<i32>, window: &OnTimeWindow) -> LiveStatus {
     let Some(d) = delay else { return LiveStatus::NoPrediction };
     if (d as i64) < -(window.early_secs as i64) {
@@ -81,117 +55,82 @@ pub fn classify(delay: Option<i32>, window: &OnTimeWindow) -> LiveStatus {
     }
 }
 
-/// One stop of a live trip: the delay the rt feed states (or carries
-/// downstream, under GTFS-rt's propagation rule) and the predicted
-/// departure. Stops before the first stated delay are absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveStop {
     pub stop: String,
-    /// The base schedule's departure here (seconds after the service-
-    /// day anchor). The delay is relative to it.
+    /// Seconds after the service-day anchor. The delay is relative to it.
     pub scheduled_departure: Option<u32>,
     pub arrival_delay: Option<i32>,
     pub departure_delay: Option<i32>,
-    /// When the vehicle should actually leave: schedule + delay.
     pub predicted_departure: Option<u32>,
-    /// The vehicle does not stop here (GTFS-rt SKIPPED). The visit
-    /// does not happen, but the trip still runs. A skipped stop states no
-    /// delay of its own. Absent when false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub skipped: bool,
 }
 
-/// One trip instance the snapshot speaks about: the network's trip
-/// (the rt trip id is the model's) and the instance's start.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveTrip {
     pub trip: String,
-    /// The instance's service date, "YYYY-MM-DD", as the feed states
-    /// it (GTFS-rt `start_date`); absent, the current service day's
-    /// (the spec's reading: [`LiveDay::on`]).
+    /// "YYYY-MM-DD". Absent is the current service day ([`LiveDay::on`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub date: Option<String>,
     pub start_secs: u32,
     pub route: Option<String>,
-    /// The route's name as the network names it.
     pub route_name: Option<String>,
-    /// The worst delay the snapshot states on the trip: its headline
-    /// lateness.
     pub worst_delay_secs: Option<i32>,
     pub status: LiveStatus,
-    /// The instance does not run (GTFS-rt CANCELED or DELETED): no
-    /// visit of it happens, and it is not late or on time
-    /// (`no_prediction`). Absent when false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub canceled: bool,
     pub stops: Vec<LiveStop>,
 }
 
-/// One live vehicle, on its trip instance when the trip resolves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveVehicle {
-    /// Stable per snapshot: the vehicle id, else the rt entity id.
+    /// The vehicle id, else the rt entity id, so it is stable per snapshot.
     pub key: String,
     pub vehicle_id: Option<String>,
-    /// The user-visible bus number.
     pub label: Option<String>,
     pub lat: f64,
     pub lon: f64,
     pub bearing: Option<f32>,
     pub route: Option<String>,
-    /// The route's name as the network names it.
     pub route_name: Option<String>,
-    /// The stop the vehicle is at or heading to.
     pub next_stop: Option<String>,
-    /// The trip instance it runs: absent when the rt trip does not
-    /// resolve (or the vehicle names no trip).
     pub trip: Option<String>,
-    /// Its trip instance's service date, "YYYY-MM-DD", as the feed states
-    /// it (GTFS-rt `start_date`); absent, the current service day's
-    /// (the spec's reading: [`LiveDay::on`]).
+    /// "YYYY-MM-DD". Absent is the current service day ([`LiveDay::on`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub date: Option<String>,
     pub start_secs: Option<u32>,
-    /// Its trip's worst stated delay (the same headline as the trip).
     pub delay_secs: Option<i32>,
     pub status: LiveStatus,
 }
 
-/// One informed entity, resolved: every present field must match
-/// (route 12 at stop 6277); all absent means the whole agency. A trip
-/// without a start names every instance of the trip.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertScope {
     pub route: Option<String>,
-    /// One of the route's model directions (GTFS-rt's `direction_id`,
-    /// resolved; D-204). It is present only with `route`.
+    /// A model direction of `route` (D-204). Present only with `route`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub direction: Option<String>,
     pub stop: Option<String>,
     pub trip: Option<String>,
-    /// A trip-scoped alert's instance service date, "YYYY-MM-DD", as the
-    /// feed states it (GTFS-rt `start_date`); absent, the current service
-    /// day's (the spec's reading: [`LiveDay::on`]).
+    /// "YYYY-MM-DD". Absent is the current service day ([`LiveDay::on`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub date: Option<String>,
     pub start_secs: Option<u32>,
 }
 
-/// One stop visit of a trip instance, as an alert sees it.
 #[derive(Debug, Clone, Copy)]
 pub struct Visit<'a> {
     pub route: &'a str,
-    /// The direction of the visit's pattern, if the pattern is in one.
     pub direction: Option<&'a str>,
     pub stop: &'a str,
     pub trip: &'a str,
@@ -199,10 +138,8 @@ pub struct Visit<'a> {
 }
 
 impl AlertScope {
-    /// Does the scope speak on `date`? A scope with no trip speaks on
-    /// every date. A trip scope speaks on its instance's date; one
-    /// stating no date is `current`'s (the current service day,
-    /// GTFS-rt's reading of an absent `start_date`).
+    /// A scope with no trip speaks on every date. A trip scope with no date
+    /// speaks on `current`, the current service day.
     pub fn on(&self, date: &str, current: &str) -> bool {
         self.trip.is_none() || self.date.as_deref().unwrap_or(current) == date
     }
@@ -216,13 +153,9 @@ impl AlertScope {
     }
 }
 
-/// A service alert in force at the document's moment, in model
-/// vocabulary. The text is the feed's untagged translation, else its
-/// first.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveAlert {
-    /// The rt entity id.
     pub id: String,
     pub cause: AlertCause,
     pub effect: AlertEffect,
@@ -230,24 +163,19 @@ pub struct LiveAlert {
     pub header: String,
     pub description: Option<String>,
     pub url: Option<String>,
-    /// When service is affected (the impact period, else the active
-    /// period); empty means for as long as the alert is shown.
+    /// The impact period, else the active period. Empty means for as long as
+    /// the alert is shown.
     pub impact: Vec<AlertPeriod>,
-    /// What it informs about: one scope for each entity it selects
-    /// (GTFS-rt adds one `informed_entity` for each affected entity, and
-    /// each applies to its own). Never empty: an alert whose entities
-    /// all fail to resolve is counted, not kept.
+    /// An alert whose entities all fail to resolve is counted in
+    /// `unmatched_alerts`, not kept, so this is never empty.
     pub scopes: Vec<AlertScope>,
 }
 
 impl LiveAlert {
-    /// Does the alert speak about this visit?
     pub fn touches(&self, visit: &Visit) -> bool {
         self.scopes.iter().any(|s| s.admits(visit))
     }
 
-    /// Does the alert speak about the stop as a whole (whatever leaves
-    /// from it): a stop scope, or the whole agency?
     pub fn touches_stop(&self, stop: &str) -> bool {
         self.scopes
             .iter()
@@ -256,7 +184,6 @@ impl LiveAlert {
 }
 
 transit_version::kind_tag!(
-    /// The live document's kind tag: always `"live"`.
     LiveKind = "live"
 );
 
@@ -268,50 +195,35 @@ impl transit_version::Versioned for LiveDay {
     }
 }
 
-/// The live document: one rt moment, in model vocabulary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveDay {
-    /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1. Version 2: a trip instance carries its service
-    /// date.
     #[serde(default)]
     #[ts(type = "\"live\"")]
     pub kind: LiveKind,
     #[serde(default = "version_one")]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<2>,
-    /// The window that classifies every status in this document.
     pub window: OnTimeWindow,
     pub trips: Vec<LiveTrip>,
     pub vehicles: Vec<LiveVehicle>,
-    /// Trip updates naming no trip instance of the network (an
-    /// unknown trip, or a start that is not one of its instances):
-    /// reported, never silently dropped.
     pub unmatched_trips: u32,
-    /// The service alerts in force at the snapshot's moment.
     #[serde(default)]
     #[ts(optional, as = "Option<Vec<LiveAlert>>")]
     pub alerts: Vec<LiveAlert>,
-    /// Alerts none of whose informed entities name anything in the
-    /// network: reported, never silently dropped.
     #[serde(default)]
     #[ts(optional, as = "Option<u32>")]
     pub unmatched_alerts: u32,
 }
 
-/// An untagged copy is version 1 (the kind gained its tags at v1).
 fn version_one() -> transit_version::Version<2> {
     transit_version::Version(1)
 }
 
 impl LiveDay {
-    /// One service date's view: the trips and vehicles of instances on
-    /// `date`, and the alerts that speak there. An instance stating no
-    /// date is `current`'s (the current service day, GTFS-rt's reading
-    /// of an absent `start_date`). An alert scoped to no trip speaks
-    /// on every date; a trip-scoped one keeps the scopes on `date`, and
-    /// leaves when none is.
+    /// An instance with no date is on `current`, the current service day. An
+    /// alert keeps the scopes that speak on `date`, and leaves when none
+    /// does.
     pub fn on(&self, date: &str, current: &str) -> LiveDay {
         let here = |d: &Option<String>| d.as_deref().unwrap_or(current) == date;
         let alerts = self
@@ -334,10 +246,8 @@ impl LiveDay {
         }
     }
 
-    /// The live answer for one visit of a trip instance: the stop
-    /// entry whose base departure matches `scheduled_departure`
-    /// (a loop visits a stop twice), else the trip's first entry at
-    /// that stop.
+    /// A loop visits a stop twice, so the entry is the one whose
+    /// `scheduled_departure` matches, else the first at the stop.
     pub fn visit(&self, trip: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> Option<&LiveStop> {
         let trip = self.trips.iter().find(|t| t.trip == trip && t.start_secs == start_secs)?;
         let mut at_stop = trip.stops.iter().filter(|s| s.stop == stop);
@@ -345,11 +255,6 @@ impl LiveDay {
         at_stop.find(|s| s.scheduled_departure == Some(scheduled_departure)).or(first)
     }
 
-    /// Does this visit of a trip instance happen? Not when the
-    /// document cancels the instance or skips the visit (the entry
-    /// [`LiveDay::visit`] finds); every visit the document says
-    /// nothing against happens. Every reader asks this rule: a board
-    /// drops a visit that does not happen, and a router never rides it.
     pub fn runs(&self, trip: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> bool {
         if self.trips.iter().any(|t| t.trip == trip && t.start_secs == start_secs && t.canceled) {
             return false;
@@ -358,7 +263,6 @@ impl LiveDay {
     }
 }
 
-/// Vehicles per status.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StatusCounts {
@@ -369,14 +273,12 @@ pub struct StatusCounts {
     pub no_prediction: u32,
 }
 
-/// One row of the "what's late" list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LateEntry {
     pub key: String,
     pub route: Option<String>,
     pub route_name: Option<String>,
-    /// The bus number, when a vehicle is out on it.
     pub label: Option<String>,
     pub trip: Option<String>,
     pub start_secs: Option<u32>,
@@ -384,22 +286,19 @@ pub struct LateEntry {
     pub status: LiveStatus,
 }
 
-/// The live overview a status panel reads: the fleet by status and
-/// the late list, worst first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveSummary {
     pub vehicles: u32,
     pub counts: StatusCounts,
     pub late: Vec<LateEntry>,
-    /// No vehicle positions in the snapshot: the late list is late
-    /// trips (predictions), not buses on the street.
+    /// True when the snapshot has no vehicle positions, so `late` lists
+    /// trips, not buses.
     pub late_are_predictions: bool,
 }
 
-/// Summarize a live document: vehicles counted by status; the late
-/// list is late buses when the snapshot has positions, late trips
-/// (predictions) when it has none. At most `limit` late rows.
+/// The late list is late buses when the snapshot has positions, and late
+/// trips (predictions) when it has none.
 pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
     let late_status = |s: LiveStatus| matches!(s, LiveStatus::Late | LiveStatus::VeryLate);
     let mut counts = StatusCounts::default();

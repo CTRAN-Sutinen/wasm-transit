@@ -1,6 +1,5 @@
-//! The progress join's propagation law, over the e2e fixture feed. A stated
-//! delay carries to the downstream stops that the update does not mention.
-//! It never carries to the stops before it.
+//! A stated delay carries to the downstream stops and never upstream
+//! (cap-rt/OPS.md `trip_progress`).
 
 use transit_rt::{trip_progress, RtOverview, StopUpdateView, TripUpdateView};
 
@@ -45,7 +44,6 @@ fn a_stated_delay_carries_downstream_not_upstream() {
     assert_eq!(by_stop, vec![("A", None), ("C", Some(240)), ("B", Some(240))]);
     assert_eq!(p.stops[2].predicted_arrival, Some(8 * 3600 + 50 * 60 + 240), "08:54");
 
-    // A later update overrides the carried one.
     let p = trip_progress(net, boundary, &overview("t30", vec![update("A", 1, 300), update("B", 3, 60)]), "t30").unwrap();
     let by_stop: Vec<_> = p.stops.iter().map(|s| s.departure_delay).collect();
     assert_eq!(by_stop, vec![Some(300), Some(300), Some(60)]);

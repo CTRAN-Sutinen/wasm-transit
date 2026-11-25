@@ -1,78 +1,54 @@
-//! The kinds: one line for each kind of document, in one list
-//! ([`KINDS`]). A kind exists only if it has a line here. Nothing
-//! discovers kinds: no link-time registration, and no scan of the
-//! crates.
+//! A kind exists only if it has a line in [`KINDS`]. The build does not
+//! discover kinds by link-time registration or by a scan of the crates. The
+//! schema of a kind declares the fields that name other records
+//! (`x-references`, D-232). The line does not.
 //!
-//! A line states the kind's name and tag, its library type and the
-//! crate that keeps its schema lock, its kernel load when a module reads
-//! it from the bus, and how the store keeps it when the store does: how
-//! it is written, its routes and pointers, its log and the log's record
-//! kinds, the capability that checks a write, the merge rule, and who
-//! reads it. The fields that name other records are declared in the
-//! kind's schema (`x-references`, D-232), not here.
+//! The kind table (`crates/cap-abi/kinds.json`, D-202) is generated from this
+//! list and the locked schemas. It is checked in, so a new kind shows in the
+//! diff of a review. gen-manifest stops while the table differs from the
+//! list, and `just schema-lock` writes the table again.
 //!
-//! The kind table (`crates/cap-abi/kinds.json`, D-202) is generated
-//! from this list and the locked schemas. It is checked in, so a new kind
-//! shows in a review's diff, and gen-manifest stops while the table
-//! differs from the list (`just schema-lock` writes it again). It is also
-//! written beside the server's modules as `web/pkg/kinds.json`.
-//!
-//! A line is data. No module reads the list: a kind costs a module nothing
-//! until a capability names it (`capability! { documents: [...] }`).
+//! No module reads the list. A kind costs a module nothing until a
+//! capability names it.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// One kind of document.
 #[derive(Debug, Clone, Copy)]
 pub struct Declaration {
-    /// The kind's name: the registry's documents index, the manifest's
-    /// `speaks`, and a content-hash reference's target name it.
+    /// The registry's documents index, the manifest's `speaks`, and the
+    /// target of a content-hash reference all use this name.
     pub name: &'static str,
-    /// The tag the document carries inside it, which names its schema.
-    /// Empty for a kind with no schema of ours (a GTFS zip, a file of a
-    /// build).
+    /// The tag inside a document names the schema. It is empty for a kind
+    /// that has no schema of ours, such as a GTFS zip or a file of a build.
     pub tag: &'static str,
-    /// The library type that reads and writes it (empty for a kind the
-    /// Go host owns, or that has no type).
+    /// Empty for a kind that the Go host owns or that has no type.
     pub library: &'static str,
-    /// The crate that keeps its schema lock (`crates/<owner>/locks/`),
-    /// `server` for the Go host's (`server/schemas/`), or empty.
+    /// The crate that keeps the schema lock (`crates/<owner>/locks/`).
+    /// `server` means the Go host's lock (`server/schemas/`).
     pub owner: &'static str,
-    /// Its kernel load, when a module reads it from the bus.
     pub load: Option<KernelLoad>,
-    /// How the store keeps it, when the store does.
     pub store: Option<Store>,
 }
 
-/// A kind's kernel load: the registry it fills, and its two ops. The
-/// load is the library type's `transit_version::Load` impl (D-239); the
-/// generator checks that its constants are the line's.
+/// The generator checks that the constants of the library type's
+/// `transit_version::Load` impl equal these (D-239).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KernelLoad {
-    /// The registry's id, as `capability! { documents: [...] }` and the
-    /// manifest's `documents` name it.
     pub id: &'static str,
-    /// The JSON op (`{"op": "load_notes", ...}`).
     pub op: &'static str,
-    /// The bulk op's code.
     pub code: u32,
 }
 
-/// How the store keeps a kind.
 #[derive(Debug, Clone, Copy)]
 pub struct Store {
-    /// The envelope's kind, or a log's document kind.
     pub kind: &'static str,
     pub write: Write,
-    /// Where it is written, in words a person reads in a refusal.
+    /// Words that a person reads in a refusal.
     pub route: &'static str,
-    /// The pointers it heads (`*` ends a prefix).
+    /// A `*` ends a prefix.
     pub pointers: &'static [&'static str],
-    /// The log that holds its records.
     pub log: Option<Log>,
-    /// Its own write route, when it has one that its log's receive op
-    /// answers: one op over the request's body.
     pub post: Option<Post>,
     /// The capability that checks a write, and its op.
     pub check: Option<(&'static str, &'static str)>,
@@ -80,46 +56,44 @@ pub struct Store {
     pub read: Read,
 }
 
-/// The log that holds a kind's records, and its record kinds.
 #[derive(Debug, Clone, Copy)]
 pub struct Log {
     pub name: &'static str,
-    /// The capability whose `receive` op writes the log (D-228): it runs
-    /// a write's ops over the head and answers the entry. Absent while
-    /// the server still sequences the log's writes itself.
+    /// The capability whose `receive` op writes the log (D-228). Absent
+    /// while the server still sequences the log's writes itself.
     pub receive: Option<&'static str>,
-    /// Each record kind, and the document field that holds its
-    /// collection (an array of records with an `id`, or an object by id).
+    /// Each record kind, with the document field that holds its collection:
+    /// an array of records with an `id`, or an object keyed by id.
     pub records: &'static [(&'static str, &'static str)],
-    /// Whether a page writes the log by intent (`POST /logs/<log>`).
-    /// False: only the kind's routes write it (a freeze stores its
-    /// network first; `POST /edits` is the edit document's protocol).
+    /// True when a page writes the log by intent (`POST /logs/<log>`). When
+    /// it is false, only the routes of the kind write the log. A freeze
+    /// stores its network first, and `POST /edits` is the protocol of the
+    /// edit document.
     pub intent: bool,
 }
 
-/// A kind's own write route, answered by its log's receive op: the
-/// path, the op the request's body is the arguments of (an op of the
-/// kind's checking capability, as the receive op takes it), the answer's
-/// field that names the document after the write, and the body's fields
-/// the answer repeats.
+/// The route runs one op of the kind's checking capability over the body of
+/// the request. The receive op of the kind's log answers it.
 #[derive(Debug, Clone, Copy)]
 pub struct Post {
     pub path: &'static str,
     pub op: &'static str,
+    /// The field of the answer that names the document after the write.
     pub answer: &'static str,
     pub echo: &'static [&'static str],
 }
 
-/// How a kind is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Write {
-    /// `POST /pointers/<name>`, one of `pointers`, checked by `module`'s
-    /// `validate` op, and stored as the module answers it.
+    /// `POST /pointers/<name>`, where the name is one of `pointers`. The
+    /// `validate` op of the `module` checks the write, and the store
+    /// keeps what the module answers.
     Pointer,
-    /// Its own route (`route`), which runs its module.
+    /// The kind has its own route (`route`), which runs its module.
     Route,
-    /// The server alone: an import, a release, or the manifest.
+    /// Only the server writes the kind, in an import, a release, or the
+    /// manifest.
     Server,
 }
 
@@ -127,42 +101,43 @@ pub enum Write {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Read {
-    /// Anyone, by hash (`/blobs/<hash>`; D-152).
+    /// Anyone reads the kind by hash (`/blobs/<hash>`; D-152).
     Open,
-    /// Never served by hash. A client reads only its own projection.
+    /// The server does not serve the kind by hash. A client reads only
+    /// its own projection.
     Restricted,
-    /// A caller with the audit rule (a log's entries name their writers).
+    /// A caller with the audit rule reads the kind. The entries of a log
+    /// name their writers.
     Audit,
 }
 
-/// How two writes of a kind meet.
+/// How two writes of a kind merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Merge {
-    /// The whole document, by CAS on the head the writer read.
+    /// The write replaces the whole document, by CAS on the head that the
+    /// writer read.
     Replace,
-    /// Last writer wins for each record id (the edit document; D-56).
+    /// The last writer wins for each record id, as in the edit document
+    /// (D-56).
     Lww,
-    /// Ops over the log's head; different records never conflict.
+    /// The writes are ops over the head of the log. Writes to different
+    /// records do not conflict.
     Log,
-    /// No writer but the server.
+    /// Only the server writes the kind.
     None,
 }
 
 impl Declaration {
-    /// A kind with no load and no store: a document a page keeps, or one
-    /// that crosses only inside an op.
     const fn new(name: &'static str, tag: &'static str, library: &'static str, owner: &'static str) -> Self {
         Declaration { name, tag, library, owner, load: None, store: None }
     }
 
-    /// The kind's kernel load.
     const fn loaded(mut self, id: &'static str, op: &'static str, code: u32) -> Self {
         self.load = Some(KernelLoad { id, op, code });
         self
     }
 
-    /// How the store keeps the kind.
     const fn stored(
         mut self,
         kind: &'static str,
@@ -176,7 +151,6 @@ impl Declaration {
         self
     }
 
-    /// The capability that checks a write of the stored kind, and its op.
     const fn checked(mut self, module: &'static str, op: &'static str) -> Self {
         if let Some(store) = &mut self.store {
             store.check = Some((module, op));
@@ -184,7 +158,6 @@ impl Declaration {
         self
     }
 
-    /// The capability whose `receive` op writes the stored kind's log.
     const fn received(mut self, capability: &'static str) -> Self {
         if let Some(Store { log: Some(log), .. }) = &mut self.store {
             log.receive = Some(capability);
@@ -192,8 +165,6 @@ impl Declaration {
         self
     }
 
-    /// The stored kind's log takes no write by intent: only its routes
-    /// write it.
     const fn no_intent(mut self) -> Self {
         if let Some(Store { log: Some(log), .. }) = &mut self.store {
             log.intent = false;
@@ -201,7 +172,6 @@ impl Declaration {
         self
     }
 
-    /// The stored kind's own write route.
     const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
         if let Some(store) = &mut self.store {
             store.post = Some(Post { path, op, answer, echo });
@@ -209,7 +179,6 @@ impl Declaration {
         self
     }
 
-    /// The log that holds the stored kind's records.
     const fn logged(mut self, name: &'static str, records: &'static [(&'static str, &'static str)]) -> Self {
         if let Some(store) = &mut self.store {
             store.log = Some(Log { name, receive: None, records, intent: true });
@@ -222,11 +191,9 @@ use Merge::{Lww, Replace};
 use Read::{Audit, Open, Restricted};
 use Write::{Pointer, Route, Server};
 
-/// Every kind of document. The kernel's load codes are a wire contract:
-/// a code is never reused (the network's is 256, the registry ops are
-/// 257 and 258, and `about` is 268).
+/// The load codes are a wire contract, so a code is never reused. The
+/// registry ops are 257 and 258, and `about` is 268.
 pub static KINDS: &[Declaration] = &[
-    // The network and what an import gives with it.
     Declaration::new("network", "network", "transit_network::Network", "transit-network")
         .loaded("network", "load_network", 256)
         .stored("network_document", Route, "POST /plans/freeze, POST /plans; the server's import", &["plan.*", "network"], Replace, Open)
@@ -238,7 +205,6 @@ pub static KINDS: &[Declaration] = &[
         .loaded("feed", "load_feed", 266)
         .stored("gtfs_feed", Server, "the server's -feed", &["source.feed"], Merge::None, Open),
     Declaration::new("plan_set", "plan_set", "transit_network::PlanSet", "transit-network"),
-    // The operator's day.
     Declaration::new("operator_edits", "edit_records", "transit_sync::EditDocument", "transit-sync")
         .loaded("edits", "load_edits", 259)
         .stored("edit_records", Route, "POST /edits", &["edits"], Lww, Open)
@@ -248,7 +214,6 @@ pub static KINDS: &[Declaration] = &[
         .no_intent(),
     Declaration::new("live", "live", "transit_live::LiveDay", "transit-live").loaded("live", "load_live", 260),
     Declaration::new("rt", "", "transit_rt::RtOverview", "").loaded("rt", "load_rt", 267),
-    // Streets and walking.
     Declaration::new("streets", "streets", "transit_streets::Streets", "transit-streets")
         .loaded("streets", "load_streets", 263)
         .stored("streets", Server, "the server's import of the street layer", &["streets"], Merge::None, Open),
@@ -257,13 +222,10 @@ pub static KINDS: &[Declaration] = &[
         .loaded("walks", "load_walks", 262)
         .stored("walks", Server, "the server's walk table", &["walks"], Merge::None, Open),
     Declaration::new("layer", "", "transit_analysis::WeightedLayer", "").loaded("layer", "load_layer", 265),
-    // A rider's own documents.
     Declaration::new("watchlist", "watchlist", "transit_rider::watchlist::Watchlist", "transit-rider").loaded("watchlist", "load_watchlist", 264),
     Declaration::new("recent_places", "recent_places", "transit_rider::device::RecentPlaces", "transit-rider"),
     Declaration::new("live_feeds", "live_feeds", "transit_rider::device::LiveFeeds", "transit-rider"),
-    // The runs layer.
     Declaration::new("work_rules", "work_rules", "transit_runs::WorkRules", "transit-runs").loaded("work_rules", "load_work_rules", 269),
-    // The agency's record, in its logs.
     Declaration::new("stops", "stops", "transit_stops::Stops", "transit-stops")
         .loaded("stops", "load_stops", 270)
         .stored("stops", Route, "POST /stops, POST /logs/stops", &["stops"], Merge::Log, Open)
@@ -314,11 +276,9 @@ pub static KINDS: &[Declaration] = &[
     Declaration::new("log_entry", "log_entry", "transit_log::Entry", "transit-log").stored("log_entry", Route, "the log's own writes", &[], Merge::None, Audit),
     Declaration::new("log_checkpoint", "log_checkpoint", "transit_log::Checkpoint", "transit-log")
         .stored("log_checkpoint", Server, "the server's fold", &[], Merge::None, Audit),
-    // Sign-in.
     Declaration::new("policy", "policy", "transit_authz::Policy", "transit-authz")
         .stored("policy", Pointer, "POST /pointers/policy", &["policy"], Replace, Restricted)
         .checked("authz", "validate"),
-    // The server's own documents.
     Declaration::new("derivation", "derivation", "", "server").stored("derivation", Server, "the server's imports", &["derived.*"], Merge::None, Open),
     Declaration::new("manifest", "", "", "").stored("manifest", Server, "the server's publishing", &["manifest"], Merge::None, Open),
     Declaration::new("build", "build", "", "server").stored("build", Route, "the server's -dist, and POST /builds", &["build", "build.*"], Replace, Open),
@@ -328,12 +288,10 @@ pub static KINDS: &[Declaration] = &[
     Declaration::new("store_layout", "store_layout", "", "server").stored("store_layout", Server, "the server's setup of the store", &[], Merge::None, Open),
 ];
 
-/// The line whose tag is `tag`.
 pub fn by_tag(tag: &str) -> Option<&'static Declaration> {
     KINDS.iter().find(|k| !k.tag.is_empty() && k.tag == tag)
 }
 
-/// The line whose kernel load fills the registry `id`.
 pub fn by_load(id: &str) -> Option<&'static Declaration> {
     KINDS.iter().find(|k| k.load.is_some_and(|l| l.id == id))
 }
@@ -384,11 +342,9 @@ mod tests {
             }
             if let Some(log) = s.log {
                 assert!(matches!(s.merge, Merge::Log | Lww), "{}: a log's records merge one by one", k.name);
-                // Every kind of one log is written by one receive op: one
-                // entry can change records of each (D-232).
+                // One entry can change records of each kind (D-232).
                 let mut others = KINDS.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name);
                 assert!(others.clone().all(|o| o.receive == log.receive), "the {} log has one receive op", log.name);
-                // A log takes a page's intent write, or does not, whole.
                 assert!(others.all(|o| o.intent == log.intent), "the {} log's kinds agree on intent", log.name);
             }
         }

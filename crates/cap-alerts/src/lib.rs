@@ -1,12 +1,3 @@
-//! cap-alerts: what is the agency telling riders? (OPS.md has the ops.)
-//!
-//! The seam over transit-alerts (D-206, D-207, D-210). The module is the
-//! hash authority: `validate` answers every refusal or the canonical
-//! document and its hash, and a host stores exactly those bytes. `receive`
-//! writes the alerts log whole (D-228), and an older document comes
-//! forward in the op. What no alert explains is cap-disruptions' `gaps`
-//! (D-218). cap-rt reads and writes the document as an Alerts feed.
-
 #![forbid(unsafe_code)]
 
 use cap_abi::kernel::kind;
@@ -22,15 +13,10 @@ pub use transit_alerts::{
 #[ts(export, export_to = "cap_alerts/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What a write must pass: every refusal, or, when there is none,
-    /// the canonical document and its hash.
     Validate {
         #[ts(as = "ServiceAlerts")]
         alerts: cap_abi::Base<ServiceAlerts>,
     },
-    /// The document with `alert` placed under `id`, new or replacing the
-    /// one held, then checked as a write is. A document absent
-    /// (`alerts_hash` omitted) is an empty one.
     Put {
         #[serde(default)]
         #[ts(optional)]
@@ -38,16 +24,12 @@ pub enum Request {
         id: String,
         alert: ServiceAlert,
     },
-    /// The document with alert `id` ended at `at` (Unix seconds, the
-    /// host's clock). An id the document does not hold is an error.
     End {
         alerts_hash: String,
         id: String,
         #[ts(type = "number")]
         at: u64,
     },
-    /// The agency's list at `now` (Unix seconds). A document absent is
-    /// an empty one.
     List {
         #[serde(default)]
         #[ts(optional)]
@@ -55,9 +37,6 @@ pub enum Request {
         #[ts(type = "number")]
         now: u64,
     },
-    /// What a person is told about the alerts that are not withdrawn:
-    /// each id the network does not have, and each text with no
-    /// translation for one of `languages` (the deployment's).
     Flags {
         alerts_hash: String,
         network_hash: String,
@@ -65,14 +44,10 @@ pub enum Request {
         #[ts(optional)]
         languages: Option<Vec<String>>,
     },
-    /// What a template write must pass: every refusal, or the canonical
-    /// document and its hash.
     ValidateTemplates {
         #[ts(as = "AlertTemplates")]
         templates: cap_abi::Base<AlertTemplates>,
     },
-    /// The templates document with `template` placed under `id`, then
-    /// checked as a write is. A document absent is an empty one.
     PutTemplate {
         #[serde(default)]
         #[ts(optional)]
@@ -80,20 +55,12 @@ pub enum Request {
         id: String,
         template: AlertTemplate,
     },
-    /// The templates offered, by name: each not retired. A document
-    /// absent is an empty one.
     Templates {
         #[serde(default)]
         #[ts(optional)]
         templates_hash: Option<String>,
     },
-    /// Template `template` written out: the stops' and routes' names
-    /// from the network, and the dates from `input`.
     Fill { templates_hash: String, template: String, network_hash: String, input: FillInput },
-    /// The documents as the alerts log's records (D-197): a
-    /// `service_alert` record for each alert, an `alert_template` record
-    /// for each template, and each document's own record. Each document
-    /// left out gives no records.
     LogRecords {
         #[serde(default)]
         #[ts(optional)]
@@ -102,20 +69,6 @@ pub enum Request {
         #[ts(optional)]
         templates_hash: Option<String>,
     },
-    /// A write to the alerts log, whole (D-228): each op of the write's
-    /// intent over the documents at the head (`heads.service_alerts`,
-    /// `heads.alert_templates`, registered by the host; absent: empty),
-    /// then the entry that records what changed. The ops: `put` (`{id,
-    /// alert}`), `end` (`{id, at}`; the header's clock when `at` is
-    /// absent), `put_template`
-    /// (`{id, template}`), and the whole-document writes `validate`
-    /// (`{alerts, from}`) and `validate_templates` (`{templates, from}`),
-    /// where `from` is the head the writer read (empty: none). An older
-    /// service alerts document comes forward first (D-216). A refused op
-    /// answers its refusals, an op that does not run answers why
-    /// (`failed`), and a whole document over a head it did not read
-    /// answers `moved`: no entry in any of these. `heads` names each
-    /// document the ops wrote.
     Receive {
         #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
         write: transit_log::Write,
@@ -125,15 +78,10 @@ pub enum Request {
         #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
         ops: Vec<transit_log::OpCall>,
     },
-    /// One document (`kind`: `service_alerts` or `alert_templates`)
-    /// assembled from the alerts log's records of its kind, registered
-    /// and answered as its canonical bytes and hash. A record in another
-    /// version is refused, naming both.
     LogDocument {
         kind: String,
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
         records: std::collections::BTreeMap<String, transit_log::Held>,
-        /// The document's own record (absent: the empty document's).
         #[serde(default)]
         #[ts(optional, type = "{ version: number, value: unknown }")]
         document: Option<transit_log::Held>,
@@ -148,9 +96,6 @@ pub enum Response {
         refusals: Vec<AlertRefusal>,
         document: Option<String>,
         document_hash: Option<String>,
-        /// The fields the document carries that this build does not
-        /// know (D-167): kept in it, and flagged for a person, never
-        /// refused. Absent when every field is known.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<String>>")]
         unknown_fields: Vec<String>,
@@ -175,24 +120,16 @@ pub enum Response {
     Templates { templates: Vec<transit_alerts::TemplateRow> },
     Fill { filled: Filled },
     LogRecords {
-        /// The records of each kind, as the log capability's `compose`
-        /// takes them.
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
-    /// What the write adds to the alerts log.
     Receive(transit_log::Received),
     LogDocument {
-        /// The document's hash (`alerts_hash` or `templates_hash` by its
-        /// kind).
         document_hash: String,
-        /// The document's canonical bytes, which a host serves under
-        /// `document_hash`.
         document: String,
     },
 }
 
-/// The next alerts document, checked and registered, or its refusals.
 fn registered(next: ServiceAlerts) -> Result<(Vec<AlertRefusal>, Option<String>, Option<ServiceAlerts>), String> {
     Ok(match next.checked() {
         Ok(next) => {
@@ -203,13 +140,10 @@ fn registered(next: ServiceAlerts) -> Result<(Vec<AlertRefusal>, Option<String>,
     })
 }
 
-/// An op of a write to the alerts log, as a page sends it.
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Intent {
     Put { id: String, alert: ServiceAlert },
-    /// `at` is when the person ended it (Unix seconds): the header's
-    /// clock when the page names none.
     End {
         id: String,
         #[serde(default)]
@@ -232,8 +166,6 @@ fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
     serde_json::to_value(v).map_err(|e| e.to_string())
 }
 
-/// The documents a write runs over: each head, whether an op wrote it,
-/// and the unknown fields of the whole documents written.
 #[derive(Default)]
 struct Heads {
     alerts: Option<String>,
@@ -243,9 +175,6 @@ struct Heads {
     unknown_fields: Vec<String>,
 }
 
-/// One op of a write over the heads: none when it ran, the answer that
-/// ends the write when it was refused or moved, or the error of an op
-/// that did not run.
 fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option<transit_log::Received>, String> {
     let refused = |refusals: serde_json::Value| Ok(Some(transit_log::Received::refused(op, refusals)));
     match intent {
@@ -271,7 +200,7 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
             if from != heads.alerts.clone().unwrap_or_default() {
                 return Ok(Some(transit_log::Received::moved(heads.alerts.clone())));
             }
-            // An absent version reads as v1, as the library reads it.
+            // An absent version reads as v1.
             let older = transit_alerts::version::schema_version_of(&doc)? < transit_alerts::ALERTS_VERSION;
             let doc = if older { transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION)?.0 } else { doc };
             let (doc, unknown) = cap_abi::read_base::<ServiceAlerts>(doc)?;
@@ -296,7 +225,6 @@ fn step(heads: &mut Heads, intent: Intent, op: usize, now: u64) -> Result<Option
     Ok(None)
 }
 
-/// A write's ops over the heads, then its entry (`Request::Receive`).
 fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>) -> Result<Response, String> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
@@ -334,8 +262,6 @@ fn held_alerts(hash: Option<&str>) -> Result<std::sync::Arc<ServiceAlerts>, Stri
     }
 }
 
-/// The typed dispatch (native hosts call this directly). Failures are
-/// `{"error": ...}`, never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Validate { alerts } => Ok(match alerts.0.checked() {
@@ -414,8 +340,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::LogDocument { kind, records, document } => {
             let (document_hash, document) = match kind.as_str() {
                 "service_alerts" => {
-                    // The log keeps each record in the version it was
-                    // written in: bring each one forward (D-216).
+                    // The log keeps each record in the version it was written
+                    // in (D-216).
                     let version = transit_alerts::ALERTS_VERSION;
                     let forward = |kind: &str, held: &transit_log::Held| -> Result<transit_log::Held, String> {
                         let value = transit_alerts::version::record_forward(kind, held.value.clone(), held.version)?;
@@ -441,21 +367,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out, byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The alerts take their questions inline; a document registers on the
-/// kernel's `load_service_alerts` (bulk op 272) or
-/// `load_alert_templates` (bulk op 273).
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: an alerts or templates document registers on the kernel's load_service_alerts or load_alert_templates") }).to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
 #[cfg(feature = "examples")]
 pub mod examples;
 

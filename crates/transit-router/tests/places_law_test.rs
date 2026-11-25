@@ -1,29 +1,17 @@
-//! Trips from any point: a plan's ends are stops or places.
+//! Pins plans whose ends are stops or places (D-33). The oracle is
+//! `prop_support::oracle_arrival`, which shares no code with the search. The
+//! properties:
 //!
-//! The intent (crates/transit-streets/src/lib.rs, walks from a point; D-33,
-//! encoded provisionally): a place is somewhere off the network, such as a
-//! tapped spot or the rider's location. It is named by its walks to the stops
-//! near it (cap-streets `access` answers them along the streets). A trip from a
-//! place is a walk to one of those stops, a plan between stops, and a walk from
-//! a stop to the destination place. Or, when one is given, it is the direct
-//! walk between the two ends.
-//!
-//! The laws, each against the independent fixpoint oracle
-//! (`prop_support::oracle_arrival`, no code shared with the search):
-//!
-//! 1. **Leave-at**: the arrival is the best over every access walk and every
-//!    egress walk of the stop oracle between them (and the direct walk). The
-//!    itinerary is feasible from the place to the place. "No plan" means no
-//!    combination reaches.
-//! 2. **Arrive-by**: the departure is the latest from which that best still
-//!    arrives by the deadline.
-//! 3. **The leg bound holds**: the same composition over the router's own stop
-//!    search at `k` legs.
-//! 4. **A stop is a place with one zero-second walk to it.**
-//! 5. **A place is not a stop, and walks only to stops**: a place id naming a
-//!    stop, or a walk naming an unknown stop, is refused.
-//! 6. **The direct walk wins its ties**: arriving as early on foot, the rider
-//!    walks.
+//! 1. Leave-at: the arrival is the best over every access walk, the stop
+//!    oracle, and every egress walk, and over the direct walk. The itinerary
+//!    is feasible from place to place. "No plan" means no combination reaches.
+//! 2. Arrive-by: the departure is the latest from which that best arrival
+//!    still meets the deadline.
+//! 3. Properties 1 and 2 hold over the router's own stop search at `k` legs.
+//! 4. A stop plans like a place with one zero-second walk to it.
+//! 5. A place id that names a stop is refused, and so is a walk that names an
+//!    unknown stop.
+//! 6. The direct walk wins its ties.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -38,7 +26,6 @@ mod support;
 use support::{assert_feasible, build_zip_spaced, model_day, oracle_arrival, TripSpec, INF};
 
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
-/// Enough legs for any path through feeds this small.
 const MAX_LEGS: usize = 12;
 
 prop_compose! {
@@ -51,12 +38,10 @@ prop_compose! {
     }
 }
 
-/// A place's walks: a few stops, a stop possibly twice.
 fn place_walks(n_stops: usize) -> impl Strategy<Value = Vec<(usize, u32)>> {
     vec((0..n_stops, 0u32..600), 0..=3)
 }
 
-/// An end: a stop, or a place with its walks.
 #[derive(Debug, Clone)]
 enum GenEnd {
     Stop(usize),
@@ -76,7 +61,8 @@ fn case() -> impl Strategy<Value = Case> {
     (3usize..=8).prop_flat_map(|n_stops| {
         (
             Just(n_stops),
-            // ~89 m apart (every near pair a transfer) or ~333 m (none).
+            // About 89 m apart (every near pair is a transfer) or about 333 m
+            // (none).
             prop_oneof![Just(0.0008), Just(0.003)],
             vec(trip_spec(n_stops), 1..=10),
             end(n_stops),
@@ -98,7 +84,6 @@ fn as_end(e: &GenEnd, id: &str) -> End {
     }
 }
 
-/// The stops an end walks to, by network index, with the seconds.
 fn sides(net: &RouterNetwork, e: &GenEnd) -> Vec<(usize, u32)> {
     let idx = |s: &usize| net.stop_index(&format!("s{s}")).unwrap() as usize;
     match e {
@@ -107,8 +92,6 @@ fn sides(net: &RouterNetwork, e: &GenEnd) -> Vec<(usize, u32)> {
     }
 }
 
-/// The oracle's arrival leaving at `depart`: the best access walk,
-/// stop plan, egress walk, or the direct walk.
 fn oracle(net: &RouterNetwork, from: &GenEnd, to: &GenEnd, direct: Option<u32>, depart: u32) -> u32 {
     let mut best = direct.map_or(INF, |w| depart + w);
     for (a, wa) in sides(net, from) {
@@ -130,8 +113,7 @@ fn network(n_stops: usize, spacing: f64, trips: &[TripSpec]) -> RouterNetwork {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Law 1: leave-at is the oracle's best composition, and the
-    /// itinerary runs from the place to the place.
+    /// Property 1.
     #[test]
     fn a_trip_from_a_place_walks_rides_and_walks(
         (n_stops, spacing, trips, from, to, direct, depart) in case()
@@ -152,8 +134,7 @@ proptest! {
         }
     }
 
-    /// Law 2: arrive-by is the latest departure from the place that
-    /// still arrives by the deadline.
+    /// Property 2.
     #[test]
     fn arrive_by_from_a_place_leaves_as_late_as_it_can(
         (n_stops, spacing, trips, from, to, direct, deadline) in case()
@@ -178,8 +159,7 @@ proptest! {
         }
     }
 
-    /// Law 3: under a leg bound, the composition over the router's own
-    /// stop search at the same bound.
+    /// Property 3.
     #[test]
     fn the_leg_bound_holds_from_a_place(
         (n_stops, spacing, trips, from, to, direct, depart) in case(),
@@ -204,8 +184,7 @@ proptest! {
         }
     }
 
-    /// Law 4: a stop plans like a place whose one walk reaches it in
-    /// no time: leave-at and arrive-by.
+    /// Property 4, for leave-at and arrive-by.
     #[test]
     fn a_stop_is_a_place_with_one_zero_second_walk(
         (n_stops, spacing, trips, _from, _to, _direct, depart) in case(),
@@ -226,8 +205,6 @@ proptest! {
     }
 }
 
-/// One trip s0 → s2 leaving 08:00, arriving 08:10; stops ~333 m apart
-/// (no transfers).
 fn line() -> RouterNetwork {
     network(3, 0.003, &[TripSpec { stops: vec![0, 2], start: 28_800, step: 600 }])
 }
@@ -240,9 +217,8 @@ fn place(id: &str, walks: &[(&str, u32)]) -> End {
     })
 }
 
-/// Law 5: a place id that names a stop is refused (the itinerary would
-/// name two things one way), and so is a walk to a stop the network
-/// does not have.
+/// Property 5. A place id that names a stop would give an itinerary two
+/// things under one name.
 #[test]
 fn a_place_is_not_a_stop_and_walks_only_to_stops() {
     let net = line();
@@ -253,8 +229,6 @@ fn a_place_is_not_a_stop_and_walks_only_to_stops() {
     assert!(matches!(&r, Err(RouterError::UnknownStop(id)) if id == "nowhere"), "{r:?}");
 }
 
-/// The legs of a trip between places: walk to the stop, ride, walk to the
-/// place. The walks use their own seconds and are named by the places.
 #[test]
 fn the_walks_are_the_first_and_last_legs() {
     let net = line();
@@ -274,8 +248,8 @@ fn the_walks_are_the_first_and_last_legs() {
     }
 }
 
-/// Law 6: walking arrives as early as the bus, so the rider walks. It is one
-/// leg, place to place. One second later on foot, the rider rides.
+/// Property 6. When walking arrives as early as the bus, the rider walks in
+/// one leg from place to place. One second later on foot, the rider rides.
 #[test]
 fn the_direct_walk_wins_its_ties() {
     let net = line();
@@ -291,8 +265,6 @@ fn the_direct_walk_wins_its_ties() {
     assert!(it.legs.iter().any(|l| matches!(l, Leg::Transit { .. })), "{:?}", it.legs);
 }
 
-/// A place with no walks and no direct walk reaches nothing, and
-/// nothing reaches it.
 #[test]
 fn a_place_with_no_walks_is_unreachable() {
     let net = line();

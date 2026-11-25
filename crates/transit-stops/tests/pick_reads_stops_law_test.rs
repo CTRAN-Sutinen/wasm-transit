@@ -1,16 +1,5 @@
-//! What a pick reads of the stops document (D-157). These are the laws,
-//! from the user's intent, before the implementation:
-//!
-//! * a pick takes each stop's record (its point, name, code, station, and
-//!   details) from the stops document as it stands on the pick's first
-//!   date. It never writes the document. A stop the document does not
-//!   hold, or that is not there yet that day, keeps the pick's own record.
-//!   Nothing else in the pick changes;
-//! * a pick read from a document seeded from it is the pick unchanged;
-//! * the planner is warned, never refused, when the pick visits a stop
-//!   not in service on its dates: always for a stop planned, permitted,
-//!   built, retired, or not there yet; for a suspended one only when the
-//!   suspension covers the pick's whole period or has no end.
+//! What a pick reads of the stops document (D-157). The ops are in
+//! cap-stops' OPS.md (`read_records`, `visit_warnings`).
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -36,8 +25,6 @@ fn ev(kind: EventKind, on: u32) -> Event {
     Event { on: Some(date(on)), event: kind, ..Event::default() }
 }
 
-/// What may happen to a stop after the seed: a move, a rename, a
-/// suspension (with or without an end), a retirement.
 #[derive(Debug, Clone)]
 enum Change {
     Move(u32, i32),
@@ -55,8 +42,8 @@ fn arb_change() -> impl Strategy<Value = Change> {
     ]
 }
 
-/// The fixture's stops seeded, each given at most one change, and maybe
-/// a stop only planned on a day.
+/// The fixture's stops seeded, each given at most one change, and maybe a
+/// stop only planned on a day.
 fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
     let ids: Vec<String> = net.stops.keys().cloned().collect();
     let base = seed(net);
@@ -86,15 +73,13 @@ fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
     )
 }
 
-/// The pick's stops a pattern visits.
 fn visited(net: &Network) -> std::collections::BTreeSet<String> {
     net.patterns.values().flat_map(|p| p.stops.iter().map(|s| s.stop.clone())).collect()
 }
 
 proptest! {
-    /// Each stop the document holds and has on the first date takes the
-    /// document's record; every other stop, and everything else in the
-    /// pick, is as it was.
+    /// A stop that the document has on the first date takes its record.
+    /// Everything else in the pick is as it was.
     #[test]
     fn a_pick_takes_each_stops_record_on_its_first_date(stops in arb_stops(&fixture()), first in 0u32..80) {
         let net = fixture();
@@ -116,9 +101,8 @@ proptest! {
         }
     }
 
-    /// A stop warns exactly when, on some date of the pick's period, it
-    /// is not in service. When that is a suspension, the suspension must
-    /// also cover the whole period or have no end.
+    /// A stop warns exactly when it is not in service on some date of the
+    /// period. A suspension warns only if it covers the period or has no end.
     #[test]
     fn a_pick_is_warned_of_the_stops_it_visits_not_in_service(stops in arb_stops(&fixture()), first in 0u32..80, len in proptest::option::of(1u32..60)) {
         let net = fixture();
@@ -173,13 +157,11 @@ fn the_warnings_name_the_stop_its_status_and_the_dates() {
         vec![NetworkWarning::StopNotInService { stop: "B".into(), status: Some("retired".into()), from: date(10), until: Some(date(30)) }],
         "a short suspension inside the period is real time's, not the pick's"
     );
-    // a suspension with no end warns
     let stops = seed(&net).add_event("A", ev(EventKind::Suspended, 2)).checked().unwrap();
     assert_eq!(
         visit_warnings(&net, &stops, day(0), Some(day(30))),
         vec![NetworkWarning::StopNotInService { stop: "A".into(), status: Some("suspended".into()), from: date(2), until: Some(date(30)) }]
     );
-    // the record read: B retired on day 10 still has its point and name
     let read = read_records(&net, &seed(&net).add_event("B", ev(EventKind::Retired, 10)), day(20));
     assert_eq!(read.stops["B"], net.stops["B"]);
 }

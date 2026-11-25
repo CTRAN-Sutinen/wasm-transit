@@ -3,7 +3,7 @@
   "versions": {
     "1": {
       "example_hash": "sha256:e3d45cf27142cbeaeae64df52af279c5b82e035f14c32a6a2186999ddf24fdcb",
-      "schema_hash": "sha256:aaf44d351fe5ce88e8fd3719241a3ddac9dff42e081c03053348fd30bb49f049"
+      "schema_hash": "sha256:aadb7c35ee7ea0b68bcb55037abdc3de3df10b7c341235283ce2875a77716dbb"
     }
   }
 }

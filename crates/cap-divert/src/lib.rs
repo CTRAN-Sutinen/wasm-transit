@@ -1,20 +1,5 @@
-//! cap-divert: what does this operator edit amount to over the network?
-//! (OPS.md has the ops.)
-//!
-//! An operator edit is a diversion or a whole-trip cancel (D-45, D-102).
-//! The seam over transit-dispatch (the draft over the network) and
-//! transit-sync (the record envelope).
-//!
-//! * A record the network cannot answer is reported, never rejected, and
-//!   moves nothing in a day view.
-//! * Every op takes the edit document whole and answers the next one
-//!   tagged (D-115), so a host persists or posts it as given. Another
-//!   version is refused naming both (`cap_abi::Current`); a write's base
-//!   is a `cap_abi::Base`, which refuses a copy read ahead read-only
-//!   (D-186).
-//! * The host owns the clock and ids (`now_ms`, `record_id`).
-//! * Converging two edit documents is cap-sync's question, which the
-//!   server hosts without a network.
+//! A write's base is a `cap_abi::Base`, which refuses a copy read ahead
+//! read-only (D-186).
 
 #![forbid(unsafe_code)]
 
@@ -28,35 +13,21 @@ use transit_dispatch::{CancelRow, DiversionDraft, DiversionRow, DraftView};
 use transit_network::Network;
 use transit_sync::EditDocument;
 
-/// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_divert/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What the editor shows about a draft (total: problems, never an
-    /// error, for a draft that names what the network lacks).
     Draft { network_hash: String, draft: DiversionDraft },
-    /// The edit document's rows, with names resolved over the network. The
-    /// list shows the diversions and the trip cancels, each in document
-    /// order.
     List {
         network_hash: String,
         #[ts(as = "EditDocument")]
         edits: Current<EditDocument>,
     },
-    /// What each record amounts to on the network, in document order:
-    /// whether it is valid (its route, pattern, and stops exist and are in
-    /// order), what is wrong when it is not, and how many trip instances it
-    /// touches. Invalid records are reported, never rejected (the sync
-    /// contract). Every day view simply finds nothing to patch for them.
     Reports {
         network_hash: String,
         #[ts(as = "EditDocument")]
         edits: Current<EditDocument>,
     },
-    /// The edit document with the draft proposed as `record_id` (a
-    /// new id appends at rev 1; an existing one is replaced, rev
-    /// bumped). Errors name what keeps the draft from being a record.
     Propose {
         network_hash: String,
         draft: DiversionDraft,
@@ -66,12 +37,6 @@ pub enum Request {
         #[ts(type = "number")]
         now_ms: u64,
     },
-    /// The edit document with trip `trip_id` cancelled on `date` as
-    /// `record_id` (D-45): one instance (`start_secs`) or, without it,
-    /// every instance the trip runs that day. A new id appends at rev
-    /// 1; an existing one is replaced, rev bumped. Errors name what
-    /// keeps it from being a record: an unknown trip, an instance it
-    /// never runs, a date its service does not run.
     Cancel {
         network_hash: String,
         #[ts(as = "EditDocument")]
@@ -84,7 +49,6 @@ pub enum Request {
         #[ts(type = "number")]
         now_ms: u64,
     },
-    /// The edit document with `record_id` retired. This is the tombstone.
     Retire {
         #[ts(as = "EditDocument")]
         edits: Base<EditDocument>,
@@ -92,7 +56,6 @@ pub enum Request {
         #[ts(type = "number")]
         now_ms: u64,
     },
-    /// The edit document with `record_id` back in force as a draft.
     Restore {
         #[ts(as = "EditDocument")]
         edits: Base<EditDocument>,
@@ -119,8 +82,6 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
     kind::<transit_network::Network>().require(network_hash)
 }
 
-/// The typed dispatch. Native hosts call this directly. Failures are
-/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     let next = |records| EditDocument::new(records);
     match request {
@@ -174,20 +135,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
-/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// Drafts and edit documents travel inline. There is no bulk op of its own.
-/// The seam answers with an error instead of silently ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: divert has no bulk op of its own")))
 }
 
-/// The worked examples. The generator runs them. No module build turns
-/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

@@ -1,10 +1,5 @@
-//! Native dispatch tests for the stop requests capability. These test the
-//! seam without wasm. The document's own laws are tested at the library
-//! seam (transit-requests). Here the module's contract is pinned. validate
-//! and the kernel's load agree on one identity. A refused document is
-//! refused at both, with its reasons named. put begins and changes the
-//! document. A stop's requests are answered. Garbage is an honest error,
-//! never a panic.
+//! Native dispatch tests for cap-requests. The document's own properties are
+//! in transit-requests. The op contracts are in OPS.md.
 
 use serde_json::{json, Value};
 
@@ -62,8 +57,7 @@ fn put_begins_and_changes_the_document() {
     assert_eq!(ok(json!({ "op": "requests_for", "requests_hash": next["requests_hash"], "stop": "nope" }))["requests"], json!([]));
 }
 
-/// The work across every stop: filtered by status and job, every
-/// request counted by status whatever the filters ask.
+/// The counts cover every request, whatever the filters ask.
 #[test]
 fn list_is_the_work_across_every_stop() {
     let a = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "drafted" } }));
@@ -89,8 +83,7 @@ fn the_vocabulary_is_the_librarys() {
     assert_eq!(v["open_statuses"], json!(["drafted", "submitted", "ordered"]));
 }
 
-/// A write that says the request is new is refused a held id; an
-/// ordinary put replaces it (D-228).
+/// An ordinary put replaces a held id (D-228).
 #[test]
 fn a_new_request_is_refused_a_held_id() {
     let held = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "drafted" } }));
@@ -113,8 +106,7 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(run(json!({ "op": "validate", "requests": { "kind": "stops" } }))["error"].is_string());
 }
 
-/// What the work order system answered lands on its request (D-165),
-/// checked; an unknown request is an error.
+/// An unknown request is an error (D-165).
 #[test]
 fn a_work_order_is_recorded_on_its_request() {
     let held = ok(json!({ "op": "load_stop_requests", "requests": sample() }));
@@ -126,8 +118,7 @@ fn a_work_order_is_recorded_on_its_request() {
     assert!(run(json!({ "op": "record_work_order", "requests_hash": held["requests_hash"], "id": "nope", "work_order": { "id": "x" } }))["error"].is_string());
 }
 
-/// A field this build does not know is kept and flagged, never refused
-/// (D-167).
+/// An unknown field is kept and flagged, never refused (D-167).
 #[test]
 fn validate_flags_an_unknown_field_and_keeps_it() {
     let mut newer = sample();
@@ -140,8 +131,7 @@ fn validate_flags_an_unknown_field_and_keeps_it() {
     assert_eq!(document["requests"][&first]["permit_fee"], 125);
 }
 
-/// The stops log (D-197): the document's records are its requests, and
-/// the document assembled from them is the same document.
+/// The document assembled from its records is the same document (D-197).
 #[test]
 fn the_document_and_its_log_records_round_trip() {
     let v = ok(json!({ "op": "validate", "requests": sample() }));
@@ -158,7 +148,7 @@ fn the_document_and_its_log_records_round_trip() {
     let back = ok(json!({ "op": "log_document", "records": held(2), "document": {"version": 2, "value": own} }));
     assert_eq!(back["document_hash"], v["document_hash"]);
     assert_eq!(back["document"], v["document"]);
-    // A log written before v2 keeps its records at v1: they come forward
+    // A log written before v2 keeps its records at v1, and they come forward
     // to the same document.
     let mut own_v1 = own.clone();
     own_v1["schema_version"] = json!(1);
@@ -166,8 +156,8 @@ fn the_document_and_its_log_records_round_trip() {
     assert_eq!(old["document_hash"], v["document_hash"]);
 }
 
-/// The call to the work order system is an op's answer (D-228): the
-/// request for an open, the held work order for a refresh.
+/// An `open` sends the request, and a `refresh` sends the held work order
+/// (D-228).
 #[test]
 fn the_work_order_call_answers_what_to_send() {
     let held = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "submitted" } }));

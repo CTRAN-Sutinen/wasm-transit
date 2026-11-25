@@ -1,26 +1,28 @@
 # Plain code comments
 
 Rewrite the code comments to the writing rules in `docs/CONVENTIONS.md`,
-"Writing" (D-174), and make them shorter. A guard checks each file
-against git HEAD: the code without its comments must not change, and
-every decision number, finding number, backticked name, path, test
-name, and number in the old comments must still be in the new ones.
+"Writing" (D-252). One pass does all of it: delete what the code already
+says or what has a home elsewhere, restructure the property-test
+headers (`docs/TESTING.md`, "Laws first"), replace the words in "Use
+these words", and fix the faults in the table.
+
+A guard checks each file against git HEAD. The code without its
+comments must not change, and every decision id and finding id in the
+old comments must still be in the new ones. A field's doc comment is
+its schema description, so each run ends with `just schema-lock`
+(`docs/FORMATS.md`).
 
 ## Scope, in order
 
-1. **The style pass.** Remove dash asides, words in capitals for
-   emphasis, history, and decision numbers inside sentences. Wrap
-   comments at 80 columns. Rust is done. Go is next, then TS and
-   Svelte. A field's doc comment is its schema description, so the
-   pass ends with `just schema-lock` (docs/FORMATS.md).
-2. **The law-test headers.** Bring each header to the shape in
-   `docs/TESTING.md`, "Laws first": what it pins, where the intent
-   lives, and one line for each law. Drop API notes, process notes,
-   and text that restates a decision file or an `OPS.md` section. A
-   blanket word cut was tried and dropped: on comments already in the
-   plain style it saved about 2%.
+1. **Rust.** cap-abi's `src/` is done. The other crates go in batches.
+2. **Go.**
+3. **TS and Svelte.** The guard does not parse these files yet.
+4. **The developer documents.** Apply "Use these words" and the fault
+   table to `AGENTS.md`, `crates/AGENTS.md`, `docs/`, and the `OPS.md`
+   files.
 
 ## Done when
 
-- Every Rust, Go, TS, and Svelte file has had both passes, and the
-  guard passed on each one.
+- Every Rust, Go, TS, and Svelte file has had the pass, and the guard
+  passed on each one.
+- No developer document uses a word in the "Do not write" column.

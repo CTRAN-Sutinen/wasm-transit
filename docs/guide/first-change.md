@@ -200,8 +200,8 @@ the `web/` folder.
 - Try the change on real data. `just qa` starts the apps on C-TRAN's
   schedule.
 
-Then update the documents that describe what you changed.
-[CONVENTIONS.md](../CONVENTIONS.md), "The documentation sweep", lists
+Then update the documents that describe what you changed. The
+[documentation sweep](../../.claude/skills/doc-sweep/SKILL.md) lists
 them.
 
 ## Parts you used but did not change

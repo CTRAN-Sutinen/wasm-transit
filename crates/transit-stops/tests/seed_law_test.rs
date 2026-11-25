@@ -1,7 +1,4 @@
-//! A stops document begun from a network (D-153, D-157). This is the law,
-//! from the user's intent. The seed records every stop the network has.
-//! Each stop is in service from before any record, at its point, with its
-//! details. The seed passes what a write must pass.
+//! The seed of a stops document from a network (D-153, D-157).
 
 use transit_stops::stop_record::seed;
 use transit_network::Network;

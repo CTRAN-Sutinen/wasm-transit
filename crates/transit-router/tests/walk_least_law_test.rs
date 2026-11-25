@@ -1,30 +1,17 @@
-//! A plan walks the least it can: at equal arrival and the same rides, every
-//! walk is the shortest that still connects (D-35, encoded provisionally).
+//! Pins that a plan walks the least it can at equal arrival and the same rides
+//! (D-35). The oracle has its own Dijkstra over the footpaths and shares
+//! nothing with the router. The properties hold for plans whose arrival
+//! `prop_test.rs` already pins:
 //!
-//! The intent, as the user stated it: a C-TRAN plan walked 13 minutes up
-//! Broadway to a route 032 trip's first stop. The same bus passed a stop four
-//! minutes away and arrived at the same time. When another stop of the same bus
-//! serves the connection with less walking, the plan uses it. The earliest
-//! arrival and the rides are the search's answer and stay. Only where each ride
-//! is boarded and left moves.
-//!
-//! The laws, each against an oracle that shares nothing with the router. The
-//! oracle has its own Dijkstra over the network's footpaths (walks chain
-//! through stops, as the router's do). The laws apply to plans that the
-//! fixpoint oracle already pins for arrival (`prop_test.rs`):
-//!
-//! 1. **The first boarding walks least**: no stop of the first ride's trip
-//!    before where it is left is reached from the origin with a shorter walk in
-//!    time to board there.
-//! 2. **Every transfer walks least**: no stop where the earlier ride could be
-//!    left (after it is boarded) and stop where the later one could be boarded
-//!    (before it is left) are joined by a shorter walk that still makes the
+//! 1. No stop of the first ride's trip, before where it is left, is reached
+//!    from the origin by a shorter walk in time to board there.
+//! 2. No stop where the earlier ride could be left and stop where the later
+//!    ride could be boarded are joined by a shorter walk that still makes the
 //!    connection.
-//! 3. **The last alighting walks least**: no stop of the last ride's trip after
-//!    it is boarded reaches the destination by a shorter walk without arriving
-//!    later.
-//! 4. The arrival is the earliest (the fixpoint oracle), and the plan is
-//!    feasible from its departure.
+//! 3. No stop of the last ride's trip, after where it is boarded, reaches the
+//!    destination by a shorter walk without arriving later.
+//! 4. The arrival is the earliest, and the plan is feasible from its
+//!    departure.
 
 #[path = "prop_support.rs"]
 mod support;
@@ -44,22 +31,20 @@ prop_compose! {
     fn trip_spec(n_stops: usize)
         (stops in vec(0u32..(n_stops as u32), 2..=6),
          start in 0u32..3_000,
-         // Short hops: a bus is still there to be caught a stop or
-         // two on, so most rides offer more than one boarding.
+         // Short hops leave a bus to catch a stop or two on, so most rides
+         // offer more than one boarding.
          step in 5u32..150)
     -> TripSpec {
         TripSpec { stops, start, step }
     }
 }
 
-/// Stops ~89 m apart: every stop within three of another is a walk,
-/// so most rides can be boarded and left at more than one stop.
+/// Stops about 89 m apart. Every stop within three of another is a walk, so
+/// most rides can be boarded and left at more than one stop.
 fn case() -> impl Strategy<Value = (usize, Vec<TripSpec>, usize, usize, u32)> {
     (4usize..=9).prop_flat_map(|n| (Just(n), vec(trip_spec(n), 1..=10), 0..n, 0..n, 0u32..3_000))
 }
 
-/// The oracle's walking seconds from `sources` to every stop, over the
-/// network's footpaths, chains included.
 fn walks_from(net: &RouterNetwork, sources: &[(usize, u32)]) -> Vec<u32> {
     let mut dist = vec![INF; net.stops.len()];
     let mut heap = BinaryHeap::new();
@@ -84,8 +69,6 @@ fn walks_from(net: &RouterNetwork, sources: &[(usize, u32)]) -> Vec<u32> {
     dist
 }
 
-/// A ride of the plan, as the network holds it: its pattern's stops
-/// and its trip's times, and the positions boarded and left.
 struct Ride<'a> {
     stops: &'a [u32],
     departures: &'a [u32],
@@ -116,7 +99,6 @@ fn ride<'a>(net: &'a RouterNetwork, leg: &Leg) -> Ride<'a> {
     panic!("trip {trip} at {start_secs} is not in the network");
 }
 
-/// The walking seconds before each ride and after the last.
 fn walks(it: &Itinerary) -> Vec<u32> {
     let mut out = vec![0];
     for leg in &it.legs {
@@ -128,7 +110,6 @@ fn walks(it: &Itinerary) -> Vec<u32> {
     out
 }
 
-/// Laws 1–3 over one plan; Err names the shorter walk the plan missed.
 fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> Result<(), String> {
     let legs: Vec<&Leg> = it.legs.iter().filter(|l| matches!(l, Leg::Transit { .. })).collect();
     if legs.is_empty() {
@@ -138,7 +119,7 @@ fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> R
     let used = walks(it);
     let name = |s: u32| net.stops[s as usize].stop_id.clone();
 
-    // Law 1: the first boarding.
+    // Property 1.
     let d = walks_from(net, &[(from, 0)]);
     let r = &rides[0];
     for p in 0..r.alight {
@@ -147,7 +128,7 @@ fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> R
             return Err(format!("board at {} walking {w} s, not {} s", name(r.stops[p]), used[0]));
         }
     }
-    // Law 2: every transfer.
+    // Property 2.
     for i in 0..rides.len() - 1 {
         let (a, b) = (&rides[i], &rides[i + 1]);
         for q in a.board + 1..a.stops.len() {
@@ -163,7 +144,7 @@ fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> R
             }
         }
     }
-    // Law 3: the last alighting.
+    // Property 3.
     let r = rides.last().unwrap();
     for q in r.board + 1..r.stops.len() {
         let w = walks_from(net, &[(r.stops[q] as usize, 0)])[to];
@@ -195,13 +176,11 @@ proptest! {
     }
 }
 
-/// The Broadway case: a bus starts three stops up the street and comes back
-/// past the stop next door. The rider boards next door. It is the same bus,
-/// with the same arrival, and a walk of one stop, not three.
+/// The Broadway case from D-35.
 #[test]
 fn the_rider_boards_the_same_bus_at_the_nearer_stop() {
-    // s0 to s9 in a line, ~89 m apart (69 s on foot). The bus starts at s3,
-    // passes s1, and ends at s9.
+    // s0 to s9 in a line, about 89 m apart (69 s on foot). The bus starts at
+    // s3, passes s1, and ends at s9.
     let trips = [TripSpec { stops: vec![3, 1, 9], start: 1_250, step: 10 }];
     let (network, day) = model_day(&build_zip_spaced(10, 0.0008, &trips), DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);

@@ -1,10 +1,9 @@
-//! What an alert reaches on a day: the departures its scopes select, by the
-//! board's own rule (crates/cap-board/OPS.md "alert_reach").
+//! `alert_reach` returns the departures that an alert's scopes select
+//! (crates/cap-board/OPS.md "alert_reach").
 //!
-//! Fixture: the e2e network on Friday 2026-10-23. t10 (route 10, A to B), t20
-//! (route 20, A to B), t30 (route 10, A to C to B), t40 and t41 (route 40,
-//! between the bays SA and SB of station STN). A trip's last stop is not a
-//! departure.
+//! The fixture is the e2e network on Friday 2026-10-23. t10 (route 10, A to
+//! B), t20 (route 20, A to B), t30 (route 10, A to C to B), t40 and t41
+//! (route 40, between the bays SA and SB of station STN).
 
 use proptest::prelude::*;
 use transit_dispatch::alert_reach;
@@ -34,7 +33,6 @@ fn stops(r: &transit_dispatch::Reach) -> Vec<(&str, u32)> {
 fn route_and_stop_together_reach_that_route_at_that_stop_only() {
     let net = network();
     let r = alert_reach(&net, &day(&net), &[scope(Some("10"), Some("A"))], DATE);
-    // Not route 20 at A. Not route 10 at C.
     assert_eq!(stops(&r), [("A", 2)]);
     assert_eq!(r.routes, ["10"]);
     assert_eq!(r.departures, 2);
@@ -77,7 +75,6 @@ fn a_trip_reaches_only_on_its_date() {
     let on = |date: Option<&str>| AlertScope { trip: Some("t10".into()), date: date.map(String::from), start_secs: Some(28800), ..Default::default() };
     assert_eq!(stops(&alert_reach(&net, &day(&net), &[on(Some(DATE))], DATE)), [("A", 1)]);
     assert_eq!(alert_reach(&net, &day(&net), &[on(Some("2026-10-24"))], DATE).departures, 0);
-    // No date: the day asked.
     assert_eq!(alert_reach(&net, &day(&net), &[on(None)], DATE).departures, 1);
 }
 
@@ -96,8 +93,6 @@ fn arb_scope() -> impl Strategy<Value = AlertScope> {
 }
 
 proptest! {
-    /// Each entity applies on its own. At each stop, an alert reaches the
-    /// departures that any of its scopes reaches alone, and no others.
     #[test]
     fn several_scopes_reach_what_each_reaches(scopes in prop::collection::vec(arb_scope(), 1..4)) {
         let net = network();
@@ -111,9 +106,6 @@ proptest! {
     }
 }
 
-/// A trip the edit document cancels is out of the patched day. The board still
-/// lists its visits as skipped, with the alerts about them (an alert about
-/// the cancel reaches them).
 #[test]
 fn a_cancelled_trip_is_reached_where_the_board_lists_it_skipped() {
     let net = network();

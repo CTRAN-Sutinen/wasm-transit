@@ -1,19 +1,12 @@
-//! The street-layer import: GeoJSON lines in, the streets document
-//! out. It is the boundary half of the crate: the graph and every query
-//! read the document, never a layer's properties.
-//!
-//! A layer's own schemes are read here and nowhere else: the class
-//! (TIGER's CFCC, which the agency's Trapeze export spells so; TIGER's
-//! MTFCC; OSM's `highway`), the name (`FULLNAME`, `name`, `NAME`), and
-//! the one-way conventions (TIGER `OneWay`, OSM `oneway`). Which lines
-//! are streets and what class each is: D-30 (docs/decisions/D-30.md).
+//! A layer's own schemes are read here and nowhere else: the graph and every
+//! query read the document, never a layer's properties (D-30). TIGER's CFCC
+//! is the scheme that the agency's Trapeze export uses.
 
 use serde_json::Value;
 
 use crate::model::{StreetClass, Streets, Way};
 use crate::StreetError;
 
-/// A layer's travel direction relative to its digitized order.
 #[derive(Clone, Copy, PartialEq)]
 enum Dir {
     Both,
@@ -21,17 +14,12 @@ enum Dir {
     Backward,
 }
 
-/// Read a property case-insensitively over the spellings layers use.
 fn prop<'a>(props: &'a serde_json::Map<String, Value>, keys: &[&str]) -> Option<&'a Value> {
     keys.iter().find_map(|k| props.get(*k))
 }
 
-/// One-way convention, read case-insensitively: TIGER-style `OneWay`
-/// (`>` with the digitized direction, `<` against; some derivatives
-/// use F/T, FT/TF) and OSM-style `oneway` (`yes`/`true`/`1` with,
-/// `-1`/`reverse` against, `no`/`false`/`0` two-way). Unrecognized
-/// values are two-way: schemas drift, and a wrong one-way is worse
-/// than none.
+/// Unrecognized values are two-way, because schemas drift and a wrong
+/// one-way is worse than none.
 fn direction(props: &serde_json::Map<String, Value>) -> Dir {
     let raw = prop(props, &["OneWay", "oneway", "ONEWAY"]).and_then(Value::as_str);
     match raw.map(|r| r.trim().to_ascii_uppercase()).as_deref() {
@@ -41,7 +29,6 @@ fn direction(props: &serde_json::Map<String, Value>) -> Dir {
     }
 }
 
-/// D-30: the street's class, or None when the line is not a street.
 fn class(props: &serde_json::Map<String, Value>) -> Option<StreetClass> {
     use StreetClass::*;
     if let Some(cfcc) = prop(props, &["CFCC", "cfcc"]) {
@@ -49,8 +36,7 @@ fn class(props: &serde_json::Map<String, Value>) -> Option<StreetClass> {
             return Some(Unknown);
         };
         return match code.get(..1) {
-            // Railroads, other transport, landmarks, physical
-            // features, boundaries, water.
+            // Not streets: railroads, landmarks, boundaries, water.
             Some("B" | "C" | "D" | "E" | "F" | "H") => None,
             Some("A") => Some(match code.get(..2) {
                 Some("A1") => Motorway,
@@ -118,15 +104,13 @@ fn name(props: &serde_json::Map<String, Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Degrees to microdegrees, when within `limit` degrees of zero.
 fn e6(x: f64, limit: f64) -> Option<i32> {
     let v = (x * 1e6).round();
     (v.is_finite() && v.abs() <= limit * 1e6).then_some(v as i32)
 }
 
-/// One line's runs of well-formed vertices: a malformed vertex (not a
-/// number pair, or off the globe) breaks the line (a gap, not a segment).
-/// Repeated vertices collapse. A run of fewer than two points is no street.
+/// A malformed vertex breaks the line into two runs, so it leaves a gap and
+/// not a segment.
 fn runs(line: &Value) -> Vec<Vec<[i32; 2]>> {
     let mut runs = vec![Vec::new()];
     for vertex in line.as_array().into_iter().flatten() {
@@ -151,10 +135,6 @@ fn runs(line: &Value) -> Vec<Vec<[i32; 2]>> {
     runs
 }
 
-/// Read a GeoJSON FeatureCollection (or bare Feature) of LineString /
-/// MultiLineString streets into the streets document. Points,
-/// polygons, malformed rows, and lines that are not streets (D-30) are
-/// skipped. Errors when the input is not GeoJSON or holds no street.
 pub fn import(geojson: &[u8]) -> Result<Streets, StreetError> {
     let value: Value =
         serde_json::from_slice(geojson).map_err(|e| StreetError(format!("invalid JSON: {e}")))?;

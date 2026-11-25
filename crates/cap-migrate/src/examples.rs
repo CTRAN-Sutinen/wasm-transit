@@ -1,7 +1,3 @@
-//! The worked examples of the migration capability (its `examples` feature),
-//! one for each request. The generator runs them through this crate's
-//! `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 

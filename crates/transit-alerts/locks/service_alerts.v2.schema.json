@@ -1,7 +1,6 @@
 {
   "$defs": {
     "AlertCause": {
-      "description": "Why an alert was raised (GTFS-rt's cause, by name).",
       "enum": [
         "unknown",
         "other",
@@ -20,7 +19,6 @@
       "type": "string"
     },
     "AlertEffect": {
-      "description": "What an alert does to service (GTFS-rt's effect, by name).",
       "enum": [
         "no_service",
         "reduced_service",
@@ -38,17 +36,14 @@
     },
     "AlertEntity": {
       "additionalProperties": true,
-      "description": "One informed entity, in the network's ids. Every present field must\nmatch (route 12 AT stop 6277). With every field absent, it is the\nwhole agency.",
       "properties": {
         "date": {
-          "description": "The trip instance's service date, \"YYYY-MM-DD\". None means the\ntrip on every date.",
           "type": [
             "string",
             "null"
           ]
         },
         "direction": {
-          "description": "One of the route's model directions. It needs `route` (D-204).",
           "type": [
             "string",
             "null"
@@ -62,7 +57,6 @@
           "x-references": "network.route"
         },
         "route_type": {
-          "description": "Every route published under this GTFS route type.",
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
@@ -72,7 +66,7 @@
           ]
         },
         "start_secs": {
-          "description": "The trip instance's start, in seconds after the service-day\nanchor. It needs `trip`.",
+          "description": "Seconds after the service-day anchor. Needs `trip`.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -88,7 +82,6 @@
           "x-references": "network.stop"
         },
         "trip": {
-          "description": "A trip, by the model's trip id.",
           "type": [
             "string",
             "null"
@@ -99,7 +92,7 @@
       "type": "object"
     },
     "AlertPeriod": {
-      "description": "A span of time in Unix seconds; an open end is unbounded.",
+      "description": "Unix seconds. An open end is unbounded.",
       "properties": {
         "end": {
           "format": "uint64",
@@ -121,7 +114,6 @@
       "type": "object"
     },
     "AlertSeverity": {
-      "description": "How serious the agency says an alert is.",
       "enum": [
         "unknown",
         "info",
@@ -131,10 +123,8 @@
       "type": "string"
     },
     "AlertSource": {
-      "description": "A disruption that an alert tells riders about.",
       "oneOf": [
         {
-          "description": "A record of the edit document (a diversion or a trip cancel), by\nits record id.",
           "properties": {
             "id": {
               "type": "string",
@@ -152,7 +142,6 @@
           "type": "object"
         },
         {
-          "description": "A stop's suspension in the stops document, by the stop's lasting\nid.",
           "properties": {
             "kind": {
               "const": "stop",
@@ -170,7 +159,7 @@
           "type": "object"
         },
         {
-          "description": "A trip instance that the live feed cancels (D-216): the model's\ntrip id, its service date (\"YYYY-MM-DD\"), and its start in seconds\nafter the service-day anchor. Version 2.",
+          "description": "A trip instance that the live feed cancels (D-216). Version 2.",
           "properties": {
             "date": {
               "type": "string"
@@ -200,24 +189,13 @@
       ]
     },
     "AlertStatus": {
-      "description": "An alert's state. There is no review step (D-207): a person with\nthe write role publishes at once.",
-      "oneOf": [
-        {
-          "const": "draft",
-          "description": "Saved, not yet told to riders.",
-          "type": "string"
-        },
-        {
-          "const": "published",
-          "description": "Told to riders while a communication period holds.",
-          "type": "string"
-        },
-        {
-          "const": "retired",
-          "description": "Withdrawn. It is kept, and is never told to riders.",
-          "type": "string"
-        }
-      ]
+      "description": "There is no review step (D-207).",
+      "enum": [
+        "draft",
+        "published",
+        "retired"
+      ],
+      "type": "string"
     },
     "AlertText": {
       "description": "A text in one language. No language means the agency's default.",
@@ -244,14 +222,12 @@
     },
     "ServiceAlert": {
       "additionalProperties": true,
-      "description": "One service alert.",
       "properties": {
         "cause": {
           "$ref": "#/$defs/AlertCause",
           "default": "unknown"
         },
         "communication": {
-          "description": "When to show it, in Unix seconds (the host converts the agency's\nlocal times; D-205). None means for as long as it is published.",
           "items": {
             "$ref": "#/$defs/AlertPeriod"
           },
@@ -268,28 +244,24 @@
           "default": "unknown"
         },
         "explains": {
-          "description": "The disruptions it tells riders about: a diversion or trip\ncancel, or a suspended stop. Nothing writes an alert from these\nautomatically.",
           "items": {
             "$ref": "#/$defs/AlertSource"
           },
           "type": "array"
         },
         "header": {
-          "description": "The header in each language. At least one text is not blank.",
           "items": {
             "$ref": "#/$defs/AlertText"
           },
           "type": "array"
         },
         "impact": {
-          "description": "When service is affected, in Unix seconds. Each impact period is\ninside a communication period (the GTFS-rt spec's rule).",
           "items": {
             "$ref": "#/$defs/AlertPeriod"
           },
           "type": "array"
         },
         "informed": {
-          "description": "What it is about: one entity for each affected entity, each\napplying on its own. The fields of one entity are joined by AND.\nAt least one.",
           "items": {
             "$ref": "#/$defs/AlertEntity"
           },
@@ -303,7 +275,6 @@
           "$ref": "#/$defs/AlertStatus"
         },
         "url": {
-          "description": "A link to more about it, in each language.",
           "items": {
             "$ref": "#/$defs/AlertText"
           },
@@ -323,7 +294,6 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "Every service alert, by its id. The id is the alert's GTFS-rt entity\nid.",
   "properties": {
     "alerts": {
       "additionalProperties": {
@@ -333,8 +303,7 @@
     },
     "kind": {
       "$ref": "#/$defs/ServiceAlertsKind",
-      "default": "service_alerts",
-      "description": "The kind tag and version (D-115). A copy without the version is\nversion 1, which cap-migrate brings forward ([`version`])."
+      "default": "service_alerts"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",

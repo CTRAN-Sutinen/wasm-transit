@@ -1,16 +1,9 @@
-//! The schema lock: what each document kind has promised
-//! (docs/FORMATS.md, "The schema lock"). For each kind and each version
-//! it froze, the owning crate keeps three files in `locks/`:
-//!
-//! - `<tag>.v<N>.schema.json`: the JSON Schema of that version.
-//! - `<tag>.v<N>.example.json`: a worked example, in its canonical
-//!   bytes (RFC 8785).
-//! - `<tag>.lock.json`: the index, with the hash of each file.
-//!
-//! `<tag>` is the kind's tag, the name a document carries inside it.
-//! [`check`] compares a build with its lock. [`freeze`] writes what a
-//! build adds (a new version, or an added optional field, D-167) and
-//! refuses every other change. gen-manifest runs both; the test is
+//! The owning crate keeps three files in `locks/` for each frozen version of
+//! a kind (docs/FORMATS.md, "The schema lock"): `<tag>.v<N>.schema.json`,
+//! `<tag>.v<N>.example.json` (canonical bytes, RFC 8785), and the index
+//! `<tag>.lock.json` with the hash of each file. [`freeze`] writes a new
+//! version or an added optional field (D-167) and refuses every other
+//! change. gen-manifest runs [`check`] and [`freeze`]. The test is
 //! `crates/generator/tests/schema_lock_test.rs`.
 
 #![allow(dead_code)]
@@ -21,32 +14,22 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-/// Read a document as the current type and write it again: its
-/// canonical bytes, and the names of the fields the type does not know.
+/// Returns the canonical bytes and the names of the fields that the type
+/// does not know.
 pub type Reparse = fn(&Value) -> Result<(String, Vec<String>), String>;
 
-/// Bring a document of an older version (the second argument) to the
-/// current one.
 pub type Migrate = fn(Value, u32) -> Result<Value, String>;
 
-/// One document kind as this build reads and writes it.
 pub struct Kind {
-    /// The tag a document of the kind carries inside it.
     pub tag: &'static str,
-    /// The version this build writes.
     pub current: u32,
-    /// The JSON Schema generated from the current serde type.
     pub schema: Value,
-    /// A worked example of the current version, computed through the
-    /// owning library. [`freeze`] freezes it.
     pub example: Option<Value>,
     pub reparse: Reparse,
-    /// The kind's migration chain. A kind with no older version needs
-    /// none.
+    /// A kind with no older version needs none.
     pub migrate: Option<Migrate>,
 }
 
-/// A kind whose current serde type is `T`.
 pub fn kind<T>(tag: &'static str, current: u32, example: Option<Value>, migrate: Option<Migrate>) -> Kind
 where
     T: schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
@@ -61,14 +44,10 @@ fn reparse<T: serde::Serialize + serde::de::DeserializeOwned>(doc: &Value) -> Re
     Ok((cap_abi::canonical_bytes(&read)?, unknown))
 }
 
-/// One frozen version of a kind.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Locked {
     pub schema: Value,
-    /// The example's canonical bytes.
     pub example: String,
-    /// The hashes the index records. A lock read from files compares
-    /// them with the files.
     pub schema_hash: String,
     pub example_hash: String,
 }
@@ -81,7 +60,6 @@ impl Locked {
     }
 }
 
-/// Every frozen version of one kind.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lock {
     pub tag: String,
@@ -94,32 +72,22 @@ impl Lock {
     }
 }
 
-/// One way a build differs from its lock.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Drift {
-    /// The build writes a version that is not frozen.
     Unlocked { tag: String, version: u32 },
     /// The generated schema differs from the frozen one. It is additive
     /// when the frozen example still reads, knows every field, and
     /// writes the same bytes.
     SchemaChanged { tag: String, version: u32, additive: bool },
-    /// The frozen example does not read as the current type.
     Unreadable { tag: String, version: u32, error: String },
-    /// The frozen example has fields the current type does not know: a
-    /// field was removed or renamed.
+    /// A field was removed or renamed.
     UnknownFields { tag: String, version: u32, names: Vec<String> },
     /// The frozen example writes other bytes, so every document of the
     /// kind changes its identity.
     HashMoved { tag: String, version: u32, was: String, now: String },
-    /// A lock file does not match the hash its index records, or the
-    /// example is not in canonical form.
     Edited { tag: String, version: u32, file: String },
-    /// An older version's frozen example does not migrate to the
-    /// current version.
     MigrationBroken { tag: String, from: u32, error: String },
-    /// A version newer than the build is frozen.
     LockAhead { tag: String, version: u32, current: u32 },
-    /// The build has no worked example to freeze.
     NoExample { tag: String, version: u32 },
     /// A field's declared target changed, or its declaration is gone
     /// (D-232). A changed target changes what the field means, even when
@@ -179,7 +147,6 @@ impl fmt::Display for Drift {
     }
 }
 
-/// Every way `kind` differs from `lock`. An empty list is a pass.
 pub fn check(kind: &Kind, lock: &Lock) -> Vec<Drift> {
     let tag = kind.tag.to_string();
     let mut drifts = Vec::new();
@@ -219,8 +186,6 @@ pub fn check(kind: &Kind, lock: &Lock) -> Vec<Drift> {
     drifts
 }
 
-/// Each reference the locked schema declares that the build's schema
-/// declares with another target, or not at all.
 fn references_changed(tag: &str, version: u32, locked: &Value, build: &Value) -> Vec<Drift> {
     let now = transit_version::references(build);
     transit_version::references(locked)
@@ -238,9 +203,8 @@ fn references_changed(tag: &str, version: u32, locked: &Value, build: &Value) ->
         .collect()
 }
 
-/// The lock that records `kind`: `lock` with the current version frozen
-/// when it is new, and its schema replaced when the change is additive.
-/// Any other drift is refused, and the lock is unchanged.
+/// Freezes the current version when it is new, and replaces its schema when
+/// the change is additive. Any other drift is refused.
 pub fn freeze(kind: &Kind, lock: &Lock) -> Result<Lock, Vec<Drift>> {
     let drifts = check(kind, lock);
     let refused: Vec<Drift> = drifts
@@ -271,8 +235,6 @@ pub fn freeze(kind: &Kind, lock: &Lock) -> Result<Lock, Vec<Drift>> {
     }
 }
 
-/// Bring an older version's frozen example to the current version, and
-/// read it there.
 fn migrates(kind: &Kind, from: u32, locked: &Locked) -> Result<(), String> {
     let migrate = kind.migrate.ok_or_else(|| format!("the kind has no migration from v{from}"))?;
     let doc = serde_json::from_str::<Value>(&locked.example).map_err(|e| e.to_string())?;
@@ -284,8 +246,6 @@ fn migrates(kind: &Kind, from: u32, locked: &Locked) -> Result<(), String> {
     }
 }
 
-/// The lock files that do not match their index, or an example that is
-/// not in canonical form.
 fn edited(tag: &str, version: u32, locked: &Locked) -> Vec<Drift> {
     let mut out = Vec::new();
     if cap_abi::content_hash(schema_text(&locked.schema).as_bytes()) != locked.schema_hash {
@@ -301,7 +261,6 @@ fn edited(tag: &str, version: u32, locked: &Locked) -> Vec<Drift> {
     out
 }
 
-/// A schema file's text: pretty JSON with a final newline.
 fn schema_text(schema: &Value) -> String {
     serde_json::to_string_pretty(schema).expect("a schema serializes") + "\n"
 }
@@ -318,8 +277,6 @@ fn index_file(tag: &str) -> String {
     format!("{tag}.lock.json")
 }
 
-/// Read a kind's lock from a `locks/` directory. A kind with no index
-/// has an empty lock.
 pub fn read_lock(dir: &Path, tag: &str) -> Result<Lock, String> {
     let mut lock = Lock::empty(tag);
     let index = match std::fs::read_to_string(dir.join(index_file(tag))) {
@@ -342,8 +299,7 @@ pub fn read_lock(dir: &Path, tag: &str) -> Result<Lock, String> {
     Ok(lock)
 }
 
-/// Write a kind's lock into a `locks/` directory: every version's files,
-/// then the index.
+/// Writes the index last.
 pub fn write_lock(dir: &Path, lock: &Lock) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let write = |file: String, text: &str| std::fs::write(dir.join(&file), text).map_err(|e| format!("{file}: {e}"));

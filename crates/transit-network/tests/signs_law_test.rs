@@ -1,7 +1,5 @@
-//! Where a bus is going, as its sign says it: the visit's own
-//! headsign (GTFS stop_headsign overrides the trip's at that visit
-//! only), else the trip's headsign, else the final stop: named as
-//! the place (its parent station), never the bay it pulls into.
+//! A sign shows the visit's `stop_headsign`, else the trip's headsign, else the
+//! final stop's parent station (GTFS `stop_times.txt`).
 
 use transit_network::{materialize, visit_destination, Network, Stop};
 
@@ -50,8 +48,7 @@ fn a_visit_headsign_overrides_the_trip_at_that_visit_only() {
 
 #[test]
 fn a_loop_reads_the_headsign_of_the_visit_it_is_on() {
-    // A → B → A: the first A says where the loop goes, the second
-    // (the terminal) says nothing of its own.
+    // A loop: only the first A names where the trip goes.
     let mut net = network();
     let pattern = net.patterns.get_mut("10-inbound").unwrap();
     pattern.stops[2].stop = "A".into();

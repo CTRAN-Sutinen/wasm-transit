@@ -1,31 +1,13 @@
-//! The registry: the one type every module keeps its documents in.
+//! A document registry holds documents by content hash. A derived registry
+//! caches values that a module computed from documents. It accepts any key
+//! and remembers the hashes that the value came from.
 //!
-//! A module is the hash authority for what it holds, so only the module
-//! can drop a document; the host owns the documents, so the module never
-//! decides alone what a session still needs. The registry joins the two:
+//! The host owns the documents and decides which ones a session needs. A
+//! host that asks for an evicted document gets the unknown-hash error
+//! ([`Registry::require`]) and registers the document again.
 //!
-//! * a **document registry** holds documents by their content hash. Its
-//!   kind's default says how it is bounded on its own: a durable kind
-//!   (networks, feeds, edits, layers, walk tables) keeps everything until
-//!   the host says otherwise ([`Retain::Host`]); an ephemeral kind (rt
-//!   snapshots, live documents; each is re-minted every poll) keeps its last N
-//!   ([`Retain::Last`]), so a poll loop plateaus with no host steering.
-//! * a **derived registry** caches what a module computed from documents
-//!   (the router's RAPTOR graph per day), keyed by anything, and
-//!   remembers the hashes it was computed from.
-//!
-//! The kernel ops ([`OP_EVICT`], [`OP_HELD`]) are answered by
-//! [`kernel`] over a module's declared registries. The `capability!`
-//! macro wires it, so a module never re-implements eviction. An evicted
-//! document asked for again gets the unknown-hash error
-//! ([`Registry::require`]), never a wrong answer: the host registers it
-//! again.
-//!
-//! Registries are `const`-constructed statics (no lazy init), and only
-//! the kernel constructs them ([`crate::kernel`]): one registry per
-//! document kind and one derived registry per instance, so every
-//! capability in an assembly reads the same `Arc` and none can declare
-//! shared state of its own.
+//! Only the kernel constructs registries ([`crate::kernel`]), so no
+//! capability can declare shared state of its own.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -33,31 +15,29 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// Kernel bulk op: drop everything not named. The bytes are
-/// `{"keep": ["sha256:…", …]}`; a document survives when its hash is
-/// kept, a derived entry when every hash it was computed from is. The
-/// answer is [`Evicted`].
+/// The bytes are `{"keep": ["sha256:…", …]}`. A document survives when its
+/// hash is in the keep list. A derived entry survives when every hash that
+/// it came from is in the keep list. The answer is [`Evicted`].
 pub const OP_EVICT: u32 = 257;
 
-/// Kernel bulk op: what the module holds, per registry (the bytes are
-/// ignored). The answer is [`Holding`].
+/// The bytes are ignored. The answer is [`Holding`].
 pub const OP_HELD: u32 = 258;
 
-/// How a registry bounds itself with no host steering.
+/// How a registry bounds itself when the host gives no keep list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Retain {
-    /// Durable: everything stays until the host's keep-set drops it.
+    /// Every entry stays until the host's keep list drops it. Durable kinds
+    /// use this.
     Host,
-    /// Ephemeral: the most recent N registrations stay; registering
-    /// one more drops the oldest.
+    /// The last N registrations stay, so a poll loop plateaus with no action
+    /// from the host. Kinds that every poll makes again use this.
     Last(usize),
 }
 
 struct Entry<T: ?Sized> {
-    /// Registration order: the age `Retain::Last` drops by.
+    /// The registration order, which `Retain::Last` uses as the age.
     seq: u64,
-    /// The document hashes a derived entry was computed from (empty
-    /// for a document: its key is its hash).
+    /// Empty for a document.
     inputs: Vec<String>,
     value: Arc<T>,
 }
@@ -67,10 +47,7 @@ struct Entries<T: ?Sized> {
     map: BTreeMap<String, Entry<T>>,
 }
 
-/// One kind's registry: values by key, bounded by its [`Retain`].
-///
-/// Only the kernel constructs one. A capability that declares a
-/// registry of its own does not compile (the gate, D-77):
+/// A capability that declares a registry of its own does not compile (D-77):
 ///
 /// ```compile_fail
 /// use cap_abi::registry::{Registry, Retain};
@@ -83,60 +60,46 @@ struct Entries<T: ?Sized> {
 /// ```
 pub struct Registry<T: ?Sized> {
     kind: &'static str,
-    /// The op that registers this kind ("load_network"). The unknown-hash
-    /// error names it. Empty for a derived registry.
+    /// Empty for a derived registry.
     load_op: &'static str,
     derived: bool,
     retain: Retain,
     entries: Mutex<Entries<T>>,
-    /// The documents read one version ahead (D-186), by hash, with the
-    /// version each was in and how it was read.
     ahead: Mutex<BTreeMap<String, (u32, transit_version::Ahead)>>,
 }
 
 impl<T: ?Sized> Registry<T> {
-    /// A document registry: values by their content hash. Private to
-    /// the kernel.
     pub(crate) const fn documents(kind: &'static str, load_op: &'static str, retain: Retain) -> Self {
         Registry { kind, load_op, derived: false, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
     }
 
-    /// A derived registry: values computed from documents, by any key.
     pub(crate) const fn derived(kind: &'static str, retain: Retain) -> Self {
         Registry { kind, load_op: "", derived: true, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Entries<T>> {
-        // A panic mid-op poisons nothing worth refusing: entries are
-        // whole values, inserted atomically.
+        // A panic in the middle of an op leaves nothing that the registry
+        // must refuse, because it inserts entries as whole values.
         self.entries.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// The document under `hash` was read one version ahead, from
-    /// version `found` (D-186).
     pub(crate) fn mark_ahead(&self, hash: &str, found: u32, how: transit_version::Ahead) {
         self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(hash.to_string(), (found, how));
     }
 
-    /// The version a document read one version ahead was in, and how.
     pub(crate) fn ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
         self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(hash).copied()
     }
 
-    /// The value under `key`, if held.
     pub fn get(&self, key: &str) -> Option<Arc<T>> {
         self.lock().map.get(key).map(|entry| entry.value.clone())
     }
 
-    /// The document under `hash`, or the unknown-hash error every module
-    /// speaks: `unknown <kind> <hash>: <load op> first`. Hosts recover
-    /// by registering it again.
     pub fn require(&self, hash: &str) -> Result<Arc<T>, String> {
         self.get(hash).ok_or_else(|| format!("unknown {} {hash}: {} first", self.kind, self.load_op))
     }
 
-    /// Register a document under its hash. It is idempotent: a document held
-    /// already keeps its first copy (and its age).
+    /// A document that is already held keeps its first copy and its age.
     pub fn insert(&self, hash: String, value: T) -> Arc<T>
     where
         T: Sized,
@@ -144,13 +107,12 @@ impl<T: ?Sized> Registry<T> {
         self.insert_arc(hash, Vec::new(), Arc::new(value))
     }
 
-    /// Cache a derived value under `key`, computed from `inputs`.
     pub fn insert_derived(&self, key: String, inputs: Vec<String>, value: Arc<T>) -> Arc<T> {
         self.insert_arc(key, inputs, value)
     }
 
-    /// Drop the oldest entries `within` approves until at most `n` of
-    /// them stay: a per-derivation bound inside one derived registry.
+    /// Bounds one derivation inside the derived registry. It drops the
+    /// oldest entries that `within` approves, until at most `n` stay.
     pub(crate) fn bound(&self, n: usize, within: impl Fn(&str) -> bool) {
         let mut entries = self.lock();
         loop {
@@ -184,14 +146,10 @@ impl<T: ?Sized> Registry<T> {
         value
     }
 
-    /// Keep only the entries `keep(key, inputs)` approves: a module's
-    /// own rule over its derived cache (the router keeps only the
-    /// newest live document's graphs).
     pub fn retain(&self, keep: impl Fn(&str, &[String]) -> bool) {
         self.lock().map.retain(|key, entry| keep(key, &entry.inputs));
     }
 
-    /// How many values are held.
     pub fn len(&self) -> usize {
         self.lock().map.len()
     }
@@ -201,13 +159,10 @@ impl<T: ?Sized> Registry<T> {
     }
 }
 
-/// A registry seen through the kernel ops, whatever it holds.
 pub trait Held: Sync {
     fn kind(&self) -> &'static str;
-    /// The keys held, oldest first.
+    /// Oldest first.
     fn keys(&self) -> Vec<String>;
-    /// Drop every entry the keep-set does not cover; answer the keys
-    /// dropped.
     fn evict(&self, keep: &BTreeSet<String>) -> Vec<String>;
 }
 
@@ -245,7 +200,7 @@ impl<T: ?Sized + Send + Sync> Held for Registry<T> {
     }
 }
 
-/// One held entry: its registry's kind and its key (a document's hash).
+/// The key of a document is its hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct HeldEntry {
@@ -253,14 +208,12 @@ pub struct HeldEntry {
     pub key: String,
 }
 
-/// [`OP_EVICT`]'s request.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct Keep {
     pub keep: Vec<String>,
 }
 
-/// [`OP_EVICT`]'s answer: what was dropped, and what is held after.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct Evicted {
@@ -268,8 +221,7 @@ pub struct Evicted {
     pub held: Vec<HeldEntry>,
 }
 
-/// [`OP_HELD`]'s answer: every entry held, per registry in declaration
-/// order, oldest first.
+/// Entries are by registry in declaration order, oldest first.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct Holding {
@@ -283,9 +235,7 @@ fn holding(registries: &[&dyn Held]) -> Vec<HeldEntry> {
         .collect()
 }
 
-/// The kernel ops over a module's registries: `Some(outcome)` for a
-/// kernel op this answers, `None` for every other op (the module's
-/// own dispatch answers it).
+/// Return `None` for every other op, which the module's dispatch answers.
 pub fn kernel(op: u32, bytes: &[u8], registries: &[&dyn Held]) -> Option<String> {
     match op {
         OP_EVICT => Some(crate::outcome(
@@ -329,7 +279,6 @@ mod tests {
         let docs: Registry<u32> = Registry::documents("live document", "load_live", Retain::Last(2));
         docs.insert("x".into(), 1);
         docs.insert("y".into(), 2);
-        // Re-registering x neither replaces it nor makes it younger.
         assert_eq!(*docs.insert("x".into(), 9), 1);
         docs.insert("z".into(), 3);
         assert!(docs.get("x").is_none(), "x was the oldest");
@@ -366,8 +315,8 @@ mod tests {
     }
 
     proptest! {
-        /// Keep-last-N plateaus: however many registrations a poll loop
-        /// makes, at most N are held, and they are the N most recent.
+        /// However many registrations a poll loop makes, the registry holds
+        /// at most N, and they are the N most recent.
         #[test]
         fn keep_last_n_plateaus(n in 1usize..6, hashes in proptest::collection::vec(0u8..40, 0..200)) {
             let docs: Registry<u8> = Registry::documents("rt snapshot", "decode", Retain::Last(n));
@@ -378,7 +327,6 @@ mod tests {
                 if !recent.contains(&key) {
                     recent.push(key);
                 }
-                // The model: first registrations in order, the oldest dropped.
                 while recent.len() > n {
                     recent.remove(0);
                 }
@@ -387,8 +335,7 @@ mod tests {
             }
         }
 
-        /// A keep-set entry never drops: eviction removes exactly the
-        /// documents outside it.
+        /// Eviction removes the documents outside the keep list and no others.
         #[test]
         fn a_kept_document_never_drops(
             held in proptest::collection::btree_set(0u8..30, 0..20),

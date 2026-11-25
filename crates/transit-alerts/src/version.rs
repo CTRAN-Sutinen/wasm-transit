@@ -1,45 +1,27 @@
-//! The documents' versions and the service alerts document's migration
-//! chain.
-//!
-//! The chain is kept forever (D-66): one pure step for each version.
-//! Every record is kept, and every loss is reported as a
-//! [`MigrationNote`]. The migration capability wraps it, and a consumer
-//! reads the current version only.
-//!
-//! - service alerts v1 → v2: `explains` gains a trip instance (D-216).
-//!   Every v1 document is a v2 document, so the step changes only the
-//!   version.
-//!
-//! The alerts log keeps each record in the version it was written in.
-//! [`record_forward`] brings one stored record to the version this build
-//! reads.
+//! The chain is kept forever (D-66). Service alerts v1 to v2 added a trip
+//! instance to `explains` (D-216). The alerts log keeps each record in the
+//! version it was written in, and [`record_forward`] brings one to the
+//! current version.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-/// The kind the service alerts document names itself.
 pub const KIND: &str = "service_alerts";
 
-/// The service alerts document version this build reads and writes.
 pub const ALERTS_VERSION: u32 = 2;
 
-/// The alert templates document version this build reads and writes.
 pub const TEMPLATES_VERSION: u32 = 1;
 
-/// One loss a migration step applied: reported, never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "transit_alerts/")]
 pub struct MigrationNote {
-    /// The version the step started from.
     pub from: u32,
     pub kind: String,
     pub field: String,
     pub count: u32,
 }
 
-/// The version a service alerts document is in: its `schema_version`,
-/// or 1 when it names none.
 pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     let root = doc.as_object().ok_or("a service alerts document is a JSON object")?;
     if let Some(kind) = root.get("kind") {
@@ -53,8 +35,6 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     }
 }
 
-/// One step: a document in version `from` to `from + 1`, and what it
-/// lost.
 pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let found = schema_version_of(&doc)?;
     if found != from {
@@ -70,8 +50,6 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>)
     }
 }
 
-/// A document brought to version `to` through every step between.
-/// Refuses a document already at or past `to`.
 pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let from = schema_version_of(&doc)?;
     if to > ALERTS_VERSION {
@@ -90,15 +68,11 @@ pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), St
     Ok((doc, notes))
 }
 
-/// One record of the alerts log, of `kind` (`service_alert`, or the
-/// document's own record `service_alerts`), stored in `version`,
-/// brought to [`ALERTS_VERSION`]. A record already there is unchanged.
 pub fn record_forward(kind: &str, value: Value, version: u32) -> Result<Value, String> {
     if version > ALERTS_VERSION {
         return Err(format!("a {kind} record in v{version} is newer than this build (it reads up to v{ALERTS_VERSION})"));
     }
     match kind {
-        // Every v1 alert is a v2 alert.
         "service_alert" => Ok(value),
         KIND if version < ALERTS_VERSION => migrate_to(value, ALERTS_VERSION).map(|(doc, _)| doc),
         KIND => Ok(value),

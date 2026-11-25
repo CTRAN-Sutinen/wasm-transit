@@ -1,21 +1,5 @@
-//! GTFS out and in with the stops' history (D-150, D-151, D-157). These are
-//! the laws, from the user's intent, before the implementation:
-//!
-//! * EXPORT: a stop whose record (point, name, code, details) changes
-//!   inside the export's dates is one stop per version. The version in
-//!   force on the last date keeps the stop's id. Each earlier one is
-//!   `<id>@<its first date>`. Every one has the stop's code. Each pattern
-//!   visiting it splits at those dates, and its trips run under calendars
-//!   cut to each version's dates. On every date the export runs exactly
-//!   the trips the pick runs that day, at the stops' records of that day.
-//!   A suspension or retirement splits nothing. With no record changing,
-//!   the export is the pick read on its first date;
-//! * IMPORT: the feed's stops compared with the stops document on the
-//!   feed's first date, each difference an event dated that day
-//!   (`in_service` for a stop the document lacks or has not yet in
-//!   service, `moved`, `changed`); a stop the feed does not list keeps
-//!   its events, later events stand, a made id reads back as a version of
-//!   its stop, so a re-import of this repo's own export adds no event.
+//! GTFS export and import with the stops' history (D-150, D-151, D-157). The
+//! ops are in cap-stops' OPS.md (`export_versions`, `import_events`).
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -59,7 +43,7 @@ fn arb_change() -> impl Strategy<Value = Change> {
     ]
 }
 
-/// The fixture's stops seeded, some given up to two changes.
+/// The fixture's stops seeded, some given up to three changes.
 fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
     let ids: Vec<String> = net.stops.keys().cloned().collect();
     let base = seed(net);
@@ -85,8 +69,7 @@ fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
     })
 }
 
-/// An exported id back to its stop's, pattern's, or trip's own: the
-/// `@<date>` a version or a split adds, taken off.
+/// Takes off the `@<date>` that a version or a split adds.
 fn base(id: &str) -> String {
     match id.rsplit_once('@') {
         Some((head, tail)) if NaiveDate::parse_from_str(tail, "%Y-%m-%d").is_ok() => head.to_string(),
@@ -94,8 +77,6 @@ fn base(id: &str) -> String {
     }
 }
 
-/// A day's trips as comparable rows: trip, start, and each visit's stop
-/// (its own id, and the record it is exported under) and times.
 type Row = (String, String, u32, Vec<(String, (f64, f64, String), u32, u32)>);
 
 fn rows(net: &Network, d: NaiveDate) -> Vec<Row> {
@@ -121,8 +102,8 @@ fn rows(net: &Network, d: NaiveDate) -> Vec<Row> {
 proptest! {
     #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
-    /// On every date the export runs the trips the pick runs, each visit
-    /// at its stop's record of that day (of the first date, before it).
+    /// On every date the export runs the trips the pick runs, each visit at
+    /// its stop's record of that day.
     #[test]
     fn every_date_of_the_export_is_the_pick_on_that_date(stops in arb_stops(&fixture()), from in 0u32..40, len in proptest::option::of(5u32..60), d in 0u32..110) {
         let net = fixture();
@@ -133,9 +114,8 @@ proptest! {
         prop_assert_eq!(rows(&exported, day(d)), rows(&read_records(&net, &stops, on), day(d)), "on {}", date(d));
     }
 
-    /// Each stop is one stop per version: its own id last, the others
-    /// made from it and their first date, all with the stop's code; a
-    /// stop whose record does not change in the window is one stop.
+    /// Each stop is one row per version, all with the stop's code. A stop
+    /// whose record does not change in the window is one row.
     #[test]
     fn a_stop_is_one_row_per_version_sharing_its_code(stops in arb_stops(&fixture()), from in 0u32..40, len in proptest::option::of(5u32..60)) {
         let net = fixture();
@@ -155,11 +135,8 @@ proptest! {
         }
     }
 
-    /// A re-import of this repo's own export adds no event, and names as
-    /// unlisted only the stops the export does not carry. It names as
-    /// unapplied exactly the stops the export lists that are retired on its
-    /// first date: a pick that still visits one is the planner's warning,
-    /// and the feed lists the retired id.
+    /// A re-import of the export adds no event. It names as unapplied
+    /// exactly the exported stops that are retired on the first date.
     #[test]
     fn a_reimport_of_the_export_adds_no_event(stops in arb_stops(&fixture()), from in 0u32..40, len in proptest::option::of(5u32..60)) {
         let net = fixture();
@@ -178,9 +155,8 @@ proptest! {
         prop_assert_eq!(&imported.stops, &stops);
     }
 
-    /// A feed's difference is an event dated its first date: the stop then
-    /// reads as the feed has it; every event already recorded stays, and the
-    /// document still passes what a write must pass.
+    /// A feed's difference is an event dated its first date. Every event
+    /// already recorded stays, and the document still passes `checked`.
     #[test]
     fn a_feed_difference_is_an_event_on_its_first_date(stops in arb_stops(&fixture()), on in 0u32..80, moved in 1i32..300, renamed in any::<bool>()) {
         let mut feed = read_records(&fixture(), &stops, day(on));
@@ -211,7 +187,6 @@ proptest! {
 #[test]
 fn a_move_inside_the_window_is_two_rows_and_a_calendar_split() {
     let net = fixture();
-    // B moves on 2026-10-01, inside an export from 2026-09-01 to 2026-12-01
     let mut stops = seed(&net);
     let b = stops.stops["B"][0].clone();
     stops = stops.add_event("B", Event { lat: Some(b.lat.unwrap() + 0.001), lon: b.lon, ..ev(EventKind::Moved, 30) });
@@ -224,7 +199,6 @@ fn a_move_inside_the_window_is_two_rows_and_a_calendar_split() {
     };
     assert!(!visits(29).is_empty() && visits(29).iter().all(|s| s == "B@2026-09-01"));
     assert!(!visits(30).is_empty() && visits(30).iter().all(|s| s == "B"));
-    // the made id reads back as a version of B
     let imported = import_events(&stops, &exported, day(0));
     assert!(imported.added.is_empty() && imported.unlisted.is_empty());
 }
@@ -250,11 +224,7 @@ fn an_import_records_a_new_stop_and_names_the_ones_it_does_not_list() {
     assert_eq!(imported.stops.stops["Z"], stops.stops["Z"]);
 }
 
-/// A feed lists the stops in service: a stop the document has in service
-/// or suspended on the feed's first date and the feed does not list is
-/// one a person looks at (the stops page's notice); a stop planned,
-/// permitted, built, retired, or not there yet that day is expected to be
-/// missing from a feed, and is not named.
+/// Only a stop in service or suspended on the feed's first date is named.
 #[test]
 fn unlisted_names_only_the_stops_a_feed_should_list() {
     let net = fixture();
@@ -270,10 +240,7 @@ fn unlisted_names_only_the_stops_a_feed_should_list() {
     assert_eq!(imported.unlisted, vec!["S".to_string(), "Z".to_string()]);
 }
 
-/// An import names the feed it came from on every event it records
-/// (D-150: the planner sees what the feed did), and is otherwise the
-/// same import; the events a feed recorded are found again by its id,
-/// and only those.
+/// `import_feed` equals `import_events` apart from `from_feed` (D-150).
 #[test]
 fn an_import_names_its_feed_on_every_event_it_records() {
     let net = fixture();
@@ -294,10 +261,8 @@ fn an_import_names_its_feed_on_every_event_it_records() {
     assert!(feed_events(&stops, "sha256:feed").is_empty());
 }
 
-/// Ids across networks: a stop's life ends at `retired`, and the document
-/// refuses any event after it. A feed that lists a retired stop's id
-/// reuses the id, whether or not its point and details match: the stop
-/// is named in `unapplied` for a person, and nothing is added for it.
+/// A feed that lists a retired stop's id is named in `unapplied`, whether or
+/// not its point matches, and nothing is added.
 #[test]
 fn a_feed_that_lists_a_retired_stop_names_it_unapplied() {
     let net = fixture();

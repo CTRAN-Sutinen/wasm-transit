@@ -1,30 +1,11 @@
-//! Assembly validation: the compose-time tier of the proof stack.
-//!
-//! The registry's rigor is layered, and each layer is cheap where it
-//! runs:
-//!
-//! * **Build time** (expensive, once, published as evidence): the
-//!   property laws with independent oracles, the module dispatch
-//!   tests, the mutation runs. An agent never re-runs these. It
-//!   reads their attestations.
-//! * **Compose time** (this module: light, cheap, total): the
-//!   assembly an agent writes is checked the way a compiler
-//!   type-checks, not sampled like a test suite. Every check is
-//!   decidable over the manifest alone, holds for all future requests,
-//!   and finishes in microseconds.
-//! * **Run time** (the seam): fetched bytes verified against pinned
-//!   hashes, documents rejected at load when out-of-version, every op
-//!   total (errors, never panics: the panic-fuzz law).
-//!
-//! What "total" buys: a validated assembly cannot later find a document
-//! that a loaded capability can neither speak nor migrate. Version
-//! coherence is proven for every kind, not shown on sample documents.
+//! Each check reads only the manifest and holds for every future request,
+//! as a type check does. A validated assembly cannot later get a document
+//! that a loaded capability can neither speak nor migrate.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::manifest::{CapManifest, Capability};
 
-/// One thing wrong with an assembly: capability id, check name, detail.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct AssemblyIssue {
     pub capability: String,
@@ -32,14 +13,9 @@ pub struct AssemblyIssue {
     pub detail: String,
 }
 
-/// The kernel the assembling host speaks; a manifest built for a
-/// different kernel is rejected at the seam, not mid-flight.
+/// The validator rejects a manifest that was built for a different kernel.
 pub const HOST_KERNEL: u32 = 1;
 
-/// Validate an assembly: decidable checks, total over the manifest.
-/// Ok(()) means the assembly is provably coherent: dependency
-/// closure, document-kind coherence between producers and consumers,
-/// and migration-path mutual reachability for every document kind.
 pub fn validate_assembly(manifest: &CapManifest) -> Result<(), Vec<AssemblyIssue>> {
     validate_with_kernel(manifest, HOST_KERNEL)
 }
@@ -63,7 +39,6 @@ pub fn validate_with_kernel(
         .map(|c| (c.id.as_str(), c))
         .collect();
 
-    // Unique ids, hash pinning, and per-capability shape.
     let mut seen = BTreeSet::new();
     for cap in &manifest.capabilities {
         if !seen.insert(cap.id.as_str()) {
@@ -82,8 +57,8 @@ pub fn validate_with_kernel(
                 detail: format!("hash {:?} is not sha256:<64 hex>", cap.hash),
             });
         }
-        // The served bytes are pinned BY NAME: the url must carry the
-        // hash, or a swap at the url would defeat the pin.
+        // The url must carry the hash. Otherwise a swap at the url would
+        // defeat the pin.
         if !cap.url.contains(hex) {
             issues.push(AssemblyIssue {
                 capability: cap.id.clone(),
@@ -130,9 +105,6 @@ pub fn validate_with_kernel(
         }
     }
 
-    // Dependency closure + producer coherence: every consumed
-    // document kind is produced by a capability present in the
-    // assembly, and producers actually speak what they produce.
     for cap in &manifest.capabilities {
         for (kind, producer_id) in &cap.consumes {
             let Some(producer) = by_id.get(producer_id.as_str()) else {
@@ -153,10 +125,6 @@ pub fn validate_with_kernel(
         }
     }
 
-    // The linked assemblies (D-77): each links capabilities the
-    // manifest carries, once each, under pinned bytes, and is closed:
-    // every document kind a linked capability consumes is produced by a
-    // capability linked beside it.
     let mut uis = BTreeSet::new();
     for asm in &manifest.assemblies {
         let name = format!("(assembly {})", asm.ui);
@@ -199,12 +167,9 @@ pub fn validate_with_kernel(
         }
     }
 
-    // Version coherence, per document kind: every version any
-    // capability speaks must be readable by every consumer of the
-    // kind: spoken directly, or reachable through the migration
-    // paths the assembly carries (any capability may provide the
-    // bridge; the host routes the op). So a document can never be
-    // unreadable-by-and-unmigratable-for a loaded consumer.
+    // Every consumer of a kind must read every version that any capability
+    // speaks, directly or through migration paths. Any capability may
+    // provide the bridge, and the host routes the op.
     let kinds: BTreeSet<&str> = manifest
         .capabilities
         .iter()
@@ -221,8 +186,7 @@ pub fn validate_with_kernel(
                 }
             }
         }
-        // Transitive reachability (tiny graphs; versions per kind
-        // are single digits).
+        // A kind has single-digit versions, so the graphs are tiny.
         let reach = |from: u32| -> BTreeSet<u32> {
             let mut seen = BTreeSet::from([from]);
             let mut frontier = vec![from];
@@ -239,7 +203,7 @@ pub fn validate_with_kernel(
         };
         for cap in &manifest.capabilities {
             if !cap.consumes.contains_key(kind) {
-                continue; // readers of their own documents need no bridge
+                continue; // A reader of its own documents needs no bridge.
             }
             let Some(accepted) = cap.speaks.get(kind) else {
                 issues.push(AssemblyIssue {
@@ -249,8 +213,6 @@ pub fn validate_with_kernel(
                 });
                 continue;
             };
-            // Every version of the kind that exists in the assembly
-            // (spoken by anyone) must be readable by this consumer.
             for other in &manifest.capabilities {
                 let Some(existing) = other.speaks.get(kind) else { continue };
                 for &version in existing {

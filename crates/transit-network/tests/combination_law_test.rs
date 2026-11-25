@@ -1,30 +1,13 @@
-//! The service combination laws (D-55): a planner's service group is
-//! the set of service types that run together on the same dates, shown
-//! with the dates on which it holds. Members that never share a day
-//! are never pooled, and no date stands in for a combination: every
-//! date it holds on runs exactly its members.
+//! Service combinations (D-55, D-94, D-140): the service types that run
+//! together on the same dates. The oracle walks every date and calls `runs_on`
+//! for each type.
 //!
-//! The oracle walks every date independently (`runs_on` per type, per
-//! date) and checks the answer against it:
-//!
-//! * **Partition**: every date on which a type with trips runs
-//!   belongs to exactly one combination, whose members are exactly the
-//!   types with trips that run that date; a date nothing runs on
-//!   belongs to none.
-//! * **Never pooled apart**: two members of a combination share every
-//!   one of its dates (so types that never share a day never meet).
-//! * **Trip-less types**: a type that carries no trips runs no
-//!   service and is never a member (D-94).
-//! * **Identity**: members sorted, the id their " + " join, dates
-//!   sorted and distinct; `service_combination` finds a combination by
-//!   its member set in any order and answers None for a set that holds
-//!   on no date.
-//! * **Spans** (D-94): the dates, folded into spans. A new span starts
-//!   where the next date it holds is more than seven days after the
-//!   last; the spans' days sum to the dates.
-//! * **First service date** (D-140): `first_service_date` is the
-//!   earliest date some type with trips runs, None when nothing runs:
-//!   the date an imported feed picks on.
+//! 1. Every date on which a type with trips runs belongs to exactly one
+//!    combination, whose members are those types.
+//! 2. A type with no trips is never a member (D-94).
+//! 3. Members are sorted, and the id joins them with " + ".
+//! 4. Spans break where the next date is more than seven days after the last.
+//! 5. `first_service_date` is the earliest date that a type with trips runs.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -61,8 +44,7 @@ fn gen_type() -> impl Strategy<Value = GenType> {
         .prop_map(|(days, start, len, exceptions, trips)| GenType { days, start, len, exceptions, trips })
 }
 
-/// The base network with its one type replaced by the generated ones:
-/// each type with trips runs a copy of the base's schedule.
+/// Each generated type with trips runs a copy of the base's schedule.
 fn network(types: &[GenType]) -> Network {
     let mut net = base();
     let template = net.pattern_trips.values().next().unwrap().clone();
@@ -131,7 +113,6 @@ proptest! {
         let net = network(&types);
         let combos = service_combinations(&net);
 
-        // Oracle: per date, the types with trips that run on it.
         let with_trips: BTreeSet<String> = net.pattern_trips.values()
             .filter(|pt| !pt.trips.is_empty())
             .map(|pt| pt.service_type.clone())
@@ -148,8 +129,6 @@ proptest! {
             }
         }
 
-        // Partition: every running date in exactly one combination,
-        // with exactly that date's members.
         let mut placed: BTreeMap<String, usize> = BTreeMap::new();
         for (i, c) in combos.iter().enumerate() {
             prop_assert!(!c.members.is_empty(), "a combination has members");
@@ -160,16 +139,13 @@ proptest! {
                 prop_assert_eq!(running.get(&date), Some(&members), "{} runs exactly {:?}", d, c.members);
                 prop_assert!(placed.insert(d.clone(), i).is_none(), "{} is in one combination", d);
             }
-            // Trip-less types are never members.
             prop_assert!(c.members.iter().all(|m| with_trips.contains(m)), "{:?} carry trips", c.members);
-            // Identity.
             let mut sorted = c.members.clone();
             sorted.sort();
             sorted.dedup();
             prop_assert_eq!(&sorted, &c.members, "members sorted and distinct");
             prop_assert_eq!(&c.id, &c.members.join(" + "));
             prop_assert!(c.dates.windows(2).all(|w| w[0] < w[1]), "dates sorted and distinct");
-            // Spans: cover the dates, broken where the next is > 7 days on.
             let dates: Vec<NaiveDate> = c.dates.iter().map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap()).collect();
             let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
             for &d in &dates {
@@ -184,18 +160,15 @@ proptest! {
                 prop_assert_eq!(&got.end, &want.1.format("%Y-%m-%d").to_string());
                 prop_assert_eq!(got.days, want.2);
             }
-            // Lookup by member set, in any order.
             let mut reversed = c.members.clone();
             reversed.reverse();
             prop_assert_eq!(service_combination(&net, &reversed).map(|f| f.id), Some(c.id.clone()));
         }
         prop_assert_eq!(placed.len(), running.len(), "every running date is placed");
 
-        // Distinct member sets: one row per combination.
         let ids: BTreeSet<&String> = combos.iter().map(|c| &c.id).collect();
         prop_assert_eq!(ids.len(), combos.len());
 
-        // A set that never runs together answers None.
         for a in net.service_types.keys() {
             for b in net.service_types.keys() {
                 if a >= b { continue; }
@@ -210,10 +183,8 @@ proptest! {
         prop_assert!(service_combination(&net, &["ghost".to_string()]).is_none());
     }
 
-    /// The date is an address, never an input: every date a combination
-    /// holds on materializes the same day, so whatever reads a day:
-    /// the fleet as blocked, the suggested blocks: answers by the
-    /// service keys running, never by which of their dates was asked.
+    /// A date is an address, not an input: every date of a combination
+    /// materializes the same day.
     #[test]
     fn every_date_of_a_combination_materializes_the_same_day(types in proptest::collection::vec(gen_type(), 0..=5)) {
         let net = network(&types);
@@ -227,11 +198,9 @@ proptest! {
     }
 }
 
-/// Two overlays in successive periods never pool (QAF-91's shape): a
-/// base weekday with /30 in one month and /31 the next is two
-/// combinations, base + /30 and base + /31, and no row holds /30 and
-/// /31 together. A dated exception: the base removed on a holiday a
-/// holiday type runs: is a combination of its own.
+/// A base weekday with /30 in one month and /31 the next is two combinations,
+/// base + /30 and base + /31. A holiday type that runs where the base is
+/// removed is a combination of its own.
 #[test]
 fn successive_overlays_are_separate_combinations() {
     let mut net = base();

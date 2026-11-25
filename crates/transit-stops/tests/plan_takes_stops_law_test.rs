@@ -1,16 +1,5 @@
-//! A plan takes a stop from the stops document (D-173). The planner
-//! adding a stop to a pattern may pick one the stops app made, and the
-//! plan gets that stop's record. These are the laws, before the
-//! implementation:
-//!
-//! * `records(stops, ids, on)` answers each named stop's record in the
-//!   network's terms on `on`: exactly the record a pick reads of it
-//!   (`read_records`), so a stop taken in, then read at publish, is
-//!   unchanged;
-//! * a stop that is not there yet on `on` (its first event is later) is
-//!   not answered; a stop the document does not hold is not answered;
-//! * the record is copied, never linked: the stops document is not
-//!   written, and the plan's stop is an ordinary stop (`upsert_stop`).
+//! A plan takes a stop from the stops document (D-173, D-228). The ops are
+//! in cap-stops' OPS.md (`records`, `take_stops`).
 
 use chrono::NaiveDate;
 use transit_stops::stop_record::{read_records, records};
@@ -36,8 +25,8 @@ fn planned(on: &str, lat: f64, lon: f64, name: &str, code: &str) -> Event {
     }
 }
 
-/// A document holding stop N1 (planned 2026-09-01, in service
-/// 2026-11-13, renamed 2026-12-01) and N2 (planned 2027-01-04).
+/// N1 is planned 2026-09-01, in service 2026-11-13, and renamed 2026-12-01.
+/// N2 is planned 2027-01-04.
 fn doc() -> Stops {
     Stops::empty()
         .add_event("N1", planned("2026-09-01", 45.58, -122.348, "Washougal TC", "9906"))
@@ -60,9 +49,7 @@ fn a_stop_taken_in_is_the_record_a_pick_reads() {
     for on in ["2026-11-13", "2026-12-05"] {
         let taken = records(&stops, &["N1".to_string()], day(on));
         let stop = taken.get("N1").expect("N1 is there on the day");
-        // into the plan as an ordinary stop…
         let plan = apply_edits(&network(), &[NetworkEdit::UpsertStop { id: "N1".into(), stop: stop.clone() }]).unwrap();
-        // …and read at publish: unchanged
         assert_eq!(read_records(&plan, &stops, day(on)).stops["N1"], *stop, "on {on}");
     }
     assert_eq!(records(&stops, &["N1".to_string()], day("2026-11-13"))["N1"].name, "Washougal TC");
@@ -78,19 +65,8 @@ fn a_stop_not_there_yet_or_not_held_is_not_answered() {
     assert!(before.is_empty(), "nothing is there yet: {before:?}");
     let now = records(&stops, &ids, day("2026-11-13"));
     assert_eq!(now.keys().collect::<Vec<_>>(), vec!["N1"], "N2 is planned later; Z is not held");
-    // a planned stop is there from its planned date: a plan may take it
     assert!(records(&stops, &ids, day("2027-01-04")).contains_key("N2"));
 }
-
-// A new route takes its stops in (D-173, D-228): `take_stops` answers the
-// `upsert_stop` edits for the named stops, one rule for every host.
-//
-// * a stop the plan already holds is left as the plan has it: no edit;
-// * a stop named twice is taken once, in the order named;
-// * each edit carries the record `records` answers, so applying the
-//   edits gives the plan an ordinary stop;
-// * a stop the stops document does not answer on `on` refuses the whole
-//   take, naming each such stop.
 
 use transit_stops::stop_record::take_stops;
 

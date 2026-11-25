@@ -44,7 +44,7 @@ Publish a pick: the op answers the published plan set with the plan (re)placed b
 - `today` is the host's date. A pick that is new, restored, or moved never lands before it.
 - A pick republished under its own date always publishes. This is a correction to the pick in force.
 
-When the plan can publish, the answer is the canonical document and its `document_hash`. The module is the hash authority. The sync server freezes and adopts a pick in one entry of its plans log (`adopt`), and a browser's plan set publishes through it.
+When the plan can publish, the answer is the canonical document and its `document_hash`. The sync server freezes and adopts a pick in one entry of its plans log (`adopt`), and a browser's plan set publishes through it.
 
 A plan cannot publish when it is unversioned, undated, or dated before today. It also cannot publish when it would put two picks on one day. In that case the answer lists every reason in `issues` and has no document.
 

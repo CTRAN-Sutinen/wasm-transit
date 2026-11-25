@@ -1,7 +1,3 @@
-//! Who runs and publishes the network: the operators, the publisher
-//! of the dataset, the organizations credited for it, and the text
-//! of the network in other languages.
-
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -9,13 +5,11 @@ use crate::model::{RouteId, TripId};
 
 pub type OperatorId = String;
 
-/// An agency that runs service.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Operator {
     pub name: String,
     pub url: String,
-    /// The timezone every time of the operator's service is in.
     pub timezone: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -23,24 +17,21 @@ pub struct Operator {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub phone: Option<String>,
-    /// Where riders buy fares online.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub fare_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub email: Option<String>,
-    /// Whether contactless bank cards are accepted; `None` = unknown.
+    /// `None` is unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub contactless: Option<bool>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// Whether contactless bank cards are accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -50,7 +41,6 @@ pub enum Contactless {
     NotAccepted,
 }
 
-/// Who publishes the dataset, and what it covers.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Publisher {
@@ -60,7 +50,7 @@ pub struct Publisher {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub default_language: Option<String>,
-    /// The first and last dates the dataset covers, "YYYYMMDD".
+    /// "YYYYMMDD".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub start_date: Option<String>,
@@ -76,14 +66,12 @@ pub struct Publisher {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub contact_url: Option<String>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// What an attribution credits: the whole dataset (`None` on the
-/// attribution), or one operator, route, or trip.
+/// `None` on the attribution credits the whole dataset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
@@ -93,7 +81,6 @@ pub enum AttributionScope {
     Trip(TripId),
 }
 
-/// An organization credited for the data.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Attribution {
@@ -122,17 +109,14 @@ pub struct Attribution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub phone: Option<String>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// One text of the network in another language. `table` and `field`
-/// name the text the way the published dataset does ("stops",
-/// "stop_name"); the text is found by record (`record`, and
-/// `sub_record` where a record needs two keys) or by its value in the
-/// original language.
+/// `table` and `field` use the names of the published dataset ("stops",
+/// "stop_name"). A text is found by `record` (and `sub_record` where a record
+/// needs two keys) or by its value in the original language.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Translation {
@@ -149,19 +133,16 @@ pub struct Translation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub value: Option<String>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
 impl crate::Network {
-        /// The zone the network's service days are counted in: its operators'
-        /// one timezone. GTFS requires every agency in a dataset to share
-        /// `agency_timezone`, so operators that disagree (or a network with
-        /// none, or an empty zone) answer `None`. Naming one would be a guess.
-        /// Hosts turn their clock into the agency's date with it, never their
-        /// own zone's.
+    /// GTFS requires every agency in a dataset to share `agency_timezone`,
+    /// so operators that disagree, a network with none, or an empty zone
+    /// answer `None`. Hosts read their clock in this zone, never in their
+    /// own.
     pub fn timezone(&self) -> Option<&str> {
         let mut zones = self.operators.values().map(|o| o.timezone.as_str());
         let first = zones.next().filter(|z| !z.is_empty())?;

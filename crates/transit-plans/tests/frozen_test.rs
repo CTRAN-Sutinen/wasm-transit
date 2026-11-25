@@ -1,10 +1,5 @@
-//! The laws of freezing and adopting (D-191). A freeze writes a network
-//! version to the record by its hash, with what it is (a proposal for
-//! public comment, a board packet). A frozen version is in the record
-//! and not in force. Adopting puts a frozen version in force from its
-//! date, through the published plan set, and names the stops log entry
-//! it read. Only a frozen version is adopted, so every network that was
-//! ever in force is a frozen version.
+//! Freezing and adopting (D-191). A frozen version is in the record and not
+//! in force. Only a frozen version is adopted.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -115,8 +110,6 @@ fn an_adoption_keeps_the_chain_rules() {
     ));
 }
 
-/// One step of a planner's history: freeze a network of a plan, adopt a
-/// network, or retire a plan.
 #[derive(Debug, Clone)]
 enum Step {
     Freeze(u8, u8, u8),
@@ -164,11 +157,8 @@ proptest! {
     }
 }
 
-/// A version a migration brought forward pins the version it came from,
-/// by its network hash (D-232): its source is a pinned reference, not
-/// only words in its purpose. A later freeze of the same network that
-/// names no source keeps the one it has; a version written as it is
-/// names none.
+/// A version that a migration brought forward pins its source by network
+/// hash (D-232). A later freeze that names no source keeps it.
 #[test]
 fn a_version_brought_forward_pins_the_version_it_came_from() {
     let fall = info("fall", "2026-09-07");

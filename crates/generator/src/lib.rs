@@ -1,29 +1,16 @@
-//! The generator: assemble the capability manifest after the wasm
-//! builds (`just caps`), and publish the registry (`just registry`).
-//! It takes the capabilities as data ([`Linked`]: each one's
-//! declaration and worked examples) and names none. Its binary,
-//! gen-manifest, is generated (gen-assemblies writes
-//! `assemblies/gen-manifest/`). It links every capability with its
-//! `examples` feature and calls [`main`].
-//! It pins each capability module by content hash, serves it under that
-//! hash, and writes both surfaces that hosts and agents read:
+//! The generator writes the capability manifest after the wasm builds
+//! (`just caps`) and publishes the registry (`just registry`). It takes the
+//! capabilities as data ([`Linked`]) and names none. Its binary, gen-manifest,
+//! is generated, and calls [`main`].
 //!
-//! * `web/public/caps/`: the browser's manifest and hash-addressed
-//!   module files (the assembly the bus worker loads);
-//! * `registry/`: the registry. It holds immutable blobs, one evidence
-//!   record per capability (contracts, agent context, and which gates
-//!   ran when these exact bytes were published), and a registry pointer.
-//!   An agent, or a human dogfooding `caps run`, pulls compute from
-//!   here and verifies the bytes against the record. Beside them are
-//!   the documents: every kind's JSON Schema, generated from its
-//!   serde type, and a worked example computed from the fixtures
-//!   (`registry/documents.json` indexes them by kind, store kind and
-//!   schema version). A reader with no Rust or wasm can read a stored
-//!   blob with these (docs/FORMATS.md).
+//! It writes two outputs. `web/public/caps/` holds the browser's manifest and
+//! the module files, named by content hash. `registry/` holds immutable blobs,
+//! one evidence record per capability, a registry pointer, and the documents:
+//! every kind's JSON Schema and a worked example (docs/FORMATS.md). An agent
+//! verifies a module's bytes against its record.
 //!
-//! Before writing, the manifest runs through the compose-time validator
-//! (cap_abi::validate). A manifest this crate assembles must be provably
-//! coherent: generation is the first consumer of that proof.
+//! The generator checks the manifest with `cap_abi::validate` before it
+//! writes it, so it never writes a manifest that the validator refuses.
 
 use std::fs;
 use std::path::Path;
@@ -31,48 +18,37 @@ use std::process::Command;
 
 use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, MigrationSpec, OpDoc, OpExample};
 
-// The assemblies' list is shared with gen-assemblies, which stays in
-// the kernel's crate (it writes the module crates before any build).
+// gen-assemblies stays in the kernel's crate, because it writes the module
+// crates before any build.
 #[path = "../../cap-abi/src/bin/common/assemblies.rs"]
 mod common;
 mod schema_lock;
 mod kind_table;
 pub mod checks;
 pub mod doc_check;
-// The worked examples' fixtures (D-235).
 use fixtures::*;
 use cap_abi::validate::validate_assembly;
 use sha2::{Digest as _, Sha256};
 
-/// The gates `just registry` runs before publishing (it says so with
-/// `CAPS_PUBLISH_GATED=1`; a plain `just caps` publishes ungated and
-/// the record says that). The recipe is the authority.
+/// The gates that `just registry` runs before publishing. It sets
+/// `CAPS_PUBLISH_GATED=1`. A plain `just caps` publishes ungated, and the
+/// record says so. The recipe is the authority.
 const PUBLISH_GATES: &[&str] = &[
     "cargo test (workspace, includes the capability law suites)",
     "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)",
     "just reproducible (two clean builds of the tree, byte for byte)",
 ];
 
-/// The document-kernel version this build speaks.
 const KERNEL: u32 = 1;
 
-/// One capability as the generator reads it: its declaration
-/// (`capability!`) and its worked examples (its `examples` feature).
 pub struct Linked {
     pub declared: cap_abi::kernel::Declared,
     pub examples: fn() -> Vec<cap_abi::manifest::Example>,
 }
 
-/// The kernel ops, documented once for every module: each document
-/// kind's load (in every module whose capabilities read the kind), the
-/// registry ops and `about` (in every module). The registry ops'
-/// examples are computed: two registries (one durable, one keep-last-N)
-/// answer them through the same kernel the macro wires into every module.
 fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
     use cap_abi::kernel::{self, kind, loader, Cap};
     use cap_abi::registry::{OP_EVICT, OP_HELD};
-    // The registry ops' examples run the real kernel over an example
-    // capability reading networks and rt snapshots.
     static EXAMPLE: Cap = Cap {
         id: "board",
         json: |_| String::new(),
@@ -90,9 +66,8 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
     let evicted = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_EVICT, keep.to_string().as_bytes()));
     let about = answer(kernel::invoke_bytes(&[&EXAMPLE], kernel::OP_ABOUT, b""));
 
-    // A load's id, op, and code are its type's (`transit_version::Load`,
-    // D-239), and its line in the kind list names that type with the
-    // same id, op, and code.
+    // A load's id, op, and code are its type's (D-239), and its line in
+    // the kind list must agree.
     fn load<T: cap_abi::kernel::Load>(description: &str, net: Option<&NetworkExampleContext>) -> KernelOp {
         let line = cap_abi::kinds::by_load(T::ID)
             .unwrap_or_else(|| panic!("the kernel load {} has no line in crates/cap-abi/src/kinds.rs", T::LOAD_OP));
@@ -135,7 +110,7 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
             code: OP_EVICT,
             name: "evict".into(),
             kind: None,
-            description: "EVERY module. Drop everything the keep-set does not name, answering what dropped and what is held after. The bytes are {\"keep\": [hash, …]}: a document stays when its hash is kept; a derived entry (a held day, the router's graph, a street graph) stays only while every document it was computed from is kept. The host names what survives — it owns the documents; the module enforces — it is the hash authority. Asking for an evicted document is the unknown-hash error (`unknown <kind> <hash>: <load op> first`), never a wrong answer: register it again. Ephemeral kinds also bound themselves with no host steering — rt snapshots keep their last 8, live documents their last 4 — and so does each derivation (held days 4, router graphs 8, street and walking graphs 4).".into(),
+            description: "EVERY module. Drop everything the keep list does not name, answering what dropped and what is held after. The bytes are {\"keep\": [hash, …]}: a document stays when its hash is kept; a derived entry (a cached day, the router's graph, a street graph) stays only while every document it was computed from is kept. The host names what survives, because it owns the documents. The module drops the rest. Asking for an evicted document is the unknown-hash error (`unknown <kind> <hash>: <load op> first`), never a wrong answer: register it again. Ephemeral kinds also bound themselves with no host steering — rt snapshots keep their last 8, live documents their last 4 — and so does each derivation (held days 4, router graphs 8, street and walking graphs 4).".into(),
             example: Some(OpExample { request: keep, response: evicted }),
         },
         KernelOp {
@@ -153,18 +128,14 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
             example: Some(OpExample { request: serde_json::json!(null), response: about }),
         },
     ];
-    // Each line of the kind list with a load is a load here.
     let listed: std::collections::BTreeSet<&str> = cap_abi::kinds::KINDS.iter().filter_map(|k| k.load.map(|l| l.id)).collect();
     let loaded: std::collections::BTreeSet<&str> = ops.iter().filter_map(|op| op.kind.as_deref()).collect();
     assert_eq!(listed, loaded, "each line of crates/cap-abi/src/kinds.rs with a load is a kernel load");
     ops
 }
 
-/// A capability's OPS.md, read: the purpose (the text under the `# <id>`
-/// heading) and each op's description (the text under its `## <op>`
-/// heading), in the file's order. The file is the docs' one home; the
-/// generator refuses one whose heading is not the capability's id, or
-/// whose ops are not exactly its `Request` enum's.
+/// The generator refuses an OPS.md whose heading is not the capability's id,
+/// or whose ops are not exactly its `Request` enum's.
 struct CapDocs {
     purpose: String,
     ops: Vec<(String, String)>,
@@ -191,8 +162,7 @@ fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
     assert!(head.is_empty(), "{place}: starts with `# {}`", module.id);
     let ops: Vec<(String, String)> = it.map(|(op, lines)| (op, body(&lines))).collect();
     let names: Vec<&str> = ops.iter().map(|(op, _)| op.as_str()).collect();
-    // The enum says which ops exist; the file says the order a reader
-    // meets them in.
+    // The enum says which ops exist. The file says their order.
     let mut sorted = names.clone();
     sorted.sort_unstable();
     let mut ops_sorted: Vec<&str> = module.ops.iter().map(String::as_str).collect();
@@ -204,35 +174,25 @@ fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
     CapDocs { purpose: body(&purpose), ops }
 }
 
-/// Write the manifest, the registry, the schema lock, and the kind
-/// table for `capabilities` (gen-manifest's `main`).
 pub fn main(capabilities: &[Linked]) {
     let caps = capabilities;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
-    // The cargo profile the modules were built under (`just caps`:
-    // release; `just caps-fast`: wasm-fast, the iteration loop's).
     let profile = std::env::var("CAPS_PROFILE").unwrap_or_else(|_| "release".into());
     let target = root.join("target/wasm32-unknown-unknown").join(&profile);
     let dist = root.join("web/public/caps");
 
-    // The demo feed: the e2e fixture, served statically so dev and
-    // e2e run the identical demo.
     let fixture = root.join("web/e2e/fixtures/sample-gtfs.zip");
     let feed_bytes = fixtures::feed_bytes();
 
-    // The network capability's worked examples are computed from the real
-    // fixture. Import derives the document, and export produces the zip,
-    // both through the shared transit-codec library. So the examples are
-    // exactly what the module returns, and they cannot drift.
+    // Computed through transit-codec, the library that the module uses, so
+    // the examples cannot drift from what the module returns.
     let net_ctx = network_example_context(&feed_bytes);
-    // The kernel's examples first: its registry ops answer what the
-    // process holds, and each capability's examples run through its
-    // dispatch in this process after.
+    // The kernel's examples run first, because its registry ops answer what
+    // the process holds.
     let kernel_ops = kernel_ops(net_ctx.as_ref());
 
-    // The schema lock (docs/FORMATS.md, "The schema lock"), before
-    // anything is written: `--lock` (`just schema-lock`) records what
-    // this build adds and stops; a plain run fails on any drift.
+    // `--lock` (`just schema-lock`) records what this build adds and stops.
+    // A plain run fails on any drift. Both run before anything is written.
     let documents = document_kinds(net_ctx.as_ref(), caps);
     let locking = std::env::args().any(|a| a == "--lock");
     let locks = lock_documents(root, &documents, locking);
@@ -242,17 +202,14 @@ pub fn main(capabilities: &[Linked]) {
         return;
     }
 
-    // Hash-addressed files: the filename carries the content hash, so
-    // the HTTP cache holds each capability build forever.
+    // The filename carries the content hash, so the HTTP cache holds each
+    // build forever.
     let _ = fs::remove_dir_all(&dist);
     fs::create_dir_all(&dist).expect("create caps dir");
     fs::copy(&fixture, dist.join("sample-gtfs.zip")).expect("copy demo feed");
 
-    // The day-view runner gates' document: the load_network request
-    // for the real fixture-derived network (the same bytes the
-    // examples and the smoke use. The document cannot drift from
-    // the module that owns it). Every JSON-document capability's
-    // gate (board, runcut, calendar) chains from it.
+    // The runner gates chain from this load_network request, which uses the
+    // same bytes as the examples and the smoke.
     if let Some(ctx) = net_ctx.as_ref() {
         let request = serde_json::json!({ "op": "load_network", "network": ctx.derived });
         let json = serde_json::to_string_pretty(&request).expect("request serializes");
@@ -305,8 +262,6 @@ pub fn main(capabilities: &[Linked]) {
                 .ops
                 .iter()
                 .map(|(op, description)| {
-                    // Each capability's own example, run through its own
-                    // dispatch (its crate's `examples` feature).
                     let (example, kinds) = match run_examples(caps, module.id, op) {
                         Some((example, kinds)) => (Some(example), kinds),
                         None => (None, Vec::new()),
@@ -321,7 +276,6 @@ pub fn main(capabilities: &[Linked]) {
         println!("cap {}: sha256:{hex} ({:.1} KiB)", module.id, bytes.len() as f64 / 1024.0);
     }
 
-    // The linked assemblies: one module per generated UI.
     let mut assemblies = Vec::new();
     for assembly in common::assemblies(root).into_iter().filter(|a| a.ui.is_some()) {
         let ui = assembly.ui.clone().expect("a UI assembly");
@@ -341,8 +295,6 @@ pub fn main(capabilities: &[Linked]) {
 
     let manifest = CapManifest { kernel: KERNEL, kernel_ops, capabilities, assemblies };
 
-    // The compose-time proof, applied to our own assembly before it
-    // is written: generation is the validator's first consumer.
     if let Err(issues) = validate_assembly(&manifest) {
         eprintln!("generated assembly is NOT valid:");
         for issue in issues {
@@ -354,17 +306,15 @@ pub fn main(capabilities: &[Linked]) {
     let json = serde_json::to_string_pretty(&manifest).expect("manifest serializes");
     fs::write(dist.join("manifest.json"), json + "\n").expect("write manifest");
 
-    // The local registry follows every build, fast ones too (caps-run
-    // reads it, so the loop runs the code it just changed); its
-    // evidence names the profile. Only `just registry` (gated, release)
-    // is a publish.
+    // The local registry follows every build, fast ones too, so caps-run
+    // runs the code that was just changed. The evidence names the profile.
+    // Only `just registry` (gated, release) is a publish.
     publish_registry(root, &manifest, &documents, &locks, &profile);
     publish_kind_table(root, &table, &table_schemas);
 
     println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", caps.len());
 }
 
-/// The pinned toolchain's channel, from rust-toolchain.toml.
 fn toolchain_pin(root: &Path) -> String {
     let text = fs::read_to_string(root.join("rust-toolchain.toml")).expect("rust-toolchain.toml (the toolchain pin)");
     text.lines()
@@ -372,12 +322,8 @@ fn toolchain_pin(root: &Path) -> String {
         .expect("rust-toolchain.toml names a channel")
 }
 
-/// Publish the registry: immutable blobs, one evidence record per
-/// capability, and the pointer. The record says what these exact bytes
-/// are, what they answer, and what they speak. It also says which gates
-/// the publish recipe ran against them, and at which commit. So "known
-/// good" is a checkable claim for an agent (or a human dogfooding
-/// `caps run`), not a marketing one.
+/// The evidence record says which gates the publish recipe ran against the
+/// bytes, and at which commit, so "known good" is a checkable claim.
 fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], locks: &[schema_lock::Lock], profile: &str) {
     let registry = root.join("registry");
     let blobs = registry.join("blobs");
@@ -386,7 +332,6 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     fs::create_dir_all(&blobs).expect("create registry blobs");
     fs::create_dir_all(&caps_dir).expect("create registry records");
 
-    // Provenance-style evidence: what built these bytes, from where.
     let run = |args: &[&str]| {
         Command::new(args[0])
             .args(&args[1..])
@@ -400,11 +345,8 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let rustc = run(&["rustc", "--version"]);
     let gated = std::env::var("CAPS_PUBLISH_GATED").is_ok_and(|v| v == "1");
     assert!(!gated || profile == "release", "a gated publish takes release modules, not {profile} (unset CAPS_PROFILE)");
-    // The toolchain the bytes came from: the pin (rust-toolchain.toml),
-    // the compiler that ran (its release, commit, and LLVM), and cargo.
-    // A gated publish refuses a compiler other than the pin. The
-    // published hashes are the pinned toolchain's, rebuildable from the
-    // tree alone.
+    // A gated publish refuses a compiler other than the pin, so the
+    // published hashes are rebuildable from the tree alone.
     let verbose = run(&["rustc", "-vV"]);
     let field = |name: &str| {
         verbose
@@ -432,8 +374,6 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let evidence = serde_json::json!({
         "gates": if gated { PUBLISH_GATES } else { &[] },
         "recipe": if gated { "just registry" } else if profile == "release" { "just caps" } else { "just caps-fast" },
-        // The cargo profile of the modules: release (whole-program LTO,
-        // the published bytes) or wasm-fast (the iteration loop's).
         "profile": profile,
         "source_commit": commit,
         "dirty_tree": dirty,
@@ -468,13 +408,10 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
             .expect("write record");
     }
 
-    // The pointer: which capabilities (at which hashes) this registry
-    // currently names. Blobs are immutable; this file moves.
+    // Blobs are immutable. This file moves.
     let pointer = serde_json::json!({
         "kernel": manifest.kernel,
-        // The kernel ops every module answers for the kinds its
-        // capabilities read (the loads) and always (evict, held,
-        // about): what `caps-run --load <kind>:FILE` resolves.
+        // `caps-run --load <kind>:FILE` resolves its kind from these.
         "kernel_ops": manifest.kernel_ops,
         "capabilities": manifest
             .capabilities
@@ -494,13 +431,6 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     );
 }
 
-/// One document kind the registry describes: its line in the kind list
-/// (`cap_abi::kinds::KINDS`: its name, store kind, and the crate that
-/// keeps its lock), and the kind as the schema lock reads it: its tag,
-/// the version this build writes, the JSON Schema generated from its
-/// serde type, a worked example computed from the fixtures through the
-/// owning library (so it is exactly a document the modules make), and
-/// its migration chain.
 struct DocumentKind {
     line: &'static cap_abi::kinds::Declaration,
     spec: schema_lock::Kind,
@@ -512,9 +442,7 @@ impl DocumentKind {
     }
 }
 
-/// A locked kind: its tag and version are the type's own
-/// (`transit_version::Versioned`), and the rest is its line in the kind
-/// list. A type whose tag has no line stops the run.
+/// A type whose tag has no line in the kind list stops the run.
 fn kind<T>(example: Option<serde_json::Value>, migrate: Option<schema_lock::Migrate>) -> DocumentKind
 where
     T: transit_version::Versioned + schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
@@ -524,8 +452,6 @@ where
     DocumentKind { line, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
 }
 
-/// Check every locked kind against its lock, or (`locking`) write what
-/// this build adds. Any drift ends the run with every drift named.
 fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec<schema_lock::Lock> {
     let mut drifts = Vec::new();
     let mut locks = Vec::new();
@@ -561,36 +487,28 @@ fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec
     locks
 }
 
-/// Bring a network of an older version forward (transit-network's chain).
 fn migrate_network(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_network::migrate_to(doc, transit_network::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
 
-/// Bring a watchlist of an older version forward (transit-rider's chain).
 fn migrate_watchlist(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_rider::watchlist::migrate_to(doc, transit_rider::watchlist::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
 
-/// Bring a service alerts document of an older version forward
-/// (transit-alerts' chain).
 fn migrate_alerts(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_alerts::version::migrate_to(doc, transit_alerts::ALERTS_VERSION).map(|(doc, _)| doc)
 }
 
-/// Bring a stop requests document of an older version forward
-/// (transit-requests' chain).
 fn migrate_requests(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_requests::version::migrate_to(doc, transit_requests::SCHEMA_VERSION)
 }
 
-/// Bring an edit document of an older version forward (transit-sync's chain).
 fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_sync::version::migrate_to(doc, transit_sync::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
 
-/// Every JSON document kind on the bus and in the store. Not here: the
-/// feed (a GTFS zip) and the rt snapshot (protobuf) have their own specs;
-/// the manifest is the Go host's own document (docs/FORMATS.md).
+/// The feed (a GTFS zip) and the rt snapshot (protobuf) have their own
+/// specs, and the manifest is the Go host's own document (docs/FORMATS.md).
 fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<DocumentKind> {
     let plans_example = net.and_then(|n| {
         let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
@@ -598,8 +516,6 @@ fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<D
         });
         serde_json::to_value(set).ok()
     });
-    // The walk table's example is the streets capability's `walks`
-    // answer, as its dispatch gives it.
     let walks_example = run_examples(caps, "streets", "walks").and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
         kind::<transit_network::Network>(net.map(|n| n.derived.clone()), Some(migrate_network)),
@@ -644,8 +560,9 @@ fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<D
         kind::<transit_streets::Streets>(streets_example_context().map(|c| value(&c.streets)), None),
         kind::<transit_streets::walking::WalkTable>(walks_example, None),
         kind::<transit_runs::WorkRules>(Some(value(&fixture_work_rules())), None),
-        kind::<kind_table::KindTable>(// The governance alone: the versions are the published
-            // schemas', and would move the example with every schema.
+        // The example holds no versions, because they would move it with
+        // every schema.
+        kind::<kind_table::KindTable>(
             Some(value(&kind_table::KindTable {
                 kind: kind_table::KindTableKind,
                 schema_version: kind_table::SCHEMA_VERSION,
@@ -663,21 +580,13 @@ fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<D
     ]
 }
 
-/// A worked example as a JSON value.
 fn value<T: serde::Serialize>(example: &T) -> serde_json::Value {
     serde_json::to_value(example).expect("example serializes")
 }
 
-/// The schemas every deployment serves at `/schemas/`
-/// (web/public/schemas/, copied into every page build): the index
-/// `documents.json`, with each entry's paths relative to it, and each
-/// version's schema and example beside it. The files ride in the build,
-/// so a rollback serves the schemas of the build it moves to.
-///
-/// The index also holds the `Link` header each blob's response sends
-/// (`links`): by a stored blob's envelope (`stored`, "<store kind>
-/// v<N>"), and by a published document's tag (`published`, the version
-/// this build writes). The server copies the value and decides nothing.
+/// The files ride in every page build (`web/public/schemas/`), so a rollback
+/// serves the schemas of the build it moves to. The server copies the
+/// `Link` header values from `links` and decides nothing.
 fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
     let web = registry.parent().expect("the registry is in the tree").join("web/public/schemas");
     let _ = fs::remove_dir_all(&web);
@@ -706,19 +615,14 @@ fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
     fs::write(web.join("documents.json"), json + "\n").expect("write the served index");
 }
 
-/// The Go host's document kinds with a hand-written schema, by tag and
-/// version (server/schemas/).
+/// Kinds with a hand-written schema in `server/schemas/`.
 const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1), ("store_layout", 1)];
 
-/// Publish the documents: for each locked version of each kind, its
-/// schema `schemas/<tag>.v<N>.schema.json` and its example
-/// `examples/<tag>.v<N>.json`, copied from the lock; and the index
-/// `documents.json`. Each entry names its files and their hashes, and
-/// says whether this build writes that version or reads it only through
-/// a migration (`written`). Files are named by the tag a document
-/// carries inside it, so a reader holding only a document finds its
-/// schema. Each schema's `$id` names no host. `go test ./server/...`
-/// validates every example against its schema with no Rust.
+/// Files are named by the tag that a document carries inside it, so a
+/// reader holding only a document finds its schema. `written` says whether
+/// this build writes that version or reads it only through a migration.
+/// `go test ./server/...` validates every example against its schema with
+/// no Rust.
 fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) {
     let schemas = registry.join("schemas");
     let examples = registry.join("examples");
@@ -750,10 +654,8 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
             index.push(entry);
         }
     }
-    // The host-owned kinds: no Rust type generates them, so their
-    // schemas are written by hand and locked in server/schemas/ beside a
-    // frozen example (server/schema_test.go holds them). The manifest's
-    // schema is the HTTP contract's (server/openapi.json).
+    // No Rust type generates these. `server/schema_test.go` holds them.
+    // The manifest's schema is the HTTP contract's (`server/openapi.json`).
     for &(tag, version) in HOST_OWNED {
         let stem = format!("{tag}.v{version}");
         let dir = registry.parent().expect("the registry is in the tree").join("server/schemas");
@@ -783,11 +685,8 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
     println!("registry: {} document versions published (schemas + worked examples)", index.len());
 }
 
-/// The kind table (`kind_table.rs`): each stored kind's line in the
-/// kind list, with the versions its locked schemas give it and the
-/// references its current schema declares (D-232). It is a function of
-/// the list and the locks alone, so the checked-in copy
-/// (`crates/cap-abi/kinds.json`) needs no module build.
+/// A function of the list and the locks alone, so the checked-in copy
+/// (`crates/cap-abi/kinds.json`) needs no module build (D-232).
 fn kind_table(root: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock]) -> (kind_table::KindTable, Vec<(String, String)>) {
     let mut kinds = kind_table::kinds();
     let mut schemas = Vec::new();
@@ -815,12 +714,10 @@ fn kind_table(root: &Path, documents: &[DocumentKind], locks: &[schema_lock::Loc
     (table, schemas)
 }
 
-/// The checked-in kind table, beside the list it is generated from.
 const KIND_TABLE: &str = "crates/cap-abi/kinds.json";
 
-/// Hold the checked-in kind table to the list and the locks, or
-/// (`locking`, `just schema-lock`) write it. A plain run stops while it
-/// differs, so a change shows in a review's diff.
+/// A plain run stops while the table differs, so a change shows in a
+/// review's diff.
 fn lock_kind_table(root: &Path, table: &kind_table::KindTable, locking: bool) {
     let text = serde_json::to_string_pretty(table).expect("the kind table serializes") + "\n";
     let path = root.join(KIND_TABLE);
@@ -840,10 +737,7 @@ fn lock_kind_table(root: &Path, table: &kind_table::KindTable, locking: bool) {
     }
 }
 
-/// The kind table written beside the server's modules as
-/// `web/pkg/kinds.json` (its canonical bytes), and each schema it names
-/// as `web/pkg/schemas/<hex>.json` (the server keeps them in the store,
-/// D-202).
+/// The server keeps the schemas in the store (D-202).
 fn publish_kind_table(root: &Path, table: &kind_table::KindTable, schemas: &[(String, String)]) {
     let pkg = root.join("web/pkg");
     let dir = pkg.join("schemas");
@@ -857,27 +751,23 @@ fn publish_kind_table(root: &Path, table: &kind_table::KindTable, schemas: &[(St
     println!("kind table: {} kinds, {} schemas (web/pkg/kinds.json)", table.kinds.len(), fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0));
 }
 
-/// A schema as the registry publishes it: its `$id` names no host, in
-/// pretty JSON with a final newline.
+/// The `$id` names no host.
 fn published_schema(tag: &str, version: u32, schema: &serde_json::Value) -> String {
     let mut schema = schema.clone();
     schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
     serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n"
 }
 
-/// A host-owned kind's schema, as `server/schemas/` keeps it.
 fn host_owned_schema(root: &Path, tag: &str, version: u32) -> serde_json::Value {
     let file = root.join(format!("server/schemas/{tag}.v{version}.schema.json"));
     let text = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
     serde_json::from_str(&text).expect("a host-owned schema is JSON")
 }
 
-/// The digest of the source the modules are built from: every file
-/// git sees (tracked or not, ignored ones excluded) under `crates/`
-/// plus the workspace `Cargo.toml` and `Cargo.lock`: sha256 over
-/// `"{path}\n{sha256 hex of its bytes}\n"` per file, in path order.
-/// `caps-run` recomputes it the same way and says when the registry
-/// was published from another tree (QAF-77). `None` without git.
+/// The sha256 over `"{path}\n{sha256 hex of its bytes}\n"` for every file
+/// that git sees under `crates/`, plus `Cargo.toml` and `Cargo.lock`, in
+/// path order. Ignored files are excluded. `caps-run` recomputes it to say
+/// when the registry was published from another tree. `None` without git.
 fn source_digest(root: &Path) -> Option<String> {
     let listing = Command::new("git")
         .args(["ls-files", "-co", "--exclude-standard", "-z", "--", "crates", "Cargo.toml", "Cargo.lock"])
@@ -899,10 +789,6 @@ fn source_digest(root: &Path) -> Option<String> {
 
 
 
-/// A capability's own worked example of `op`, run through its own
-/// `invoke`: the loads, then the request, and the answer as dispatch
-/// gives it, with the op's example of each kind of its tagged argument.
-/// None when the capability gives none for the op.
 fn run_examples(caps: &[Linked], capability: &str, op: &str) -> Option<(OpExample, Vec<cap_abi::manifest::KindExample>)> {
     let linked = caps.iter().find(|c| c.declared.id == capability)?;
     let (examples, invoke, invoke_bytes) = (linked.examples, linked.declared.invoke, linked.declared.invoke_bytes);
@@ -920,14 +806,12 @@ fn run_examples(caps: &[Linked], capability: &str, op: &str) -> Option<(OpExampl
     Some((OpExample { request: example.request, response }, example.kinds))
 }
 
-/// A kernel op's worked example: each document kind's load, computed
-/// over the fixtures. The kernel's examples stay with the kernel and the
-/// kind list; each capability gives its own (`run_examples`).
+/// The kernel's examples stay with the kernel and the kind list. Each
+/// capability gives its own ([`run_examples`]).
 fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExample> {
     use serde_json::json;
     let (request, response) = match ("kernel", op) {
         ("kernel", "load_walks") => {
-            // A two-walk table over the fixture's station bays.
             let net = net?;
             let walk = |from: &str, to: &str| transit_streets::walking::Walk { from: from.into(), to: to.into(), walk_secs: 95 };
             let table = transit_streets::walking::WalkTable { kind: Default::default(), schema_version: Default::default(),
@@ -950,11 +834,6 @@ fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExa
                 json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
             )
         }
-        // The rt join examples compute real answers over the fixture
-        // pair (sample-gtfs.zip + sample-rt.pb): t10 +120 s at A /
-        // +180 s at B, one vehicle on t10. The joined board and the
-        // ranked view through the same shared library the module
-        // dispatches through.
         ("kernel", "load_boundary") => {
             let ctx = rt_example_context()?;
             (
@@ -1036,8 +915,8 @@ fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExa
                     "ways": ctx.streets.ways.len(), "segments": ctx.segments, "nodes": ctx.nodes } }),
             )
         }
-        // Bulk-bytes ops have no JSON request example (the payload is
-        // the raw zip/protobuf); the description carries the contract.
+        // A bulk-bytes payload is raw, so its description carries the
+        // contract.
         ("kernel", "load_feed") => return None,
         ("kernel", "load_layer") => return None,
         ("kernel", "load_rt") => return None,

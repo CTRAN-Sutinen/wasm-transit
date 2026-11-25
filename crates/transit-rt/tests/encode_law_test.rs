@@ -1,11 +1,7 @@
-//! The service alerts document encoded as a GTFS-rt Alerts feed. The
-//! feed is the alerts' serialization: decoding it again and building
-//! the live document gives back the authored alerts in force, in the
-//! network's ids. The bytes are the same for the same document and
-//! moment.
-//!
-//! Over the e2e fixture network: routes 10, 20, 40 (route 40 runs
-//! directions 0 and 1), stops A B C SA SB, trip t10 at 08:00.
+//! The service alerts document as a GTFS-rt Alerts feed (cap-rt/OPS.md,
+//! `encode_alerts` and `read_alerts`). Over the e2e fixture network: routes 10,
+//! 20, 40 (route 40 runs directions 0 and 1), stops A B C SA SB, trip t10 at
+//! 08:00.
 
 use prost::Message;
 use proptest::prelude::*;
@@ -27,9 +23,6 @@ fn live_of(net: &Network, boundary: &Boundary, bytes: &[u8]) -> transit_live::Li
     live_day(net, boundary, None, None, Some(&rt), OnTimeWindow::default())
 }
 
-/// The scope an authored entity resolves to, written from the entity
-/// and the network: a trip that departs at one time names that
-/// instance.
 fn expected_scope(net: &Network, e: &AlertEntity) -> AlertScope {
     let start_secs = e.start_secs.or_else(|| {
         let (_, _, trip) = net.trip(e.trip.as_deref()?)?;
@@ -66,7 +59,6 @@ fn expected(net: &Network, id: &str, a: &ServiceAlert) -> LiveAlert {
     }
 }
 
-// Entities over the fixture's own ids, every one of which resolves.
 fn arb_entity() -> impl Strategy<Value = AlertEntity> {
     prop_oneof![
         prop::sample::select(vec!["10", "20", "40"]).prop_map(|r| AlertEntity { route: Some(r.into()), ..Default::default() }),
@@ -117,9 +109,6 @@ fn arb_alert() -> impl Strategy<Value = ServiceAlert> {
 }
 
 proptest! {
-    /// Encode, decode, and build the live document at the feed's
-    /// moment: the result is exactly the authored alerts in force then,
-    /// with their scopes resolved, and none is unmatched.
     #[test]
     fn the_feed_reads_back_as_the_authored_alerts_in_force(
         alerts in prop::collection::btree_map("[a-d][0-9]", arb_alert(), 0..5),
@@ -135,7 +124,6 @@ proptest! {
         prop_assert_eq!(day.alerts, want);
     }
 
-    /// The same document and moment give the same bytes.
     #[test]
     fn the_bytes_are_the_same_for_the_same_document(
         alerts in prop::collection::btree_map("[a-d][0-9]", arb_alert(), 0..5),
@@ -147,8 +135,6 @@ proptest! {
         prop_assert_eq!(encode_alerts(&net, &doc, now).bytes, encode_alerts(&net, &again, now).bytes);
     }
 
-    /// Every translation of every text survives the encode and the
-    /// decode of the FeedMessage.
     #[test]
     fn every_translation_survives(alert in arb_alert()) {
         let (net, _) = network();
@@ -183,8 +169,6 @@ fn the_agency_and_a_route_type_round_trip() {
     assert_eq!(day.alerts[0].scopes, routes);
 }
 
-/// The feed is a full dataset of the published alerts not yet ended,
-/// one entity for each, under the alert's id.
 #[test]
 fn the_feed_holds_the_published_alerts_not_yet_ended() {
     let (net, _) = network();
@@ -208,11 +192,7 @@ fn the_feed_holds_the_published_alerts_not_yet_ended() {
     assert_eq!(ids, ["later", "open"]);
 }
 
-/// A direction with no GTFS code (a route's third direction, or a
-/// direction of a route the network does not have) cannot be written as
-/// the author meant it: the entity is left out and named, never
-/// widened. Any other unknown id is written as authored; the receive
-/// path flags it for a person.
+/// Any other unknown id is written as authored.
 #[test]
 fn an_entity_that_cannot_be_written_is_named_not_widened() {
     let (net, _) = network();
@@ -235,14 +215,9 @@ fn an_entity_that_cannot_be_written_is_named_not_widened() {
     assert_eq!(msg.entity[0].alert.as_ref().unwrap().informed_entity.len(), 1);
 }
 
-// ---------------------------------------------------------------------
-// Reading an Alerts feed into the document: the inverse of the encode.
-// ---------------------------------------------------------------------
-
 proptest! {
-    /// Reading back an encoded document gives the published alerts not
-    /// yet ended, each as authored but for what the feed does not carry
-    /// (the disruptions it explains).
+    /// Each alert comes back as authored, except for the disruptions it
+    /// explains, which the feed does not carry.
     #[test]
     fn reading_the_feed_back_gives_the_published_alerts(
         alerts in prop::collection::btree_map("[a-d][0-9]", arb_alert(), 0..5),
@@ -262,12 +237,6 @@ proptest! {
     }
 }
 
-/// A feed as another app writes it: an empty language is no language,
-/// the deprecated active period stands in for the communication period,
-/// the agency names the whole agency, a direction maps to the route's
-/// model direction, and a trip instance keeps its date and start. What
-/// cannot be read as written is named: an entity (a direction with no
-/// route), or a whole alert (no entity left, or no header).
 #[test]
 fn a_feed_another_app_wrote_reads_into_the_document() {
     use transit_rt::gtfs_rt::{
@@ -329,8 +298,6 @@ fn a_feed_another_app_wrote_reads_into_the_document() {
     assert!(transit_rt::read_alerts(&net, b"not a feed").is_err());
 }
 
-/// Wider than `arb_entity`: fields joined as an author may join them,
-/// including a station, a route type, and a direction with no route.
 fn arb_any_entity() -> impl Strategy<Value = AlertEntity> {
     (
         proptest::option::of(prop::sample::select(vec!["10", "20", "40", "nope"])),
@@ -350,11 +317,6 @@ fn arb_any_entity() -> impl Strategy<Value = AlertEntity> {
 }
 
 proptest! {
-    /// One entity read as the feed reads it: what it is published as,
-    /// and the scopes it resolves to, are those of the whole round trip
-    /// (encode a published alert holding only it, decode, build the
-    /// live document). An entity the encoder leaves out is named, and
-    /// selects nothing.
     #[test]
     fn an_entity_reads_as_the_feed_reads_it(e in arb_any_entity()) {
         let (net, boundary) = network();
@@ -377,8 +339,6 @@ proptest! {
     }
 }
 
-/// The spec's own example: route and stop in one entity select that
-/// route at that stop only.
 #[test]
 fn route_and_stop_in_one_entity_select_one_scope() {
     let (net, _) = network();
@@ -386,9 +346,6 @@ fn route_and_stop_in_one_entity_select_one_scope() {
     assert_eq!(reading.scopes, vec![AlertScope { route: Some("10".into()), stop: Some("A".into()), ..Default::default() }]);
 }
 
-/// What an entity names, in the network's words: the route's public
-/// name, the stop's name and whether it is a station (with its bays),
-/// a trip's start and headsign.
 #[test]
 fn an_entity_names_what_it_selects() {
     let (net, _) = network();
@@ -403,7 +360,6 @@ fn an_entity_names_what_it_selects() {
     let t = trip.trip.unwrap();
     assert_eq!((t.start_secs, t.headsign.as_deref(), t.route.as_deref()), (Some(28800), Some("Downtown"), Some("10")));
     assert!(named(AlertEntity::default()).agency);
-    // A name the network does not hold stays its id, marked unknown.
     let gone = named(AlertEntity { stop: Some("nope".into()), ..Default::default() });
     assert_eq!(gone.stop.map(|s| (s.name, s.known)), Some(("nope".to_string(), false)));
 }

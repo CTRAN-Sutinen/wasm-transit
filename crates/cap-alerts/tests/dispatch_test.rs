@@ -1,11 +1,6 @@
-//! Native dispatch tests for the service alerts capability: the seam
-//! without wasm. The documents' own laws are tested at the library seam
-//! (transit-alerts). Here the module's contract is pinned: validate and
-//! the kernel's load agree on one identity, a refused document is
-//! refused at both with its reasons named, put begins and changes the
-//! document, end closes an alert, the list, the notices, and the
-//! template menu and fill answers over registered documents, the documents round
-//! trip through the log, and garbage is an honest error, never a panic.
+//! The cap-alerts contract over native dispatch (OPS.md): `validate` and the
+//! kernel's load agree on one identity, and the documents round trip through
+//! the log. The documents' own properties are tested in transit-alerts.
 
 use serde_json::{json, Value};
 
@@ -79,7 +74,6 @@ fn the_list_and_the_notices_answer_over_a_registered_document() {
     assert_eq!(list["drafts"][0]["id"], "a2");
     let flags = ok(json!({ "op": "flags", "alerts_hash": alerts_hash, "network_hash": network_hash(), "languages": ["en", "es"] }));
     assert_eq!(flags["flags"][0], json!({ "alert": "a1", "notice": { "kind": "missing_translation", "field": "header", "lang": "en" } }));
-    // No document yet: the empty list.
     assert_eq!(ok(json!({ "op": "list", "now": 0 }))["in_force"], json!([]));
 }
 
@@ -99,7 +93,6 @@ fn a_template_is_checked_and_filled() {
     let filled = ok(json!({ "op": "fill", "templates_hash": templates_hash, "template": "closure", "network_hash": network_hash(),
         "input": { "stops": ["A"], "start_date": "2026-08-17" } }));
     assert_eq!(filled["filled"]["header"][0]["text"], "The stop at Main & 1st is closed starting Monday, August 17");
-    // the alert's informed entities name each stop once
     let informed = ok(json!({ "op": "fill", "templates_hash": templates_hash, "template": "closure", "network_hash": network_hash(),
         "input": { "informed": [{ "stop": "A" }, { "route": "10", "stop": "A" }], "start_date": "2026-08-17" } }));
     assert_eq!(informed["filled"]["header"][0]["text"], filled["filled"]["header"][0]["text"]);
@@ -114,8 +107,6 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(err(json!({ "op": "list", "alerts_hash": "sha256:none", "now": 0 })).contains("load_service_alerts"));
 }
 
-/// The documents become the alerts log's records and back (D-197): the
-/// same document, under the same hash.
 #[test]
 fn the_documents_round_trip_through_the_log_records() {
     let alerts_hash = ok(json!({ "op": "load_service_alerts", "alerts": sample() }))["alerts_hash"].clone();
@@ -133,9 +124,7 @@ fn the_documents_round_trip_through_the_log_records() {
     assert!(err(json!({ "op": "log_document", "kind": "stops", "records": {} })).contains("stops"));
 }
 
-/// The alerts log keeps each record in the version it was written in. A
-/// log written at v1 assembles as the v2 document (D-216): every v1
-/// alert is a v2 alert.
+/// A log written at v1 assembles as the v2 document (D-216).
 #[test]
 fn records_stored_at_version_1_assemble_as_version_2() {
     let mut v1 = sample();
@@ -150,10 +139,6 @@ fn records_stored_at_version_1_assemble_as_version_2() {
     let newer = json!({ "a1": { "version": 3, "value": sample()["alerts"]["a1"] } });
     assert!(err(json!({ "op": "log_document", "kind": "service_alerts", "records": newer })).contains("v3"));
 }
-
-// ---------------------------------------------------------------------
-// receive: the alerts log's write, whole (D-228)
-// ---------------------------------------------------------------------
 
 fn header(seq: u64) -> Value {
     json!({ "log": "alerts", "seq": seq, "writer": "j.tran", "at_ms": 7_000_000, "module": "cap-alerts@test", "intent": { "op": "POST /logs/alerts" } })

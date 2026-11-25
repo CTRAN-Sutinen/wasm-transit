@@ -1,12 +1,6 @@
-//! The notes document (D-214): what a write must pass, a note written
-//! and edited, nothing deleted, a target's notes, and the notes of a
-//! time span.
-//!
-//! The laws come from the user's intent (2026-11-19): dispatch keeps
-//! internal notes in place of email; a note names a trip instance, an
-//! edit record, an alert, or a stop; anyone with the write role writes
-//! one; a note is never deleted, and a correction is a new state of the
-//! note (the log keeps the earlier text).
+//! Pins the notes document (D-214, `crates/cap-notes/OPS.md`): what a write
+//! must pass, a note written and edited, nothing deleted, a target's notes,
+//! and the notes of a time span.
 
 use proptest::prelude::*;
 use transit_notes::*;
@@ -26,10 +20,6 @@ fn problems(r: Result<Notes, Vec<NoteRefusal>>) -> Vec<NoteProblem> {
 fn written(notes: &Notes, id: &str) -> Note {
     notes.notes.get(id).cloned().expect("the note is held")
 }
-
-// ---------------------------------------------------------------------
-// A note written, and edited.
-// ---------------------------------------------------------------------
 
 #[test]
 fn a_new_note_is_stamped_with_its_writer_and_time() {
@@ -70,10 +60,6 @@ fn an_edit_is_not_earlier_than_the_note() {
     assert_eq!(problems(notes.write("n1", alert("a1"), "Posted at 1:40.", "j.tran", 99)), vec![NoteProblem::EditedBeforeWritten]);
 }
 
-// ---------------------------------------------------------------------
-// What a write must pass: only what makes a note wrong (D-152).
-// ---------------------------------------------------------------------
-
 #[test]
 fn a_write_refuses_what_makes_a_note_wrong() {
     let empty = Notes::default();
@@ -88,8 +74,6 @@ fn a_write_refuses_what_makes_a_note_wrong() {
 
 #[test]
 fn a_target_the_network_does_not_have_is_not_refused() {
-    // The notes do not read the network: a note on a trip or a stop the
-    // network does not hold is a note, as written.
     let notes = Notes::default().write("n1", trip("no-such-trip", 0), "Odd one.", "r.alvarez", 1);
     assert!(notes.is_ok());
 }
@@ -100,10 +84,6 @@ fn checked_refuses_an_edit_earlier_than_the_note() {
     notes.notes.get_mut("n1").unwrap().edited = Some(Stamp { by: "j.tran".into(), at: 50 });
     assert_eq!(problems(notes.checked()), vec![NoteProblem::EditedBeforeWritten]);
 }
-
-// ---------------------------------------------------------------------
-// A target's notes, and the notes of a time span.
-// ---------------------------------------------------------------------
 
 fn sample() -> Notes {
     Notes::default()
@@ -129,10 +109,6 @@ fn a_spans_notes_are_newest_first() {
     assert_eq!(ids, vec!["d", "b"], "written in [from, to): 300 is outside, 100 is before");
 }
 
-// ---------------------------------------------------------------------
-// Properties.
-// ---------------------------------------------------------------------
-
 fn any_target() -> impl Strategy<Value = NoteTarget> {
     prop_oneof![
         (0u8..3, 0u32..3).prop_map(|(t, s)| NoteTarget::Trip { trip: format!("t{t}"), date: "2026-11-19".into(), start_secs: s * 600 }),
@@ -142,8 +118,7 @@ fn any_target() -> impl Strategy<Value = NoteTarget> {
     ]
 }
 
-/// A run of writes: (id, target, text, at). Some are refused (a changed
-/// target, an earlier edit); a refused write leaves the document as it
+/// Some writes are refused, and a refused write leaves the document as it
 /// was.
 fn any_writes() -> impl Strategy<Value = Vec<(u8, NoteTarget, u8, u64)>> {
     prop::collection::vec((0u8..6, any_target(), 0u8..3, 0u64..1000), 0..24)

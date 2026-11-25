@@ -1,7 +1,3 @@
-//! Where a walk leg runs. It passes through the stops it visits. Where it walks
-//! from or to a place, it follows the streets. The place's walk to its stop
-//! carries the path (cap-streets `access`). A walk straight between two places
-//! runs the direct walk's path.
 
 use transit_network::{Coord, Network};
 use transit_streets::walking::DirectWalk;
@@ -9,12 +5,6 @@ use transit_streets::StreetPoint;
 
 use crate::{End, Place};
 
-/// The line a walk leg runs, from its first stop or place through
-/// `via_stop_ids` to its last: a stop's point; a place's walk to its
-/// neighboring stop along that walk's path (reversed where the walk
-/// ends at the place); between two places, `direct`'s path. A hop
-/// with nothing to draw (an unknown stop, a walk given by its seconds
-/// alone) is left out; fewer than two points draw nothing.
 pub fn walk_path(
     network: &Network,
     from_stop_id: &str,

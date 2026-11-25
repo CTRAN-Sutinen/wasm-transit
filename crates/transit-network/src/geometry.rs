@@ -1,35 +1,23 @@
-//! Where things are: the network's own geometry answers.
-//!
-//! The model's contract for drawing a pattern is the alignment it runs. If the
-//! pattern has none ("None means draw stop-to-stop lines"), the contract is
-//! its stops joined in order. Every view that draws a pattern (the diversion
-//! editor's ghost, a planner's drill-down, a trip that still follows its
-//! pattern) asks here, so every host draws the same line.
+//! Every view that draws a pattern calls [`pattern_alignment`], so every
+//! host draws the same line.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{Coord, Network};
 
-/// The pattern's alignment: the alignment it runs when that is a
-/// line (two points or more), else its stops joined in order with
-/// consecutive repeats dropped. Empty when that leaves fewer than two
-/// points (or the pattern is unknown).
 pub fn pattern_alignment(network: &Network, pattern: &str) -> Vec<Coord> {
     let Some(p) = network.patterns.get(pattern) else { return Vec::new() };
     authored_alignment(network, pattern)
         .unwrap_or_else(|| stops_line(network, p.stops.iter().map(|ps| ps.stop.as_str())))
 }
 
-/// The line of the alignment the pattern runs, when it has one with
-/// two points or more.
 pub fn authored_alignment(network: &Network, pattern: &str) -> Option<Vec<Coord>> {
     let id = network.patterns.get(pattern)?.alignment.as_ref()?;
     let points = &network.alignments.get(id)?.points;
     (points.len() >= 2).then(|| points.iter().map(|p| Coord { lat: p.lat, lon: p.lon }).collect())
 }
 
-/// The pattern's stops, in order (stops the network lacks skipped).
 pub fn pattern_stop_points(network: &Network, pattern: &str) -> Vec<Coord> {
     network
         .patterns
@@ -38,13 +26,10 @@ pub fn pattern_stop_points(network: &Network, pattern: &str) -> Vec<Coord> {
         .unwrap_or_default()
 }
 
-/// One stop's coordinates.
 pub fn stop_point(network: &Network, stop: &str) -> Option<Coord> {
     network.stops.get(stop).map(|s| Coord { lat: s.lat, lon: s.lon })
 }
 
-/// Stops joined in order, consecutive repeats dropped; empty below
-/// two points (a line needs two).
 pub fn stops_line<'a>(network: &Network, stops: impl IntoIterator<Item = &'a str>) -> Vec<Coord> {
     let mut out: Vec<Coord> = Vec::new();
     for stop in stops {
@@ -60,7 +45,6 @@ pub fn stops_line<'a>(network: &Network, stops: impl IntoIterator<Item = &'a str
     out
 }
 
-/// What a drill-down can frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -73,7 +57,6 @@ pub enum EntityKind {
     Block,
 }
 
-/// An entity on the map: the lines it runs and the stops it serves.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EntityFocus {
@@ -81,9 +64,6 @@ pub struct EntityFocus {
     pub points: Vec<Coord>,
 }
 
-/// One route on the network map: its id, name and color (the
-/// agency's, when it has one), and the distinct lines its patterns
-/// draw.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(export)]
 pub struct RouteLines {
@@ -93,11 +73,8 @@ pub struct RouteLines {
     pub lines: Vec<Vec<Coord>>,
 }
 
-/// The network on a map: every route that draws a line, in id order. Each
-/// has the distinct lines of its patterns. A pattern's line is its alignment,
-/// else its stops joined. These are the lines that `entity_focus` frames.
-/// Given `members`, only the patterns that run trips under one of those
-/// service types draw. A route with none is left out.
+/// `members` names service types. When it is given, only the patterns that
+/// run trips under one of them draw. [`entity_focus`] frames the same lines.
 pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLines> {
     let runs = |pattern: &str| {
         members.map_or(true, |m| {
@@ -126,10 +103,6 @@ pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLi
     out
 }
 
-/// Where an entity is: a stop is its point; a pattern (and a schedule,
-/// through its pattern) its alignment and stops; a route every one of
-/// its patterns; a service type every pattern scheduled under it; a
-/// block every pattern its trips run. None for an unknown id.
 pub fn entity_focus(network: &Network, kind: EntityKind, id: &str) -> Option<EntityFocus> {
     let patterns: Vec<&str> = match kind {
         EntityKind::Stop => {

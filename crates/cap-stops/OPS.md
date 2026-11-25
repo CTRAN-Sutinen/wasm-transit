@@ -48,7 +48,7 @@ The refusals are:
 
 An event out of date order is refused for that alone.
 
-Before it checks, `validate` gives an id to each event that has none. With no refusal, `validate` answers the canonical document and its `document_hash`. The canonical document holds the stops by id and each stop's events as written, each with its id. It keeps every field that this repo does not know. The module is the hash authority: the hash is the same one that `load_stops` answers.
+Before it checks, `validate` gives an id to each event that has none. With no refusal, `validate` answers the canonical document and its `document_hash`. The canonical document holds the stops by id and each stop's events as written, each with its id. It keeps every field that this repo does not know. The hash is the same one that `load_stops` answers.
 
 A document whose `schema_version` this build does not read is an error.
 

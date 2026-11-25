@@ -1,29 +1,18 @@
-//! Host-friendly view of a decoded GTFS-rt feed: header, entity
-//! counts by type, trip updates (delays), live vehicles, and service
-//! alerts. It is the serialization target of cap-rt's `decode` op, shared
-//! with every host that wants meaning out of the protobuf bytes.
-
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
 use crate::gtfs_rt::trip_descriptor::ScheduleRelationship as TripRelationship;
 use crate::gtfs_rt::trip_update::stop_time_update::ScheduleRelationship as StopRelationship;
 
-/// Flat view of one trip update in a feed.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct TripUpdateView {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
-    /// The instance's start ("HH:MM:SS"): how a frequency trip's
-    /// update names which run it is.
+    /// "HH:MM:SS". It names which run of a frequency trip the update is.
     pub start_time: Option<String>,
-    /// The instance's service date ("YYYYMMDD", as the feed writes
-    /// it): which day's run a trip past midnight is.
+    /// "YYYYMMDD". It names which day's run a trip past midnight is.
     pub start_date: Option<String>,
-    /// The instance does not run: the descriptor's
-    /// schedule_relationship is CANCELED, or DELETED (cancelled and
-    /// not to be shown to riders).
     pub canceled: bool,
     pub stop_updates: Vec<StopUpdateView>,
 }
@@ -33,37 +22,28 @@ pub struct TripUpdateView {
 pub struct StopUpdateView {
     pub stop_id: Option<String>,
     pub stop_sequence: Option<u32>,
-    /// Seconds of delay; positive = late.
+    /// Seconds. Positive is late.
     pub arrival_delay: Option<i32>,
     pub departure_delay: Option<i32>,
-    /// The vehicle does not stop here (schedule_relationship
-    /// SKIPPED); the trip still runs.
     pub skipped: bool,
 }
 
-/// One live vehicle from a VehiclePositions feed.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct VehicleView {
     pub entity_id: String,
     pub trip_id: Option<String>,
-    /// The instance's start ("HH:MM:SS"), as on a trip update.
     pub start_time: Option<String>,
-    /// The instance's service date ("YYYYMMDD"), as on a trip update.
     pub start_date: Option<String>,
     pub route_id: Option<String>,
     pub lat: f64,
     pub lon: f64,
     pub bearing: Option<f32>,
     pub stop_id: Option<String>,
-    /// VehicleDescriptor: the internal vehicle id and the user-
-    /// visible label: the bus number a rider reads off the vehicle.
     pub vehicle_id: Option<String>,
     pub label: Option<String>,
 }
 
-/// One informed entity of an alert, in the feed's vocabulary (the
-/// live document resolves it into the network's).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct InformedView {
@@ -71,16 +51,12 @@ pub struct InformedView {
     pub route_id: Option<String>,
     pub route_type: Option<i32>,
     pub trip_id: Option<String>,
-    /// The trip instance's start ("HH:MM:SS"), for a frequency trip.
     pub trip_start_time: Option<String>,
-    /// The trip instance's service date ("YYYYMMDD").
     pub trip_start_date: Option<String>,
     pub stop_id: Option<String>,
     pub direction_id: Option<u32>,
 }
 
-/// One service alert from an Alerts feed. Text is the untagged
-/// translation, else the first.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct AlertView {
@@ -91,10 +67,10 @@ pub struct AlertView {
     pub header: Option<String>,
     pub description: Option<String>,
     pub url: Option<String>,
-    /// When to show it (the communication period, else the deprecated
-    /// active period); empty = always.
+    /// The communication period, else the deprecated active period. Empty
+    /// means always.
     pub communication: Vec<transit_alerts::AlertPeriod>,
-    /// When service is affected; empty = while shown.
+    /// Empty means while shown.
     pub impact: Vec<transit_alerts::AlertPeriod>,
     pub informed: Vec<InformedView>,
 }
@@ -103,26 +79,21 @@ pub struct AlertView {
 #[ts(export)]
 pub struct RtOverview {
     pub gtfs_realtime_version: Option<String>,
-    /// Unix seconds, as served in the feed header.
+    /// Unix seconds.
     pub timestamp: Option<u64>,
     pub entities: usize,
     pub trip_updates: usize,
     pub vehicles: usize,
     pub alerts: usize,
-    /// Individual trip updates, capped for UI sanity.
     pub trips: Vec<TripUpdateView>,
-    /// Live vehicles with positions, for the map.
     pub vehicle_positions: Vec<VehicleView>,
-    /// The feed's service alerts.
     pub service_alerts: Vec<AlertView>,
 }
 
-/// Rendered trip updates, capped for UI sanity. Kept generous: the UI
-/// joins these onto departure boards and vehicle dots by trip_id, so
-/// a low cap silently drops delay information.
+/// A low cap silently drops delay information, because the UI joins these
+/// onto boards and vehicle dots by trip_id.
 const MAX_TRIPS_SHOWN: usize = 1000;
 
-/// Decode a GTFS-rt protobuf payload into the overview view.
 pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
     let msg = crate::decode(bytes).map_err(|e| e.to_string())?;
 
@@ -250,7 +221,6 @@ pub(crate) fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> Aler
     }
 }
 
-/// One informed entity as the feed carries it.
 pub(crate) fn informed_view(e: &crate::gtfs_rt::EntitySelector) -> InformedView {
     InformedView {
         agency_id: e.agency_id.clone(),
@@ -264,7 +234,6 @@ pub(crate) fn informed_view(e: &crate::gtfs_rt::EntitySelector) -> InformedView 
     }
 }
 
-/// The untagged translation, else the first.
 fn translated(text: Option<&crate::gtfs_rt::TranslatedString>) -> Option<String> {
     let translations = &text?.translation;
     translations

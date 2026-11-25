@@ -1,7 +1,3 @@
-//! The worked examples of the authoring capability (its `examples` feature):
-//! the documents to load and each request. The generator runs them through
-//! this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::{Example, KindExample};
 use serde_json::json;
 use transit_network::NetworkEdit;
@@ -16,8 +12,6 @@ pub fn examples() -> Vec<Example> {
     ]))
     .expect("the example edits read");
     vec![
-        // The fixture feed, stamped as the fall pick on its first service
-        // date.
         Example {
             bytes: None, kinds: vec![],
             op: "stamp_pick",
@@ -28,10 +22,8 @@ pub fn examples() -> Vec<Example> {
     ]
 }
 
-/// `apply`'s example of each edit kind: one each, applied in order to the
-/// fixture network through the same `apply_edits` the module runs. An
-/// example that stops applying fails the build. So does an edit kind with
-/// no example. The kinds are read off the type's own declaration.
+/// An example that stops applying fails the build. So does an edit kind
+/// with no example.
 fn kinds(network: &transit_network::Network) -> Vec<KindExample> {
     let mut doc = network.clone();
     let mut kinds = Vec::new();
@@ -50,32 +42,26 @@ fn kinds(network: &transit_network::Network) -> Vec<KindExample> {
     kinds
 }
 
-/// The edit kinds, one each, in an order that applies to the fixture
-/// network. The network has routes 10/20/40, stops A B C and the station
-/// STN with bays SA SB, service types WK SUN HOL, trips t10 t11 t20 t30
-/// t40 t41, and block B1 = t10 then t20. Each later edit may name what an
-/// earlier one made.
+/// The network has routes 10/20/40, stops A B C and the station STN with bays
+/// SA SB, service types WK SUN HOL, trips t10 t11 t20 t30 t40 t41, and block
+/// B1 = t10 then t20. Each edit may name what an earlier one created.
 fn edit_kinds() -> Vec<serde_json::Value> {
     vec![
-        // the plan
         json!({ "edit": "set_plan", "plan": { "id": "fall-2026", "name": "Fall 2026", "effective_from": "2026-10-19" } }),
         json!({ "edit": "update_plan", "name": "Fall 2026 service" }),
         json!({ "edit": "set_name", "name": "Sample transit" }),
-        // Creation gestures. An omitted id is minted and reported in `created`.
         json!({ "edit": "add_stop", "id": "D", "lat": 45.53, "lon": -73.53 }),
         json!({ "edit": "add_route", "id": "30" }),
         json!({ "edit": "add_pattern", "id": "pat-30", "route": "30" }),
         json!({ "edit": "add_pattern_through", "id": "pat-10-0-3", "route": "10", "direction": "0", "stops": ["A", "B", "C"], "run_secs": 900 }),
         json!({ "edit": "add_service_type", "id": "SAT", "from": "2026-10-19" }),
         json!({ "edit": "add_pattern_trips", "id": "SAT:pat-10-0-1", "pattern": "pat-10-0-1", "service_type": "SAT" }),
-        // field gestures
         json!({ "edit": "update_stop", "id": "D", "name": "Main & 4th", "transfer": true }),
         json!({ "edit": "update_route", "id": "30", "name": "30", "mode": "bus" }),
         json!({ "edit": "set_direction", "route": "30", "id": "0", "name": "Uptown" }),
         json!({ "edit": "update_pattern", "id": "pat-30", "name": "30 via Main", "direction": "0" }),
         json!({ "edit": "update_service_type", "id": "SAT", "name": "Saturday" }),
         json!({ "edit": "set_pattern_trips_refs", "id": "SAT:pat-10-0-1", "service_type": "SAT" }),
-        // a pattern's stops and timing
         json!({ "edit": "insert_pattern_stop", "pattern": "pat-10-0-2", "stop": "D", "index": 1 }),
         json!({ "edit": "set_pattern_stop", "pattern": "pat-10-0-2", "index": 1, "distance_m": 400.0 }),
         json!({ "edit": "toggle_timepoint", "pattern": "pat-10-0-2", "index": 1 }),
@@ -84,22 +70,17 @@ fn edit_kinds() -> Vec<serde_json::Value> {
         json!({ "edit": "set_timepoint_time", "pattern": "pat-10-0-2", "profile": 1, "timepoint": 1, "secs": 300 }),
         json!({ "edit": "remove_timing_profile", "pattern": "pat-10-0-2", "index": 1 }),
         json!({ "edit": "remove_pattern_stop", "pattern": "pat-10-0-2", "index": 1 }),
-        // A pattern's line. `one` gives it its own alignment. `all` redraws
-        // the one it runs. Every pattern on it moves, and `touched` lists them.
         json!({ "edit": "draw_alignment", "pattern": "pat-10-0-2", "redraw": "one", "id": "line-10-0-2",
             "points": [ { "lat": 45.5, "lon": -73.5 }, { "lat": 45.505, "lon": -73.505 }, { "lat": 45.51, "lon": -73.51 } ] }),
-        // a service type's calendar
         json!({ "edit": "toggle_service_day", "id": "SAT", "day": "sat" }),
         json!({ "edit": "add_service_range", "id": "SAT" }),
         json!({ "edit": "set_service_range", "id": "SAT", "index": 1, "start": "2027-01-01", "end": "2027-06-30" }),
         json!({ "edit": "remove_service_range", "id": "SAT", "index": 1 }),
         json!({ "edit": "set_service_exception", "id": "SAT", "date": "2026-12-26", "state": "removed" }),
         json!({ "edit": "remove_service_exception", "id": "SAT", "date": "2026-12-26" }),
-        // trips
         json!({ "edit": "retime_trip", "trip": "t30", "to_secs": 31500 }),
         json!({ "edit": "add_trip", "pattern_trips": "WK:pat-10-0-1", "id": "t12", "start_secs": 34200 }),
         json!({ "edit": "remove_trip", "trip": "t12" }),
-        // a frequency trip's bands
         json!({ "edit": "upsert_pattern_trips", "id": "WK:pat-20-0-0", "pattern_trips": {
             "pattern": "pat-20-0-0", "service_type": "WK", "trips": [
                 { "id": "t20", "departs": { "kind": "at", "start_secs": 30000 }, "times": [
@@ -110,7 +91,6 @@ fn edit_kinds() -> Vec<serde_json::Value> {
         json!({ "edit": "add_band", "trip": "t21" }),
         json!({ "edit": "set_band", "trip": "t21", "index": 1, "start_secs": 43200, "end_secs": 50400, "headway_secs": 1800 }),
         json!({ "edit": "remove_band", "trip": "t21", "index": 1 }),
-        // the timetable gestures (route + direction + service type)
         json!({ "edit": "set_headway", "route": "10", "direction": "0", "service_type": "WK",
             "from_secs": 28800, "to_secs": 32400, "headway_secs": 1200 }),
         json!({ "edit": "set_span", "route": "10", "direction": "0", "service_type": "WK", "last_secs": 36000, "headway_secs": 1800 }),
@@ -118,12 +98,10 @@ fn edit_kinds() -> Vec<serde_json::Value> {
             "from_secs": 28800, "to_secs": 32400, "delta_secs": 120 }),
         json!({ "edit": "insert_direction_stop", "route": "10", "direction": "0", "stop": "D", "after": "A" }),
         json!({ "edit": "remove_direction_stop", "route": "10", "direction": "0", "stop": "D" }),
-        // The runcut. An emptied block goes.
         json!({ "edit": "add_block", "id": "B2" }),
         json!({ "edit": "add_block_trip", "block": "B2", "trip": { "trip": "t40" } }),
         json!({ "edit": "set_layover", "block": "B1", "after_trip": 0, "secs": 600 }),
         json!({ "edit": "remove_block_trip", "block": "B2", "index": 0 }),
-        // whole entities: read one from the document, change it, send it back
         json!({ "edit": "upsert_stop", "id": "E", "stop": { "name": "Main & 5th", "lat": 45.54, "lon": -73.54 } }),
         json!({ "edit": "upsert_route", "id": "50", "route": { "name": "50", "mode": "bus" } }),
         json!({ "edit": "upsert_pattern", "id": "pat-50", "pattern": { "route": "50", "name": "50 Main", "stops": [

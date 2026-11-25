@@ -1,12 +1,8 @@
-//! Native dispatch tests for the notes capability: the seam without
-//! wasm. The document's own laws are tested at the library seam
-//! (transit-notes). Here the module's contract is pinned: validate and
-//! the kernel's load agree on one identity, a refused document is
-//! refused at both with its reasons named, write begins and changes the
-//! document with the stamps the host gives, a target's notes and a
-//! span's notes answer over a registered document, the document round
-//! trips through the log records, and garbage is an honest error, never
-//! a panic.
+//! Native dispatch tests for cap-notes without wasm (D-214, `OPS.md`).
+//! `validate` and the kernel's load agree on one identity, and a refused
+//! document is refused at both with its reasons named. `write` stamps with
+//! what the host gives. The document round-trips through the log records,
+//! and garbage is an error, never a panic.
 
 use serde_json::{json, Value};
 
@@ -82,8 +78,7 @@ fn a_targets_notes_and_a_spans_notes_answer_over_a_registered_document() {
     assert_eq!(ok(json!({ "op": "between", "from": 0, "to": 2000 }))["notes"], json!([]), "no document is an empty one");
 }
 
-/// The document becomes the notes log's records and back (D-197): the
-/// same document, under the same hash.
+/// The same document comes back under the same hash (D-197).
 #[test]
 fn the_document_round_trips_through_the_log_records() {
     let notes_hash = ok(json!({ "op": "load_notes", "notes": sample() }))["notes_hash"].clone();
@@ -107,10 +102,6 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(run(json!({ "op": "load_notes", "notes": [1, 2] }))["error"].is_string());
 }
 
-// ---------------------------------------------------------------------
-// receive: the notes log's write, whole (D-228)
-// ---------------------------------------------------------------------
-
 fn header(seq: u64, key: Option<&str>) -> Value {
     let mut intent = json!({ "op": "POST /logs/notes" });
     if let Some(k) = key {
@@ -123,7 +114,6 @@ fn write_op(id: &str, text: &str) -> Value {
     json!({ "cap": "notes", "op": "write", "args": { "id": id, "target": trip(), "text": text } })
 }
 
-/// The fold after the host stores `entry` at seq 1.
 fn folded(entry: &str) -> Value {
     let stored = [transit_log::Stored { seq: 1, text: entry.into() }];
     let fold = transit_log::fold(transit_log::Checkpoint::empty("notes"), &stored, &cap_abi::record_hash).unwrap();
@@ -139,13 +129,11 @@ fn receive_writes_the_note_stamped_by_the_header_and_answers_its_entry() {
     let note = entry["changes"].as_array().unwrap().iter().find(|c| c["kind"] == "note").expect("the note changes");
     assert_eq!(note["after"]["written"], json!({ "by": "r.alvarez", "at": 2000 }), "the header's writer and clock, never the page's");
     let head = got["heads"]["notes"].as_str().expect("the head after the write");
-    // The same write again, over the fold that holds its key, lands once.
     let again = ok(json!({ "op": "receive", "heads": { "notes": head },
         "write": { "checkpoint": folded(got["entry"].as_str().unwrap()), "header": header(2, Some("device-1/1")) },
         "ops": [write_op("n1", "No operator.")] }));
     assert_eq!(again["landed"], 1, "{again}");
     assert!(again.get("entry").is_none());
-    // It lands once even when its ops would now be refused.
     let refused_now = ok(json!({ "op": "receive", "heads": { "notes": head },
         "write": { "checkpoint": folded(got["entry"].as_str().unwrap()), "header": header(2, Some("device-1/1")) },
         "ops": [write_op("n1", "  ")] }));

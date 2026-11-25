@@ -1,28 +1,15 @@
-//! Detour notice laws (QAF-74: notices on any change).
-//!
-//! The intent, as the user stated it: a compared plan's notice fires whenever
-//! the active (diverted) itinerary arrives later than the baseline. It also
-//! fires when the active itinerary rides a diverted trip. A diverted trip is a
-//! trip instance whose patched stop times differ from its unpatched instance.
-//! The notice does not wait for the active world to have no trip. The notice is
-//! structured. It holds its kind, the time lost, the diverted routes, and the
-//! stops they skip. It carries one text line. `plan_notice` is the one place it
-//! is computed.
-//!
-//! The laws, over generated days and a generated diversion of one trip (an
-//! interior stop skipped, or the trip delayed from a visit on: the two things a
-//! diversion does to a day):
+//! Pins `plan_notice` (`crates/cap-router/OPS.md`). The properties hold over
+//! generated days and a generated diversion of one trip:
 //!
 //! 1. No notice exactly when the active plan exists, arrives no later than the
 //!    baseline (or there is no baseline), and rides no diverted trip.
-//! 2. The kind. With no active plan, the kind is `unreachable` when the
-//!    baseline has one, and `no_trip` when neither does. An active plan that
-//!    arrives later gives `later`, with the seconds lost and the minutes
-//!    (rounded up, so a rider is never told a loss is smaller than it is).
-//!    Otherwise the kind is `diverted`.
-//! 3. Every diverted trip the active plan rides is named: its route, and the
-//!    stops it skips.
-//! 4. The notice always says something.
+//! 2. With no active plan, the kind is `unreachable` when the baseline has a
+//!    plan and `no_trip` when it has none. A later active plan gives `later`,
+//!    with the seconds lost and the minutes rounded up. Otherwise the kind is
+//!    `diverted`.
+//! 3. The notice names the route and the skipped stops of every diverted trip
+//!    that the active plan rides.
+//! 4. The text is not empty.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -39,9 +26,7 @@ const MAX_LEGS: usize = 6;
 
 #[derive(Debug, Clone)]
 enum Divert {
-    /// Skip the interior visit at this index (mod the interior).
     Skip(usize),
-    /// Delay every visit from this index on by this many seconds.
     Delay(usize, u32),
 }
 
@@ -78,7 +63,6 @@ fn world() -> impl Strategy<Value = (usize, f64, Vec<TripSpec>, usize, Divert, u
     })
 }
 
-/// The patched day: one trip diverted, everything else untouched.
 fn patch(day: &[MaterializedTrip], which: usize, how: &Divert) -> Vec<MaterializedTrip> {
     let mut out = day.to_vec();
     let target = which % out.len();
@@ -100,8 +84,6 @@ fn patch(day: &[MaterializedTrip], which: usize, how: &Divert) -> Vec<Materializ
     out
 }
 
-/// The stops a patched trip no longer visits (multiset difference),
-/// recomputed here from the two days, not from the router.
 fn skipped(base: &MaterializedTrip, patched: &MaterializedTrip) -> Vec<String> {
     let mut left: Vec<&str> = patched.stop_times.iter().map(|s| s.stop.as_str()).collect();
     let mut out = Vec::new();
@@ -130,8 +112,6 @@ proptest! {
         let active = earliest_arrival(&active_net, &f, &t, depart, MAX_LEGS).unwrap();
         let baseline = earliest_arrival(&base_net, &f, &t, depart, MAX_LEGS).unwrap();
 
-        // The diverted instances, by definition: patched stop times
-        // differ from the unpatched instance's.
         let diverted_here: Vec<(&MaterializedTrip, &MaterializedTrip)> = day
             .iter()
             .zip(&patched)
@@ -156,12 +136,12 @@ proptest! {
             (Some(a), Some(b)) => a.arrival_secs > b.arrival_secs,
             _ => false,
         };
-        // Law 1.
+        // Property 1.
         let quiet = active.is_some() && !later && rides_diverted.is_empty();
         prop_assert_eq!(notice.is_none(), quiet, "notice {:?}", notice);
         let Some(notice) = notice else { return Ok(()) };
 
-        // Law 2.
+        // Property 2.
         let kind = match (&active, &baseline) {
             (None, Some(_)) => NoticeKind::Unreachable,
             (None, None) => NoticeKind::NoTrip,
@@ -176,7 +156,7 @@ proptest! {
             prop_assert!(notice.text.contains(&format!("{} min", lost.div_ceil(60))), "{}", notice.text);
         }
 
-        // Law 3.
+        // Property 3.
         for (b, p) in rides_diverted {
             let route = network.routes.get(&b.route).map(|r| r.label().to_string()).unwrap();
             prop_assert!(notice.routes.contains(&route), "route {route} unnamed: {:?}", notice.routes);
@@ -185,7 +165,7 @@ proptest! {
             }
         }
 
-        // Law 4.
+        // Property 4.
         prop_assert!(!notice.text.trim().is_empty());
     }
 }

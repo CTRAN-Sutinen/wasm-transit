@@ -1,35 +1,17 @@
-//! The alignment-authoring laws (D-11): `draw_alignment` redraws a
-//! pattern's line, and the edit names what it redraws: `one` (the
-//! pattern gets its own new alignment; the others on the old line keep
-//! it) or `all` (the alignment itself changes, so every pattern on it
-//! is redrawn): and the change reports every pattern it touched.
-//! Nothing moves silently.
+//! `draw_alignment` (D-11; cap-author/OPS.md). `one` gives the pattern a new
+//! alignment. `all` redraws the shared alignment, so every pattern on it moves.
+//! Every change is reported in `touched`. The expected answers are recomputed
+//! from the generated input.
 //!
-//! Written before the implementation, from the decision; every
-//! expected answer is recomputed here from the generated input:
-//!
-//! 1. **One**: the pattern draws the new points under a new alignment
-//!    (created, reported); every other pattern draws what it drew, and
-//!    no existing alignment changes. Touched: the pattern alone.
-//! 2. **All**: every pattern that ran the pattern's alignment draws
-//!    the new points, under the same alignment id; every other pattern
-//!    draws what it drew. Touched: exactly those patterns, in id order.
-//!    A pattern with no alignment has no shared line: `all` gives it a
-//!    new one, as `one` does.
-//! 3. **Nothing silent**: every pattern whose line changed is in
-//!    `touched`; the touched patterns' stop distances stop claiming
-//!    to be published (they were measured along the old line), keep
-//!    their meters, and nothing else in the document changes (stops,
-//!    timing, trips, blocks, the other patterns).
-//! 4. **Refusal**: an unknown pattern, fewer than two points, a point
-//!    off the globe, or a taken alignment id is a named error; the
-//!    input is untouched.
-//!
-//! The API these laws require: `NetworkEdit::DrawAlignment { pattern,
-//! points: Vec<Coord>, redraw: Redraw (one | all), id: Option<String> }`
-//! (`id` names the new alignment of `one`, minted `al{n}` when absent);
-//! `apply_edits_reporting` answers `Applied { network, created,
-//! touched }`, `touched: Vec<TouchedEntity { kind, id }>`.
+//! 1. `one`: the pattern draws the new points under a new alignment, and no
+//!    other pattern or alignment changes.
+//! 2. `all`: every pattern on the old alignment draws the new points under the
+//!    same alignment id. A pattern with no alignment gets a new one, as `one`
+//!    does.
+//! 3. A redraw changes nothing in the document beyond the lines of the
+//!    touched patterns. Their stop distances stop claiming to be published.
+//! 4. An unknown pattern, fewer than two points, a point off the globe, or a
+//!    taken alignment id is a named error, and the input is untouched.
 
 use proptest::prelude::*;
 use transit_network::{
@@ -41,12 +23,8 @@ const ALIGNMENT_IDS: [&str; 3] = ["sh 7", "al1", "x_line"];
 
 #[derive(Clone, Debug)]
 struct Spec {
-    /// Points per alignment.
     alignments: Vec<Vec<(f64, f64)>>,
-    /// Per pattern: the alignment it runs, and whether its stop
-    /// distances were published.
     patterns: Vec<(Option<usize>, bool)>,
-    /// The pattern drawn, and the new line.
     target: usize,
     points: Vec<(f64, f64)>,
 }
@@ -122,8 +100,6 @@ fn draw(spec: &Spec, redraw: Redraw) -> NetworkEdit {
     NetworkEdit::DrawAlignment { pattern: format!("p{}", spec.target), points: line(&spec.points), redraw, id: None }
 }
 
-/// A pattern with its line fields (alignment, published flags) blanked
-/// what the edit must leave alone.
 fn rest(p: &Pattern) -> Pattern {
     let mut p = p.clone();
     p.alignment = None;
@@ -133,7 +109,6 @@ fn rest(p: &Pattern) -> Pattern {
     p
 }
 
-/// Law 3, shared by both scopes.
 fn nothing_silent(net: &Network, next: &Network, touched: &[String]) -> Result<(), TestCaseError> {
     prop_assert_eq!(&next.stops, &net.stops);
     prop_assert_eq!(&next.routes, &net.routes);
@@ -169,7 +144,6 @@ proptest! {
         prop_assert!(!net.alignments.contains_key(&new_id), "a NEW alignment");
         prop_assert_eq!(pattern_alignment(next, &target), line(&spec.points));
         prop_assert!(next.alignments[&new_id].points.iter().all(|p| p.distance.is_none()), "no distances were published along a drawn line");
-        // Every alignment that stood still stands, unchanged.
         for (id, a) in &net.alignments {
             prop_assert_eq!(&next.alignments[id], a);
         }
@@ -197,7 +171,6 @@ proptest! {
         }
         match &old {
             Some(a) => {
-                // The same alignment, redrawn: no id changes anywhere.
                 prop_assert_eq!(next.alignments.len(), net.alignments.len());
                 for (id, p) in &net.patterns {
                     prop_assert_eq!(&next.patterns[id].alignment, &p.alignment);
@@ -257,7 +230,7 @@ fn the_new_line_takes_the_callers_id_or_the_first_free_one() {
         points: vec![(45.0, -122.0), (45.05, -122.02), (45.1, -122.1)],
     };
     let net = build(&spec);
-    // "al1" is taken in the fixture: the mint skips it.
+    // The fixture already has `al1`, so the new id skips it.
     let minted = apply_edits_reporting(&net, &[draw(&spec, Redraw::One)]).unwrap();
     assert_eq!(minted.network.patterns["p0"].alignment.as_deref(), Some("al2"));
     let named = apply_edits(
@@ -276,7 +249,7 @@ fn the_edit_reads_from_json() {
     )
     .unwrap();
     assert!(matches!(edit, NetworkEdit::DrawAlignment { redraw: Redraw::All, id: None, .. }));
-    // The scope is named, never defaulted: nothing moves silently.
+    // The scope has no default (D-11).
     assert!(serde_json::from_str::<NetworkEdit>(
         r#"{"edit":"draw_alignment","pattern":"p0","points":[{"lat":45.0,"lon":-122.0},{"lat":45.1,"lon":-122.1}]}"#
     )

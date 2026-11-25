@@ -194,19 +194,29 @@ types:
 # release modules. TS_RS_EXPORT_DIR keeps the ts-rs bindings
 # regenerating into web/src/types on every run (.cargo/config.toml
 # pins the same path for plain cargo runs; without either, ts-rs
-# scatters them into crates/*/bindings). Last, `prune` deletes the
-# build artifacts the gate no longer uses, so target/ stays bounded.
-test: caps-fast _host-tests prune
+# scatters them into crates/*/bindings). First, `_target-limit` keeps
+# target/ under its size limit.
+test: _target-limit caps-fast _host-tests
 
-# Delete the artifacts in target/ that the gate's own cargo commands do
-# not use: the copies that `-p` runs, dependency changes, and toolchain
-# upgrades leave behind (tools/prune-target.mjs says how it decides).
-# `just test` runs it last, when every unit is fresh and it takes
-# seconds. Run alone on a changed tree, it builds what the gate builds
-# first. `just prune --dry-run` only reports. The release directories
-# are not touched.
-prune *args:
-    node tools/prune-target.mjs {{ args }}
+# Keep target/ under a size limit (TARGET_LIMIT_GB, 40 by default).
+# Cargo never deletes an old copy of a build: a `-p` run, a dependency
+# change, or a toolchain upgrade writes new copies beside the old ones,
+# and cargo has no stable way to delete only the old ones. Over the
+# limit, `cargo clean --workspace` deletes every copy of the
+# workspace's own crates (nearly all of target/) and keeps the
+# third-party dependencies, the slow part of a cold build. The gate
+# then rebuilds the workspace crates, a few minutes. It runs first, so
+# it never deletes a tree that the gate just built.
+_target-limit:
+    #!/usr/bin/env bash
+    set -e
+    limit="${TARGET_LIMIT_GB:-40}"
+    [ -d target ] || exit 0
+    gb=$(( $(du -sk target | cut -f1) / 1024 / 1024 ))
+    if [ "$gb" -ge "$limit" ]; then
+        echo "target/ is ${gb} GB, over its ${limit} GB limit: cargo clean --workspace"
+        cargo clean --workspace
+    fi
 
 # The same suites and gates over the release modules (`caps`: whole-
 # program LTO, the bytes the registry publishes). Run it when a unit

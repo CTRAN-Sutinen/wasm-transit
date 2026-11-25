@@ -1241,9 +1241,9 @@ assert(empty.records.length === 0, "empty documents converge to empty");
 const garbageSync = sync.raw({ op: "sync_edits", client: "not a list", server: [], now_ms: 0 });
 assert(garbageSync.error && garbageSync.error.includes("invalid request"), "garbage requests are an error outcome, never a trap");
 
-// The answer carries the canonical document bytes and their hash — the
-// module is the hash authority, so a host stores exact bytes and never
-// mints document identity (docs/FORMATS.md).
+// The answer carries the canonical document bytes and their hash. A host
+// stores those exact bytes and does not compute the hash itself
+// (docs/FORMATS.md).
 assert(
   typeof converged.document === "string" &&
     converged.document_hash === "sha256:" + createHash("sha256").update(converged.document).digest("hex"),

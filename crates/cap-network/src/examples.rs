@@ -1,8 +1,3 @@
-//! The worked examples of the network capability (its `examples` feature):
-//! the documents to load and each request, over the fixture's real derived
-//! document. The generator runs them through this crate's `invoke` and
-//! records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -15,8 +10,6 @@ pub fn examples() -> Vec<Example> {
         by_hash("validate"),
         by_hash("document"),
         by_hash("publishable"),
-        // A stored plan as it was written: its own version is read when
-        // the page uses it.
         Example {
             bytes: None, kinds: vec![],
             op: "stored_plans",

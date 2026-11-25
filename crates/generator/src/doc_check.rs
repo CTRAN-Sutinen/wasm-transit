@@ -1,26 +1,18 @@
-//! The check the real-output gate and the real-data soak share
-//! ([`crate::checks`]): every
-//! document inside an answer matches the locked schema of its tag and
-//! version (docs/FORMATS.md, "The schema lock"). The schemas are the
-//! locks in the tree (`crates/<owner>/locks/`), so the check needs no
-//! build output.
-//!
-//! A document is an object whose `kind` is a locked tag and that carries
-//! a numeric `schema_version`. A document nested in another one (a plan
-//! set's networks) is checked on its own too, and so is a document an
-//! op answers as its exact bytes (a string holding a JSON object, such as
-//! `plans.publish`'s `document`).
+//! The real-output gate and the soak share this check ([`crate::checks`]).
+//! A document is an object whose `kind` is a locked tag and that carries a
+//! numeric `schema_version`. A document nested in another one, and a
+//! document that an op answers as its exact bytes (a string holding a JSON
+//! object, such as the `document` of `plans.publish`), are checked on their
+//! own.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::Value;
 
-/// The locked schemas, compiled, by "<tag> v<N>".
 pub struct Locks(BTreeMap<String, jsonschema::Validator>);
 
 impl Locks {
-    /// Every lock under `crates/*/locks/`.
     pub fn read() -> Self {
         let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut out = BTreeMap::new();
@@ -34,8 +26,8 @@ impl Locks {
                 for version in index["versions"].as_object().expect("a lock lists its versions").keys() {
                     let path = locks.join(format!("{tag}.v{version}.schema.json"));
                     let schema: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-                    // Formats are not asserted: schemars writes some
-                    // (uint32, double) that are no standard format.
+                    // schemars writes formats (uint32, double) that are no
+                    // standard format, so formats are not asserted.
                     let validator = jsonschema::options()
                         .should_validate_formats(false)
                         .build(&schema)
@@ -52,8 +44,6 @@ impl Locks {
         self.0.keys().map(|key| key.split(' ').next().unwrap()).collect()
     }
 
-    /// Check every document inside `answer`. It answers each document's
-    /// key ("<tag> v<N>") and its problems: none when it matches.
     pub fn check(&self, answer: &Value) -> Vec<(String, Vec<String>)> {
         let tags = self.tags();
         let mut found = Vec::new();

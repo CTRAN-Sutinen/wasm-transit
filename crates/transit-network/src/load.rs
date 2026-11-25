@@ -1,9 +1,9 @@
-//! The kernel's load of a network (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
+//! The network's entry in the kind list
+//! (`crates/cap-abi/src/kinds.rs`) names this impl (D-239).
 
-/// What `load_network` answers: the network's hash, and its zone (its
-/// operator's time zone) when it names one. A host reads its clock there
-/// to give a date in the network's own day (a pick's "today", D-237).
+/// `timezone` is the time zone of the network's operator. A host reads its
+/// clock in that zone to get the date of the network (the "today" of a pick,
+/// D-237).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NetworkLoaded {
     pub network_hash: String,
@@ -11,7 +11,6 @@ pub struct NetworkLoaded {
     pub timezone: Option<String>,
 }
 
-/// Networks: the document every model-side capability reads.
 impl transit_version::Load for crate::Network {
     const ID: &'static str = "network";
     const NAME: &'static str = "network";

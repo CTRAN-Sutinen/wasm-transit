@@ -1,18 +1,12 @@
-//! The gesture laws: one edit per thing a planner does, each
-//! carrying the rule that keeps the document coherent, over the
-//! committed planner network (testdata/network.json: stops A/B/C,
-//! route 10, pattern 10-inbound A·B·C with A and C timepoints, the
-//! weekday trips at 08:00 / 08:30 / 25:30, block 400 with one
-//! layover).
+//! Authoring gestures (cap-author/OPS.md) over the committed planner network
+//! (testdata/network.json).
 //!
-//! 1. creation mints the first free id (or takes the caller's) and
-//!    reports it;
-//! 2. timing vectors and every trip's times stay aligned with the
-//!    pattern's stops through every pattern gesture;
-//! 3. blocks stay in time order and layovers only sit between two
-//!    trips;
-//! 4. a gesture that cannot apply is a named error, never a silent
-//!    no-op: and the document is untouched.
+//! 1. Creation takes the first free id, or the caller's, and reports it.
+//! 2. Timing profiles and every trip's times stay aligned with the pattern's
+//!    stops through every pattern gesture.
+//! 3. Blocks stay in time order, and layovers sit only between two trips.
+//! 4. A gesture that cannot apply is a named error and leaves the document
+//!    untouched.
 
 use transit_network::{
     apply_edits, apply_edits_reporting, Day, DayState, Departs, HeadwayBand, Network, NetworkEdit, StopOffset,
@@ -31,8 +25,7 @@ fn refused(net: &Network, edit: NetworkEdit) -> String {
     apply_edits(net, &[edit]).expect_err("the edit is refused").reason
 }
 
-/// Every profile carries one time per timepoint, and every trip one
-/// time per stop.
+/// Every profile has one time per timepoint, and every trip one time per stop.
 fn aligned(net: &Network, pattern: &str) -> bool {
     let p = &net.patterns[pattern];
     let n = p.stops.iter().filter(|s| s.timepoint).count();
@@ -74,22 +67,16 @@ fn creation_mints_ids_and_reports_them() {
             ("block", "b1")
         ]
     );
-    // An unplaced stop lands at the centre of the network's stops;
-    // a placed one where it was put.
     let (a, b, c) = (&net.stops["A"], &net.stops["B"], &net.stops["C"]);
     assert!((next.stops["s1"].lat - (a.lat + b.lat + c.lat) / 3.0).abs() < 1e-9);
     assert_eq!((next.stops["s2"].lat, next.stops["s2"].lon), (45.6, -122.5));
-    // The skeleton pattern: two timepoints, one aligned profile.
     assert!(aligned(&next, "pat1"));
     assert_eq!(next.patterns["pat1"].route, "20");
-    // A service type runs a year from the date it was given.
     let range = &next.service_types["cal1"].rule.ranges[0];
     assert_eq!((range.start.to_string(), range.end.to_string()), ("2026-09-07".into(), "2027-09-06".into()));
     assert_eq!(starts(&next, "svc1"), vec![8 * 3600]);
 
-    // A taken id is refused, not overwritten.
     assert!(refused(&net, NetworkEdit::AddStop { id: Some("A".into()), lat: None, lon: None }).contains("already exists"));
-    // A pattern needs a route and stops to exist.
     let empty = Network { routes: Default::default(), ..net.clone() };
     assert!(refused(&empty, NetworkEdit::AddPattern { id: None, route: None }).contains("add a route first"));
 }
@@ -97,8 +84,6 @@ fn creation_mints_ids_and_reports_them() {
 #[test]
 fn pattern_gestures_keep_timing_aligned() {
     let net = network();
-    // Make B a timepoint: the profile gains the midpoint of A and C,
-    // and every trip, exact there now, is scheduled where it ran.
     let on = apply(&net, vec![NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 1 }]);
     assert!(on.patterns["10-inbound"].stops[1].timepoint);
     assert_eq!(on.patterns["10-inbound"].timing[0].at_timepoints, vec![0, 300, 600]);
@@ -106,14 +91,10 @@ fn pattern_gestures_keep_timing_aligned() {
         assert_eq!(t.times[1], StopOffset { arrival_secs: Some(300), departure_secs: Some(300) });
     }
     assert!(transit_network::validation_issues(&on).is_empty());
-    // …and back: the entry leaves the profile; the trips keep the
-    // times they were given.
     let off = apply(&on, vec![NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 1 }]);
     assert_eq!(off.patterns["10-inbound"], net.patterns["10-inbound"]);
     assert_eq!(off.pattern_trips, on.pattern_trips);
 
-    // Insert before the last stop: halfway along the last leg, not a
-    // timepoint: the vectors do not move.
     let inserted = apply(&net, vec![NetworkEdit::InsertPatternStop { pattern: "10-inbound".into(), stop: "A".into(), index: None }]);
     let stops = &inserted.patterns["10-inbound"].stops;
     assert_eq!(stops.len(), 4);
@@ -124,14 +105,12 @@ fn pattern_gestures_keep_timing_aligned() {
     assert!(inserted.trips().all(|(_, _, t)| t.times[2] == StopOffset::default()), "unscheduled on every trip");
     assert!(transit_network::validation_issues(&inserted).is_empty());
 
-    // Removing a middle timepoint drops its time from every profile.
     let with_profile = apply(&on, vec![NetworkEdit::AddTimingProfile { pattern: "10-inbound".into() }]);
     assert_eq!(with_profile.patterns["10-inbound"].timing.len(), 2);
     let removed = apply(&with_profile, vec![NetworkEdit::RemovePatternStop { pattern: "10-inbound".into(), index: 1 }]);
     assert!(aligned(&removed, "10-inbound"));
     assert_eq!(removed.patterns["10-inbound"].timing[1].at_timepoints, vec![0, 600]);
 
-    // Endpoints are fixed; the last profile stays.
     assert!(refused(&net, NetworkEdit::RemovePatternStop { pattern: "10-inbound".into(), index: 0 }).contains("endpoint"));
     assert!(refused(&net, NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 2 }).contains("endpoint"));
     assert!(refused(&net, NetworkEdit::RemoveTimingProfile { pattern: "10-inbound".into(), index: 0 }).contains("at least one"));
@@ -158,8 +137,6 @@ fn bands_belong_to_frequency_trips() {
 #[test]
 fn blocks_stay_in_time_order_with_layovers_between_trips() {
     let net = network();
-    // An earlier trip lands first; the layover index still points at
-    // a pair, the one past the end is pruned.
     let early = apply(
         &net,
         vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "10-weekday@91800".into(), extra: Default::default() } }],
@@ -205,10 +182,8 @@ fn calendars_edit_in_place_with_exceptions_in_date_order() {
     assert!(refused(&net, NetworkEdit::SetServiceRange { id: "weekday".into(), index: 0, start: Some("2026-13-01".into()), end: None }).contains("invalid date"));
 }
 
-/// A range is added with the dates the planner gives it; a date left
-/// out continues the last range (its start where the last one ends,
-/// its end at its start). A key with no range takes its first one only
-/// with a start; a range never ends before it starts.
+/// A date left out continues the last range. A range never ends before it
+/// starts.
 #[test]
 fn a_range_is_added_with_its_dates_or_continues_the_last() {
     let net = network();
@@ -266,7 +241,6 @@ fn a_pattern_runs_in_one_of_its_routes_directions() {
     assert_eq!(placed.patterns["10-inbound"].direction.as_deref(), Some("in"));
     assert!(transit_network::validation_issues(&placed).is_empty());
 
-    // Only a direction the route has; never one in use.
     assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) })
         .contains("route 10 has no direction in"));
     assert!(refused(&placed, NetworkEdit::RemoveDirection { route: "10".into(), id: "in".into() }).contains("carries pattern 10-inbound"));
@@ -280,15 +254,14 @@ fn a_pattern_runs_in_one_of_its_routes_directions() {
     assert_eq!(cleared.patterns["10-inbound"].direction, None, "\"\" leaves the pattern in no direction");
     assert!(cleared.routes["10"].directions.is_empty());
 
-    // Direction ids are per route: moving routes leaves the pattern
-    // in none, unless the same edit places it.
+    // Direction ids are per route, so moving a pattern to another route clears
+    // its direction, unless the same edit places it.
     let two = apply(&placed, vec![NetworkEdit::AddRoute { id: Some("20".into()) }]);
     let moved = apply(&two, vec![NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: None }]);
     assert_eq!(moved.patterns["10-inbound"].direction, None);
     assert!(refused(&two, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: Some("in".into()) })
         .contains("route 20 has no direction in"));
 
-    // An upsert can still strand one: validation names it.
     let mut route = placed.routes["10"].clone();
     route.directions.clear();
     let stranded = apply(&placed, vec![NetworkEdit::UpsertRoute { id: "10".into(), route }]);

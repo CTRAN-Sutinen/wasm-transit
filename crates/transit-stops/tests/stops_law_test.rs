@@ -1,36 +1,7 @@
-//! The stops document's laws (D-153, D-154, D-157), derived from the
-//! user's intent and written before the implementation:
-//!
-//! * a stop has a life of its own: planned, permitted, built, in
-//!   service, suspended for a while, retired (D-157). The events are the
-//!   truth. A stop on a date is its events applied in order up to that
-//!   date. A temporary one (`until`) applies only while it lasts. The
-//!   check uses an oracle that answers each detail as the last active
-//!   event that sets it. That is a different reading of the same rule;
-//! * the stages only go forward (a stage may be skipped). A suspension is
-//!   of a stop in service. A stop returns to service from a suspension, or
-//!   goes into service from an earlier stage. It may also never return,
-//!   and end retired;
-//! * a temporary suspension or move ends on its `until`: from that date
-//!   the stop is what it would be without the event;
-//! * served is in service, nothing else;
-//! * a stop on a date says when its status began. It says when the status
-//!   ends. A temporary one ends at its `until`, or sooner at the next stage
-//!   event after the date (a stop back early, or retired while suspended).
-//!   It also gives the note on the event that set it;
-//! * a correction edits the event that is wrong. The event is taken out,
-//!   and the corrected one is placed by date. Nothing else moves;
-//! * the stops on a date are counted by status;
-//! * the stops near a point on a date, asked in the field as "which stop am
-//!   I standing at?", are those the date and the statuses ask for. Each is
-//!   at its great-circle distance, nearest first (ties by id), at most the
-//!   limit asked, and none past the radius asked. A stop left out is no
-//!   nearer than the last one listed;
-//! * a document that breaks the model is refused, each reason named;
-//! * one document is one byte sequence however its stops and keys are
-//!   ordered;
-//! * what this repo does not know (the agency's own amenity names, a field
-//!   another tool wrote) survives a read and a write.
+//! The stops document (D-153, D-154, D-157). The ops are in cap-stops'
+//! OPS.md (`validate`, `stops_on`, `stops_near`, `correct_event`). An oracle
+//! answers each detail as the last active event that sets it, a different
+//! reading of the same rule as `Stops::stop_on`.
 
 use std::collections::BTreeMap;
 
@@ -51,7 +22,6 @@ fn event(kind: EventKind, on: Option<u32>) -> Event {
     Event { on: on.map(date), event: kind, ..Event::default() }
 }
 
-/// A stop begun at a stage, at a point, with a name.
 fn begun(kind: EventKind, on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
     Event {
         lat: Some(lat),
@@ -61,7 +31,6 @@ fn begun(kind: EventKind, on: Option<u32>, lat: f64, lon: f64, name: &str) -> Ev
     }
 }
 
-/// A stop begun in service.
 fn in_service(on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
     begun(EventKind::InService, on, lat, lon, name)
 }
@@ -71,10 +40,6 @@ fn doc(stops: Vec<(&str, Vec<Event>)>) -> Stops {
 }
 
 const STAGES: [EventKind; 4] = [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService];
-
-// ---------------------------------------------------------------------
-// the oracle: each answer is the last active event that sets it
-// ---------------------------------------------------------------------
 
 fn active(e: &Event, d: NaiveDate) -> bool {
     let p = |s: &String| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
@@ -111,8 +76,6 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         let v = live.iter().rev().find_map(|e| e.details.amenities.get(k)).unwrap();
         details.amenities.insert(k.clone(), *v);
     }
-    // site answers and references (D-158, D-160): by name, the last
-    // active event's
     let mut site: BTreeMap<String, String> = BTreeMap::new();
     let mut refs: BTreeMap<String, String> = BTreeMap::new();
     for e in &live {
@@ -128,8 +91,6 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         stop_id: id.to_string(),
         status,
         since: by.on.clone(),
-        // a temporary status ends on its `until`, or sooner where a
-        // later stage event (dated after `d`) changes the status first
         until: by.until.as_ref().map(|u| {
             let p = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
             events
@@ -148,8 +109,8 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
     })
 }
 
-/// How far along a stop is: the stages in order, a suspension counting
-/// as in service (a stop must be in service to be suspended).
+/// A suspension counts as in service, because only a stop in service can be
+/// suspended.
 fn rank(s: Status) -> u8 {
     match s {
         Status::Planned => 0,
@@ -159,10 +120,6 @@ fn rank(s: Status) -> u8 {
         Status::Retired => 4,
     }
 }
-
-// ---------------------------------------------------------------------
-// valid histories
-// ---------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 enum Step {
@@ -183,14 +140,11 @@ fn arb_step() -> impl Strategy<Value = Step> {
     ]
 }
 
-/// A stop's history: a first stage, then steps at non-decreasing dates.
-/// Each step is kept only where the model allows it: stages forward, a
-/// suspension of a stop in service, a return of one not in service, and
-/// nothing after retirement.
+/// A first stage, then steps at non-decreasing dates. A step is kept only
+/// where the model allows it.
 fn arb_history() -> impl Strategy<Value = Vec<Event>> {
     (0usize..4, proptest::option::of(0u32..30), proptest::collection::vec((0u32..20, arb_step()), 0..10)).prop_map(
         |(stage, first_on, steps)| {
-            // only a first in_service goes undated
             let first_on = if stage == 3 { first_on } else { Some(first_on.unwrap_or(0)) };
             let mut events = vec![begun(STAGES[stage].clone(), first_on, 45.6, -122.6, "Main & 1st")];
             let mut at = first_on.unwrap_or(0);
@@ -239,7 +193,6 @@ fn arb_history() -> impl Strategy<Value = Vec<Event>> {
                                 details.code = Some(format!("{at}"));
                             }
                             4 => {
-                                // a survey: answers by name, and who surveyed
                                 details.site.insert("surface".into(), if b { "concrete" } else { "gravel" }.into());
                                 if b {
                                     details.site.insert("landmark".into(), format!("pole {at}"));
@@ -265,8 +218,8 @@ fn arb_doc() -> impl Strategy<Value = Stops> {
     proptest::collection::btree_map("[a-z0-9]{1,6}", arb_history(), 1..6).prop_map(|stops| Stops { stops, ..Stops::default() })
 }
 
-/// The great-circle distance, written apart from the library's: the
-/// spherical law of cosines on the same mean earth radius.
+/// The spherical law of cosines on the library's mean earth radius, written
+/// apart from the library.
 fn cosine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let (p1, p2, dl) = (lat1.to_radians(), lat2.to_radians(), (lon2 - lon1).to_radians());
     let c = (p1.sin() * p2.sin() + p1.cos() * p2.cos() * dl.cos()).clamp(-1.0, 1.0);
@@ -298,8 +251,6 @@ proptest! {
             .collect();
         prop_assert!(got.len() <= limit);
         if got.len() < limit {
-            // fewer than the limit: every stop clearly inside the radius is
-            // listed
             let listed: Vec<&str> = got.iter().map(|n| n.stop.stop_id.as_str()).collect();
             for (id, m) in &eligible {
                 prop_assert!(radius.is_some_and(|r| *m > r - 0.5) || listed.contains(&id.as_str()), "{} at {} left out", id, m);
@@ -328,10 +279,6 @@ proptest! {
         }
     }
 }
-
-// ---------------------------------------------------------------------
-// writing JSON with its keys in another order
-// ---------------------------------------------------------------------
 
 fn shuffled_text(v: &Value, seed: &mut u64) -> String {
     let mut next = || {
@@ -383,8 +330,8 @@ fn bytes(s: &Stops) -> String {
 proptest! {
     #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
-    /// A valid history is accepted, and the stop on every date is its
-    /// events applied in order. This is the oracle's last-writer reading.
+    /// A valid history is accepted, and the stop on every date matches the
+    /// oracle.
     #[test]
     fn a_stop_on_a_date_is_its_events_applied(doc in arb_doc(), d in 0u32..400) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -393,9 +340,8 @@ proptest! {
         }
     }
 
-    /// Every day of a history, not one sampled: a temporary status's
-    /// end is read on each day it applies, so a stop back early (or
-    /// retired while suspended) is met inside its suspension.
+    /// Reads every day of a history, so a stop back early, or retired while
+    /// suspended, is met inside its suspension.
     #[test]
     fn every_day_of_a_history_is_its_events_applied(doc in arb_doc()) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -406,8 +352,8 @@ proptest! {
         }
     }
 
-    /// The stages only go forward: on no two dates does a stop stand at
-    /// an earlier stage later (a suspension and its return aside).
+    /// On no two dates does a stop stand at an earlier stage later, apart
+    /// from a suspension and its return.
     #[test]
     fn the_stages_only_go_forward(doc in arb_doc(), a in 0u32..400, b in 0u32..400) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -419,7 +365,6 @@ proptest! {
         }
     }
 
-    /// Served is in service, and nothing else.
     #[test]
     fn served_is_in_service(doc in arb_doc(), d in 0u32..400, secs in 0u32..100_000) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -430,9 +375,8 @@ proptest! {
         prop_assert!(!doc.served("no-such-stop", day(d), secs));
     }
 
-    /// A temporary suspension or move ends on its `until`: from that
-    /// date on the stop is what it would be had the event never been
-    /// recorded.
+    /// From its `until` a stop is what it would be without the temporary
+    /// event.
     #[test]
     fn a_temporary_event_ends_on_its_until(doc in arb_doc(), pick in any::<prop::sample::Index>(), after in 0u32..30) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -448,9 +392,9 @@ proptest! {
         prop_assert_eq!(doc.stop_on(&id, when), without.stop_on(&id, when));
     }
 
-    /// A correction is the wrong event taken out and the corrected one
-    /// placed by date; the same event in its place changes nothing; a
-    /// removal takes the event out; an index past the list is no edit.
+    /// A correction takes the wrong event out and places the corrected one
+    /// by date. The same event changes nothing, and an index past the list
+    /// is no edit.
     #[test]
     fn a_correction_edits_the_event_that_was_wrong(doc in arb_doc(), pick in any::<prop::sample::Index>(), on in 0u32..400, remove in any::<bool>()) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -466,7 +410,6 @@ proptest! {
             if was.on.is_some() || i > 0 {
                 was.on = Some(date(on));
             }
-            // a "correction" to the same event is no edit (above)
             let want = if was == before { doc.clone() } else { taken.add_event(&id, was.clone()) };
             prop_assert_eq!(doc.correct_event(&id, i, Some(was)), Some(want));
         }
@@ -474,9 +417,8 @@ proptest! {
         prop_assert_eq!(doc.correct_event("no-such-stop", 0, None), None);
     }
 
-    /// What a stop may become on a date is exactly the lifecycle events
-    /// a write would accept there: each offered one passes, each other
-    /// one is refused.
+    /// `next_events` offers exactly the lifecycle events that a write would
+    /// accept.
     #[test]
     fn what_a_stop_may_become_is_what_a_write_accepts(doc in arb_doc(), d in 0u32..400) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -489,8 +431,7 @@ proptest! {
         }
     }
 
-    /// The stops on a date, counted by status: every listed stop counted
-    /// once, under its status.
+    /// Every listed stop is counted once, under its status.
     #[test]
     fn the_stops_on_a_date_are_counted_by_status(doc in arb_doc(), d in 0u32..400) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -503,8 +444,7 @@ proptest! {
         }
     }
 
-    /// One document is one byte sequence: its stops and every object's
-    /// keys in any order read back to the same canonical bytes.
+    /// Stops and keys in any order read back to the same canonical bytes.
     #[test]
     fn canonical_bytes_do_not_depend_on_order(doc in arb_doc(), mut seed in 1u64..u64::MAX) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -513,9 +453,8 @@ proptest! {
         prop_assert_eq!(bytes(&read.checked().unwrap()), bytes(&doc));
     }
 
-    /// Fields this repo does not know (another tool's, or the agency's own
-    /// amenity names) survive a read and a write. They survive at the top,
-    /// in an event, and among the amenities.
+    /// Unknown fields survive a read and a write, at the top, in an event,
+    /// and among the amenities.
     #[test]
     fn what_is_not_known_survives(doc in arb_doc(), name in "x_[a-z]{1,8}", value in "[a-z ]{0,12}", heated in any::<bool>()) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
@@ -529,10 +468,6 @@ proptest! {
         prop_assert_eq!(serde_json::to_value(&read).unwrap(), v);
     }
 }
-
-// ---------------------------------------------------------------------
-// refusals, one by one
-// ---------------------------------------------------------------------
 
 fn refused(d: Stops) -> Vec<Problem> {
     d.checked().err().unwrap_or_default().into_iter().map(|r| r.problem).collect()
@@ -599,7 +534,6 @@ fn the_stages_do_not_go_back() {
     assert_eq!(p, vec![Problem::StageBack], "a stage is not entered twice");
     let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Planned, Some(3))])]));
     assert_eq!(p, vec![Problem::StageBack]);
-    // a stage skipped is fine
     assert!(refused(doc(vec![("a", vec![begun(EventKind::Planned, Some(0), 45.0, -122.0, "A"), event(EventKind::InService, Some(3))])])).is_empty());
 }
 
@@ -618,7 +552,6 @@ fn a_suspension_is_of_a_stop_in_service() {
 fn a_return_to_service_needs_a_stop_not_in_service() {
     let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::InService, Some(3))])]));
     assert_eq!(p, vec![Problem::AlreadyInService]);
-    // a temporary suspension that has ended leaves nothing to return from
     let p = refused(doc(vec![(
         "a",
         vec![
@@ -628,7 +561,6 @@ fn a_return_to_service_needs_a_stop_not_in_service() {
         ],
     )]));
     assert_eq!(p, vec![Problem::AlreadyInService]);
-    // back early from a temporary one, or from one with no end
     assert!(refused(doc(vec![(
         "a",
         vec![
@@ -660,9 +592,9 @@ fn nothing_follows_retirement() {
     assert_eq!(p, vec![Problem::AfterRetired]);
 }
 
-/// The walk's case: suspended from day 16 until day 30, back early on
-/// day 24. On day 23 it is suspended and ends on day 24, not day 30.
-/// Retired on day 20 instead, it ends on day 20.
+/// Suspended from day 16 until day 30 and back early on day 24, the stop on
+/// day 23 ends its suspension on day 24, not day 30. Retired on day 20
+/// instead, it ends on day 20.
 #[test]
 fn a_suspension_ends_when_the_stop_is_back_early() {
     let back = doc(vec![(
@@ -758,10 +690,6 @@ fn every_refusal_names_its_stop_and_event() {
     assert_eq!((refusals[0].stop.as_str(), refusals[0].event), ("a", Some(1)));
 }
 
-// ---------------------------------------------------------------------
-// worked answers
-// ---------------------------------------------------------------------
-
 #[test]
 fn the_worked_example_reads_as_the_unit_says() {
     let d: Stops = serde_json::from_value(json!({
@@ -809,19 +737,12 @@ fn every_stop_on_a_date_in_id_order() {
     assert_eq!(ids, vec!["a", "b"], "a stop not yet there is not listed; a planned one is");
 }
 
-// ---------------------------------------------------------------------
-// event ids (D-166): the stop is the record, and each of its events
-// carries an id unique within the stop, so two writers' events can be
-// told apart and a correction names the event it edits
-// ---------------------------------------------------------------------
-
 proptest! {
-    /// Identifying gives every event an id, unique within its stop,
-    /// keeps every id already given, and changes nothing else.
-    /// Identifying twice is identifying once.
+    /// Identifying gives every event an id, unique within its stop, keeps
+    /// every id already given, and changes nothing else. Identifying twice
+    /// changes nothing more.
     #[test]
     fn identifying_gives_each_event_a_lasting_id(doc in arb_doc(), given in proptest::collection::vec(any::<bool>(), 0..40)) {
-        // some events already carry an id, as a writer may give one
         let mut doc = doc;
         let mut n = 0;
         for events in doc.stops.values_mut() {
@@ -851,10 +772,7 @@ proptest! {
         prop_assert_eq!(ided.clone().identified(), ided);
     }
 
-    /// An id minted for an event without one is derived from the stop
-    /// and the event's content: the same event in the same stop gets the
-    /// same id in any document, so an import of the same feed mints the
-    /// same ids.
+    /// The same event in the same stop gets the same id in any document.
     #[test]
     fn a_minted_id_depends_on_the_stop_and_the_event_only(a in arb_doc(), b in arb_doc()) {
         let (a, b) = (a.identified(), b.identified());
@@ -874,19 +792,16 @@ proptest! {
         }
     }
 
-    /// A correction names its event by id: the event with that id is
-    /// edited whatever its place, and the corrected event keeps the id.
-    /// Another writer's event added earlier in the list does not change
-    /// which event a correction edits.
+    /// A correction edits the event with that id wherever it stands, and the
+    /// corrected event keeps the id.
     #[test]
     fn a_correction_by_id_edits_that_event_wherever_it_stands(doc in arb_doc(), pick in any::<prop::sample::Index>(), remove in any::<bool>()) {
         let doc = doc.identified().checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
         let all: Vec<(String, usize)> = doc.stops.iter().flat_map(|(id, es)| (0..es.len()).map(move |i| (id.clone(), i))).collect();
         let (stop, i) = pick.get(&all).clone();
         let target = doc.stops[&stop][i].clone();
-        // another writer's undated note-free event can't be added before
-        // a first event, so add a dated `changed` before the target
-        // where the stop allows one: the index moves, the id does not
+        // Another writer's event added before the target moves its index and
+        // not its id.
         let mut moved = doc.clone();
         if let Some(on) = target.on.clone().filter(|_| i > 0) {
             let early = Event { on: Some(on), event: EventKind::Changed, id: "other-writer".into(), note: Some("theirs".into()), ..Event::default() };

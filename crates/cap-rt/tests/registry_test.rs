@@ -1,17 +1,14 @@
-//! The rt registry is the eviction pin case (QAF-49). An agency re-mints its
-//! snapshots every poll. A session must plateau with no host steering. A host's
-//! keep-set must bound the durable kinds. This has its own test binary, because
-//! the registries are process-global. Eviction would race the dispatch tests'
-//! registrations.
+//! The rt registry evicts old snapshots without host steering (QAF-49). An
+//! agency makes new snapshots every poll, so a session must plateau. This test
+//! has its own binary, because the registries are process-global and eviction
+//! would race the dispatch tests.
 
 use cap_abi::kernel::kind;
 use cap_abi::registry::{OP_EVICT, OP_HELD};
-// The module's seam, as a host calls it: the kernel's ops answer there.
 use cap_rt::{dispatch, invoke_bytes as dispatch_bytes, Request, OP_DECODE};
 use prost::Message;
 use transit_rt::gtfs_rt as rt;
 
-/// A distinct snapshot per poll: the same feed at another timestamp.
 fn snapshot(poll: u64) -> Vec<u8> {
     rt::FeedMessage {
         header: rt::FeedHeader {
@@ -50,7 +47,6 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     }
     assert!(kind::<transit_rt::RtOverview>().get(&last).is_some(), "the newest snapshot is held");
 
-    // A durable kind stays until the host names its keep-set.
     let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
     let imported = transit_codec::import(&feed);
     let doc = serde_json::to_vec(&imported.network).unwrap();
@@ -61,14 +57,12 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     assert!(before.contains(&("network".into(), network_hash.clone())));
     assert!(before.contains(&("boundary".into(), boundary_hash.clone())));
 
-    // The keep-set names the network and the newest snapshot: the
-    // boundary and every older snapshot drop, the kept never do.
+    // The boundary and every older snapshot drop, and the kept never do.
     let keep = serde_json::json!({ "keep": [network_hash, last] }).to_string();
     let after = held(&dispatch_bytes(OP_EVICT, keep.as_bytes()));
     assert_eq!(after, vec![("network".into(), network_hash.clone()), ("rt snapshot".into(), last.clone())]);
 
-    // Evicted-then-asked gives the unknown-hash error, never a wrong answer.
-    // Registering again answers the same hash.
+    // An evicted hash gives the unknown-hash error, never a wrong answer.
     let asked = dispatch(Request::Live {
         network_hash: network_hash.clone(),
         boundary_hash: Some(boundary_hash.clone()),

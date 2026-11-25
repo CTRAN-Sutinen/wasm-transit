@@ -1,5 +1,5 @@
-//! The planner's lists: rows per kind narrowed by every query term,
-//! and a route's composition: its trip counts the materialized day's.
+//! Entity lists, route and stop composition, and timetables
+//! (cap-directory/OPS.md).
 
 use transit_network::{
     apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departs, EntityKind, HeadwayBand,
@@ -27,9 +27,7 @@ fn rows_match_every_term_in_name_or_id() {
     assert_eq!(entity_rows(&net, EntityKind::Block, "400")[0].trips, Some(2));
 }
 
-/// A route reads by its long name as much as by its number: the
-/// filter matches the long name a list shows beside the label
-/// ("Lin" finds 002 Lincoln).
+/// "Lin" finds route 002 Lincoln.
 #[test]
 fn a_route_is_found_by_its_long_name() {
     let mut net = network();
@@ -57,13 +55,8 @@ fn pattern(name: &str, stops: &[&str]) -> transit_network::Pattern {
     }
 }
 
-/// A direction's variants are the ways a rider can ride it: patterns
-/// that visit the same places in the same order are one variant, a
-/// station's bays being one place (the walking group its board
-/// departs across): so patterns that differ only by the bay they use
-/// at a transit center read as one. Any other difference: a branch,
-/// a stop served only at some hours, a short trip: is its own
-/// variant, named apart. Variants list most trips first.
+/// Patterns that differ only by the bay they use at a transit center are one
+/// variant. Any other difference makes a variant of its own.
 #[test]
 fn bay_variants_of_a_direction_read_as_one() {
     let net = apply_edits(&network(), &[
@@ -71,7 +64,6 @@ fn bay_variants_of_a_direction_read_as_one() {
         NetworkEdit::UpsertStop { id: "B".into(), stop: stop("Main & 2nd: Bay A", 45.51, Some("STN")) },
         NetworkEdit::UpsertStop { id: "N1".into(), stop: stop("Main & 2nd: Bay B", 45.5101, Some("STN")) },
         NetworkEdit::UpsertStop { id: "D".into(), stop: stop("Elm & 2nd", 45.515, None) },
-        // 10-inbound runs A, B, C (three trips); these run none.
         NetworkEdit::UpsertPattern { id: "10-bay".into(), pattern: pattern("10 inbound from Bay B", &["A", "N1", "C"]) },
         NetworkEdit::UpsertPattern { id: "10-short".into(), pattern: pattern("10 inbound express", &["A", "C"]) },
         NetworkEdit::UpsertPattern { id: "10-elm".into(), pattern: pattern("10 inbound via Elm", &["A", "D", "C"]) },
@@ -100,15 +92,11 @@ fn bay_variants_of_a_direction_read_as_one() {
         "a station is its place; the bays the variant uses there are listed"
     );
 
-    // Same ends as the main variant: each is named by what sets it
-    // apart: a place only it visits, else the first place it skips.
     assert_eq!(patterns(1), ["10-elm"]);
     assert_eq!(variants[1].name, "Main & 1st → Main & 3rd via Elm & 2nd");
     assert_eq!(patterns(2), ["10-short"]);
     assert_eq!(variants[2].name, "Main & 1st → Main & 3rd, skips Main & 2nd Station");
 
-    // A plain stop is its own place: two different plain stops never
-    // merge (D stands apart from the station above).
     assert!(variants.iter().all(|v| v.patterns.len() == 1 || v.stops.iter().all(|s| s.place != "D")));
 }
 
@@ -132,10 +120,8 @@ fn a_stop_lists_the_routes_serving_it() {
     assert!(stop_detail(&net, "nope", None).is_none());
 }
 
-/// QAF-51 regression (C-TRAN, Fisher's Landing): a parent station
-/// whose patterns visit only its bays answers their routes: a stop
-/// with no service of its own pools the walking group, the same group
-/// the station board departs across.
+/// A parent station whose patterns visit only its bays answers their routes
+/// (C-TRAN, Fisher's Landing).
 #[test]
 fn a_station_answers_its_bays_routes() {
     let net = apply_edits(&network(), &[
@@ -181,9 +167,8 @@ fn a_station_answers_its_bays_routes() {
     assert_eq!(routes("N1"), ["10"], "a bay no route serves answers its sibling's routes");
     assert_eq!(routes("B"), ["10"]);
 
-    // QAF-66 (C-TRAN, Fisher's Landing: Bay A serves only 012): a bay
-    // with service of its own answers its own routes, never its
-    // siblings': the board's rule.
+    // A bay with service of its own answers its own routes, not its siblings'
+    // (C-TRAN, Fisher's Landing: Bay A serves only 012).
     let mut net = net;
     let mut route20 = net.routes["10"].clone();
     route20.name = "Route 20".into();
@@ -199,8 +184,6 @@ fn a_station_answers_its_bays_routes() {
 
 #[test]
 fn trip_counts_are_the_days_trips() {
-    // A frequency trip counts its instances (00:00–01:00 every 30
-    // min: two; an empty band: none) beside the two one-start trips.
     let mut net = network();
     net.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
         bands: vec![
@@ -212,9 +195,8 @@ fn trip_counts_are_the_days_trips() {
     assert_eq!(entity_rows(&net, EntityKind::PatternTrips, "")[0].trips, Some(4));
 }
 
-/// Route 10 in direction "in" (To Downtown): the committed pattern
-/// A·B·C plus a bay variant A·B·D that leaves at B, on the weekday
-/// type every 30 minutes 09:00–10:00.
+/// Route 10 in direction "in" has the committed pattern A, B, C and a bay
+/// variant A, B, D that leaves at B, every 30 minutes 09:00 to 10:00.
 fn with_a_bay_variant() -> Network {
     let net = network();
     let mut variant = net.patterns["10-inbound"].clone();
@@ -263,7 +245,6 @@ fn a_route_lists_its_patterns_by_direction() {
     assert_eq!((dirs[0].direction.as_deref(), dirs[0].name.as_str()), (Some("in"), "To Downtown"));
     assert_eq!(dirs[0].patterns.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["10-inbound"]);
     assert_eq!((dirs[1].direction.as_deref(), dirs[1].patterns[0].id.as_str()), (None, "10-bay"));
-    // With every pattern placed, no "No direction" group appears.
     assert_eq!(route_detail(&network(), "10").unwrap().directions.len(), 1);
 }
 
@@ -276,13 +257,10 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     .unwrap();
     let t = timetable(&net, "10", Some("in"), &["weekday".to_string()]).unwrap();
     assert_eq!((t.direction_name.as_str(), t.group.as_str()), ("To Downtown", "weekday"));
-    // The variant's bay sits where it leaves the others.
     assert_eq!(t.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), ["A", "B", "D", "C"]);
     assert_eq!(t.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(), [true, false, true, true]);
-    // Legend: most trips first; the bands are marked.
     let legend: Vec<_> = t.patterns.iter().map(|p| (p.pattern.as_str(), p.trips, p.headway)).collect();
     assert_eq!(legend, [("10-inbound", 3, false), ("10-bay", 2, true)]);
-    // Rows by start, each with its trip, block and times.
     let rows: Vec<_> =
         t.trips.iter().map(|r| (r.start_secs, r.trip.as_str(), r.pattern.as_str(), r.block.as_deref())).collect();
     assert_eq!(
@@ -293,8 +271,6 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     );
     assert_eq!(t.trips[0].times, [Some(28_800), Some(29_100), None, Some(29_400)]);
     assert_eq!(t.trips[2].times, [Some(32_400), Some(32_700), Some(33_000), None]);
-    // Each row's running time is its trip's own, end to end: the last
-    // stop's arrival less its start (the string-line's slope).
     for row in &t.trips {
         let day = transit_network::materialize_service(&net, &row.pattern_trips).unwrap();
         let trip = day.iter().find(|m| m.trip == row.trip && m.start_secs == row.start_secs).unwrap();
@@ -302,8 +278,6 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     }
     assert_eq!(t.trips.iter().map(|r| r.run_secs).collect::<Vec<_>>(), [600, 600, 600, 600, 600]);
 
-    // The patterns in no direction are their own timetable; an
-    // unknown route, direction or type is no timetable.
     assert!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().trips.is_empty());
     assert_eq!(timetable(&with_a_bay_variant(), "10", None, &["weekday".to_string()]).unwrap().trips.len(), 2);
     assert!(timetable(&net, "10", Some("out"), &["weekday".to_string()]).is_none());
@@ -313,9 +287,7 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
 
 #[test]
 fn a_timetable_against_its_baseline_marks_what_changed() {
-    // Every 30 min 07:50–09:00: 08:00 and 08:30 move to 07:50 and
-    // 08:20 (a moved trip keeps its id, so it reads retimed from its
-    // old start: QAF-64), 08:50 is a new trip, 25:30 is untouched.
+    // A moved trip keeps its id, so it reads retimed from its old start.
     let base = network();
     let edit = NetworkEdit::SetHeadway {
         route: "10".into(),
@@ -342,11 +314,6 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     );
 }
 
-/// QAF-67: a row naming a route carries its long name ("Lincoln")
-/// beside the short one ("12"): a route with one answers it, one
-/// without answers none. Every listing row that names a route: the
-/// route list (entities), a stop's serving routes, the timetable's
-/// header.
 #[test]
 fn a_route_row_answers_its_long_name_when_it_has_one() {
     let mut net = network();
@@ -359,12 +326,9 @@ fn a_route_row_answers_its_long_name_when_it_has_one() {
     assert_eq!((route.name.as_str(), route.long_name.as_deref()), ("Route 10", Some("Lincoln")));
     assert_eq!(stop_detail(&net, "B", None).unwrap().routes[0].long_name.as_deref(), Some("Lincoln"));
     assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name.as_deref(), Some("Lincoln"));
-    // Rows naming no route carry none.
     assert!(entity_rows(&net, EntityKind::Stop, "").iter().all(|r| r.long_name.is_none()));
 }
 
-/// A timetable trip names the service key it runs under: its pattern
-/// trips' (the route view shows which key carries which trips).
 #[test]
 fn a_timetable_trip_names_its_service_key() {
     let net = network();
@@ -375,11 +339,7 @@ fn a_timetable_trip_names_its_service_key() {
     }
 }
 
-/// A stop's visit names the stops either side of it on its pattern
-/// (D-158: what the schedule says beside a survey): the one before
-/// (none at the first stop), the one after (none at the last), each
-/// with the distance along the pattern between them, and whether the
-/// agency published both distances or either is an estimate.
+/// D-158.
 #[test]
 fn a_visit_names_its_neighbours_and_the_distance_to_each() {
     {
@@ -401,7 +361,6 @@ fn a_visit_names_its_neighbours_and_the_distance_to_each() {
             }
         }
     }
-    // and the fixture's middle stop has both
     let b = stop_detail(&network(), "B", None).unwrap();
     assert!(b.visits.iter().any(|v| v.previous.is_some() && v.next.is_some()));
 }

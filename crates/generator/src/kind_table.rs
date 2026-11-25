@@ -1,22 +1,21 @@
-//! The kind table (docs/FORMATS.md, "The kind table"): one table for
-//! each build, generated from the kind list (`cap_abi::kinds::KINDS`)
-//! and the locked schemas. It is checked in as `crates/cap-abi/kinds.json`
-//! and written beside the server's modules as `web/pkg/kinds.json`. It
-//! gives each kind the store keeps how it is written, the module that
-//! checks a write, the merge rule, the read class, its log record kinds,
-//! its kernel load, and its references. The server's
-//! receive path reads it, and refuses a kind with no entry. `store
-//! verify` and `store gc` read the copy the store keeps, to find a log
-//! record's schema (D-202).
+//! The kind table (docs/FORMATS.md, "The kind table") is generated from the
+//! kind list (`cap_abi::kinds::KINDS`) and the locked schemas. It is checked
+//! in as `crates/cap-abi/kinds.json` and written beside the server's modules
+//! as `web/pkg/kinds.json`. The server's write path reads it and refuses a
+//! kind with no entry. `store verify` and `store gc` read the copy that the
+//! store keeps, to find a log record's schema (D-202).
+//!
+//! The doc comments of the types here are in the locked schema
+//! (`schemars` writes them as descriptions), so a change to one changes
+//! the lock.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// The kind table's version.
 pub const SCHEMA_VERSION: u32 = 1;
 
 transit_version::kind_tag!(
-    /// The kind table's kind tag: always `"kind_table"`.
+    /// The tag is always `"kind_table"`.
     KindTableKind = "kind_table"
 );
 
@@ -49,8 +48,8 @@ pub use cap_abi::kinds::{Merge, Read, Write};
 pub struct RecordEntry {
     /// The record's kind in a log entry's changes.
     pub kind: String,
-    /// The document field that holds the collection: an array of records
-    /// with an `id`, or an object by id.
+    /// The document field that holds the collection, either an array of
+    /// records with an `id` or an object by id.
     pub collection: String,
 }
 
@@ -112,9 +111,9 @@ pub struct KindEntry {
     pub references: Vec<transit_version::Reference>,
 }
 
-/// A kind's own write route: the path, the op the request's body is the
-/// arguments of, the answer's field that names the document after the
-/// write, and the body's fields the answer repeats.
+/// The write route of a kind names the path, the op that takes the request
+/// body as its arguments, the answer field that names the document after
+/// the write, and the body fields that the answer repeats.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PostEntry {
     pub path: String,
@@ -124,16 +123,15 @@ pub struct PostEntry {
     pub echo: Vec<String>,
 }
 
-/// A kind's kernel load: its JSON op and its bulk op's code.
+/// The kernel load of a kind names its JSON op and the code of its bytes op.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LoadEntry {
     pub op: String,
     pub code: u32,
 }
 
-/// The table's entries: one for each line of the kind list that the
-/// store keeps (`cap_abi::kinds::KINDS`), with no versions and no
-/// references. gen-manifest adds those from the locked schemas.
+/// The entries have no versions and no references. gen-manifest adds those
+/// from the locked schemas.
 pub fn kinds() -> Vec<KindEntry> {
     cap_abi::kinds::KINDS
         .iter()

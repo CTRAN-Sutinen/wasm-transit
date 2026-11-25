@@ -1,16 +1,7 @@
-//! Service combinations (D-55). The planner's service group is the set
-//! of service types that run together on the same dates. The dates on
-//! which it holds are shown with it. Service ids key trips. A combination
-//! is what a rider actually gets on a day. Types that never share a day
-//! are never pooled. C-TRAN's 1-WKDY/30 and /31 run in successive periods,
-//! so they meet 1-WKDY in two combinations, never in one. A dated exception
-//! (a holiday the base skips and a holiday type runs) is a combination of
-//! its own.
-//!
-//! No date stands in for a combination. Every date it holds on runs
-//! exactly its members, so any one of them materializes the same day.
-//! The analysis laws pin that equality. The answer names the combination
-//! by its members.
+//! A combination is what a rider gets on a day (D-55). Types that never
+//! share a day are never pooled. C-TRAN's 1-WKDY/30 and /31 run in
+//! successive periods, so they meet 1-WKDY in two combinations, never in
+//! one. A dated exception is a combination of its own.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,39 +11,29 @@ use ts_rs::TS;
 
 use crate::{DayState, Network};
 
-/// One combination of service types and the dates on which it holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceCombination {
-    /// Its name and address: the members joined by " + ".
-    /// ("1-WKDY + 1-WKDY/30").
+    /// The members joined by " + ", as in "1-WKDY + 1-WKDY/30".
     pub id: String,
-    /// The service types that run together, sorted. Only types that
-    /// carry trips count. A type with none runs no service (D-94).
+    /// Sorted. Only types with trips count (D-94).
     pub members: Vec<String>,
-    /// Every date it holds on ("YYYY-MM-DD", sorted).
+    /// "YYYY-MM-DD" strings, sorted.
     pub dates: Vec<String>,
-    /// The dates folded into spans. A new span starts where the next date
-    /// is more than seven days after the last (D-94). A weekly pattern reads
-    /// as one span. A period that comes back later reads as another.
     pub spans: Vec<DateSpan>,
 }
 
-/// A run of the dates a combination holds on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DateSpan {
     pub start: String,
     pub end: String,
-    /// The dates it holds on inside the span.
     pub days: u32,
 }
 
-/// The longest step between two dates of one span.
+/// The longest gap between two dates of one span (D-94).
 const SPAN_GAP_DAYS: i64 = 7;
 
-/// Sorted dates folded into spans. A new span starts where the next
-/// date is more than seven days after the last (D-94).
 pub fn date_spans(dates: &[NaiveDate]) -> Vec<DateSpan> {
     let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
     for &d in dates {
@@ -68,8 +49,6 @@ pub fn date_spans(dates: &[NaiveDate]) -> Vec<DateSpan> {
     spans.into_iter().map(|(start, end, days)| DateSpan { start: iso(start), end: iso(end), days }).collect()
 }
 
-/// Every date any service type could run on: its ranges' dates and its
-/// added exceptions.
 fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
     let mut out = BTreeSet::new();
     for st in network.service_types.values() {
@@ -85,8 +64,7 @@ fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
     out
 }
 
-/// The earliest date any type with trips runs (D-140): the date an
-/// imported feed picks on. None when nothing runs.
+/// An imported feed picks on this date (D-140).
 pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
     service_combinations(network)
         .iter()
@@ -95,10 +73,8 @@ pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
         .min()
 }
 
-/// The edits that stamp an imported feed as a pick (D-140, D-228). They
-/// are one `set_plan` under `id` and `name`, effective from the feed's
-/// first service date. None when the document is a pick already (it
-/// carries a plan id) or runs no service, so it has no date.
+/// One `set_plan` effective from the first service date (D-140, D-228).
+/// Empty when the document has a plan id already, or runs no service.
 pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::NetworkEdit> {
     if !network.plan.id.is_empty() {
         return Vec::new();
@@ -108,9 +84,8 @@ pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::Netw
     vec![crate::NetworkEdit::SetPlan { plan, through: None }]
 }
 
-/// The service combinations. There is one per distinct set of types (with
-/// trips) that run on some date, with the dates it holds on. Sorted by the
-/// days it holds (most first), then its first date, then its id.
+/// Only types with trips count (D-94). The order is days held (most first),
+/// then first date, then id.
 pub fn service_combinations(network: &Network) -> Vec<ServiceCombination> {
     let with_trips: BTreeSet<&str> = network
         .pattern_trips
@@ -149,8 +124,6 @@ pub fn service_combinations(network: &Network) -> Vec<ServiceCombination> {
     out
 }
 
-/// The combination whose members are exactly `members` (any order),
-/// or None when that set never runs together on a date.
 pub fn service_combination(network: &Network, members: &[String]) -> Option<ServiceCombination> {
     let mut wanted: Vec<String> = members.to_vec();
     wanted.sort();

@@ -16,13 +16,10 @@
 ///   page however many capabilities read it, and a document a
 ///   capability mints there (the live document) is read by hash
 ///   without crossing back. A capability outside it runs alone.
-/// - The engine is the hash authority's witness: the module answers a
-///   document's identity, and every module must answer the same one (a
-///   served document must answer the hash its server pins; the identity
-///   check holds between instances — a page's assembly against the
-///   server's pin). A disagreement is an error, never a quiet second
-///   identity — so "the same document" holds by construction, not by
-///   discipline.
+/// - The engine checks the hash that a module answers for a document.
+///   Every module must answer the same hash. A served document must
+///   answer the hash that its server pins, so the check holds between a
+///   page's assembly and the server. A disagreement is an error.
 /// - An answer is cached under the journal's key: the module's bytes
 ///   (its pinned hash — the assembly's, in a linked page) and the exact
 ///   request bytes, which name the capability and every input by hash.

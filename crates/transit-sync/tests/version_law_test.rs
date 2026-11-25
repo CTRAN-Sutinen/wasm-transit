@@ -1,14 +1,5 @@
-//! The edit document's version laws (D-62, D-66, D-115;
-//! docs/FORMATS.md, "Versions").
-//!
-//! * The document names its kind and version, first:
-//!   `{"kind":"edit_records","schema_version":2,"records":[…]}`.
-//! * A bare array is version 1.
-//! * `migrate_to` is the steps in order; every record survives, in
-//!   order, byte for byte; every loss is a `MigrationNote`.
-//! * Migrating the current version is refused; `read_document` reads
-//!   the current version only and refuses an older or newer one naming
-//!   both versions.
+//! The edit document's version rules (D-62, D-66, D-115; docs/FORMATS.md,
+//! "Versions").
 
 use serde_json::{json, Value};
 use transit_sync::version::{migrate_step, migrate_to, schema_version_of};

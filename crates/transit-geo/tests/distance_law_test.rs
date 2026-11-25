@@ -1,6 +1,4 @@
-//! The laws of the one distance (D-250): a great-circle distance on a
-//! sphere of the mean earth radius, and the local frame that agrees
-//! with it at street scale.
+//! Properties of `distance_m` and the local frame (D-250).
 
 use proptest::prelude::*;
 use transit_geo::{distance_m, meters_per_degree_lon, EARTH_RADIUS_M, METERS_PER_DEGREE};
@@ -13,7 +11,7 @@ fn lon() -> impl Strategy<Value = f64> {
     -180.0f64..180.0
 }
 
-/// A point near (lat, lon): within about 5 km.
+/// An offset of about 5 km or less.
 fn near() -> impl Strategy<Value = (f64, f64)> {
     (-0.045f64..0.045, -0.045f64..0.045)
 }
@@ -24,8 +22,7 @@ fn one_degree_of_latitude_is_the_mean_radius_arc() {
     assert!((distance_m(45.0, -122.0, 46.0, -122.0) - METERS_PER_DEGREE).abs() < 1e-6);
 }
 
-/// Near the antipodes, `asin` near 1 loses precision: a few decimeters
-/// in 20,000 km.
+/// `asin` near 1 loses a few decimeters in 20,000 km.
 #[test]
 fn antipodes_are_half_the_circumference() {
     let d = distance_m(10.0, 20.0, -10.0, -160.0);
@@ -77,9 +74,7 @@ proptest! {
         prop_assert!((m - span * METERS_PER_DEGREE).abs() < 1e-6 * m.max(1.0), "{m}");
     }
 
-    /// The local frame (meters per degree of latitude, and of
-    /// longitude at a latitude) agrees with the distance to 0.1% within
-    /// 5 km, away from the poles.
+    /// Within 5 km and away from the poles, the frame agrees to 0.1%.
     #[test]
     fn the_local_frame_agrees_at_street_scale(a in -70.0f64..70.0, b in lon(), (dlat, dlon) in near()) {
         let (c, d) = (a + dlat, b + dlon);

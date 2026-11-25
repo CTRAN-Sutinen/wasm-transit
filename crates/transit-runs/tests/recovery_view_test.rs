@@ -1,18 +1,6 @@
-//! The recovery view: every wait between a block's adjacent
-//! trips on a day, its run before it, the recovery required there
-//! (D-9: the rules' requirement wins, else the terminal's floor), and
-//! the slack above it, folded per pattern into layover-to-runtime.
-//!
-//! The laws: a wait is short exactly when validation reports the
-//! layover infeasible under the same rules (one rule, two readers);
-//! slack is the gap less the requirement; a pattern's totals are its
-//! waits' sums.
-//!
-//! API notes: `recovery(net, day, rules)` → `Recovery { waits:
-//! [{block_id, after_trip, trip, route, pattern, terminal,
-//! start_secs, run_secs, gap_secs, required_secs, required_by,
-//! slack_secs, recovery_pct}], patterns: [{pattern, route, waits,
-//! run_secs, gap_secs, recovery_pct, short, min_slack_secs}] }`.
+//! The recovery view (D-9). A wait is short exactly when validation reports
+//! the layover infeasible under the same rules. Slack is the gap less the
+//! requirement, and a pattern's totals are its waits' sums.
 
 mod common;
 
@@ -21,9 +9,7 @@ use proptest::prelude::*;
 use transit_network::{materialize, validation_issues_under, Departs, Network, NetworkError, RecoverySource};
 use transit_runs::{recovery, RecoveryRule, WorkRules};
 
-/// Two vehicles shuttling on 5: b1 08:00 out, 09:00 back (a 40-minute
-/// wait at C, authored); b2 10:00 out, 10:30 back (a 10-minute wait,
-/// authored). C's floor is 600.
+/// b1 waits 40 minutes at C, b2 waits 10, both authored. C's floor is 600.
 fn shuttle() -> Network {
     let trips = [("5", true, 8 * H), ("5", false, 9 * H), ("5", true, 10 * H), ("5", false, 10 * H + 1800)];
     let mut net = world(
@@ -70,8 +56,6 @@ fn a_wait_says_what_is_required_and_what_is_slack() {
 }
 
 proptest! {
-    /// One rule, two readers: a wait is short exactly where validation
-    /// says the layover is infeasible, under the same rules.
     #[test]
     fn short_waits_are_the_validators_infeasible_layovers(
         back in 8 * H + RUN..=9 * H + 600,

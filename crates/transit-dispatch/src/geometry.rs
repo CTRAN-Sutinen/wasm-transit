@@ -1,14 +1,4 @@
-//! Where service runs today: geometry over the effective day.
-//!
-//! A trip that still follows its pattern draws the pattern's alignment.
-//! A diverted trip draws the alignment to the diversion's first kept stop, then
-//! the diversion's traced detour, then the alignment from its last kept stop.
-//! A skip-only diversion (no detour) leaves the alignment as it is.
-//! With no alignment, its patched stops are joined in order, with the detour
-//! between the anchors.
-//! An itinerary's transit leg draws only the ridden segment of that line. A
-//! walk draws through the stops it passes.
-//! The map is handed these lines. It computes none.
+//! `cap-runcut` OPS.md, `trip_path`, holds the line rules.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -20,8 +10,6 @@ fn day_trip<'a>(day: &'a [MaterializedTrip], trip: &str, start_secs: u32) -> Opt
     day.iter().find(|t| t.trip == trip && t.start_secs == start_secs)
 }
 
-/// The trip's pattern alignment. It applies when the effective trip still
-/// visits exactly its pattern's stops, and the pattern runs an alignment.
 fn followed_path(network: &Network, trip: &MaterializedTrip) -> Option<Vec<Coord>> {
     let pattern_id = &network.pattern_trips.get(&trip.pattern_trips)?.pattern;
     let pattern = network.patterns.get(pattern_id)?;
@@ -30,9 +18,6 @@ fn followed_path(network: &Network, trip: &MaterializedTrip) -> Option<Vec<Coord
     follows.then(|| authored_alignment(network, pattern_id)).flatten()
 }
 
-/// The diversions in force that reroute this patched trip: its route's
-/// diversions whose kept stops it visits in order (the day's patch applied
-/// them).
 fn rerouting<'a>(trip: &MaterializedTrip, diversions: &'a [Diversion]) -> Vec<&'a Diversion> {
     diversions
         .iter()
@@ -44,10 +29,6 @@ fn rerouting<'a>(trip: &MaterializedTrip, diversions: &'a [Diversion]) -> Vec<&'
         .collect()
 }
 
-/// Splice each traced detour into a line: the line to the vertex nearest the
-/// first kept stop, then the detour, then the line from the vertex nearest
-/// the last kept stop (searched after the first). A diversion without a
-/// detour leaves the line as it is.
 fn spliced(network: &Network, mut path: Vec<Coord>, diversions: &[&Diversion]) -> Vec<Coord> {
     for d in diversions {
         let Some(points) = d.detour.as_ref().filter(|p| !p.is_empty()) else { continue };
@@ -68,10 +49,6 @@ fn spliced(network: &Network, mut path: Vec<Coord>, diversions: &[&Diversion]) -
     path
 }
 
-/// The line a trip instance runs: a trip on its pattern gets the alignment; a
-/// diverted trip gets it with its detours spliced in, or, with no alignment,
-/// its patched stops joined around the detours. `None` when the trip has no
-/// alignment and no diversion.
 fn drawn_path(network: &Network, trip: &MaterializedTrip, diversions: &[Diversion]) -> Option<Vec<Coord>> {
     let rerouted = rerouting(trip, diversions);
     if rerouted.is_empty() {
@@ -83,10 +60,6 @@ fn drawn_path(network: &Network, trip: &MaterializedTrip, diversions: &[Diversio
     Some(spliced(network, base, &rerouted))
 }
 
-/// One trip instance's line in the effective day, given the diversions in
-/// force: the pattern's authored alignment with each diversion that reroutes
-/// it spliced in at the first and last kept stops. The result is empty when
-/// the trip does not run that day.
 pub fn trip_path(
     network: &Network,
     day: &[MaterializedTrip],
@@ -99,12 +72,8 @@ pub fn trip_path(
         .unwrap_or_else(|| stops_line(network, trip.stop_times.iter().map(|st| st.stop.as_str())))
 }
 
-/// The ridden part of a trip, from one of its stops to a later one: the
-/// trip's line ([`trip_path`]) sliced between the vertices nearest the two
-/// stops. Planar distance is exact at city scale. If the trip does not visit
-/// both stops, the result is its stops between the two; if neither works, a
-/// straight line. The result is empty when either stop is unknown to the
-/// network.
+/// The trip's line ([`trip_path`]) sliced between the vertices nearest the two
+/// stops. Planar distance is accurate at city scale.
 pub fn trip_segment(
     network: &Network,
     day: &[MaterializedTrip],
@@ -152,7 +121,6 @@ fn nearest_vertex(path: &[Coord], at: Coord) -> usize {
     best.0
 }
 
-/// One drawn leg of an itinerary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]

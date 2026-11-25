@@ -1,16 +1,5 @@
 //! A pick's period, and what a pick reads of the stops over it (D-157,
-//! D-228). These are the laws, from the user's intent, before the
-//! implementation:
-//!
-//! * a pick governs from its own date until the date of the next pick
-//!   that is not retired; a retired pick bounds nothing;
-//! * the pick is placed in the published set by its id, so the date it
-//!   carries wins over the date the set holds for it;
-//! * a pick with no id or no date has no period, and reads nothing;
-//! * `read_pick` is `read_records` on the pick's first date and
-//!   `visit_warnings` over its period, and `export_pick` is
-//!   `export_versions` over the same period, so every host that asks
-//!   gets the same answer.
+//! D-228). The ops are in cap-stops' OPS.md (`read_pick`, `export_pick`).
 
 use chrono::NaiveDate;
 use transit_network::Network;
@@ -56,11 +45,9 @@ fn the_last_pick_and_a_first_publish_are_open_ended() {
 
 #[test]
 fn the_pick_is_placed_by_its_id_and_its_own_date_wins() {
-    // the set holds "b" on 2027-02-01; the pick carries 2027-09-01
     let set = published(&[("a", "2027-01-10", "published"), ("b", "2027-02-01", "published"), ("c", "2027-06-01", "published")]);
     let period = pick_period(&pick("b", Some("2027-09-01")), Some(&set)).unwrap();
     assert_eq!((period.from.as_str(), period.until.as_deref()), ("2027-09-01", None));
-    // a retired entry of the same id is replaced too
     let set = published(&[("a", "2027-01-10", "published"), ("b", "2027-02-01", "retired")]);
     assert_eq!(pick_period(&pick("b", Some("2027-01-20")), Some(&set)).unwrap().until, None);
 }
@@ -80,7 +67,6 @@ fn a_pick_reads_the_stops_over_its_period() {
     let net = pick("a", Some("2027-01-10"));
     let mut stops = seed(&net);
     let id = net.stops.keys().next().unwrap().clone();
-    // the stop retires inside the period, and moves after it
     stops = stops.add_event(&id, Event { on: Some("2027-02-01".into()), event: EventKind::Retired, ..Event::default() });
     let stops = stops.checked().unwrap();
     let set = published(&[("a", "2027-01-10", "published"), ("c", "2027-06-01", "published")]);

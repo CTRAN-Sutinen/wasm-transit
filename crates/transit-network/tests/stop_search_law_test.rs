@@ -1,29 +1,18 @@
-//! Finding a stop by what a rider types (D-48).
+//! Stop search (D-48; thresholds D-91; cap-directory/OPS.md, `stops`).
+//! "vancouver
+//! mall" finds the stops whose sign says "Van Mall". There are no authored
+//! aliases.
 //!
-//! The intent, as the user decided it (D-48, 2026-11-05): fuzzy
-//! matching on the stop names: typos, and abbreviations like "Van"
-//! for "Vancouver": and no authored aliases (a hand-kept separate
-//! dataset). "vancouver mall" must find the stops whose sign says "Van
-//! Mall". The thresholds are D-91 (encoded provisionally).
-//!
-//! The laws, over generated stop names:
-//!
-//! 1. **Exact still finds**: every term a substring of the name or id
-//!    (the picker's typing) finds the stop, as an exact match: fuzzy
-//!    matching never drops what the substring rule found.
-//! 2. **An abbreviation on the sign answers the full word**: a name
-//!    word of three letters or more answers any term it begins
-//!    ("Van" answers "vancouver"); a name word answers a term it is a
-//!    subsequence of when they share the first and the last letter
-//!    ("St" answers "street", "Blvd" answers "boulevard").
-//! 3. **A typo still finds**: a term within one edit (a letter
-//!    substituted, added, dropped, or two neighbours swapped) of a name
-//!    word, or of the start of one, finds it: two edits from eight
-//!    letters on; a term under four letters is never corrected.
-//! 4. **Exact first**: every exact match lists before every
-//!    abbreviation, every abbreviation before every typo; inside a
-//!    tier by name, then id. No query is the whole list, name-sorted.
-//! 5. **Every term must match**: a term no word answers finds nothing.
+//! 1. Every term that is a substring of the name or id finds the stop as an
+//!    exact match.
+//! 2. A name word of three letters or more answers any term it begins. A name
+//!    word answers a term it is a subsequence of when they share the first
+//!    and last letter ("Blvd" answers "boulevard").
+//! 3. A term within one edit of a name word, or of its start, finds it. A term
+//!    under four letters is never corrected.
+//! 4. Exact matches list before abbreviations, and abbreviations before typos.
+//!    Each tier sorts by name, then id.
+//! 5. A term that no word answers finds nothing.
 
 use std::collections::BTreeMap;
 
@@ -56,7 +45,6 @@ fn name() -> impl Strategy<Value = String> {
     })
 }
 
-/// One edit of `w` at `at`, by `kind`.
 fn typo(w: &str, at: usize, kind: u8, letter: char) -> String {
     let mut c: Vec<char> = w.chars().collect();
     let i = at % c.len();
@@ -101,7 +89,6 @@ proptest! {
         prop_assume!(typed.chars().count() >= 4);
         let sign = format!("Stop {w}");
         prop_assert!(name_match(&typed, &sign, "id").is_some(), "{sign:?} answers {typed:?}");
-        // and the start of a longer word, as a type-ahead types it
         let long = format!("Stop {w}ington");
         prop_assert!(name_match(&typed, &long, "id").is_some(), "{long:?} answers {typed:?}");
     }
@@ -120,11 +107,9 @@ proptest! {
         let mut sorted = tiers.clone();
         sorted.sort();
         prop_assert_eq!(&tiers, &sorted, "tier, then name, then id");
-        // nothing that matches is left out
         for (id, s) in &net.stops {
             prop_assert_eq!(found.contains(id), name_match(&q, &s.name, id).is_some());
         }
-        // no query: the whole list, name-sorted
         let all = find_stops(&net, "");
         let mut by_name: Vec<(String, String)> = net.stops.iter().map(|(id, s)| (s.name.clone(), id.clone())).collect();
         by_name.sort();
@@ -134,7 +119,6 @@ proptest! {
 
 #[test]
 fn the_everyday_name_finds_the_sign() {
-    // The everyday name, in miniature: the sign says "Van Mall".
     for sign in ["Van Mall Transit Center", "Vancouver Mall"] {
         assert!(name_match("vancouver mall", sign, "1").is_some(), "{sign}");
     }
@@ -149,6 +133,5 @@ fn the_everyday_name_finds_the_sign() {
 fn law5_every_term_must_match() {
     assert_eq!(name_match("vancouver zebra", "Van Mall", "1"), None);
     assert_eq!(name_match("xyz", "Van Mall", "1"), None, "under four letters: never corrected");
-    // a short sign word never stands for an unrelated long term
     assert_eq!(name_match("newport", "NE 4th St", "1"), None);
 }

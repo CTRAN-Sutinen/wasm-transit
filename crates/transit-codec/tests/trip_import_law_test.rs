@@ -1,16 +1,6 @@
-//! The import's trip laws: a feed's trips are the network's trips, with
-//! the agency's ids, every scheduled time exactly, frequency trips as
-//! frequency trips. Patterns are stop sequences, not timings.
-//!
-//! Written before the implementation, as the definition of the
-//! behavior; the expected answers come from the generator's own
-//! values, never from parsing or from the implementation. The feed is
-//! built in memory (`transit_codec::Feed`), so no parser sits between
-//! the generator and the import.
-//!
-//! The API these laws require, beyond `transit-network`'s trip laws
-//! (`crates/transit-network/tests/trip_law_test.rs`):
-//! `transit_codec::import(&Feed) -> ImportOutcome` with `.network`.
+//! A feed's trips are the network's trips, with the agency's ids and every
+//! scheduled time exactly. The expected answers come from the generator's
+//! values, and the feed is built in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,24 +11,19 @@ use transit_codec::feed::{
 use transit_codec::Feed;
 use transit_network::{materialize_service, validation_issues, Departs, HeadwayBand, Network, TripRef};
 
-// ===================================================================
-// Generator: spec-valid feeds.
-// ===================================================================
-
 #[derive(Clone, Debug)]
 struct GenTrip {
     route: u8,
     service: u8,
     direction: Option<u8>,
     shape: Option<u8>,
-    /// Ordered distinct stops (2..=4 of s0..s5).
+    /// Distinct, in order: 2..=4 of s0..s5.
     stops: Vec<u8>,
-    /// A 5-minute slot from a small pool. Duplicates are intended.
+    /// A 5-minute slot from a small pool, so duplicates are intended.
     start: u32,
-    /// Per stop: (leg seconds to reach it, dwell seconds, which times
-    /// the row carries (0 both, 1 arrival only, 2 departure only, 3
-    /// neither), and its timepoint cell). First and last rows carry
-    /// both times; a row missing a time is marked approximate.
+    /// Each row has leg seconds, dwell seconds, which times it carries (0
+    /// both, 1 arrival only, 2 departure only, 3 neither), and its timepoint
+    /// cell.
     rows: Vec<(u32, u32, u8, Option<bool>)>,
     /// `Some` = a frequency trip: (start, end, headway, exact_times).
     every: Option<(u32, u32, u32, bool)>,
@@ -73,9 +58,7 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
     })
 }
 
-/// One row's scheduled times, as absolute seconds, and its
-/// normalized exactness (an empty timepoint cell on a timed row is
-/// exact).
+/// Absolute seconds. An empty timepoint cell on a timed row is exact.
 #[derive(Clone, Debug)]
 struct Row {
     stop: String,
@@ -101,9 +84,7 @@ fn rows_of(t: &GenTrip) -> Vec<Row> {
                 stop: format!("s{}", t.stops[i]),
                 arrival: (shown == 0 || shown == 1).then_some(arrival),
                 departure: (shown == 0 || shown == 2).then_some(at),
-                // A row missing a time must say it is approximate: an
-                // exact row (timepoint 1, or empty on a timed feed)
-                // carries both, by the spec.
+                // The spec says an exact row carries both times.
                 timepoint: if shown != 0 { Some(false) } else { tp },
             }
         })
@@ -114,8 +95,8 @@ fn hms(secs: u32) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
 }
 
-/// Blocks that respect the spec: a block's trips on one service never
-/// overlap in time (frequency trips stay out of blocks).
+/// A block's trips on one service never overlap in time. Frequency trips stay
+/// out of blocks.
 fn assign_blocks(trips: &[GenTrip]) -> Vec<Option<String>> {
     let mut taken: BTreeMap<(u8, u8), Vec<(u32, u32)>> = BTreeMap::new();
     trips
@@ -202,7 +183,7 @@ fn build_feed(trips: &[GenTrip]) -> Feed {
             feed.stop_times.push(StopTimeRow {
                 trip_id: Some(id.clone()),
                 stop_id: Some(row.stop.clone()),
-                // Sequence numbers with gaps, as the spec allows.
+                // The spec allows gaps in stop_sequence.
                 stop_sequence: Some((j * 10 + 1).to_string()),
                 arrival_time: row.arrival.map(hms),
                 departure_time: row.departure.map(hms),
@@ -223,7 +204,6 @@ fn build_feed(trips: &[GenTrip]) -> Feed {
     feed
 }
 
-/// Where a model trip lives: its pattern trips key and record.
 fn find<'a>(net: &'a Network, id: &str) -> Option<(&'a str, &'a transit_network::PatternTrips, &'a transit_network::Trip)> {
     net.pattern_trips
         .iter()
@@ -256,9 +236,9 @@ proptest! {
         prop_assert_eq!(model, feed);
     }
 
-    /// Every scheduled time survives exactly: arrivals and departures,
-    /// timepoints or not. An unscheduled row stays unscheduled. The trip
-    /// runs on its feed service.
+    /// Every scheduled time survives exactly, timepoint or not. An
+    /// unscheduled row stays unscheduled, and the trip runs on its feed
+    /// service.
     #[test]
     fn every_scheduled_time_survives(trips in trips_strategy()) {
         let net = transit_codec::import(&build_feed(&trips)).network;
@@ -290,9 +270,9 @@ proptest! {
         }
     }
 
-    /// A frequency trip imports as one: the agency's id, its windows
-    /// and headways, its exactness, and its stop times as offsets from
-    /// its first arrival.
+    /// A frequency trip imports as one, with the agency's id, its windows,
+    /// headways, and exactness, and its stop times as offsets from its first
+    /// arrival.
     #[test]
     fn frequency_trips_stay_frequency_trips(trips in trips_strategy()) {
         let net = transit_codec::import(&build_feed(&trips)).network;
@@ -311,9 +291,8 @@ proptest! {
         }
     }
 
-    /// Patterns are stop sequences: two trips share a pattern exactly
-    /// when they share route, direction, stops, exactness flags, and
-    /// shape. How long they take is the trips' own business.
+    /// Two trips share a pattern exactly when they share route, direction,
+    /// stops, exactness flags, and shape, whatever their run times.
     #[test]
     fn patterns_are_stop_sequences(trips in trips_strategy()) {
         let net = transit_codec::import(&build_feed(&trips)).network;

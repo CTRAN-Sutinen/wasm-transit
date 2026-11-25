@@ -1,31 +1,8 @@
-//! The streets import laws: a street layer (GeoJSON lines) in, the
-//! canonical streets document out.
-//!
-//! The intent they encode (crates/transit-streets/src/lib.rs):
-//!
-//! * **Streets are a model, not a file.** The document's identity is
-//!   the streets, so what does not change the streets does not change
-//!   the document: the layer's feature order, the direction a two-way
-//!   street is digitized in (a one-way's travel direction is kept,
-//!   whichever way it is drawn), the same street drawn twice, and
-//!   every property outside the model (OBJECTID, publish dates).
-//! * **Only streets are streets** (D-30, encoded provisionally): a
-//!   line whose class field names something other than a road
-//!   (railroad, water, a boundary, a power line) is not in the
-//!   document; a line with no class field, or a road class the import
-//!   does not know, is a street of class `unknown`. The class mapping
-//!   is D-30's table, written out here independently.
-//! * **The geometry is the layer's**, at the model's 1e-6 degree
-//!   resolution: a malformed vertex breaks the line (a gap, never a
-//!   segment), repeated vertices collapse, and a run of fewer than two
-//!   distinct vertices is no street.
-//! * **The document is valid by construction**, and a layer with no
-//!   street is an error, not an empty document.
-//!
-//! The oracle rebuilds the expected document from the generated spec
-//! with its own code; the canonical order it sorts by is the
-//! documented one (points, then one-way, then class by wire name,
-//! then name, an absent name first).
+//! Pins the street-layer import (`crates/cap-streets/OPS.md` "import", D-30).
+//! The canonical document ignores feature order, digitizing direction,
+//! duplicates, and properties outside the model. Only streets enter it, and a
+//! layer with no street is an error. The oracle rebuilds the expected
+//! document with its own code.
 
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -37,10 +14,6 @@ const LAT0: f64 = 45.6;
 const LON0: f64 = -122.6;
 const STEP: f64 = 0.001;
 
-// ---------------------------------------------------------------------
-// The spec a layer is generated from
-// ---------------------------------------------------------------------
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Dir {
     Both,
@@ -48,7 +21,6 @@ enum Dir {
     Backward,
 }
 
-/// How a feature spells its one-way (or does not).
 #[derive(Clone, Copy, Debug)]
 enum OneWaySpelling {
     Tiger, // OneWay ">" / "<"
@@ -168,10 +140,6 @@ fn layer() -> impl Strategy<Value = Vec<Feature>> {
     vec(feature(), 1..=8)
 }
 
-// ---------------------------------------------------------------------
-// The layer's GeoJSON
-// ---------------------------------------------------------------------
-
 fn lat(v: i64) -> f64 {
     LAT0 + v as f64 * STEP
 }
@@ -189,7 +157,6 @@ fn vertex_json(v: &Vertex) -> Value {
     }
 }
 
-/// The feature as GeoJSON. `junk` adds properties outside the model.
 fn feature_json(f: &Feature, junk: bool) -> Value {
     let mut props = serde_json::Map::new();
     match (f.dir, f.spelling) {
@@ -241,11 +208,7 @@ fn layer_bytes(features: &[Feature], junk: bool) -> Vec<u8> {
     serde_json::to_vec(&fc).unwrap()
 }
 
-// ---------------------------------------------------------------------
-// The oracle
-// ---------------------------------------------------------------------
-
-/// D-30's table. Outer None: not a street.
+/// D-30's table, written out independently. Outer None means not a street.
 fn expected_class(field: &ClassField) -> Option<&'static str> {
     match field {
         ClassField::None => Some("unknown"),
@@ -333,7 +296,6 @@ fn expected_ways(features: &[Feature]) -> Vec<OWay> {
         let Some(class) = expected_class(&f.class) else { continue };
         let name = expected_name(&f.name);
         for line in &f.lines {
-            // Malformed vertices break the line into runs.
             let mut runs: Vec<Vec<[i32; 2]>> = vec![Vec::new()];
             for v in line {
                 match v {
@@ -383,7 +345,6 @@ fn actual_ways(doc: &Streets) -> Vec<OWay> {
         .collect()
 }
 
-/// A deterministic permutation from a seed (Fisher–Yates over an LCG).
 fn shuffled<T: Clone>(items: &[T], seed: u64) -> Vec<T> {
     let mut out = items.to_vec();
     let mut s = seed | 1;
@@ -395,8 +356,8 @@ fn shuffled<T: Clone>(items: &[T], seed: u64) -> Vec<T> {
     out
 }
 
-/// The same streets digitized the other way: every line reversed, a
-/// one-way's spelling flipped so it still runs the same way.
+/// Reverses every line and flips a one-way's spelling, so it still runs the
+/// same way.
 fn redrawn(f: &Feature) -> Feature {
     Feature {
         lines: f.lines.iter().map(|l| l.iter().rev().copied().collect()).collect(),
@@ -412,10 +373,8 @@ fn redrawn(f: &Feature) -> Feature {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// The document is the layer's streets: D-30's street test and
-    /// class, the name, the travel direction, the geometry at 1e-6,
-    /// in canonical order with no street twice. A layer with no
-    /// street is an error.
+    /// The document matches the oracle, and a layer with no street is an
+    /// error.
     #[test]
     fn import_matches_the_oracle(features in layer(), junk in any::<bool>()) {
         let expected = expected_ways(&features);
@@ -428,7 +387,7 @@ proptest! {
         }
     }
 
-    /// The layer's feature order is not the streets.
+    /// Feature order does not change the document.
     #[test]
     fn feature_order_does_not_change_the_document(features in layer(), seed in any::<u64>()) {
         let a = import(&layer_bytes(&features, false));
@@ -436,8 +395,7 @@ proptest! {
         prop_assert_eq!(a.ok(), b.ok());
     }
 
-    /// The direction a street is digitized in is not the streets; a
-    /// one-way's travel direction is.
+    /// Digitizing direction does not change the document.
     #[test]
     fn digitized_direction_does_not_change_the_document(features in layer()) {
         let a = import(&layer_bytes(&features, false));
@@ -446,8 +404,8 @@ proptest! {
         prop_assert_eq!(a.ok(), b.ok());
     }
 
-    /// Properties outside the model are not the streets, and a street
-    /// drawn twice is one street.
+    /// Properties outside the model and a street drawn twice do not change
+    /// the document.
     #[test]
     fn foreign_properties_and_duplicates_do_not_change_the_document(features in layer()) {
         let a = import(&layer_bytes(&features, false));
@@ -458,7 +416,7 @@ proptest! {
         prop_assert_eq!(a.ok(), c.ok());
     }
 
-    /// The import's document is valid, and survives its own JSON.
+    /// The import's document is valid and round-trips through JSON.
     #[test]
     fn the_import_is_a_valid_document(features in layer()) {
         if let Ok(doc) = import(&layer_bytes(&features, true)) {
@@ -469,18 +427,12 @@ proptest! {
         }
     }
 
-    /// Totality: arbitrary bytes are Ok or Err, never a panic.
+    /// Arbitrary bytes give Ok or Err, never a panic.
     #[test]
     fn import_survives_arbitrary_bytes(bytes in vec(any::<u8>(), 0..=128)) {
         let _ = import(&bytes);
     }
 }
-
-// ---------------------------------------------------------------------
-// Validity: a stored document the host hands back is checked, so a
-// registered document is canonical: the hash of the streets, not of
-// one spelling of them.
-// ---------------------------------------------------------------------
 
 fn doc(ways: Value) -> Streets {
     serde_json::from_value(json!({ "ways": ways })).unwrap()
@@ -513,8 +465,8 @@ fn validate_refuses_what_the_import_never_writes() {
     }
 }
 
-/// C-TRAN's layer, in miniature: the railroad and the river are not
-/// streets; SE Powell Blvd with a null CFCC is.
+/// A miniature of C-TRAN's layer. SE Powell Blvd has a null CFCC and is a
+/// street.
 #[test]
 fn railroads_and_rivers_are_not_streets() {
     let line = |props: Value, a: f64| {

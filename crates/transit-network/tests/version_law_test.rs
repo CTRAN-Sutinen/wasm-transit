@@ -1,25 +1,11 @@
-//! The network document's version laws (D-62, D-66, D-115;
-//! docs/FORMATS.md, "Versions").
-//!
-//! * Every network written names its kind and its version, first:
-//!   `{"kind":"network","schema_version":2,…}`.
-//! * A document without a `schema_version` is version 1; one naming
-//!   another kind is no network.
-//! * `migrate_to(doc, N)` is the steps from the document's version to
-//!   N applied in order (composition equals stepwise); every record id
-//!   survives; every loss is a `MigrationNote`.
-//! * Migrating a document already at (or past) the target is refused;
-//!   a version newer than this build is refused naming both versions.
-//!
-//! The v1 shapes themselves (pre-trip, pre-alignment) are pinned in
-//! trip_law_test.rs and alignment_law_test.rs, through
-//! `migrate_network`.
+//! The network document's versions (D-62, D-66, D-115; docs/FORMATS.md,
+//! "Versions"). The v1 shapes before trips and alignments are pinned in
+//! trip_law_test.rs and alignment_law_test.rs.
 
 use serde_json::{json, Value};
 use transit_network::{migrate_network, migrate_step, migrate_to, schema_version_of, Network, SCHEMA_VERSION};
 
-/// A small v1 document: the untagged current shape, with ids in every
-/// keyed map the migration must keep.
+/// An untagged v1 document, with ids in every keyed map.
 fn v1() -> Value {
     json!({
         "name": "Sample",

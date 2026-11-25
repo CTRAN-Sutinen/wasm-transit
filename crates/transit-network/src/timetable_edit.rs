@@ -1,27 +1,10 @@
-//! The timetable's gestures: changes a planner states against a timetable.
-//! A timetable is one route, one direction, and one service type (see
-//! `listing::timetable`). Each gesture applies across every pattern of the
-//! direction, including bay and short-turn variants. Each carries the
-//! coherence rule of the trips it moves:
-//!
-//! * A trip that stays is retimed. It is never re-created. It keeps its id
-//!   and its own running times. Its blocks keep it, because they reference
-//!   it by id.
-//! * A trip that goes leaves its blocks. The layovers on either side of it
-//!   go with it, and the chain closes up. Validation names a gap that no
-//!   longer fits. A block that the trip empties goes.
-//! * A new trip gets an id that no trip had. It runs the pattern of the trip
-//!   before it in the timetable, which is the bay variant it slots between.
-//!   The pattern's profile times it. It joins the pattern's busiest pattern
-//!   trips for the type, or a minted one when there is none. It is unassigned
-//!   until a block takes it (the `unassigned_trips` warning).
-//! * Pattern trips that a gesture empties are removed. The model keeps no
-//!   empty trip list.
-//! * A new trip never lands where its pattern's profiles cannot time it. That
-//!   is a named refusal.
-//!
-//! Only one-start trips are moved. Frequency trips are left as they are. Edit
-//! their bands instead.
+//! Every gesture here keeps the trips that it moves coherent. A trip that
+//! stays keeps its id, running times, and blocks. A trip that goes leaves its
+//! blocks with the layovers beside it, and validation reports a gap that no
+//! longer fits. A new trip runs the pattern of the trip before it, which is
+//! the bay variant that it slots between, and joins the busiest pattern trips
+//! of that pattern. Pattern trips that a gesture empties go, because the model
+//! keeps no empty trip list.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,11 +12,10 @@ use crate::edit::{prune_layovers, CreatedEntity};
 use crate::materialize::produce_times;
 use crate::model::{Block, Departs, Network, PatternStop, PatternTrips, StopOffset, Trip, TripRef};
 
-/// A one-start trip of the timetable: (pattern trips, trip id, start).
+/// (pattern trips, trip id, start) of a one-start trip in the timetable.
 type Row = (String, String, u32);
 
-/// The patterns of `route` in `direction` (`None`: those in none), in
-/// id order; refused for an unknown route or direction, or none.
+/// `None` selects the patterns with no direction.
 pub(crate) fn direction_patterns(net: &Network, route: &str, direction: Option<&str>) -> Result<Vec<String>, String> {
     let r = net.routes.get(route).ok_or_else(|| format!("unknown route {route}"))?;
     if let Some(d) = direction {
@@ -53,8 +35,6 @@ pub(crate) fn direction_patterns(net: &Network, route: &str, direction: Option<&
     Ok(ids)
 }
 
-/// The timetable's one-start trips, by start (then pattern trips, then
-/// trip id).
 fn rows(net: &Network, patterns: &[String], service_type: &str) -> Result<Vec<Row>, String> {
     if !net.service_types.contains_key(service_type) {
         return Err(format!("unknown service type {service_type}"));
@@ -74,8 +54,8 @@ fn rows(net: &Network, patterns: &[String], service_type: &str) -> Result<Vec<Ro
     Ok(out)
 }
 
-/// Re-attach a block's layovers after its chain changed: a layover
-/// stays only while the two trips it sat between are still adjacent.
+/// A layover stays only while the two trips that it sat between are still
+/// adjacent.
 pub(crate) fn reindex_layovers(block: &mut Block, before: &[TripRef]) {
     let layovers = std::mem::take(&mut block.layovers);
     for mut l in layovers {
@@ -91,8 +71,6 @@ pub(crate) fn reindex_layovers(block: &mut Block, before: &[TripRef]) {
     prune_layovers(block);
 }
 
-/// A trip id no trip in the network has, and none of `taken`:
-/// `{base}`, else `{base}-2`, `{base}-3`, …
 pub(crate) fn fresh_trip_id(net: &Network, taken: &BTreeSet<String>, base: &str) -> String {
     let exists: BTreeSet<&str> = net.trips().map(|(_, _, t)| t.id.as_str()).collect();
     let free = |id: &str| !exists.contains(id) && !taken.contains(id);
@@ -102,9 +80,6 @@ pub(crate) fn fresh_trip_id(net: &Network, taken: &BTreeSet<String>, base: &str)
     (2..).map(|n| format!("{base}-{n}")).find(|id| free(id)).expect("ids are unbounded")
 }
 
-/// Remove trips everywhere: from their pattern trips (an emptied one
-/// goes) and from every block (the layovers either side go; an
-/// emptied block goes).
 pub(crate) fn remove_trips(net: &mut Network, ids: &BTreeSet<String>) {
     if ids.is_empty() {
         return;
@@ -123,16 +98,12 @@ pub(crate) fn remove_trips(net: &mut Network, ids: &BTreeSet<String>) {
     net.blocks.retain(|_, b| !b.trips.is_empty());
 }
 
-/// Every trip running `pattern`, under any service type.
 pub(crate) fn pattern_trips_mut<'a>(net: &'a mut Network, pattern: &'a str) -> impl Iterator<Item = &'a mut Trip> + 'a {
     net.pattern_trips.values_mut().filter(move |pt| pt.pattern == pattern).flat_map(|pt| pt.trips.iter_mut())
 }
 
-/// Retime, remove, and add trips in one step. `moves` (trip id → new start)
-/// keep their ids, times, and blocks. `removed` trips leave everything.
-/// `added` (pattern, start) pairs are new trips under the pattern's busiest
-/// pattern trips for the type. Answers the first pattern trips that it had
-/// to create.
+/// `moves` pairs a trip id with its new start, and `added` pairs a pattern
+/// with a start. Answers the first pattern trips that it had to create.
 fn rewrite(
     net: &mut Network,
     service_type: &str,
@@ -140,8 +111,6 @@ fn rewrite(
     removed: &[String],
     added: &[(String, u32)],
 ) -> Result<Option<CreatedEntity>, String> {
-        // A new trip is timed by its pattern's profile. Refuse a trip that no
-        // profile can time.
     let mut timed = Vec::new();
     for (pattern, start) in added {
         let times = net.patterns.get(pattern).and_then(|p| produce_times(p, *start)).ok_or_else(|| {
@@ -203,12 +172,12 @@ fn rewrite(
     Ok(created)
 }
 
-/// Match `small` into `large` in order, minimizing the total distance
-/// (each of `small` takes one of `large`): `large` indices, one per
-/// `small` item.
+/// Match `small` into `large` in order, with the least total distance (each
+/// item of `small` takes one item of `large`). Answers the `large` index of
+/// each `small` item.
 fn match_in_order(small: &[u32], large: &[u32]) -> Vec<usize> {
     let (n, m) = (small.len(), large.len());
-    // cost[i][j]: the best for small[..i] within large[..j].
+    // cost[i][j] is the best total for small[..i] within large[..j].
     let mut cost = vec![vec![u64::MAX; m + 1]; n + 1];
     for j in 0..=m {
         cost[0][j] = 0;
@@ -234,8 +203,6 @@ fn match_in_order(small: &[u32], large: &[u32]) -> Vec<usize> {
     out
 }
 
-/// The pattern a new trip at `start` runs: the trip before it in the
-/// timetable, else the one after, else the direction's busiest.
 fn neighbour_pattern(net: &Network, kept: &[(Row, u32)], start: u32, fallback: &str) -> String {
     let pattern_of = |pt: &str| net.pattern_trips.get(pt).map(|t| t.pattern.clone());
     let before = kept.iter().filter(|(_, s)| *s <= start).max_by_key(|(_, s)| *s);
@@ -246,8 +213,6 @@ fn neighbour_pattern(net: &Network, kept: &[(Row, u32)], start: u32, fallback: &
         .unwrap_or_else(|| fallback.to_string())
 }
 
-/// The pattern most of the timetable's trips run; with none, the
-/// direction's first pattern.
 fn busiest_pattern(net: &Network, timetable: &[Row], patterns: &[String]) -> String {
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for (pt, _, _) in timetable {
@@ -263,11 +228,6 @@ fn busiest_pattern(net: &Network, timetable: &[Row], patterns: &[String]) -> Str
         .unwrap_or_default()
 }
 
-/// Frequency by period: one-start trips every `headway_secs` from `from_secs`
-/// (the first departure) until before `to_secs`. Existing trips in the window
-/// move to the nearest slots, in order. They keep their ids, times, and
-/// blocks. Slots left over become new trips (`pattern` when given, else the
-/// neighbour's). Trips left over go, because the frequency is lower.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn set_headway(
     net: &mut Network,
@@ -310,7 +270,6 @@ pub(crate) fn set_headway(
             }
         }
     }
-    // Every trip that stays, at its new time: the neighbours.
     let mut staying: Vec<(Row, u32)> =
         all.iter().filter(|r| !(from_secs..to_secs).contains(&r.2)).map(|r| (r.clone(), r.2)).collect();
     staying.extend(moves.iter().cloned());
@@ -323,11 +282,6 @@ pub(crate) fn set_headway(
     rewrite(net, service_type, &moves, &removed, &added)
 }
 
-/// Span: one-start trips before `first_secs` or after `last_secs` go. A bound
-/// past the current first or last trip becomes the new first or last
-/// departure. It is reached in even steps nearest `headway_secs`, or else the
-/// lower median of the edge's last three gaps. Each new trip runs the edge
-/// trip's pattern.
 pub(crate) fn set_span(
     net: &mut Network,
     route: &str,
@@ -383,9 +337,9 @@ pub(crate) fn set_span(
     rewrite(net, service_type, &[], &removed, &added)
 }
 
-/// The departures from `edge` (exclusive) to `bound` (inclusive), in
-/// the whole number of even steps nearest `headway`. None when the
-/// bound is within half a headway of the edge. Either direction.
+/// The departures after `edge`, up to and including `bound`, in the whole
+/// number of even steps nearest `headway`. Empty when the bound is within
+/// half a headway of the edge.
 fn steps(edge: u32, bound: u32, headway: u32) -> Vec<u32> {
     let span = edge.abs_diff(bound);
     let n = (span + headway / 2) / headway;
@@ -397,12 +351,6 @@ fn steps(edge: u32, bound: u32, headway: u32) -> Vec<u32> {
         .collect()
 }
 
-/// Running time by period: the one-start trips of the direction's
-/// patterns under `service_type` departing in [`from_secs`,
-/// `to_secs`) run `delta_secs` longer (shorter, when negative) from
-/// their first departure to their last arrival, spread over the trip
-/// in proportion. Each keeps its id and start; the profiles, other
-/// service types and frequency trips are untouched.
 pub(crate) fn adjust_running_time(
     net: &mut Network,
     route: &str,
@@ -451,8 +399,7 @@ pub(crate) fn adjust_running_time(
     Ok(None)
 }
 
-/// Insert an unscheduled visit at `index` into every trip of
-/// `pattern` (the pattern's stops already have it).
+/// The caller has already added the visit to the stops of the pattern.
 pub(crate) fn insert_trip_stop(net: &mut Network, pattern: &str, index: usize) {
     for trip in pattern_trips_mut(net, pattern) {
         if index <= trip.times.len() {
@@ -461,7 +408,6 @@ pub(crate) fn insert_trip_stop(net: &mut Network, pattern: &str, index: usize) {
     }
 }
 
-/// Drop visit `index` from every trip of `pattern`.
 pub(crate) fn remove_trip_stop(net: &mut Network, pattern: &str, index: usize) {
     for trip in pattern_trips_mut(net, pattern) {
         if index < trip.times.len() {
@@ -470,10 +416,7 @@ pub(crate) fn remove_trip_stop(net: &mut Network, pattern: &str, index: usize) {
     }
 }
 
-/// Visit `stop` right after `after` on every pattern of the direction
-/// that visits `after` before its last stop (a non-timepoint, halfway
-/// along that leg, unscheduled on every trip). Patterns already
-/// visiting `stop` are left alone.
+/// A pattern that already visits `stop` stays as it is.
 pub(crate) fn insert_direction_stop(
     net: &mut Network,
     route: &str,
@@ -507,9 +450,6 @@ pub(crate) fn insert_direction_stop(
     Ok(None)
 }
 
-/// Stop visiting `stop` on every pattern of the direction (a timepoint's entry
-/// leaves every profile with it, and every trip loses its time there).
-/// Refused when it ends a pattern. Endpoints stay.
 pub(crate) fn remove_direction_stop(
     net: &mut Network,
     route: &str,

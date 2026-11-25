@@ -1,14 +1,6 @@
-//! Native dispatch tests for the authoring capability. These test the seam
-//! without wasm, over the committed planner network. The laws (the edit
-//! semantics themselves live in transit-network's edit_test):
-//!
-//! 1. the document identity is the canonical-serialization hash
-//!    every capability returns;
-//! 2. apply answers the next document registered under its own hash.
-//!    Changes chain by hash, and the last document stays addressable;
-//! 3. issues and warnings ride along (the authoring loop in one op);
-//! 4. a refused change, an unknown hash, and garbage are errors,
-//!    never panics.
+//! Native tests of `apply` and `stamp_pick` over the committed planner
+//! network (cap-author/OPS.md). The edit semantics are in transit-network's
+//! `edit_test`.
 
 use cap_author::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use sha2::Digest;
@@ -29,7 +21,6 @@ fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, String
 #[test]
 fn the_identity_is_the_canonical_hash() {
     let net = network();
-    // the sha256 of its canonical bytes (RFC 8785, D-169)
     let expected = format!("sha256:{:x}", sha2::Sha256::digest(cap_abi::canonical_bytes(&net).unwrap().as_bytes()));
     assert_eq!(load(net), expected);
 }
@@ -37,8 +28,6 @@ fn the_identity_is_the_canonical_hash() {
 #[test]
 fn changes_chain_by_hash_and_report_the_result() {
     let base = load(network());
-    // Fork into a pick dated after the calendar ends: applied, and
-    // the warning says the pick governs a period with no service.
     let Response::Apply { network_hash: pick, network, issues, warnings, created, touched } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
@@ -59,7 +48,6 @@ fn changes_chain_by_hash_and_report_the_result() {
     assert!(touched.is_empty());
     assert_eq!(network.plan.id, "spring");
     assert!(issues.is_empty());
-    // The 25:30 trip was never in block 400. It is unassigned and warned.
     let unassigned = NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 };
     assert_eq!(
         warnings,
@@ -69,11 +57,8 @@ fn changes_chain_by_hash_and_report_the_result() {
         ]
     );
 
-    // The fork keeps only its period's dates (D-138): the weekday
-    // calendar, all before the pick, left with no range.
+    // D-138.
     assert!(network.service_types["weekday"].rule.ranges.is_empty());
-    // The next change chains on the answered hash, with no reload. Give the
-    // weekday a range in the period, and the plan-period warning clears.
     let Response::Apply { warnings, .. } = apply(
         &pick,
         vec![NetworkEdit::AddServiceRange {
@@ -88,8 +73,6 @@ fn changes_chain_by_hash_and_report_the_result() {
     };
     assert_eq!(warnings, vec![unassigned], "the plan-period warning clears");
 
-    // The last document stays addressable: a change from the base
-    // again lands on the same identity as before (idempotent).
     let Response::Apply { network_hash: again, .. } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
@@ -107,8 +90,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     };
     assert_eq!(again, pick, "the same change of the same document is the same document");
 
-    // D-41 (QAF-54): the fork carries the calendar. The same pick, with its
-    // period end, runs the weekday on its date. The warning never fires.
+    // D-41.
     let Response::Apply { network, warnings, .. } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
@@ -129,7 +111,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     assert_eq!(warnings, vec![NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 }]);
 }
 
-/// D-11 through the seam: a redraw names the patterns it moved.
+/// D-11.
 #[test]
 fn a_redraw_reports_the_patterns_it_touched() {
     let base = load(network());
@@ -152,7 +134,6 @@ fn refusals_and_garbage_are_errors_not_panics() {
     let err = apply("sha256:missing", vec![]).unwrap_err();
     assert!(err.contains("unknown network"), "{err}");
 
-    // The JSON seam: tagged edits in, the outcome wrapper out.
     let out = dispatch_json(&format!(
         r#"{{"op":"apply","network_hash":"{base}","edits":[{{"edit":"set_name","name":"Renamed"}}]}}"#
     ));
@@ -161,8 +142,6 @@ fn refusals_and_garbage_are_errors_not_panics() {
     assert!(dispatch_bytes(0, b"x").contains("unknown bulk op"));
 }
 
-/// A gesture through the seam: the minted id comes back in `created`,
-/// and the next change chains on the answered hash.
 #[test]
 fn gestures_report_what_they_created() {
     let base = load(network());
@@ -187,9 +166,6 @@ fn gestures_report_what_they_created() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed straight into the
-    // model, with no request envelope. It answers exactly what the JSON op
-    // answers. Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_author::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -201,9 +177,7 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// D-9: with work rules, a block's waits are judged against what the
-/// rules require (they win over the terminal's floor); an unknown
-/// rules hash is the unknown-hash error.
+/// D-9. Work rules win over the terminal's floor.
 #[test]
 fn work_rules_judge_the_waits_of_the_next_document() {
     let base = load(network());
@@ -233,8 +207,7 @@ fn work_rules_judge_the_waits_of_the_next_document() {
     assert!(err.contains("load_work_rules"), "{err}");
 }
 
-/// An imported feed is stamped as a pick on its first service date; a
-/// pick is not stamped again (D-228).
+/// D-228.
 #[test]
 fn stamp_pick_stamps_a_feed_once() {
     let base = load(network());

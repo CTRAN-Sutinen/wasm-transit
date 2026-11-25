@@ -1,12 +1,5 @@
-//! Native dispatch tests for the gtfs capability. These test the seam
-//! without wasm, as each capability's dispatch_test does. The content-hash
-//! registry has explicit laws: same bytes, same hash, one entry
-//! (idempotence); different bytes, different hashes; and the registry is
-//! addressed by hash, so a query for an unknown hash is an error, never a
-//! panic. The day views and the directory questions (pickers, names join)
-//! are not here. They answer over the network document (cap-board /
-//! cap-runcut / cap-calendar / cap-directory; one question, one answer on
-//! the bus).
+//! The same bytes give one registry entry, and an unknown hash or bad input
+//! is an error. The retired day ops are not spoken (OPS.md).
 
 use std::io::Read;
 
@@ -25,8 +18,6 @@ fn dispatch(request: cap_gtfs::Request) -> cap_gtfs::Response {
     cap_gtfs::dispatch(request).expect("dispatch succeeds")
 }
 
-/// The module's seam, as a host calls it: the kernel's load_feed on
-/// its bulk op, the outcome parsed.
 fn load_feed(bytes: &[u8]) -> serde_json::Value {
     serde_json::from_str(&cap_gtfs::invoke_bytes(<transit_codec::Feed as cap_abi::kernel::Load>::CODE, bytes)).unwrap()
 }
@@ -38,7 +29,6 @@ fn load_feed_returns_a_content_hash_and_summary() {
     assert_eq!(ok["op"], "load_feed");
     assert_eq!(ok["summary"]["stops"], 6, "A, B, C, the station pin, two bays");
     assert_eq!(ok["summary"]["trips"], 7);
-    // The hash is the content hash of the input bytes.
     assert_eq!(ok["feed_hash"], cap_abi::content_hash(&bytes));
 }
 
@@ -73,8 +63,6 @@ fn json_seam_round_trips_the_tagged_form() {
     let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(r#"{"op": "nope"}"#)).unwrap();
     assert!(bad["error"].as_str().unwrap().contains("invalid request"));
 
-    // The retired day ops answer as request errors. The module does not
-    // speak them. The seam says so.
     for retired in [
         "departures",
         "blocks",
@@ -94,13 +82,10 @@ fn json_seam_round_trips_the_tagged_form() {
         );
     }
 
-    // The capability has no bulk op of its own.
     let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke_bytes(9, b"")).unwrap();
     assert!(bad["error"].as_str().unwrap().contains("unknown bulk op"));
 }
 
-/// The identity question: which feed is this? The fixture carries
-/// feed_info.txt.
 #[test]
 fn feed_info_answers_the_feeds_identity() {
     let bytes = fixture_zip();

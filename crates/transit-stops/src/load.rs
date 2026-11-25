@@ -1,16 +1,9 @@
-//! The kernel loads a stops document (D-239). Its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_stops` answers: the hash, and how many stops the document holds.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StopsLoaded {
     pub stops_hash: String,
     pub stops: u32,
 }
 
-/// Stops documents: every stop is a list of dated events (D-153). The load
-/// refuses a document that no write could store, and names each refusal.
-/// So a registered document is always one the model reads.
 impl transit_version::Load for crate::Stops {
     const ID: &'static str = "stops";
     const NAME: &'static str = "stops document";

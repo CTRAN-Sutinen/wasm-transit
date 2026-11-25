@@ -1,7 +1,3 @@
-//! The alerts capability's worked examples (its `examples` feature): the
-//! documents to load and each request. The generator runs them through
-//! this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 use transit_alerts::{AlertTemplate, FillInput, ServiceAlert};
@@ -16,13 +12,11 @@ pub fn examples() -> Vec<Example> {
     let load_templates = || fixtures::load("load_alert_templates", "templates", &templates);
     let network = || fixtures::load_network(&net.derived);
     // Read through the types, so each request is serde's own bytes.
-    // Snow: an agency-wide alert, published now.
     let snow: ServiceAlert = serde_json::from_value(json!({
         "status": "published", "cause": "weather", "effect": "significant_delays",
         "header": [{"text": "Snow: expect delays on every route"}], "informed": [{}]
     }))
     .expect("the snow alert reads");
-    // A detour template beside the closure.
     let detour: AlertTemplate = serde_json::from_value(json!({
         "name": "Detour", "cause": "construction", "effect": "detour",
         "header": [{"text": "Route {route} is on detour from {start date}"}]
@@ -37,14 +31,12 @@ pub fn examples() -> Vec<Example> {
         start_date: Some("2026-10-26".into()),
         end_date: Some("2026-11-20".into()),
     };
-    // The first alert, put in an empty alerts log.
     let first = alerts.alerts.values().next().expect("a fixture alert").clone();
     let records: std::collections::BTreeMap<String, serde_json::Value> =
         alerts.alerts.iter().map(|(id, a)| (id.clone(), json!({ "version": transit_alerts::ALERTS_VERSION, "value": a }))).collect();
     vec![
         Example { bytes: None, kinds: vec![], op: "validate", loads: vec![], request: json!({ "op": "validate", "alerts": alerts }) },
         Example { bytes: None, kinds: vec![], op: "put", loads: vec![load_alerts()], request: json!({ "op": "put", "alerts_hash": alerts_hash, "id": "snow", "alert": snow }) },
-        // The detour lifts now.
         Example {
             bytes: None, kinds: vec![],
             op: "end",
@@ -52,7 +44,6 @@ pub fn examples() -> Vec<Example> {
             request: json!({ "op": "end", "alerts_hash": alerts_hash, "id": "detour-10", "at": fixtures::ALERTS_NOW }),
         },
         Example { bytes: None, kinds: vec![], op: "list", loads: vec![load_alerts()], request: json!({ "op": "list", "alerts_hash": alerts_hash, "now": fixtures::ALERTS_NOW }) },
-        // The deployment speaks English and Spanish.
         Example {
             bytes: None, kinds: vec![],
             op: "flags",
@@ -86,7 +77,6 @@ pub fn examples() -> Vec<Example> {
             loads: vec![load_alerts(), load_templates()],
             request: json!({ "op": "log_records", "alerts_hash": alerts_hash, "templates_hash": templates_hash }),
         },
-        // The alerts document assembled from the log's records.
         Example { bytes: None, kinds: vec![], op: "log_document", loads: vec![], request: json!({ "op": "log_document", "kind": "service_alerts", "records": records }) },
     ]
 }

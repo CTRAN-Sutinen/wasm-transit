@@ -1,25 +1,6 @@
-//! What a document says about itself (D-62, D-115): its kind and version,
-//! inside it, so any copy names both without the app. The kinds and their
-//! versions are in docs/FORMATS.md, "Versions".
-//!
-//! - [`kind_tag!`] declares a kind's tag: always written; an absent one
-//!   reads as the kind; another kind is refused.
-//! - [`Version<N>`] is a version field whose absence reads as `N`.
-//! - [`Versioned`] refuses another version at load, naming both
-//!   ([`parse_versioned`]). For one release a kind may read the next
-//!   version ([`Ahead`], D-79, D-186). The owning crate's `step_down` is
-//!   either lossless and writable, or the copy is read-only and a write
-//!   over it is refused. A write's base reads through `cap_abi::Base` or
-//!   `Kind::require_writable` (docs/FORMATS.md, "Rolling a version back").
-//! - [`Extra`] keeps a record's unknown fields through a read and a write
-//!   (D-167). Values (a point, a time pair) carry none. Every load and
-//!   receive op names the unknown fields it met.
-//! - [`references`] reads the references a schema declares
-//!   (`x-references`, D-232).
-//! - [`Load`] is how the kernel loads a kind; each library implements it
-//!   in its `src/load.rs` (D-239).
-//! - [`document`] is identity and read: the canonical hash (RFC 8785) and
-//!   the versioned read of JSON or gzipped JSON.
+//! A document names its kind and version inside it (D-62, D-115), so any copy
+//! says both without the app. The kinds and their versions are in
+//! docs/FORMATS.md, "Versions".
 
 #![forbid(unsafe_code)]
 
@@ -36,60 +17,41 @@ pub use schemars;
 #[doc(hidden)]
 pub use serde;
 
-/// A document kind a reader checks the version of: its name, the one
-/// version this build reads, where the version lives, and the version
-/// a copy carries.
 pub trait Versioned {
-    /// The kind's name, as its tag writes it.
     const KIND: &'static str;
-    /// The version this build reads and writes.
     const READS: u32;
-    /// The field the version lives in.
     const VERSION_FIELD: &'static str = "schema_version";
-    /// What a copy with no version field is.
     const UNTAGGED: u32 = 1;
-    /// The version this copy carries.
     fn schema_version(&self) -> u32;
-    /// The version a copy carries, read from its JSON when the copy does
-    /// not read as this type. `cap_abi::parse_versioned` names it in the
-    /// refusal. It is the number in [`Self::VERSION_FIELD`], else
-    /// [`Self::UNTAGGED`]. A kind whose older copies name their version
-    /// another way reads that way too.
+    /// Reads the version from JSON that does not read as this type, so the
+    /// refusal can name it. A kind whose older copies name their version
+    /// another way overrides this.
     fn version_in(value: &serde_json::Value) -> u32 {
         value.get(Self::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(Self::UNTAGGED, |v| v as u32)
     }
-    /// The next version this build also reads, for one release, and how
-    /// (D-79, D-186). A format change ships in two releases: release A
-    /// reads vN and vN+1 and writes vN, and release B writes vN+1. So a
-    /// rollback from B to A reads what B stored. `None`: this build
-    /// reads only [`Self::READS`].
+    /// A format change ships in two releases (D-79, D-186). Release A reads
+    /// vN and vN+1 and writes vN, and release B writes vN+1. So a rollback
+    /// from B to A reads what B stored.
     const AHEAD: Option<(u32, Ahead)> = None;
-    /// A copy in the version [`Self::AHEAD`] names, stepped down to the
-    /// version this build reads. It is called only for that version.
-    /// The step lives in the crate that owns the kind, beside the
-    /// migration step it reverses.
+    /// The step lives in the crate that owns the kind, beside the migration
+    /// step that it reverses.
     fn step_down(next: serde_json::Value) -> Result<serde_json::Value, String> {
         let _ = next;
         Err(format!("{} has no step down from a newer version", Self::KIND))
     }
 }
 
-/// How a build reads the next version of a kind (D-186). The format
-/// change declares it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ahead {
-    /// The step down loses nothing: vN+1 read down and brought forward
-    /// again is the same document (a law pins it). The build reads the
-    /// document and writes over it as usual.
+    /// vN+1 read down and brought forward again is the same document, so
+    /// writes over it proceed.
     Lossless,
-    /// vN+1 holds what vN cannot. The build reads the document through
-    /// the step down, and refuses to write over it, naming both
-    /// versions, until the deployment moves forward again.
+    /// vN+1 holds what vN cannot, so a write over it is refused. A write's
+    /// base reads through `cap_abi::Base` or `Kind::require_writable`
+    /// (docs/FORMATS.md, "Rolling a version back").
     ReadOnly,
 }
 
-/// How a copy was read: in the version this build reads, or one
-/// version ahead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadAs {
     Current,
@@ -97,16 +59,11 @@ pub enum ReadAs {
 }
 
 impl ReadAs {
-    /// Whether a write over the copy is refused: a copy read ahead
-    /// through a read-only step.
     pub fn read_only(self) -> bool {
         self == ReadAs::Ahead(Ahead::ReadOnly)
     }
 }
 
-/// How this build reads a copy of `T`'s kind in version `found`: the
-/// version it reads, the version [`Versioned::AHEAD`] names, or the
-/// refusal naming both ([`refused`]).
 pub fn reads<T: Versioned>(found: u32) -> Result<ReadAs, String> {
     match T::AHEAD {
         _ if found == T::READS => Ok(ReadAs::Current),
@@ -115,9 +72,8 @@ pub fn reads<T: Versioned>(found: u32) -> Result<ReadAs, String> {
     }
 }
 
-/// The refusal of a copy in another version, naming both: an older one
-/// with the capability op that migrates it, a newer one as written by a
-/// newer build (refused, never rewritten).
+/// An older copy names the op that migrates it. A newer copy is refused and
+/// never rewritten.
 pub fn refused(kind: &str, found: u32, reads: u32) -> String {
     if found < reads {
         format!("{kind} v{found}: this module reads v{reads} — bring it forward first (migrate.migrate, kind {kind:?})")
@@ -126,8 +82,6 @@ pub fn refused(kind: &str, found: u32, reads: u32) -> String {
     }
 }
 
-/// The refusal of a write over a copy read ahead through a read-only
-/// step (D-186), naming both versions.
 pub fn write_refused(kind: &str, found: u32, reads: u32) -> String {
     format!(
         "{kind} v{found} was written by a newer build: this build reads it one version ahead of v{reads}, \
@@ -135,8 +89,6 @@ pub fn write_refused(kind: &str, found: u32, reads: u32) -> String {
     )
 }
 
-/// The refusal of a write over a copy of `T`'s kind read as `read`, if
-/// it is refused.
 pub fn writes_over<T: Versioned>(found: u32, read: ReadAs) -> Result<(), String> {
     if read.read_only() {
         Err(write_refused(T::KIND, found, T::READS))
@@ -145,23 +97,20 @@ pub fn writes_over<T: Versioned>(found: u32, read: ReadAs) -> Result<(), String>
     }
 }
 
-/// The fields of a record that this build does not know (D-167): kept
-/// as written through a read and a write, so a writer on an older build
-/// does not drop what a newer one wrote. Every record of an authored
-/// kind carries one, flattened into the record (`#[serde(flatten)]`).
-/// A value (a point, a stop's two times, a set of weekdays) is not a
-/// record and carries none. The receive path flags a field kept here
-/// for a person, and never refuses it.
+/// The fields of a record that this build does not know (D-167). They stay
+/// as written through a read and a write, so a writer on an older build does
+/// not drop what a newer one wrote. Every record of an authored kind carries
+/// one, flattened into the record. A value (a point, a set of weekdays)
+/// carries none. The write path flags a field kept here for a person and
+/// never refuses it.
 ///
-/// Equality, order, and hashing read the fields' JSON text, so a record
-/// that derives them may carry one.
+/// Equality, order, and hashing read the fields' JSON text, so a record that
+/// derives them may carry one.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 #[serde(transparent)]
 pub struct Extra(pub std::collections::BTreeMap<String, serde_json::Value>);
 
 thread_local! {
-    /// The names of the unknown fields read while [`noting_unknown`]
-    /// runs; none is kept outside it.
     static NOTED: std::cell::RefCell<Option<std::collections::BTreeSet<String>>> = const { std::cell::RefCell::new(None) };
 }
 
@@ -179,15 +128,14 @@ impl<'de> serde::Deserialize<'de> for Extra {
     }
 }
 
-/// Run `read`. It returns the answer beside the names of the fields it
-/// read that this build does not know (D-167), in name order. A receive
-/// path flags these for a person. A read outside it notes nothing.
+/// Returns the answer beside the names of the unknown fields that `read`
+/// met (D-167). A read outside it notes nothing.
 pub fn noting_unknown<R>(read: impl FnOnce() -> R) -> (R, Vec<String>) {
     let outer = NOTED.with(|noted| noted.borrow_mut().replace(Default::default()));
     let answer = read();
     let names = NOTED.with(|noted| {
         let mine = noted.borrow_mut().take().unwrap_or_default();
-        // a reading nested in another one is noted in both
+        // A nested reading is noted in both.
         if let Some(mut outer) = outer {
             outer.extend(mine.iter().cloned());
             *noted.borrow_mut() = Some(outer);
@@ -198,12 +146,10 @@ pub fn noting_unknown<R>(read: impl FnOnce() -> R) -> (R, Vec<String>) {
 }
 
 impl Extra {
-    /// Whether every field is known.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// The names of the fields not known, in order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.0.keys().map(String::as_str)
     }
@@ -250,7 +196,6 @@ impl schemars::JsonSchema for Extra {
     }
 }
 
-/// A version field whose absence reads as `N`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct Version<const N: u32>(pub u32);
@@ -270,10 +215,8 @@ impl<const N: u32> schemars::JsonSchema for Version<N> {
     }
 }
 
-/// Declare a kind's tag type: `kind_tag!(PlansKind = "plans");`. The
-/// tag serializes as the kind's name, reads an absent field as itself
-/// (with `#[serde(default)]` on the field), and refuses a document
-/// that names another kind. Its JSON Schema is the constant.
+/// Declares a kind's tag, as in `kind_tag!(PlansKind = "plans");`. The field
+/// needs `#[serde(default)]` for an absent tag to read as the kind.
 #[macro_export]
 macro_rules! kind_tag {
     ($(#[$meta:meta])* $name:ident = $kind:literal) => {
@@ -283,7 +226,6 @@ macro_rules! kind_tag {
 
         #[allow(dead_code)]
         impl $name {
-            /// The kind's name, as the tag writes it.
             pub const KIND: &'static str = $kind;
         }
 
@@ -359,7 +301,6 @@ mod tests {
         assert_eq!(record.extra.names().collect::<Vec<_>>(), ["later"]);
         assert_eq!(record.inner[0].extra.names().collect::<Vec<_>>(), ["newer"]);
         assert!(record.inner[1].extra.is_empty());
-        // outside it, nothing is noted
         let (_, none) = super::noting_unknown(|| ());
         assert!(none.is_empty());
     }

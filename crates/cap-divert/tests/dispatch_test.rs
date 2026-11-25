@@ -1,20 +1,8 @@
-//! Native dispatch tests for the diversion-authoring capability. These test
-//! the seam without wasm, over the committed planner network. The laws
-//! (the draft and envelope semantics live in transit-dispatch's
-//! divert_test and transit-sync):
-//!
-//! 1. a draft answers its view, problems included, never an error;
-//! 2. propose → retire → restore walks the edit document's states.
-//!    The domain id stays stable across re-proposals;
-//! 3. an unready draft, an unknown record, an unknown hash, and
-//!    garbage are errors, never panics;
-//! 4. a trip cancel (D-45) walks the same envelope: cancel → list →
-//!    reports → retire. Its domain id stays stable. A trip that does
-//!    not run that day is refused;
-//! 5. every op takes the edit document whole and answers the next one,
-//!    tagged in the version this build reads. An older document is
-//!    refused and names the migration op. A newer one is refused and
-//!    names both versions (docs/FORMATS.md, "Versions").
+//! The cap-divert contract over native dispatch (OPS.md), on the committed
+//! planner network. The draft and envelope properties are tested in
+//! transit-dispatch's divert_test and in transit-sync. An older edit document
+//! is refused and names the migration op, and a newer one names both versions
+//! (docs/FORMATS.md, "Versions").
 
 use cap_abi::{Base, Current};
 use cap_divert::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
@@ -45,7 +33,6 @@ fn doc(records: Vec<EditRecord>) -> Current<EditDocument> {
     Current(EditDocument::new(records))
 }
 
-/// The edit document as the base of a write.
 fn base(records: Vec<EditRecord>) -> Base<EditDocument> {
     Base(EditDocument::new(records))
 }
@@ -102,8 +89,7 @@ fn the_edit_document_walks_propose_retire_restore() {
     assert_eq!((edits.records[0].status, edits.records[0].rev), (EditStatus::Draft, 4));
 }
 
-/// The answer is the next document itself, tagged (D-115): a host
-/// persists or posts it as given.
+/// The answer is the next document itself, tagged (D-115).
 #[test]
 fn every_answer_is_the_tagged_document_in_this_version() {
     let hash = load();
@@ -146,9 +132,8 @@ fn refusals_are_errors_never_panics() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed straight into the
-    // model, with no request envelope. It answers exactly what the JSON op
-    // answers. Garbage bytes are an error outcome, never a trap.
+    // The bulk op parses the bare document with no request envelope and
+    // answers what the JSON op answers.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_divert::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -160,10 +145,6 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// What each record of an edit document amounts to on the network. This is
-/// the one answer. The loads report nothing. A valid record reports the
-/// trips it touches. An invalid record is reported with what is wrong. It is
-/// never rejected. Records keep document order.
 #[test]
 fn reports_say_what_each_record_amounts_to_on_the_network() {
     let network_hash = load();
@@ -198,7 +179,6 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
     let err = dispatch(Request::Reports { network_hash: "sha256:missing".into(), edits: doc(vec![]) }).unwrap_err();
     assert!(err.contains("unknown network"), "{err}");
 }
-
 
 fn cancel(hash: &str, records: Vec<EditRecord>, start_secs: Option<u32>, date: &str, now_ms: u64) -> Result<Vec<EditRecord>, String> {
     let request = Request::Cancel {

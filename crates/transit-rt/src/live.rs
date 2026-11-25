@@ -1,11 +1,3 @@
-//! The boundary resolution: one rt moment (trip updates and/or
-//! vehicle positions) plus the network → the live document in model
-//! vocabulary. An rt trip id is a model trip id; each update resolves
-//! here, once, to the trip instance it names, and downstream readers
-//! key by (trip, start). Service alerts resolve here too: the ones in
-//! force at the snapshot's moment, their informed entities named as
-//! the network's routes, stops, and trip instances.
-
 use std::collections::HashMap;
 
 use transit_codec::Boundary;
@@ -16,19 +8,14 @@ use transit_network::Network;
 use crate::overview::{AlertView, InformedView, RtOverview, TripUpdateView};
 use crate::progress::{progress_of, resolve_instance};
 
-/// A descriptor's `start_date` ("YYYYMMDD") as the instance's service
-/// date ("YYYY-MM-DD"): `Ok(None)` when it states none (the current
-/// service day's), `Err` when it is unreadable, and the descriptor then
-/// names no instance.
+/// `Ok(None)` is the current service day. `Err` means the date is unreadable,
+/// so the descriptor names no instance.
 fn service_date(start_date: Option<&str>) -> Result<Option<String>, ()> {
     let Some(text) = start_date else { return Ok(None) };
     chrono::NaiveDate::parse_from_str(text, "%Y%m%d").map(|d| Some(d.format("%Y-%m-%d").to_string())).map_err(|_| ())
 }
 
-/// The worst delay an update states anywhere (arrival or departure). It
-/// is `None` when it states none, and for a cancelled trip (it is not
-/// late: it does not run). A skipped stop states none. The same headline
-/// `late_trips` and `trip_progress` rank by.
+/// The headline delay that `late_trips` and `trip_progress` also rank by.
 fn stated_worst(update: &TripUpdateView) -> Option<i32> {
     if update.canceled {
         return None;
@@ -36,13 +23,6 @@ fn stated_worst(update: &TripUpdateView) -> Option<i32> {
     update.stop_updates.iter().filter(|s| !s.skipped).filter_map(|s| s.arrival_delay.max(s.departure_delay)).max()
 }
 
-/// Resolve a snapshot. `delays` carries trip updates, `positions`
-/// vehicles, `alerts` service alerts; agencies that serve one combined
-/// feed pass it as `delays` and `None`s (its own vehicles and alerts
-/// are used. Alerts are gathered from every snapshot given, one per
-/// entity id). `boundary` is the published numbering the updates'
-/// stop_sequences use. Every status is classified under `window`,
-/// which the document records.
 pub fn live_day(
     network: &Network,
     boundary: &Boundary,
@@ -139,8 +119,6 @@ pub fn live_day(
     LiveDay { kind: Default::default(), schema_version: Default::default(), window, trips, vehicles, unmatched_trips, alerts, unmatched_alerts }
 }
 
-/// The alerts in force at each snapshot's moment, resolved; the count
-/// of those none of whose informed entities name anything here.
 fn live_alerts<const N: usize>(network: &Network, snapshots: [Option<&RtOverview>; N]) -> (Vec<LiveAlert>, u32) {
     let mut seen = std::collections::HashSet::new();
     let mut alerts = Vec::new();
@@ -161,7 +139,6 @@ fn live_alerts<const N: usize>(network: &Network, snapshots: [Option<&RtOverview
     (alerts, unmatched)
 }
 
-/// No period means always; an unstamped snapshot keeps every alert.
 fn in_force(periods: &[AlertPeriod], now: Option<u64>) -> bool {
     let Some(now) = now else { return true };
     periods.is_empty()
@@ -182,11 +159,6 @@ fn live_alert(view: &AlertView, scopes: Vec<AlertScope>) -> LiveAlert {
     }
 }
 
-/// One informed entity → the scopes it names (a route_type names every
-/// route published under it). Every named field must resolve, or the
-/// entity names nothing. A `direction_id` needs a `route_id` (the
-/// spec's rule) and names that route's model direction by the
-/// export's code (D-204).
 pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
     if e.route_id.is_none() && e.route_type.is_none() && e.trip_id.is_none() && e.stop_id.is_none() {
         return if e.agency_id.is_some() { vec![AlertScope::default()] } else { Vec::new() };

@@ -74,9 +74,9 @@ directory.
 - A blob is the object `blobs/<hex>` (raw bytes, no extension). Its
   envelope is the object's metadata, so a blob and its envelope are
   one write.
-- **The module is the hash authority for bus documents** (network, edit
-  records, plans, walks). The producing module returns the canonical
-  bytes and their hash. The store asserts `sha256(blob) == hash` and
+- **The module that writes a bus document computes its hash**
+  (network, edit records, plans, walks). The module returns the
+  canonical bytes and their hash. The store asserts `sha256(blob) == hash` and
   fails loudly on a mismatch. The host canonicalizes and hashes
   host-owned documents (the manifest) with the same formula. No module
   ever claims their identity.

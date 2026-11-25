@@ -1,4 +1,3 @@
-//! Suggested blocking (D-46).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,31 +10,21 @@ use ts_rs::TS;
 use crate::recovery::end;
 use crate::WorkRules;
 
-/// The suggested blocking of a day's unassigned trips.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct Suggestion {
-    /// New blocks, each a chain of trips one vehicle can run.
     pub blocks: Vec<SuggestedBlock>,
-    /// Unassigned trips the suggestion cannot place, with why.
     pub unblocked: Vec<Unblocked>,
-    /// The day's peak vehicles over the authored blocks alone.
     pub authored_peak_vehicles: u32,
-    /// The day's peak with the suggestion adopted, and the first time
-    /// it is reached.
     pub peak_vehicles: u32,
     pub peak_at_secs: Option<u32>,
-    /// What the suggestion adds to the authored peak.
     pub added_vehicles: u32,
-    /// The edits that adopt it (author `apply`): a new block per
-    /// suggested block, its trips, and each wait as its layover.
     pub edits: Vec<NetworkEdit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct SuggestedBlock {
-    /// A block id the network does not have.
     pub block_id: String,
     pub trips: Vec<SuggestedTrip>,
 }
@@ -46,20 +35,17 @@ pub struct SuggestedTrip {
     pub trip: String,
     pub route: String,
     pub start_secs: u32,
-    /// Its arrival at its last stop.
     pub end_secs: u32,
     pub from_stop: String,
     pub to_stop: String,
-    /// The wait before the block's next trip; null on the last.
     pub wait: Option<Wait>,
 }
 
-/// One suggested wait: the gap, what is required there, and the slack.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct Wait {
     pub gap_secs: u32,
-    /// 0 when nothing is required there (no rule, no floor).
+    /// 0 when nothing is required there.
     pub required_secs: u32,
     pub required_by: Option<RecoverySource>,
     pub slack_secs: u32,
@@ -76,8 +62,6 @@ pub struct Unblocked {
 #[ts(export, export_to = "transit_runs/")]
 #[serde(rename_all = "snake_case")]
 pub enum UnblockedReason {
-    /// A frequency trip: a block runs every instance back to back,
-    /// which the suggestion does not chain.
     Frequency,
 }
 
@@ -87,17 +71,12 @@ struct Candidate<'a> {
     end: u32,
     from: &'a str,
     to: &'a str,
-    /// The recovery required after it, and by what.
     required: Option<(u32, RecoverySource)>,
 }
 
-/// Chain the day's trips no authored block carries into suggested
-/// blocks: by start, each trip follows the vehicle that leaves it the
-/// least slack among those waiting where it starts (the same stop, or
-/// a bay of the same station; no deadheads), on a route the rules let
-/// it interline with, after the recovery required (`rules`', else the
-/// terminal's floor); else it takes a new vehicle. Authored blocks
-/// are kept as authored.
+/// Each trip follows the vehicle that leaves it the least slack among those
+/// waiting where it starts (the same stop, or a bay of the same station), or
+/// else takes a new vehicle. Authored blocks stay as authored.
 pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option<&WorkRules>) -> Suggestion {
     let floors = recovery_floors(network);
     let blocked: BTreeSet<&str> =
@@ -130,8 +109,8 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option
             run_secs: model.and_then(|(_, _, t)| t.run_secs()).unwrap_or(0),
             terminal: to,
         };
-        // A suggested wait is authored as a layover, so the floor judges
-        // it where the rules do not.
+        // A suggested wait is authored as a layover, so the floor judges it
+        // where the rules do not.
         let required = required_recovery(&floors, rules.and_then(|r| r.recovery_secs(&at)), true, to);
         candidates.push(Candidate { trip, start: trip.start_secs, end: end(trip), from, to, required });
     }
@@ -197,8 +176,8 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option
         blocks.push(SuggestedBlock { block_id, trips });
     }
 
-    // The peak: the authored blocks' spans (as the fleet summary
-    // reads them) and the suggested chains', swept together.
+    // The peak sweeps the authored blocks' spans, as the fleet summary reads
+    // them, together with the suggested chains'.
     let authored = transit_dispatch::fleet_summary(network, day);
     let mut events: Vec<(u32, i64)> = authored
         .spans
@@ -231,8 +210,8 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option
     }
 }
 
-/// Where a vehicle's span ends after a trip, as the fleet summary
-/// reads it (the later of its last arrival and departure).
+/// The later of the last arrival and the last departure, as the fleet
+/// summary reads a vehicle's span.
 fn span_end(trip: &MaterializedTrip) -> u32 {
     trip.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs)).unwrap_or(trip.start_secs)
 }

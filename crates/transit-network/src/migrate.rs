@@ -1,20 +1,16 @@
-//! The network's v1 shapes, read into the current model: the body of
-//! the v1 → v2 step (`version.rs`). v1 is every untagged document,
-//! including those written before trips were stored or alignments
-//! stood on their own.
+//! The body of the v1 to v2 step (`version.rs`). v1 is every untagged
+//! document.
 //!
-//! A pre-alignment document draws each pattern's line inline, as its `path`.
-//! That line becomes an alignment under the pattern's id, which is the id that
-//! the export gave its shape. The pattern runs that alignment.
+//! A pre-alignment document draws the line of each pattern inline, as its
+//! `path`. That line becomes an alignment under the id of the pattern, which
+//! is the id that the export gave its shape.
 //!
-//! A pre-trip document keeps `departures` (exact starts or headway
-//! bands) per pattern trips and references block trips as
-//! `(pattern_trips, start_secs)`. Every departure it derived becomes a
-//! one-start trip with the id that the export minted:
-//! `"{pattern_trips}@{start}"`, timed by the profile that covered its
-//! start (timepoints at the profile's offsets, other stops
-//! unscheduled, so they materialize where they did); block references
-//! become trip references.
+//! A pre-trip document keeps `departures` for each pattern trips and
+//! references block trips as `(pattern_trips, start_secs)`. Every departure
+//! becomes a one-start trip with the id `"{pattern_trips}@{start}"`, which
+//! the export used. The profile that covered its start times it: timepoints
+//! at the offsets of the profile, and other stops unscheduled, so they
+//! materialize where they did.
 
 use std::collections::BTreeMap;
 
@@ -22,8 +18,6 @@ use serde_json::{json, Value};
 
 use crate::model::{Pattern, StopOffset};
 
-/// The v1 shapes read into the current model, in place (the v1 → v2
-/// step, `version.rs`, adds the tag).
 pub(crate) fn migrate_v1(doc: &mut Value) -> Result<(), String> {
     let Some(root) = doc.as_object_mut() else { return Ok(()) };
     migrate_paths(root);
@@ -77,7 +71,6 @@ pub(crate) fn migrate_v1(doc: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
-/// The starts an old `departures` value derived: sorted, unique.
 fn old_starts(departures: &Value) -> Vec<u32> {
     let num = |v: &Value, k: &str| v.get(k).and_then(Value::as_u64).map(|n| n as u32);
     let mut starts: Vec<u32> = match departures.get("kind").and_then(Value::as_str) {
@@ -116,10 +109,8 @@ fn old_starts(departures: &Value) -> Vec<u32> {
     starts
 }
 
-/// The old materialization's scheduled times for a start: timepoints
-/// at the covering profile's offsets, other stops unscheduled. No
-/// covering profile leaves every stop unscheduled (validation names
-/// the trip).
+/// No covering profile leaves every stop unscheduled. Validation names the
+/// trip.
 fn profile_times(pattern: &Pattern, start: u32) -> Vec<StopOffset> {
     let profile = pattern.profile_for(start);
     let mut k = 0;
@@ -139,7 +130,6 @@ fn profile_times(pattern: &Pattern, start: u32) -> Vec<StopOffset> {
         .collect()
 }
 
-/// Inline pattern paths become alignments under the pattern's id.
 fn migrate_paths(root: &mut serde_json::Map<String, Value>) {
     let mut lines: Vec<(String, Value)> = Vec::new();
     if let Some(patterns) = root.get_mut("patterns").and_then(Value::as_object_mut) {

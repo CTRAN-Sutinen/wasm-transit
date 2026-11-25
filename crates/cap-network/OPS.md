@@ -48,7 +48,7 @@ The answer returns the zip base64-encoded, under the content hash of those bytes
 
 Return a registered document's canonical bytes. These are its serialization, and they are the bytes that its `network_hash` names. The answer also carries that hash, the document's plan frame, and its `timezone` (as `import` answers it).
 
-A host stores these bytes when it persists a network that it was sent in any serialization. The module is the hash authority. The host stores exactly these bytes and never reads them.
+A host stores these bytes when it persists a network that it was sent in any serialization. The host stores exactly these bytes and never reads them.
 
 ## publishable
 

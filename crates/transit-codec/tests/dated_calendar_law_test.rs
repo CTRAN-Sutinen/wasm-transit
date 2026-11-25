@@ -1,34 +1,20 @@
-//! The dated-calendar laws (D-105): a feed may publish weekly service
-//! as dates alone: no weekday flagged in calendar.txt (or no row at all),
-//! and every day it runs an added row in calendar_dates.txt, as C-TRAN
-//! does. The import reads the weekly rule out of those dates,
-//! so the model sees a weekday service as one (and the fork can carry
-//! it, D-41); the export writes the dates back as the feed had them.
+//! A feed may publish weekly service as dates alone (D-105). The import reads
+//! the weekly rule out of the dates, and the export writes the dates back.
+//! D-111 sets the threshold. The numbers below tag the checks.
 //!
-//! Written before the implementation, from the decision. The
-//! recognition threshold is D-111 (encoded provisionally):
-//!
-//! 1. **Exact**: whatever the import reads, the imported rule runs on
-//!    exactly the feed's dates: no date gained, none lost.
-//! 2. **Recognition** (D-111): over the span of the dates (first to
-//!    last), a weekday is part of the rule when the service runs on at
-//!    least 4 of them AND on at least three quarters of that weekday's
-//!    occurrences in the span. Fewer, and that weekday's dates stay
-//!    dated (added exceptions). No weekday qualifying: the service
-//!    stays dated, imported as the feed wrote it.
-//! 3. **The shape of the rule**: the qualifying weekdays as the flags,
-//!    one range from the first to the last date on those weekdays (so a
-//!    closed period ends where its dates end), a removed exception for
-//!    each of those weekdays in the range it does not run, an added
-//!    exception for each date the flags and range do not cover (a
-//!    holiday running Sunday service). Nothing else.
-//! 4. **Only dated service is read**: a service with a flagged
-//!    calendar row, or any removed date, imports as the feed wrote it.
-//! 5. **Lossless**: export(import(feed)) writes calendar.txt and
-//!    calendar_dates.txt back as the feed had them.
-//! 6. **The publisher's form after an edit**: a carried (extended)
-//!    rule still exports as dates: the same calendar row, and every
-//!    date the rule runs as an added date.
+//! 1. The imported rule runs on exactly the feed's dates.
+//! 2. A weekday joins the rule when the service runs on at least 4 of them
+//!    and on at least three quarters of that weekday's occurrences between
+//!    the first and last date. With no such weekday, the service stays dated.
+//! 3. The rule has one range from the first to the last date on those
+//!    weekdays, a removed exception for each skipped date in the range, and
+//!    an added exception for each other date. Nothing else.
+//! 4. A service with a flagged calendar row, or any removed date, imports as
+//!    the feed wrote it.
+//! 5. `export(import(feed))` writes calendar.txt and calendar_dates.txt back
+//!    as the feed had them.
+//! 6. After an edit that extends the rule, the export still writes the same
+//!    calendar row and every running date as an added date.
 
 use chrono::{Datelike, Duration, NaiveDate};
 use proptest::prelude::*;
@@ -52,12 +38,10 @@ fn s(v: &str) -> Option<String> {
 #[derive(Clone, Debug)]
 struct Dated {
     dates: BTreeSet<NaiveDate>,
-    /// A zero-flag calendar row and its range (offsets from day0), or
-    /// no calendar row at all.
+    /// A zero-flag calendar row and its range (offsets from day0), or none.
     row: Option<(i64, i64)>,
 }
 
-/// A weekly rhythm with holes and extras, or sparse dates.
 fn dated() -> impl Strategy<Value = Dated> {
     let rhythm = (
         0i64..14,                                  // start offset
@@ -124,7 +108,6 @@ fn feed(services: &[Dated]) -> Feed {
     feed
 }
 
-/// The spec's reading of a rule, written out here.
 fn runs(rule: &CalendarRule, date: NaiveDate) -> bool {
     if let Some(e) = rule.exceptions.iter().find(|e| e.date == date) {
         return e.state == DayState::Added;
@@ -139,7 +122,7 @@ fn flags(rule: &CalendarRule) -> [bool; 7] {
     [w.mon, w.tue, w.wed, w.thu, w.fri, w.sat, w.sun]
 }
 
-/// D-111, recomputed: which weekdays qualify.
+/// An oracle for D-111.
 fn expected_flags(dates: &BTreeSet<NaiveDate>) -> [bool; 7] {
     let (first, last) = (*dates.first().unwrap(), *dates.last().unwrap());
     let mut out = [false; 7];
@@ -159,8 +142,7 @@ fn expected_flags(dates: &BTreeSet<NaiveDate>) -> [bool; 7] {
     out
 }
 
-/// The calendar files as sets of rows (the CSV's order is not the
-/// feed's meaning).
+/// Row order is not part of the feed's meaning.
 fn calendar_rows(feed: &Feed) -> (BTreeSet<String>, BTreeSet<String>) {
     let cal = feed.calendar.iter().map(|r| format!("{r:?}")).collect();
     let dates = feed.calendar_dates.iter().map(|r| format!("{r:?}")).collect();
@@ -177,23 +159,22 @@ proptest! {
         for (i, svc) in services.iter().enumerate() {
             let rule = &net.service_types[&format!("svc{i}")].rule;
             let (first, last) = (*svc.dates.first().unwrap(), *svc.dates.last().unwrap());
-            // 1: exact.
+            // 1.
             let mut d = first - Duration::days(21);
             while d <= last + Duration::days(21) {
                 prop_assert_eq!(runs(rule, d), svc.dates.contains(&d), "svc{} on {}", i, d);
                 d += Duration::days(1);
             }
-            // 2: recognition.
+            // 2.
             let want = expected_flags(&svc.dates);
             if want.iter().any(|&b| b) {
                 prop_assert_eq!(flags(rule), want);
-                // 3: one range over the dates on the flagged weekdays.
+                // 3.
                 let on: Vec<NaiveDate> =
                     svc.dates.iter().copied().filter(|d| want[d.weekday().num_days_from_monday() as usize]).collect();
                 prop_assert_eq!(rule.ranges.len(), 1);
                 prop_assert_eq!(rule.ranges[0].start, on[0]);
                 prop_assert_eq!(rule.ranges[0].end, *on.last().unwrap());
-                // …and only the exceptions exactness needs.
                 for e in &rule.exceptions {
                     let flagged = want[e.date.weekday().num_days_from_monday() as usize];
                     let inside = rule.ranges[0].start <= e.date && e.date <= rule.ranges[0].end;
@@ -204,21 +185,19 @@ proptest! {
                 }
                 prop_assert!(rule.exceptions.windows(2).all(|w| w[0].date < w[1].date), "date order");
             } else {
-                // Stays dated, as the feed wrote it.
                 prop_assert_eq!(flags(rule), [false; 7]);
                 prop_assert!(rule.exceptions.iter().all(|e| e.state == DayState::Added));
                 prop_assert_eq!(rule.exceptions.len(), svc.dates.len());
             }
         }
-        // 5: lossless.
+        // 5.
         let back = export(&net, &import(&f).boundary).expect("exports");
         prop_assert_eq!(calendar_rows(&back), calendar_rows(&f));
     }
 
     #[test]
     fn a_carried_rule_exports_in_the_publishers_form(svc in dated(), weeks in 1i64..10) {
-        // Only a service whose rule is read (a dated one that stays
-        // dated has no rule to carry: no weekday is flagged).
+        // A service that stays dated has no rule to carry.
         prop_assume!(expected_flags(&svc.dates).iter().any(|&b| b));
         let f = feed(std::slice::from_ref(&svc));
         let outcome = import(&f);
@@ -229,8 +208,7 @@ proptest! {
         }
         let rule = rule.clone();
         let back = export(&net, &outcome.boundary).unwrap();
-        // 6: the calendar row as the feed had it (zero flags, its
-        // range), and every running date as an added date.
+        // 6.
         let (cal, _) = calendar_rows(&back);
         prop_assert_eq!(cal, calendar_rows(&f).0);
         let exported: BTreeSet<NaiveDate> = back
@@ -256,8 +234,7 @@ proptest! {
 
 #[test]
 fn a_flagged_or_removing_calendar_is_read_as_written() {
-    // 4: a flagged row with added dates, and a zero row with a removed
-    // date, are not dated service.
+    // 4.
     let mut f = feed(&[]);
     f.calendar.push(CalendarRow {
         service_id: s("wk"),
@@ -291,9 +268,7 @@ fn a_flagged_or_removing_calendar_is_read_as_written() {
 
 #[test]
 fn the_ctran_shapes_read_as_the_decision_says() {
-    // The shapes D-105 names (measured on C-TRAN's feed): a weekday
-    // service with holiday gaps, Sunday service with holidays running
-    // it, a closed period, a Tuesday-only overlay, and a one-day type.
+    // The shapes that D-105 names, measured on C-TRAN's feed.
     let span = |from: NaiveDate, to: NaiveDate, days: &[u32]| {
         let mut out = BTreeSet::new();
         let mut d = from;

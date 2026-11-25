@@ -1,10 +1,3 @@
-//! Everything a feed carries beside its trips: operators, the
-//! publisher, attributions, translations, stops and the parts of
-//! stations, levels, pathways, transfer rules, fares, and the
-//! demand-responsive catalog (location groups, zones, booking
-//! rules). Each family reads into its model home and writes back from
-//! it, value for value.
-
 use std::collections::BTreeMap;
 
 use transit_network::demand::{BookingKind, BookingRule, LocationGroup};
@@ -28,13 +21,8 @@ use crate::feed::{
 use crate::values::*;
 use crate::{Boundary, Feed};
 
-/// The id given an operator the feed names without one (a single
-/// agency may omit agency_id).
+/// A single agency may omit agency_id.
 const ANONYMOUS_OPERATOR: &str = "operator";
-
-// ---------------------------------------------------------------------
-// Operators, the publisher, attributions, translations.
-// ---------------------------------------------------------------------
 
 pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Boundary) {
     for row in &feed.agency {
@@ -111,7 +99,6 @@ pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Bo
 
 pub(crate) fn export_operators(net: &Network, boundary: &Boundary, feed: &mut Feed) {
     if net.operators.is_empty() {
-        // An authored network names no operator: the network is one.
         feed.agency.push(AgencyRow { agency_name: Some(net.name.clone()), ..Default::default() });
     }
     for (id, o) in &net.operators {
@@ -178,10 +165,6 @@ pub(crate) fn export_operators(net: &Network, boundary: &Boundary, feed: &mut Fe
     }
 }
 
-// ---------------------------------------------------------------------
-// Stops, station parts, levels, pathways, transfer rules.
-// ---------------------------------------------------------------------
-
 fn stop_info(row: &StopRow) -> StopInfo {
     StopInfo {
         code: text(&row.stop_code),
@@ -211,9 +194,6 @@ fn info_cells(info: &StopInfo, row: &mut StopRow) {
     row.stop_access = opt_bit_cell(info.street_access);
 }
 
-/// Stops and stations into `stops`. They need a place on the map, so one
-/// without coordinates is left out. Entrances, nodes, and boarding areas
-/// go into `station_parts`.
 pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
     for row in &feed.stops {
         let Some(id) = &row.stop_id else { continue };
@@ -241,8 +221,8 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
             );
             continue;
         }
-        // Missing coordinates: the model cannot represent a place at
-        // (0, 0), and silently mapping one there poisons every map.
+        // The model cannot represent a place at (0, 0), and mapping one
+        // there would poison every map.
         let Some(at) = at else { continue };
         net.stops.insert(
             id.clone(),
@@ -320,8 +300,7 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
 }
 
 pub(crate) fn export_places(net: &Network, feed: &mut Feed) {
-    // A stop other stops name as their parent is a station (an
-    // authored network may group without saying so).
+    // An authored network may group stops without saying so.
     let parents: std::collections::BTreeSet<&str> = net.stops.values().filter_map(|st| st.parent.as_deref()).collect();
     for (id, st) in &net.stops {
         let station = st.kind == StopKind::Station || parents.contains(id.as_str());
@@ -410,10 +389,6 @@ pub(crate) fn export_places(net: &Network, feed: &mut Feed) {
         });
     }
 }
-
-// ---------------------------------------------------------------------
-// Fares.
-// ---------------------------------------------------------------------
 
 pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
     let fares = &mut net.fares;
@@ -674,10 +649,6 @@ pub(crate) fn export_fares(net: &Network, feed: &mut Feed) {
     }
 }
 
-// ---------------------------------------------------------------------
-// The demand-responsive catalog (its trips are read with the others).
-// ---------------------------------------------------------------------
-
 pub(crate) fn import_demand_catalog(feed: &Feed, net: &mut Network) {
     let demand = &mut net.demand;
     for row in &feed.location_groups {
@@ -754,9 +725,8 @@ pub(crate) fn export_demand_catalog(net: &Network, feed: &mut Feed) {
     }
 }
 
-/// Fare networks by route: routes.txt's network_id or
-/// route_networks.txt (the spec forbids both), and which one the feed
-/// used.
+/// The spec forbids both routes.txt network_id and route_networks.txt. The
+/// boundary records which one the feed used.
 pub(crate) fn route_fare_networks(feed: &Feed, boundary: &mut Boundary) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for row in &feed.routes {

@@ -5,7 +5,7 @@
     },
     "Rule": {
       "additionalProperties": true,
-      "description": "One policy rule: identities holding any of `roles` may perform any\nof `actions` on any of `pointers`. `\"*\"` matches all actions /\npointers. A rule with empty `roles` never matches, because an empty\nrole set has no overlap with any identity.",
+      "description": "`\"*\"` matches all actions or pointers. A rule with empty `roles` never\nmatches.",
       "properties": {
         "actions": {
           "default": [],
@@ -40,12 +40,11 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The policy document: a versioned rule list, evaluated in order.\nFail-closed by construction. See `authorize`.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/PolicyKind",
       "default": "policy",
-      "description": "The kind tag (D-115): `\"policy\"`; a copy without one reads as a\npolicy."
+      "description": "A copy without a kind tag reads as a policy (D-115)."
     },
     "rules": {
       "default": [],

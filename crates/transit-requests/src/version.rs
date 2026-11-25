@@ -1,27 +1,20 @@
-//! The stop requests document's versions and its migration chain.
+//! The migration chain is kept forever, one pure step for each version
+//! (D-66). A consumer reads the current version only.
 //!
-//! The chain is kept forever (D-66): one pure step for each version.
-//! The migration capability wraps it, and a consumer reads the current
-//! version only.
+//! v1 to v2 (D-234): a request's `routes` are the planner's intent, not a
+//! reference into the network. Every v1 document is a v2 document, so the
+//! step changes only the version.
 //!
-//! - v1 → v2: a request's `routes` are the planner's intent, written by
-//!   hand, not a reference into the network (D-234). Every v1
-//!   document is a v2 document, so the step changes only the version.
-//!
-//! The stops log keeps each record in the version it was written in.
-//! [`record_forward`] brings one stored record to the version this build
-//! reads.
+//! The stops log keeps each record in the version it was written in, so
+//! [`record_forward`] brings a stored record to the version this build reads.
 
 use serde_json::Value;
 
-/// The kind the stop requests document names itself.
 pub const KIND: &str = "stop_requests";
 
-/// The version this build reads and writes.
 pub const SCHEMA_VERSION: u32 = 2;
 
-/// The version a stop requests document is in: its `schema_version`,
-/// or 1 when it names none.
+/// A document that names no version is v1.
 pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     let root = doc.as_object().ok_or("a stop requests document is a JSON object")?;
     if let Some(kind) = root.get("kind") {
@@ -35,8 +28,6 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     }
 }
 
-/// One step: a document in version `from` to `from + 1`. No step loses
-/// anything.
 pub fn migrate_step(doc: Value, from: u32) -> Result<Value, String> {
     let found = schema_version_of(&doc)?;
     if found != from {
@@ -52,7 +43,6 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<Value, String> {
     }
 }
 
-/// A document brought to version `to` through every step between.
 /// Refuses a document already at or past `to`.
 pub fn migrate_to(doc: Value, to: u32) -> Result<Value, String> {
     let from = schema_version_of(&doc)?;
@@ -65,8 +55,6 @@ pub fn migrate_to(doc: Value, to: u32) -> Result<Value, String> {
     (from..to).try_fold(doc, migrate_step)
 }
 
-/// A document in the version this build reads: an older one brought
-/// forward, the current one as it is.
 pub fn forward(doc: Value) -> Result<Value, String> {
     if schema_version_of(&doc)? < SCHEMA_VERSION {
         migrate_to(doc, SCHEMA_VERSION)
@@ -75,15 +63,12 @@ pub fn forward(doc: Value) -> Result<Value, String> {
     }
 }
 
-/// One record of the stops log, of `kind` (`stop_request`, or the
-/// document's own record `stop_requests`), stored in `version`, brought
-/// to [`SCHEMA_VERSION`]. A record already there is unchanged.
+/// `kind` is `stop_request`, or the document's own record `stop_requests`.
 pub fn record_forward(kind: &str, value: Value, version: u32) -> Result<Value, String> {
     if version > SCHEMA_VERSION {
         return Err(format!("a {kind} record in v{version} is newer than this build (it reads up to v{SCHEMA_VERSION})"));
     }
     match kind {
-        // Every v1 request is a v2 request.
         "stop_request" => Ok(value),
         KIND if version < SCHEMA_VERSION => migrate_to(value, SCHEMA_VERSION),
         KIND => Ok(value),

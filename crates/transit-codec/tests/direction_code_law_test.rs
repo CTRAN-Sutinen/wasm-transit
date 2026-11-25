@@ -1,8 +1,5 @@
-//! A route's model directions and GTFS's binary `direction_id`.
-//! The export writes a code for each direction, and a GTFS-rt reader
-//! maps a code back to the model direction (D-204). Both use one rule:
-//! "0" and "1" are themselves, any other id takes a free code in id
-//! order, and a direction with no free code has none.
+//! Model directions and GTFS's binary `direction_id` (D-204). The rule is on
+//! `gtfs_direction`.
 
 use proptest::prelude::*;
 use std::collections::BTreeMap;
@@ -46,8 +43,8 @@ fn a_third_direction_has_no_code_and_an_unknown_code_names_nothing() {
 }
 
 proptest! {
-    /// Every code the export writes maps back to its own direction,
-    /// and no two directions of a route share a code.
+    /// Every code that the export writes maps back to its own direction, and
+    /// no two directions of a route share a code.
     #[test]
     fn the_reader_inverts_the_export(ids in prop::collection::btree_set("[0-3a-c]{1,2}", 0..5)) {
         let ids: Vec<&str> = ids.iter().map(String::as_str).collect();

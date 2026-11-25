@@ -1,11 +1,7 @@
-//! Property-based tests for RAPTOR.
-//!
-//! The oracle is brute force: Bellman-Ford-style relaxation over every (trip,
-//! board position, alight position) pair and every footpath, iterated to a
-//! fixpoint. It shares no code with the round-based search. If RAPTOR claims an
-//! arrival earlier than the oracle, or misses a connection the oracle finds,
-//! the test fails. Proptest then shrinks the feed to the smallest
-//! counterexample.
+//! Pins RAPTOR earliest arrival against the brute-force fixpoint oracle
+//! (`prop_support::oracle_arrival`), which shares no code with the round-based
+//! search. The test fails when RAPTOR arrives earlier than the oracle or misses
+//! a connection that the oracle finds.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -18,12 +14,7 @@ use support::{build_zip, model_day, TripSpec};
 
 const INF: u32 = u32::MAX;
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
-/// Enough legs for any path through feeds this small.
 const MAX_LEGS: usize = 12;
-
-// ---------------------------------------------------------------------
-// generator
-// ---------------------------------------------------------------------
 
 prop_compose! {
     fn trip_spec(n_stops: usize)
@@ -47,10 +38,6 @@ fn feed()
         )
     })
 }
-
-// ---------------------------------------------------------------------
-// oracle
-// ---------------------------------------------------------------------
 
 fn oracle_earliest_arrival(net: &RouterNetwork, from: usize, to: usize, depart: u32) -> u32 {
     let n = net.stops.len();
@@ -95,16 +82,9 @@ fn oracle_earliest_arrival(net: &RouterNetwork, from: usize, to: usize, depart: 
     arr[to]
 }
 
-// ---------------------------------------------------------------------
-// properties
-// ---------------------------------------------------------------------
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// RAPTOR's arrival must exactly match the fixpoint oracle, and the
-    /// reconstructed itinerary must be internally consistent and end at
-    /// that arrival time.
     #[test]
     fn matches_oracle_and_reconstructs(
         (n_stops, trips, from, to, depart) in feed()
@@ -112,8 +92,6 @@ proptest! {
         let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
         let net = RouterNetwork::build_from_day(&network, &day, DATE);
 
-        // Resolve the generated stop numbers the same way RAPTOR does:
-        // by id, not by index (network stop order is a HashMap artifact).
         let from_id = format!("s{from}");
         let to_id = format!("s{to}");
         let from_idx = net.stop_index(&from_id).expect("from exists") as usize;
@@ -124,7 +102,7 @@ proptest! {
             .expect("valid query");
 
         match (plan, expected == INF) {
-            (None, true) => {} // both agree: unreachable
+            (None, true) => {} // both find it unreachable
             (None, false) => panic!(
                 "RAPTOR found no plan; oracle arrives at {expected}. \
                  n_stops={n_stops} from={from} to={to} depart={depart} trips={trips:?}"
@@ -137,7 +115,6 @@ proptest! {
         }
     }
 
-    /// Determinism: identical queries give identical answers.
     #[test]
     fn deterministic((n_stops, trips, from, to, depart) in feed()) {
         let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
@@ -147,8 +124,6 @@ proptest! {
         prop_assert_eq!(a.map(|i| i.arrival_secs), b.map(|i| i.arrival_secs));
     }
 
-    /// More legs never hurt: the arrival with MAX_LEGS is at least as
-    /// early as with fewer.
     #[test]
     fn more_legs_never_hurt((n_stops, trips, from, to, depart) in feed()) {
         let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
@@ -163,15 +138,11 @@ proptest! {
     }
 }
 
-/// The itinerary must make chronological sense: legs connect stop to
-/// stop, nothing boards before the previous leg ended, and the last leg
-/// ends exactly at the promised arrival.
 fn assert_itinerary_consistent(it: &Itinerary, depart: u32) {
     let mut t = depart;
     let mut place: Option<&str> = None;
     let mut legs = 0;
-    // A rider walks once between rides: consecutive footpaths are
-    // one merged leg (QAF-34), never two.
+    // Consecutive footpaths are one merged leg, never two.
     for pair in it.legs.windows(2) {
         assert!(
             !matches!(pair, [Leg::Walk { .. }, Leg::Walk { .. }]),

@@ -1,14 +1,7 @@
-//! The laws of a policy write (docs/architecture/agency-data.md, "Writes
-//! are governed"): a write is refused only for what makes the policy
-//! wrong, and a consequence is accepted and named for a person.
-//!
-//! - an action other than read, write, audit, or "*" is refused: it
-//!   would grant nothing, silently;
-//! - a rule's name is not blank and names one rule: a decision names the
-//!   rule that allowed it;
-//! - a policy that grants no role a write on the policy is accepted, with
-//!   a warning: nobody could change it again but by a new seed;
-//! - the checks never depend on rule order.
+//! A policy write is refused only for what makes the policy wrong, and a
+//! consequence is accepted and named for a person (docs/architecture/
+//! agency-data.md, "Writes are governed"). The checks do not depend on rule
+//! order.
 
 use transit_authz::{validate, Policy, PolicyIssue, PolicyWarning, Rule};
 
@@ -54,10 +47,8 @@ fn a_policy_nobody_can_change_is_accepted_and_named() {
     let v = validate(&p);
     assert!(v.issues.is_empty());
     assert_eq!(v.warnings, vec![PolicyWarning::NoPolicyWriter]);
-    // A rule with no roles grants nothing, so it does not count.
     let p = Policy::current(vec![rule("nobody", &[], &["policy"], &["write"])]);
     assert_eq!(validate(&p).warnings, vec![PolicyWarning::NoPolicyWriter]);
-    // Empty pointers and actions mean all.
     let p = Policy::current(vec![rule("root", &["admin"], &[], &[])]);
     assert!(validate(&p).warnings.is_empty());
 }

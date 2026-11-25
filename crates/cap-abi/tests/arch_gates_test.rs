@@ -1,9 +1,6 @@
-//! The architecture gates, each broken on a fixture: a gate
-//! that cannot fail proves nothing. The gates themselves run over the
-//! real workspace in `just test` (`arch-gates`); the registry
-//! constructor's privacy is a `compile_fail` doctest on
-//! `cap_abi::registry::Registry` (a capability that declares a
-//! registry does not compile).
+//! Each architecture gate fails on a broken fixture (`crates/AGENTS.md`,
+//! "Enforcement"). The registry constructor's privacy is a `compile_fail`
+//! doctest on `cap_abi::registry::Registry`.
 
 #[path = "../src/bin/common/gates.rs"]
 mod gates;
@@ -15,8 +12,6 @@ fn package(name: &str, deps: &[&str]) -> Package {
     Package { name: name.into(), required: deps.clone(), deps, examples: vec![] }
 }
 
-/// A workspace that keeps the rule: capabilities over the kernel and
-/// libraries, assemblies over capabilities.
 fn lawful() -> Vec<Package> {
     vec![
         package("cap-abi", &["transit-version"]),
@@ -36,12 +31,8 @@ fn the_lawful_workspace_passes() {
     assert_eq!(dependency_violations(&lawful()), Vec::<String>::new());
 }
 
-/// The generator and its fixtures (D-235): the generator reads the
-/// kernel, the libraries, and the fixtures, and names no capability;
-/// its generated binary links it and the capabilities; the fixtures read
-/// the kernel and the libraries; a capability names the fixtures only
-/// through its `examples` feature; only the binary depends on the
-/// generator, so no module's closure holds either.
+/// Only the generator's binary depends on the generator, and a capability
+/// names the fixtures only through its `examples` feature (D-235).
 #[test]
 fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     let mut ws = lawful();
@@ -49,8 +40,6 @@ fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     ws.push(package("generator", &["cap-abi", "fixtures", "transit-codec"]));
     ws.push(package("gen-manifest", &["generator", "cap-board"]));
     assert_eq!(dependency_violations(&ws), Vec::<String>::new());
-    // A capability names the fixtures only as an optional dependency its
-    // `examples` feature turns on.
     let mut examples = ws.clone();
     examples.retain(|p| p.name != "cap-board");
     examples.push(Package { name: "cap-board".into(), deps: vec!["cap-abi".into(), "fixtures".into()], required: vec!["cap-abi".into()], examples: vec!["fixtures".into()] });
@@ -73,8 +62,7 @@ fn only_the_generator_depends_on_the_fixtures_and_nothing_on_the_generator() {
     }
 }
 
-/// The kernel knows no kind (D-239): each kind's library loads its own
-/// kind, so the kernel depends on transit-version alone.
+/// The kernel depends on transit-version alone (D-239).
 #[test]
 fn a_kernel_that_depends_on_a_domain_library_fails() {
     let mut ws = lawful();
@@ -178,11 +166,8 @@ fn a_capability_that_declares_state_fails() {
     }
 }
 
-// Hash churn (docs/architecture/release-artifacts.md): a library the
-// kernel depends on is in every module's closure, so a change in it moves
-// every module's hash. The kernel requires only the libraries its own
-// code names (and gate 1 holds that set to transit-version).
-
+/// A library in the kernel's closure moves every module's hash
+/// (docs/architecture/release-artifacts.md).
 #[test]
 fn the_kernel_requires_only_the_libraries_its_code_names() {
     let kernel = "use transit_network::Network;\nfn f() { transit_codec::import(); }\n// transit_router in prose";
@@ -213,8 +198,7 @@ fn the_gate_reads_which_dependencies_are_optional() {
     assert_eq!(packages[0].required, vec!["transit-network".to_string()], "the closure rule reads only the required ones");
 }
 
-/// No hand-written list names a capability (D-243): the generator and
-/// the kernel take them as data.
+/// D-243.
 #[test]
 fn a_list_that_names_a_capability_fails() {
     let ids = vec!["board".to_string(), "rt".to_string()];

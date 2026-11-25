@@ -1,11 +1,8 @@
-//! The service alerts document and the alert templates document: what
-//! a write must pass, what a person is told about a record that passes
+//! What a write must pass, what a person is told about a record that passes
 //! (D-152), ending an alert, the agency's list, and the template fill
-//! (D-206..D-210). The gap list is transit-disruptions' (D-218).
-//!
-//! Over the e2e fixture network: routes 10, 20, 40 (route 40 runs
-//! directions 0 and 1), stops A ("Main & 1st"), B, C, and the station
-//! STN with bays SA and SB; trip t10 at 08:00.
+//! (D-206..D-210; cap-alerts/OPS.md). Over the e2e fixture network: routes
+//! 10, 20, 40 (route 40 runs directions 0 and 1), stops A, B, C, and the
+//! station STN with bays SA and SB; trip t10 at 08:00.
 
 use proptest::prelude::*;
 use transit_alerts::*;
@@ -54,10 +51,6 @@ fn doc(alerts: Vec<(&str, ServiceAlert)>) -> ServiceAlerts {
 fn problems(d: ServiceAlerts) -> Vec<AlertProblem> {
     d.checked().err().unwrap_or_default().into_iter().map(|r| r.problem).collect()
 }
-
-// ---------------------------------------------------------------------
-// What a write must pass: only what makes a record wrong.
-// ---------------------------------------------------------------------
 
 #[test]
 fn a_well_formed_alert_passes() {
@@ -113,10 +106,6 @@ fn an_impact_period_inside_a_communication_period_passes() {
     assert!(doc(vec![("a1", open)]).checked().is_ok());
 }
 
-// ---------------------------------------------------------------------
-// What a person is told: a record that passes, with consequences.
-// ---------------------------------------------------------------------
-
 #[test]
 fn an_id_the_network_does_not_have_is_flagged_not_refused() {
     let net = network();
@@ -163,10 +152,6 @@ fn a_missing_translation_is_flagged() {
     );
 }
 
-// ---------------------------------------------------------------------
-// Ending an alert, and the agency's list.
-// ---------------------------------------------------------------------
-
 fn arb_period() -> impl Strategy<Value = AlertPeriod> {
     (proptest::option::of(0u64..1000), proptest::option::of(0u64..1000)).prop_map(|(a, b)| match (a, b) {
         (Some(a), Some(b)) => period(Some(a.min(b)), Some(a.max(b))),
@@ -208,9 +193,6 @@ fn only_a_published_alert_is_in_force() {
     assert!(!a.in_force(5));
 }
 
-/// The agency's list: every alert in exactly one group. In force now,
-/// upcoming, ended (or withdrawn), and drafts; each in force alert with
-/// no end says how long it has been open.
 #[test]
 fn the_list_puts_every_alert_in_one_group() {
     let now = 10_000;
@@ -234,10 +216,6 @@ fn the_list_puts_every_alert_in_one_group() {
     assert_eq!(open("closing"), None, "it has an end");
     assert_eq!(open("always"), None, "no period: no start to count from");
 }
-
-// ---------------------------------------------------------------------
-// Templates: the agency's standard language, with blanks.
-// ---------------------------------------------------------------------
 
 fn template(header: &str) -> AlertTemplate {
     AlertTemplate { name: "Stop closure".into(), effect: AlertEffect::NoService, header: text(header), ..Default::default() }
@@ -287,9 +265,8 @@ fn the_fill_writes_names_and_dates_in_the_agencys_words() {
     assert_eq!(two.header[0].text, "Main & 1st and Main & 2nd");
 }
 
-/// The blanks are filled from the alert's own informed entities (D-228):
-/// each route and stop is named once, in the order first informed, beside
-/// any the input names itself. No host collects them.
+/// The blanks fill from the alert's informed entities (D-228): each route and
+/// stop once, in the order first informed, beside any the input names.
 #[test]
 fn the_fill_names_each_informed_route_and_stop_once() {
     use transit_alerts::AlertEntity;
@@ -300,14 +277,12 @@ fn the_fill_names_each_informed_route_and_stop_once() {
     let f = fill(&t, &net, &FillInput { informed, ..Default::default() });
     assert_eq!(f.header[0].text, "Main & 1st and Main & 2nd");
     assert_eq!(f.description[0].text, "Use 10 and 20 near Main & 1st and Main & 2nd.");
-    // an entity with neither a route nor a stop (the whole agency) names none
     let none = fill(&template("{stop}"), &net, &FillInput { informed: vec![AlertEntity::default()], ..Default::default() });
     assert_eq!(none.unfilled.iter().map(|u| u.blank.as_str()).collect::<Vec<_>>(), ["stop"]);
 }
 
 proptest! {
-    /// Every blank is filled, or the fill names it; no blank is left in
-    /// a text that the fill does not name.
+    /// Every blank is filled or named.
     #[test]
     fn every_blank_is_filled_or_named(
         stops in prop::collection::vec(prop::sample::select(vec!["A", "B", "SA", "Z"]), 0..3),
@@ -329,11 +304,6 @@ proptest! {
         }
     }
 }
-
-// ---------------------------------------------------------------------
-// Version 2: an alert explains a trip instance (D-216), and version 1
-// comes forward unchanged.
-// ---------------------------------------------------------------------
 
 fn explaining(source: AlertSource) -> ServiceAlert {
     ServiceAlert { explains: vec![source], ..alert(vec![route("10")], vec![]) }

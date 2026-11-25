@@ -1,30 +1,6 @@
-//! The stop requests document's laws (D-159), derived from the user's
-//! intent: C-TRAN's Bus Stop Sign & Shelter Installation Worksheet,
-//! which "the planning team submits, the sheet isn't itself a work
-//! order. they should have their own record and the system should be
-//! able to track a reference to the external work order" and written
-//! before the implementation:
-//!
-//! * a request is a record of its own, by id: the job (the worksheet's
-//!   five), the stop it concerns, its status (drafted, submitted, work
-//!   order opened, completed, cancelled. Cancelled is the tombstone:
-//!   nothing is deleted), and the worksheet's fields, every one
-//!   optional but the stop and the job;
-//! * a write refuses only what makes a request wrong, each reason named:
-//!   no stop, a job or status or listed answer this build does not
-//!   know, a date that is not a date, a negative offset, a request at
-//!   "work order opened" with no work order id, a completed one with no
-//!   completion date, or one completed before it was requested;
-//! * `put` places one request by id (new, or replacing the one held)
-//!   and nothing else changes; `for_stop` is a stop's requests in id
-//!   order;
-//! * `list` is the work across every stop: "what work is in flight,
-//!   and where is it?": every request in id order, only those at the
-//!   statuses and of the jobs asked, where asked; beside it the count
-//!   of every request by status, whatever the filters ask, in the
-//!   statuses' order, only the statuses some request has;
-//! * one document is one byte sequence however its keys are ordered,
-//!   and what this repo does not know (another tool's field) is kept.
+//! The stop requests document (D-159, D-152). The ops are in cap-requests'
+//! OPS.md. A request is the planning team's own record, and the system tracks
+//! a reference to the external work order.
 
 use proptest::prelude::*;
 use serde_json::{json, Value};
@@ -118,7 +94,6 @@ fn a_status_carries_what_it_claims() {
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::NoCompletion]);
     let r = json!({ "stop": "a", "job": "new", "status": "completed", "requested_on": "2027-02-01", "completed_on": "2027-01-15" });
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::CompletedBeforeRequested]);
-    // a cancelled request keeps whatever it had
     let r = json!({ "stop": "a", "job": "new", "status": "cancelled" });
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![]);
 }
@@ -149,7 +124,7 @@ fn arb_doc() -> impl Strategy<Value = StopRequests> {
 }
 
 proptest! {
-    /// put places one request by id and nothing else changes.
+    /// `put` changes only the request it places.
     #[test]
     fn put_places_one_request(d in arb_doc(), id in "[a-z0-9-]{1,6}", r in arb_request()) {
         let next = d.put(&id, r.clone());
@@ -162,7 +137,7 @@ proptest! {
         prop_assert_eq!(next.requests.len(), d.requests.len() + usize::from(!d.requests.contains_key(&id)));
     }
 
-    /// A stop's requests are exactly those naming it, in id order.
+    /// `for_stop` answers exactly the requests naming the stop, in id order.
     #[test]
     fn for_stop_is_the_stops_requests(d in arb_doc(), pick in any::<prop::sample::Index>()) {
         let stops: Vec<String> = d.requests.values().map(|r| r.stop.clone()).collect();
@@ -172,9 +147,7 @@ proptest! {
         prop_assert_eq!(got, want);
     }
 
-    /// list is every request at the statuses and of the jobs asked (each
-    /// filter only where given), in id order, and its counts are every
-    /// request's by status whatever the filters ask.
+    /// `list` filters by status and job, and its counts ignore the filters.
     #[test]
     fn list_is_the_work_asked_and_counts_all_of_it(
         d in arb_doc(),
@@ -203,8 +176,8 @@ proptest! {
         }
     }
 
-    /// What this repo does not know survives a read and a write, and the
-    /// bytes do not depend on the order a writer gave the keys.
+    /// Unknown fields survive a read and a write, and the bytes do not depend
+    /// on the order of the keys.
     #[test]
     fn unknown_fields_survive_and_bytes_are_canonical(d in arb_doc(), name in "x_[a-z]{1,8}", value in "[a-z ]{0,12}") {
         let mut v = serde_json::to_value(&d).unwrap();
@@ -214,7 +187,6 @@ proptest! {
         }
         let read: StopRequests = serde_json::from_value(v.clone()).unwrap();
         prop_assert_eq!(serde_json::to_value(&read).unwrap(), v.clone());
-        // the same document with its keys reversed is the same bytes
         fn reverse(v: &Value) -> Value {
             match v {
                 Value::Object(m) => {
@@ -231,12 +203,7 @@ proptest! {
     }
 }
 
-/// What the work order system answers lands on the request (D-165): its
-/// reference replaces the one held (a link or status the answer lacks is
-/// kept), a drafted or submitted request moves to `ordered`. Its work
-/// order is open. A request already ordered, completed, or cancelled
-/// keeps its status; every other request is as it was, and an id the
-/// document does not hold answers none.
+/// An ordered, completed, or cancelled request keeps its status (D-165).
 #[test]
 fn a_work_order_lands_on_its_request() {
     let held = doc(vec![
@@ -250,21 +217,18 @@ fn a_work_order_lands_on_its_request() {
     assert_eq!(next.requests["a"].work_order.as_ref().unwrap().id, "WO-1");
     assert_eq!(next.requests["b"], held.requests["b"]);
     assert_eq!(next.clone().checked().map(|_| ()), Ok(()));
-    // a later status: the link it lacks is kept, the status stays ordered
     let mut linked = next.clone();
     linked.requests.get_mut("a").unwrap().work_order.as_mut().unwrap().url = Some("https://wo/1".into());
     let later = linked.record_work_order("a", transit_requests::WorkOrder { url: None, ..wo("WO-1", "in progress") }).unwrap();
     let w = later.requests["a"].work_order.as_ref().unwrap();
     assert_eq!((w.status.as_deref(), w.url.as_deref()), (Some("in progress"), Some("https://wo/1")));
     assert_eq!(later.requests["a"].status, "ordered");
-    // completed stays completed
     assert_eq!(held.record_work_order("b", wo("WO-2", "closed")).unwrap().requests["b"].status, "completed");
     assert_eq!(held.record_work_order("c", wo("WO-3", "open")).unwrap().requests["c"].status, "ordered");
     assert!(held.record_work_order("zz", wo("WO-9", "open")).is_none());
 }
 
-/// A request carries its photos and the site drawing (D-162), each named
-/// by its content hash with its media type; another shape is refused.
+/// Another shape of attachment name is refused (D-162).
 #[test]
 fn a_request_names_its_attachments_by_hash() {
     let hash = format!("sha256:{}", "cd".repeat(32));
@@ -274,9 +238,6 @@ fn a_request_names_its_attachments_by_hash() {
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::BadAttachment { hash: "sha256:xyz".into() }]);
 }
 
-// A write that says a request is new (D-228): the intent "new" is a
-// refusal of a held id. An ordinary `put` still replaces the one held.
-
 #[test]
 fn a_new_request_is_refused_an_id_the_document_holds() {
     let held = doc(vec![("r1", request("A", "new", "drafted"))]);
@@ -284,7 +245,6 @@ fn a_new_request_is_refused_an_id_the_document_holds() {
     assert_eq!((refusal.request.as_str(), &refusal.problem), ("r1", &RequestProblem::IdTaken));
     assert!(held.refuse_taken("r2").is_none(), "a free id is accepted");
     assert!(StopRequests::default().refuse_taken("r1").is_none());
-    // an ordinary put replaces the one held
     let replaced = held.put("r1", request("B", "new", "submitted"));
     assert_eq!(replaced.requests["r1"].stop, "B");
 }
@@ -295,30 +255,22 @@ fn the_open_statuses_are_the_ones_before_completed_and_cancelled() {
     assert!(transit_requests::OPEN_STATUSES.iter().all(|s| STATUSES.contains(s)));
 }
 
-// A call to the work order system splits in three (D-228): an op answers
-// what to send, a host makes the call, and `record_work_order` records
-// the answer.
-
 #[test]
 fn the_work_order_call_says_what_to_send_for_a_request() {
     let mut with_order = request("A", "new", "ordered");
     with_order.work_order = Some(transit_requests::WorkOrder { id: "WO-1".into(), ..Default::default() });
     let held = doc(vec![("r1", request("A", "new", "submitted")), ("r2", with_order.clone())]);
 
-    // open: the system is sent the request; no work order is held yet
     let open = held.work_order_call("r1", "open").unwrap();
     assert_eq!((open.action.as_str(), open.request.as_ref().map(|r| r.stop.as_str()), open.work_order.is_none()), ("open", Some("A"), true));
-    // refresh: the system is sent the work order the request holds
     let refresh = held.work_order_call("r2", "refresh").unwrap();
     assert_eq!((refresh.action.as_str(), refresh.request.is_none(), refresh.work_order.as_ref().map(|w| w.id.as_str())), ("refresh", true, Some("WO-1")));
-    // a request the document does not hold, and an action it does not know
     assert!(held.work_order_call("r9", "open").is_err());
     assert!(held.work_order_call("r1", "close").is_err());
 }
 
-/// v1 → v2 (D-234): every v1 document is a v2 document, so the step
-/// changes only the version; a stored v1 record comes forward unchanged;
-/// nothing comes back from a version newer than this build.
+/// A v1 document is a v2 document, so the step changes only the version
+/// (D-234).
 #[test]
 fn a_v1_document_is_a_v2_document() {
     use transit_requests::version;

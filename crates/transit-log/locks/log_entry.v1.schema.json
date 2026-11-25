@@ -2,28 +2,23 @@
   "$defs": {
     "Change": {
       "additionalProperties": true,
-      "description": "One record that an entry changed.",
       "properties": {
         "after": {
-          "description": "The record after the entry, whole. Absent when the entry takes\nthe record out of the fold."
+          "description": "Absent when the entry takes the record out of the fold."
         },
         "before": {
-          "description": "The hash of the record as stored before the entry. Absent when\nthe record is new.",
           "type": [
             "string",
             "null"
           ]
         },
         "id": {
-          "description": "The record's id within its kind.",
           "type": "string"
         },
         "kind": {
-          "description": "The record's kind, for example `stop` or `stop_request`.",
           "type": "string"
         },
         "version": {
-          "description": "The version of the record's document kind that `after` is in.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -41,17 +36,15 @@
     },
     "Intent": {
       "additionalProperties": true,
-      "description": "What asked for an entry.",
       "properties": {
         "args_hash": {
-          "description": "The content hash of the request's arguments.",
           "type": [
             "string",
             "null"
           ]
         },
         "claimed_at_ms": {
-          "description": "The writer's device clock when the person made the write, Unix\nepoch milliseconds: a claim beside the host's `at_ms`, never the\nentry's time (D-222). A write that waited on the device carries\nit.",
+          "description": "A claim beside the host's `at_ms`, never the entry's time (D-222).",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -60,21 +53,18 @@
           ]
         },
         "key": {
-          "description": "The writer's idempotency key: a write sent again with the same\nkey lands once.",
           "type": [
             "string",
             "null"
           ]
         },
         "note": {
-          "description": "A note from a person or a tool, for example the cause that an\nentry closing a gap names.",
           "type": [
             "string",
             "null"
           ]
         },
         "op": {
-          "description": "The endpoint or op that asked for the write, for example\n`POST /stops` or `POST /logs/stops`.",
           "type": "string"
         }
       },
@@ -86,7 +76,6 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "One entry of a log: one transaction.",
   "properties": {
     "at_ms": {
       "format": "uint64",
@@ -94,7 +83,7 @@
       "type": "integer"
     },
     "changes": {
-      "description": "The records the entry changed, in kind and id order. Empty only\nin an entry that closes a gap.",
+      "description": "In kind and id order. Empty only in an entry that closes a gap.",
       "items": {
         "$ref": "#/$defs/Change"
       },
@@ -113,7 +102,6 @@
       "type": "string"
     },
     "reverts": {
-      "description": "The `seq` of the entry this one reverts.",
       "format": "uint64",
       "minimum": 0,
       "type": [

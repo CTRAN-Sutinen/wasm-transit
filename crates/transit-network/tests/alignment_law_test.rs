@@ -1,25 +1,6 @@
-//! The alignment laws: a line on the ground is its own record. Its
-//! own id, its points, the distances published along it: and a
-//! pattern runs one by reference (the pattern points at the
-//! alignment, so a pattern is its stops along its line). Alignments
-//! are shared by any number of patterns, or by none.
-//!
-//! Written before the implementation, as the definition of the
-//! behavior; every expected answer is recomputed here from the
-//! generated input, with no code shared with the implementation.
-//!
-//! The API these laws require:
-//!
-//! * `Network.alignments: BTreeMap<AlignmentId, Alignment>`;
-//!   `Alignment { points: Vec<AlignmentPoint> }` (`Default`);
-//!   `AlignmentPoint { lat, lon, distance: Option<f64> }`.
-//! * `Pattern.alignment: Option<AlignmentId>`: no inline path.
-//! * `NetworkError::UnknownAlignment { pattern, alignment }`.
-//! * `pattern_alignment` draws the referenced alignment (two points
-//!   or more), else the stops joined.
-//! * `migrate_network` reads a pre-alignment (v1) document (an inline
-//!   `path` per pattern) as an alignment under the pattern's id:
-//!   the id the old export gave its shape.
+//! An alignment is its own record. Patterns reference it by id, and any number
+//! of patterns, or none, can share one (docs/FORMATS.md, "Versions"). The
+//! expected answers are recomputed from the generated input.
 
 use proptest::prelude::*;
 use serde_json::Value;
@@ -28,12 +9,6 @@ use transit_network::{
     NetworkError, Pattern, PatternStop, Route, Stop,
 };
 
-// ===================================================================
-// Generator: valid by construction.
-// ===================================================================
-
-/// One generated alignment: its points (lat, lon) and whether the
-/// distances along it were published.
 #[derive(Clone, Debug)]
 struct GenAlignment {
     points: Vec<(f64, f64)>,
@@ -42,12 +17,8 @@ struct GenAlignment {
 
 #[derive(Clone, Debug)]
 struct Spec {
-    /// Ids chosen to look nothing like pattern ids: an alignment's id
-    /// is its own, never derived.
     alignments: Vec<GenAlignment>,
-    /// Each pattern: its stop indices and which alignment it runs.
     patterns: Vec<(Vec<usize>, Option<usize>)>,
-    /// Stop coordinates; repeats make consecutive duplicate points.
     stops: Vec<(f64, f64)>,
 }
 
@@ -125,8 +96,6 @@ fn build(spec: &Spec) -> Network {
     net
 }
 
-/// The stops joined in order, consecutive repeats dropped, empty
-/// below two points: recomputed from the spec.
 fn stops_joined(spec: &Spec, stops: &[usize]) -> Vec<Coord> {
     let mut out: Vec<Coord> = Vec::new();
     for &s in stops {
@@ -142,15 +111,9 @@ fn stops_joined(spec: &Spec, stops: &[usize]) -> Vec<Coord> {
     out
 }
 
-// ===================================================================
-// The laws.
-// ===================================================================
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// A pattern draws the alignment it runs: when that alignment is
-    /// a line (two points or more): else its stops joined.
     #[test]
     fn a_pattern_draws_its_alignment(spec in spec_strategy()) {
         let net = build(&spec);
@@ -164,9 +127,6 @@ proptest! {
         }
     }
 
-    /// Alignments shared by several patterns, and alignments no
-    /// pattern runs, are a valid network: an alignment stands on its
-    /// own.
     #[test]
     fn shared_and_unused_alignments_are_valid(spec in spec_strategy()) {
         let issues = validation_issues(&build(&spec));
@@ -177,8 +137,6 @@ proptest! {
         );
     }
 
-    /// A pattern that names an alignment the network lacks is a
-    /// defect, named by pattern and alignment.
     #[test]
     fn an_unknown_alignment_is_a_defect(spec in spec_strategy(), which in any::<prop::sample::Index>()) {
         let mut net = build(&spec);
@@ -195,8 +153,6 @@ proptest! {
         );
     }
 
-    /// The document carries alignments exactly: every point, every
-    /// published distance, every id, read back as written.
     #[test]
     fn alignments_survive_the_document(spec in spec_strategy()) {
         let net = build(&spec);
@@ -204,9 +160,8 @@ proptest! {
         prop_assert_eq!(serde_json::from_str::<Network>(&text).unwrap(), net);
     }
 
-    /// A pre-alignment document: each pattern's line inline as its
-    /// `path`: reads as an alignment under the pattern's id, run by
-    /// that pattern, drawn exactly as before.
+    /// A v1 document with an inline `path` per pattern reads as an alignment
+    /// under the pattern's id, drawn as before.
     #[test]
     fn a_pre_alignment_document_migrates(spec in spec_strategy()) {
         let net = build(&spec);

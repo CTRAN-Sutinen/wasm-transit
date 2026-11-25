@@ -1,19 +1,7 @@
-//! The import's alignment laws: a feed's shapes are the network's
-//! alignments: the feed's ids, every point in sequence order, every
-//! published distance, and a trip's `shape_id` is the alignment its
-//! pattern runs (the pattern points at the alignment). A shape
-//! no trip uses is still an alignment; a shape several stop lists use
-//! is one alignment.
-//!
-//! Written before the implementation, as the definition of the
-//! behavior; the expected answers come from the generator's own
-//! values, never from parsing or from the implementation. The feed is
-//! built in memory (`transit_codec::Feed`), so no parser sits between
-//! the generator and the import.
-//!
-//! The API these laws require, beyond `transit-network`'s alignment
-//! laws (`crates/transit-network/tests/alignment_law_test.rs`):
-//! `import(&Feed)` and `export(&Network, &Boundary)` as they stand.
+//! A feed's shapes are the network's alignments, under the feed's ids. A
+//! shape that no trip uses is still an alignment, and a shape that several
+//! stop lists use is one alignment. The expected answers come from the
+//! generator's values, and the feed is built in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,22 +9,15 @@ use proptest::prelude::*;
 use transit_codec::feed::{AgencyRow, CalendarRow, RouteRow, ShapeRow, StopRow, StopTimeRow, TripRow};
 use transit_codec::Feed;
 
-// ===================================================================
-// Generator: spec-valid feeds.
-// ===================================================================
-
-/// Shape ids that look nothing like pattern ids.
 const SHAPE_IDS: [&str; 4] = ["sh 7", "A/1", "0", "x_line"];
 
 #[derive(Clone, Debug)]
 struct GenShape {
-    /// (lat, lon) in travel order.
     points: Vec<(f64, f64)>,
-    /// The first shape_pt_sequence and the gap to each next one.
     first_seq: u32,
     gaps: Vec<u32>,
     with_distances: bool,
-    /// Write the rows backwards: row order is not sequence order.
+    /// Row order is not sequence order.
     reversed: bool,
 }
 
@@ -60,9 +41,8 @@ impl GenShape {
 
 #[derive(Clone, Debug)]
 struct GenTrip {
-    /// Ordered distinct stops (2..=4 of s0..s5).
+    /// Distinct, in order: 2..=4 of s0..s5.
     stops: Vec<u8>,
-    /// Index into the shapes.
     shape: Option<usize>,
 }
 
@@ -184,7 +164,6 @@ fn build_feed(spec: &Spec) -> Feed {
     feed
 }
 
-/// A shapes.txt row as values: (id, sequence, lat, lon, distance).
 type ShapePoint = (String, u32, f64, f64, Option<f64>);
 
 fn shape_points(feed: &Feed) -> Vec<ShapePoint> {
@@ -213,16 +192,11 @@ fn trip_shapes(feed: &Feed) -> BTreeMap<String, Option<String>> {
         .collect()
 }
 
-// ===================================================================
-// The laws.
-// ===================================================================
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// Every shape is an alignment under the feed's id, including
-    /// shapes no trip uses, with its points in sequence order and
-    /// the distances the feed published (and none it did not).
+    /// Every shape is an alignment, with its points in sequence order and the
+    /// distances that the feed published (and none that it did not).
     #[test]
     fn every_shape_is_an_alignment(spec in spec_strategy()) {
         let net = transit_codec::import(&build_feed(&spec)).network;
@@ -238,9 +212,7 @@ proptest! {
         }
     }
 
-    /// A trip's shape is the alignment its pattern runs; a trip with
-    /// no shape runs a pattern with none. One shape used by different
-    /// stop lists is one alignment, run by each of their patterns.
+    /// A trip's pattern runs the trip's shape.
     #[test]
     fn a_trip_runs_its_shape(spec in spec_strategy()) {
         let net = transit_codec::import(&build_feed(&spec)).network;
@@ -257,9 +229,8 @@ proptest! {
         prop_assert!(validation_clean(&net));
     }
 
-    /// Export writes every alignment back as the feed published it: its id,
-    /// its sequence numbers, its points, its distances. Every trip keeps
-    /// its shape id.
+    /// Export writes every alignment back as the feed published it, and
+    /// every trip keeps its shape id.
     #[test]
     fn shapes_export_as_published(spec in spec_strategy()) {
         let feed = build_feed(&spec);

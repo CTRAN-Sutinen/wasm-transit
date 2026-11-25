@@ -1,7 +1,7 @@
-//! The kernel helpers every capability shares. The law: a document's
-//! identity is the content hash of its canonical serialization, and
-//! streaming that serialization into the digest changes nothing:
-//! every hash minted before the stream is the same hash after it.
+//! A document's identity is the content hash of its canonical serialization,
+//! and streaming that serialization into the digest changes no hash. The
+//! versioned kinds read and refuse versions as docs/FORMATS.md, "Versions",
+//! says.
 
 use proptest::prelude::*;
 use sha2::Digest;
@@ -41,7 +41,6 @@ fn a_document_that_does_not_parse_is_an_error() {
     assert!(err.starts_with("invalid document"), "{err}");
 }
 
-/// gzip a document's bytes the way a host serves them.
 fn gzip(bytes: &[u8]) -> Vec<u8> {
     use std::io::Write;
     let mut z = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
@@ -50,8 +49,8 @@ fn gzip(bytes: &[u8]) -> Vec<u8> {
 }
 
 proptest! {
-    /// A document crosses as its JSON or that JSON gzipped, and both
-    /// are the same document: the same value, so the same identity.
+    /// A document crosses as its JSON or that JSON gzipped, with the same
+    /// identity.
     #[test]
     fn a_gzipped_document_is_the_same_document(doc in gen_doc()) {
         #[derive(Debug, PartialEq, serde::Deserialize)]
@@ -81,11 +80,7 @@ fn a_gzipped_network_registers_under_the_plain_hash() {
     assert_eq!(cap_abi::canonical_hash(&plain).unwrap(), cap_abi::canonical_hash(&zipped).unwrap());
 }
 
-/// The live document is v2 (a trip instance carries its service
-/// date): an untagged copy is its v1 and is refused naming both
-/// versions, as is a newer one; a v2 copy reads. It is ephemeral:
-/// minted by the build that reads it, so no migration brings a v1
-/// forward.
+/// The live document is ephemeral, so no migration brings a v1 forward.
 #[test]
 fn the_live_document_reads_v2_only() {
     use transit_version::Versioned;
@@ -105,10 +100,7 @@ fn the_live_document_reads_v2_only() {
     assert!(newer.contains("live v3") && newer.contains("reads v2"), "{newer}");
 }
 
-/// A module reads the network version it was built for, and only that
-/// (docs/FORMATS.md, "Versions"): an older document is
-/// refused with the op that brings it forward, a newer one naming both
-/// versions. The check runs at the load, never three layers deep in an op.
+/// The check runs at the load, never deep inside an op.
 #[test]
 fn a_network_load_refuses_other_versions_naming_both() {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata/network.json")).unwrap();
@@ -122,7 +114,7 @@ fn a_network_load_refuses_other_versions_naming_both() {
     assert!(older.contains("network v1") && older.contains(&format!("reads v{current}")) && older.contains("migrate"), "{older}");
 
     doc["schema_version"] = serde_json::json!(current + 1);
-    // A newer document's shape may still parse; its tag refuses it.
+    // A newer document's shape may still parse, so its tag must refuse it.
     let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
     assert!(newer.contains(&format!("network v{}", current + 1)) && newer.contains(&format!("reads v{current}")), "{newer}");
     doc["stops"] = serde_json::json!("a shape this build does not know");
@@ -130,10 +122,8 @@ fn a_network_load_refuses_other_versions_naming_both() {
     assert!(newer.contains(&format!("network v{}", current + 1)), "{newer}");
 }
 
-/// Every versioned kind's load (docs/FORMATS.md, "Versions"): a copy
-/// with no tag is the kind's v1 (the derived kinds and the work rules
-/// gained their tags at v1), and a newer copy is refused naming both
-/// versions, never read as this build's.
+/// The derived kinds and the work rules gained their tags at v1, so an
+/// untagged copy is v1.
 #[test]
 fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     use transit_version::Versioned;
@@ -164,10 +154,7 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
 }
 
-/// Stop requests are v2 (D-234): a tagged v1 is refused at the load,
-/// naming the migration; v2 reads, and so does an untagged copy, since
-/// every v1 document is a v2 document; a newer copy is refused naming
-/// both.
+/// Every v1 document is a v2 document, so an untagged copy reads (D-234).
 #[test]
 fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
     use transit_requests::StopRequests;
@@ -181,11 +168,8 @@ fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
     assert!(err.contains("stop_requests v3") && err.contains("reads v2"), "{err}");
 }
 
-/// The watchlist gained its tags at v2 (docs/FORMATS.md, "Versions"): a
-/// copy from before them that names "v2" reads as v2 and is written
-/// tagged; one that names "v1" is the older v1 and is refused naming
-/// the migration; a newer copy is refused naming both; another kind is
-/// refused.
+/// The watchlist gained its tags at v2. A copy from before them reads by
+/// its `version` field.
 #[test]
 fn the_watchlist_reads_its_v2_from_before_the_tags_and_refuses_every_other_version() {
     use transit_rider::watchlist::Watchlist;

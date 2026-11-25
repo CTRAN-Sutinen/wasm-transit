@@ -1,17 +1,12 @@
-//! Property-based tests (proptest) for the network model.
+//! Property tests of the network model. Each expected answer is recomputed
+//! from the generated input, with no code shared with the implementation.
+//! `trip_law_test.rs` checks the stop times that a stored trip materializes.
 //!
-//! Same discipline as `transit-codec/tests/spec_round_trip_test.rs`. The laws
-//! must hold for every network. Each expected answer is recomputed
-//! independently from the generated input, with no code shared with the
-//! implementation. There are three flavors:
-//!
-//! * round-trip laws (serde, canonical serialization);
-//! * oracle properties. Which trips `materialize` runs on a date is recomputed
-//!   by a deliberately different expansion (count-derived band expansion,
-//!   brute-force calendar over `%u` weekdays). The stop times a stored trip
-//!   materializes are checked in `trip_law_test.rs`.
-//! * structural invariants: generated networks validate clean, and single
-//!   mutations always break validation.
+//! * Round trips: serde and canonical serialization.
+//! * Oracles: `materialize` against a different expansion, and `runs_on`
+//!   against a brute-force calendar over `%u` weekdays.
+//! * Structure: generated networks validate, and single mutations break
+//!   validation.
 
 use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
@@ -23,12 +18,6 @@ use transit_network::{
 
 const YEAR_START: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
 
-// ---------------------------------------------------------------------
-// Valid-network generator
-// ---------------------------------------------------------------------
-
-/// Parameters the generator derives a network from. Small ranges keep
-/// proptest's shrinking meaningful.
 #[derive(Clone, Debug)]
 struct Spec {
     n_stops: u32,       // 3..6
@@ -38,9 +27,8 @@ struct Spec {
     dayset: u32,        // preset index
     with_block: bool,
     with_exception: bool,
-        /// A parent station pin none of the patterns visits, with the first
-        /// `bays` stops as its children. This is the shape a transfer center
-        /// imports as (Fisher's Landing, its bays).
+    /// A parent station pin that no pattern visits, with the first `bays`
+    /// stops as its children: the shape of Fisher's Landing.
     station: bool,
     bays: u32,           // 1..3
 }
@@ -70,8 +58,8 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
         })
 }
 
-/// The day the exception date sits on. It is a mid-range Sunday that weekday
-/// presets do not run, so `Added` exceptions add service.
+/// A mid-range Sunday that weekday presets do not run, so `Added` exceptions
+/// add service.
 const EXCEPTION_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
 
 fn dayset(index: u32) -> WeekdaySet {
@@ -98,8 +86,6 @@ fn dayset(index: u32) -> WeekdaySet {
     }
 }
 
-/// Build a valid network from the spec. It is valid by construction. Every
-/// invariant is satisfied here, so `validate` must accept it.
 fn build_network(spec: &Spec) -> Network {
     let mut net = Network { name: "Generated".into(), ..Default::default() };
     for i in 0..spec.n_stops {
@@ -113,8 +99,7 @@ fn build_network(spec: &Spec) -> Network {
             },
         );
     }
-        // The optional station pin. No pattern visits it. Its bays carry the
-        // trips. This is the transfer-center shape.
+    // The station pin is visited by no pattern. Its bays carry the trips.
     if spec.station {
         net.stops.insert(
             "STN".into(),
@@ -126,8 +111,6 @@ fn build_network(spec: &Spec) -> Network {
     }
     net.routes.insert("r0".into(), Route { mode: Mode::Bus, ..Default::default() });
 
-    // Patterns: distinct stop sequences, first/last timepoints,
-    // one timing profile covering the whole service day (0..30h).
     for j in 0..spec.n_patterns {
         let len = 2 + (j as usize % 2) + ((j + spec.n_patterns) as usize % 2); // 2..=4
         let len = len.min(spec.n_stops as usize);
@@ -142,7 +125,6 @@ fn build_network(spec: &Spec) -> Network {
             stops.push(PatternStop { stop: format!("s{i}"), timepoint, distance_m: cum as f64, ..Default::default() });
         }
         let tp_count = stops.iter().filter(|s| s.timepoint).count();
-        // Cumulative times at timepoints: strictly increasing.
         let mut at_timepoints = Vec::new();
         let mut t = 0u32;
         for _ in 0..tp_count {
@@ -191,8 +173,6 @@ fn build_network(spec: &Spec) -> Network {
         let key = format!("svc{i}");
         let pattern = format!("p{}", i % spec.n_patterns);
         let times = profile_times(&net.patterns[&pattern]);
-        // Frequency and one-start trips alternate; ids are the trips'
-        // own.
         let trips = if i % 2 == 0 {
             vec![Trip {
                 id: format!("{key}@every"),
@@ -223,9 +203,8 @@ fn build_network(spec: &Spec) -> Network {
     }
 
     if spec.with_block {
-        // svc0's frequency trip, whole (GTFS: a block runs a trip
-        // whole), only when one vehicle can run its instances back to
-        // back.
+        // GTFS: a block runs a trip whole. Only one vehicle that can run the
+        // frequency trip's instances back to back carries it.
         let every = &net.pattern_trips["svc0"].trips[0];
         let run = every.times.last().and_then(|o| o.arrival_secs).unwrap();
         if spec.headway >= run {
@@ -235,9 +214,6 @@ fn build_network(spec: &Spec) -> Network {
     net
 }
 
-/// A trip's times as the pattern's profile produces them, computed
-/// here: timepoints at the profile's offsets, other stops by distance
-/// between their bracketing timepoints.
 fn profile_times(pattern: &Pattern) -> Vec<StopOffset> {
     let profile = &pattern.timing[0];
     let tps: Vec<usize> = pattern.stops.iter().enumerate().filter(|(_, s)| s.timepoint).map(|(i, _)| i).collect();
@@ -265,12 +241,7 @@ fn net_strategy() -> impl Strategy<Value = Network> {
     spec_strategy().prop_map(|spec| build_network(&spec))
 }
 
-// ---------------------------------------------------------------------
-// Independent oracles (no shared code with the implementation)
-// ---------------------------------------------------------------------
-
-/// Oracle calendar: ISO weekday via string formatting, exception
-/// scan, range check. The mechanics are deliberately different.
+/// Oracle calendar. Its mechanics differ from the model's on purpose.
 fn oracle_runs_on(rule: &CalendarRule, date: NaiveDate) -> bool {
     let iso = date.format("%u").to_string();
     let flagged = match iso.as_str() {
@@ -294,7 +265,6 @@ fn oracle_runs_on(rule: &CalendarRule, date: NaiveDate) -> bool {
     flagged && in_range
 }
 
-/// Oracle instances: count-then-index instead of accumulate.
 fn oracle_instances(departs: &Departs) -> Vec<u32> {
     match departs {
         Departs::At { start_secs } => vec![*start_secs],
@@ -309,8 +279,6 @@ fn oracle_instances(departs: &Departs) -> Vec<u32> {
     }
 }
 
-/// Oracle day: the (trip, start) instances of every trip whose
-/// service runs on `date`.
 fn oracle_day(net: &Network, date: NaiveDate) -> Vec<(String, u32)> {
     let mut out = Vec::new();
     for pt in net.pattern_trips.values() {
@@ -327,25 +295,14 @@ fn oracle_day(net: &Network, date: NaiveDate) -> Vec<(String, u32)> {
     out
 }
 
-// ---------------------------------------------------------------------
-// The laws
-// ---------------------------------------------------------------------
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// Every generated network validates. Validity by construction
-    /// is only meaningful if `validate` agrees.
     #[test]
     fn generated_networks_validate(net in net_strategy()) {
         prop_assert!(net.validate().is_ok(), "issues: {:?}", validation_issues(&net));
     }
 
-        /// The network on a map (`route_lines`): every route that draws a line,
-        /// in id order. Each has its name, its color, and the distinct lines of
-        /// its patterns. These are the same lines `entity_focus` frames for the
-        /// route. Given service types, only the patterns that run trips under
-        /// one of them draw. A route with none is no row.
     #[test]
     fn route_lines_draw_what_focus_frames(net in net_strategy(), pick in proptest::collection::vec(any::<bool>(), 3)) {
         use std::collections::BTreeSet;
@@ -387,12 +344,6 @@ proptest! {
         }
     }
 
-    /// The service keys (`service_keys`): every service type, in id
-    /// order, with its name and its calendar rule as authored, the
-    /// trips it runs (materialized, the count a day runs), and the
-    /// routes it carries. Each has the pattern trips under the key
-    /// on that route and their trips. A route the key runs nothing on
-    /// is no row; the routes' trips sum to the key's.
     #[test]
     fn service_keys_are_the_authored_calendars_and_what_runs_on_them(net in net_strategy()) {
         let keys = transit_network::service_keys(&net);
@@ -421,7 +372,6 @@ proptest! {
         }
     }
 
-    /// serde round-trip: the document survives JSON exactly.
     #[test]
     fn network_round_trips_through_json(net in net_strategy()) {
         let json = serde_json::to_string(&net).unwrap();
@@ -429,8 +379,6 @@ proptest! {
         prop_assert_eq!(back, net);
     }
 
-    /// Canonical serialization: identical bytes every time. This is the
-    /// substrate per-entity sync and content addressing needs.
     #[test]
     fn serialization_is_deterministic(net in net_strategy()) {
         let a = serde_json::to_string(&net).unwrap();
@@ -438,9 +386,9 @@ proptest! {
         prop_assert_eq!(a, b);
     }
 
-    /// Oracle law: on every probed date (weekdays, weekends, the
-    /// exception date, and dates outside every range), materialization
-    /// runs exactly the stored trips of the services running that day.
+    /// Materialization runs exactly the stored trips of the services running
+    /// that day, on weekdays, weekends, the exception date, and dates outside
+    /// every range.
     #[test]
     fn materialize_runs_the_days_trips(net in net_strategy()) {
         for day in [1u32, 2, 5, 6, 100, 200, 304, 305, 400] {
@@ -452,8 +400,6 @@ proptest! {
         }
     }
 
-    /// Calendar law: `runs_on` matches the brute-force oracle over a
-    /// full year, exceptions included.
     #[test]
     fn calendar_runs_on_matches_brute_force(net in net_strategy()) {
         let rule = &net.service_types["cal"];
@@ -463,8 +409,6 @@ proptest! {
         }
     }
 
-    /// Mutation law: any single referential break invalidates the
-    /// document (validation has no blind spots the generator feeds).
     #[test]
     fn single_mutations_break_validation(net in net_strategy()) {
         let mut broken = net.clone();
@@ -495,7 +439,6 @@ proptest! {
         }
         prop_assert!(!validation_issues(&broken).is_empty());
 
-        // A block naming a trip the document does not have.
         let mut broken = net.clone();
         if let Some((_, block)) = broken.blocks.iter_mut().next() {
             block.trips[0].trip = "ghost-trip".into();
@@ -503,8 +446,6 @@ proptest! {
         }
     }
 
-        /// Totality law: materialization never panics on any generated network,
-        /// valid or mutated. It returns Ok or Err.
     #[test]
     fn materialize_never_panics_on_broken_documents(net in net_strategy()) {
         let mut broken = net.clone();
@@ -521,13 +462,9 @@ proptest! {
         let _ = materialize(&broken, date);
     }
 
-        /// QAF-51 and QAF-66 (C-TRAN, Fisher's Landing): a stop's detail
-        /// answers the routes that serve that stop. This is the board's rule. A
-        /// stop with service of its own never pools. A stop that no pattern
-        /// visits (a station pin whose patterns visit only its bays) answers
-        /// for its whole walking group. The group is spelled out here from
-        /// `parent` fields (the oracle). It is never borrowed from the model's
-        /// own helper.
+    /// A stop with service of its own never pools. A stop that no pattern
+    /// visits answers for its whole walking group, which this test builds
+    /// from `parent` fields instead of the model's helper.
     #[test]
     fn stop_detail_answers_its_own_routes_or_its_walking_group(net in net_strategy()) {
         for id in net.stops.keys() {
@@ -568,14 +505,9 @@ proptest! {
         }
     }
 
-        /// The stop card (docs/units/ui-stops.md item 1): a stop's detail
-        /// carries its own record and every pattern position that visits it. It
-        /// never includes its walking group's positions. Each position has its
-        /// route, its direction, whether it ends the pattern, and the trips the
-        /// pattern runs under the members asked (every service type when none
-        /// are named; none under an empty set). Positions are recomputed here
-        /// by scanning every pattern. Trips come from the oracle's own
-        /// expansion.
+    /// A stop's detail has its own record and every pattern position that
+    /// visits it, never its walking group's positions. Positions come from
+    /// scanning every pattern, and trips from the oracle's expansion.
     #[test]
     fn stop_detail_lists_every_visit_of_the_stop_itself(net in net_strategy()) {
         let all: Vec<String> = net.service_types.keys().cloned().collect();

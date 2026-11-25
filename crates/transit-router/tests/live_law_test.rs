@@ -1,31 +1,17 @@
-//! Live planning laws (QAF-73: plans use live data).
+//! Pins planning over a live document (D-73). The properties:
 //!
-//! The intent, as the user stated it: with a live document, the router plans
-//! over the day. Each trip instance uses its predicted times where the live
-//! document states them. The stop entries of `LiveDay::trips` are keyed by trip
-//! instance, stop, and scheduled departure. Predicted time is the schedule plus
-//! the delay. The arrival delay works the same way. Stops absent before the
-//! first stated delay stay on schedule. Elsewhere the router uses the schedule.
-//! Legs say which times are predicted.
-//!
-//! The laws:
-//!
-//! 1. An empty live document changes nothing. The plan equals the schedule-only
-//!    plan.
-//! 2. A live plan is the schedule plan of the predicted world. The oracle
-//!    builds a second feed whose trips run at the predicted times outright. It
-//!    does this independently of the router's live join. It plans that feed
-//!    schedule-only. The arrivals agree.
-//! 3. A transit leg's times are the predicted ones, and say so.
-//!    `board_delay_secs` and `alight_delay_secs` hold the stated delay where
-//!    the document states one. They are `None` (schedule) where it does not.
-//!    `secs - delay` is the scheduled time.
-//! 4. Scenarios: a predicted-late bus makes a connection that the schedule says
-//!    is missed. A predicted-late bus misses a connection that the schedule
-//!    says is made.
-//! 5. A trip that the live document cancels is never ridden. The live plan is
-//!    the schedule plan of the world without it. A stop it skips is never
-//!    boarded or alighted at (D-73).
+//! 1. An empty live document gives the schedule-only plan.
+//! 2. A live plan arrives when the schedule-only plan of the predicted world
+//!    arrives. The oracle builds a second feed whose trips run at the
+//!    predicted times, independently of the router's live join.
+//! 3. A transit leg's `board_delay_secs` and `alight_delay_secs` hold the
+//!    stated delay, or `None` where the document states none. `secs - delay`
+//!    is the scheduled time.
+//! 4. A late bus makes a connection that the schedule misses, and misses one
+//!    that the schedule makes.
+//! 5. A cancelled trip is never ridden, and a skipped stop is never boarded or
+//!    alighted at (D-73). The live plan is the schedule plan of the world
+//!    without them.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -39,14 +25,12 @@ use support::{build_zip_timed, model_day};
 
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
-/// Stop spacing in degrees. No walk crosses it. Law 5's plans ride.
+/// No walk crosses this spacing, so the plans of property 5 ride.
 const SPREAD: f64 = 0.05;
 
-/// One generated trip: its stops, scheduled start and step, and its live state:
-/// `None` (no prediction), or (first stated position, delay). A delay stated
-/// mid-trip is never negative here. An early bus that has not yet reached the
-/// earlier, on-schedule stops would run backwards in time. That is not a valid
-/// world.
+/// One generated trip. `live` is `None` (no prediction) or the first stated
+/// position and the delay. A delay stated mid-trip is never negative, because
+/// an early bus would run backwards in time past the earlier on-schedule stops.
 #[derive(Debug, Clone)]
 struct LiveTripSpec {
     stops: Vec<u32>,
@@ -59,7 +43,6 @@ impl LiveTripSpec {
     fn scheduled(&self) -> Vec<u32> {
         (0..self.stops.len() as u32).map(|i| self.start + i * self.step).collect()
     }
-    /// The delay stated at visit `i`, if any.
     fn delay_at(&self, i: usize) -> Option<i32> {
         self.live.and_then(|(first, d)| (i >= first).then_some(d))
     }
@@ -93,11 +76,9 @@ fn feed() -> impl Strategy<Value = (usize, Vec<LiveTripSpec>, usize, usize, u32)
     })
 }
 
-/// The live document for the generated trips, written the way the
-/// rt boundary writes it: one entry per stated visit, keyed by the
-/// trip instance (the materialized day's start) and the scheduled
-/// departure. Built from JSON so the document's other fields keep
-/// their defaults.
+/// One entry per stated visit, keyed by the trip instance (the materialized
+/// day's start) and the scheduled departure. JSON builds it so that the other
+/// fields keep their defaults.
 fn live_doc(trips: &[LiveTripSpec], day: &[transit_network::MaterializedTrip]) -> LiveDay {
     let entries: Vec<serde_json::Value> = trips
         .iter()
@@ -145,7 +126,7 @@ fn plan(net: &RouterNetwork, from: usize, to: usize, depart: u32) -> Option<tran
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Law 1: an empty live document is the schedule.
+    /// Property 1.
     #[test]
     fn an_empty_live_document_is_the_schedule((n_stops, trips, from, to, depart) in feed()) {
         let timed: Vec<_> = trips.iter().map(|t| (t.stops.clone(), t.scheduled())).collect();
@@ -160,8 +141,7 @@ proptest! {
         );
     }
 
-    /// Laws 2–3: the live plan is the predicted world's schedule
-    /// plan, and its legs carry the predictions they ride.
+    /// Properties 2 and 3.
     #[test]
     fn a_live_plan_is_the_predicted_worlds_plan((n_stops, trips, from, to, depart) in feed()) {
         let timed: Vec<_> = trips.iter().map(|t| (t.stops.clone(), t.scheduled())).collect();
@@ -169,7 +149,6 @@ proptest! {
         let live = live_doc(&trips, &day);
         let net = RouterNetwork::build(&network, &day, DATE, Some(&live));
 
-        // The oracle world: every trip runs at its predicted times.
         let predicted: Vec<_> = trips.iter().map(|t| (t.stops.clone(), t.predicted())).collect();
         let (pnetwork, pday) = model_day(&build_zip_timed(n_stops, 0.0008, &predicted), DATE);
         let oracle = RouterNetwork::build_from_day(&pnetwork, &pday, DATE);
@@ -182,9 +161,6 @@ proptest! {
             let Leg::Transit { trip, board_stop_id, board_secs, board_delay_secs, alight_stop_id, alight_secs, alight_delay_secs, .. } = leg else { continue };
             let spec = &trips[trip[1..].parse::<usize>().unwrap()];
             let (sched, pred) = (spec.scheduled(), spec.predicted());
-            // Some visit of the trip at the board stop is the one
-            // ridden: its predicted time, its stated delay (None when
-            // none is stated), and secs - delay is its schedule.
             let visit = |stop: &str, secs: u32, delay: Option<i32>| {
                 (0..spec.stops.len()).any(|v| {
                     format!("s{}", spec.stops[v]) == stop
@@ -201,7 +177,7 @@ proptest! {
     }
 }
 
-/// Two buses that meet at s1, stops far apart (no walking):
+/// Two buses meet at s1, and the stops are too far apart to walk:
 /// t0 s0 08:00 → s1 08:10, t1 s1 08:12 → s2 08:30, t2 s1 08:20 → s2 08:50.
 fn connection(live: impl Fn(&[transit_network::MaterializedTrip]) -> Vec<serde_json::Value>) -> Option<transit_router::Itinerary> {
     let timed = vec![
@@ -229,10 +205,9 @@ fn delayed(trip: &str, start: u32, stops: &[(&str, u32)], d: i32) -> serde_json:
 
 #[test]
 fn a_late_first_bus_misses_the_scheduled_connection() {
-    // On schedule: t0 arrives 08:10, t1 leaves 08:12 → 08:30.
     let on_time = connection(|_| vec![]).unwrap();
     assert_eq!(on_time.arrival_secs, 8 * 3600 + 1800);
-    // t0 predicted 5 min late arrives 08:15: t1 is gone, t2 → 08:50.
+    // t0 predicted 5 min late arrives 08:15. t1 is gone, so t2 arrives 08:50.
     let late = connection(|_| vec![delayed("t0", 8 * 3600, &[("s0", 8 * 3600), ("s1", 8 * 3600 + 600)], 300)]).unwrap();
     assert_eq!(late.arrival_secs, 8 * 3600 + 3000, "the predicted-late t0 misses t1");
     match &late.legs[0] {
@@ -247,9 +222,9 @@ fn a_late_first_bus_misses_the_scheduled_connection() {
 
 #[test]
 fn a_late_second_bus_makes_a_connection_the_schedule_misses() {
-    // t0 predicted 4 min late arrives 08:14, missing t1 at 08:12 on
-    // the schedule. But t1 is predicted 5 min late, leaving 08:17:
-    // the connection is made, arriving 08:35.
+    // t0 predicted 4 min late arrives 08:14 and misses t1 at 08:12 on the
+    // schedule. But t1 is predicted 5 min late and leaves 08:17, so the
+    // connection is made and arrives 08:35.
     let it = connection(|_| {
         vec![
             delayed("t0", 8 * 3600, &[("s1", 8 * 3600 + 600)], 240),
@@ -261,7 +236,7 @@ fn a_late_second_bus_makes_a_connection_the_schedule_misses() {
     match &it.legs[..] {
         [Leg::Transit { trip: a, board_secs, board_delay_secs, .. }, Leg::Transit { trip: b, .. }] => {
             assert_eq!((a.as_str(), b.as_str()), ("t0", "t1"));
-            // s0 is before t0's first stated delay: on schedule.
+            // s0 is before t0's first stated delay, so it stays on schedule.
             assert_eq!((*board_secs, *board_delay_secs), (8 * 3600, None));
         }
         other => panic!("t0 then t1, got {other:?}"),
@@ -271,7 +246,6 @@ fn a_late_second_bus_makes_a_connection_the_schedule_misses() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Law 5: cancelled trips are not in the world the router plans.
     #[test]
     fn a_cancelled_trip_is_never_ridden(
         (n_stops, trips, from, to, depart) in feed(),
@@ -291,9 +265,8 @@ proptest! {
             })
             .collect();
         let net = RouterNetwork::build(&network, &day, DATE, Some(&empty_live_with(cancelled)));
-        // Stops too far apart to walk between: the plan rides.
 
-        // The oracle world keeps only the trips that run. The stops stay. A
+        // The oracle world keeps only the trips that run, and all the stops. A
         // stop that no trip serves is still a place to walk from.
         let running: Vec<_> = trips.iter().enumerate().filter(|(i, _)| !cancel[*i]).map(|(_, t)| t).collect();
         let got = plan(&net, from, to, depart);
@@ -313,7 +286,6 @@ proptest! {
 
 #[test]
 fn a_cancelled_connection_waits_for_the_next_bus() {
-    // t1 (08:12 → 08:30) is cancelled: t0 then t2, arriving 08:50.
     let it = connection(|day| {
         let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
         vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
@@ -326,7 +298,6 @@ fn a_cancelled_connection_waits_for_the_next_bus() {
 
 #[test]
 fn a_skipped_stop_is_not_boarded() {
-    // t1 skips s1, where the rider would board it: t0 then t2.
     let it = connection(|day| {
         let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
         vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",

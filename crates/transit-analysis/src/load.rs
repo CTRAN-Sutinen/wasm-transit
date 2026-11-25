@@ -1,9 +1,3 @@
-//! The kernel's load of a weighted layer (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_layer` answers: what the layer holds and the weights it can be
-/// read by (each numeric property, with its total). It is the whole answer
-/// the layer's import shows; a coverage op names the field.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LayerLoaded {
     pub layer_hash: String,
@@ -13,9 +7,8 @@ pub struct LayerLoaded {
     pub fields: Vec<crate::LayerField>,
 }
 
-/// Weighted layers (GeoJSON points and polygons: people, jobs, households;
-/// D-47), by the hash of their bytes. Which property is the weight is the
-/// coverage op's question, so the bytes are the whole document.
+/// The hash is of the bytes, because the coverage op chooses the weight
+/// property later (D-47, D-239).
 impl transit_version::Load for crate::WeightedLayer {
     const ID: &'static str = "layer";
     const NAME: &'static str = "layer";

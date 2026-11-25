@@ -1,12 +1,7 @@
-//! The notes capability's worked examples (its `examples` feature): for
-//! each op, the documents to load and the request. The generator runs
-//! them through this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 use transit_notes::NoteTarget;
 
-/// The cancelled trip the fixture notes are about.
 fn trip() -> NoteTarget {
     NoteTarget::Trip { trip: "t10".into(), date: "2026-10-23".into(), start_secs: 28800 }
 }
@@ -19,7 +14,6 @@ pub fn examples() -> Vec<Example> {
         notes.notes.iter().map(|(id, n)| (id.clone(), json!({ "version": transit_notes::SCHEMA_VERSION, "value": n }))).collect();
     vec![
         Example { bytes: None, kinds: vec![], op: "validate", loads: vec![], request: json!({ "op": "validate", "notes": notes }) },
-        // Customer service notes a rider's call about the cancelled trip.
         Example {
             bytes: None, kinds: vec![],
             op: "write",
@@ -34,8 +28,6 @@ pub fn examples() -> Vec<Example> {
             loads: load(),
             request: json!({ "op": "between", "notes_hash": notes_hash, "from": fixtures::NOTES_DAY.0, "to": fixtures::NOTES_DAY.1 }),
         },
-        // Dispatch notes the first note of the day in an empty log: the
-        // server stamps it with the verified writer and its clock.
         Example {
             bytes: None, kinds: vec![],
             op: "receive",
@@ -44,7 +36,6 @@ pub fn examples() -> Vec<Example> {
                              "ops": [{ "cap": "notes", "op": "write", "args": { "id": "n1", "target": trip(), "text": "No operator. Trip cancelled." } }] }),
         },
         Example { bytes: None, kinds: vec![], op: "log_records", loads: load(), request: json!({ "op": "log_records", "notes_hash": notes_hash }) },
-        // The notes document assembled from the log's records.
         Example { bytes: None, kinds: vec![], op: "log_document", loads: vec![], request: json!({ "op": "log_document", "records": records }) },
     ]
 }

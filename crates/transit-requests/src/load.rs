@@ -1,17 +1,9 @@
-//! The kernel's load of a stop requests document (D-239). Its line in the
-//! kind list (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_stop_requests` answers: the hash, and how many requests the
-/// document holds.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StopRequestsLoaded {
     pub requests_hash: String,
     pub requests: u32,
 }
 
-/// Stop requests documents (the planning team's requests for work at a
-/// stop, each tracking its work order, D-159), refused unless a write
-/// could store them, each refusal named.
 impl transit_version::Load for crate::StopRequests {
     const ID: &'static str = "stop_requests";
     const NAME: &'static str = "stop requests document";

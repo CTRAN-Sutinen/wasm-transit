@@ -1,5 +1,4 @@
-//! The network's geometry answers: a pattern draws the alignment it
-//! runs, else its stops joined; an entity frames every pattern it runs.
+//! Pattern lines and entity focus (`pattern_alignment`, `entity_focus`).
 
 use transit_network::{entity_focus, pattern_alignment, Alignment, AlignmentPoint, Coord, EntityKind, Network};
 
@@ -11,7 +10,6 @@ fn c(lat: f64, lon: f64) -> Coord {
     Coord { lat, lon }
 }
 
-/// `pattern` runs a new alignment drawn through `points`.
 fn run(net: &mut Network, pattern: &str, points: &[Coord]) {
     let points = points.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect();
     net.alignments.insert("line".into(), Alignment { points, extra: Default::default() });

@@ -45,7 +45,7 @@ The refusals are:
 
 Nothing else is refused. A request's fields are the worksheet's, as the planner gives them.
 
-When there is no refusal, the answer is the canonical document and its `document_hash`. The document holds requests by id, and it keeps every field that this repo does not know. The module is the hash authority. The hash is the same hash that `load_stop_requests` answers.
+When there is no refusal, the answer is the canonical document and its `document_hash`. The document holds requests by id, and it keeps every field that this repo does not know. The hash is the same hash that `load_stop_requests` answers.
 
 A document whose `schema_version` this build does not read is an error.
 

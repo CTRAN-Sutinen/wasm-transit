@@ -5,14 +5,12 @@
     },
     "FrozenVersion": {
       "additionalProperties": true,
-      "description": "One frozen version: a network the agency wrote to the record by its\nhash, and what it is. Its plan frame (the plan's id, name, and date)\nis the network's own.",
       "properties": {
         "effective_from": {
-          "description": "\"YYYY-MM-DD\": the date the plan would take effect.",
           "type": "string"
         },
         "from_network_hash": {
-          "description": "The frozen version this one was made from, by its network hash:\na version a migration brought forward to a newer network version\npins its source (D-232). Absent: the version was written as it is.",
+          "description": "The network hash of the frozen version that a migration brought\nforward (D-232).",
           "format": "content-hash",
           "type": [
             "string",
@@ -24,7 +22,6 @@
           "type": "string"
         },
         "network_hash": {
-          "description": "\"sha256:<hex>\" of the version's canonical network document.",
           "format": "content-hash",
           "type": "string",
           "x-references": "network"
@@ -33,7 +30,7 @@
           "type": "string"
         },
         "purpose": {
-          "description": "What the version is, in the agency's words: \"proposal for public\ncomment\", \"board packet\".",
+          "description": "In the agency's words, such as \"board packet\".",
           "type": "string"
         }
       },
@@ -49,12 +46,11 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "Every version the agency froze, by network hash: the document the\nplans log holds beside the published plan set. A version stays when\nit is adopted, so every network that was ever in force is here, with\nthe proposals that led to it.",
+  "description": "A version stays when adopted, so every network that was ever in force is\nhere (D-191).",
   "properties": {
     "kind": {
       "$ref": "#/$defs/FrozenKind",
-      "default": "frozen_versions",
-      "description": "The kind tag (D-115): `\"frozen_versions\"`."
+      "default": "frozen_versions"
     },
     "schema_version": {
       "format": "uint32",
@@ -65,7 +61,6 @@
       "additionalProperties": {
         "$ref": "#/$defs/FrozenVersion"
       },
-      "description": "The versions by network hash.",
       "type": "object"
     }
   },

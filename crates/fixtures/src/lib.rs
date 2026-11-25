@@ -1,29 +1,18 @@
-//! The worked examples' fixtures (D-235): the fixture network, streets,
-//! and live feed as each capability's examples read them, the fixture
-//! documents of each kind, and the fixed clocks. The examples compute
-//! real answers over them through the same libraries the modules run.
-//!
-//! A class of its own (the arch gates, `crates/cap-abi/src/bin/common/
-//! gates.rs`). The generator, a capability's `examples` feature, or a
-//! dev-dependency may name it. No module's closure holds it.
+//! The fixtures that the worked examples read (D-235). The generator, a
+//! capability's `examples` feature, or a dev-dependency may name this crate.
+//! No module's closure holds it (arch gates,
+//! `cap-abi/src/bin/common/gates.rs`).
 
 #![forbid(unsafe_code)]
 
 use sha2::{Digest as _, Sha256};
 
-/// The fixture watchlist: a rider's two saved stops, as the kernel's
-/// load and the board's example read it.
 pub fn fixture_watchlist() -> transit_rider::watchlist::Watchlist {
     let stop = |id: &str, label: &str| transit_rider::watchlist::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
     transit_rider::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
-/// The network examples' real context: the fixture's derived document
-/// (canonical hash, the module's formula), and its exported zip (content
-/// hash of the deterministic bytes).
 pub struct NetworkExampleContext {
-    /// The typed derived document. The analysis examples compute
-    /// real answers over it.
     pub network: transit_network::Network,
     pub derived: serde_json::Value,
     pub boundary: serde_json::Value,
@@ -92,17 +81,14 @@ pub fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContex
     })
 }
 
-/// The parsed e2e fixture feed (for the gtfs capability's dispatch
-/// read examples).
 pub fn fixture_gtfs() -> Option<transit_codec::Feed> {
     let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip");
     let bytes = std::fs::read(fixture).ok()?;
     transit_codec::Feed::from_zip_bytes(&bytes).ok()
 }
 
-/// The street capability's examples' context: the e2e street
-/// fixture imported through the shared library, with the Elbow
-/// corner snap/route answers computed over the real graph.
+/// The e2e street fixture, with the snap and route answers at the Elbow
+/// corner.
 pub struct StreetsExampleContext {
     pub streets: transit_streets::Streets,
     pub streets_hash: String,
@@ -134,9 +120,6 @@ pub fn streets_example_context() -> Option<StreetsExampleContext> {
     Some(StreetsExampleContext { streets, streets_hash, segments, nodes, pos_a, pos_b, points, length_m, streets_along })
 }
 
-/// The rt join examples' context: the fixture network (imported
-/// through the codec, with its boundary) and the e2e rt payload, both
-/// through the shared libraries.
 pub struct RtExampleContext {
     pub network: transit_network::Network,
     pub network_hash: String,
@@ -164,8 +147,6 @@ pub fn rt_example_context() -> Option<RtExampleContext> {
     })
 }
 
-/// The live document over the fixture pair, the way the rt module
-/// mints it: the document and its hash.
 pub fn live_example() -> Option<(transit_live::LiveDay, String)> {
     let ctx = rt_example_context()?;
     let live = transit_rt::live_day(&ctx.network, &ctx.boundary, Some(&ctx.overview), None, None, transit_live::OnTimeWindow::default());
@@ -173,9 +154,6 @@ pub fn live_example() -> Option<(transit_live::LiveDay, String)> {
     Some((live, live_hash))
 }
 
-/// Worked examples: an agent reads these to learn the shapes.
-/// Requests carry the real feed hash computed above; responses
-/// carry the fixture's known answers.
 /// A stops document (D-153, D-154, D-157): one stop in service, given
 /// amenities, suspended for a while, then moved; one planned, then
 /// permitted.
@@ -199,14 +177,12 @@ pub fn fixture_stops() -> transit_stops::Stops {
     .expect("the fixture stops parse")
 }
 
-/// The moment the alerts examples are asked at (Unix seconds): the
-/// fixture Friday, 2026-10-23, in the morning.
+/// The fixture Friday, 2026-10-23, in the morning, in Unix seconds.
 pub const ALERTS_NOW: u64 = 1_792_756_800;
 
-/// Two alerts over the fixture network: route 10's detour at stop C,
-/// in English and Spanish, explaining the fixture's diversion; route
-/// 40's reduced service in one direction, for a day; and trip t10's
-/// 08:00 instance, which the live feed cancels (D-216).
+/// The alerts are route 10's detour at stop C (English and Spanish, explaining
+/// the fixture's diversion), route 40's reduced service in one direction for a
+/// day, and trip t10's 08:00 instance, which the live feed cancels (D-216).
 pub fn fixture_alerts() -> transit_alerts::ServiceAlerts {
     serde_json::from_value(serde_json::json!({
         "kind": "service_alerts", "schema_version": 2,
@@ -237,8 +213,7 @@ pub fn fixture_alerts() -> transit_alerts::ServiceAlerts {
     .expect("the fixture alerts parse")
 }
 
-/// The write a receive op's example runs: the first entry of an empty
-/// log, as the server gives it.
+/// The first entry of an empty log.
 pub fn receive_write(log: &str, writer: &str, at_ms: u64) -> transit_log::Write {
     let header = transit_log::Header {
         log: log.into(),
@@ -251,19 +226,17 @@ pub fn receive_write(log: &str, writer: &str, at_ms: u64) -> transit_log::Write 
     transit_log::Write { checkpoint: None, header, unread: vec![], references: None, read: None, now: None, today: None }
 }
 
-/// A receive op's answer, as its module writes it.
 pub fn receive_answer(received: &transit_log::Received) -> Option<serde_json::Value> {
     let mut answer = serde_json::to_value(received).ok()?;
     answer["op"] = "receive".into();
     Some(answer)
 }
 
-/// The span the notes examples ask about: 2026-10-23 in the fixture's
-/// zone (America/Montreal), as Unix seconds.
+/// Unix seconds for 2026-10-23 in the fixture's zone (America/Montreal).
 pub const NOTES_DAY: (u64, u64) = (1_792_728_000, 1_792_814_400);
 
-/// Two notes: one on trip t10's 08:00 instance on 2026-10-23, edited,
-/// and one on the detour alert.
+/// One note is on trip t10's 08:00 instance on 2026-10-23, edited. The other
+/// is on the detour alert.
 pub fn fixture_notes() -> transit_notes::Notes {
     serde_json::from_value(serde_json::json!({
         "kind": "notes", "schema_version": 1,
@@ -284,7 +257,7 @@ pub fn fixture_notes() -> transit_notes::Notes {
     .expect("the fixture notes parse")
 }
 
-/// One template: a stop closure, with blanks, in English and Spanish.
+/// A stop closure with blanks, in English and Spanish.
 pub fn fixture_templates() -> transit_alerts::AlertTemplates {
     serde_json::from_value(serde_json::json!({
         "kind": "alert_templates", "schema_version": 1,
@@ -299,8 +272,8 @@ pub fn fixture_templates() -> transit_alerts::AlertTemplates {
     .expect("the fixture templates parse")
 }
 
-/// Two stop requests: a new stop at 7001 with its work order open, and
-/// a repair at 6124 drafted.
+/// A new stop at 7001 with its work order open, and a repair at 6124
+/// drafted.
 pub fn fixture_requests() -> transit_requests::StopRequests {
     serde_json::from_value(serde_json::json!({
         "kind": "stop_requests", "schema_version": 2,
@@ -320,9 +293,9 @@ pub fn fixture_requests() -> transit_requests::StopRequests {
     .expect("the fixture requests parse")
 }
 
-/// The worked work rules: five minutes or a tenth of the run after
-/// every trip, route 10's own rule, routes 10 and 20 interlined, and an
-/// eight-hour run under report and clear times.
+/// Five minutes or a tenth of the run after every trip, route 10's own rule,
+/// routes 10 and 20 interlined, and an eight-hour run under report and clear
+/// times.
 pub fn fixture_work_rules() -> transit_runs::WorkRules {
     transit_runs::WorkRules { kind: Default::default(),
         schema_version: Default::default(),
@@ -343,15 +316,13 @@ pub fn fixture_work_rules() -> transit_runs::WorkRules {
     }
 }
 
-/// The plan-chain examples' plan set: a two-pick chain around the
-/// fixture's dates. The spring pick in force on the fixture Friday,
-/// the fall pick taking over after it.
-/// The host's date in the plan examples: before every fixture pick, so
-/// each publishes as a future one.
+/// Before every fixture pick, so each publishes as a future one.
 pub fn fixture_today() -> chrono::NaiveDate {
     chrono::NaiveDate::from_ymd_opt(2026, 1, 1).expect("a date")
 }
 
+/// The spring pick is in force on the fixture Friday. The fall pick takes
+/// over after it.
 pub fn fixture_plan_set() -> Vec<transit_plans::PlanInfo> {
     vec![
         transit_plans::PlanInfo {
@@ -367,10 +338,8 @@ pub fn fixture_plan_set() -> Vec<transit_plans::PlanInfo> {
     ]
 }
 
-/// The dispatch examples' edit document: the fixture diversion
-/// (route 10 keeps A→B, skips C, +300 s on the fixture Friday).
-/// The divert examples' draft: route 10 kept end to end on its
-/// default pattern, five minutes added, on the fixture Friday.
+/// Route 10 kept end to end on its default pattern, five minutes added, on
+/// the fixture Friday.
 pub fn divert_example_draft(network: &transit_network::Network) -> Option<transit_dispatch::DiversionDraft> {
     let mut draft = transit_dispatch::DiversionDraft {
         route_id: "10".into(),
@@ -389,12 +358,10 @@ pub fn divert_example_draft(network: &transit_network::Network) -> Option<transi
     Some(draft)
 }
 
-/// A record's identity in a log, as cap-log computes it.
 pub fn log_record_hash(value: &serde_json::Value) -> String {
     cap_abi::canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
 }
 
-/// A fixture log entry's header.
 pub fn fixture_log_header(seq: u64, at_ms: u64, op: &str, key: Option<&str>) -> transit_log::Header {
     transit_log::Header {
         log: "stops".into(),
@@ -406,8 +373,6 @@ pub fn fixture_log_header(seq: u64, at_ms: u64, op: &str, key: Option<&str>) -> 
     }
 }
 
-/// The fixture stops document's and requests document's records, each
-/// the collection's records then the document's own record.
 pub fn fixture_log_records() -> (Vec<transit_log::KindRecords>, Vec<transit_log::KindRecords>) {
     let stops = serde_json::to_value(fixture_stops().checked().expect("the fixture stops are valid")).unwrap();
     let requests = serde_json::to_value(fixture_requests().checked().expect("the fixture requests are valid")).unwrap();
@@ -417,9 +382,8 @@ pub fn fixture_log_records() -> (Vec<transit_log::KindRecords>, Vec<transit_log:
     )
 }
 
-/// The fixture stops log: the stops and requests seeded (entry 1), then
-/// a request completed and its stop's event added in one entry (entry
-/// 2). Answers the fold after them and the two entries.
+/// Entry 1 seeds the stops and requests. Entry 2 completes a request and adds
+/// its stop's event.
 pub fn fixture_stops_log() -> (transit_log::Checkpoint, Vec<transit_log::Entry>) {
     let (stops, requests) = fixture_log_records();
     let mut fold = transit_log::Checkpoint::empty("stops");
@@ -469,35 +433,28 @@ pub fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {
     }]
 }
 
-/// The e2e fixture feed's bytes (`web/e2e/fixtures/sample-gtfs.zip`).
 pub fn feed_bytes() -> Vec<u8> {
     std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).expect("the fixture feed")
 }
 
-/// The fixture feed's hash, as the kernel's `load_feed` answers it.
 pub fn feed_hash() -> String {
     format!("sha256:{:x}", Sha256::digest(feed_bytes()))
 }
 
-/// The fixture network's context: the feed imported, its document, and
-/// its export.
 pub fn network() -> NetworkExampleContext {
     network_example_context(&feed_bytes()).expect("the fixture feed imports")
 }
 
-/// A kernel load request: `{"op": op, field: document}`.
 pub fn load(op: &str, field: &str, document: impl serde::Serialize) -> serde_json::Value {
     let mut request = serde_json::json!({ "op": op });
     request[field] = serde_json::to_value(document).expect("a fixture document serializes");
     request
 }
 
-/// The kernel load of the fixture feed (its bytes on the JSON lane).
 pub fn load_feed() -> serde_json::Value {
     load("load_feed", "bytes", feed_bytes())
 }
 
-/// The kernel load of a network document.
 pub fn load_network(network: impl serde::Serialize) -> serde_json::Value {
     load("load_network", "network", network)
 }

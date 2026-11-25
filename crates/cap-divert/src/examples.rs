@@ -1,8 +1,3 @@
-//! The worked examples of the diversion capability (its `examples` feature):
-//! the documents to load and each request. The generator runs them through
-//! this crate's `invoke` and records the answers. Each runs over the fixture
-//! network: route 10 anchored end to end on its default pattern.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -23,8 +18,6 @@ pub fn examples() -> Vec<Example> {
             request: json!({ "op": "propose", "network_hash": net.network_hash, "draft": draft, "edits": transit_sync::EditDocument::default(),
                              "record_id": "e2", "now_ms": now_ms }),
         },
-        // The 08:00 trip on the fixture's Friday, appended beside the
-        // fixture's diversion.
         Example {
             bytes: None, kinds: vec![],
             op: "cancel",
@@ -32,7 +25,6 @@ pub fn examples() -> Vec<Example> {
             request: json!({ "op": "cancel", "network_hash": net.network_hash, "edits": edits, "record_id": "e2",
                              "trip_id": "t10", "date": "2026-10-23", "now_ms": now_ms }),
         },
-        // Retire the fixture's diversion, and restore it once retired.
         Example {
             bytes: None, kinds: vec![],
             op: "retire",

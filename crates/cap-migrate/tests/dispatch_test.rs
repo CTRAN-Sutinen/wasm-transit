@@ -1,14 +1,10 @@
-//! cap-migrate's seam laws (docs/FORMATS.md, "Versions"):
+//! Pins `migrate` and `version` (`OPS.md`, docs/FORMATS.md, "Versions"):
 //!
-//! * a v1 network, edit document, watchlist, and service alerts document
-//!   each come forward to the version this build reads. The answer's hash is
-//!   the one the kernel registers the migrated bytes under (one identity on
-//!   every host);
-//! * the chain's losses come back as notes, each naming its step;
-//! * a document already current is refused (nothing to migrate); a
-//!   newer one is refused naming both versions; an unknown kind names
-//!   the kinds it knows;
-//! * `version` answers a document's version and the version read.
+//! 1. A v1 document of each kind comes forward to the current version, under
+//!    the hash that the kernel registers the migrated bytes under.
+//! 2. The chain's losses come back as notes, each naming its step.
+//! 3. A current document is refused, a newer one is refused naming both
+//!    versions, and an unknown kind names the kinds that it knows.
 
 use cap_migrate::{dispatch_json, KINDS};
 use serde_json::{json, Value};
@@ -39,7 +35,6 @@ fn an_untagged_network_comes_forward_under_the_kernels_identity() {
     assert_eq!((answer["from"].as_u64(), answer["to"].as_u64()), (Some(1), Some(transit_network::SCHEMA_VERSION as u64)));
     assert_eq!(answer["notes"], json!([]));
     let canonical = answer["canonical"].as_str().unwrap();
-    // canonical bytes (RFC 8785, D-169): keys sorted, the tags among them
     assert!(canonical.contains("\"kind\":\"network\"") && canonical.contains("\"schema_version\":2"), "{canonical}");
     assert_eq!(canonical, cap_abi::canonical_bytes(&serde_json::from_str::<serde_json::Value>(canonical).unwrap()).unwrap(), "the bytes are canonical");
     let loaded = cap_abi::parse_versioned::<transit_network::Network>(canonical.as_bytes()).expect("the kernel reads what migrate answers");

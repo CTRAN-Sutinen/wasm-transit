@@ -1,16 +1,9 @@
-//! The kernel's load of a service alerts document and an alert templates document (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_service_alerts` answers: the hash, and how many alerts the
-/// document holds.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ServiceAlertsLoaded {
     pub alerts_hash: String,
     pub alerts: u32,
 }
 
-/// Service alerts documents (the agency's alerts in the network's ids,
-/// D-206), refused unless a write could store them, each refusal named.
 impl transit_version::Load for crate::ServiceAlerts {
     const ID: &'static str = "service_alerts";
     const NAME: &'static str = "service alerts document";
@@ -36,16 +29,12 @@ impl transit_version::Load for crate::ServiceAlerts {
     }
 }
 
-/// What `load_alert_templates` answers: the hash, and how many templates
-/// the document holds.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AlertTemplatesLoaded {
     pub templates_hash: String,
     pub templates: u32,
 }
 
-/// Alert templates documents (the agency's standard language with blanks,
-/// D-210), refused unless a write could store them, each refusal named.
 impl transit_version::Load for crate::AlertTemplates {
     const ID: &'static str = "alert_templates";
     const NAME: &'static str = "alert templates document";

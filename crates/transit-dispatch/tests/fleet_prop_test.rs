@@ -1,6 +1,5 @@
-//! `fleet_summary` folds the day's blocks into one answer (QAF-3, QAF-15;
-//! crates/cap-runcut/OPS.md "fleet_summary"). The oracle recomputes it from the
-//! materialized day.
+//! `fleet_summary` (crates/cap-runcut/OPS.md "fleet_summary"). The oracle
+//! recomputes it from the materialized day.
 //!
 //! 1. The peak vehicles, when it is first reached, and the platform, revenue,
 //!    and layover hours equal the oracle's, which finds the peak by brute force
@@ -10,7 +9,7 @@
 //! 3. Trips left unassigned to a block are the document's warning, not
 //!    vehicles. An empty day answers zero fleet.
 //! 4. Each running block has an outline: its span, trip count, and longest
-//!    internal gap (QAF-15).
+//!    internal gap.
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -82,8 +81,6 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
                 extra: Default::default(),
         },
     );
-    // Partition the sorted, unique starts into consecutive blocks. The trailing
-    // `unassigned_tail` starts belong to no block.
     let mut blocks = std::collections::BTreeMap::new();
     let mut trips = starts;
     let total = trips.len();
@@ -119,15 +116,12 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// Every number `fleet_summary` reports is recomputed by hand from the
-    /// materialized day (laws 1 to 4).
     #[test]
     fn fleet_summary_matches_the_span_oracle(
         slots in proptest::collection::vec(0u16..96, 0..=10),
         block_sizes in proptest::collection::vec(1u8..=3, 0..=6),
         unassigned_tail in 0u8..3,
     ) {
-        // Distinct, sorted starts. One vehicle per block runs them in turn.
         let starts: Vec<u32> = {
             let mut s: Vec<u32> = slots.into_iter().map(|x| x as u32 * 600).collect();
             s.sort_unstable();
@@ -137,7 +131,6 @@ proptest! {
         let net = build_network(starts.clone(), block_sizes, unassigned_tail);
         let day = materialize(&net, day()).expect("materialize");
 
-        // Oracle: per running block, span and runtime.
         let mut spans: Vec<(u32, u32)> = Vec::new();
         let mut outlines: Vec<(String, u32, u32, u32, Option<(u32, u32)>)> = Vec::new();
         let mut platform = 0u64;
@@ -160,8 +153,6 @@ proptest! {
                 .unwrap();
             spans.push((first, last));
             platform += (last - first) as u64;
-            // The longest wait between one trip's end and the next trip's
-            // start, in start order. Ties go to the first.
             let mut ordered: Vec<(u32, u32)> = running
                 .iter()
                 .map(|t| (t.start_secs, t.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs)).unwrap_or(t.start_secs)))
@@ -181,7 +172,6 @@ proptest! {
                 revenue += (end - t.start_secs) as u64;
             }
         }
-        // The peak by brute force: every boundary time, half-open.
         let mut peak = 0u32;
         let mut peak_at = None;
         for &(start, end) in &spans {
@@ -213,7 +203,6 @@ proptest! {
             .collect();
         prop_assert_eq!(got, outlines, "each running block's outline, in block order");
 
-        // An empty day answers zero fleet. It never errors.
         let saturday = materialize(&net, NaiveDate::from_ymd_opt(2026, 1, 10).unwrap()).expect("materialize");
         let quiet = fleet_summary(&net, &saturday);
         prop_assert_eq!((quiet.blocks, quiet.peak_vehicles), (0, 0));

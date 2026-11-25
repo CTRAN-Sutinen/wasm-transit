@@ -1,16 +1,5 @@
-//! Native dispatch tests for the calendar capability. These test the seam
-//! without wasm, over the real fixture-derived network (the same document
-//! cap-network's import produces from the e2e zip). The laws (the library
-//! carries the day-level detail in transit-dispatch's own suite; these pin
-//! the seam):
-//!
-//! 1. the network document's identity is the module's canonical
-//!    serialization (the same identity cap-analysis returns);
-//! 2. the answer comes from the effective day. This is the honesty law:
-//!    a key whose every trip is skipped or unrepresentable is not
-//!    running, however its calendar reads;
-//! 3. invalid edit records are reported at load, never rejected;
-//! 4. unknown hashes and garbage are errors, never panics.
+//! Dispatch tests for cap-calendar over the fixture-derived network
+//! (`OPS.md`). The day-level detail is in transit-dispatch's suite.
 
 use cap_calendar::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use sha2::Digest;
@@ -20,8 +9,6 @@ use transit_sync::{EditRecord, EditStatus};
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 
-/// The fixture-derived network document. Import is the codec, at the
-/// boundary. This module composes over the document it produces.
 fn derived_network() -> Network {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
     transit_codec::import(&feed).network
@@ -68,12 +55,10 @@ fn service_dates(
 #[test]
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
-    // Every network-consuming module uses the same formula: the canonical
-    // bytes (RFC 8785, D-169) hashed. One document, one truth.
+    // RFC 8785 canonical bytes (D-169).
     let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
-    // Idempotent: the same document loads to the same hash.
     assert_eq!(load_network(), hash);
 }
 
@@ -81,24 +66,18 @@ fn the_network_identity_is_the_modules_canonical_serialization() {
 fn the_answer_comes_from_the_effective_day() {
     let network_hash = load_network();
 
-    // The fixture Friday: WK runs. HOL's only trip is single-stop, so the
-    // import drops it and reports it. HOL runs nothing, though its calendar
-    // is in the document. This is the honest answer.
+    // HOL's only trip is single-stop, so the import drops it.
     assert_eq!(
         active_services(&network_hash, None, DATE),
         vec!["WK".to_string()],
         "the day answers, not the calendar rules"
     );
 
-    // A no-service day answers empty, never an error.
     assert!(
         active_services(&network_hash, None, "2026-10-24").is_empty(),
         "Saturday carries nothing"
     );
 
-    // The honesty law: HOL's calendar runs on the Friday. The import keeps
-    // every calendar the feed names. Yet the day answers WK alone. The
-    // calendar rule never stands in for service.
     let net = derived_network();
     let friday = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
     assert!(
@@ -110,11 +89,7 @@ fn the_answer_comes_from_the_effective_day() {
 #[test]
 fn edits_can_take_a_key_off_the_board() {
     let network_hash = load_network();
-    // Skip every stop of route 20's trips on the fixture Friday. The WK key
-    // that only exists through those trips leaves the board. (The fixture's
-    // WK also carries route 10. So this record only proves the mechanism when
-    // it removes a whole key. Instead, the law pins the honest mechanics: the
-    // answer never includes a key with no running trips.)
+    // Route 20's trips are skipped. Route 10 also carries WK, so WK stays.
     let records = vec![EditRecord {
         id: "e1".into(),
         diversion: Some(transit_sync::Diversion {
@@ -137,9 +112,6 @@ fn edits_can_take_a_key_off_the_board() {
         extra: Default::default(),
     }];
     let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0;
-    // WK still runs (route 10 carries it). The answer is unchanged. The
-    // mechanism is pinned by construction: the answer derives from the patched
-    // day. A key only leaves when its every trip leaves.
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()]
@@ -150,9 +122,7 @@ fn edits_can_take_a_key_off_the_board() {
 fn the_reverse_read_names_a_types_dates() {
     let network_hash = load_network();
 
-    // The fixture pins the reverse read. WK runs every weekday of its 2026
-    // range, except 2026-10-29. calendar_dates.txt removes that date. The
-    // window crosses the exception, so the answer must carry it.
+    // calendar_dates.txt removes 2026-10-29.
     let dates = service_dates(&network_hash, None, "WK", "2026-10-23", "2026-11-03");
     assert_eq!(
         dates,
@@ -163,9 +133,8 @@ fn the_reverse_read_names_a_types_dates() {
         "every fixture weekday except the removed 10-29"
     );
 
-    // The two-way agreement at the seam, for every date of the window and
-    // every service key the day answers. A date the rule names is exactly a
-    // date the day fold lists the key on.
+    // A date that `service_dates` names is a date that `active_services`
+    // lists the key on.
     for day in ["2026-10-23", "2026-10-24", "2026-10-25", "2026-10-29"] {
         let keys = active_services(&network_hash, None, day);
         for key in ["WK", "SUN"] {
@@ -178,12 +147,9 @@ fn the_reverse_read_names_a_types_dates() {
         }
     }
 
-    // Id-lookup honesty: an unknown type and an inverted window
-    // answer empty, never an error.
     assert!(service_dates(&network_hash, None, "NOPE", "2026-10-23", "2026-11-03").is_empty());
     assert!(service_dates(&network_hash, None, "WK", "2026-11-03", "2026-10-23").is_empty());
 
-    // Garbage dates and unknown hashes are errors, never panics.
     let err = dispatch(Request::ServiceDates {
         network_hash: network_hash.clone(),
         edits_hash: None,
@@ -207,10 +173,6 @@ fn the_reverse_read_names_a_types_dates() {
 #[test]
 fn the_reverse_read_comes_from_the_effective_day() {
     let network_hash = load_network();
-    // The same fixture diversion as the active_services law. It is in force on
-    // 2026-10-23 only, and it cannot take WK off the board. So the reverse read
-    // is unchanged wherever it runs. The edits window answers from the patched
-    // day.
     let records = vec![EditRecord {
         id: "e1".into(),
         diversion: Some(transit_sync::Diversion {
@@ -243,9 +205,8 @@ fn the_reverse_read_comes_from_the_effective_day() {
 #[test]
 fn an_invalid_edit_record_moves_nothing() {
     let network_hash = load_network();
-    // A record whose anchors do not exist in the network is registered all the
-    // same. The sync contract says the host owns the document. cap-divert's
-    // reports say what is wrong with it. The day view finds nothing to patch.
+    // The host owns the edit document, so a record with no anchors in the
+    // network still registers.
     let mut broken = EditRecord {
         id: "e1".into(),
         diversion: Some(transit_sync::Diversion {
@@ -297,9 +258,6 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed straight into the
-    // model, with no request envelope. It answers exactly what the JSON op
-    // answers. Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_calendar::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();

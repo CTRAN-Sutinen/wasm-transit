@@ -1,14 +1,5 @@
-//! The authoring laws: `apply_edits` over the committed planner
-//! network (testdata/network.json: stops A/B/C, route 10, one
-//! pattern, one weekday schedule, block 400 with a layover at C).
-//!
-//! 1. the input document is never mutated; no edits is identity;
-//! 2. a change is atomic: one edit that cannot apply rejects the
-//!    whole list, naming its position;
-//! 3. removal refuses while anything references the entity, and
-//!    succeeds once the references are gone (no dangling documents);
-//! 4. upserts are the planner's verbs: a changed trip list changes
-//!    the materialized day, a plan frame stamps the pick.
+//! `apply_edits` over the committed planner network (testdata/network.json).
+//! The edit semantics are in cap-author/OPS.md.
 
 use chrono::NaiveDate;
 use transit_network::{
@@ -47,7 +38,6 @@ fn a_change_is_atomic() {
     let err = apply_edits(&net, &edits).unwrap_err();
     assert_eq!(err.index, 1, "the failing edit is named by position");
     assert!(err.reason.contains("unknown route ghost"), "{err}");
-    // Nothing of the change escaped: the caller still holds `net`.
     assert_eq!(net.name, "Planner Network");
 }
 
@@ -64,8 +54,6 @@ fn removal_refuses_while_referenced() {
     refused(remove(|id| NetworkEdit::RemoveServiceType { id }, "weekday"), "governs pattern trips 10-weekday");
     refused(remove(|id| NetworkEdit::RemovePatternTrips { id }, "10-weekday"), "trips in block 400");
 
-    // Dependents first, then the entity: the whole route comes out
-    // and the document stays valid (no dangling reference anywhere).
     let teardown: Vec<NetworkEdit> = vec![
         remove(|id| NetworkEdit::RemoveBlock { id }, "400"),
         remove(|id| NetworkEdit::RemovePatternTrips { id }, "10-weekday"),
@@ -83,8 +71,6 @@ fn removal_refuses_while_referenced() {
 #[test]
 fn upserts_are_the_planners_verbs() {
     let net = network();
-    // The weekday trips gain a midday trip, through the model's own
-    // vocabulary.
     let mut pattern_trips = net.pattern_trips["10-weekday"].clone();
     let mut midday = pattern_trips.trips[0].clone();
     midday.id = "midday".into();
@@ -106,8 +92,8 @@ fn upserts_are_the_planners_verbs() {
     assert_eq!(next.plan.id, "spring", "the pick frame is stamped");
     assert!(validation_issues(&next).is_empty());
 
-    // An upsert that drops a block's trip is applied (a document
-    // mid-edit may be invalid) and validation names the break.
+    // A document may be invalid mid-edit, so the edit applies and validation
+    // names the break.
     let mut stranded = net.pattern_trips["10-weekday"].clone();
     stranded.trips.remove(0);
     let broken = apply_edits(&net, &[NetworkEdit::UpsertPatternTrips { id: "10-weekday".into(), pattern_trips: stranded }]).unwrap();
@@ -121,16 +107,12 @@ fn upserts_are_the_planners_verbs() {
 
 #[test]
 fn a_retime_keeps_the_trip_and_its_runcut() {
-    // Block 400 carries the 08:00 and 08:30 trips by id. Moving the
-    // 08:00 trip to 08:05 keeps its id, so the block still runs it and
-    // the layover still fits.
     let net = network();
     let next = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 29_100 }]).unwrap();
     let (_, _, moved) = next.trip("10-weekday@28800").expect("same id");
     assert_eq!(moved.departs, Departs::At { start_secs: 29_100 });
     assert_eq!(next.blocks, net.blocks);
     assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
-    // Past the next trip's start, the block cannot run it: reported.
     let late = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 30_300 }]).unwrap();
     assert!(!validation_issues(&late).is_empty());
 
@@ -160,7 +142,6 @@ fn trips_are_added_and_removed_by_id() {
     .unwrap_err();
     assert!(refused.reason.contains("already exists"), "{refused}");
 
-    // Removing a blocked trip closes the block up; its layover goes.
     let next = apply_edits(&net, &[NetworkEdit::RemoveTrip { trip: "10-weekday@28800".into() }]).unwrap();
     assert!(next.trip("10-weekday@28800").is_none());
     assert_eq!(next.blocks["400"].trips.len(), 1);

@@ -1,16 +1,6 @@
-// Real-data soak: the Clark County Trapeze roads export. The file is
-// ~100 MB and lives outside the repo, so the test is gated on
-// COUNTY_GEOJSON pointing at the downloaded geojson. It skips
-// silently otherwise, which keeps `just check` hermetic.
-//
-// What it proves that the synthetic fixtures cannot: the import reads
-// a production-sized layer into a streets document, the export's
-// railroads and water lines stay out of it (D-30), and one-way travel
-// is respected on real digitized geometry (NW 10TH AVE is `>`
-// northbound; the southbound trip must loop through the grid, never
-// the segment). It prints the document's JSON size: the number the
-// browser pays to hold it (crates/transit-streets/src/lib.rs).
-
+// Real-data soak on the Clark County Trapeze roads export. The file is about
+// 100 MB and lives outside the repo, so the test skips silently unless
+// COUNTY_GEOJSON names it. That keeps `just check` hermetic.
 #[test]
 fn county_export_parses_and_respects_one_ways() {
     let Ok(path) = std::env::var("COUNTY_GEOJSON") else {
@@ -39,9 +29,8 @@ fn county_export_parses_and_respects_one_ways() {
     }
     assert!(net.segment_count() > 500_000, "production-sized, not a stub");
 
-    // NW 10TH AVE, OneWay ">": digitized
-    // (-122.681412333, 45.530829395) -> (-122.681435787, 45.531537199)
-    // Legal travel is northbound only.
+    // NW 10TH AVE has OneWay ">" and is digitized northbound, so legal
+    // travel is northbound only.
     let south = net.snap(45.53085, -122.68141).expect("snap south");
     let north = net.snap(45.53150, -122.68144).expect("snap north");
     assert_eq!(south.seg, north.seg, "both on NW 10TH AVE");

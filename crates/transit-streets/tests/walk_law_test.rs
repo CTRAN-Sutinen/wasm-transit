@@ -1,36 +1,10 @@
-//! The walk laws: how long a rider walks between two stops, along the
-//! streets.
+//! Pins the walk table and the walks from a point against an oracle that
+//! rebuilds the walking graph with its own snap and Dijkstra
+//! (`crates/cap-streets/OPS.md` "walks" and "access", D-25, D-26).
 //!
-//! The intent they encode (crates/transit-streets/src/lib.rs, the walk
-//! table; the user's answers to D-25 and D-26):
-//!
-//! * **Walks follow the streets document**, whatever source filled it.
-//! * **The walking profile is strict**: a rider walks every class but
-//!   motorway, ramp, and unknown.
-//! * **A rider walks a one-way street both ways.** One-way is a
-//!   vehicle restriction, so every walk is symmetric.
-//! * **A walk is the stop's walk to its street, the street distance,
-//!   and the walk from the street to the other stop**: each stop
-//!   snaps to the nearest walkable street (the graph's snap
-//!   neighborhood); a stop that snaps to none walks nowhere.
-//! * **Time is distance over the walking speed**, rounded up to the
-//!   second, and a walk longer than the limit is no walk. The speed
-//!   and the limit are parameters; their defaults are 1.3 m/s and
-//!   ten minutes.
-//!
-//! * **A point walks as a stop there would**: the walks from a point
-//!   (a tapped spot, the rider's location) to the stops are the walk
-//!   table's from a stop at the point, and each walk carries its
-//!   path: from the point, along walkable streets, to the stop, as
-//!   long as the walk.
-//!
-//! The oracle rebuilds the walking graph from the document with its
-//! own code: its own snap (brute force over the snap neighborhood),
-//! its own Dijkstra. It shares nothing with the implementation.
-//! "The nearest street" does not choose between streets equally near
-//! (two overlapping lines that never join, as layers draw a path over
-//! a street): the oracle accepts the walk from any equally near
-//! position.
+//! The oracle accepts the walk from any of several equally near positions,
+//! because the nearest street is not unique where two lines overlap without
+//! joining.
 
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
@@ -44,7 +18,6 @@ use transit_streets::Streets;
 const LAT0: f64 = 45.6;
 const LON0: f64 = -122.6;
 const STEP: f64 = 0.001;
-/// The graph's snap neighborhood: a 3x3 block of 0.001° cells.
 const CELL: f64 = 0.001;
 
 fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
@@ -54,12 +27,7 @@ fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
     2.0 * 6_371_000.0 * h.sqrt().min(1.0).asin()
 }
 
-/// Meters per degree of latitude on the same sphere.
 const M_PER_DEG: f64 = 6_371_000.0 * std::f64::consts::PI / 180.0;
-
-// ---------------------------------------------------------------------
-// Generator: a street layer and stops near it
-// ---------------------------------------------------------------------
 
 const CLASSES: &[&str] = &["A10", "A30", "A40", "A63", "A71", "A72", "X10", "A64"];
 
@@ -93,8 +61,8 @@ fn layer_bytes(lines: &[Line]) -> Vec<u8> {
     serde_json::to_vec(&json!({ "type": "FeatureCollection", "features": features })).unwrap()
 }
 
-/// Stops at fractional lattice positions, never exactly equidistant
-/// from two streets, so the nearest street is one street.
+/// Fractional lattice positions are never exactly equidistant from two
+/// streets, so the nearest street is unique.
 fn stops() -> impl Strategy<Value = Vec<(String, f64, f64)>> {
     vec((-1.0f64..7.0, -1.0f64..7.0), 1..=7).prop_map(|pts| {
         pts.into_iter()
@@ -104,7 +72,6 @@ fn stops() -> impl Strategy<Value = Vec<(String, f64, f64)>> {
     })
 }
 
-/// A point anywhere stops may be.
 fn point() -> impl Strategy<Value = (f64, f64)> {
     (-1.0f64..7.0, -1.0f64..7.0).prop_map(|(a, b)| (LAT0 + a * STEP, LON0 + b * STEP))
 }
@@ -115,10 +82,6 @@ fn case() -> impl Strategy<Value = (Streets, Vec<(String, f64, f64)>, f64, u32)>
             import(&layer_bytes(&lines)).ok().map(|doc| (doc, stops, speed, max))
         })
 }
-
-// ---------------------------------------------------------------------
-// The oracle
-// ---------------------------------------------------------------------
 
 fn walkable(class: &str) -> bool {
     !matches!(class, "motorway" | "ramp" | "unknown")
@@ -158,15 +121,13 @@ impl Oracle {
         }
         let mut adj = vec![Vec::new(); ids.len()];
         for s in &segs {
-            // Both ways: a rider walks a one-way street either way.
             adj[s.na].push((s.nb, s.len));
             adj[s.nb].push((s.na, s.len));
         }
         Oracle { segs, adj }
     }
 
-    /// The nearest walkable streets within the snap neighborhood.
-    /// Every position is equally near: (segment, t, distance in meters).
+    /// The equally near positions as (segment, t, distance in meters).
     fn snap(&self, lat: f64, lon: f64) -> Vec<(usize, f64, f64)> {
         let (qx, qy) = ((lon / CELL).floor() as i64, (lat / CELL).floor() as i64);
         let m_lat = M_PER_DEG;
@@ -215,7 +176,6 @@ impl Oracle {
         dist
     }
 
-    /// Street meters between two snapped positions.
     fn between(&self, (sa, ta, _): (usize, f64, f64), (sb, tb, _): (usize, f64, f64)) -> f64 {
         let a = &self.segs[sa];
         let b = &self.segs[sb];
@@ -227,8 +187,8 @@ impl Oracle {
         best
     }
 
-    /// Every pair of snapped stops, and the walk seconds each choice
-    /// of equally near positions gives (infinite: no street path).
+    /// Walk seconds for each choice of equally near positions. Infinite
+    /// means no street path.
     fn walks(&self, stops: &[(String, f64, f64)], speed: f64) -> BTreeMap<(String, String), Vec<f64>> {
         let snapped: Vec<_> = stops.iter().map(|(_, lat, lon)| self.snap(*lat, *lon)).collect();
         let mut out = BTreeMap::new();
@@ -254,13 +214,9 @@ fn as_tuples(got: &[Walk]) -> Vec<(String, String, u32)> {
     got.iter().map(|w| (w.from.clone(), w.to.clone(), w.walk_secs)).collect()
 }
 
-/// The implementation's table against the oracle's choices, equal up
-/// to a second of rounding: the two sum the same meters in different
-/// orders, so a walk within float noise of a whole second (or of the
-/// limit) may round either way. A walk is right when some choice of
-/// equally near positions gives it; no walk is right when some choice
-/// is past the limit (or has no street path). A stop that snaps to no
-/// street walks nowhere.
+/// Agrees up to a second of rounding, because the two sum the same meters in
+/// different orders and a walk near a whole second or the limit may round
+/// either way.
 fn agree(got: &[(String, String, u32)], want: &BTreeMap<(String, String), Vec<f64>>, max: u32) -> Result<(), String> {
     let g: HashMap<_, _> = got.iter().map(|(a, b, s)| ((a.clone(), b.clone()), *s as f64)).collect();
     let max = max as f64;
@@ -281,9 +237,7 @@ fn agree(got: &[(String, String, u32)], want: &BTreeMap<(String, String), Vec<f6
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Every walk is the oracle's: the right pairs, the right seconds,
-    /// none past the limit, on walkable streets only, both ways along
-    /// one-way streets.
+    /// Every walk is the oracle's, and none is past the limit.
     #[test]
     fn walks_match_the_oracle((doc, stops, speed, max) in case()) {
         let got = walks(&doc, &stops, speed, max);
@@ -295,8 +249,8 @@ proptest! {
         prop_assert!(got.iter().all(|(_, _, s)| *s <= max), "no walk past the limit");
     }
 
-    /// A walk is symmetric, never a stop to itself, and the table is
-    /// in (from, to) order with no pair twice.
+    /// A walk is symmetric and never from a stop to itself. The table is in
+    /// (from, to) order with no pair twice.
     #[test]
     fn walks_are_symmetric_and_ordered((doc, stops, speed, max) in case()) {
         let got = as_tuples(&walks(&doc, &stops, speed, max));
@@ -316,8 +270,7 @@ proptest! {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// The walks from a point are the oracle's walks from a stop at
-    /// the point.
+    /// A point walks as a stop at the point would.
     #[test]
     fn a_point_walks_as_a_stop_there_walks((doc, stops, speed, max) in case(), (lat, lon) in point()) {
         let got: Vec<_> = walks_from(&doc, lat, lon, &stops, speed, max)
@@ -337,8 +290,8 @@ proptest! {
         prop_assert!(got.iter().all(|(_, _, s)| *s <= max), "no walk past the limit");
     }
 
-    /// Each walk's path starts at the point, runs along walkable
-    /// streets, ends at the stop, and is as long as the walk.
+    /// Each path starts at the point, runs along walkable streets, ends at
+    /// the stop, and is as long as the walk.
     #[test]
     fn a_walk_from_a_point_draws_its_path((doc, stops, speed, max) in case(), (lat, lon) in point()) {
         let oracle = Oracle::new(&doc);
@@ -363,10 +316,6 @@ proptest! {
     }
 }
 
-// ---------------------------------------------------------------------
-// Hand cases: the profile and the one-way rule, plainly
-// ---------------------------------------------------------------------
-
 fn street(cfcc: &str, oneway: bool, coords: &[(f64, f64)]) -> serde_json::Value {
     let mut props = serde_json::Map::new();
     props.insert("CFCC".into(), json!(cfcc));
@@ -385,8 +334,6 @@ fn stop(id: &str, lat: f64, lon: f64) -> (String, f64, f64) {
     (id.to_string(), lat, lon)
 }
 
-/// Two stops on a freeway and nothing else: no walk. The same stops
-/// with a local street beside it: a walk along the local street.
 #[test]
 fn a_rider_never_walks_a_motorway_a_ramp_or_an_unknown_street() {
     let stops = [stop("a", 45.6000, -122.6000), stop("b", 45.6000, -122.5950)];
@@ -404,7 +351,6 @@ fn a_rider_never_walks_a_motorway_a_ramp_or_an_unknown_street() {
     assert!(got[0].walk_secs.abs_diff((meters / WALK_SPEED_MPS).ceil() as u32) <= 1, "{got:?}");
 }
 
-/// A one-way street is a walk both ways.
 #[test]
 fn a_rider_walks_a_one_way_street_both_ways() {
     let one_way = doc(vec![street("A40", true, &[(45.6, -122.6), (45.6, -122.597)])]);
@@ -414,10 +360,9 @@ fn a_rider_walks_a_one_way_street_both_ways() {
     assert_eq!(got[0].walk_secs, got[1].walk_secs);
 }
 
-/// The limit: ten minutes by default, a parameter otherwise.
 #[test]
 fn a_walk_past_the_limit_is_no_walk() {
-    // About 1.2 km of street: 15 minutes at 1.3 m/s.
+    // About 1.2 km of street is 15 minutes at 1.3 m/s.
     let long = doc(vec![street("A40", false, &[(45.6, -122.6), (45.6, -122.585)])]);
     let stops = [stop("a", 45.6, -122.6), stop("b", 45.6, -122.585)];
     assert!(walks(&long, &stops, WALK_SPEED_MPS, MAX_WALK_SECS).is_empty());

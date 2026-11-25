@@ -1,13 +1,8 @@
-//! The kernel loads a boundary and a feed (D-239). Their lines in the kind
-//! list (`crates/cap-abi/src/kinds.rs`) name this impl.
-
-/// What `load_boundary` answers.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BoundaryLoaded {
     pub boundary_hash: String,
 }
 
-/// An import's boundary: the feed numbering an rt join pairs by.
 impl transit_version::Load for crate::Boundary {
     const ID: &'static str = "boundary";
     const NAME: &'static str = "boundary";
@@ -29,14 +24,12 @@ impl transit_version::Load for crate::Boundary {
     }
 }
 
-/// What `load_feed` answers: the hash, and the feed's summary.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FeedLoaded {
     pub feed_hash: String,
     pub summary: crate::FeedSummary,
 }
 
-/// GTFS feeds (the zip's bytes), by the hash of their bytes.
 impl transit_version::Load for crate::Feed {
     const ID: &'static str = "feed";
     const NAME: &'static str = "feed";

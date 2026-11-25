@@ -1,7 +1,7 @@
 {
   "$defs": {
     "PickStatus": {
-      "description": "Whether a published pick is in the chain. Retirement is the\ntombstone (D-75): a retired pick stays in the set, never governs,\nand republishing its id restores it.",
+      "description": "Republishing a retired pick's id restores it (D-75).",
       "enum": [
         "published",
         "retired"
@@ -13,10 +13,9 @@
     },
     "PublishedPlan": {
       "additionalProperties": true,
-      "description": "One published pick: its chain metadata and the network document it\nis, by content hash (the store's `plan.<id>` pointer holds the\ndocument itself).",
       "properties": {
         "effective_from": {
-          "description": "\"YYYY-MM-DD\": a published pick is always dated.",
+          "description": "\"YYYY-MM-DD\". A published pick is always dated.",
           "type": "string"
         },
         "id": {
@@ -26,7 +25,7 @@
           "type": "string"
         },
         "network_hash": {
-          "description": "\"sha256:<hex>\" of the pick's canonical network document.",
+          "description": "\"sha256:<hex>\" of the canonical network document.",
           "format": "content-hash",
           "type": "string",
           "x-references": "network"
@@ -36,7 +35,7 @@
           "default": "published"
         },
         "stops_seq": {
-          "description": "The stops log entry the adoption read (D-191): the pick's stops\nare the stops document at that entry. Absent when the adoption\nread no stops, or the pick was published before the plans log.",
+          "description": "Absent when the adoption read no stops, or the pick predates the plans\nlog (D-191).",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -57,12 +56,12 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The published plan set: every pick the deployment publishes. It is the\ndocument the server's `plans` pointer holds, and the manifest pins\nas `plans_hash`. Every client resolves the pick in force from it.\nCanonical: picks sorted by (effective_from, id), one entry per id,\nso one set of picks is one byte sequence however it was published.",
+  "description": "Picks are sorted by (effective_from, id), one entry per id, so one set of\npicks is one byte sequence.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/PlansKind",
       "default": "plans",
-      "description": "The kind tag (D-115): `\"plans\"`; a copy without one reads as\nthe plans document."
+      "description": "A copy without a kind tag reads as the plans document (D-115)."
     },
     "plans": {
       "items": {

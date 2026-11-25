@@ -1,7 +1,6 @@
 {
   "$defs": {
     "AlertCause": {
-      "description": "Why an alert was raised (GTFS-rt's cause, by name).",
       "enum": [
         "unknown",
         "other",
@@ -20,7 +19,6 @@
       "type": "string"
     },
     "AlertEffect": {
-      "description": "What an alert does to service (GTFS-rt's effect, by name).",
       "enum": [
         "no_service",
         "reduced_service",
@@ -37,7 +35,6 @@
       "type": "string"
     },
     "AlertSeverity": {
-      "description": "How serious the agency says an alert is.",
       "enum": [
         "unknown",
         "info",
@@ -48,7 +45,6 @@
     },
     "AlertTemplate": {
       "additionalProperties": true,
-      "description": "One template: its name in the menu, the cause, effect, and severity\nit sets, and its texts with blanks.",
       "properties": {
         "cause": {
           "$ref": "#/$defs/AlertCause",
@@ -74,7 +70,6 @@
           "type": "string"
         },
         "retired": {
-          "description": "No longer offered in the menu. It is kept.",
           "type": "boolean"
         },
         "severity": {
@@ -123,12 +118,10 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "Every alert template, by its id: the agency's standard language\n(D-207, D-210).",
   "properties": {
     "kind": {
       "$ref": "#/$defs/AlertTemplatesKind",
-      "default": "alert_templates",
-      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+      "default": "alert_templates"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",

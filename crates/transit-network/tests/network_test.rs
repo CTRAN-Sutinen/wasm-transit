@@ -1,7 +1,5 @@
-//! Example-based tests for the authored network model: a hand-built
-//! fixture with hand-computed expectations, serde shape contracts,
-//! calendar rules, and one rejection test per validation invariant.
-//! The property tests in `prop_test.rs` generalize all of this.
+//! Hand-computed examples for the network model, and one rejection test per
+//! validation invariant. `prop_test.rs` generalizes them.
 
 use chrono::NaiveDate;
 use transit_network::{
@@ -33,7 +31,6 @@ fn at(t: u32) -> StopOffset {
     StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }
 }
 
-/// A one-start trip: A at 0, B unscheduled, C at 20 minutes.
 fn trip(id: &str, start_secs: u32) -> Trip {
     Trip { id: id.into(), departs: Departs::At { start_secs }, times: vec![at(0), StopOffset::default(), at(1200)], ..Default::default() }
 }
@@ -42,8 +39,6 @@ fn trip_ref(id: &str) -> TripRef {
     TripRef { trip: id.into(), extra: Default::default() }
 }
 
-/// A small valid network: A → B → C, one inbound pattern, weekday
-/// service, one block of two trips with a layover.
 pub(crate) fn valid_network() -> Network {
     let net = Network {
         name: "Test Transit".into(),
@@ -162,7 +157,6 @@ pub(crate) fn valid_network() -> Network {
 fn fixture_validates_and_serializes_as_expected() {
     let net = valid_network();
     let json = serde_json::to_string(&net).unwrap();
-    // Shape contracts for the document format.
     assert!(json.contains("\"anchor\":\"noon_minus_twelve\""), "{json}");
     assert!(json.contains("\"mode\":\"bus\""), "{json}");
     assert!(json.contains("\"kind\":\"at\""), "{json}");
@@ -176,9 +170,8 @@ fn fixture_validates_and_serializes_as_expected() {
 #[test]
 fn serialization_is_canonical_regardless_of_insertion_order() {
     let a = valid_network();
-    // Same content, maps rebuilt in reverse insertion order: BTreeMap
-    // keying must produce byte-identical JSON: that is what makes
-    // the document mergeable and content-addressable later.
+    // Maps rebuilt in reverse insertion order must serialize to identical
+    // bytes, so that the document hash is stable.
     let mut b = a.clone();
     b.stops = a.stops.iter().rev().map(|(k, v)| (k.clone(), v.clone())).collect();
     b.patterns = a.patterns.iter().rev().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -201,10 +194,8 @@ fn materializes_expected_stop_times_including_interpolation() {
     assert_eq!(trips[0].stop_times[1].arrival_secs, 7 * 3600 + 600);
     assert_eq!(trips[0].stop_times[1].departure_secs, 7 * 3600 + 600);
     assert_eq!(trips[0].stop_times[2].arrival_secs, 7 * 3600 + 1200);
-    // After-midnight trip (25:30) flows through untouched.
     assert_eq!(trips[2].start_secs, 25 * 3600 + 1800);
     assert_eq!(trips[2].stop_times[2].arrival_secs, 25 * 3600 + 1800 + 1200);
-    // Sorted by start time.
     assert!(trips.windows(2).all(|w| w[0].start_secs <= w[1].start_secs));
 
     let saturday = date(2026, 10, 24);
@@ -242,11 +233,6 @@ fn calendar_rules_weekdays_ranges_and_exceptions() {
     assert!(rule.runs_on(date(2026, 10, 25)), "exception adds a Sunday");
     assert!(!rule.runs_on(date(2026, 11, 6)), "a Friday outside the range");
 }
-
-// ---------------------------------------------------------------------
-// Every validation invariant rejects its defect (example-based; the
-// property suite generalizes)
-// ---------------------------------------------------------------------
 
 fn first_issue(net: &Network) -> NetworkError {
     validation_issues(net).into_iter().next().unwrap()
@@ -312,7 +298,6 @@ fn rejects_broken_pattern_structure() {
     assert!(matches!(defect(|n| {
         n.patterns.get_mut("5-inbound").unwrap().timing[0].at_timepoints = vec![0, 900, 1200];
     }), TimepointCountMismatch { .. }));
-    // 3 timepoints, times out of order.
     assert!(matches!(defect(|n| {
         let p = n.patterns.get_mut("5-inbound").unwrap();
         p.stops[1].timepoint = true;
@@ -370,14 +355,11 @@ fn rejects_broken_trips() {
     assert!(matches!(defect(first(|t| t.times[0] = StopOffset::default())), TripEndpointUnscheduled { .. }));
     assert!(matches!(defect(first(|t| t.times[0] = at(60))), FirstOffsetNotZero { .. }));
     assert!(matches!(defect(first(|t| t.times[1] = at(1500))), TripTimesBackwards { .. }));
-    // A timepoint is exact on every trip.
     assert!(matches!(defect(|n| {
         let p = n.patterns.get_mut("5-inbound").unwrap();
         p.stops[1].timepoint = true;
         p.timing[0].at_timepoints = vec![0, 600, 1200];
     }), TimepointUnscheduled { index: 1, .. }));
-    // The profile does not govern stored trips: none covering them is
-    // fine.
     let mut net = valid_network();
     net.patterns.get_mut("5-inbound").unwrap().timing.clear();
     assert!(net.validate().is_ok(), "{:?}", validation_issues(&net));
@@ -396,27 +378,23 @@ fn rejects_broken_runcut() {
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].after_trip = 1;
     }), LayoverAfterLastTrip { .. }));
-    // Second trip departs before the first arrives (arrival 7:20).
-    // a trip the schedule really runs, so feasibility is what fails.
+    // The second trip departs before the first arrives (7:20).
     assert!(matches!(defect(|n| {
         n.pattern_trips.get_mut("5-weekday").unwrap().trips[1].departs = Departs::At { start_secs: 7 * 3600 + 60 };
     }), BlockInfeasible { .. }));
-    // A block trip the network does not have: the runcut and the
-    // published schedule would disagree (QAF-1).
+    // The runcut and the published schedule would disagree.
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().trips[1].trip = "t0900".into();
     }), UnknownBlockTrip { trip, .. } if trip == "t0900"));
-    // Arrives in time, but the wait is under the 3 h recovery its
-    // terminal's floor requires (the only layover there, D-9).
+    // The wait is under the 3 h recovery that the terminal's floor requires
+    // (the only layover there, D-9).
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].secs = 3 * 3600;
     }), LayoverInfeasible { .. }));
-    // The same trip in two blocks.
     assert!(matches!(defect(|n| {
         n.blocks.insert("b2".into(), Block { trips: vec![trip_ref("t0800")], layovers: vec![], extra: Default::default() });
     }), DuplicateBlockTrip { .. }));
-    // A frequency trip in a block runs every instance back to back:
-    // a 10-minute headway on a 20-minute run cannot be one vehicle.
+    // A 10-minute headway on a 20-minute run cannot be one vehicle.
     assert!(matches!(defect(|n| {
         n.pattern_trips.get_mut("5-weekday").unwrap().trips[2].departs = Departs::Every {
             bands: vec![HeadwayBand { start_secs: 10 * 3600, end_secs: 11 * 3600, headway_secs: 600, extra: Default::default() }],
@@ -426,9 +404,8 @@ fn rejects_broken_runcut() {
     }), BlockInfeasible { .. }));
 }
 
-/// A block is block id plus service day (GTFS): trips of service
-/// types that never share a day may overlap in time, and the block's
-/// feasibility is judged day by day.
+/// A block is a block id plus a service day (GTFS). Trips of service types
+/// that never share a day may overlap in time.
 #[test]
 fn a_block_runs_day_by_day() {
     let mut net = valid_network();
@@ -452,8 +429,6 @@ fn a_block_runs_day_by_day() {
     net.blocks.get_mut("b1").unwrap().trips.push(trip_ref("s0700"));
     assert!(net.validate().is_ok(), "{:?}", validation_issues(&net));
 
-    // Once Saturday service also runs on a weekday, that day has both
-    // 07:00 trips in one vehicle.
     net.service_types.get_mut("saturday").unwrap().rule.exceptions.push(CalendarException {
         date: date(2026, 10, 23),
         state: DayState::Added,
@@ -464,8 +439,7 @@ fn a_block_runs_day_by_day() {
 
 #[test]
 fn materialization_is_total_on_invalid_networks() {
-    // No panics on documents that failed validation: the wasm seam
-    // must never trap on hostile input.
+    // The wasm module must never trap on a document that failed validation.
     let mut net = valid_network();
     net.pattern_trips.get_mut("5-weekday").unwrap().trips[0].times.pop();
     assert!(transit_network::materialize(&net, date(2026, 10, 23)).is_err());
@@ -486,8 +460,7 @@ fn materialization_is_total_on_invalid_networks() {
 
 #[test]
 fn transfer_point_requires_two_routes_across_its_walking_group() {
-    // The flag is composed intent: flagged on a stop whose group is
-    // served by one route only, it is meaningless.
+    // A transfer flag on a stop whose group one route serves is meaningless.
     let mut net = valid_network();
     net.stops.get_mut("B").unwrap().transfer = true;
     assert!(matches!(
@@ -495,9 +468,8 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
         Err(NetworkError::TransferPointWithoutConnections { stop }) if stop == "B"
     ));
 
-    // A second route meeting across the street: a sibling stop
-    // sharing B's parent station makes the flag compose. The
-    // walking group, not the pin, is the unit.
+    // A sibling stop under B's parent station makes the flag meaningful. The
+    // walking group is the unit, not the pin.
     let mut net = valid_network();
     net.stops.insert("STN".into(), transit_network::Stop {
         name: "Transfer Center".into(),
@@ -543,8 +515,6 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
     });
     assert!(net.validate().is_ok(), "two routes across the walking group compose: {:?}", validation_issues(&net));
 
-    // The helpers say the same thing: the group is B, B2, STN; the
-    // routes meeting there are 5 and 7.
     let group = transit_network::walking_group(&net, "B");
     assert_eq!(group.len(), 3, "walking group: {:?}", group.keys().collect::<Vec<_>>());
     let index = transit_network::stop_route_index(&net);
@@ -555,20 +525,18 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
 #[test]
 fn warnings_name_what_validity_lets_through() {
     use transit_network::{validation_warnings, NetworkWarning};
-    // The fixture: b1 carries 07:00 and 08:00; 25:30 has no vehicle.
     let net = valid_network();
     assert!(net.validate().is_ok(), "warnings never invalidate");
     assert_eq!(
         validation_warnings(&net),
         vec![NetworkWarning::UnassignedTrips { pattern_trips: "5-weekday".into(), trips: 1 }]
     );
-    // No runcut at all: nothing is "unassigned" yet.
     let mut no_blocks = net.clone();
     no_blocks.blocks.clear();
     assert!(validation_warnings(&no_blocks).is_empty());
 
-    // A pick effective after its calendars end (QAF-40): the fork
-    // governs a period it carries no service for.
+    // A pick effective after its calendars end governs a period with no
+    // service.
     let mut pick = no_blocks.clone();
     pick.plan = transit_network::PlanMeta {
         id: "spring".into(),
@@ -580,19 +548,15 @@ fn warnings_name_what_validity_lets_through() {
         validation_warnings(&pick),
         vec![NetworkWarning::NoServiceInPlanPeriod { plan_name: "Spring".into(), effective_from: "2030-01-07".into() }]
     );
-    // Inside the calendar, the pick runs: no warning.
     pick.plan.effective_from = net.service_types["weekday"].rule.ranges.first().map(|r| r.start);
     assert!(validation_warnings(&pick).is_empty(), "{:?}", validation_warnings(&pick));
 }
 
-/// D-76: a pick that runs no service in its period is refused
-/// publication: on its date every rider would load a network that
-/// runs nothing. Every other warning publishes; issues never do.
+/// D-76. Every other warning publishes, and issues never do.
 #[test]
 fn a_pick_with_no_service_in_its_period_is_refused_publication() {
     use transit_network::{publish_refusals, validation_warnings, NetworkWarning};
     let net = valid_network();
-    // The fixture warns (an unassigned trip) and still publishes.
     assert!(!validation_warnings(&net).is_empty());
     assert!(publish_refusals(&net).is_empty(), "warnings other than no-service never refuse");
 
@@ -608,7 +572,6 @@ fn a_pick_with_no_service_in_its_period_is_refused_publication() {
         publish_refusals(&pick),
         vec![NetworkWarning::NoServiceInPlanPeriod { plan_name: "Spring".into(), effective_from: "2030-01-07".into() }]
     );
-    // Inside its calendar the same pick publishes.
     pick.plan.effective_from = net.service_types["weekday"].rule.ranges.first().map(|r| r.start);
     assert!(publish_refusals(&pick).is_empty());
 }

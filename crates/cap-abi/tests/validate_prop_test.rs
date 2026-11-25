@@ -1,14 +1,9 @@
-//! Assembly-validator laws: the compose-time tier is only trust-
-//! worthy if the validator itself is gated. Three laws:
+//! Agents trust the assembly validator, so the validator needs tests of its
+//! own. Properties:
 //!
-//! * **Totality**: any manifest (garbage fields and all) yields
-//!   Ok or Err, never a panic: the validator is total, because
-//!   agents will hand it arbitrary output.
-//! * **Purity**: validation is a pure function of the manifest:
-//!   same bytes, same verdict, on every host.
-//! * **Mutation law**: every single way to break an otherwise-valid
-//!   assembly is caught, by name (the check an agent or a reviewer
-//!   acts on).
+//! 1. Any manifest gives Ok or Err and never panics.
+//! 2. The verdict is a pure function of the manifest.
+//! 3. Every single way to break a valid assembly is caught, by check name.
 
 use std::collections::BTreeMap;
 
@@ -17,7 +12,7 @@ use proptest::prelude::*;
 use cap_abi::manifest::{CapManifest, Capability, MigrationSpec};
 use cap_abi::validate::{validate_assembly, validate_with_kernel};
 
-/// The PoC's own assembly: the baseline the mutations break.
+/// The baseline that the mutations break.
 fn valid_manifest() -> CapManifest {
     let cap = |id: &str,
                hash: &str,
@@ -67,7 +62,6 @@ fn valid_manifest() -> CapManifest {
     }
 }
 
-/// A linked assembly over the baseline's capabilities.
 fn linked(ui: &str, capabilities: &[&str]) -> cap_abi::manifest::LinkedAssembly {
     let hex = format!("9{:0>63}", "");
     cap_abi::manifest::LinkedAssembly {
@@ -79,9 +73,8 @@ fn linked(ui: &str, capabilities: &[&str]) -> cap_abi::manifest::LinkedAssembly 
     }
 }
 
-/// A linked assembly is closed (every producer a linked capability
-/// consumes from is linked beside it), links only what the manifest
-/// carries, and is pinned like a capability.
+/// A linked assembly is closed over its producers, links only what the
+/// manifest carries, and is pinned like a capability.
 #[test]
 fn a_linked_assembly_is_closed_known_and_pinned() {
     let mut manifest = valid_manifest();
@@ -114,8 +107,7 @@ fn rejects_with(manifest: &CapManifest, check: &str) -> bool {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// Totality: arbitrary manifests (garbage ids, malformed hashes,
-    /// empty everything) produce a verdict, never a panic.
+    /// Property 1.
     #[test]
     fn validation_is_total(
         kernel in any::<u32>(),
@@ -140,10 +132,10 @@ proptest! {
             })
             .collect();
         let manifest = CapManifest { kernel, kernel_ops: vec![], capabilities, assemblies: vec![] };
-        let _ = validate_assembly(&manifest); // a verdict, never a panic
+        let _ = validate_assembly(&manifest);
     }
 
-    /// Purity: the verdict is a pure function of the manifest bytes.
+    /// Property 2.
     #[test]
     fn validation_is_pure(
         manifest_seed in any::<u64>(),
@@ -156,11 +148,9 @@ proptest! {
     }
 }
 
-/// Mutation law: every single break is caught, by check name. One
-/// mutation at a time on an otherwise-valid assembly.
+/// Property 3, one mutation at a time.
 #[test]
 fn every_single_break_is_caught_by_name() {
-    // The unmutated assembly validates.
     assert!(validate_assembly(&valid_manifest()).is_ok(), "baseline must be valid");
 
     let cases: Vec<(&str, Box<dyn Fn(&mut CapManifest)>)> = vec![
@@ -206,8 +196,6 @@ fn every_single_break_is_caught_by_name() {
     }
 }
 
-/// Kernel negotiation: the validator states which host it
-/// speaks for.
 #[test]
 fn kernel_mismatch_is_reported_not_swallowed() {
     let manifest = valid_manifest();

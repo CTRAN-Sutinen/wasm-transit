@@ -1,26 +1,7 @@
-//! A stop's site survey (D-158, D-160, D-161), derived from the user's
-//! intent. The intent is C-TRAN's Service Stop Worksheet, filled at the
-//! stop. These laws are written before the implementation:
-//!
-//! * a stop's site answers and its references to other systems are
-//!   details like any other: set by the events that set details (a
-//!   stage, `changed`), merged by name, each name's answer the last
-//!   active event's. The fold law in `stops_law_test.rs` checks them
-//!   against its oracle with the rest of the stop;
-//! * a core question with a list of answers takes only an answer on its
-//!   list; a count takes a whole number; a written answer takes any
-//!   text, and the agency's own questions and references are kept and
-//!   not checked;
-//! * an event recording a survey names who surveyed (`surveyed_by`),
-//!   only on an event that sets details; a stop on a date says when it
-//!   was last surveyed and by whom;
-//! * the questions a page asks are the crate's (`SITE`), every one
-//!   named once, and every list answer is a plain lowercase word;
-//! * the surveyor is the signed-in writer, never a name a client sent
-//!   (`Stops::attribute_surveys`): every survey event the stored document
-//!   does not already hold names the writer; every event it holds keeps
-//!   its surveyor; nothing else changes, and attributing twice is
-//!   attributing once.
+//! A stop's site survey (D-158, D-160, D-161), from C-TRAN's Service Stop
+//! Worksheet. `stops_law_test.rs` checks the fold of site answers against its
+//! oracle. The ops are in cap-stops' OPS.md (`questions`,
+//! `attribute_surveys`).
 
 use serde_json::json;
 use transit_stops::{Answer, Details, Event, EventKind, Problem, Stops, SITE};
@@ -137,11 +118,9 @@ fn a_stop_says_when_it_was_last_surveyed_and_by_whom() {
     assert_eq!((s.surveyed_on, s.surveyed_by), (None, None));
     let s = at(5);
     assert_eq!((s.surveyed_on.as_deref(), s.surveyed_by.as_deref()), (Some("2027-01-03"), Some("A. Lee")));
-    // a change that is not a survey moves neither
     assert_eq!(s.details.site.get("landmark").map(String::as_str), Some("the library"));
     let s = at(7);
     assert_eq!((s.surveyed_on.as_deref(), s.surveyed_by.as_deref()), (Some("2027-01-07"), Some("R. Ortiz")));
-    // answers merge by name: the later survey's surface, the earlier's position
     assert_eq!(s.details.site.get("surface").map(String::as_str), Some("concrete"));
     assert_eq!(s.details.site.get("position").map(String::as_str), Some("near_side"));
 }
@@ -162,7 +141,6 @@ fn the_core_questions_are_named_once_in_plain_words() {
             }
         }
     }
-    // the worksheet's questions, as the paper asks them
     assert!(matches!(answer("position"), Answer::OneOf(a) if a == &["near_side", "far_side", "opposite", "mid_block"]));
     assert!(matches!(answer("lanes"), Answer::Number));
     assert!(matches!(answer("landmark"), Answer::Text));
@@ -199,10 +177,6 @@ fn the_worked_survey_reads() {
     assert_eq!(s.details.refs.get("sign").map(String::as_str), Some("S-1180"));
 }
 
-// ---------------------------------------------------------------------
-// the surveyor is the writer
-// ---------------------------------------------------------------------
-
 fn survey(on: u32, by: &str, site: &[(&str, &str)]) -> Event {
     Event { surveyed_by: Some(by.into()), ..changed(on, site) }
 }
@@ -211,8 +185,6 @@ fn held_and_next() -> (Stops, Stops) {
     let held = doc(vec![begun(0), survey(2, "A. Lee", &[("surface", "gravel")])]);
     let mut next = held.clone();
     let events = next.stops.get_mut("a").unwrap();
-    // a new survey naming whoever the client liked, a plain change, and
-    // a stored survey whose surveyor the client rewrote
     events.push(survey(4, "Someone Else", &[("surface", "concrete")]));
     events.push(changed(5, &[("landmark", "the library")]));
     events[1].surveyed_by = Some("Forged".into());
@@ -225,7 +197,6 @@ fn a_new_survey_names_the_writer_whatever_the_client_sent() {
     let out = held.attribute_surveys(next, "rosa.ortiz");
     let events = &out.stops["a"];
     assert_eq!(events[2].surveyed_by.as_deref(), Some("rosa.ortiz"));
-    // an empty name is a survey with its surveyor left to the writer
     let mut blank = held.clone();
     blank.stops.get_mut("a").unwrap().push(survey(6, "", &[]));
     assert_eq!(held.attribute_surveys(blank, "rosa.ortiz").stops["a"][2].surveyed_by.as_deref(), Some("rosa.ortiz"));
@@ -235,9 +206,7 @@ fn a_new_survey_names_the_writer_whatever_the_client_sent() {
 fn a_held_survey_keeps_its_surveyor_and_a_rewritten_one_is_the_writers() {
     let (held, next) = held_and_next();
     let out = held.attribute_surveys(next.clone(), "rosa.ortiz");
-    // the event the client rewrote is not the one held: it is the writer's
     assert_eq!(out.stops["a"][1].surveyed_by.as_deref(), Some("rosa.ortiz"));
-    // an untouched held survey keeps its own
     let untouched = held.attribute_surveys(held.clone(), "rosa.ortiz");
     assert_eq!(untouched, held);
 }
@@ -256,16 +225,13 @@ fn nothing_but_surveyors_changes_and_twice_is_once() {
         d
     };
     assert_eq!(strip(&once), strip(&next));
-    // an event that is no survey stays none
     assert_eq!(once.stops["a"][3].surveyed_by, None);
-    // a stop the held document lacks: every survey in it is new
     let mut fresh = Stops::default();
     fresh.stops.insert("n".into(), vec![Event { surveyed_by: Some("x".into()), ..Event { event: EventKind::Planned, ..begun(0) } }]);
     assert_eq!(Stops::default().attribute_surveys(fresh, "rosa.ortiz").stops["n"][0].surveyed_by.as_deref(), Some("rosa.ortiz"));
 }
 
-/// An event names the stop request it carries out (D-159). The stops
-/// document keeps it as given. The requests are their own document.
+/// The stops document keeps the request id as given (D-159).
 #[test]
 fn an_event_names_its_request() {
     let built = Event { request: Some("R-2027-014".into()), ..Event { event: EventKind::Built, on: Some(date(3)), ..Event::default() } };
@@ -276,11 +242,8 @@ fn an_event_names_its_request() {
     assert_eq!(read.stops["a"][1].request.as_deref(), Some("R-2027-014"));
 }
 
-/// A stop's event carries its photos and drawings (D-162). Each is named by
-/// its content hash ("sha256:" and 64 hex digits), never a URL. It has a
-/// media type. It may have a file name, a caption, and the day it was
-/// taken. A hash or type of another shape is refused, and named. So is a
-/// day that is not a date.
+/// An attachment with a hash or media type of another shape, or a day that is
+/// not a date, is refused and named (D-162).
 #[test]
 fn an_event_names_its_attachments_by_hash() {
     let hash = format!("sha256:{}", "ab".repeat(32));
@@ -294,7 +257,6 @@ fn an_event_names_its_attachments_by_hash() {
     assert_eq!(with(json!({"hash": "https://bucket/x.jpg", "type": "image/jpeg"})), vec![Problem::BadAttachment { hash: "https://bucket/x.jpg".into() }]);
     assert_eq!(with(json!({"hash": hash, "type": "jpeg"})), vec![Problem::BadAttachment { hash: hash.clone() }]);
     assert_eq!(with(json!({"hash": hash, "type": "image/png", "taken_on": "Jan 2"})), vec![Problem::BadDate { date: "Jan 2".into() }]);
-    // on any event, a suspension's sign photo included
     let mut s = serde_json::to_value(Event { event: EventKind::Suspended, on: Some(date(2)), ..Event::default() }).unwrap();
     s["attachments"] = json!([{"hash": hash, "type": "image/jpeg"}]);
     assert_eq!(refused(doc(vec![begun(0), serde_json::from_value(s).unwrap()])), vec![]);

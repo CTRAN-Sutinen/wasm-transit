@@ -1,16 +1,7 @@
-//! The canonical form is RFC 8785 (D-169). The laws, from the standard
-//! and written before the writer:
-//!
-//! * the standard's own examples come out byte for byte (its sample
-//!   document, its key order, its number forms);
-//! * the writer agrees with a plain reference written here from the
-//!   standard: a JSON value's keys sorted by UTF-16 code units at every
-//!   level, numbers as ECMAScript writes them, for any JSON value, and
-//!   for every real document, typed, whatever order its fields are
-//!   declared in (a struct, a flattened map, a tagged enum);
-//! * the bytes read back to the same value;
-//! * a number that is not finite has no canonical form;
-//! * the hash is the sha256 of exactly these bytes.
+//! The canonical form is RFC 8785 (D-169). The properties come from the
+//! standard. The writer must agree with the `reference` below for any JSON
+//! value and for every real document, whatever order its fields are declared
+//! in.
 
 use proptest::prelude::*;
 use serde_json::{json, Value};
@@ -19,8 +10,7 @@ fn jcs(v: &impl serde::Serialize) -> String {
     cap_abi::jcs::to_string(v).unwrap()
 }
 
-/// The reference: written from the standard over a JSON value, with no
-/// streaming, no passes, and no buffers to get wrong.
+/// A plain reference writer with no streaming and no buffers.
 fn reference(v: &Value) -> String {
     match v {
         Value::Null => "null".into(),
@@ -65,7 +55,7 @@ fn reference(v: &Value) -> String {
 
 #[test]
 fn the_standards_sample_comes_out_byte_for_byte() {
-    // RFC 8785, section 3.2.2 and 3.2.3
+    // RFC 8785, sections 3.2.2 and 3.2.3.
     let input: Value = serde_json::from_str(
         r#"{
           "numbers": [333333333.33333329, 1E30, 4.50, 2e-3, 0.000000000000000000000000001],
@@ -82,8 +72,8 @@ fn the_standards_sample_comes_out_byte_for_byte() {
 
 #[test]
 fn keys_sort_by_utf16_code_units() {
-    // RFC 8785, section 3.2.3: an astral character (a surrogate pair)
-    // sorts before U+FB33, though its UTF-8 bytes sort after.
+    // RFC 8785, section 3.2.3. An astral character (a surrogate pair) sorts
+    // before U+FB33, though its UTF-8 bytes sort after.
     let input: Value = serde_json::from_str(
         r#"{"€":"Euro Sign","\r":"Carriage Return","דּ":"Hebrew Letter Dalet With Dagesh","1":"One","😀":"Emoji: Grinning Face","\u0080":"Control","ö":"Latin Small Letter O With Diaeresis"}"#,
     )
@@ -145,13 +135,10 @@ proptest! {
     fn any_json_value_comes_out_as_the_reference_writes_it(v in arb_json()) {
         let text = jcs(&v);
         prop_assert_eq!(&text, &reference(&v));
-        // read back, it is the same value: written again, the same bytes
         prop_assert_eq!(reference(&serde_json::from_str::<Value>(&text).unwrap()), text);
     }
 }
 
-/// A typed document: its fields in declaration order, its flattened
-/// unknown fields, its tagged enums.
 fn agrees_typed<T: serde::Serialize>(what: &str, doc: &T) {
     let value = serde_json::to_value(doc).unwrap();
     let text = jcs(doc);
@@ -167,7 +154,7 @@ fn every_real_document_comes_out_as_the_reference_writes_it() {
     agrees_typed("network", &imported.network);
     agrees_typed("boundary", &imported.boundary);
 
-    // the same, carrying fields this build does not know, out of order
+    // Fields that this build does not know, out of order.
     let mut newer = serde_json::to_value(&imported.network).unwrap();
     newer["aaa_first"] = json!(1);
     newer["zzz_last"] = json!({"b": 2, "a": 1});
@@ -190,7 +177,7 @@ fn every_real_document_comes_out_as_the_reference_writes_it() {
 
 #[test]
 fn a_large_object_out_of_order_comes_out_sorted() {
-    // more keys than the writer serializes one pass per key: buffered
+    // More keys than the writer serializes one pass per key, so it buffers.
     struct Map<'a>(&'a [(String, u32)]);
     impl serde::Serialize for Map<'_> {
         fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -208,7 +195,6 @@ fn a_large_object_out_of_order_comes_out_sorted() {
     assert_eq!(text, reference(&value));
 }
 
-/// The keys of an object as they arrive in its serialization, in order.
 fn arrival_order(text: &str) -> Vec<String> {
     struct Order(Vec<String>);
     impl<'de> serde::Deserialize<'de> for Order {
@@ -234,9 +220,8 @@ fn arrival_order(text: &str) -> Vec<String> {
     serde_json::from_str::<Order>(text).unwrap().0
 }
 
-/// The records a network holds by the hundred thousand declare their
-/// fields in canonical order, so their canonical bytes stream in one
-/// pass and a page's registration pays no reordering for them.
+/// A network holds records by the hundred thousand. Declared in canonical
+/// order, their bytes stream in one pass with no reordering.
 #[test]
 fn the_networks_many_records_arrive_in_canonical_order() {
     let zip = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();

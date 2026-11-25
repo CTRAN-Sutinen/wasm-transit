@@ -1,15 +1,7 @@
-//! cap-log: what does this write add to the log, and what does the log
-//! hold? (D-190, D-197; OPS.md has the ops.)
-//!
-//! The seam over transit-log. It never reads a record; the capability that
-//! owns a kind splits and joins its document (`log_records`,
-//! `log_document`), so one entry may change two capabilities' records and
-//! no capability calls another. A write is checked against the records it
-//! changes, not the whole log. Stateless: the host stores entries and
-//! checkpoints and gives them back in order. The server keeps the
-//! disruptions, stops, and plans logs through it and folds and reverts
-//! every log with it; the alerts and notes logs are written by their own
-//! receive ops.
+//! The log capability (D-190, D-197). `OPS.md` holds the op contracts. The
+//! server keeps the disruptions, stops, and plans logs through it and folds
+//! and reverts every log with it. The alerts and notes logs are written by
+//! their own receive ops.
 
 #![forbid(unsafe_code)]
 
@@ -18,21 +10,11 @@ use ts_rs::TS;
 
 use transit_log::{Checkpoint, Header, KindRecords, Quarantined, Records, Stored};
 
-/// One operation call.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_log/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// The entry for one write: for each kind `next` names, every record
-    /// of that kind's document after the write. A record of a named kind
-    /// that `next` leaves out leaves the fold. The answer is the entry,
-    /// or none when nothing changed, or the entry that holds the write's
-    /// idempotency key (`header.intent.key`) when it landed before.
-    /// `unread` are the entries after the fold the writer read: a record
-    /// the write changes that one of them changed answers `overlap`, and
-    /// no entry.
     Compose {
-        /// The fold the write runs over (absent: the empty log).
         #[serde(default)]
         #[ts(optional, type = "any")]
         checkpoint: Option<serde_json::Value>,
@@ -44,8 +26,6 @@ pub enum Request {
         #[ts(optional, type = "Array<{ seq: number, text: string }>")]
         unread: Option<serde_json::Value>,
     },
-    /// The fold of a log's entries after a checkpoint (absent: from the
-    /// empty log), in `seq` order.
     Fold {
         log: String,
         #[serde(default)]
@@ -54,10 +34,6 @@ pub enum Request {
         #[ts(type = "Array<{ seq: number, text: string }>")]
         entries: serde_json::Value,
     },
-    /// The entry that reverts entry `target`. `checkpoint` is at or
-    /// before `target - 1`, and `entries` runs from after it to the head.
-    /// `written` names records to write back in place of their states
-    /// before, as a kind's capability answers them over the `states`.
     Revert {
         log: String,
         #[serde(default)]
@@ -73,21 +49,10 @@ pub enum Request {
         #[ts(optional, type = "Array<{ kind: string, id: string, version: number, after?: unknown }>")]
         written: Option<serde_json::Value>,
     },
-    /// The entry with no changes that closes a gap, its cause in
-    /// `header.intent.note`.
     CloseGap {
         #[ts(type = "any")]
         header: serde_json::Value,
     },
-    /// Each broken reference of the folds (D-232, D-233): a declared
-    /// reference (the kind table's `kinds`, each with its `log`,
-    /// `records`, and `references`) whose target record its log's fold
-    /// does not hold. `folds` are the logs' records by log, as `fold`
-    /// answers them. A target whose log is not given is not judged.
-    /// With `entries` (each log's stored entries), each broken reference
-    /// names the entry that broke it. With `entry` (one entry of `log`,
-    /// as stored), the answer is only the broken references that entry
-    /// touches: what a write answers as warnings.
     References {
         #[ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>")]
         kinds: serde_json::Value,
@@ -103,8 +68,6 @@ pub enum Request {
         #[ts(optional, type = "{ seq: number, text: string }")]
         entry: Option<serde_json::Value>,
     },
-    /// Each declared reference of the folds whose value is one of
-    /// `hashes`: what names the documents a pointer's revert drops.
     Naming {
         #[ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>")]
         kinds: serde_json::Value,
@@ -119,42 +82,29 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Compose {
-        /// The entry's canonical bytes, which the host stores at its
-        /// `seq`. Absent when the write changes nothing or landed before.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         entry: Option<String>,
-        /// How many records the entry changes.
         changes: usize,
-        /// The entry that holds the write's key, when it landed before.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional, type = "number")]
         landed: Option<u64>,
-        /// A record the write changes that an unread entry changed too:
-        /// a person settles it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional, type = "{ kind: string, id: string, seq: number }")]
         overlap: Option<transit_log::Overlap>,
     },
     Fold {
-        /// The last entry the fold read.
         #[ts(type = "number")]
         seq: u64,
-        /// The fold, canonically serialized: the next fold starts here.
         checkpoint: String,
-        /// The records by kind, then by id, each with its version: what
-        /// each kind's capability assembles its document from.
         #[ts(type = "Record<string, Record<string, { version: number, value: unknown }>>")]
         records: Records,
-        /// The entries the fold did not apply.
         #[ts(type = "Array<{ seq: number, reason: string }>")]
         quarantined: Vec<Quarantined>,
     },
     Revert {
         entry: String,
         changes: usize,
-        /// Each record the revert writes back: its state now and before
-        /// the entry, what a kind's capability answers `written` from.
         #[ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>")]
         states: Vec<transit_log::RevertState>,
     },
@@ -164,8 +114,7 @@ pub enum Response {
     References {
         #[ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string, entry?: { log: string, seq: number } }>")]
         broken: Vec<transit_log::Broken>,
-        /// The records in a version newer than the table reads, whose
-        /// references are not judged (absent with `entry`).
+        /// Absent with `entry`.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, type = "Array<{ log: string, kind: string, id: string, version: number, reads: number }>")]
         unjudged: Vec<transit_log::Unjudged>,
@@ -196,7 +145,6 @@ fn parse<T: serde::de::DeserializeOwned>(what: &str, value: serde_json::Value) -
     serde_json::from_value(value).map_err(|e| format!("{what}: {e}"))
 }
 
-/// The typed dispatch. Failures are `{"error": ...}`, never panics.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Compose { checkpoint, header, next, unread } => {
@@ -277,18 +225,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}` out.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The log is JSON: no bulk op exists.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: the log is JSON (compose, fold)") }).to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
 #[cfg(feature = "examples")]
 pub mod examples;
 

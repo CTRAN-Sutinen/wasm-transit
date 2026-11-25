@@ -1,8 +1,6 @@
-//! GTFS out and back in with the stops' history (D-150, D-151): the law
-//! at the codec's boundary: a pick exported with a stop moved inside its
-//! dates is a GTFS feed with one stops.txt row per version sharing the
-//! stop's code, and that feed, imported again, adds no event to the stops
-//! document it was made from (a made id reads back as a version).
+//! D-150, D-151. A pick exported with a stop moved inside its dates is a feed
+//! with one stops.txt row per version, sharing the stop's code. Importing that
+//! feed adds no event to the stops document.
 
 use chrono::NaiveDate;
 use transit_stops::stop_record::{export_versions, import_events, seed};

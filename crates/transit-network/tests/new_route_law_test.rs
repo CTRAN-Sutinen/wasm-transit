@@ -1,34 +1,17 @@
-//! The new-route laws: a planner builds a route that does not
-//! exist yet: the route, its directions, a pattern each way laid
-//! through stops they pick in order, and trips at a headway under a
-//! service key: as one change, over the committed planner network
-//! (testdata/network.json: stops A/B/C, route 10, service type
-//! `weekday`).
+//! A new route in one change (cap-author/OPS.md, `add_pattern_through`), over
+//! the committed planner network (testdata/network.json).
 //!
-//! `add_pattern_through {route, direction?, stops, run_secs, id?, name?}`
-//! lays a pattern through `stops` in order:
-//!
-//! 1. its visits are exactly the stops given, in that order; the first
-//!    and last are timepoints, the rest are not (scheduled between them
-//!    by distance until the planner makes one a timepoint);
-//! 2. each visit's distance is the great-circle length of the legs
-//!    before it: 0 at the first, never decreasing, and estimated (never
-//!    claimed as published);
-//! 3. it carries one all-day timing profile, `run_secs` end to end, so
-//!    trips set on it at a headway run `run_secs` first to last stop;
-//! 4. it runs in `direction` (one of the route's), on `route`, under
-//!    `name` (else "<route name> → <last stop's name>"), with no
-//!    alignment of its own (drawn stop to stop), its id minted `pat<n>`
-//!    unless given, and reported in `created`;
-//! 5. what cannot be laid is a named error and the document is
-//!    untouched: fewer than two stops, a stop the network does not hold,
-//!    the same stop twice in a row, a route that does not exist, a
-//!    direction the route does not have, a zero run time, a taken id.
-//!
-//! And the whole route as one change: `add_route`, `upsert_route`,
-//! `set_direction` each way, `add_pattern_through` each way, and
-//! `set_headway` each way under a service key validates with no issue,
-//! and its trips are exactly the headway's slots.
+//! 1. The visits are the stops given, in order. The first and last are
+//!    timepoints.
+//! 2. Each visit's distance is the great-circle length of the legs before it.
+//!    It starts at 0, never decreases, and is an estimate.
+//! 3. One all-day timing profile runs `run_secs` end to end.
+//! 4. The pattern has no alignment of its own, and its id is reported in
+//!    `created`.
+//! 5. What cannot be laid is a named error, and the document is untouched.
+//! 6. A whole route (`add_route`, `set_direction`, `add_pattern_through`, and
+//!    `set_headway`, each way) validates, and its trips are the headway's
+//!    slots.
 
 use proptest::prelude::*;
 use transit_network::{apply_edits, apply_edits_reporting, validation_issues, Mode, Network, NetworkEdit, Route, Stop};
@@ -53,8 +36,6 @@ fn route(name: &str, long_name: &str) -> Route {
     }
 }
 
-/// The new route 20 through `stops` each way, at `headway` from 07:00
-/// until before 09:00 under `weekday`, `run_secs` end to end.
 fn new_route(stops: &[&str], run_secs: u32, headway: u32) -> Vec<NetworkEdit> {
     let there: Vec<String> = stops.iter().map(|s| s.to_string()).collect();
     let back: Vec<String> = there.iter().rev().cloned().collect();
@@ -92,10 +73,8 @@ fn a_pattern_is_laid_through_the_stops_given() {
     let applied = apply_edits_reporting(&net, &new_route(&["A", "C", "B"], 1500, 1800)).expect("the new route applies");
     let next = applied.network;
     let p = &next.patterns["20-0"];
-    // 1. the visits, in order; first and last timepoints only
     assert_eq!(p.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), vec!["A", "C", "B"]);
     assert_eq!(p.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(), vec![true, false, true]);
-    // 2. distances: the legs' great-circle lengths, estimated
     let legs = [0.0, haversine_m(&net.stops["A"], &net.stops["C"]), haversine_m(&net.stops["C"], &net.stops["B"])];
     let mut along = 0.0;
     for (visit, leg) in p.stops.iter().zip(legs) {
@@ -103,11 +82,9 @@ fn a_pattern_is_laid_through_the_stops_given() {
         assert!((visit.distance_m - along).abs() < 0.5, "{} at {} m, not {along}", visit.stop, visit.distance_m);
         assert!(!visit.distance_published);
     }
-    // 3. one all-day profile, run_secs end to end
     assert_eq!(p.timing.len(), 1);
     assert_eq!(p.timing[0].at_timepoints, vec![0, 1500]);
     assert!(p.timing[0].start_secs == 0 && p.timing[0].end_secs >= 24 * 3600);
-    // 4. its route, direction, default name, no alignment; reported
     assert_eq!((p.route.as_str(), p.direction.as_deref(), p.alignment.as_deref()), ("20", Some("0"), None));
     assert_eq!(p.name, format!("20 → {}", net.stops["B"].name));
     assert!(applied.created.iter().any(|c| c.kind == "pattern" && c.id == "20-0"));
@@ -161,9 +138,6 @@ fn what_cannot_be_laid_is_named_and_changes_nothing() {
 }
 
 proptest! {
-    /// Any stops, in any order (no stop twice in a row): the pattern
-    /// visits them in order, its distances never decrease from 0, its
-    /// timing is aligned, and its trips at a headway validate.
     #[test]
     fn any_stops_lay_an_aligned_pattern(
         points in prop::collection::vec((45.0f64..46.0, -123.0f64..-122.0), 2..8),

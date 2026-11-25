@@ -1,17 +1,5 @@
-//! The rule of the reference from a stop request to its stop (D-233,
-//! D-238), from the user's intent:
-//!
-//! * A request that is open (drafted, submitted, ordered) needs a stop
-//!   that is not retired on the write's date. A retired stop's life has
-//!   ended: the stops document refuses every event after `retired`, so
-//!   no work can be done at it.
-//! * A completed or cancelled request is history: any state of its stop.
-//! * The request that a stop's `retired` event names is exempt: the
-//!   retirement is that request's outcome.
-//! * A retirement dated after the write's date does not break the rule.
-//! * Every status a request can have is covered, and a status this build
-//!   does not know is not judged. A stop the document does not hold is
-//!   the existence check's, not the rule's.
+//! The rule from a stop request to its stop (D-233, D-238). The rule is
+//! documented in `request_rule.rs`.
 
 use chrono::NaiveDate;
 use transit_requests::{StopRequest, STATUSES};
@@ -61,6 +49,7 @@ fn only_an_open_request_on_a_retired_stop_breaks_the_rule() {
     }
 }
 
+/// A retirement dated after the write's date breaks nothing.
 #[test]
 fn the_rule_reads_the_stop_on_the_write_s_date() {
     let doc = stops();

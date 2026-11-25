@@ -1,18 +1,8 @@
-//! cap-runcut: what does this vehicle do today? (OPS.md has the ops.)
+//! cap-runcut wraps transit-dispatch and transit-runs (`OPS.md` has the ops).
+//! It reads the same cached day as cap-board.
 //!
-//! The seam over transit-dispatch and transit-runs. It reads the same
-//! documents and the same held day as cap-board, plus the `work_rules`
-//! kind. There is no GTFS expansion. The arch gate forbids a GTFS layer.
-//!
-//! * Blocks and layovers are authored model state that GTFS does not carry. A
-//!   diverted trip that ends later eats into the vehicle's next layover. A
-//!   trip that the live document predicts ends late does too. That prediction
-//!   wins over the edits' ripple (D-18).
-//! * A block whose every trip is skipped or cannot be represented is not
-//!   offered: the hole shows as a hole.
-//! * Blocking is where cutting the work begins (D-46): `recovery` and
-//!   `suggest_blocks` answer under the work rules, and author `apply`
-//!   adopts the suggestion's edits.
+//! A live prediction of a late end wins over the edits' ripple (D-18).
+
 
 #![forbid(unsafe_code)]
 
@@ -21,49 +11,28 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{BlockChainTrip, DayBlock};
 
-/// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_runcut/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// The day's blocks: every authored block with at least one trip running
-    /// on the date, with that day's running trip counts. A block whose every
-    /// trip is off that day is a vehicle still in the garage. It is not
-    /// offered.
     Blocks {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
         date: String,
     },
-    /// The day's fleet in one answer (QAF-3). It gives running blocks, the peak
-    /// concurrent vehicles and the first time the peak is reached, and the
-    /// platform, revenue, and layover hours. It also gives each running block's
-    /// outline (span, trips, longest internal gap). Hosts otherwise need one
-    /// block_trips call per block, plus host-side concurrency glue.
     FleetSummary {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
         date: String,
     },
-    /// One block's chain on a service date. This is the authored runcut. The
-    /// model's blocks carry layovers that GTFS does not carry. The chain is
-    /// materialized for the day, with the in-force edits applied. A diverted
-    /// trip that ends later eats into the vehicle's next layover. This is the
-    /// connection-health ripple, made visible. With `live_hash`, a trip that
-    /// the live document predicts ends late does the same. Its delay at its
-    /// last stop counts, against the published time. Trips of the chain that
-    /// do not run on the date stay in view, marked. Unknown blocks answer
-    /// empty, never error.
     BlockTrips {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
         block_id: String,
         date: String,
-        /// Under this many seconds left, a layover is tight. This is the
-        /// dispatcher's policy. The default is 300.
         #[serde(default)]
         #[ts(optional)]
         tight_layover_secs: Option<u32>,
@@ -71,11 +40,6 @@ pub enum Request {
         #[ts(optional)]
         live_hash: Option<String>,
     },
-    /// One trip instance's stops on a service date. This is the day's trip
-    /// detail, effective. A diverted trip answers its patched sequence. The
-    /// instance's identity is the model's: (trip, start_secs). Its line is
-    /// `trip_path`. A trip that does not run on the date answers empty, never
-    /// an error.
     TripStops {
         network_hash: String,
         #[serde(default)]
@@ -84,11 +48,6 @@ pub enum Request {
         start_secs: u32,
         date: String,
     },
-    /// Every wait between a block's adjacent running trips on a date:
-    /// the recovery required there (D-9: the work rules' when one
-    /// applies, else the smallest authored layover at that terminal)
-    /// and the slack above it, folded per pattern into
-    /// layover-to-runtime.
     Recovery {
         network_hash: String,
         #[serde(default)]
@@ -98,13 +57,6 @@ pub enum Request {
         #[ts(optional)]
         work_rules_hash: Option<String>,
     },
-    /// The trips running on a date that no block carries, chained into
-    /// suggested blocks (D-46): each follows the vehicle that leaves it
-    /// the least slack where it starts (no deadheads), on a route the
-    /// work rules let it interline with, after the recovery required.
-    /// The answer carries each wait's slack, the peak with the
-    /// suggestion adopted against the authored peak, and the edits
-    /// that adopt it.
     SuggestBlocks {
         network_hash: String,
         #[serde(default)]
@@ -114,13 +66,6 @@ pub enum Request {
         #[ts(optional)]
         work_rules_hash: Option<String>,
     },
-    /// One trip instance's LINE on a service date, over the effective
-    /// day: its pattern's authored alignment, and for a trip a
-    /// diversion in force reroutes, the alignment to the first kept
-    /// stop, the diversion's traced detour, and the alignment from the
-    /// last kept stop (a skip-only diversion keeps the alignment; with
-    /// no alignment, the patched stops joined around the detour). A
-    /// trip that does not run on the date answers an empty path.
     TripPath {
         network_hash: String,
         #[serde(default)]
@@ -137,8 +82,6 @@ pub enum Request {
 pub enum Response {
     Blocks { blocks: Vec<DayBlock> },
     FleetSummary { summary: transit_dispatch::FleetSummary },
-    /// The chain, carrying the block it answers for. A session that asks for
-    /// many blocks groups results by the answer, never by request order.
     BlockTrips { block_id: String, trips: Vec<BlockChainTrip> },
     TripStops { stops: Vec<transit_dispatch::TripStopView> },
     TripPath { path: Vec<transit_network::Coord> },
@@ -146,8 +89,6 @@ pub enum Response {
     SuggestBlocks { suggestion: transit_runs::Suggestion },
 }
 
-/// The typed dispatch. Native hosts call this directly. Failures are
-/// `{"error": ...}`, and never panic. The seam is total.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Blocks { network_hash, edits_hash, date } => {
@@ -165,7 +106,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs, live_hash } => {
             let day = day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            // The date's live instances only (LiveDay::on).
             let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?.map(|l| l.on(&date, &date));
             Ok(Response::BlockTrips {
                 trips: transit_dispatch::block_chain(
@@ -208,21 +148,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, and `{"ok": ...}` or `{"error": ...}`
-/// out. Its bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The runcut has no bulk op of its own. Its documents register on the
-/// kernel's loads. The seam answers with an error, and does not silently
-/// ignore a bulk op.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the runcut has no bulk op of its own")))
 }
 
-/// The worked examples. The generator runs them. No module build turns
-/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 
@@ -241,10 +174,6 @@ cap_abi::capability! {
     ],
 }
 
-/// The day for (network, edits, date). The kernel holds it in its derived
-/// registry under `transit_dispatch::day_key`. It has the effective trips and,
-/// when edits are in force, what they took away. The date is read first, so
-/// a date that does not parse is the caller's error.
 fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, String> {
     let on = transit_dispatch::day_date(date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;

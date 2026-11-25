@@ -1,22 +1,5 @@
-//! Native dispatch tests for the directory capability. These test the seam
-//! without wasm, over the real fixture-derived network. That is the same
-//! document cap-network's import produces from the e2e zip. The laws:
-//!
-//! 1. the network document's identity is the module's canonical
-//!    serialization (the same identity every network-consuming
-//!    module returns);
-//! 2. the stop list is name-sorted and carries the walking-group
-//!    structure (the parent flag the station board keys off);
-//! 3. the names join answers in the request's order, unknown ids
-//!    omitted;
-//! 4. the route list is name-sorted with the model's modes;
-//! 5. a route's stop sequences are its PATTERNS, ordered stops with
-//!    resolved names (route_detail groups them by direction, the
-//!    timetable runs across one direction's patterns);
-//! 6. unknown hashes and unknown routes are honest errors and
-//!    empty answers, never panics;
-//! 7. `about` names the network a host holds only as bytes (its
-//!    name and plan, as the document carries them).
+//! Native tests of the directory ops over the network that cap-network's import
+//! produces from the e2e zip (cap-directory/OPS.md).
 
 use cap_directory::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use proptest::prelude::*;
@@ -25,8 +8,6 @@ use transit_network::Network;
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 
-/// The fixture-derived network document. Import is the codec, at the
-/// boundary. This module composes over the document it produces.
 fn derived_network() -> Network {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
     transit_codec::import(&feed).network
@@ -46,12 +27,9 @@ fn stops(limit: Option<u32>) -> Vec<cap_directory::DirectoryStop> {
 #[test]
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
-    // Every network-consuming module uses this formula: the canonical bytes
-    // (RFC 8785, D-169), hashed. One document, one truth.
     let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
-    // Idempotent: the same document loads to the same hash.
     assert_eq!(load_network(), hash);
 }
 
@@ -60,21 +38,17 @@ fn the_stop_list_is_name_sorted_and_carries_the_walking_group() {
     let all = stops(None);
     assert_eq!(all.len(), 6, "A, B, C, the station pin, two bays");
 
-    // Name-sorted (the pickers' shape), with ties by id. This is a total order.
     let names: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
     let mut sorted = names.clone();
     sorted.sort();
     assert_eq!(names, sorted, "{names:?}");
 
-    // The walking-group structure survives: the bays carry their
-    // parent, the pin carries none.
     let by_id = |id: &str| all.iter().find(|s| s.stop_id == id).unwrap_or_else(|| panic!("{id}"));
     assert_eq!(by_id("SA").parent.as_deref(), Some("STN"));
     assert_eq!(by_id("SB").parent.as_deref(), Some("STN"));
     assert_eq!(by_id("STN").parent, None);
     assert_eq!(by_id("A").name, "Main & 1st");
 
-    // The limit truncates after the sort. It never silently truncates the list.
     let two = stops(Some(2));
     assert_eq!(two.len(), 2);
     assert_eq!(two[0].stop_id, all[0].stop_id);
@@ -91,16 +65,11 @@ fn a_query_narrows_the_list_like_a_pickers_typing() {
             _ => panic!("stops"),
         }
     };
-    // Every term must match (name or id), case-insensitive: the
-    // station and both bays share "main station".
     assert_eq!(search("MAIN station"), vec!["STN", "SA", "SB"].into_iter().map(String::from).collect::<Vec<_>>());
-    // Substring terms narrow as a picker's typing does: "bay b"
-    // still matches both bays ("b" is in "Bay"); the id settles it.
     assert_eq!(search("bay b").len(), 2);
     assert_eq!(search("bay sb"), vec!["SB".to_string()]);
     assert_eq!(search("3rd"), vec!["C".to_string()]);
     assert!(search("nowhere").is_empty(), "no match answers empty, never an error");
-    // Fuzzy (D-48): a typo still finds the station and its bays.
     assert_eq!(search("main statoin"), vec!["STN", "SA", "SB"].into_iter().map(String::from).collect::<Vec<_>>());
     assert_eq!(search("  ").len(), 6, "an empty query is the whole list");
 }
@@ -116,8 +85,6 @@ fn the_names_join_answers_in_request_order() {
         Response::StopsByIds { stops } => stops,
         _ => panic!("stops_by_ids"),
     };
-    // Unknown ids are omitted, since the caller asked for stops. The answer
-    // keeps the request's order.
     assert_eq!(
         result.iter().map(|s| (s.stop_id.as_str(), s.name.as_str())).collect::<Vec<_>>(),
         vec![("B", "Main & 2nd"), ("STN", "Main Station"), ("A", "Main & 1st")],
@@ -142,10 +109,8 @@ fn the_route_list_is_name_sorted_with_model_modes() {
     assert!(routes.iter().any(|r| r.route_id == "10"));
 }
 
-/// A route's stop sequences are its patterns, the model's directions. Route
-/// 10 has three in the fixture. They are the direct A→B run with its shape
-/// and without, and the A→C→B run. The longest is the one with the
-/// skippable interior that the diversion editor anchors against.
+/// Route 10 has three patterns in the fixture. Two run A to B, with a shape and
+/// without. One runs A to C to B.
 #[test]
 fn a_routes_stop_sequences_are_its_patterns() {
     let patterns = match dispatch(Request::RouteStopSequence {
@@ -161,14 +126,10 @@ fn a_routes_stop_sequences_are_its_patterns() {
     let longest = patterns.iter().max_by_key(|p| p.stops.len()).unwrap();
     let ids: Vec<&str> = longest.stops.iter().map(|s| s.stop_id.as_str()).collect();
     assert!(ids.contains(&"A") && ids.contains(&"B") && ids.contains(&"C"), "{ids:?}");
-    // The interior stop sits between the anchors. This is the editor's
-    // skippable middle (the diversion e2e's contract).
     let pos = |id: &str| ids.iter().position(|s| *s == id).unwrap();
     assert!(pos("A") < pos("C") && pos("C") < pos("B"), "C is interior on the longest pattern");
-    // Names are resolved: the rows a human reads.
     assert!(longest.stops.iter().all(|s| !s.name.is_empty()));
 
-    // An unknown route answers empty, never an error.
     let ghost = match dispatch(Request::RouteStopSequence {
         network_hash: load_network(),
         route_id: "missing".into(),
@@ -181,8 +142,6 @@ fn a_routes_stop_sequences_are_its_patterns() {
     assert!(ghost.is_empty());
 }
 
-/// QAF-67: a route row carries its long name beside the short one. The
-/// fixture's routes all have one ("Downtown via Main").
 #[test]
 fn a_route_row_carries_its_long_name() {
     let routes = match dispatch(Request::Routes { network_hash: load_network() }).unwrap() {
@@ -200,12 +159,8 @@ fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result
     })
 }
 
-/// The stop question from a point. Places come nearest first. The station's
-/// bays answer as the station, as one place. Each row gives its distance in
-/// meters.
 #[test]
 fn stops_near_a_point_are_places_nearest_first() {
-    // Standing on Bay A: the station is the nearest place (0 m).
     let rows = near(45.5150, -73.5155, None, None).unwrap();
     let ids: Vec<&str> = rows.iter().map(|r| r.stop_id.as_str()).collect();
     assert_eq!(ids[0], "STN", "the bay answers as its station: {ids:?}");
@@ -214,13 +169,10 @@ fn stops_near_a_point_are_places_nearest_first() {
     assert_eq!(ids.len(), 4, "A, B, C and the station — every place, under the default limit");
     assert!(rows.windows(2).all(|w| w[0].distance_m <= w[1].distance_m));
 
-    // The limit and the radius narrow it. The answer is empty when nothing
-    // is near.
     assert_eq!(near(45.5150, -73.5155, Some(1), None).unwrap().len(), 1);
     assert!(near(45.5150, -73.5155, None, Some(500.0)).unwrap().iter().all(|r| r.distance_m <= 500.0));
     assert!(near(0.0, 0.0, None, Some(1000.0)).unwrap().is_empty());
 
-    // A point off the earth is a request error, never a panic.
     assert!(near(91.0, 0.0, None, None).unwrap_err().contains("lat"));
     assert!(near(0.0, 181.0, None, None).unwrap_err().contains("lon"));
     assert!(near(0.0, 0.0, None, Some(-1.0)).unwrap_err().contains("radius"));
@@ -228,10 +180,7 @@ fn stops_near_a_point_are_places_nearest_first() {
     assert!(bad.contains("invalid request"), "{bad}");
 }
 
-/// With the point's walks (cap-streets `access`'s, passed as they are, paths
-/// and all): the station a walk reaches comes first, at its bays' shortest
-/// walk. A and B are nearer as the crow flies. The places no walk reaches
-/// follow by distance.
+/// A and B are nearer as the crow flies, but the station's walk is shortest.
 #[test]
 fn stops_near_with_walks_ranks_by_walk() {
     let request = serde_json::json!({
@@ -308,9 +257,6 @@ fn the_planners_lists_are_directory_answers() {
     };
     assert!(!detail.patterns.is_empty() && !detail.stops.is_empty());
     assert!(detail.pattern_trips_by_type.iter().flat_map(|g| &g.pattern_trips).all(|s| s.trips.unwrap_or(0) > 0));
-    // The timetable of its first direction under its first service
-    // type, which runs alone on its dates (a combination of one):
-    // every trip, by start, one time per column.
     let direction = detail.directions[0].direction.clone();
     let members = vec![detail.pattern_trips_by_type[0].service_type.clone()];
     let request = Request::Timetable {
@@ -327,7 +273,6 @@ fn the_planners_lists_are_directory_answers() {
     assert!(!table.trips.is_empty());
     assert!(table.trips.windows(2).all(|w| w[0].start_secs <= w[1].start_secs), "rows by start");
     assert!(table.trips.iter().all(|t| t.times.len() == table.stops.len()));
-    // Against itself: nothing added, nothing removed.
     let against = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, members, compare_hash: Some(hash.clone()) };
     match dispatch(against).unwrap() {
         Response::Timetable { timetable: Some(t) } => assert!(t.trips.iter().all(|x| !x.added) && t.removed.is_empty()),
@@ -349,7 +294,6 @@ fn the_planners_lists_are_directory_answers() {
     };
     assert!(card.routes.iter().any(|r| r.id == "10"), "a stop route 10 visits is served by it");
     assert!(card.visits.iter().any(|v| v.route == "10" && v.trips > 0), "its visits carry the trips each pattern runs");
-    // Under no member, the same visits run nothing.
     match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id, members: Some(vec![]) }).unwrap() {
         Response::StopDetail { detail } => {
             let under_none = detail.expect("a visited stop exists");
@@ -366,9 +310,6 @@ fn the_planners_lists_are_directory_answers() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed into the model,
-    // with no request envelope. It answers what the JSON op answers.
-    // Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_directory::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -383,10 +324,6 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// QAF-19 re-pin: the finding asked to re-check these. Unknown IDs are
-    /// lookup misses. They give null details, never errors. Errors are for
-    /// hash addresses only. A lowercase id cannot collide with the fixture's
-    /// (A/B/C, 10/20, WK/SUN/HOL, B1, pat-*).
     #[test]
     fn unknown_ids_answer_empty_never_errors(id in "[a-z][a-z0-9_]{0,7}") {
         let hash = load_network();
@@ -408,8 +345,6 @@ proptest! {
             Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
             other => panic!("timetable on an unknown id must answer, not {other:?}"),
         }
-        // The known route under members that never run together is
-        // the same lookup miss.
         match dispatch(Request::Timetable {
             network_hash: hash,
             route_id: "10".into(),
@@ -420,7 +355,6 @@ proptest! {
             Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
             other => panic!("timetable on an unknown service type must answer, not {other:?}"),
         }
-        // The hash is an address: unknown means error, not empty.
         prop_assert!(
             dispatch(Request::RouteDetail {
                 network_hash: "sha256:missing".into(),
@@ -432,9 +366,6 @@ proptest! {
     }
 }
 
-/// A page that registers the network from bytes it never parsed still heads
-/// itself with the network's name. `about` answers it, with the plan the
-/// document is, as the document carries them.
 #[test]
 fn about_names_the_network_as_the_document_does() {
     let network = derived_network();
@@ -458,10 +389,7 @@ fn about_names_the_network_as_the_document_does() {
     }
 }
 
-/// The network on a map answers through the seam. The law is in
-/// transit-network's `route_lines_draw_what_focus_frames`. Every route the
-/// fixture runs draws. Route 10 draws the lines that `focus` frames for it.
-/// A service type that runs no route draws nothing.
+/// The property is transit-network's `route_lines_draw_what_focus_frames`.
 #[test]
 fn route_lines_draw_the_network() {
     let hash = load_network();
@@ -476,10 +404,8 @@ fn route_lines_draw_the_network() {
     assert!(lines(Some(vec!["nope".into()])).is_empty());
 }
 
-/// The service keys answer through the seam (the law is
-/// transit-network's
-/// `service_keys_are_the_authored_calendars_and_what_runs_on_them`):
-/// the fixture's weekday key carries route 10's trips.
+/// The property is transit-network's
+/// `service_keys_are_the_authored_calendars_and_what_runs_on_them`.
 #[test]
 fn service_keys_name_each_calendar_and_what_runs_on_it() {
     let keys = match dispatch(Request::ServiceKeys { network_hash: load_network() }).unwrap() {

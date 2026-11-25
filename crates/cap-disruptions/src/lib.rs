@@ -1,10 +1,3 @@
-//! cap-disruptions: what is disrupted on a day, and does an alert explain
-//! it? (D-213, D-218; OPS.md has the ops.)
-//!
-//! The seam over transit-disruptions. It reads the network, the edit
-//! document, the live document, the stops, the service alerts, and the
-//! notes, each by hash, and writes nothing.
-
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
@@ -15,8 +8,6 @@ use ts_rs::TS;
 
 pub use transit_disruptions::{AlertGap, AlertStart, Disruption, Filter, NamedStop, Origin, RouteDay, Today};
 
-/// The documents a question reads, by hash. Each one absent is an empty
-/// one, and no live document means no feed cancels and no late trips.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_disruptions/")]
 pub struct Documents {
@@ -36,9 +27,7 @@ pub struct Documents {
     #[serde(default)]
     #[ts(optional)]
     pub notes_hash: Option<String>,
-    /// The service date, "YYYY-MM-DD".
     pub date: String,
-    /// The host's clock, Unix seconds: what an alert explains now.
     #[ts(type = "number")]
     pub now: u64,
 }
@@ -47,8 +36,6 @@ pub struct Documents {
 #[ts(export, export_to = "cap_disruptions/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// The day by route. `route` answers one route; `stop`, the
-    /// disruptions that touch one stop.
     Today {
         #[serde(flatten)]
         #[ts(flatten)]
@@ -60,16 +47,11 @@ pub enum Request {
         #[ts(optional)]
         stop: Option<String>,
     },
-    /// What no alert explains on the day, with what an alert about each
-    /// starts from.
     Gaps {
         #[serde(flatten)]
         #[ts(flatten)]
         documents: Documents,
     },
-    /// What a new alert starts from (D-228): with a `source` that is a
-    /// gap, the gap's effect, informed riders, and what it explains; else
-    /// a blank alert that explains `source`, if one is given.
     StartAlert {
         #[serde(flatten)]
         #[ts(flatten)]
@@ -97,7 +79,6 @@ pub enum Response {
     },
 }
 
-/// The documents, held: every hash the request names is required.
 struct Held {
     network: Arc<transit_network::Network>,
     edits: Vec<transit_sync::EditRecord>,
@@ -149,8 +130,6 @@ impl Held {
     }
 }
 
-/// The typed dispatch (native hosts call this directly). Failures are
-/// `{"error": ...}`, never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Today { documents, route, stop } => {
@@ -168,20 +147,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out, byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The disruptions take their questions inline; each document registers
-/// on its kernel load.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: the disruptions read documents that register on the kernel's loads") }).to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
 #[cfg(feature = "examples")]
 pub mod examples;
 

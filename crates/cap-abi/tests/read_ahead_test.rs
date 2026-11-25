@@ -1,16 +1,6 @@
 //! Reading one version ahead (D-79, D-186; docs/FORMATS.md, "Rolling a
-//! version back"). A format change ships in two releases: release A
-//! reads vN and vN+1 and writes vN, and release B writes vN+1. So a
-//! rollback from B to A reads what B stored. Each change declares how A
-//! reads vN+1:
-//!
-//! - lossless: A reads it down, and vN+1 read down and brought forward
-//!   again is the same document;
-//! - read-only: A reads it down, and refuses to write over it, naming
-//!   both versions.
-//!
-//! A version past the next, or an older one, is refused. The
-//! laws run over fixture kinds: no kind has a next version today.
+//! version back"). The tests use fixture kinds, because no real kind has a
+//! next version.
 
 use cap_abi::{read_versioned, versioned, Base, Current, ReadAhead};
 use proptest::prelude::*;
@@ -22,14 +12,13 @@ transit_version::kind_tag!(ThingKind = "thing");
 transit_version::kind_tag!(RatedKind = "rated");
 transit_version::kind_tag!(PlainKind = "plain");
 
-/// v1 of a kind whose v2 renames `name` to `title`: lossless.
+/// Its v2 renames `name` to `title`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Thing {
     #[serde(default)]
     kind: ThingKind,
     schema_version: u32,
     name: String,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     extra: transit_version::Extra,
 }
@@ -50,7 +39,6 @@ impl Versioned for Thing {
     }
 }
 
-/// The migration step the step down reverses: v1 to v2.
 fn thing_forward(mut v1: Value) -> Value {
     let object = v1.as_object_mut().unwrap();
     let name = object.remove("name").unwrap();
@@ -59,8 +47,7 @@ fn thing_forward(mut v1: Value) -> Value {
     v1
 }
 
-/// v1 of a kind whose v2 adds stars, a meaning v1 cannot hold:
-/// read-only.
+/// Its v2 adds stars, which v1 cannot hold.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Rated {
     #[serde(default)]
@@ -84,7 +71,6 @@ impl Versioned for Rated {
     }
 }
 
-/// A kind that reads only its own version.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Plain {
     #[serde(default)]
@@ -131,9 +117,8 @@ fn a_copy_in_this_version_reads_as_itself() {
 }
 
 proptest! {
-    /// Lossless: vN+1 reads down, keeps the identity it is stored under,
-    /// and brought forward again is the same document. A write over it
-    /// is allowed.
+    /// A lossless copy keeps its identity, and brought forward again it is
+    /// the same document. A write over it is allowed.
     #[test]
     fn a_lossless_step_reads_down_and_round_trips(name in "\\PC{0,24}", extra in any::<bool>()) {
         let mut v2 = json!({"kind": "thing", "schema_version": 2, "title": name});

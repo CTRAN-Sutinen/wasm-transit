@@ -1,19 +1,6 @@
-//! cap-streets: where along the streets? (OPS.md has the ops.)
-//!
-//! The seam over transit-streets: snap, route along the graph (so a traced
-//! detour or a drawn pattern is street geometry), and walks between a
-//! network's stops or from a point to the stops near it (D-26 for the bus
-//! profile).
-//!
-//! * The streets document is the host's. The module is the hash
-//!   authority: the hash is the canonical document's, so the same streets
-//!   from another file are one hash, and `load_streets` refuses a
-//!   document that is not canonical.
-//! * The street graph and the walking graph are derived entries
-//!   (`cap_abi::kernel::STREET_GRAPH`, `WALK_GRAPH`), each built on first
-//!   use, so a host that only walks never builds the street graph.
-//! * `route` answers empty across a gap in the graph, and the caller
-//!   falls back to a straight line.
+//! The street graph and the walking graph are separate cached entries
+//! (`STREET_GRAPH`, `WALK_GRAPH`), each built on first use, so a host that
+//! only walks never builds the street graph.
 
 #![forbid(unsafe_code)]
 
@@ -25,26 +12,13 @@ use ts_rs::TS;
 use transit_streets::walking::{DirectWalk, PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
 use transit_streets::{StreetClass, StreetNetwork, StreetPoint, StreetPosition, StreetUse, Streets};
 
-/// The bulk-bytes op code that imports a street layer (GeoJSON); a
-/// streets document registers on the kernel's `load_streets`.
 pub const OP_IMPORT: u32 = 0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_streets/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Read a street layer into the streets document, and register it under
-    /// its hash. The layer is a GeoJSON FeatureCollection or Feature of
-    /// LineString/MultiLineString geometries. Lines that are not streets
-    /// (railroads, water) are left out (D-30). Bulk-bytes op 0.
     Import { bytes: Vec<u8> },
-    /// How long a rider walks between the network's stops along the streets.
-    /// The answer is the walk table, a document that the router plans
-    /// transfers over, and its hash. Walkable streets are every class but
-    /// motorway, ramp and unknown. Walks run both ways along one-way
-    /// streets. A walk is each stop's walk to its nearest walkable street
-    /// plus the street distance, at `speed_mps` (default 1.3), rounded up to
-    /// the second. It is kept within `max_walk_secs` (default 600).
     Walks {
         streets_hash: String,
         network_hash: String,
@@ -53,13 +27,6 @@ pub enum Request {
         #[serde(default)]
         max_walk_secs: Option<u32>,
     },
-    /// The walks from a point (a tapped spot, the rider's location) to the
-    /// network's stops within the limit. These are the walks the walk table
-    /// would hold for a stop at the point. Each walk has the path the rider
-    /// walks, and the walks come nearest first. When `to` is given, the
-    /// answer also has the walk from the point straight to it. The router
-    /// plans a trip from the point over these walks. The answer is empty
-    /// when no walkable street is near the point.
     Access {
         streets_hash: String,
         network_hash: String,
@@ -71,20 +38,7 @@ pub enum Request {
         #[serde(default)]
         max_walk_secs: Option<u32>,
     },
-    /// The nearest street position to (lat, lon), within the snap
-    /// neighborhood. This is the graph address (segment, parameter) that a
-    /// trace's waypoint commits to. Null when no street is nearby.
     Snap { streets_hash: String, lat: f64, lon: f64 },
-    /// The street geometry between two positions: the shortest path along
-    /// the graph. The points end exactly at `to`. They start after `from`.
-    /// A trace chains legs, so each leg starts at the previous leg's
-    /// committed end. For a standalone trace, prepend `from`. The answer is
-    /// empty when the positions sit on disconnected parts of the network.
-    /// The caller then falls back to a straight line. The answer names the
-    /// streets the path follows. For the bus profile (D-26), a bus is drawn
-    /// down any street and is never refused. The answer also names the
-    /// streets of a class in `confirm`, for the planner to confirm (default:
-    /// unknown, path, steps, track).
     Route {
         streets_hash: String,
         from: StreetPosition,
@@ -99,9 +53,6 @@ pub enum Request {
 #[ts(export, export_to = "cap_streets/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    /// The document the host holds, its hash, and its size.
-    /// The streets as their canonical bytes exactly (RFC 8785, D-169):
-    /// a host serves them under `streets_hash` as they stand.
     Import {
         streets_hash: String,
         #[ts(as = "Streets")]
@@ -110,42 +61,26 @@ pub enum Response {
         segments: u32,
         nodes: u32,
     },
-    /// The walk table and its hash (the router's `load_walks` answers
-    /// the same).
-    /// The walk table as its canonical bytes exactly (RFC 8785, D-169).
     Walks {
         walks_hash: String,
         #[ts(as = "WalkTable")]
         walks: cap_abi::Canonical<WalkTable>,
     },
-    /// `direct`: the walk to `to` (null when none was asked, or none
-    /// is within the limit).
     Access { walks: Vec<PointWalk>, direct: Option<DirectWalk> },
     Snap { position: Option<StreetPosition> },
-    /// `length_m`: the path's length along the graph from `from` to
-    /// `to`. It is null when no path exists. `streets`: the streets the
-    /// path follows, in order (class, name, meters along it). `to_confirm`:
-    /// those of them whose class the profile asks the planner to confirm.
-    /// They are drawn all the same.
     Route { points: Vec<StreetPoint>, length_m: Option<f64>, streets: Vec<StreetUse>, to_confirm: Vec<StreetUse> },
 }
 
-/// The street graph (snap, route) over a registered streets document,
-/// built on first use and held as a derived entry.
 fn graph(streets_hash: &str) -> Result<Arc<StreetNetwork>, String> {
     let streets = kind::<transit_streets::Streets>().require(streets_hash)?;
     cap_abi::kernel::derive(&STREET_GRAPH, streets_hash, &[streets_hash], || Ok(StreetNetwork::build(&streets)))
 }
 
-/// The walking graph over a registered streets document, built on
-/// first use and held as a derived entry. A host that only walks never
-/// builds the street graph.
 fn walking(streets_hash: &str) -> Result<Arc<WalkGraph>, String> {
     let streets = kind::<transit_streets::Streets>().require(streets_hash)?;
     cap_abi::kernel::derive(&WALK_GRAPH, streets_hash, &[streets_hash], || Ok(WalkGraph::new(&streets)))
 }
 
-/// The walking speed and limit, defaulted and checked.
 fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32), String> {
     let speed_mps = speed_mps.unwrap_or(WALK_SPEED_MPS);
     let max_walk_secs = max_walk_secs.unwrap_or(MAX_WALK_SECS);
@@ -158,7 +93,6 @@ fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32)
     Ok((speed_mps, max_walk_secs))
 }
 
-/// A registered network's stops (id, lat, lon). A walk reads only these.
 fn network_stops(network_hash: &str) -> Result<Vec<(String, f64, f64)>, String> {
     Ok(kind::<transit_network::Network>().require(network_hash)?.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect())
 }
@@ -204,16 +138,11 @@ fn access(
 
 fn import(bytes: &[u8]) -> Result<Response, String> {
     let streets = transit_streets::geojson::import(bytes).map_err(|e| format!("street layer: {}", e.0))?;
-    // The document registers where it is minted. Every query, and in an
-    // assembly every capability, addresses it by hash.
     let (ways, segments, nodes) = streets.counts();
     let (streets_hash, streets) = kind::<transit_streets::Streets>().register(streets)?;
     Ok(Response::Import { streets_hash, streets: cap_abi::Canonical((*streets).clone()), ways, segments, nodes })
 }
 
-/// The typed dispatch. Native hosts call this directly. Failures are
-/// `Err(msg)`. It never panics: a total seam. Garbage bytes are an error
-/// outcome, not a trap.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Import { bytes } => import(&bytes),
@@ -239,13 +168,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
-/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The bulk-bytes seam: op 0 imports a street layer.
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     cap_abi::outcome(match op {
         OP_IMPORT => import(bytes),
@@ -253,8 +179,6 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     })
 }
 
-/// The worked examples. The generator runs them. No module build turns
-/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

@@ -1,7 +1,3 @@
-//! The disruptions capability's worked examples (its `examples`
-//! feature): the documents to load and each request. The generator runs
-//! them through this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -52,7 +48,6 @@ pub fn examples() -> Vec<Example> {
     ]
 }
 
-/// A fixture document's canonical hash, whatever its type.
 mod erased {
     pub trait Hash {
         fn hash(&self) -> String;

@@ -1,27 +1,11 @@
-//! The bus profile's laws (D-26, a bus): a planner draws a bus along
-//! any class of street. The data's class is a grey area the planner
-//! judges. The classes the data does not clearly allow (unknown,
-//! and the path-like path, steps and track) come back named, as
-//! streets to confirm, never as a refusal.
+//! Pins the bus profile (D-26, `crates/cap-streets/OPS.md` "route"):
 //!
-//! Written before the implementation, from the decision:
-//!
-//! 1. **Never refused**: a route's points and length do not depend on
-//!    the classes of the streets it runs: the same document with every
-//!    class relabeled answers the same path.
-//! 2. **The streets it follows**: a route names the streets it runs,
-//!    in order (`streets`: class, name, meters along it); their meters
-//!    add up to the route's length, none is empty, and two in a row
-//!    differ (a street is one entry however many segments it has).
-//!    Each is a street of the document.
-//! 3. **On one street**: a route that never leaves a way names that
-//!    way alone.
-//! 4. **The profile**: the bus profile asks the planner to confirm
-//!    exactly unknown, path, steps and track; nothing else.
-//!
-//! The API: `StreetNetwork::route_along(from, to) -> Option<StreetRoute
-//! { points, length_m, streets: Vec<StreetUse { class, name, length_m
-//! }> }>`; `transit_streets::bus::{CONFIRM, confirms}`.
+//! 1. A route does not depend on street class.
+//! 2. A route names its streets in order. Their meters add up to the
+//!    length, and no entry is empty or repeated in a row.
+//! 3. A route along one way names that way alone.
+//! 4. The profile asks the planner to confirm exactly unknown, path, steps,
+//!    and track.
 
 use proptest::prelude::*;
 use transit_streets::{bus, StreetClass, StreetNetwork, Streets, Way};
@@ -64,8 +48,7 @@ fn spec() -> impl Strategy<Value = Spec> {
         .prop_map(|(ways, from, to)| Spec { ways, from, to })
 }
 
-/// A lattice: N rows and N columns of straight streets, each split at
-/// every crossing (ways weld where they share a point).
+/// N rows and N columns of straight streets that weld at the crossings.
 fn streets(spec: &Spec, relabel: Option<StreetClass>) -> Streets {
     let mut ways = Vec::new();
     for (i, &(present, class, name, oneway)) in spec.ways.iter().enumerate() {
@@ -103,7 +86,6 @@ proptest! {
         let a = g.route_along(from, to);
         let b = h.route_along(from, to);
         prop_assert_eq!(a.as_ref().map(|r| (&r.points, r.length_m)), b.as_ref().map(|r| (&r.points, r.length_m)));
-        // …and the same as the plain route the graph always answered.
         prop_assert_eq!(a.as_ref().map(|r| (r.points.clone(), r.length_m)), g.route_with_length(from, to));
     }
 

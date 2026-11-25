@@ -1,14 +1,11 @@
-//! The work-rule document (D-50).
 
 use serde::{Deserialize, Serialize};
 use transit_network::RecoveryAt;
 use ts_rs::TS;
 
-/// The document version this build speaks.
 pub const SCHEMA_VERSION: u32 = 1;
 
 transit_version::kind_tag!(
-    /// The work-rule document's kind tag: always `"work_rules"`.
     WorkRulesKind = "work_rules"
 );
 
@@ -20,56 +17,47 @@ impl transit_version::Versioned for WorkRules {
     }
 }
 
-/// The rules work is cut under: generic, every rule optional, an
-/// agency's values as data. Nothing unset is written, so an empty
-/// document is `{"kind":"work_rules","schema_version":1}`.
+/// An empty document is `{"kind":"work_rules","schema_version":1}`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct WorkRules {
-    /// The kind tag (D-115): `"work_rules"`; a copy without one reads
-    /// as work rules.
+    /// A copy without a kind tag reads as work rules (D-115).
     #[serde(default)]
     #[ts(type = "\"work_rules\"")]
     pub kind: WorkRulesKind,
-    /// The document's version, as every kind names it; a copy without
-    /// one is version 1.
+    /// A copy without a version is version 1.
     #[serde(default)]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
-    /// What the agency calls this rule set ("Winter 2027 agreement").
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[ts(optional, as = "Option<String>")]
     pub name: String,
-    /// The recovery a wait after a trip requires (D-9). The most
-    /// specific rule answers: route and service type, then route, then
-    /// service type, then neither. If no rule applies, the terminal's
-    /// floor (the smallest authored layover there).
+    /// The most specific rule answers. Specificity runs from route with
+    /// service type, to route, to service type, to neither. With no rule,
+    /// the terminal's floor applies, which is the smallest authored layover
+    /// there (D-9).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<RecoveryRule>>")]
     pub recovery: Vec<RecoveryRule>,
-    /// The route pairs one vehicle may run back to back (D-46: set per
-    /// pair, either order). A route always follows itself; a pair not
-    /// listed is not interlined.
+    /// Set per pair, in either order (D-46). A route follows itself. An
+    /// unlisted pair never interlines.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<RoutePair>>")]
     pub interline: Vec<RoutePair>,
-    /// The rules a run is cut under.
     #[serde(default, skip_serializing_if = "RunRules::is_empty")]
     #[ts(optional, as = "Option<RunRules>")]
     pub runs: RunRules,
-    /// What a run is paid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub pay: Option<Pay>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// One recovery requirement: the larger of `min_secs` and
-/// `pct_of_run` percent of the run before the wait (rounded up to the
-/// second). Scoped by route and/or service type; neither = every trip.
+/// The larger of `min_secs` and `pct_of_run` percent of the run before the
+/// wait, rounded up to the second. With no route or service type, the rule
+/// covers every trip.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct RecoveryRule {
@@ -82,30 +70,25 @@ pub struct RecoveryRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub min_secs: Option<u32>,
-    /// A whole percent of the run time (0–1000).
+    /// A whole percent of the run time (0 to 1000).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub pct_of_run: Option<u32>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// Two routes one vehicle may run back to back, either order.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct RoutePair {
     pub a: String,
     pub b: String,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// The rules a run is cut under. Each is optional. The runs cut reads
-/// them (`docs/units/runs-layer.md`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct RunRules {
@@ -134,12 +117,11 @@ pub struct RunRules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub meal: Option<MealBreak>,
-    /// Where one operator may relieve another (stop ids). Empty: at
-    /// the ends of a block's trips only.
+    /// Stop ids where one operator may relieve another. When empty, only at
+    /// the ends of a block's trips.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
     pub relief_points: Vec<String>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -151,21 +133,19 @@ impl RunRules {
     }
 }
 
-/// A meal break: at least `min_secs` off within the first
-/// `within_secs` of work.
+/// At least `min_secs` off within the first `within_secs` of work.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct MealBreak {
     pub within_secs: u32,
     pub min_secs: u32,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// What a run is paid, in time (D-51: no dollars, because operators'
-/// rates vary by seniority).
+/// Pay is in time, not dollars, because operators' rates vary by seniority
+/// (D-51).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct Pay {
@@ -188,7 +168,6 @@ pub struct Pay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub spread_pct: Option<u32>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -211,13 +190,11 @@ impl RecoveryRule {
 }
 
 impl WorkRules {
-    /// The document validated and normalized (rules and pairs sorted,
-    /// each pair's routes in order). It is what the kernel registers, so
-    /// two orderings of one document are one identity. Refused: a
-    /// version this build does not speak, a rule that requires
-    /// nothing, two rules over one scope, a share over 1000 percent, a
-    /// pair that is one route or listed twice, a minimum piece over
-    /// the maximum.
+    /// Rules and pairs are sorted, and each pair's routes are in order, so
+    /// two orderings of one document are one identity. Refused: a version
+    /// this build does not speak, a rule that requires nothing, two rules
+    /// over one scope, a share over 1000 percent, a pair that is one route or
+    /// listed twice, and a minimum piece over the maximum.
     pub fn checked(mut self) -> Result<WorkRules, String> {
         if self.schema_version.0 != SCHEMA_VERSION {
             return Err(format!("work rules version {} (this build speaks version {SCHEMA_VERSION})", self.schema_version.0));
@@ -254,13 +231,10 @@ impl WorkRules {
         Ok(self)
     }
 
-    /// The recovery the most specific applicable rule requires after a
-    /// trip, or `None` when no rule applies.
     pub fn recovery_secs(&self, at: &RecoveryAt) -> Option<u32> {
         self.recovery.iter().filter(|r| r.applies(at)).max_by_key(|r| r.specificity()).and_then(|r| r.secs(at.run_secs))
     }
 
-    /// May one vehicle run route `b` right after route `a`?
     pub fn interlines(&self, a: &str, b: &str) -> bool {
         a == b || self.interline.iter().any(|p| (p.a == a && p.b == b) || (p.a == b && p.b == a))
     }
@@ -275,9 +249,8 @@ fn scope(r: &RecoveryRule) -> String {
     }
 }
 
-/// The requirement `transit_network::validation_issues_under` takes:
-/// the rules' when there are rules, else none (the terminal's floor
-/// judges).
+/// The requirement that `validation_issues_under` takes: the rules', else the
+/// terminal's floor judges.
 pub fn required(rules: Option<&WorkRules>) -> impl Fn(&RecoveryAt) -> Option<u32> + '_ {
     move |at| rules.and_then(|r| r.recovery_secs(at))
 }

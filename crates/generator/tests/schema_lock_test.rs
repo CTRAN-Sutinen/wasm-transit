@@ -1,11 +1,7 @@
-//! The schema lock, each of its conditions broken on a fixture: a gate
-//! that cannot fail proves nothing. The gate itself runs over every real
-//! document kind in `just caps` (gen-manifest), and `just schema-lock`
-//! writes the locks (docs/FORMATS.md, "The schema lock").
-//!
-//! The fixture kind is `thing`. Each module below is one build's serde
-//! type for it, with the same Rust name, so a schema differs only where
-//! the shape differs.
+//! Each condition of the schema lock fails on a fixture (docs/FORMATS.md,
+//! "The schema lock"). The fixture kind is `thing`. Each module below is one
+//! build's serde type for it, with the same Rust name, so a schema differs
+//! only where the shape differs.
 
 #[path = "../src/schema_lock.rs"]
 mod schema_lock;
@@ -13,7 +9,6 @@ mod schema_lock;
 use schema_lock::{freeze, kind, read_lock, write_lock, Drift, Kind, Lock};
 use serde_json::{json, Value};
 
-/// The build that freezes v1: a name and a list of stops.
 mod v1 {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -26,7 +21,6 @@ mod v1 {
     }
 }
 
-/// v1 with an optional field that writes nothing when it is absent.
 mod added_optional {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -41,7 +35,7 @@ mod added_optional {
     }
 }
 
-/// v1 with a field that always writes, so every document's bytes move.
+/// A field that always writes, so every document's bytes move.
 mod added_written {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -56,8 +50,6 @@ mod added_written {
     }
 }
 
-/// v1 with `name` renamed to `title`: the frozen example's `name` is
-/// then a field the type does not know.
 mod renamed {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -71,7 +63,6 @@ mod renamed {
     }
 }
 
-/// v1 with `stops` made a count: the frozen example does not read.
 mod retyped {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -84,7 +75,7 @@ mod retyped {
     }
 }
 
-/// v1 with `stops` declared to name stops (D-232): no byte changes.
+/// Declares `stops` as a reference (D-232). No byte changes.
 mod declared {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -98,7 +89,6 @@ mod declared {
     }
 }
 
-/// `declared` with the target changed to the network's stops.
 mod retargeted {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -120,12 +110,10 @@ fn v1_kind() -> Kind {
     kind::<v1::Thing>("thing", 1, Some(example(1)), None)
 }
 
-/// The v1 lock, frozen from the v1 build.
 fn v1_lock() -> Lock {
     freeze(&v1_kind(), &Lock::empty("thing")).expect("v1 freezes")
 }
 
-/// The v2 build: v1's `name` is `title`, a required field.
 mod v2 {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     pub struct Thing {
@@ -148,7 +136,7 @@ fn v1_to_v2(mut doc: Value, from: u32) -> Result<Value, String> {
     Ok(doc)
 }
 
-/// A step that forgets to carry `name` over, so v2 does not read.
+/// Forgets to carry `name` over, so v2 does not read.
 fn broken_step(mut doc: Value, _from: u32) -> Result<Value, String> {
     doc["schema_version"] = json!(2);
     Ok(doc)
@@ -186,7 +174,7 @@ fn a_version_this_build_writes_with_no_lock_fails() {
     assert!(has(&drifts, |d| matches!(d, Drift::Unlocked { version: 1, .. })), "{drifts:?}");
 }
 
-/// Condition 1: the serde type changed without a version bump.
+/// Condition 1.
 #[test]
 fn a_changed_type_in_the_same_version_fails() {
     for (what, changed) in [
@@ -211,7 +199,7 @@ fn a_retyped_field_is_unreadable() {
     assert!(has(&drifts, |d| matches!(d, Drift::Unreadable { .. })), "{drifts:?}");
 }
 
-/// Condition 3: the current example's canonical hash moves.
+/// Condition 3.
 #[test]
 fn a_field_that_changes_the_bytes_fails() {
     let changed = kind::<added_written::Thing>("thing", 1, Some(example(1)), None);
@@ -221,7 +209,7 @@ fn a_field_that_changes_the_bytes_fails() {
     assert!(freeze(&changed, &v1_lock()).is_err());
 }
 
-/// The exception (D-167): an added optional field needs no bump.
+/// D-167.
 #[test]
 fn an_added_optional_field_is_recorded_in_the_same_version() {
     let added = kind::<added_optional::Thing>("thing", 1, Some(example(1)), None);
@@ -234,7 +222,7 @@ fn an_added_optional_field_is_recorded_in_the_same_version() {
     assert_eq!(schema_lock::check(&added, &recorded), vec![]);
 }
 
-/// Condition 2: an older version's example no longer migrates.
+/// Condition 2.
 #[test]
 fn an_older_example_that_does_not_migrate_fails() {
     let bumped = v2_kind(broken_step);
@@ -300,9 +288,7 @@ fn a_lock_edited_by_hand_fails() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// D-232: a declaration added to a field that had none states what was
-/// already true. The bytes do not change, so it is recorded in the same
-/// version.
+/// D-232. The bytes do not change, so the same version records it.
 #[test]
 fn an_added_reference_declaration_is_recorded_in_the_same_version() {
     let declared = kind::<declared::Thing>("thing", 1, Some(example(1)), None);
@@ -313,8 +299,8 @@ fn an_added_reference_declaration_is_recorded_in_the_same_version() {
     assert_eq!(schema_lock::check(&declared, &recorded), vec![]);
 }
 
-/// D-232: a changed target changes what the field means, though no byte
-/// changes. It needs a version bump, and so does a dropped declaration.
+/// D-232. A changed target changes what the field means, though no byte
+/// changes.
 #[test]
 fn a_changed_or_dropped_reference_target_needs_a_bump() {
     let declared = kind::<declared::Thing>("thing", 1, Some(example(1)), None);

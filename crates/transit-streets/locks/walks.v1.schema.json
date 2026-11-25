@@ -5,7 +5,6 @@
       "type": "integer"
     },
     "Walk": {
-      "description": "One walk: `from` to `to`, in seconds.",
       "properties": {
         "from": {
           "type": "string"
@@ -31,12 +30,10 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Every walk between a network's stops within the limit, and what\nit derives from: the streets and network documents' hashes,\nthe speed, the limit. Walks in (from, to) order; symmetric.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/WalksKind",
-      "default": "walks",
-      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+      "default": "walks"
     },
     "max_walk_secs": {
       "format": "uint32",
@@ -44,7 +41,6 @@
       "type": "integer"
     },
     "network_hash": {
-      "description": "The network whose stops it walks between.",
       "format": "content-hash",
       "type": "string",
       "x-references": "network"
@@ -58,7 +54,6 @@
       "type": "number"
     },
     "streets_hash": {
-      "description": "The streets document the table walks (a blob in the store).",
       "format": "content-hash",
       "type": "string",
       "x-references": "streets"

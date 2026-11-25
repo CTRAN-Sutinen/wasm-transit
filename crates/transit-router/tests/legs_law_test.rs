@@ -1,22 +1,13 @@
-//! What a transit leg tells the rider (QAF-67/68).
-//!
-//! The intent, as the user stated it: a transit leg carries the route's long
-//! name next to its short name. It also carries the headsign the bus shows
-//! where the rider boards. The one shared rule is
-//! `transit_network::visit_destination`. It uses the visit's own headsign.
-//! Otherwise it uses the trip's. Otherwise it uses the final stop, named as the
-//! place (its parent station). It never names the bay, and it never names the
-//! authored pattern.
-//!
-//! The fixture:
+//! Pins the route names and the headsign of a transit leg. The headsign
+//! follows `transit_network::visit_destination`.
 //!
 //! * t1 (route 12 "Fourth Plain", trip headsign "Downtown"): A to B to C.
 //!   Boarding anywhere reads "Downtown".
 //! * t2 (route 12, no trip headsign, stop headsign "Via Main" at A only): A to
-//!   B to BAY (a bay of "Van Mall TC"). Boarding at A reads "Via Main".
-//!   Boarding at B reads "Van Mall TC".
+//!   B to BAY (a bay of "Van Mall TC"). Boarding at A reads "Via Main", and
+//!   boarding at B reads "Van Mall TC".
 //! * t3 (route 7, short name only): C to BAY, no headsigns. It reads "Van Mall
-//!   TC". Its long name is absent.
+//!   TC" and has no long name.
 
 use std::io::Write;
 
@@ -39,7 +30,6 @@ fn fixture() -> Vec<u8> {
     add(&mut w, "agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n");
     add(&mut w, "routes.txt",
         "route_id,agency_id,route_short_name,route_long_name,route_type\n12,1,12,Fourth Plain,3\n7,1,7,,3\n");
-    // Stops ~1 km apart: no walking shortcuts.
     add(&mut w, "stops.txt",
         "stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station\n\
          A,A St,45.50,-122.50,0,\n\
@@ -64,7 +54,6 @@ fn fixture() -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-/// The one transit leg of the plan from `from` leaving at `depart`.
 fn ride(net: &RouterNetwork, from: &str, to: &str, depart: u32) -> Leg {
     let it = earliest_arrival(net, from, to, depart, 1).unwrap().expect("reachable");
     let [leg] = &it.legs[..] else { panic!("one ride, got {:?}", it.legs) };
@@ -86,13 +75,11 @@ fn a_leg_names_its_route_and_the_sign_where_the_rider_boards() {
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
     let long = Some("Fourth Plain".to_string());
 
-    // t1: the trip's headsign, wherever you board.
     assert_eq!(signs(&ride(&net, "A", "C", 7 * 3600)), ("12".into(), long.clone(), "Downtown".into()));
     assert_eq!(signs(&ride(&net, "B", "C", 7 * 3600)), ("12".into(), long.clone(), "Downtown".into()));
-    // t2: the visit's own headsign at A. At B, there is no visit or trip
-    // headsign. The final stop names the place (the station, not the bay).
+    // t2: the visit's own headsign at A. At B, no visit or trip headsign
+    // exists, so the final stop names the place (the station, not the bay).
     assert_eq!(signs(&ride(&net, "A", "BAY", 8 * 3600 + 30 * 60)), ("12".into(), long.clone(), "Via Main".into()));
     assert_eq!(signs(&ride(&net, "B", "BAY", 8 * 3600 + 30 * 60)), ("12".into(), long, "Van Mall TC".into()));
-    // t3: a route with no long name says so.
     assert_eq!(signs(&ride(&net, "C", "BAY", 9 * 3600 + 30 * 60)), ("7".into(), None, "Van Mall TC".into()));
 }

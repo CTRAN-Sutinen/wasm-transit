@@ -1,24 +1,17 @@
-//! The GTFS Schedule feed, whole: every file and every column of the
-//! spec, read and written without loss.
+//! Each file is a list of rows, and each row keeps every spec column as the
+//! text the feed carried (`None` is empty or absent). Typing is the import's
+//! job, so `from_zip_bytes` then `to_zip_bytes` loses nothing. Extension files
+//! and columns outside the spec are not read.
 //!
-//! This is the boundary's serialization layer and nothing more. Each
-//! file is a list of rows; each row keeps every spec column as the
-//! exact text the feed carried (`None` = empty or absent). Typing is
-//! the import's job, where the model needs it. Keeping text here is
-//! what makes `Feed::from_zip_bytes` → `Feed::to_zip_bytes` lossless
-//! by construction. Extension files and columns outside the spec are
-//! not read.
-//!
-//! Writing is deterministic: files in spec order, columns in spec
-//! order (a column appears when the spec requires it or any row fills
-//! it), rows in the order given, fixed zip metadata, so the zip's
-//! content hash is a document identity (the capability-bus rule).
+//! Writing is deterministic, so the zip's content hash is a document
+//! identity. Files and columns follow spec order, and a column appears when
+//! the spec requires it or any row fills it. Rows keep their order, and the zip
+//! metadata is fixed.
 
 use std::io::{Cursor, Read, Write};
 
 use serde::{Deserialize, Deserializer};
 
-/// Why a feed could not be read.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FeedError {
     Zip(String),
@@ -40,21 +33,15 @@ impl std::fmt::Display for FeedError {
 
 impl std::error::Error for FeedError {}
 
-/// One spec file's row type.
 pub trait Table: for<'de> Deserialize<'de> {
-    /// The file name inside the zip.
     const FILE: &'static str;
-    /// Every spec column, in spec order.
     const COLUMNS: &'static [&'static str];
-    /// Columns the spec requires in the header even when every row
-    /// leaves them empty (an empty `fare_attributes.transfers` means
-    /// unlimited, so the column must exist).
+    /// The header has these even when every row leaves them empty. An empty
+    /// `fare_attributes.transfers` means unlimited, so the column must exist.
     const REQUIRED: &'static [&'static str];
-    /// The row's cells, in `COLUMNS` order.
     fn cells(&self) -> Vec<Option<&str>>;
 }
 
-/// An empty cell is an absent value.
 fn empty_as_none<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     Ok(Option::<String>::deserialize(d)?.filter(|s| !s.is_empty()))
 }
@@ -86,17 +73,13 @@ macro_rules! gtfs_files {
             }
         )*
 
-        /// A whole GTFS Schedule feed: one row list per spec file,
-        /// plus `locations.geojson`.
         #[derive(Debug, Clone, Default, PartialEq)]
         pub struct Feed {
             $(pub $field: Vec<$row>,)*
-            /// `locations.geojson`, as the JSON value it is.
             pub locations: Option<serde_json::Value>,
         }
 
         impl Feed {
-            /// Read every spec file the zip carries.
             pub fn from_zip_bytes(bytes: &[u8]) -> Result<Feed, FeedError> {
                 let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
                     .map_err(|e| FeedError::Zip(e.to_string()))?;
@@ -113,7 +96,7 @@ macro_rules! gtfs_files {
                         return Err(FeedError::MissingFile(required));
                     }
                 }
-                // stops.txt is conditionally required: a feed whose
+                // The spec makes stops.txt conditionally required: a feed whose
                 // service is all zones (locations.geojson) may omit it.
                 if !has_member(&mut archive, "stops.txt") && feed.locations.is_none() {
                     return Err(FeedError::MissingFile("stops.txt"));
@@ -124,8 +107,6 @@ macro_rules! gtfs_files {
                 Ok(feed)
             }
 
-            /// Write the feed as zip bytes. Deterministic: the same
-            /// feed yields the same bytes on every host.
             pub fn to_zip_bytes(&self) -> Vec<u8> {
                 let mut zip = ZipWriter::new();
                 $(
@@ -144,9 +125,8 @@ macro_rules! gtfs_files {
 
 const LOCATIONS: &str = "locations.geojson";
 
-/// Written even when empty: the spec requires these files, and the
-/// calendar needs one of its two (a network with no service still
-/// publishes a parseable feed).
+/// The spec requires these files, and one of calendar.txt and
+/// calendar_dates.txt, so they are written even when empty.
 const ALWAYS_WRITTEN: &[&str] =
     &["agency.txt", "stops.txt", "routes.txt", "trips.txt", "stop_times.txt", "calendar.txt"];
 
@@ -274,7 +254,6 @@ fn has_member(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> bool 
     archive.by_name(name).is_ok()
 }
 
-/// One member as UTF-8 text, BOM stripped; `None` when absent.
 fn read_member(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &'static str) -> Result<Option<String>, FeedError> {
     let mut file = match archive.by_name(name) {
         Ok(file) => file,
@@ -292,8 +271,8 @@ fn read_member(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &'static str)
 
 fn read_table<T: Table>(archive: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Result<Vec<T>, FeedError> {
     let Some(text) = read_member(archive, T::FILE)? else { return Ok(Vec::new()) };
-    // Ragged rows are common in real feeds (trailing separators,
-    // short optional tails): missing cells read as empty.
+    // Real feeds have ragged rows (trailing separators, short optional
+    // tails). Missing cells read as empty.
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
         .trim(csv::Trim::Headers)
@@ -305,9 +284,7 @@ fn read_table<T: Table>(archive: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Result<
     Ok(rows)
 }
 
-/// A file's CSV text: the header holds every required column and
-/// every column some row fills, in spec order; `\r\n` line endings
-/// and RFC 4180 quoting, as the spec asks.
+/// `\r\n` line endings and RFC 4180 quoting, as the spec asks.
 fn render<T: Table>(rows: &[T]) -> Vec<u8> {
     let cells: Vec<Vec<Option<&str>>> = rows.iter().map(Table::cells).collect();
     let used: Vec<usize> = (0..T::COLUMNS.len())
@@ -337,8 +314,8 @@ fn line<'a>(out: &mut String, cells: impl Iterator<Item = &'a str>) {
     out.push_str("\r\n");
 }
 
-/// A zip whose bytes carry no wall clock: every entry gets the DOS
-/// epoch, so the output is a pure function of the content.
+/// Every entry gets the DOS epoch, so the output is a pure function of the
+/// content.
 struct ZipWriter {
     writer: zip::ZipWriter<Cursor<Vec<u8>>>,
 }
@@ -360,7 +337,6 @@ impl ZipWriter {
     }
 }
 
-/// A feed's counts at a glance.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FeedSummary {
@@ -371,7 +347,6 @@ pub struct FeedSummary {
     pub stop_times: usize,
 }
 
-/// `feed_info.txt`: which dataset this is, and who publishes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FeedInfo {
@@ -397,7 +372,6 @@ impl Feed {
         }
     }
 
-    /// The feed's `feed_info.txt` row, when it has one.
     pub fn info(&self) -> Option<FeedInfo> {
         self.feed_info.first().map(|r| FeedInfo {
             feed_publisher_name: r.feed_publisher_name.clone(),
@@ -413,7 +387,6 @@ impl Feed {
     }
 }
 
-/// Standard base64 (with padding). Zip bytes cross the JSON seam this way.
 pub fn base64_encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);

@@ -1,28 +1,15 @@
-//! transit-authz: the authorization policy document and the pure
-//! authorize decision.
-//!
-//! Authentication is the IdP's. The host verifies the JWT: signature,
-//! iss/aud/exp (D-60). Authorization is a document on the bus: a policy
-//! names rules, each rule names roles, pointers and actions, and
-//! `authorize` answers one question: **may this identity perform this
-//! action on this pointer?** It fails closed. With no policy, no matching
-//! rule, or a malformed request, the answer is a deny, never an allow.
-//!
-//! Everything here is pure: types plus functions over them. The host
-//! owns the token and the clock. The policy document is stored like any
-//! other (the store's `policy` pointer, seeded from a file at first boot,
-//! D-61). The host passes it to the module per call, the way cap-plans
-//! takes the plan set.
+//! Authentication is the IdP's. The host verifies the JWT (signature, iss,
+//! aud, exp; D-60). `authorize` fails closed: with no policy, no matching
+//! rule, or a malformed request, the answer is a deny. The host owns
+//! the token and the clock, and passes the policy document on each call.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The current schema version of the policy document.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// What is being asked about: a read (GET), a write (POST/CAS), or an
-/// audit read (the pointer log with writer identities, the only place a
-/// user identity leaves the store). `"*"` in a rule matches all.
+/// `"*"` in a rule matches all. `Audit` reads the pointer log with writer
+/// identities, the only place a user identity leaves the store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "lowercase")]
@@ -33,8 +20,6 @@ pub enum Action {
 }
 
 impl Action {
-    /// The string form used in requests and rules: "read", "write",
-    /// "audit", "*".
     pub fn as_str(self) -> &'static str {
         match self {
             Action::Read => "read",
@@ -44,9 +29,8 @@ impl Action {
     }
 }
 
-/// The verified identity a host hands over after authenticating the
-/// token: the subject and the roles read from the configured claim
-/// path (D-59). Nothing else is trusted.
+/// The subject and the roles from the configured claim path (D-59). Nothing
+/// else is trusted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Identity {
@@ -54,10 +38,8 @@ pub struct Identity {
     pub roles: Vec<String>,
 }
 
-/// One policy rule: identities holding any of `roles` may perform any
-/// of `actions` on any of `pointers`. `"*"` matches all actions /
-/// pointers. A rule with empty `roles` never matches, because an empty
-/// role set has no overlap with any identity.
+/// `"*"` matches all actions or pointers. A rule with empty `roles` never
+/// matches.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Rule {
@@ -67,7 +49,6 @@ pub struct Rule {
     pub pointers: Vec<String>,
     #[serde(default)]
     pub actions: Vec<String>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -84,7 +65,6 @@ impl Rule {
 }
 
 transit_version::kind_tag!(
-    /// The policy document's kind tag: always `"policy"`.
     PolicyKind = "policy"
 );
 
@@ -96,20 +76,16 @@ impl transit_version::Versioned for Policy {
     }
 }
 
-/// The policy document: a versioned rule list, evaluated in order.
-/// Fail-closed by construction. See `authorize`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Policy {
-    /// The kind tag (D-115): `"policy"`; a copy without one reads as a
-    /// policy.
+    /// A copy without a kind tag reads as a policy (D-115).
     #[serde(default)]
     #[ts(type = "\"policy\"")]
     pub kind: PolicyKind,
     pub schema_version: u32,
     #[serde(default)]
     pub rules: Vec<Rule>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
@@ -121,28 +97,19 @@ impl Policy {
     }
 }
 
-/// The answer to one authorize question.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Decision {
     pub allow: bool,
-    /// The first rule that allowed it, when one did.
     pub matched_rule: Option<String>,
-    /// Why. It is human-readable and safe to log. It never echoes the token.
+    /// Safe to log. It never echoes the token.
     pub reason: String,
 }
 
-/// May `identity` perform `action` on `pointer` under `policy`?
-///
-/// Laws (property-tested below):
-/// - fail-closed: empty policy, no rules, or no matching rule → deny;
-/// - a rule matches only when the identity holds at least one of the
-///   rule's roles AND the rule's actions/pointers match (empty
-///   actions/pointers in a rule mean "all"; empty roles mean "never");
-/// - the allow/deny outcome is independent of rule order (the first
-///   match's name is reported, so the name may vary; the verdict
-///   never does);
-/// - an unknown pointer is denied unless a rule says "*".
+/// A rule matches only when the identity holds one of its roles and its
+/// actions and pointers match. Empty actions or pointers mean all, and empty
+/// roles mean never. The verdict does not depend on rule order, though the
+/// reported rule name may.
 pub fn authorize(policy: &Policy, identity: &Identity, action: Action, pointer: &str) -> Decision {
     if identity.sub.is_empty() {
         return Decision { allow: false, matched_rule: None, reason: "no subject".into() };
@@ -165,8 +132,6 @@ pub fn authorize(policy: &Policy, identity: &Identity, action: Action, pointer: 
     }
 }
 
-/// One effective capability entry: the actions an identity may perform
-/// on one pointer (`"*"` = all pointers).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Capability {
@@ -174,11 +139,8 @@ pub struct Capability {
     pub actions: Vec<String>,
 }
 
-/// The policy as it applies to one identity. It is the client's view: the
-/// caller's own roles and the merged capabilities of every matching
-/// rule. It never contains other roles, other rules, or the policy's
-/// structure beyond what applies to this identity, so a client can
-/// drive its UI from it without learning anything about anyone else.
+/// A client drives its UI from it without learning anything about other
+/// roles, other rules, or the rest of the policy's structure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EffectivePolicy {
@@ -186,10 +148,7 @@ pub struct EffectivePolicy {
     pub capabilities: Vec<Capability>,
 }
 
-/// The projection of `policy` onto `identity`: every rule whose roles
-/// intersect the identity's, merged per pointer (empty actions/pointers
-/// in a rule mean "all"; empty roles never match). Deterministic:
-/// capabilities sorted by pointer, actions sorted and deduped.
+/// Capabilities are sorted by pointer, and actions sorted and deduped.
 pub fn effective(policy: &Policy, identity: &Identity) -> EffectivePolicy {
     let mut caps: Vec<Capability> = Vec::new();
     for rule in &policy.rules {
@@ -311,20 +270,15 @@ mod laws {
             rule("auditors", &["auditor"], &["*"], &["audit"]),
             rule("admin-all", &["admin"], &["*"], &["*"]),
         ]);
-        // A dispatcher sees its own rule merged, and nothing about
-        // auditor or admin.
         let eff = effective(&policy, &id(&["dispatcher"]));
         assert_eq!(eff.roles, vec!["dispatcher".to_string()]);
         assert_eq!(eff.capabilities, vec![Capability {
             pointer: "edits".into(),
             actions: vec!["read".into(), "write".into()],
         }]);
-        // An auditor sees the wildcard audit capability only.
         let eff = effective(&policy, &id(&["auditor"]));
         assert_eq!(eff.capabilities, vec![Capability { pointer: "*".into(), actions: vec!["audit".into()] }]);
-        // Empty policy → no capabilities (fail-closed projection).
         assert!(effective(&Policy::current(vec![]), &id(&["admin"])).capabilities.is_empty());
-        // Empty roles on the identity → nothing, even with wildcard rules.
         assert!(effective(&policy, &id(&[])).capabilities.is_empty());
     }
 
@@ -366,8 +320,8 @@ mod prop {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
-        /// Fail-closed everywhere: a deny is the only possible answer
-        /// when no rule's role set intersects the identity's.
+        /// A deny is the only answer when no rule's roles intersect the
+        /// identity's.
         #[test]
         fn deny_when_no_role_intersects(
             rules in vec(rule_strat(), 0..5),
@@ -386,7 +340,7 @@ mod prop {
             }
         }
 
-        /// Verdict independent of rule order.
+        /// The verdict does not depend on rule order.
         #[test]
         fn verdict_is_order_insensitive(
             rules in vec(rule_strat(), 0..5),
@@ -405,8 +359,7 @@ mod prop {
             );
         }
 
-        /// The projection is deterministic under rule permutation
-        /// (output is sorted), so clients see a stable answer.
+        /// The projection is sorted, so it is stable under rule permutation.
         #[test]
         fn effective_is_order_insensitive(
             rules in vec(rule_strat(), 0..5),
@@ -423,32 +376,22 @@ mod prop {
     }
 }
 
-/// What makes a policy wrong: a write of it is refused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PolicyIssue {
-    /// An action other than "read", "write", "audit", or "*": it would
-    /// grant nothing, silently.
     UnknownAction { rule: String, action: String },
-    /// A rule with a blank name, by its place: a decision names the rule
-    /// that allowed it.
     UnnamedRule { index: usize },
-    /// Two rules share a name.
     DuplicateRuleName { name: String },
 }
 
-/// A consequence of a policy that is accepted, and named for a person.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PolicyWarning {
-    /// No rule grants any role a write on the policy: nobody can change
-    /// it again but by a new seed.
     NoPolicyWriter,
 }
 
-/// A policy's check: what refuses it, and what is accepted and named.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PolicyCheck {
@@ -456,9 +399,6 @@ pub struct PolicyCheck {
     pub warnings: Vec<PolicyWarning>,
 }
 
-/// Check a policy for a write: every issue that makes it wrong, and
-/// every consequence a person should see. Issues are in rule order and
-/// sets of them never depend on it.
 pub fn validate(policy: &Policy) -> PolicyCheck {
     let mut issues = Vec::new();
     let mut seen = std::collections::BTreeSet::new();

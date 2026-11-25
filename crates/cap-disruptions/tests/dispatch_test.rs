@@ -1,9 +1,5 @@
-//! Native dispatch tests for the disruptions capability: the seam
-//! without wasm. The laws are tested at the library seam
-//! (transit-disruptions). Here the module's contract is pinned: both ops
-//! read registered documents by hash, the gap list and the day agree
-//! with the documents given, a filter answers one stop, and garbage is
-//! an honest error, never a panic.
+//! The cap-disruptions contract over native dispatch (OPS.md). The properties
+//! are tested in transit-disruptions.
 
 use serde_json::{json, Value};
 
@@ -26,9 +22,6 @@ fn network_hash() -> Value {
     ok(serde_json::from_str(&text).unwrap())["network_hash"].clone()
 }
 
-/// The documents of one day: two cancels in the edit document, the feed
-/// cancelling t10 too, stop B suspended, and an alert explaining t30's
-/// cancel.
 fn documents() -> Value {
     let edits = json!({ "kind": "edit_records", "schema_version": 2, "records": [
         { "id": "r1", "status": "accepted", "rev": 1, "updated_at": 0,
@@ -102,8 +95,6 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(err(with("today", json!({ "date": "11/19" }))).contains("11/19"));
 }
 
-/// A new alert starts from the gap it is for, and from nothing without
-/// one (D-228).
 #[test]
 fn a_new_alert_starts_from_its_gap() {
     let gaps = ok(with("gaps", json!({})));

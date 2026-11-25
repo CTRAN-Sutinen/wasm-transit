@@ -1,11 +1,5 @@
-//! Native dispatch tests for the stops capability. They test the seam
-//! without wasm. The document's own laws (the stop on a date, served, each
-//! refusal, canonical bytes, what is not known kept) are tested at the
-//! library seam (transit-stops). Here the module's contract is pinned:
-//! `validate` and the kernel's `load_stops` agree on one identity. A
-//! refused document is refused at both, with its reasons named. The date
-//! questions answer over a registered document. Garbage is an honest
-//! error, never a panic.
+//! Native dispatch tests for cap-stops. The document's own properties are in
+//! transit-stops. The op contracts are in OPS.md.
 
 use serde_json::{json, Value};
 
@@ -49,16 +43,15 @@ fn validate_and_the_load_agree_on_one_identity() {
     let hash = checked["document_hash"].as_str().unwrap();
     assert_eq!(cap_abi::content_hash(document.as_bytes()), hash, "the hash is the document's bytes'");
 
-    // A write stores the document that validate answers, with ids given
-    // (D-166). The load registers it under the same identity.
+    // `validate` gives each event an id (D-166), and the load registers the
+    // result under the same identity.
     let answered: Value = serde_json::from_str(document).unwrap();
     let loaded = ok(json!({"op": "load_stops", "stops": answered}));
     assert_eq!(loaded, json!({"op": "load_stops", "stops_hash": hash, "stops": 2}));
-    // The bulk lane takes the document's bytes, with no envelope. It gives
-    // the same answer.
+    // The bytes entry point takes the bare document and gives the same
+    // answer.
     let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(<transit_stops::Stops as cap_abi::kernel::Load>::CODE, document.as_bytes())).unwrap();
     assert_eq!(bulk["ok"], loaded);
-    // a writer's key order is not part of the identity
     let reordered: Value = serde_json::from_str(r#"{"stops":{"7001":[{"name":"NE 104th St","lon":-122.66,"lat":45.70,"event":"planned","on":"2027-01-10"},{"event":"permitted","on":"2027-05-03"}],"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99","code":"6124","wheelchair":true},{"on":"2025-05-12","event":"changed","amenities":{"bin":true,"bench":true,"shelter":true}},{"note":"water main","until":"2027-07-01","event":"suspended","on":"2027-03-03"},{"on":"2027-09-01","event":"moved","lat":45.6936,"lon":-122.6509}]},"schema_version":1,"kind":"stops"}"#).unwrap();
     assert_eq!(ok(json!({"op": "validate", "stops": reordered}))["document_hash"], hash);
 }
@@ -138,8 +131,6 @@ fn seed_begins_a_document_from_a_network() {
     let stops = &seeded["stops"]["stops"];
     assert_eq!(stops["A"].as_array().unwrap().len(), 1, "one in_service event per stop");
     assert!(stops["A"][0].get("on").is_none() && stops["A"][0]["event"] == "in_service");
-    // The seed is registered under its hash. Loading it again gives the
-    // same identity.
     assert_eq!(ok(json!({"op": "load_stops", "stops": seeded["stops"]}))["stops_hash"], seeded["stops_hash"]);
     assert!(err(json!({"op": "seed", "network_hash": "sha256:none"})).contains("load_network"));
 }
@@ -169,9 +160,7 @@ fn stops_on_filters_by_status_and_counts_them() {
     assert_eq!(spring["counts"], json!([{"status": "planned", "stops": 1}, {"status": "suspended", "stops": 1}]), "every stop counted, whatever the filter");
 }
 
-/// The field's "which stop am I at?": nearest first with its distance,
-/// a planned stop included, filtered by status and radius; a point off
-/// the earth is an error.
+/// A point off the earth is an error.
 #[test]
 fn stops_near_answers_the_nearest_stops_on_the_date() {
     let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
@@ -192,7 +181,6 @@ fn stops_near_answers_the_nearest_stops_on_the_date() {
 
 #[test]
 fn correct_event_edits_the_event_that_was_wrong() {
-    // a write gives every event an id (D-166); a correction names it
     let valid = ok(json!({"op": "validate", "stops": sample()}));
     let stops: serde_json::Value = serde_json::from_str(valid["document"].as_str().unwrap()).unwrap();
     let ids: Vec<String> = stops["stops"]["6124"].as_array().unwrap().iter().map(|e| e["id"].as_str().expect("every event has an id").to_string()).collect();
@@ -233,9 +221,6 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
         "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}));
     let read = ok(json!({"op": "read_records", "network_hash": network_hash, "stops_hash": renamed["stops_hash"], "on": "2026-10-05"}));
     assert_eq!(read["network"]["stops"]["A"]["name"], "A Street Station");
-    // A plan takes a stop that the document holds (D-173). The record is in
-    // the network's terms, as read_records gives it. A stop not there yet,
-    // or not held, is not answered.
     let planned = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "N1",
         "event": {"on": "2026-10-20", "event": "planned", "lat": 45.58, "lon": -122.348, "name": "Washougal TC", "code": "9906"}}));
     let taken = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "A", "Z"], "on": "2026-10-20"}));
@@ -246,9 +231,6 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
     assert!(taken["records"].get("Z").is_none());
     let early = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1"], "on": "2026-10-19"}));
     assert_eq!(early["records"], json!({}));
-    // A new route takes its stops. The plan's own stops are left. The rest
-    // become upsert_stop edits with the record, once each. A stop not
-    // answered refuses the take, and the error names it.
     let take = ok(json!({"op": "take_stops", "network_hash": network_hash, "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "A", "N1"], "on": "2026-10-20"}));
     assert_eq!(take["edits"].as_array().unwrap().len(), 1);
     assert_eq!(take["edits"][0]["edit"], "upsert_stop");
@@ -262,11 +244,8 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
     assert!(err(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-12-01", "until": "2026-12-01"})).contains("until"));
 }
 
-/// GTFS out and in with the stops' history. A stop moved inside the
-/// export's dates is two stops sharing its code. The export read back
-/// adds no event. (The round trip through a GTFS zip is transit-codec's
-/// law: the codec stays in its homes.) A feed's rename is an event on its
-/// first date.
+/// The round trip through a GTFS zip is transit-codec's, which stays in its
+/// homes.
 #[test]
 fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     let network_hash = sample_network()["network_hash"].clone();
@@ -282,8 +261,6 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(again["added"], json!([]), "{again}");
     assert_eq!(again["stops_hash"], moved["stops_hash"]);
 
-    // A feed with no history, whose stop A is renamed, records the change
-    // on the feed's first date.
     let mut renamed: transit_network::Network = serde_json::from_value(sample_network_value()).unwrap();
     renamed.stops.get_mut("A").unwrap().name = "A Street Station".into();
     let renamed_hash = ok(json!({"op": "load_network", "network": renamed}))["network_hash"].clone();
@@ -291,16 +268,14 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(changed["added"], json!([{"stop": "A", "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}]));
     assert_eq!(changed["on"], "2026-10-01");
 
-    // With no date, the feed's own first service date is used. The feed
-    // states the date it starts on (cap-network import answers it too).
+    // With no `on`, the feed's own first service date is used, as cap-network's
+    // import answers it.
     let first = transit_network::first_service_date(&renamed).unwrap().to_string();
     let dated = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash}));
     assert_eq!(dated["on"], first);
     assert_eq!(dated["added"][0]["event"]["on"], first);
 
-    // A feed named on the import is named on every event it records. The
-    // events are found again by its id (D-150: the planner sees what the
-    // feed did).
+    // A feed named on the import is named on every event it records (D-150).
     let named = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "feed": "sha256:feed"}));
     assert_eq!(named["added"][0]["event"]["from_feed"], "sha256:feed");
     let shown = ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:feed"}));
@@ -308,9 +283,7 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     assert_eq!(ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:other"}))["events"], json!([]));
 }
 
-/// What a survey asks (D-158) is the library's. It lists every core question
-/// in its order, with its kind of answer, and the core amenity names. An
-/// answer outside its kind is refused at add_event, and named.
+/// An answer outside its kind is refused at `add_event`, and named (D-158).
 #[test]
 fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     let q = ok(json!({ "op": "questions" }));
@@ -337,8 +310,7 @@ fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     assert!(bad["stops_hash"].is_null());
 }
 
-/// The surveyor is the writer (D-158). A new survey names `by`. A held one
-/// keeps its own. This is the receive path's step before validate.
+/// A new survey names `by`, and a held one keeps its own (D-158).
 #[test]
 fn attribute_surveys_names_the_writer() {
     let held = ok(json!({ "op": "load_stops", "stops": sample() }));
@@ -348,16 +320,12 @@ fn attribute_surveys_names_the_writer() {
     let out = ok(json!({ "op": "attribute_surveys", "stops_hash": held["stops_hash"], "stops": next, "by": "Rosa Ortiz" }));
     assert_eq!(out["stops"]["stops"]["6124"][4]["surveyed_by"], "Rosa Ortiz");
     assert_eq!(out["stops"]["stops"]["6124"][1].get("surveyed_by"), None);
-    // a first write: every survey is new
     let first = ok(json!({ "op": "attribute_surveys", "stops": next, "by": "Rosa Ortiz" }));
     assert_eq!(first["stops"]["stops"]["6124"][4]["surveyed_by"], "Rosa Ortiz");
-    // a held document the module does not hold is an error
     assert!(err(json!({ "op": "attribute_surveys", "stops_hash": "sha256:00", "stops": next, "by": "x" })).len() > 0);
 }
 
-/// A field this build does not know is kept and flagged, never refused
-/// (D-167): validate answers its name, the document keeps it, and the
-/// kernel's load names it too.
+/// `validate` and the kernel's load name an unknown field and keep it (D-167).
 #[test]
 fn validate_flags_an_unknown_field_and_keeps_it() {
     let mut newer = sample();
@@ -371,13 +339,11 @@ fn validate_flags_an_unknown_field_and_keeps_it() {
     assert_eq!(document["survey_round"], 3);
     let loaded = ok(json!({"op": "load_stops", "stops": document}));
     assert_eq!(loaded["unknown_fields"], json!(["shelter_model", "survey_round"]));
-    // every field known: no flag at all
     assert!(ok(json!({"op": "validate", "stops": sample()})).get("unknown_fields").is_none());
 }
 
-/// The stops log (D-197): the document's records are its stops, each
-/// whole, and the document assembled from them is the same document,
-/// under the same hash. A record in another version is refused.
+/// The document assembled from its records is the same document, under the
+/// same hash (D-197).
 #[test]
 fn the_document_and_its_log_records_round_trip() {
     let valid = ok(json!({"op": "validate", "stops": sample()}));
@@ -401,8 +367,8 @@ fn the_document_and_its_log_records_round_trip() {
     assert!(err(json!({"op": "log_document", "records": newer})).contains("record 7001"));
 }
 
-/// A correction names the event as the writer read it (D-166): changed
-/// since, the answer is a conflict naming it, and nothing is corrected.
+/// A correction of an event changed since the writer read it is a conflict
+/// (D-166).
 #[test]
 fn a_correction_of_an_event_changed_since_is_a_conflict() {
     let valid = ok(json!({"op": "validate", "stops": sample()}));
@@ -414,16 +380,12 @@ fn a_correction_of_an_event_changed_since_is_a_conflict() {
     let fix = json!({"on": "2027-05-04", "event": "permitted"});
     let fixed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "7001", "event_id": id, "event": fix, "saw": saw}));
     assert!(fixed.get("conflict").is_none() && fixed["stops"].is_object(), "{fixed}");
-    // Another writer's read: the event as it stands before the fix.
     let stale = ok(json!({"op": "correct_event", "stops_hash": fixed["stops_hash"], "stop_id": "7001", "event_id": id, "event": fix, "saw": saw}));
     assert_eq!(stale["conflict"], json!(id));
     assert!(stale["stops"].is_null());
 }
 
-/// A pick reads the stops over the period the published set gives it
-/// (D-228): `read_pick` and `export_pick` agree with the explicit-date
-/// ops, a retired pick bounds nothing, the next published pick does, and
-/// a network with no plan id is no pick.
+/// `read_pick` and `export_pick` agree with the explicit-date ops (D-228).
 #[test]
 fn a_pick_reads_the_stops_over_the_period_the_published_set_gives() {
     let mut pick = sample_network_value();
@@ -454,19 +416,15 @@ fn a_pick_reads_the_stops_over_the_period_the_published_set_gives() {
     assert_eq!(exported["network_hash"], versions["network_hash"]);
     assert!(exported["network"]["stops"].as_object().unwrap().contains_key("C@2026-10-01"), "C moved inside the period");
 
-    // before the first publish the pick is open-ended
     let first = ok(json!({"op": "read_pick", "network_hash": pick_hash, "stops_hash": stops_hash}));
     assert_eq!(first["period"], json!({"from": "2026-10-01"}));
 
-    // a network with no plan id is no pick: nothing is read
     let plain = sample_network()["network_hash"].clone();
     let none = ok(json!({"op": "read_pick", "network_hash": plain, "stops_hash": stops_hash, "published": published}));
     assert!(none.get("period").is_none() && none["warnings"] == json!([]) && none["network_hash"] == plain);
 }
 
-/// A write that says the stop is new is refused a held id; an event added
-/// to a held stop without that is an ordinary write (D-228). The
-/// vocabulary lists the statuses in order.
+/// A write that says the stop is new is refused a held id (D-228).
 #[test]
 fn a_new_stop_is_refused_a_held_id_and_the_vocabulary_lists_the_statuses() {
     let network_hash = sample_network()["network_hash"].clone();
@@ -483,10 +441,6 @@ fn a_new_stop_is_refused_a_held_id_and_the_vocabulary_lists_the_statuses() {
     assert_eq!(ok(json!({"op": "vocabulary"}))["statuses"], json!(["planned", "permitted", "built", "in_service", "suspended", "retired"]));
 }
 
-// ---------------------------------------------------------------------
-// receive: the stops log's write, whole (D-228)
-// ---------------------------------------------------------------------
-
 fn header(seq: u64, key: Option<&str>) -> Value {
     let mut intent = json!({ "op": "POST /logs/stops" });
     if let Some(k) = key {
@@ -501,7 +455,6 @@ fn requests_sample() -> Value {
     } })
 }
 
-/// The fold after the host stores `entry` at seq 1.
 fn folded(entry: &str) -> Value {
     let stored = [transit_log::Stored { seq: 1, text: entry.into() }];
     let fold = transit_log::fold(transit_log::Checkpoint::empty("stops"), &stored, &cap_abi::record_hash).unwrap();
@@ -530,7 +483,6 @@ fn receive_writes_a_stop_and_the_request_it_carries_out_as_one_entry() {
     let entry: Value = serde_json::from_str(got["entry"].as_str().unwrap_or_else(|| panic!("an entry: {got}"))).unwrap();
     assert!(kinds_changed(&entry).contains(&"stop".to_string()) && kinds_changed(&entry).contains(&"stop_request".to_string()), "{entry}");
     assert!(got["heads"]["stops"].is_string() && got["heads"]["stop_requests"].is_string(), "both documents written: {got}");
-    // The same key again, over the fold that holds it, lands once.
     let again = ok(json!({ "op": "receive", "heads": got["heads"].clone(),
         "write": { "checkpoint": folded(got["entry"].as_str().unwrap()), "header": header(2, Some("dev/1")) },
         "ops": [{"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": event}}] }));
@@ -568,7 +520,6 @@ fn receive_names_the_signed_in_writer_on_each_new_survey() {
 
 #[test]
 fn receive_answers_a_moved_head_a_conflict_and_another_log_s_op_with_no_entry() {
-    // validate gives each event its id (D-166)
     let valid: Value = serde_json::from_str(ok(json!({"op": "validate", "stops": sample()}))["document"].as_str().unwrap()).unwrap();
     let stops = ok(json!({"op": "load_stops", "stops": valid}))["stops_hash"].clone();
     let moved = ok(json!({ "op": "receive", "heads": {"stops": stops.clone()}, "write": { "header": header(1, None) },
@@ -603,12 +554,6 @@ fn receive_migrate_records_the_heads_as_they_are_and_a_feed_needs_a_stops_docume
     assert!(nothing.get("entry").is_none() && nothing.get("failed").is_none(), "{nothing}");
 }
 
-// ---------------------------------------------------------------------
-// the stop rule of a request (D-233, D-238)
-// ---------------------------------------------------------------------
-
-/// A stops document with stop B, in service, and retired on `retired`
-/// when given.
 fn stops_with_b(retired: Option<&str>) -> Value {
     let mut b = vec![json!({"on": "2020-01-01", "event": "in_service", "lat": 45.6, "lon": -122.6, "name": "B"})];
     if let Some(on) = retired {
@@ -619,7 +564,6 @@ fn stops_with_b(retired: Option<&str>) -> Value {
     doc
 }
 
-/// The stops log's records of a stops document, as a fold holds them.
 fn stop_records(stops: &Value) -> Value {
     let hash = ok(json!({"op": "load_stops", "stops": stops}))["stops_hash"].clone();
     let next = ok(json!({"op": "log_records", "stops_hash": hash}))["next"].clone();
@@ -636,8 +580,6 @@ fn put(id: &str, stop: &str, status: &str) -> Value {
     json!({"cap": "requests", "op": "put", "args": {"id": id, "request": {"stop": stop, "job": "repair_improve", "status": status}}})
 }
 
-/// A write as of the stops its writer read, on 2026-11-21, over the heads
-/// `stops` and `requests`.
 fn rule_write(read: &Value, stops: &Value, requests: &Value, ops: Value) -> Value {
     let stops = ok(json!({"op": "load_stops", "stops": stops}))["stops_hash"].clone();
     let requests = ok(json!({"op": "load_stop_requests", "requests": requests}))["requests_hash"].clone();
@@ -658,10 +600,8 @@ fn an_open_request_on_a_stop_retired_when_read_is_refused() {
     assert!(got["entry"].is_null(), "refused: {got}");
     assert_eq!(rules(&got["broken"]), vec![("R-9".to_string(), "B".to_string())], "{got}");
     assert!(got["broken"][0]["rule"].as_str().unwrap().contains("was retired on 2026-10-01"), "{got}");
-    // Completed work on a retired stop is history.
     let done = json!({"cap": "requests", "op": "put", "args": {"id": "R-9", "request": {"stop": "B", "job": "repair_improve", "status": "cancelled"}}});
     assert!(rule_write(&retired, &retired, &requests_sample(), json!([done]))["entry"].is_string());
-    // A retirement dated after the write's date breaks nothing yet.
     let later = stops_with_b(Some("2027-01-01"));
     let got = rule_write(&later, &later, &requests_sample(), json!([put("R-9", "B", "submitted")]));
     assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "{got}");
@@ -677,14 +617,12 @@ fn a_stop_retired_after_the_writer_read_it_lands_with_a_warning() {
 
 #[test]
 fn retiring_a_stop_that_an_open_request_names_warns_the_planner() {
-    // R-1 (requests_sample) is a submitted request on 6124.
     let retire = json!({"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": {"on": "2026-11-01", "event": "retired"}}});
     let mut stops = sample();
     stops["stops"]["6124"] = json!([{"on": "2004-09-01", "event": "in_service", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99"}]);
     let got = rule_write(&stops, &stops, &requests_sample(), json!([retire]));
     assert!(got["entry"].is_string(), "a retirement is never refused for a request: {got}");
     assert_eq!(rules(&got["references"]), vec![("R-1".to_string(), "6124".to_string())], "{got}");
-    // The request the retirement names is its outcome: no warning.
     let by_r1 = json!({"cap": "stops", "op": "add_event", "args": {"stop_id": "6124", "event": {"on": "2026-11-01", "event": "retired", "request": "R-1"}}});
     let got = rule_write(&stops, &stops, &requests_sample(), json!([by_r1]));
     assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "{got}");
@@ -704,9 +642,8 @@ fn a_request_already_broken_can_still_be_changed_or_cancelled() {
     assert!(got["entry"].is_string() && rules(&got["references"]).is_empty(), "cancelled: {got}");
 }
 
-/// What a request's page shows before any write (D-238): each open
-/// request whose stop is retired on the date, with why; a completed one
-/// and a stop's own retiring request are not named; `stop` narrows.
+/// A completed request and a stop's own retiring request are not named
+/// (D-238).
 #[test]
 fn request_warnings_names_each_open_request_on_a_stop_retired_that_day() {
     let stops = ok(json!({"op": "load_stops", "stops": stops_with_b(Some("2026-10-01"))}))["stops_hash"].clone();

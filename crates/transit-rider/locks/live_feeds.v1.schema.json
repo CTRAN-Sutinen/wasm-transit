@@ -10,7 +10,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The rider's own GTFS-rt feed URLs, in place of the deployment's\n(`live-feeds.json`). An empty URL is a feed the rider does not read.",
+  "description": "An empty URL is a feed that the rider does not read.",
   "properties": {
     "alerts": {
       "default": "",
@@ -19,7 +19,7 @@
     "kind": {
       "$ref": "#/$defs/LiveFeedsKind",
       "default": "live_feeds",
-      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+      "description": "A copy without the kind tag and version is this kind, version 1 (D-115)."
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",

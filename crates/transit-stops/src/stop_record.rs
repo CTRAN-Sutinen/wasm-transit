@@ -1,9 +1,5 @@
-//! A pick and the stops document (`transit-stops`; D-153, D-157). A stop's
-//! life is its own. A pick only reads it. [`read_records`] takes each
-//! stop's record as the document has it on the pick's first date.
-//! [`visit_warnings`] tells the planner of a visited stop that is not in
-//! service on the pick's dates. [`seed`] makes the first document from the
-//! stops that a network already records.
+//! How a pick reads the stops document (D-153, D-157). A pick never writes
+//! it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,9 +13,8 @@ use transit_network::{Network, NetworkEdit, NetworkWarning, Stop};
 use transit_plans::{PlanInfo, PublishedPlans};
 use ts_rs::TS;
 
-/// A stops document from a network's stops. Each stop has one `in_service`
-/// event with no date, because no feed records when a stop went into
-/// service. The event carries its point and every detail.
+/// The `in_service` event has no date, because no feed records when a stop
+/// went into service.
 pub fn seed(network: &Network) -> Stops {
     let stops = network.stops.iter().map(|(id, stop)| (id.clone(), vec![opening(stop)])).collect();
     Stops { stops, ..Stops::default() }
@@ -54,11 +49,6 @@ fn opening(stop: &Stop) -> Event {
     }
 }
 
-/// The pick with each stop's record: point, name, code, station, and
-/// details. The record is as the stops document has it on `on`, the
-/// pick's first date. A stop the document does not hold, or that is not
-/// there yet that day, keeps the pick's own record. Nothing else changes.
-/// The document is never written.
 pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network {
     let mut next = network.clone();
     for (id, stop) in next.stops.iter_mut() {
@@ -69,19 +59,11 @@ pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network 
     next
 }
 
-/// The named stops' records in the network's terms on `on`. These are the
-/// records that [`read_records`] gives a pick. A plan takes a stop from
-/// them (D-173). A stop not there yet that day, or not held, is not
-/// answered. The document is never written.
+/// A plan takes a stop from these records (D-173).
 pub fn records(stops: &Stops, ids: &[String], on: NaiveDate) -> BTreeMap<String, Stop> {
     ids.iter().filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found)))).collect()
 }
 
-/// The edits that take the named stops into a plan (D-173, D-228). There is
-/// one `upsert_stop` for each stop the plan does not hold. They follow the
-/// order named, once each, and carry the record on `on`. A stop that the
-/// document does not answer on `on` refuses the whole take. The error
-/// names each such stop. The plan and the document are never written.
 pub fn take_stops(network: &Network, stops: &Stops, ids: &[String], on: NaiveDate) -> Result<Vec<NetworkEdit>, Vec<String>> {
     let mut seen = std::collections::BTreeSet::new();
     let wanted: Vec<&String> = ids.iter().filter(|id| !network.stops.contains_key(*id) && seen.insert(*id)).collect();
@@ -96,8 +78,7 @@ pub fn take_stops(network: &Network, stops: &Stops, ids: &[String], on: NaiveDat
     if missing.is_empty() { Ok(edits) } else { Err(missing) }
 }
 
-/// A stop's record in the network's terms. Amenities, the site survey, and
-/// references stay in the stops document only.
+/// Amenities, the site survey, and references stay in the stops document.
 fn record(on: &StopOn) -> Stop {
     let d = &on.details;
     Stop {
@@ -131,20 +112,12 @@ fn parse(s: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-/// What the planner is told of the stops that the pick's patterns visit
-/// over its period `[from, until)`. Without `until`, the period is
-/// open-ended. Warnings come in stop order. Each span where a stop is not
-/// in service gets one: planned, permitted, built, retired, or not there
-/// yet. Each span where it is suspended gets one too, when the suspension
-/// covers the whole period or has no end. A warning, not a refusal. A stop
-/// the document does not hold says nothing.
 pub fn visit_warnings(network: &Network, stops: &Stops, from: NaiveDate, until: Option<NaiveDate>) -> Vec<NetworkWarning> {
     let visited: BTreeSet<&str> = network.patterns.values().flat_map(|p| p.stops.iter().map(|s| s.stop.as_str())).collect();
     let fmt = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
     let mut out = Vec::new();
     for id in visited {
         let Some(events) = stops.stops.get(id) else { continue };
-        // the days the stop can change inside the period
         let mut days: BTreeSet<NaiveDate> = BTreeSet::from([from]);
         for e in events {
             for d in [e.on.as_deref(), e.until.as_deref()].into_iter().flatten().filter_map(parse) {
@@ -191,36 +164,18 @@ pub fn visit_warnings(network: &Network, stops: &Stops, from: NaiveDate, until: 
     out
 }
 
-// ---------------------------------------------------------------------
-// GTFS out and in with the stops' history (D-150, D-151, D-157)
-// ---------------------------------------------------------------------
-
 fn fmt_date(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
-/// A made id's stop: `<id>@<date>` is a version of `<id>` (D-151).
+/// An id `<id>@<date>` is a version of `<id>` (D-151).
 fn made_base(id: &str) -> Option<(&str, NaiveDate)> {
     let (head, tail) = id.rsplit_once('@')?;
     Some((head, parse(tail)?))
 }
 
-/// The network over `[from, until)` with each stop's history in GTFS
-/// terms (D-151). A stop whose record changes inside the dates is one stop
-/// per version. The version in force on the last date keeps the id. Each
-/// earlier version gets `<id>@<its first date>`. The first version's first
-/// date is `from`. Each pattern visiting the stop splits at those dates.
-/// Each earlier version's dates get a copy of the pattern and its trips.
-/// The copy's trips run under the service type cut to those dates
-/// (`<type>@<first date>..<last date>`; `<type>@<first date>` for the
-/// open-ended last). The last dates keep the pattern's and trips' own ids.
-/// Every copy sits beside its trip in each block. Before `from` the first
-/// version runs. From `until` on, the last version runs. A suspension or
-/// retirement changes no record, so it splits nothing. With no record
-/// changing, this is [`read_records`] on `from`.
 pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until: Option<NaiveDate>) -> Network {
     let mut out = read_records(network, stops, from);
-    // each stop's versions: its first date and its record
     let mut versions: BTreeMap<String, Vec<(NaiveDate, Stop)>> = BTreeMap::new();
     for (id, own) in &network.stops {
         let Some(events) = stops.stops.get(id) else { continue };
@@ -262,7 +217,6 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
         }
     }
 
-    // each pattern visiting a versioned stop splits at its stops' dates
     let mut copies: BTreeMap<String, Vec<String>> = BTreeMap::new(); // trip → its earlier copies
     for (pid, pattern) in &network.patterns {
         let starts: BTreeSet<NaiveDate> = pattern
@@ -274,7 +228,6 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
         if starts.is_empty() {
             continue;
         }
-        // the periods: [from-or-ever, b1), [b1, b2), …, [bk, ever)
         let mut bounds: Vec<NaiveDate> = vec![from];
         bounds.extend(starts.iter().copied());
         let last = bounds.len() - 1;
@@ -315,7 +268,6 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
             }
         }
     }
-    // Drop each service type that no schedule runs under.
     let used: BTreeSet<String> = out.pattern_trips.values().map(|pt| pt.service_type.clone()).collect();
     out.service_types.retain(|id, _| used.contains(id) || !network.pattern_trips.values().any(|pt| &pt.service_type == id));
     // Each block runs a trip's copies beside it. The copies never share a day.
@@ -325,8 +277,6 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
     out
 }
 
-/// A calendar rule cut to `[lo, hi]` (open where none): its ranges
-/// intersected, its exceptions outside dropped.
 fn clip(rule: &CalendarRule, lo: Option<NaiveDate>, hi: Option<NaiveDate>) -> CalendarRule {
     let inside = |d: NaiveDate| lo.is_none_or(|l| d >= l) && hi.is_none_or(|h| d <= h);
     CalendarRule {
@@ -366,7 +316,6 @@ fn with_copies(block: &Block, copies: &BTreeMap<String, Vec<String>>) -> Block {
     Block { trips, layovers, extra: Default::default() }
 }
 
-/// One event an import added, and the stop it is for.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AddedEvent {
@@ -374,51 +323,27 @@ pub struct AddedEvent {
     pub event: Event,
 }
 
-/// What an import does to the stops document (D-150).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportedStops {
-    /// The document with every event the import added.
     pub stops: Stops,
-    /// Each event added, in stop order.
     pub added: Vec<AddedEvent>,
-    /// The stops that the document has in service or suspended on the
-    /// feed's date, but that the feed does not list. A person looks at
-    /// these. They keep their events. A stop planned, permitted, built,
-    /// retired, or not there yet is expected missing from a feed. Such a
-    /// stop is not named.
+    /// A stop planned, permitted, built, retired, or not there yet is
+    /// expected missing from a feed, so it is not named.
     pub unlisted: Vec<String>,
-    /// The stops whose difference cannot be recorded without breaking their
-    /// history. Two cases: a stop retired on the feed's date that the feed
-    /// still lists (its id reused), or a later event that the feed's would
-    /// contradict. Nothing is added for them. A person looks at them.
+    /// A person looks at these. Nothing is added for them.
     pub unapplied: Vec<String>,
 }
 
-/// A feed's stops, recorded in the stops document on `on`, the feed's first
-/// service date (D-150). Each stop the feed lists is compared with the
-/// document on that date. Each difference becomes an event dated that day.
-/// `in_service` is for a stop the document lacks, or has not yet in service
-/// (planned, permitted, built, not there yet). `moved` is for another
-/// point. `changed` is for the details that differ. A detail the feed does
-/// not carry is not a difference. A suspension is real time's, so a
-/// suspended stop that the feed lists stays suspended. Events already
-/// recorded all stand. A made id (`<id>@<date>`, D-151) is a version of its
-/// stop. The version in force on `on` is compared. This function never
-/// writes the document. The caller writes the answer through the receive
-/// path.
+/// `on` is the feed's first service date, the only date a feed states
+/// (D-150). This function never writes the document.
 pub fn import_events(stops: &Stops, feed: &Network, on: NaiveDate) -> ImportedStops {
     import(stops, feed, on, None)
 }
 
-/// [`import_events`], with every event it records naming the feed it came
-/// from (`from_feed`, the feed's id, its hash). The planner then sees what
-/// the feed did (D-150; [`feed_events`]).
 pub fn import_feed(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: &str) -> ImportedStops {
     import(stops, feed, on, Some(feed_id))
 }
 
-/// The events the document holds that the feed `feed_id` recorded, in
-/// stop order, each stop's in its order.
 pub fn feed_events(stops: &Stops, feed_id: &str) -> Vec<AddedEvent> {
     stops
         .stops
@@ -433,9 +358,8 @@ fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -
     let mut next = stops.clone();
     let mut added = Vec::new();
     let mut unapplied = Vec::new();
-    // Each stop the feed lists, at its version in force on `on`. The own
-    // id stands for the last version. So an earlier version in force on
-    // `on` wins over it. A made id sorts after its stop's own id.
+    // A stop's own id stands for its last version, so an earlier version in
+    // force on `on` wins over it.
     let mut listed: BTreeMap<&str, (NaiveDate, &Stop)> = BTreeMap::new();
     for (id, stop) in &feed.stops {
         match made_base(id).filter(|(base, _)| feed.stops.contains_key(*base)) {
@@ -453,9 +377,8 @@ fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -
         let mut events: Vec<Event> = Vec::new();
         let now = stops.stop_on(id, on);
         let feed_open = opening(stop);
-        // A retired stop's life has ended. The document refuses any event
-        // after `retired`. A feed that lists its id reuses the id, even with
-        // the same point and details. A person looks at it.
+        // The document refuses any event after `retired`, so a feed that
+        // lists a retired stop's id reuses it, even with the same point.
         if now.as_ref().is_some_and(|s| s.status == Status::Retired) {
             unapplied.push(id.to_string());
             continue;
@@ -493,9 +416,6 @@ fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -
             unapplied.push(id.to_string());
         }
     }
-    // A feed lists the stops in service. A stop in service or suspended on
-    // `on` that the feed does not list is for a person to look at. A stop
-    // planned, permitted, built, retired, or not there yet is expected missing
     let unlisted = stops
         .stops
         .keys()
@@ -506,8 +426,6 @@ fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -
     ImportedStops { stops: next, added, unlisted, unapplied }
 }
 
-/// The details `feed` sets that differ from `now` (a detail the feed
-/// does not carry is no difference).
 fn differing(now: &Details, feed: &Details) -> Details {
     fn pick<T: Clone + PartialEq>(now: &Option<T>, feed: &Option<T>) -> Option<T> {
         feed.as_ref().filter(|f| now.as_ref() != Some(*f)).cloned()
@@ -533,24 +451,18 @@ fn differing(now: &Details, feed: &Details) -> Details {
     }
 }
 
-/// The dates that a pick governs: from its own date until the next pick's
-/// date. Without `until`, the period is open-ended. Every host gets the same
-/// answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_stops/")]
 pub struct PickPeriod {
-    /// "YYYY-MM-DD".
     pub from: String,
-    /// "YYYY-MM-DD" of the next pick that is not retired.
+    /// The date of the next pick that is not retired.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub until: Option<String>,
 }
 
-/// The period that the pick governs in the published set `published`. The
-/// set is none before the first publish. See [`transit_plans::period_in`].
-/// The result is `None` when the pick has no id or no date. A standalone
-/// import is no pick.
+/// See [`transit_plans::period_in`]. A standalone import is no pick, so it
+/// has no period.
 pub fn pick_period(network: &Network, published: Option<&PublishedPlans>) -> Option<PickPeriod> {
     let plan = &network.plan;
     let from = plan.effective_from?;
@@ -562,9 +474,6 @@ pub fn pick_period(network: &Network, published: Option<&PublishedPlans>) -> Opt
     Some(PickPeriod { from: fmt(from), until: transit_plans::period_in(published, &info) })
 }
 
-/// What a pick reads of the stops document over its period (D-157). This is
-/// each stop's record on the pick's first date. It also holds the warnings
-/// for the visited stops that are not in service over the period.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PickReads {
     pub period: PickPeriod,
@@ -572,8 +481,6 @@ pub struct PickReads {
     pub warnings: Vec<NetworkWarning>,
 }
 
-/// [`read_records`] on the pick's first date and [`visit_warnings`] over
-/// its period. `None` when the pick has no period.
 pub fn read_pick(network: &Network, stops: &Stops, published: Option<&PublishedPlans>) -> Option<PickReads> {
     let period = pick_period(network, published)?;
     let (from, until) = period_dates(&period)?;
@@ -584,8 +491,6 @@ pub fn read_pick(network: &Network, stops: &Stops, published: Option<&PublishedP
     })
 }
 
-/// [`export_versions`] over the pick's period. `None` when the pick has
-/// no period.
 pub fn export_pick(network: &Network, stops: &Stops, published: Option<&PublishedPlans>) -> Option<Network> {
     let period = pick_period(network, published)?;
     let (from, until) = period_dates(&period)?;

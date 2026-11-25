@@ -1,16 +1,11 @@
-//! What is disrupted on a day, and whether an alert explains it
-//! (D-213, D-218): the disruptions from the edit document, the live
-//! feed, and the stops document; the gap list; and the day by route.
+//! What is disrupted on a day, and whether an alert explains it (D-213,
+//! D-218; cap-disruptions/OPS.md). The feed's cancels are shown as the feed
+//! gives them, beside the edit document's, and no rule picks a winner.
 //!
-//! The laws come from the user's intent (2026-11-19): the live feed's
-//! cancels are shown as the feed gives them, beside the edit document's,
-//! and no rule picks a winner; a rider's question about a route or a
-//! stop is answered from one list; the notes are read beside it.
-//!
-//! Over the e2e fixture network on Thursday 2026-11-19 (the WK service
-//! runs): route 10 runs t10 (A → B at 08:00) and t30 (A → C → B at
-//! 08:40); route 20 runs t20 (A → B at 08:20); route 40 runs t40 and
-//! t41 between the station's bays SA and SB. Stop A is "Main & 1st".
+//! Over the e2e fixture network on Thursday 2026-11-19 (the WK service runs):
+//! route 10 runs t10 (A to B at 08:00) and t30 (A, C, B at 08:40), route 20
+//! runs t20 (A to B at 08:20), and route 40 runs t40 and t41 between the
+//! station's bays SA and SB.
 
 use chrono::NaiveDate;
 use serde_json::json;
@@ -65,8 +60,8 @@ fn stops() -> transit_stops::Stops {
     .unwrap()
 }
 
-/// The live feed: t10's 08:00 instance cancelled (the edit document
-/// cancels it too), t20 running 6 minutes late, and t41 2 minutes late.
+/// The live feed cancels t10's 08:00 instance (the edit document cancels it
+/// too), and runs t20 6 minutes late and t41 2 minutes late.
 fn live() -> transit_live::LiveDay {
     serde_json::from_value(json!({
         "kind": "live", "schema_version": 2,
@@ -127,10 +122,6 @@ fn sources(list: &[Disruption]) -> Vec<AlertSource> {
     list.iter().map(|d| d.source.clone()).collect()
 }
 
-// ---------------------------------------------------------------------
-// The disruptions: each source as its document gives it.
-// ---------------------------------------------------------------------
-
 #[test]
 fn every_source_is_listed_as_its_document_gives_it() {
     let w = world();
@@ -180,7 +171,6 @@ fn a_detour_and_a_closed_stop_name_their_stops() {
     assert_eq!((detour.start_date.as_deref(), detour.end_date.as_deref()), (Some("2026-11-18"), Some("2026-11-20")));
     let closed = all.iter().find(|d| d.from == Origin::Stops).unwrap();
     assert_eq!(closed.stops[0].name.as_deref(), Some("Main & 2nd"));
-    // A closed stop is where the stops document puts it on the day.
     assert_eq!((closed.stops[0].lat, closed.stops[0].lon), (Some(45.51), Some(-73.51)));
     assert_eq!((closed.start_date.as_deref(), closed.end_date.as_deref()), (Some("2026-11-01"), Some("2026-12-01")));
 }
@@ -191,10 +181,6 @@ fn no_live_document_lists_no_feed_cancels() {
     w.live = None;
     assert!(!sources(&disruptions(&w.inputs())).contains(&feed_cancel()));
 }
-
-// ---------------------------------------------------------------------
-// What explains it, and what was noted about it.
-// ---------------------------------------------------------------------
 
 #[test]
 fn an_alert_explains_what_it_names_while_it_is_not_withdrawn_or_ended() {
@@ -211,7 +197,6 @@ fn an_alert_explains_what_it_names_while_it_is_not_withdrawn_or_ended() {
     assert_eq!(by(&AlertSource::Edit { id: "r-cancel".into() }), vec!["a-draft"], "a draft explains: someone is writing it");
     assert!(by(&AlertSource::Edit { id: "r-div".into() }).is_empty(), "a withdrawn alert explains nothing");
     assert!(by(&AlertSource::Stop { stop: "B".into() }).is_empty(), "an ended alert explains nothing now");
-    // The gap list is exactly what no alert explains.
     assert_eq!(gaps(&w.inputs()).into_iter().map(|g| g.source).collect::<Vec<_>>(), vec![AlertSource::Edit { id: "r-div".into() }, AlertSource::Stop { stop: "B".into() }]);
 }
 
@@ -231,13 +216,10 @@ fn a_gap_names_the_riders_an_alert_about_it_informs() {
     let w = world();
     let g = gaps(&w.inputs());
     let entity = |v: serde_json::Value| -> transit_alerts::AlertEntity { serde_json::from_value(v).unwrap() };
-    // A cancelled trip: its instance, on its route.
     let feed = g.iter().find(|g| g.source == feed_cancel()).unwrap();
     assert_eq!(feed.informed, vec![entity(json!({ "route": "10", "trip": "t10", "date": "2026-11-19", "start_secs": 28800 }))]);
-    // A detour: its route, and its route at each stop it skips.
     let detour = g.iter().find(|g| g.effect == AlertEffect::Detour).unwrap();
     assert_eq!(detour.informed, vec![entity(json!({ "route": "10" })), entity(json!({ "route": "10", "stop": "B" }))]);
-    // A closed stop: the stop.
     let stop_b = g.iter().find(|g| g.source == AlertSource::Stop { stop: "B".into() }).unwrap();
     assert_eq!(stop_b.informed, vec![entity(json!({ "stop": "B" }))]);
 }
@@ -259,10 +241,6 @@ fn each_disruption_carries_its_latest_note() {
     assert_eq!(note(&AlertSource::Edit { id: "r-div".into() }), Some("n3".into()));
     assert_eq!(note(&AlertSource::Stop { stop: "B".into() }), None);
 }
-
-// ---------------------------------------------------------------------
-// The day by route.
-// ---------------------------------------------------------------------
 
 #[test]
 fn the_day_lists_each_route_with_a_disruption_or_a_late_trip() {
@@ -322,11 +300,6 @@ fn a_station_answers_what_touches_its_bays() {
     assert_eq!(at_station.routes.iter().map(|r| r.route.as_str()).collect::<Vec<_>>(), ["40"]);
 }
 
-// ---------------------------------------------------------------------
-// A new alert (D-228): what it starts from is the library's answer, so
-// no host decides what a new alert informs, explains, and does.
-// ---------------------------------------------------------------------
-
 #[test]
 fn a_new_alert_for_a_gap_starts_from_what_the_gap_says() {
     let w = world();
@@ -345,10 +318,10 @@ fn a_new_alert_for_a_gap_starts_from_what_the_gap_says() {
 #[test]
 fn the_preview_stop_is_a_stop_the_gap_takes_away_else_its_trips_first_stop() {
     let w = world();
-    // a closed stop names its own stop
     let closed = start_alert(&w.inputs(), Some(&AlertSource::Stop { stop: "B".into() }));
     assert_eq!(closed.preview_stop.as_deref(), Some("B"));
-    // a cancelled trip takes away no stop: its trip's first stop, as the day names it
+    // a cancelled trip takes away no stop: its trip's first stop, as the day
+    // names it
     let all = disruptions(&w.inputs());
     let first = all.iter().find(|d| d.source == feed_cancel()).unwrap().first_stop.as_ref().map(|s| s.id.clone());
     assert!(first.is_some());

@@ -1,15 +1,10 @@
-//! The kernel's load of a watchlist (D-239): its line in the kind list
-//! (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_watchlist` answers: the hash, and the version.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct WatchlistLoaded {
     pub watchlist_hash: String,
     pub version: u32,
 }
 
-/// Watchlists (the personal saved set): the current version only. A copy
-/// from before the tags reads as the version it names.
+/// A copy from before the tags reads as the version it names.
 impl transit_version::Load for crate::watchlist::Watchlist {
     const ID: &'static str = "watchlist";
     const NAME: &'static str = "watchlist";

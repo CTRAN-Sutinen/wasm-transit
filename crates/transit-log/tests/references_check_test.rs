@@ -1,7 +1,7 @@
-//! The existence check's laws (D-232, D-233): a declared reference names
-//! a record its log's fold holds, in any state; a target the check
-//! cannot see is not judged; and every record kind the kind table
-//! names as a target has a log, so the check can judge it.
+//! Pins the existence check (D-232, D-233, `crates/cap-log/OPS.md`
+//! "references"). A declared reference names a record that its log's fold
+//! holds in any state. A target that the check cannot see is not judged, and
+//! every record kind that the kind table names as a target has a log.
 
 use std::collections::BTreeMap;
 
@@ -104,8 +104,7 @@ fn a_path_reads_fields_each_element_and_filters_with_pointers() {
     assert_eq!(at("a/id"), vec![], "a field of an array is nothing");
 }
 
-/// The kind table as `just caps` writes it: each target that is a record
-/// kind is kept by a log, so the check can judge every such reference.
+/// Reads the kind table that `just caps` writes.
 #[test]
 fn every_record_kind_a_kind_names_has_a_log() {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../cap-abi/kinds.json")).unwrap();
@@ -125,8 +124,6 @@ fn every_record_kind_a_kind_names_has_a_log() {
     assert!(judged >= 6, "the table's record references: {judged}");
 }
 
-/// An entry as a log stores it: its seq, its clock, and the records it
-/// changes (`after` absent: the record leaves the fold).
 fn entry(log: &str, seq: u64, at_ms: u64, changes: &[(&str, &str, bool)]) -> Stored {
     let changes: Vec<Value> = changes
         .iter()
@@ -136,9 +133,9 @@ fn entry(log: &str, seq: u64, at_ms: u64, changes: &[(&str, &str, bool)]) -> Sto
     Stored { seq, text: text.to_string() }
 }
 
-/// The entry that broke a reference is the later of the referrer's last
-/// write and the target's last change: by seq in one log, by clock
-/// across two. A target never written names the referrer's entry.
+/// The later of the referrer's last write and the target's last change, by
+/// seq in one log and by clock across two. A target never written names the
+/// referrer's entry.
 #[test]
 fn blame_names_the_later_of_the_referrers_write_and_the_targets_change() {
     let mut found = vec![
@@ -170,8 +167,8 @@ fn blame_names_the_later_of_the_referrers_write_and_the_targets_change() {
     );
 }
 
-/// A write answers the broken references it touches: one it wrote
-/// broken, and one whose target it took out. The others are not its.
+/// A write answers the broken references that it wrote broken or whose target
+/// it took out.
 #[test]
 fn an_entry_touches_the_references_it_wrote_and_the_targets_it_changed() {
     let found = vec![
@@ -187,9 +184,8 @@ fn an_entry_touches_the_references_it_wrote_and_the_targets_it_changed() {
     assert_eq!(other.iter().map(|b| b.id.as_str()).collect::<Vec<_>>(), vec!["n2"], "a target in another log");
 }
 
-/// After a rollback a fold can hold a record in a version newer than the
-/// table reads (D-186). Its references are not judged: it is listed as
-/// unjudged, a warning, and never as broken.
+/// A record in a version newer than the table reads (D-186) is listed as
+/// unjudged and never as broken.
 #[test]
 fn a_record_newer_than_the_table_reads_is_unjudged_and_never_broken() {
     let mut kinds = kinds();
@@ -206,8 +202,8 @@ fn a_record_newer_than_the_table_reads_is_unjudged_and_never_broken() {
     );
 }
 
-/// What a pointer's revert drops is named by hash: every declared
-/// reference whose value is a dropped hash, whatever its target.
+/// Every declared reference whose value is a dropped hash is named, whatever
+/// its target.
 #[test]
 fn naming_finds_each_reference_to_a_dropped_hash() {
     let kinds: Vec<KindReferences> = serde_json::from_value(json!([
@@ -224,11 +220,10 @@ fn naming_finds_each_reference_to_a_dropped_hash() {
     );
 }
 
-/// The refusal as of the read seq (D-233): a write that adds a reference
-/// to a record missing from what its writer read is refused; one the
-/// writer saw, one the write itself creates, and one the record already
-/// had are not; a target the write takes out is missing; a target log
-/// the writer read nothing of is not judged.
+/// A write that adds a reference to a record missing from what its writer
+/// read is refused (D-233). A reference to a record that the writer saw, that
+/// the write creates, or that the record already had is not refused. A target
+/// that the write takes out is missing.
 #[test]
 fn a_write_that_adds_a_reference_the_writer_could_not_have_seen_is_refused() {
     let read: BTreeMap<String, Records> = [("stops".to_string(), records(&[
@@ -261,11 +256,8 @@ fn a_write_that_adds_a_reference_the_writer_could_not_have_seen_is_refused() {
     assert_eq!(transit_log::added(&kinds(), &read, &Records::new(), "notes", &Stored { seq: 1, text: note.to_string() }), vec![], "the writer read nothing of the alerts log");
 }
 
-/// The receive op judges a write's references (D-233): given the kind
-/// table and each log as of the writer's read seqs, a write that adds a
-/// reference to a record missing then is refused with `broken` and no
-/// entry; one that held then and is broken now lands, with the reference
-/// as its warning in `references`. A log not given is not judged.
+/// A reference that held at the writer's read and is broken now lands, with
+/// a warning in `references` (D-233).
 #[test]
 fn the_receive_op_refuses_as_of_the_read_and_warns_as_of_now() {
     let header = |seq: u64| serde_json::from_value::<transit_log::Header>(json!({"log": "stops", "seq": seq, "writer": "w", "at_ms": 1, "module": "m", "intent": {"op": "test"}})).unwrap();
@@ -297,10 +289,8 @@ fn the_receive_op_refuses_as_of_the_read_and_warns_as_of_now() {
     assert!(landed.entry.is_some() && landed.broken.is_empty() && landed.references.is_empty(), "the stops log is not judged: {landed:?}");
 }
 
-/// What compaction keeps (D-231): `named` is each record of a target kind
-/// that a held record of the given folds names, through a declared
-/// reference, in any state. A filtered path names only its own kind, and a
-/// fold not given names nothing.
+/// `named` is what compaction keeps (D-231). A filtered path names only its
+/// own kind.
 #[test]
 fn named_is_every_target_a_held_record_names_in_any_state() {
     let notes = records(&[("note", json!({

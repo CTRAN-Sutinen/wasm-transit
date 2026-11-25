@@ -1,7 +1,4 @@
-//! An edit of the stops document (D-153, D-157). This is the law, from the
-//! user's intent, before the implementation. An event added to a stop
-//! takes its place by date, and nothing else moves. Every edit of the
-//! stops app is one event added.
+//! Editing the stops document by adding one event (D-153, D-157, D-228).
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -15,8 +12,8 @@ fn date(n: u32) -> String {
     day(n).format("%Y-%m-%d").to_string()
 }
 
-/// One stop: 0 in service from before any record, 1 planned, 2
-/// permitted, 3 planned and then moved.
+/// Kind 0 is in service from before any record, 1 planned, 2 permitted, and
+/// 3 planned and then moved.
 fn stop(kind: u8, on: u32, i: usize) -> Vec<Event> {
     let point = |e: Event| Event { lat: Some(45.0 + i as f64 / 100.0), lon: Some(-122.0), ..e };
     let named = Details { name: Some(format!("stop {i}")), wheelchair: Some(i % 2 == 0), ..Details::default() };
@@ -36,18 +33,13 @@ fn arb_doc() -> impl Strategy<Value = Stops> {
     })
 }
 
-// ---------------------------------------------------------------------
-// an edit: one event added to one stop (each of the stops app's
-// edits)
-// ---------------------------------------------------------------------
-
 fn on_of(e: &Event) -> Option<NaiveDate> {
     e.on.as_deref().map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap())
 }
 
 proptest! {
-    /// An added event takes its place by date. It goes after every event
-    /// dated on or before it, and before every later one. Nothing else moves.
+    /// An added event goes after every event dated on or before it and before
+    /// every later one. Nothing else moves.
     #[test]
     fn an_added_event_takes_its_place_by_date(doc in arb_doc(), which in 0usize..6, on in 0u32..40) {
         let id = format!("s{}", which % doc.stops.len());
@@ -80,9 +72,6 @@ fn a_suspension_added_suspends_the_stop_and_a_new_id_begins_a_stop() {
     let fresh = doc.add_event("n", stop(1, 2, 1)[0].clone());
     assert_eq!(fresh.stops["n"], stop(1, 2, 1));
 }
-
-// A write that says a stop is new (D-228) is refused for an id the
-// document holds. An event added to a held stop is still an ordinary write.
 
 #[test]
 fn a_new_stop_is_refused_an_id_the_document_holds() {

@@ -1,12 +1,5 @@
-//! cap-requests: what work has been asked for at a stop, and where is it?
-//! (OPS.md has the ops.)
-//!
-//! The seam over transit-requests (D-159). The module is the hash
-//! authority: `validate` answers every refusal or the canonical document
-//! and its hash, and a host stores exactly those bytes. `work_order_call`
-//! says what to send the work order system; the host makes the call, and
-//! `record_work_order` keeps the answer (D-165). The stops log holds the
-//! requests: cap-stops' `receive` writes them (D-197).
+//! cap-requests wraps transit-requests (D-159). The stops log holds the
+//! requests, and cap-stops' `receive` writes them (D-197).
 
 #![forbid(unsafe_code)]
 
@@ -20,18 +13,11 @@ pub use transit_requests::{RequestRefusal, StopRequest, StopRequests};
 #[ts(export, export_to = "cap_requests/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What a write must pass. It returns every refusal (its request, its
-    /// problem). With no refusal, it returns the canonical document and its
-    /// hash.
     Validate {
         #[ts(as = "StopRequests")]
         requests: cap_abi::Base<StopRequests>,
     },
-    /// A stop's requests, in id order.
     RequestsFor { requests_hash: String, stop: String },
-    /// The work across every stop: every request in id order, only those
-    /// at `statuses` and of `jobs` where given, with every request
-    /// counted by status.
     List {
         requests_hash: String,
         #[serde(default)]
@@ -41,53 +27,28 @@ pub enum Request {
         #[ts(optional)]
         jobs: Option<Vec<String>>,
     },
-    /// The document with `request` placed under `id`, new or replacing
-    /// the one held. Then it is checked as a write is: every
-    /// refusal, or the document registered and answered with its hash.
-    /// A document absent (`requests_hash` omitted) is an empty one: the
-    /// first request begins it.
     Put {
         #[serde(default)]
         #[ts(optional)]
         requests_hash: Option<String>,
         id: String,
         request: StopRequest,
-        /// The write says the request is new (D-228): an id the document
-        /// holds is refused (`id_taken`), and nothing is placed.
         #[serde(default)]
         #[ts(optional)]
         new: Option<bool>,
     },
-    /// What to send the work order system for request `id` (D-228):
-    /// `action` is `open` or `refresh`. The host makes the call, and
-    /// `record_work_order` records the answer.
     WorkOrderCall { requests_hash: String, id: String, action: String },
-    /// What the work order system answered, on request `id` (D-165). Its
-    /// reference goes on the request. A drafted or submitted request moves
-    /// to ordered. Then the document is checked as a write is. An id the
-    /// document does not hold is an error.
     RecordWorkOrder { requests_hash: String, id: String, work_order: transit_requests::WorkOrder },
-    /// The lists a request's answers come from: its jobs, statuses, the
-    /// sides of a street, the directions of travel, and the markings.
     Vocabulary {},
-    /// The stop requests document as the stops log's records (D-197):
-    /// one record of kind `stop_request` for each request.
     LogRecords { requests_hash: String },
-    /// The stop requests document assembled from the stops log's
-    /// `stop_request` records, registered and answered as its canonical
-    /// bytes and hash. An older record comes forward (transit-requests'
-    /// `version::record_forward`); a newer one is refused, naming both.
     LogDocument {
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
         records: std::collections::BTreeMap<String, transit_log::Held>,
-        /// The document's own record (absent: the empty document's).
         #[serde(default)]
         #[ts(optional, type = "{ version: number, value: unknown }")]
         document: Option<transit_log::Held>,
     },
 }
-
-/// One request and its id.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_requests/")]
 pub struct IdRequest {
@@ -103,9 +64,6 @@ pub enum Response {
         refusals: Vec<RequestRefusal>,
         document: Option<String>,
         document_hash: Option<String>,
-        /// Fields the document carries that this build does not know (D-167).
-        /// The document keeps them and flags them for a person. It never
-        /// refuses them. The list is absent when every field is known.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<String>>")]
         unknown_fields: Vec<String>,
@@ -117,18 +75,11 @@ pub enum Response {
     WorkOrderCall { call: transit_requests::WorkOrderCall },
     Vocabulary { jobs: Vec<String>, statuses: Vec<String>, open_statuses: Vec<String>, sides: Vec<String>, directions: Vec<String>, markings: Vec<String> },
     LogRecords {
-        /// The records of each kind, as the log capability's `compose`
-        /// takes them: the collection's records, and the document's own
-        /// record (`document`), which keeps the fields outside the
-        /// collection.
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
     LogDocument {
-        /// The document's hash (`requests_hash`).
         document_hash: String,
-        /// The document's canonical bytes, which a host serves under
-        /// `document_hash`.
         document: String,
     },
 }
@@ -137,12 +88,9 @@ fn strings(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| s.to_string()).collect()
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Validate { requests } => {
-            // A received document: the base of a write (cap_abi::Base).
             Ok(match requests.0.checked() {
                 Ok(requests) => {
                     let document = cap_abi::canonical_bytes(&requests)?;
@@ -214,8 +162,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LogRecords { next: transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)? })
         }
         Request::LogDocument { records, document } => {
-            // The stops log keeps each record in the version it was
-            // written in: bring each one forward.
             let version = transit_requests::SCHEMA_VERSION;
             let forward = |kind: &str, held: &transit_log::Held| -> Result<transit_log::Held, String> {
                 Ok(transit_log::Held { version, value: transit_requests::version::record_forward(kind, held.value.clone(), held.version)? })
@@ -231,20 +177,16 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
-/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The requests take their questions inline; a document registers on
-/// the kernel's `load_stop_requests` (bulk op 271).
+/// A document registers on the kernel's `load_stop_requests` (271), so this
+/// crate has no bytes ops.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: a stop requests document registers on the kernel's load_stop_requests") }).to_string()
 }
 
-/// The worked examples. The generator runs them. No module build turns
-/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

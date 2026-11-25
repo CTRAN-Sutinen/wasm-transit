@@ -1,33 +1,12 @@
-//! transit-log: the append-only log of the agency's record (D-190,
-//! D-197). cap-log is the seam.
-//!
-//! A log is one consistency domain. Each entry (`log_entry`) is one
-//! transaction: its place (`log`, `seq`), writer, time, module, intent
-//! (with the idempotency `key`, and the device's `claimed_at_ms` for a
-//! write that waited, D-222), and each record changed, with its hash
-//! before and its new state whole. The current state is the fold; a
-//! `log_checkpoint` is the fold up to an entry. A mistake is fixed by a new
-//! entry (a revert), so the truth before it stays.
+//! The append-only log of the agency's record (D-190, D-197). The op
+//! contracts are in `crates/cap-log/OPS.md`.
 //!
 //! This crate never reads a record. A record is JSON named by kind and id.
 //! The owning capability splits its document into records and joins them
-//! back ([`split`], [`join`]; fields outside the collection are kept), so
-//! one log can hold two capabilities' kinds and one entry can change both.
-//!
-//! - [`compose`] answers the entry for one write; [`overlap`] names a
-//!   record that an entry the writer did not read changed too (D-189).
-//! - [`apply`] is all or none, checking each `before`. [`fold`]
-//!   quarantines an entry it cannot read or apply.
-//! - [`revert`] writes back the states before an entry, and a record the
-//!   entry created leaves the fold (D-198). A kind whose merge would undo
-//!   that writes its own records ([`revert_states`], [`revert_with`]).
-//! - `receive` is every write's last step, shared by cap-log and every
-//!   capability's receive op (D-228); `Received` is a receive op's whole
-//!   answer. A key the fold holds lands once and answers its entry.
-//! - A `before` hashes the record as stored, never a migrated copy. The
-//!   hash function is the caller's (`cap_abi::record_hash`), so the crate
-//!   is pure.
-
+//! back ([`split`], [`join`]), so one log can hold two capabilities' kinds
+//! and one entry can change both. A `before` hashes the record as stored,
+//! never a migrated copy. The caller supplies the hash function
+//! (`cap_abi::record_hash`), so the crate is pure.
 
 pub mod receive;
 pub mod references;
@@ -39,92 +18,61 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The entry version this build reads and writes.
 pub const ENTRY_VERSION: u32 = 1;
 
-/// The checkpoint version this build reads and writes.
 pub const CHECKPOINT_VERSION: u32 = 1;
 
 transit_version::kind_tag!(
-    /// The entry's kind tag: always `"log_entry"`.
     EntryKind = "log_entry"
 );
 
 transit_version::kind_tag!(
-    /// The checkpoint's kind tag: always `"log_checkpoint"`.
     CheckpointKind = "log_checkpoint"
 );
 
-/// A record's hash, as the caller computes it.
 pub type Hash<'a> = &'a dyn Fn(&Value) -> String;
 
-/// What asked for an entry.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Intent {
-    /// The endpoint or op that asked for the write, for example
-    /// `POST /stops` or `POST /logs/stops`.
     pub op: String,
-    /// The content hash of the request's arguments.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args_hash: Option<String>,
-    /// The writer's idempotency key: a write sent again with the same
-    /// key lands once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
-    /// A note from a person or a tool, for example the cause that an
-    /// entry closing a gap names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// The writer's device clock when the person made the write, Unix
-    /// epoch milliseconds: a claim beside the host's `at_ms`, never the
-    /// entry's time (D-222). A write that waited on the device carries
-    /// it.
+    /// A claim beside the host's `at_ms`, never the entry's time (D-222).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claimed_at_ms: Option<u64>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     pub extra: transit_version::Extra,
 }
 
-/// The place and the provenance of an entry, as the host gives them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Header {
-    /// The log's name, for example `stops`.
     pub log: String,
-    /// The entry's place in the log, from 1.
+    /// From 1.
     pub seq: u64,
-    /// The verified sign-in subject, or the tool.
     pub writer: String,
-    /// The host's clock, Unix epoch milliseconds.
     pub at_ms: u64,
-    /// The module and its build that answered the entry.
     pub module: String,
     pub intent: Intent,
 }
 
-/// One record that an entry changed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Change {
-    /// The record's kind, for example `stop` or `stop_request`.
     pub kind: String,
-    /// The version of the record's document kind that `after` is in.
     pub version: u32,
-    /// The record's id within its kind.
     pub id: String,
-    /// The hash of the record as stored before the entry. Absent when
-    /// the record is new.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
-    /// The record after the entry, whole. Absent when the entry takes
-    /// the record out of the fold.
+    /// Absent when the entry takes the record out of the fold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<Value>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     pub extra: transit_version::Extra,
 }
 
-/// One entry of a log: one transaction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Entry {
     pub kind: EntryKind,
@@ -135,13 +83,10 @@ pub struct Entry {
     pub at_ms: u64,
     pub module: String,
     pub intent: Intent,
-    /// The records the entry changed, in kind and id order. Empty only
-    /// in an entry that closes a gap.
+    /// In kind and id order. Empty only in an entry that closes a gap.
     pub changes: Vec<Change>,
-    /// The `seq` of the entry this one reverts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverts: Option<u64>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     pub extra: transit_version::Extra,
 }
@@ -155,7 +100,6 @@ impl transit_version::Versioned for Entry {
 }
 
 impl Entry {
-    /// An entry at the header's place, over these changes.
     pub fn new(header: Header, changes: Vec<Change>, reverts: Option<u64>) -> Self {
         Entry {
             kind: EntryKind,
@@ -173,30 +117,23 @@ impl Entry {
     }
 }
 
-/// A record in the fold, as the entry that wrote it stored it.
+/// A record as the entry that wrote it stored it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Held {
-    /// The version of its document kind.
     pub version: u32,
     pub value: Value,
 }
 
-/// The records of a fold: by kind, then by id.
 pub type Records = BTreeMap<String, BTreeMap<String, Held>>;
 
-/// The fold of a log up to `seq`: every record, and every idempotency
-/// key with the entry that holds it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Checkpoint {
     pub kind: CheckpointKind,
     pub schema_version: u32,
     pub log: String,
-    /// The last entry the fold read.
     pub seq: u64,
     pub records: Records,
-    /// Each idempotency key, and the entry that holds it.
     pub keys: BTreeMap<String, u64>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     pub extra: transit_version::Extra,
 }
@@ -210,7 +147,6 @@ impl transit_version::Versioned for Checkpoint {
 }
 
 impl Checkpoint {
-    /// The empty fold of a log.
     pub fn empty(log: &str) -> Self {
         Checkpoint {
             kind: CheckpointKind,
@@ -223,15 +159,11 @@ impl Checkpoint {
         }
     }
 
-    /// The record of `kind` with `id`, if the fold holds it.
     pub fn get(&self, kind: &str, id: &str) -> Option<&Held> {
         self.records.get(kind)?.get(id)
     }
 }
 
-/// The records of one kind after a write: every record the kind's
-/// document holds, in its version. A record of the kind that the fold
-/// holds and this list does not is taken out of the fold.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct KindRecords {
     pub kind: String,
@@ -239,19 +171,13 @@ pub struct KindRecords {
     pub records: BTreeMap<String, Value>,
 }
 
-/// The answer of [`compose`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum Composed {
-    /// The entry to store at the header's `seq`.
     Entry(Entry),
-    /// The write changes nothing: no entry.
     Unchanged,
-    /// The fold holds the write's idempotency key: the write landed in
-    /// this entry before. No entry.
     Landed(u64),
 }
 
-/// The changes from the fold to `next`, for the kinds `next` names.
 pub fn changes(fold: &Checkpoint, next: &[KindRecords], hash: Hash) -> Vec<Change> {
     let empty = BTreeMap::new();
     let mut out = Vec::new();
@@ -285,9 +211,6 @@ pub fn changes(fold: &Checkpoint, next: &[KindRecords], hash: Hash) -> Vec<Chang
     out
 }
 
-/// The entry for one write: the changes from the fold to `next`. A
-/// write whose key the fold holds has landed already; a write that
-/// changes nothing writes no entry.
 pub fn compose(fold: &Checkpoint, header: Header, next: &[KindRecords], hash: Hash) -> Composed {
     if let Some(seq) = header.intent.key.as_ref().and_then(|k| fold.keys.get(k)) {
         return Composed::Landed(*seq);
@@ -299,21 +222,16 @@ pub fn compose(fold: &Checkpoint, header: Header, next: &[KindRecords], hash: Ha
     Composed::Entry(Entry::new(header, changes, None))
 }
 
-/// A record that a write changes and that an entry the writer did not
-/// read changed too.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Overlap {
     pub kind: String,
     pub id: String,
-    /// The latest unread entry that changed the record.
     pub seq: u64,
 }
 
-/// The first of `changes` (in kind and id order) that one of the
-/// `unread` entries changed: the entries after the fold the writer
-/// read. A write is checked against the records it changes, never the
-/// whole log's head. So a change to another record does not refuse it,
-/// and a change to the same record is for a person to settle.
+/// A write is checked against the records it changes, never the whole log's
+/// head, so a change to another record does not refuse it. A change to the
+/// same record is for a person to settle.
 pub fn overlap(changes: &[Change], unread: &[Entry]) -> Option<Overlap> {
     changes.iter().find_map(|c| {
         unread
@@ -325,10 +243,7 @@ pub fn overlap(changes: &[Change], unread: &[Entry]) -> Option<Overlap> {
     })
 }
 
-/// Apply an entry to the fold, all or none. Each change's `before` must
-/// name the record the fold holds (absent for a new record), and a key
-/// the entry names must be new. Otherwise the fold is unchanged and the
-/// error names the record.
+/// On an error the fold is unchanged.
 pub fn apply(fold: &mut Checkpoint, entry: &Entry, hash: Hash) -> Result<(), String> {
     for c in &entry.changes {
         let held = fold.get(&c.kind, &c.id).map(|h| hash(&h.value));
@@ -362,23 +277,18 @@ pub fn apply(fold: &mut Checkpoint, entry: &Entry, hash: Hash) -> Result<(), Str
     Ok(())
 }
 
-/// One stored entry as the host read it: the `seq` in its key, and its
-/// text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Stored {
     pub seq: u64,
     pub text: String,
 }
 
-/// An entry that the fold did not apply, and why.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Quarantined {
     pub seq: u64,
     pub reason: String,
 }
 
-/// Read one stored entry of `log`: its kind, its version, its log, and
-/// the `seq` in its key.
 pub fn read_entry(log: &str, stored: &Stored) -> Result<Entry, String> {
     let value: Value = serde_json::from_str(&stored.text).map_err(|e| format!("not JSON: {e}"))?;
     if value.get("kind").and_then(Value::as_str) != Some(EntryKind::KIND) {
@@ -398,17 +308,12 @@ pub fn read_entry(log: &str, stored: &Stored) -> Result<Entry, String> {
     Ok(entry)
 }
 
-/// The answer of [`fold`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Folded {
     pub fold: Checkpoint,
     pub quarantined: Vec<Quarantined>,
 }
 
-/// Fold the entries after a checkpoint. The entries come in `seq` order,
-/// each after the one before and after the checkpoint. An entry that
-/// does not read, or does not apply, is quarantined with its reason, and
-/// the fold goes on.
 pub fn fold(start: Checkpoint, entries: &[Stored], hash: Hash) -> Result<Folded, String> {
     let mut fold = start;
     let mut quarantined = Vec::new();
@@ -426,9 +331,6 @@ pub fn fold(start: Checkpoint, entries: &[Stored], hash: Hash) -> Result<Folded,
     Ok(Folded { fold, quarantined })
 }
 
-/// One record that a revert writes back: its state at the head (`now`,
-/// what the reverted entry wrote) and its state before the entry
-/// (`prior`). Absent is a record the fold does not hold.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RevertState {
     pub kind: String,
@@ -439,11 +341,8 @@ pub struct RevertState {
     pub prior: Option<Held>,
 }
 
-/// A record that a kind's capability writes back in a revert in place
-/// of its state before. A kind whose merge would bring the state before
-/// back over the revert writes something else (the edit document's
-/// records are stamped to win the merge, and a record the entry created
-/// is retired, D-193). Absent `after` takes the record out of the fold.
+/// For a kind whose merge would bring the state before back over the revert
+/// (D-193).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Written {
     pub kind: String,
@@ -453,10 +352,6 @@ pub struct Written {
     pub after: Option<Value>,
 }
 
-/// The records a revert of `entry` writes back, with their state now and
-/// before the entry (`before`, the fold just before it). A record that a
-/// later entry changed (`head` does not hold what the entry wrote)
-/// refuses the revert, and the error names it, because a person decides.
 pub fn revert_states(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<RevertState>, String> {
     let mut out = Vec::new();
     for c in &entry.changes {
@@ -473,11 +368,6 @@ pub fn revert_states(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash
     Ok(out)
 }
 
-/// The changes of a revert: each record goes back to its state before,
-/// or to what `written` names for it. A record the entry created leaves
-/// the fold (D-198), unless `written` names it. A record already in the
-/// state it goes to is no change. A written record that the revert does
-/// not write back is an error.
 pub fn revert_with(states: &[RevertState], written: &[Written], hash: Hash) -> Result<Vec<Change>, String> {
     for w in written {
         if !states.iter().any(|s| s.kind == w.kind && s.id == w.id) {
@@ -510,17 +400,11 @@ pub fn revert_with(states: &[RevertState], written: &[Written], hash: Hash) -> R
     Ok(out)
 }
 
-/// The changes that revert `entry`: each record it changed goes back to
-/// its state in `before` (the fold just before the entry). A record the
-/// entry created leaves the fold (D-198). A record that a later entry
-/// changed refuses the revert ([`revert_states`]).
+/// A record that the entry created leaves the fold (D-198).
 pub fn revert(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<Change>, String> {
     revert_with(&revert_states(before, head, entry, hash)?, &[], hash)
 }
 
-/// The records of a document's collection: the object (or the array of
-/// records with an `id`) under `field`, by id. A record with no id in an
-/// array is an error.
 pub fn split(document: &Value, field: &str) -> Result<BTreeMap<String, Value>, String> {
     match document.get(field) {
         Some(Value::Object(map)) => Ok(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
@@ -536,8 +420,6 @@ pub fn split(document: &Value, field: &str) -> Result<BTreeMap<String, Value>, S
     }
 }
 
-/// A document with `records` placed under `field` of `template`: an
-/// object by id, or (`as_array`) an array in id order.
 pub fn join(template: Value, field: &str, records: &BTreeMap<String, Value>, as_array: bool) -> Value {
     let mut doc = template;
     let collection = if as_array {
@@ -551,16 +433,10 @@ pub fn join(template: Value, field: &str, records: &BTreeMap<String, Value>, as_
     doc
 }
 
-/// The id of a document's own record: the document with its collection
-/// empty (its tags, and every field this build does not know, D-167),
-/// recorded under the document's kind. It is a valid document of its
-/// kind and version, with no records.
+/// The document with its collection emptied, which keeps its tags and the
+/// fields this build does not know (D-167), is recorded under this id.
 pub const DOCUMENT_ID: &str = "document";
 
-/// A document as a log's records: the collection under `field` as
-/// records of `record_kind`, and the document with that collection
-/// empty as the one record `DOCUMENT_ID` of `document_kind`. So a field
-/// the document carries outside its collection is kept too.
 pub fn document_records(document: &Value, field: &str, record_kind: &str, document_kind: &str, version: u32) -> Result<Vec<KindRecords>, String> {
     let records = split(document, field)?;
     let mut rest = document.clone();
@@ -577,12 +453,6 @@ pub fn document_records(document: &Value, field: &str, record_kind: &str, docume
     ])
 }
 
-/// A kind's document assembled from its records in a fold: each record
-/// in the version this build reads, joined under `field` of the
-/// document's own record (`document`; absent: `template`, the empty
-/// document). A record in an older version is refused, naming the
-/// migration that brings it forward as a one-record document (D-197); a
-/// newer one is refused naming both versions.
 pub fn assemble<T>(template: Value, document: Option<&Held>, field: &str, records: &BTreeMap<String, Held>, as_array: bool) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
@@ -605,26 +475,25 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! The laws of a log (D-190, D-197, D-198):
+    //! Pins the log (D-190, D-197, D-198):
     //!
-    //! 1. folding the entries of a sequence of writes gives the records
-    //!    of the last write;
-    //! 2. a write that changes nothing gives no entry, and a write whose
-    //!    key landed gives the entry that holds it;
-    //! 3. `apply` is all or none, and a stale `before` applies nothing;
-    //! 4. a fold from a checkpoint equals the fold from the start;
-    //! 5. an entry that does not read or apply is quarantined, and the
-    //!    fold goes on;
-    //! 6. a revert writes back the states before, or what the kind
-    //!    writes in their place; a record the entry created leaves the
-    //!    fold; a record a later entry changed refuses it;
-    //! 7. one entry may change records of two kinds;
+    //! 1. Folding the entries of a sequence of writes gives the records of
+    //!    the last write.
+    //! 2. A write that changes nothing gives no entry. A write whose key
+    //!    landed gives the entry that holds it.
+    //! 3. `apply` is all or none, and a stale `before` applies nothing.
+    //! 4. A fold from a checkpoint equals the fold from the start.
+    //! 5. An entry that does not read or apply is quarantined, and the fold
+    //!    goes on.
+    //! 6. A revert writes back the states before, or what the kind writes in
+    //!    their place. A record the entry created leaves the fold, and a
+    //!    record that a later entry changed refuses it.
+    //! 7. One entry may change records of two kinds.
     //! 8. `split` and `join` are inverse over a collection, and a
     //!    document's fields outside its collection (D-167) survive its
-    //!    records and its assembly;
-    //! 9. a write overlaps the entries its writer did not read exactly
-    //!    when one of them changed a record the write changes, and it
-    //!    names the latest such entry.
+    //!    records and its assembly.
+    //! 9. A write overlaps the entries that its writer did not read exactly
+    //!    when one of them changed a record that the write changes.
     use super::*;
     use proptest::prelude::*;
     use serde_json::json;
@@ -656,7 +525,6 @@ mod tests {
         Stored { seq: e.seq, text: serde_json::to_string(e).unwrap() }
     }
 
-    /// Write `next` over `fold`: the entry, applied, or nothing.
     fn write(fold: &mut Checkpoint, next: &[KindRecords], key: Option<&str>) -> Option<Entry> {
         match compose(fold, header(fold.seq + 1, key), next, &hash) {
             Composed::Entry(e) => {
@@ -678,7 +546,7 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
-        /// Laws 1 and 4.
+        /// Properties 1 and 4.
         #[test]
         fn the_fold_is_the_last_write_from_anywhere(writes in proptest::collection::vec(doc(), 1..8), cut in 0usize..8) {
             let mut live = Checkpoint::empty("stops");
@@ -698,7 +566,7 @@ mod tests {
             prop_assert_eq!(fold(at, &log[cut..], &hash).unwrap().fold, live);
         }
 
-        /// Law 9.
+        /// Property 9.
         #[test]
         fn a_write_overlaps_only_through_a_record_it_changes(
             start in doc(),
@@ -715,7 +583,6 @@ mod tests {
                     unread.push(e);
                 }
             }
-            // The write as the writer made it, over the fold it read.
             let next = KindRecords { kind: "stop".into(), version: 1, records: mine.clone() };
             let ours = changes(&read, std::slice::from_ref(&next), &hash);
             let expected = ours.iter().find_map(|c| {
@@ -725,7 +592,7 @@ mod tests {
             prop_assert_eq!(got, expected);
         }
 
-        /// Law 8.
+        /// Property 8.
         #[test]
         fn split_and_join_are_inverse(records in doc()) {
             let template = json!({"kind": "stops", "schema_version": 1});
@@ -788,7 +655,6 @@ mod tests {
         .unwrap();
         let kinds: Vec<&str> = e.changes.iter().map(|c| c.kind.as_str()).collect();
         assert_eq!(kinds, vec!["stop", "stop_request"], "one entry, both kinds, in kind order");
-        // A write that names only one kind leaves the other kind alone.
         write(&mut fold, &[stops(&[("B", json!({"events": 3}))])], None);
         assert_eq!(records_of(&fold, "stop_request")["B-1"], json!({"status": "completed"}));
     }
@@ -819,13 +685,12 @@ mod tests {
         apply(&mut after, &Entry::new(header(3, None), back, Some(2)), &hash).unwrap();
         assert_eq!(records_of(&after, "stop"), records_of(&before, "stop"), "A back to 1, B out of the fold (D-198)");
 
-        // A later entry changed A: a second revert of entry 2 is refused.
+        // A later entry changed A, so a second revert of entry 2 is refused.
         let refused = revert(&before, &after, &e, &hash).unwrap_err();
         assert!(refused.contains("stop A") && refused.contains("a person decides"), "{refused}");
     }
 
-    /// Law 6, a kind's own write-back: the records a kind's capability
-    /// writes in place of the states before, and only those.
+    /// Property 6, for a kind that writes back its own records.
     #[test]
     fn a_kind_writes_back_its_own_records_in_a_revert() {
         let mut fold = Checkpoint::empty("stops");
@@ -853,8 +718,8 @@ mod tests {
         assert!(read_entry("stops", &Stored { seq: 1, text: newer }).is_err());
     }
 
-    /// Law 8, the document's own record: a field outside the collection
-    /// that this build does not know is kept.
+    /// Property 8, for a field outside the collection that this build does
+    /// not know.
     #[test]
     fn a_documents_own_fields_survive_its_records() {
         #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq)]

@@ -1,18 +1,11 @@
-//! Native dispatch tests for the runcut capability. These test the seam
-//! without wasm, over the real fixture-derived network. That is the same
-//! document cap-network's import produces from the e2e zip. The substrate is
-//! model-native: schedules, materialized days, and the authored runcut. It is
-//! never a GTFS expansion. The library carries the day-level detail in
-//! transit-dispatch's own suite. These pin the seam:
+//! Native dispatch tests for cap-runcut (`OPS.md`). They pin:
 //!
-//! 1. the network document's identity is the module's canonical
-//!    serialization (the same identity cap-analysis returns);
-//! 2. the day's blocks list is the index facet: only blocks with
-//!    running trips, with that day's counts;
-//! 3. one block's chain is the authored runcut and ripples under
-//!    the edit;
-//! 4. invalid edit records are REPORTED at load, never rejected;
-//! 5. unknown hashes and garbage are errors, never panics.
+//! 1. the network document's identity is the module's canonical serialization;
+//! 2. the blocks list holds only blocks with running trips, with that day's
+//!    counts;
+//! 3. one block's chain is the authored runcut and ripples under the edit;
+//! 4. an invalid edit record is reported at load and not rejected;
+//! 5. an unknown hash or garbage input is an error and never a panic.
 
 use cap_runcut::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use sha2::Digest;
@@ -22,8 +15,6 @@ use transit_sync::{EditRecord, EditStatus};
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 
-/// The fixture-derived network document. Import is the codec, at the
-/// boundary. This module composes over the document it produces.
 fn derived_network() -> Network {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
     transit_codec::import(&feed).network
@@ -33,9 +24,8 @@ fn load_network() -> String {
     cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
 }
 
-/// The schedule id of route 10's pattern in the fixture-derived document. The
-/// schedule runs on the fixture Friday. The test finds it in the document, and
-/// reads the model, not the codec's naming.
+/// The test reads the schedule id from the model and does not rely on the
+/// codec's naming.
 fn route10_schedule(net: &Network) -> String {
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
     net.pattern_trips
@@ -50,7 +40,6 @@ fn route10_schedule(net: &Network) -> String {
         .expect("route 10 has a schedule running on the fixture Friday")
 }
 
-/// The fixture's diversion: route 10 keeps A→B, skips C, +N s.
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     EditRecord {
         id: "e1".into(),
@@ -82,12 +71,9 @@ fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
 #[test]
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
-    // Every network-consuming module uses this formula: the canonical bytes
-    // (RFC 8785, D-169), hashed. One document, one truth.
     let canonical = cap_abi::canonical_bytes(&derived_network()).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(hash, expect);
-    // Idempotent: the same document loads to the same hash.
     assert_eq!(load_network(), hash);
 }
 
@@ -95,10 +81,8 @@ fn the_network_identity_is_the_modules_canonical_serialization() {
 fn the_days_blocks_are_the_index_facet_of_the_chain() {
     let network_hash = load_network();
 
-    // The fixture Friday: B1 (t10 and t20, both running) is out. B2's only
-    // trip is single-stop. The import drops it and reports it, so the authored
-    // runcut has no trip for B2. The list does not offer it. That is the honest
-    // hole, never a silent blank. A no-service day answers empty.
+    // B2's only trip is single-stop and the import drops it, so the list does
+    // not offer B2.
     let blocks = match dispatch(Request::Blocks {
         network_hash: network_hash.clone(),
         edits_hash: None,
@@ -113,8 +97,6 @@ fn the_days_blocks_are_the_index_facet_of_the_chain() {
     assert_eq!(blocks[0].block_id, "B1");
     assert_eq!(blocks[0].trip_count, 2, "t10 and t20 both run");
 
-    // Saturday: WK is off. The holiday applies to Friday only. Every bus is
-    // parked.
     let parked = match dispatch(Request::Blocks {
         network_hash,
         edits_hash: None,
@@ -128,11 +110,6 @@ fn the_days_blocks_are_the_index_facet_of_the_chain() {
     assert!(parked.is_empty(), "no service, no blocks out");
 }
 
-/// QAF-3's fold, pinned at the seam. The day's fleet comes in one answer:
-/// running blocks, the peak and when, and the hour bases. The deep oracle law
-/// lives in transit-dispatch's prop suite. This pins the numbers the fixture
-/// pins. B1 is one vehicle out 08:00–08:30 (t10 and t20), and platform equals
-/// revenue plus layover.
 #[test]
 fn the_fleet_summary_folds_the_day_into_one_answer() {
     let network_hash = load_network();
@@ -150,8 +127,6 @@ fn the_fleet_summary_folds_the_day_into_one_answer() {
     assert_eq!(summary.blocks, 1, "only B1 runs");
     assert_eq!(summary.peak_vehicles, 1, "one vehicle is out at a time");
     assert_eq!(summary.peak_at_secs, Some(28800), "out from t10's 08:00");
-    // Platform 08:00–08:30 = 1800 s; the trips run 600 s each
-    // (revenue 1200 s); the rest is the layover (600 s).
     assert!((summary.platform_hours - 1800.0 / 3600.0).abs() < 1e-9, "platform hours");
     assert!((summary.revenue_hours - 1200.0 / 3600.0).abs() < 1e-9, "revenue hours");
     assert!((summary.layover_hours - 600.0 / 3600.0).abs() < 1e-9, "layover hours");
@@ -159,15 +134,12 @@ fn the_fleet_summary_folds_the_day_into_one_answer() {
         (summary.platform_hours - summary.revenue_hours - summary.layover_hours).abs() < 1e-9,
         "platform = revenue + layover"
     );
-    // B1 in outline (QAF-15): out 08:00–08:30, two trips, the
-    // 10-minute layover its longest gap, from t10's 08:10 end.
     let b1 = &summary.spans[0];
     assert_eq!(
         (b1.block_id.as_str(), b1.trips, b1.first_start_secs, b1.span_secs, b1.longest_gap_secs, b1.longest_gap_at_secs),
         ("B1", 2, 28800, 1800, Some(600), Some(29400))
     );
 
-    // A no-service day answers a zero fleet, never an error.
     let parked = match dispatch(Request::FleetSummary {
         network_hash,
         edits_hash: None,
@@ -188,8 +160,6 @@ fn the_block_chain_ripples_under_the_edit() {
     let net = derived_network();
     let network_hash = load_network();
 
-    // The authored runcut: B1 chains t10 into t20. The import computes the
-    // observed gap as the layover (10 minutes).
     let base = match dispatch(Request::BlockTrips {
         network_hash: network_hash.clone(),
         edits_hash: None,
@@ -211,7 +181,6 @@ fn the_block_chain_ripples_under_the_edit() {
     assert_eq!(base[0].layover_remaining_secs, Some(600), "no edits: the layover stands");
     assert!(base.iter().all(|t| t.runs));
 
-    // An unknown block answers empty, never an error.
     let ghost = match dispatch(Request::BlockTrips {
         network_hash: network_hash.clone(),
         edits_hash: None,
@@ -227,8 +196,6 @@ fn the_block_chain_ripples_under_the_edit() {
     };
     assert!(ghost.is_empty());
 
-    // The ripple: t10 diverted +300 ends at 08:16. The connection tightens from
-    // 10 min to 4 (the connection-health read).
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
     let ripped = match dispatch(Request::BlockTrips {
         network_hash,
@@ -244,14 +211,11 @@ fn the_block_chain_ripples_under_the_edit() {
         _ => panic!("block_trips"),
     };
     assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
-    // The chain rows carry the authored trip identity, model-native.
     assert_eq!(ripped[0].pattern_trips, route10_schedule(&net));
 }
 
-/// QAF-31 at the seam. A registered live document ripples the chain. t10 is
-/// predicted +370 s at its last stop, so it leaves 230 s of the 600 s layover
-/// before t20. This answers the dispatcher's "will it make its next trip?".
-/// The trip says how late it ends.
+/// t10 is predicted +370 s at its last stop, so it leaves 230 s of the 600 s
+/// layover before t20.
 #[test]
 fn the_block_chain_ripples_under_a_live_prediction() {
     use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
@@ -315,9 +279,8 @@ fn the_block_chain_ripples_under_a_live_prediction() {
 #[test]
 fn an_invalid_edit_record_moves_nothing() {
     let network_hash = load_network();
-    // A record whose anchors do not exist in the network is registered all the
-    // same. The sync contract makes the host own the document. cap-divert's
-    // reports say what is wrong with it. The day views find nothing to patch.
+    // The host owns the edit document, so a record with no anchors in the
+    // network still registers. The day patches nothing.
     let mut broken = record(EditStatus::Accepted, 60);
     broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
     let edits_hash = load_edits(&network_hash, vec![broken]);
@@ -334,9 +297,8 @@ fn an_invalid_edit_record_moves_nothing() {
     assert!(!blocks.is_empty(), "the list still answers");
 }
 
-/// The schedule id of one of route 10's patterns in the fixture-derived
-/// network, found by its stop sequence. t10 and t11 share route and sequence.
-/// The service type tells them apart, and only WK runs on the fixture Friday.
+/// t10 and t11 share route and stop sequence. The service type tells them
+/// apart, and only WK runs on the fixture Friday.
 fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
     net.pattern_trips
@@ -356,14 +318,9 @@ fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
 
 #[test]
 fn the_trip_detail_answers_the_effective_day() {
-    // The map's click-through question: one trip instance's stops, effective
-    // for the date. A diverted trip answers its patched sequence. The answer
-    // carries no geometry. The network document holds the coordinates, and the
-    // map is the host's view.
     let _ = derived_network();
     let network_hash = load_network();
 
-    // The authored day: t10's direct run A→B, times model-native.
     let stops = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: None,
@@ -383,8 +340,6 @@ fn the_trip_detail_answers_the_effective_day() {
     assert_eq!(stops[0].departure_secs, 8 * 3600, "A departs 08:00");
     assert_eq!(stops[1].arrival_secs, 8 * 3600 + 600, "B arrives 08:10");
 
-    // A trip not in the day (this start does not exist) answers
-    // empty, never an error.
     let absent = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: None,
@@ -399,8 +354,8 @@ fn the_trip_detail_answers_the_effective_day() {
     };
     assert!(absent.is_empty(), "no such trip in the day");
 
-    // The patched day: the diverted via-C trip keeps A→B, C skipped,
-    // the added time on the kept segment (B at 08:55).
+    // The via-C trip keeps A→B with the added time on the kept segment (B at
+    // 08:55).
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
     let patched = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
@@ -446,8 +401,6 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
 
 #[test]
 fn the_trip_line_is_the_effective_day_drawn() {
-    // The fixture authors no paths: a trip draws its stops joined,
-    // and a trip that does not run draws nothing.
     let net = derived_network();
     let network_hash = load_network();
     let via_c = route10_schedule_of(&net, &["A", "C", "B"]);
@@ -470,9 +423,6 @@ fn the_trip_line_is_the_effective_day_drawn() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed into the model,
-    // with no request envelope. It answers what the JSON op answers. Garbage
-    // bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_runcut::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -490,7 +440,6 @@ fn load_rules(min_secs: u32) -> String {
         recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(min_secs), pct_of_run: None, extra: Default::default() }],
         ..Default::default()
     };
-    // The kernel's load: checked, normalized, under its canonical hash.
     let answer = cap_abi::kernel::invoke(
         &[&cap_runcut::CAPABILITY],
         &serde_json::json!({ "op": "load_work_rules", "work_rules": rules }).to_string(),
@@ -500,9 +449,6 @@ fn load_rules(min_secs: u32) -> String {
     value["ok"]["work_rules_hash"].as_str().unwrap().to_string()
 }
 
-/// The recovery view. B1 waits 600 s after t10, which is the smallest
-/// authored layover there (the floor). It has no slack. Work rules that
-/// require 900 s win, and leave it 300 s short.
 #[test]
 fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
     let network_hash = load_network();
@@ -525,7 +471,6 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
     let w = &ruled.waits[0];
     assert_eq!((w.required_secs, w.slack_secs), (Some(900), Some(-300)));
     assert_eq!(ruled.patterns[0].short, 1);
-    // An unknown rules hash is the unknown-hash error.
     let err = dispatch(Request::Recovery {
         network_hash,
         edits_hash: None,
@@ -536,9 +481,8 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
     assert!(err.contains("load_work_rules"), "{err}");
 }
 
-/// Suggested blocking (D-46): with the runcut cleared, every trip the
-/// day runs is suggested into a block, and adopting the answer's edits
-/// makes a document whose fleet peak is the answer's.
+/// Adopting the answer's edits makes a document whose fleet peak is the
+/// answer's (D-46).
 #[test]
 fn a_suggestion_adopts_into_the_fleet_it_names() {
     let mut cleared = derived_network();

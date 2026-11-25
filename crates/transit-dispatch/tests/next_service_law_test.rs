@@ -1,15 +1,10 @@
-//! When a stopped route next runs at a stop (D-42), over generated weekly
-//! service, calendar ends, and diversions that take the stop away on some
-//! dates.
+//! `next` of a stopped group (D-42; crates/cap-board/OPS.md "grouped_board"),
+//! over generated weekly service, calendar ends, and diversions that take the
+//! stop away on some dates. The properties that OPS.md does not state:
 //!
-//! 1. A group with departures left today has no next.
-//! 2. A stopped group's next is its earliest departure from the stop on the
-//!    first of the next seven dates whose patched day (the edits in force that
-//!    date) carries one, with its date, days ahead, weekday, and departure.
-//! 3. With no such departure on any of the seven dates, there is no next.
-//! 4. The live document changes today's rows only. A next is the same with or
+//! 1. The live document changes today's rows only. A next is the same with or
 //!    without it.
-//! 5. A later day's departure counts only if it leaves at or after `from_secs`,
+//! 2. A later day's departure counts only if it leaves at or after `from_secs`,
 //!    which may run past midnight into the next calendar day.
 
 use std::collections::BTreeMap;
@@ -32,12 +27,9 @@ fn today() -> NaiveDate {
 
 #[derive(Debug, Clone)]
 struct GenRoute {
-    /// The weekdays it runs besides Friday (today), Monday first.
     days: [bool; 7],
-    /// The calendar's last date, days after today.
     ends_after: u64,
     starts: Vec<u32>,
-    /// A diversion skipping X on these days after today (inclusive).
     diverted: Option<(u64, u64)>,
 }
 
@@ -59,7 +51,6 @@ fn gen_route() -> impl Strategy<Value = GenRoute> {
         })
 }
 
-/// Route r runs A → X → T{r}; X is 600 s in.
 fn build(routes: &[GenRoute]) -> Network {
     let plain = |name: &str| Stop { name: name.into(), lat: 45.5, lon: -122.5, ..Default::default() };
     let mut stops = BTreeMap::new();
@@ -164,8 +155,6 @@ fn edits(routes: &[GenRoute]) -> Vec<EditRecord> {
         .collect()
 }
 
-/// The oracle: route r's next departure from X after today, from the generated
-/// calendar alone. The result is (days ahead, departure secs).
 fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
     for k in 1..=7u64 {
         let d = today().checked_add_days(Days::new(k)).unwrap();
@@ -183,7 +172,6 @@ fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
     None
 }
 
-/// Every trip cancelled live: today's rows go (D-73). The next must not move.
 fn all_cancelled(net: &Network, day: &Day) -> LiveDay {
     let _ = net;
     LiveDay { kind: Default::default(), schema_version: Default::default(),
@@ -251,8 +239,6 @@ proptest! {
     }
 }
 
-/// The worked case: the last trip has left Friday night. The route runs
-/// weekdays only, so the next is Monday at 05:10.
 #[test]
 fn a_weekday_route_stopped_on_friday_night_next_runs_monday() {
     let mut days = [false; 7];

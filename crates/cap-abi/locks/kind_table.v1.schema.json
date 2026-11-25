@@ -126,7 +126,7 @@
       "const": "kind_table"
     },
     "LoadEntry": {
-      "description": "A kind's kernel load: its JSON op and its bulk op's code.",
+      "description": "The kernel load of a kind names its JSON op and the code of its bytes op.",
       "properties": {
         "code": {
           "format": "uint32",
@@ -144,32 +144,32 @@
       "type": "object"
     },
     "Merge": {
-      "description": "How two writes of a kind meet.",
+      "description": "How two writes of a kind merge.",
       "oneOf": [
         {
           "const": "replace",
-          "description": "The whole document, by CAS on the head the writer read.",
+          "description": "The write replaces the whole document, by CAS on the head that the\nwriter read.",
           "type": "string"
         },
         {
           "const": "lww",
-          "description": "Last writer wins for each record id (the edit document; D-56).",
+          "description": "The last writer wins for each record id, as in the edit document\n(D-56).",
           "type": "string"
         },
         {
           "const": "log",
-          "description": "Ops over the log's head; different records never conflict.",
+          "description": "The writes are ops over the head of the log. Writes to different\nrecords do not conflict.",
           "type": "string"
         },
         {
           "const": "none",
-          "description": "No writer but the server.",
+          "description": "Only the server writes the kind.",
           "type": "string"
         }
       ]
     },
     "PostEntry": {
-      "description": "A kind's own write route: the path, the op the request's body is the\narguments of, the answer's field that names the document after the\nwrite, and the body's fields the answer repeats.",
+      "description": "The write route of a kind names the path, the op that takes the request\nbody as its arguments, the answer field that names the document after\nthe write, and the body fields that the answer repeats.",
       "properties": {
         "answer": {
           "type": "string"
@@ -199,17 +199,17 @@
       "oneOf": [
         {
           "const": "open",
-          "description": "Anyone, by hash (`/blobs/<hash>`; D-152).",
+          "description": "Anyone reads the kind by hash (`/blobs/<hash>`; D-152).",
           "type": "string"
         },
         {
           "const": "restricted",
-          "description": "Never served by hash. A client reads only its own projection.",
+          "description": "The server does not serve the kind by hash. A client reads only\nits own projection.",
           "type": "string"
         },
         {
           "const": "audit",
-          "description": "A caller with the audit rule (a log's entries name their writers).",
+          "description": "A caller with the audit rule reads the kind. The entries of a log\nname their writers.",
           "type": "string"
         }
       ]
@@ -218,7 +218,7 @@
       "description": "One record kind of a log, and where it lives in its document.",
       "properties": {
         "collection": {
-          "description": "The document field that holds the collection: an array of records\nwith an `id`, or an object by id.",
+          "description": "The document field that holds the collection, either an array of\nrecords with an `id` or an object by id.",
           "type": "string"
         },
         "kind": {
@@ -233,7 +233,7 @@
       "type": "object"
     },
     "Reference": {
-      "description": "One declared reference: where it is in a document, and its target.\n\nThe path is a JSON Pointer with two additions. `*` is each item of an\narray, or each value of an object keyed by id. `[tag=value]` after a\nsegment chooses the branch of a tagged enum, by the value of its tag\nfield (`/notes/*/target[kind=edit]/id`). A declaration on an array\napplies to each item, so its path ends in `*`.",
+      "description": "The path is a JSON Pointer with `*` and `[tag=value]` added. A\ndeclaration on an array applies to each item, so its path ends in `*`.",
       "properties": {
         "path": {
           "type": "string"
@@ -268,21 +268,20 @@
       "type": "object"
     },
     "Write": {
-      "description": "How a kind is written.",
       "oneOf": [
         {
           "const": "pointer",
-          "description": "`POST /pointers/<name>`, one of `pointers`, checked by `module`'s\n`validate` op, and stored as the module answers it.",
+          "description": "`POST /pointers/<name>`, where the name is one of `pointers`. The\n`validate` op of the `module` checks the write, and the store\nkeeps what the module answers.",
           "type": "string"
         },
         {
           "const": "route",
-          "description": "Its own route (`route`), which runs its module.",
+          "description": "The kind has its own route (`route`), which runs its module.",
           "type": "string"
         },
         {
           "const": "server",
-          "description": "The server alone: an import, a release, or the manifest.",
+          "description": "Only the server writes the kind, in an import, a release, or the\nmanifest.",
           "type": "string"
         }
       ]

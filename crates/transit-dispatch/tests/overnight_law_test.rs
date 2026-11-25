@@ -101,7 +101,6 @@ fn live(trips: Vec<LiveTrip>) -> LiveDay {
     }
 }
 
-/// "late" (start 24:35) live: `delay` at X, or cancelled. On `date`.
 fn late_live(date: Option<&str>, delay: i32, canceled: bool) -> LiveTrip {
     LiveTrip {
         trip: "late".into(),
@@ -135,8 +134,6 @@ fn cancel_late_on(on: &str) -> EditRecord {
     }
 }
 
-/// Saturday's board over Friday's night: `prev_secs` on Friday's clock, Friday
-/// `length` seconds long.
 fn ask<'a>(
     sat: &'a transit_dispatch::Day,
     fri: &'a transit_dispatch::Day,
@@ -163,14 +160,10 @@ fn rows(board: &transit_dispatch::StopBoard) -> Vec<(String, String, u32)> {
     board.rows.iter().map(|r| (r.departure.trip.clone(), r.departure.date.clone().unwrap(), r.departure.departure_secs)).collect()
 }
 
-/// The previous day's after-midnight departures that have not left are on the
-/// board, each on its own date's clock (`departure_secs` past 86 400) and
-/// carrying its date. Without `previous`, the board is its date alone.
 #[test]
 fn law1_the_previous_days_after_midnight_departures_are_on_the_board() {
     let net = network();
     let (sat, fri) = days(&net, &[]);
-    // Saturday 00:30: Friday's clock reads 24:30.
     let board = stop_board_at(&net, &ask(&sat, &fri, 88_200, 86_400, 1_800), "X", 10, None);
     assert_eq!(
         rows(&board)[..4],
@@ -182,7 +175,6 @@ fn law1_the_previous_days_after_midnight_departures_are_on_the_board() {
         ],
         "Friday's 24:45 and 25:00 are Friday's; Saturday's 00:10 has left"
     );
-    // Without the previous date, the board is Saturday alone.
     let alone = stop_board_at(
         &net,
         &BoardAt { today: ServiceDay { date: SAT, trips: &sat.trips, edits: None }, from_secs: 1_800, previous: None },
@@ -194,20 +186,16 @@ fn law1_the_previous_days_after_midnight_departures_are_on_the_board() {
     assert_eq!(alone.rows[0].departure.trip, "early");
 }
 
-/// A previous day departure that has left is not on the board.
 #[test]
 fn law1_a_previous_day_departure_that_has_left_is_not_on_the_board() {
     let net = network();
     let (sat, fri) = days(&net, &[]);
-    // 00:55 Saturday: Friday's 24:45 has left. Its 25:00 has not.
     let board = stop_board_at(&net, &ask(&sat, &fri, 89_700, 86_400, 3_300), "X", 10, None);
     let r = rows(&board);
     assert!(!r.contains(&("late".into(), FRI.into(), 89_100)));
     assert_eq!(r[0], ("owl".into(), FRI.into(), 90_000));
 }
 
-/// Rows order by how long until each leaves, the wait counted on each row's
-/// own clock.
 #[test]
 fn law2_rows_order_by_the_wait_on_each_rows_own_clock() {
     let net = network();
@@ -230,7 +218,6 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
         board.rows.iter().find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(FRI)).cloned()
     };
 
-    // Stating Friday: it predicts Friday's instance.
     let dated = live(vec![late_live(Some(FRI), 120, false)]);
     let board = stop_board_at(&net, &at, "X", 10, Some(&dated));
     let row = friday_late(&board).expect("Friday's late is on the board");
@@ -253,8 +240,6 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     assert!(friday_late(&board).is_some());
 }
 
-/// A cancel on the previous date takes its departure off the board and lists it
-/// as skipped.
 #[test]
 fn law4_the_previous_days_edits_are_the_previous_days() {
     let net = network();
@@ -285,7 +270,6 @@ fn law5_the_fall_back_hour_counts_waits_from_the_true_instant() {
     assert_eq!(board.rows[0].wait, Wait::Minutes { minutes: 15 });
 }
 
-/// A route only the previous day still runs has its group on the grouped board.
 #[test]
 fn law6_a_route_only_the_previous_day_runs_has_its_group() {
     let net = network();
@@ -298,8 +282,6 @@ fn law6_a_route_only_the_previous_day_runs_has_its_group() {
     let order: Vec<_> = r1.departures.iter().map(|r| (r.departure.trip.as_str(), r.departure.date.as_deref().unwrap())).collect();
     assert_eq!(order, [("late", FRI), ("early", SAT), ("late", SAT)]);
 
-    // Once Friday's night is done, the owl's group is gone: Saturday does not
-    // run it.
     let later = grouped_board_at(&net, &ask(&sat, &fri, 100_000, 86_400, 13_600), "X", 3, None);
     assert!(later.groups.iter().all(|g| g.route != "r2"));
 }

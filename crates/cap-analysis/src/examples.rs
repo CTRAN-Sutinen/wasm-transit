@@ -1,18 +1,11 @@
-//! The analysis capability's worked examples, under its `examples` feature.
-//! Each request runs over the fixture network. The point and area layers
-//! are the ones the coverage ops read. The generator runs them through this
-//! crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::{json, Value};
 
-/// Two people points: one by the fixture's stops, one far away.
 const PEOPLE: &str = r#"{"type":"FeatureCollection","features":[
                 {"type":"Feature","properties":{"pop":500},"geometry":{"type":"Point","coordinates":[-73.5,45.5]}},
                 {"type":"Feature","properties":{"pop":500},"geometry":{"type":"Point","coordinates":[-74.0,46.0]}}
             ]}"#;
 
-/// Jobs: an area around the fixture's stops, and a point far away.
 const JOBS: &str = r#"{"type":"FeatureCollection","features":[
                 {"type":"Feature","properties":{"jobs":300},"geometry":{"type":"Polygon","coordinates":[[[-73.501,45.4995],[-73.499,45.4995],[-73.499,45.5005],[-73.501,45.5005],[-73.501,45.4995]]]}},
                 {"type":"Feature","properties":{"jobs":100},"geometry":{"type":"Point","coordinates":[-74.0,46.0]}}

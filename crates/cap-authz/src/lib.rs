@@ -1,31 +1,19 @@
-//! cap-authz: may this identity perform this action on this pointer?
-//! (OPS.md has the ops.)
-//!
 //! The IdP authenticates the identity. The host verifies the JWT (D-60) and
-//! reads the roles claim (D-59). This module owns only the decision, over the
-//! policy document (kind `policy`, D-61) that the host pushes on each call.
-//!
-//! * The verdict is fail-closed. No policy, no subject, or no matching rule
-//!   is a deny. The verdict never depends on rule order. transit-authz holds
-//!   the property tests.
-//! * `validate` is the policy's check in the kind table (D-202). A policy
-//!   that grants no role a write on the policy is accepted with a warning.
-//! * Stateless, never cached across calls. The policy's hash is the cache
-//!   key if a host wants one.
+//! reads the roles claim (D-59). This module owns only the decision, over
+//! the policy document (kind `policy`, D-61) that the host pushes on each
+//! call, and the module never caches across calls. `validate` is the
+//! policy's check in the kind table (D-202). transit-authz holds the
+//! property tests.
 
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_authz/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// May `identity` perform `action` ("read" | "write") on `pointer`
-    /// under `policy`? Fail-closed; the verdict never depends on rule
-    /// order (transit_authz::authorize, property-tested).
     Authorize {
         identity: transit_authz::Identity,
         action: String,
@@ -33,19 +21,11 @@ pub enum Request {
         #[ts(as = "transit_authz::Policy")]
         policy: cap_abi::Current<transit_authz::Policy>,
     },
-    /// The policy as it applies to this identity: the client's view.
-    /// It holds the caller's roles and merged capabilities only, never
-    /// other roles or rules. `GET /permissions` serves this view.
     Effective {
         identity: transit_authz::Identity,
         #[ts(as = "transit_authz::Policy")]
         policy: cap_abi::Current<transit_authz::Policy>,
     },
-    /// What a policy write must pass, on the receive path of
-    /// `POST /pointers/policy`. It returns every issue that makes the
-    /// policy wrong. With no issue, it returns the canonical document and
-    /// its hash. Consequences a person should see go in `warnings`. They
-    /// never refuse the write (a policy nobody can change again).
     Validate {
         #[ts(as = "transit_authz::Policy")]
         policy: cap_abi::Base<transit_authz::Policy>,
@@ -63,17 +43,12 @@ pub enum Response {
         warnings: Vec<transit_authz::PolicyWarning>,
         document: Option<String>,
         document_hash: Option<String>,
-        /// Fields in the policy that this build does not know (D-167).
-        /// The policy keeps them and flags them for a person. It never
-        /// refuses them.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<String>>")]
         unknown_fields: Vec<String>,
     },
 }
 
-/// The typed dispatch. Native hosts call this directly. Failures are
-/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Authorize { identity, action, pointer, policy } => {
@@ -110,20 +85,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
-/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// No bulk-bytes op exists. The policy is a JSON document.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: the policy document is JSON (authorize)") })
         .to_string()
 }
 
-/// The worked examples. The generator runs them. No module build turns
-/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

@@ -1,8 +1,3 @@
-//! The runcut capability's worked examples, under its `examples` feature.
-//! Each example gives the documents to load and a request, over the fixture
-//! Friday. The generator runs them through this crate's `invoke` and records
-//! the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -15,8 +10,6 @@ pub fn examples() -> Vec<Example> {
     let network = || fixtures::load_network(&net.derived);
     let with_rules = || vec![network(), fixtures::load("load_work_rules", "work_rules", &rules)];
     let with_edits = || vec![network(), fixtures::load("load_edits", "edits", &edits)];
-    // t30: the via-C run at 08:40. The patched day keeps A→B (C skipped, +300
-    // s), and draws the diversion's line.
     let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("a date");
     let day = transit_dispatch::effective_day(&net.network, date, &records).expect("the patched day");
     let diverted = day.iter().find(|t| t.stop_times.len() == 2 && t.start_secs == 8 * 3600 + 40 * 60).expect("the diverted trip");
@@ -39,7 +32,6 @@ pub fn examples() -> Vec<Example> {
     ]
 }
 
-/// A fixture document's canonical hash, whatever its type.
 trait Hashed {
     fn hashed(&self) -> String;
 }

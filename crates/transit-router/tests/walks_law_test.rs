@@ -1,15 +1,7 @@
-//! The router over a walk table: a plan's transfers walk the streets.
-//!
-//! The intent (crates/transit-streets/src/lib.rs, the walk table): with a walk
-//! table, the router's footpaths are the table's walks. These are every walk
-//! between two of the network's stops, at the table's seconds, and nothing
-//! else. No straight-line pair survives. A walk that names a stop the network
-//! does not have is ignored. With no walk table, the router keeps its
-//! straight-line transfers (D-32, encoded provisionally).
-//!
-//! The planning laws (`prop_test.rs`, `arrive_by_law_test.rs`) hold over
-//! whatever footpaths the network has. These laws pin which footpaths those
-//! are.
+//! Pins which footpaths the router has over a walk table (D-32). With a table,
+//! the footpaths are exactly its walks between two of the network's stops, and
+//! no straight-line pair survives. With no table, the straight-line transfers
+//! stay.
 
 #[path = "prop_support.rs"]
 mod support;
@@ -37,8 +29,6 @@ fn table(walks: Vec<Walk>) -> WalkTable {
     }
 }
 
-/// A symmetric table over `n` stops (`s0`...), with walks naming a stop the
-/// network does not have mixed in.
 fn walks(n: usize) -> impl Strategy<Value = Vec<Walk>> {
     vec((0..n + 1, 0..n + 1, 1u32..600), 0..12).prop_map(move |pairs| {
         let id = |i: usize| if i == n { "ghost".to_string() } else { format!("s{i}") };
@@ -75,9 +65,8 @@ fn footpaths(net: &RouterNetwork) -> BTreeMap<(String, String), u32> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// With a walk table, the footpaths are exactly the table's walks
-    /// between the network's stops. The straight-line pairs (every
-    /// stop here is ~89 m from the next) are gone.
+    /// Every stop here is about 89 m from the next, so the straight-line pairs
+    /// would exist without the table.
     #[test]
     fn the_footpaths_are_the_walk_table((n, walks) in case()) {
         let trips = [TripSpec { stops: (0..n as u32).collect(), start: 28_800, step: 120 }];
@@ -92,9 +81,9 @@ proptest! {
     }
 }
 
-/// Two stops far apart with no trip between them: the table's walk is
-/// the plan. Two stops a few meters apart that the table says no walk
-/// joins (a freeway between them): no plan.
+/// Two stops far apart with no trip between them plan by the table's walk.
+/// Two stops a few meters apart that the table does not join (a freeway lies
+/// between them) have no plan.
 #[test]
 fn a_plan_walks_where_the_table_walks_and_nowhere_else() {
     let far = [TripSpec { stops: vec![0], start: 28_800, step: 60 }];

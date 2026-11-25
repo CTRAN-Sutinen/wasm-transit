@@ -17,7 +17,7 @@ A notes document registers on the kernel's `load_notes`. The load is refused unl
 
 ## validate
 
-What a write must pass. The answer is every refusal, each naming its note and its problem, or the canonical document and its hash. The module is the hash authority: a host stores exactly those bytes.
+What a write must pass. The answer is every refusal, each naming its note and its problem, or the canonical document and its hash. A host stores exactly those bytes.
 
 A note is refused when its id, text, or writer is blank, when its target names a blank id, when a trip instance's date is not "YYYY-MM-DD", or when its edit is earlier than the note. Nothing else is refused.
 

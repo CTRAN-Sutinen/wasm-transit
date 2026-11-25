@@ -1,45 +1,21 @@
-//! transit-codec: GTFS to the network and back, over the whole GTFS
-//! Schedule spec.
+//! [`import`] reads a [`Feed`] into an authored network document, and
+//! [`export`] writes it back. This crate is the only place GTFS and
+//! transit-network meet. cap-network wraps it.
 //!
-//! [`import`] reads a whole-spec [`Feed`] into an authored network
-//! document (the planner's start), and [`export`] writes it back (the
-//! publish path). cap-network wraps it. This crate is the only place GTFS
-//! and transit-network meet. `Feed` keeps every file and column as the
-//! text the feed carried, and writes deterministic zip bytes.
-//!
-//! The mapping:
-//!
-//! * A feed's trips are the network's trips: the agency's ids, every time
-//!   exactly (offsets from the first arrival), frequency trips as
-//!   frequency trips, blocks by trip. A shape is an alignment under its
-//!   own id, run or not.
 //! * A pattern is one (route, direction, stops, exactness, shape, and what
-//!   each stop row says). A row is exact when it has both times and does
-//!   not say `timepoint=0`. A row that is not a stop at a time makes a
-//!   demand-responsive trip. Everything else reads into its model home
-//!   and writes back value for value (`extras`, `values`).
-//! * The [`Boundary`] is what the bytes need and the document cannot hold:
-//!   sequence numbering, a frequency trip's base, a made agency id, which
-//!   file names a fare network, and services written as dates. An
-//!   authored document exports with `Boundary::default()`.
-//! * A service id is a service type: its calendar row and its exceptions.
-//!   A service written as dates alone (C-TRAN's whole calendar) imports
-//!   as the weekly rule its dates read as, because otherwise a fork would
-//!   carry nothing. A weekday qualifies at 4+ dates and three quarters of
-//!   its occurrences; the dates stay exact through added and removed
-//!   exceptions, and the export writes dates again, after a fork too
-//!   (D-105, D-111; [`read_weekly_rule`]; tests/dated_calendar_law_test).
-//! * Each pattern gets one all-day profile from its earliest trip; each
-//!   layover is the observed gap. The planner re-authors from there.
-//! * `direction_id` becomes the route's directions, named by the commonest
-//!   headsign. The export invents no headsign.
-//! * A transfer point is the feed's own flag; nothing infers one.
-//! * What the model cannot hold is an `ImportNote`, never silence.
-//!
-//! Laws: the import is valid over spec-valid feeds (import_prop_test),
-//! keeps the trips (trip_import_law_test), `import ∘ export` is a fixpoint
-//! (codec_prop_test), and the whole spec round-trips one law per file
-//! (spec_round_trip_test). C-TRAN regressions: import_regression_test.
+//!   each stop row says). A row is exact when it has both times and does not
+//!   say `timepoint=0`. A row that is not a stop at a time makes a
+//!   demand-responsive trip.
+//! * The [`Boundary`] holds what the bytes need and the document cannot:
+//!   sequence numbering, a frequency trip's base, a generated agency id, the
+//!   file
+//!   that names a fare network, and services written as dates. An authored
+//!   document exports with `Boundary::default()`.
+//! * A service written as dates alone imports as the weekly rule that its
+//!   dates read as, because otherwise a fork would carry nothing. The dates
+//!   stay exact through added and removed exceptions, and the export writes
+//!   dates again, after a fork too (D-105, D-111; [`read_weekly_rule`]).
+//! * The export invents no headsign.
 
 pub mod feed;
 pub use feed::{base64_encode, Feed, FeedError, FeedInfo, FeedSummary};
@@ -63,12 +39,7 @@ use transit_network::{
     Network, Pattern, PatternStop, PatternTrips, ServiceType, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
-// ---------------------------------------------------------------------
-// The boundary residue and the import's report.
-// ---------------------------------------------------------------------
-
 transit_version::kind_tag!(
-    /// The import boundary's kind tag: always `"boundary"`.
     BoundaryKind = "boundary"
 );
 
@@ -80,78 +51,64 @@ impl transit_version::Versioned for Boundary {
     }
 }
 
-/// What the feed's bytes carry that the document does not: pure
-/// serialization, never planner intent. Emitted with the imported
-/// document; `Boundary::default()` for an authored one (stop_sequence
-/// 1..=n, a frequency trip's rows based at its first band).
+/// Serialization only, never planner intent. `Boundary::default()` exports
+/// stop_sequence as 1..=n and bases a frequency trip's rows at its first band.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Boundary {
-    /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1.
     #[serde(default)]
     #[ts(type = "\"boundary\"")]
     pub kind: BoundaryKind,
     #[serde(default)]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
-    /// Per trip, the feed's stop_sequence numbers, kept only where
-    /// they are not 1..=n.
+    /// Kept only where the numbers are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
     pub stop_sequences: BTreeMap<String, Vec<u32>>,
-    /// Per frequency trip, the first arrival its stop_times rows
-    /// carried (the spec reads those rows as offsets only).
+    /// The first arrival of a frequency trip's rows. The spec reads those
+    /// rows as offsets only.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, u32>>")]
     pub frequency_bases: BTreeMap<String, u32>,
-    /// Per alignment, the feed's shape_pt_sequence numbers, kept only
-    /// where they are not 1..=n.
+    /// Kept only where the numbers are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
     pub shape_sequences: BTreeMap<String, Vec<u32>>,
-    /// The id given the one agency the feed names without an
+    /// The id given to the one agency that the feed names without an
     /// agency_id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub anonymous_operator: Option<String>,
-    /// Routes name their fare network in routes.txt (otherwise in
-    /// route_networks.txt).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub fare_networks_on_routes: bool,
-    /// The services the feed published as dates alone whose weekly
-    /// rule the import read (D-105): the export writes them back as
-    /// dates, under the calendar.txt row they had (zero flags, its
-    /// range as written), if any.
+    /// D-105. The export writes these services back as dates, under the
+    /// calendar.txt row they had (zero flags), if any.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>")]
     pub dated_calendars: BTreeMap<String, DatedCalendar>,
 }
 
-/// How a feed wrote a service it published as dates alone.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DatedCalendar {
-    /// The calendar.txt row's start_date and end_date as written; none
-    /// when the feed had no row for the service.
+    /// start_date and end_date as written. None when the feed had no row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub row: Option<(String, String)>,
 }
 
-/// D-111: a weekday is part of a dated service's weekly rule when the
-/// service runs on at least this many of them…
+/// D-111. A weekday is part of a dated service's weekly rule when the service
+/// runs on at least this many of them...
 pub const WEEKLY_MIN_DAYS: u32 = 4;
-/// …and on at least this share (numerator, denominator) of that
-/// weekday's occurrences between its first and last date.
+/// ...and on at least this share (numerator, denominator) of that weekday's
+/// occurrences between its first and last date.
 pub const WEEKLY_MIN_SHARE: (u32, u32) = (3, 4);
 
-/// D-105: the weekly rule a service published as dates alone runs, when
-/// one reads out of them (D-111): the qualifying weekdays, one range
-/// from the first to the last date on them, a removed date for each of
-/// them it skips, an added date for each other date. It runs on exactly
-/// `dates`. None when no weekday qualifies: the service stays dated.
+/// D-105. The rule runs on exactly `dates`: one range over the qualifying
+/// weekdays, a removed date for each one it skips, and an added date for each
+/// other date. None when no weekday qualifies, so the service stays dated.
 pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
     use chrono::Datelike;
     let (first, last) = (*dates.first()?, *dates.last()?);
@@ -185,32 +142,21 @@ pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
     Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions, extra: Default::default() })
 }
 
-/// One thing the import could not carry into the document. It is reported,
-/// never silent. The planner needs to see what the bootstrap did to their
-/// feed.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ImportNote {
-    /// Trips the model cannot represent at all, aggregated by
-    /// reason (single-stop shuttles, no first time, serving stops
-    /// without coordinates).
     DroppedTrips {
         single_stop: u32,
         no_departure: u32,
         missing_stop_coords: u32,
     },
-    /// A transfers.txt row marks a stop whose walking group is
-    /// served by fewer than two routes. The feed's intent cannot compose.
-    /// The flag is reported, not applied.
+    /// A transfers.txt row marks a stop whose walking group fewer than two
+    /// routes serve. The flag is reported, not applied.
     UnusableTransferPoint { stop: String },
-    /// Trips name a shape shapes.txt does not have; their pattern runs
-    /// no alignment.
     UnknownShape { shape: String },
 }
 
-/// What [`import`] hands back: the document, its boundary residue,
-/// and the notes describing what could not cross.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ImportOutcome {
@@ -219,31 +165,22 @@ pub struct ImportOutcome {
     pub notes: Vec<ImportNote>,
 }
 
-// ---------------------------------------------------------------------
-// Import.
-// ---------------------------------------------------------------------
-
-/// One feed trip, read: its rows' offsets and the pattern it runs.
 struct Read<'a> {
     row: &'a TripRow,
     id: &'a str,
     route: &'a str,
     service: &'a str,
     departs: Departs,
-    /// The first arrival: what the offsets are measured from.
     base: u32,
     times: Vec<StopOffset>,
     stops: Vec<String>,
     flags: Vec<bool>,
     distances: Vec<f64>,
-    /// What each stop's row says beyond its times. It is part of the
-    /// pattern's identity.
+    /// Part of the pattern's identity.
     attrs: Vec<StopAttrs>,
 }
 
-/// A stop row's own rules: headsign, pickup and drop-off, continuous
-/// stopping, booking rules, and the distance it published (as bits,
-/// so it can key a pattern).
+/// The published distance is held as bits so that it can key a pattern.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct StopAttrs {
     headsign: Option<String>,
@@ -269,8 +206,6 @@ fn stop_attrs(row: &StopTimeRow) -> StopAttrs {
     }
 }
 
-/// A row that is not a stop at a time: a location group or zone, or a
-/// pickup / drop-off window. A trip with one is demand-responsive.
 fn is_flexible(row: &StopTimeRow) -> bool {
     row.stop_id.is_none()
         || row.location_group_id.is_some()
@@ -311,11 +246,8 @@ impl Read<'_> {
     }
 }
 
-/// Read a feed into a network document. Deterministic: every
-/// iteration is ordered, so the same feed yields the same document on
-/// every host. What the model cannot hold yet is reported in the
-/// notes (stops without coordinates, and the trips serving them;
-/// single-stop trips; trips with no first time).
+/// Every iteration is ordered, so the same feed yields the same document on
+/// every host.
 pub fn import(feed: &Feed) -> ImportOutcome {
     let mut notes: Vec<ImportNote> = Vec::new();
     let mut boundary = Boundary::default();
@@ -347,7 +279,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             url: text(&row.route_url),
             text_color: text(&row.route_text_color),
             sort_order: int(&row.route_sort_order),
-            // Empty means no continuous stopping, as 1 does.
+            // Empty and 1 both mean no continuous stopping.
             continuous_pickup: stop_rule(&row.continuous_pickup).filter(|r| *r != StopRule::NotAvailable),
             continuous_drop_off: stop_rule(&row.continuous_drop_off).filter(|r| *r != StopRule::NotAvailable),
             operator: text(&row.agency_id),
@@ -362,7 +294,6 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         net.routes.insert(id.clone(), route);
     }
 
-    // Rows by trip, in stop_sequence order.
     let mut rows_of: BTreeMap<&str, Vec<(u32, &StopTimeRow)>> = BTreeMap::new();
     for row in &feed.stop_times {
         let Some(trip) = row.trip_id.as_deref() else { continue };
@@ -477,11 +408,8 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             attrs: rows.iter().map(|(_, r)| stop_attrs(r)).collect(),
         });
     }
-    // Earliest first, then id: the order a pattern's trips are stored in.
     trips.sort_by(|a, b| a.first_start().cmp(&b.first_start()).then_with(|| a.id.cmp(b.id)));
 
-    // Patterns: one per (route, direction, stops, exactness, shape,
-    // and what each stop's row says).
     type Key = (String, String, Vec<String>, Vec<bool>, Option<String>, Vec<StopAttrs>);
     let mut clusters: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
     for (i, t) in trips.iter().enumerate() {
@@ -495,8 +423,6 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     let mut pattern_of: Vec<String> = vec![String::new(); trips.len()];
     let mut index: BTreeMap<(String, String), usize> = BTreeMap::new();
     let stop_name = |id: &str| net.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
-    // Alignments: every shape under its own id, in sequence order. This
-    // includes shapes no trip runs.
     let mut shapes: BTreeMap<&str, Vec<(u32, AlignmentPoint)>> = BTreeMap::new();
     for row in &feed.shapes {
         let (Some(id), Some(lat), Some(lon)) = (row.shape_id.as_deref(), parse_f64(&row.shape_pt_lat), parse_f64(&row.shape_pt_lon))
@@ -521,8 +447,8 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let pattern_id = format!("pat-{route}-{direction}-{n}");
         *n += 1;
         let first = &trips[members[0]];
-        // The production tool: one all-day profile from the earliest
-        // member's timepoint arrivals, when its ends are exact.
+        // One all-day profile from the earliest member's timepoint arrivals,
+        // when both ends are exact.
         let timing = (flags.first() == Some(&true) && flags.last() == Some(&true))
             .then(|| TimingProfile {
                 start_secs: 0,
@@ -599,9 +525,8 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             });
     }
 
-    // Directions, each named by its trips' most common headsign (else
-    // "To" its most common terminal). Ties: the lexicographically
-    // first, deterministic.
+    // A direction is named by its trips' most common headsign, else "To" its
+    // most common terminal. A tie goes to the lexicographically first.
     let mut headsigns: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     let mut terminals: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     for ((route, direction, stops, ..), members) in &clusters {
@@ -631,8 +556,6 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         }
     }
 
-    // Service types: every service the feed's calendars name, and any
-    // a kept trip runs under.
     let mut rules: BTreeMap<String, CalendarRule> = BTreeMap::new();
     for row in &feed.calendar {
         let Some(id) = &row.service_id else { continue };
@@ -666,9 +589,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     }
     for (id, mut rule) in rules {
         rule.exceptions.sort_by_key(|e| e.date);
-        // D-105: a service published as dates alone (no weekday flagged,
-        // every exception an added date) runs the weekly rule its dates
-        // read as, where one does; the boundary keeps how it is written.
+        // D-105. The boundary keeps how the service was written.
         let dated = rule.days == WeekdaySet::none()
             && !rule.exceptions.is_empty()
             && rule.exceptions.iter().all(|e| e.state == DayState::Added);
@@ -687,10 +608,8 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         net.service_types.insert(id.clone(), ServiceType { name: id, rule, extra: Default::default() });
     }
 
-    // Blocks: every trip under its block id, in the order they run
-    // (first start, then id). The observed gap between consecutive
-    // one-start trips of one service type becomes the layover (GTFS
-    // has none; the planner re-authors from there).
+    // GTFS has no layover. The observed gap between consecutive one-start
+    // trips of one service type becomes the layover.
     let mut blocks: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, t) in trips.iter().enumerate() {
         if let Some(b) = t.row.block_id.as_deref() {
@@ -715,10 +634,9 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         );
     }
 
-    // Transfer points: transfers.txt declares them (pairs; type 3 is
-    // "not possible" and never marks). A flag only composes where at
-    // least two routes meet across the stop's walking group. Otherwise it
-    // is reported, not applied.
+    // transfers.txt type 3 ("not possible") never marks a transfer point. A
+    // flag applies only where at least two routes meet across the stop's
+    // walking group.
     {
         let index = transit_network::stop_route_index(&net);
         let marked: BTreeSet<&str> = feed
@@ -755,14 +673,8 @@ fn empty_rule() -> CalendarRule {
     CalendarRule { days: WeekdaySet::none(), ranges: vec![], exceptions: vec![], extra: Default::default() }
 }
 
-// ---------------------------------------------------------------------
-// Export.
-// ---------------------------------------------------------------------
-
-/// Write a validated network document as a feed. Invalid documents
-/// are refused: the registry only ever holds feeds built from
-/// documents that passed validation (cap-network's `validate` op
-/// reports the full issue list for authoring UIs).
+/// Refuses an invalid document, so the registry only holds feeds built from
+/// validated documents.
 pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     if let Err(first) = net.validate() {
         let count = transit_network::validation_issues(net).len();
@@ -960,15 +872,10 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
         }
     }
 
-    // The calendar as authored: the weekday flags and the first range
-    // as the calendar row, every exception as a calendar_dates row,
-    // and a further range's running dates as added dates.
     for (id, st) in &net.service_types {
         let rule = &st.rule;
         let bit = |b: bool| Some(if b { "1" } else { "0" }.to_string());
-        // A service the feed published as dates (D-105) goes back as
-        // dates: its calendar row as written (zero flags), and every date
-        // the rule runs as an added date.
+        // D-105.
         if let Some(dated) = boundary.dated_calendars.get(id) {
             if let Some((start, end)) = &dated.row {
                 let zero = || bit(false);
@@ -1040,11 +947,9 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     Ok(feed)
 }
 
-/// The GTFS `direction_id` that a route's model direction is
-/// published under. GTFS's code is binary. Directions "0" and "1"
-/// (the ids an import gives them) are themselves. Any other id takes
-/// a free code in id order. A route's third direction, or an id the
-/// route does not have, has no code.
+/// The `direction_id` code is binary. Directions "0" and "1" keep their ids.
+/// Any other id takes a free code in id order. A route's third direction, or
+/// an id the route does not have, has no code.
 pub fn gtfs_direction(route: &transit_network::Route, id: &str) -> Option<u8> {
     if !route.directions.contains_key(id) {
         return None;
@@ -1061,22 +966,18 @@ pub fn gtfs_direction(route: &transit_network::Route, id: &str) -> Option<u8> {
     })
 }
 
-/// The route's model direction that a GTFS `direction_id` names: the
-/// inverse of [`gtfs_direction`]. A GTFS-rt alert's `direction_id`
+/// The inverse of [`gtfs_direction`]. A GTFS-rt alert's `direction_id`
 /// resolves through it (D-204).
 pub fn model_direction(route: &transit_network::Route, code: u32) -> Option<&transit_network::DirectionId> {
     route.directions.keys().find(|k| gtfs_direction(route, k).map(u32::from) == Some(code))
 }
 
-/// The route_type a route is published under: its own vehicle type
-/// where it carries one, else its mode's code. An rt alert's `route_type`
-/// selector names this code.
+/// A GTFS-rt alert's `route_type` selector names this code.
 pub fn published_route_type(route: &transit_network::Route) -> u16 {
     route.vehicle_type.unwrap_or_else(|| gtfs_route_type(route.mode))
 }
 
-/// Feed route type. The model's `Mode::Other` has no GTFS code; bus
-/// is the least-wrong default for display purposes.
+/// `Mode::Other` has no GTFS code, so it publishes as bus.
 fn gtfs_route_type(mode: Mode) -> u16 {
     match mode {
         Mode::Tram => 0,
@@ -1093,13 +994,8 @@ fn gtfs_route_type(mode: Mode) -> u16 {
     }
 }
 
-/// Meters along a trip, resolved from the feed's own
-/// `shape_dist_traveled` where it publishes any: known anchors are
-/// kept (clamped non-decreasing, as the model requires), missing
-/// rows interpolate between their bracketing anchors and
-/// extrapolate by 500 m steps outside them. A trip without a
-/// single anchor fabricates index × 500 m (GTFS has none to keep).
-/// Non-finite values count as absent (they cannot key a cluster).
+/// Missing rows interpolate between their bracketing anchors and extrapolate
+/// by 500 m steps outside them. A trip without an anchor gets index × 500 m.
 fn resolve_distances(raw: &[Option<f64>]) -> Vec<f64> {
     let raw: Vec<Option<f64>> = raw
         .iter()
@@ -1134,8 +1030,7 @@ fn resolve_distances(raw: &[Option<f64>]) -> Vec<f64> {
         };
         out.push(d);
     }
-    // The model requires non-decreasing distances; the spec's rows
-    // can wobble.
+    // The model requires non-decreasing distances.
     let mut prev = 0.0f64;
     for d in out.iter_mut() {
         if *d < prev {
@@ -1146,7 +1041,6 @@ fn resolve_distances(raw: &[Option<f64>]) -> Vec<f64> {
     out
 }
 
-/// GTFS route types → model modes.
 fn mode_from_gtfs_type(t: u16) -> Mode {
     match t {
         0 => Mode::Tram,

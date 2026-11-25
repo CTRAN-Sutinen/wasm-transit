@@ -1,23 +1,7 @@
-//! The watchlist's laws. The personal document is the migration
-//! mechanism's real payload, so its chain is property-tested here (the
-//! library owns the document; cap-migrate wraps the chain):
-//!
-//! * **Identity**: the stop-id sequence is invariant across
-//!   versions. This is the law that keeps sync sound: LWW-by-record-id
-//!   merges stay well-defined across clients at different document
-//!   versions only if migrations never touch the key space.
-//! * **No silent loss**: every dropped color is counted in a
-//!   MigrationNote. Never silent, always reported.
-//! * **Determinism**: the same input produces the same output bytes,
-//!   on every host (the sync thesis needs this).
-//! * **Totality of the seam**: a current input is an error, never a
-//!   panic.
-//!
-//! And the tags (D-115): the current version writes `kind` and
-//! `schema_version`. A copy with no tags names its version as
-//! `"version": "vN"`. Such a copy of v2 reads as v2 and writes tagged,
-//! and one of v1 does not read as the current type (it comes forward
-//! through the chain).
+//! The watchlist's migration chain (D-66, D-115). The stop-id sequence stays
+//! invariant across versions, because LWW merges stay well defined across
+//! clients at different versions only if migrations never touch the key
+//! space.
 
 use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
@@ -26,7 +10,6 @@ use serde_json::{json, Value};
 use transit_rider::watchlist::{migrate_to, schema_version_of, Watchlist, SCHEMA_VERSION};
 use transit_version::Versioned;
 
-/// One v1 stop: a note and an optional color.
 fn gen_stop_v1() -> BoxedStrategy<Value> {
     (
         0u8..6, // id pool small enough for duplicates
@@ -54,8 +37,8 @@ fn ids(doc: &Value) -> Vec<String> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Totality, identity, loss reporting, and determinism: the four
-    /// laws that make a migration publishable evidence in a registry.
+    /// A migration is total, keeps the stop-id sequence, counts every dropped
+    /// color, and is deterministic.
     #[test]
     fn migration_is_total_deterministic_and_reports_loss(
         stops in proptest::collection::vec(gen_stop_v1(), 0..=12),
@@ -63,21 +46,17 @@ proptest! {
         let doc = v1_doc(stops);
         let (migrated, notes) = migrate_to(doc.clone(), SCHEMA_VERSION).expect("every valid v1 document migrates");
 
-        // Totality: the result reads as the current type, tagged.
         let read: Watchlist = serde_json::from_value(migrated.clone()).unwrap();
         prop_assert_eq!(read.schema_version(), SCHEMA_VERSION);
         prop_assert_eq!(&migrated["kind"], "watchlist");
         prop_assert_eq!(&migrated["schema_version"], SCHEMA_VERSION);
 
-        // Identity: the stop-id sequence is invariant.
         prop_assert_eq!(read.stop_ids(), ids(&doc));
 
-        // Semantics: every label is the authored note.
         for (a, b) in doc["stops"].as_array().unwrap().iter().zip(read.stops.iter()) {
             prop_assert_eq!(a["note"].as_str().unwrap(), b.label.as_str());
         }
 
-        // No silent loss: dropped colors are counted exactly.
         let dropped = doc["stops"].as_array().unwrap().iter().filter(|s| s.get("color").is_some()).count() as u32;
         if dropped > 0 {
             prop_assert_eq!(notes.len(), 1, "one note per dropped field kind");
@@ -89,14 +68,12 @@ proptest! {
             prop_assert!(notes.is_empty());
         }
 
-        // Determinism: migrating again yields identical bytes.
         let (again, notes_again) = migrate_to(doc, SCHEMA_VERSION).expect("migrates twice");
         prop_assert_eq!(serde_json::to_string(&again).unwrap(), serde_json::to_string(&migrated).unwrap());
         prop_assert_eq!(notes_again.len(), notes.len());
     }
 
-    /// A current input is an error, never a panic: the seam refuses
-    /// what it has nothing to do to.
+    /// A current input is an error, never a panic.
     #[test]
     fn migrating_the_current_version_is_refused(
         stops in proptest::collection::vec(gen_stop_v1(), 1..=4),
@@ -147,8 +124,6 @@ fn a_newer_version_is_refused_by_the_chain() {
 
 #[test]
 fn a_copy_with_no_version_is_the_current_one() {
-    // Every copy with no tags names its version, so a copy with
-    // neither field is current, as the type reads it.
     assert_eq!(schema_version_of(&json!({"stops": []})), Ok(SCHEMA_VERSION));
     let read: Watchlist = serde_json::from_value(json!({"stops": []})).unwrap();
     assert_eq!(read.schema_version(), SCHEMA_VERSION);

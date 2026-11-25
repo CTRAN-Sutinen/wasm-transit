@@ -1,10 +1,9 @@
-//! Encode a small sample GTFS-rt feed to a file. The demo page and the
-//! node smoke test read this `.pb`. The vehicle's position is a parameter.
-//! The e2e suite re-encodes the feed with the bus slightly moved. This
-//! proves that the bus popup follows its vehicle.
+//! Writes the sample GTFS-rt feed that the demo page and the node smoke test
+//! read. The e2e suite re-encodes it with the vehicle moved, to show that the
+//! bus popup follows its vehicle.
 //!
-//! Usage:
-//! `cargo run -p transit-rt --example encode_sample [out.pb] [lat] [lon]`
+//! Run it with
+//! `cargo run -p transit-rt --example encode_sample [out.pb] [lat] [lon]`.
 
 use prost::Message;
 use transit_rt::gtfs_rt::trip_update::{StopTimeEvent, StopTimeUpdate};
@@ -69,7 +68,6 @@ fn main() -> std::io::Result<()> {
                         ..Default::default()
                     }),
                     stop_id: Some("A".into()),
-                    // The bus number, as an agency would serve it.
                     vehicle: Some(transit_rt::gtfs_rt::VehicleDescriptor {
                         id: Some("4201".into()),
                         label: Some("4201".into()),

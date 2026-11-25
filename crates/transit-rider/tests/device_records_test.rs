@@ -1,8 +1,6 @@
-//! A rider's device records (docs/FORMATS.md, "Versions"): the recent
-//! places and the rider's own live-feed URLs, each a tagged document in
-//! the browser's document store. Each writes its kind and version, reads
-//! a copy with neither as v1, refuses another kind, and keeps a field
-//! this build does not know (D-167).
+//! The recent places and the rider's live-feed URLs each write their kind and
+//! version, read a copy with neither as v1, refuse another kind, and keep an
+//! unknown field (D-167; docs/FORMATS.md, "Versions").
 
 use serde_json::json;
 use transit_rider::device::{LiveFeeds, RecentPlaces};
@@ -24,7 +22,6 @@ fn recent_places_write_their_tags_and_keep_what_they_do_not_know() {
             "pinned": true
         })
     );
-    // A place without a point (a stop the rider found by name) has none.
     let bare: RecentPlaces = serde_json::from_value(json!({"places": [{"id": "B", "name": "Elm"}]})).unwrap();
     assert_eq!(serde_json::to_value(&bare).unwrap()["places"], json!([{"id": "B", "name": "Elm"}]));
     assert!(serde_json::from_value::<RecentPlaces>(json!({"kind": "live_feeds", "places": []})).is_err());

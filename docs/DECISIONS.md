@@ -62,7 +62,7 @@ first, and open only the entries you need.
 - **The summary has one row for each entry.** A new entry adds its
   row in the same change. A change of state or of what it blocks
   updates the row and the entry together.
-- IDs are never reused; the next new decision is **D-252**.
+- IDs are never reused; the next new decision is **D-253**.
 
 ## Summary
 
@@ -236,7 +236,7 @@ first, and open only the entries you need.
 | [D-171](decisions/D-171.md) | How does a UI at its own URL reach the server, and how is it rolled back? | decided | nothing |
 | [D-172](decisions/D-172.md) | Where do the server's settings live? | decided | nothing |
 | [D-173](decisions/D-173.md) | How does a stop the stops app made reach a plan? | decided | nothing |
-| [D-174](decisions/D-174.md) | How are code comments and the developer documents written? | decided | nothing |
+| [D-174](decisions/D-174.md) | How are code comments and the developer documents written? | decided; replaced by D-252 | nothing |
 | [D-175](decisions/D-175.md) | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
 | [D-176](decisions/D-176.md) | Does a user's own selection assemble capabilities at wire time? | decided | nothing |
 | [D-177](decisions/D-177.md) | What does a journal keep, and where? | encoded provisionally | nothing |
@@ -314,3 +314,4 @@ first, and open only the entries you need.
 | [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | unanswered | `http-contract-generated.md` item 4 |
 | [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
 | [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |
+| [D-252](decisions/D-252.md) | Which writing rules do code comments and the developer documents follow? | decided | nothing |

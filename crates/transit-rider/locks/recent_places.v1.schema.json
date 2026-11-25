@@ -2,7 +2,6 @@
   "$defs": {
     "RecentPlace": {
       "additionalProperties": true,
-      "description": "One recent place: a stop by its id and name, and its point when the\nrider's device has it.",
       "properties": {
         "id": {
           "type": "string"
@@ -41,12 +40,11 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The places a rider looked at last on this device, newest first.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/RecentPlacesKind",
       "default": "recent_places",
-      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+      "description": "A copy without the kind tag and version is this kind, version 1 (D-115)."
     },
     "places": {
       "items": {

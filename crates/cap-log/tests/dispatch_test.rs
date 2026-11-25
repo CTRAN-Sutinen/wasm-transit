@@ -1,21 +1,20 @@
-//! Native dispatch tests for the log capability (D-190, D-197): the
-//! seam without wasm. The log's laws are property-tested in
-//! transit-log; here the module's contract is pinned:
+//! Native dispatch tests for cap-log without wasm (D-190, D-197,
+//! `OPS.md`). The log's properties are in transit-log's tests.
 //!
-//! 1. `compose` answers an entry with each `before` the canonical hash
-//!    of the record as stored, and `fold` of the entries holds the
-//!    records of the last write, with a checkpoint to start from;
-//! 2. a write that changes nothing answers no entry, and a key that
-//!    landed answers its entry;
-//! 3. one entry changes two kinds;
-//! 4. a revert writes back, and a record the entry created leaves the
-//!    fold (D-198); a later change refuses it; a kind's written records
-//!    take the place of the states before, over the states it answers;
-//! 5. a bad entry is quarantined and named; a gap's entry needs a cause;
-//! 6. the entry's `seq` must follow the fold;
-//! 7. a write over the head overlaps an unread entry only through a
-//!    record both change, and the overlap names it; a key that landed
-//!    answers before the overlap; the device's time is kept as a claim.
+//! 1. `compose` answers an entry whose `before` is the canonical hash of
+//!    the record as stored. `fold` of the entries holds the records of the
+//!    last write, and a checkpoint can start it.
+//! 2. A write that changes nothing answers no entry, and a key that landed
+//!    answers its entry.
+//! 3. One entry changes two kinds.
+//! 4. A revert writes back, and a record that the entry created leaves the
+//!    fold (D-198). A later change refuses it, and a kind's written records
+//!    take the place of the states before.
+//! 5. A bad entry is quarantined and named, and a gap's entry needs a cause.
+//! 6. The entry's `seq` must follow the fold.
+//! 7. A write overlaps an unread entry only through a record that both
+//!    change. A key that landed answers before the overlap, and the device's
+//!    time is kept as a claim.
 
 use cap_log::{dispatch_json};
 use serde_json::{json, Value};
@@ -42,8 +41,7 @@ fn header(seq: u64, key: Option<&str>) -> Value {
     json!({"log": "stops", "seq": seq, "writer": "planner-3", "at_ms": seq * 1000, "module": "cap-log@sha256:test", "intent": intent})
 }
 
-/// A small log, built through the seam: each write's entry, composed
-/// over the fold of the entries before it.
+/// Each write's entry is composed over the fold of the entries before it.
 struct Log {
     checkpoint: Option<Value>,
     entries: Vec<Value>,
@@ -97,7 +95,6 @@ fn the_fold_of_the_entries_is_the_last_write() {
     assert_eq!(folded["seq"], 2);
     assert_eq!(folded["records"]["stop"]["A"], json!({"version": 1, "value": a2}));
     assert_eq!(folded["quarantined"], json!([]));
-    // From the checkpoint at 1, the same fold.
     let at1: Value = serde_json::from_str(ok(json!({"op": "fold", "log": "stops", "entries": [log.entries[0]]}))["checkpoint"].as_str().unwrap()).unwrap();
     let again = ok(json!({"op": "fold", "log": "stops", "checkpoint": at1, "entries": [log.entries[1]]}));
     assert_eq!(again["checkpoint"], folded["checkpoint"]);
@@ -216,9 +213,8 @@ fn the_devices_time_is_a_claim_beside_the_hosts() {
     assert_eq!(entry["intent"]["claimed_at_ms"], json!(999));
 }
 
-/// The existence check over the kind table as `just caps` writes it and
-/// a fold the log answered: a stop request naming a stop the fold does
-/// not hold is broken (D-233).
+/// A stop request that names a stop that the fold does not hold is broken
+/// (D-233).
 #[test]
 fn references_answers_each_broken_reference_from_the_kind_table_and_the_folds() {
     let table: Value = serde_json::from_str(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../cap-abi/kinds.json")).unwrap()).unwrap();

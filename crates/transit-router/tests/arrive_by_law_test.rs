@@ -1,27 +1,18 @@
-//! Arrive-by laws (QAF-72, "the last bus home").
+//! Pins arrive-by, "the last bus home" (`crates/cap-router/OPS.md`).
+//! The oracle is `prop_support::oracle_arrival`, which shares no code with the
+//! search. The properties:
 //!
-//! The intent, as the user stated it: an arrive-by query answers the latest
-//! departure from `from` that reaches `to` by the deadline. With no deadline,
-//! it answers the latest departure on the service day that reaches `to` at all.
-//! Times past 86400 are after-midnight trips of the same service day, never
-//! errors.
-//!
-//! The laws, each against the independent fixpoint oracle
-//! (`prop_support::oracle_arrival`, no code shared with the search):
-//!
-//! 1. The answer's itinerary is feasible from its own departure. It arrives no
-//!    later than the deadline.
-//! 2. No later departure reaches `to` by the deadline. This is checked at the
-//!    answer plus 1 s. That covers every later second, because leaving later
-//!    never arrives earlier (FIFO: waiting is free).
-//! 3. "No answer" means no departure at all (from the start of the service day)
-//!    reaches `to` by the deadline.
-//! 4. With no deadline, the deadline is the service day's end: the latest
-//!    arrival of any trip that day, after-midnight included. Nothing reaches
-//!    anywhere later than that. So "reaches at all" and "reaches by the day's
-//!    end" are the same question.
-//! 5. The leg bound holds. With `k` legs, the same two-sided law applies
-//!    against the router's own earliest-arrival search at `k` legs.
+//! 1. The answer's itinerary is feasible from its own departure and arrives by
+//!    the deadline.
+//! 2. No later departure reaches `to` by the deadline. Checking the answer
+//!    plus 1 s covers every later second, because leaving later never arrives
+//!    earlier.
+//! 3. "No answer" means no departure from the start of the service day reaches
+//!    `to` by the deadline.
+//! 4. With no deadline, the deadline is the service day's end, which is the
+//!    latest arrival of any trip, after-midnight included.
+//! 5. With `k` legs, properties 1 to 3 hold against the earliest-arrival
+//!    search at `k` legs.
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -33,13 +24,12 @@ mod support;
 use support::{assert_feasible, build_zip_spaced, model_day, oracle_arrival, TripSpec, INF};
 
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
-/// Enough legs for any path through feeds this small.
 const MAX_LEGS: usize = 12;
 
 prop_compose! {
     fn trip_spec(n_stops: usize)
         (stops in vec(0u32..(n_stops as u32), 2..=5),
-         // Past 86400: after-midnight trips are legitimate.
+         // A start past 86400 is a trip after midnight.
          start in 0u32..100_000,
          step in 100u32..900)
     -> TripSpec {
@@ -47,8 +37,6 @@ prop_compose! {
     }
 }
 
-/// Stops ~89 m apart (every near pair walkable) or ~333 m apart (no
-/// footpaths: transit only).
 fn feed() -> impl Strategy<Value = (usize, f64, Vec<TripSpec>, usize, usize, Option<u32>)> {
     (3usize..=8).prop_flat_map(|n_stops| {
         (
@@ -62,8 +50,6 @@ fn feed() -> impl Strategy<Value = (usize, f64, Vec<TripSpec>, usize, usize, Opt
     })
 }
 
-/// The service day's end, recomputed from the generated trips (not
-/// from the router): the latest final arrival of any trip.
 fn day_end(trips: &[TripSpec]) -> u32 {
     trips.iter().map(|t| t.start + (t.stops.len() as u32 - 1) * t.step).max().unwrap_or(0)
 }
@@ -71,8 +57,7 @@ fn day_end(trips: &[TripSpec]) -> u32 {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Laws 1 to 4: the answer is the latest feasible departure, against the
-    /// oracle. If there is no answer, nothing reaches by the deadline.
+    /// Properties 1 to 4.
     #[test]
     fn the_answer_is_the_latest_departure_that_arrives_by_the_deadline(
         (n_stops, spacing, trips, from, to, deadline) in feed()
@@ -108,8 +93,7 @@ proptest! {
         }
     }
 
-    /// Law 5: under a leg bound, the answer is two-sided against the
-    /// earliest-arrival search at the same bound.
+    /// Property 5.
     #[test]
     fn the_leg_bound_holds(
         (n_stops, spacing, trips, from, to, deadline) in feed(),
@@ -135,16 +119,15 @@ proptest! {
     }
 }
 
-/// The last bus home, after midnight (the QAF-72 shape): the last trip leaves
-/// 23:07 and arrives 24:01. The no-deadline answer is that trip, not
-/// "unreachable".
+/// The last trip leaves 23:07 and arrives 24:01. With no deadline, that trip is
+/// the answer.
 #[test]
 fn the_last_bus_home_runs_past_midnight() {
     let trips = vec![
         TripSpec { stops: vec![0, 1], start: 22 * 3600, step: 54 * 60 },
         TripSpec { stops: vec![0, 1], start: 23 * 3600 + 7 * 60, step: 54 * 60 },
-        // A far-away trip that ends later still: the day's end, not
-        // a reason to leave later from s0.
+        // A far-away trip that ends later sets the day's end. It gives no
+        // reason to leave later from s0.
         TripSpec { stops: vec![5, 6], start: 25 * 3600, step: 300 },
     ];
     let (network, day) = model_day(&build_zip_spaced(7, 0.003, &trips), DATE);
@@ -156,14 +139,11 @@ fn the_last_bus_home_runs_past_midnight() {
         [Leg::Transit { board_secs, .. }] => assert_eq!(*board_secs, 23 * 3600 + 7 * 60, "the 23:07"),
         other => panic!("one ride home, got {other:?}"),
     }
-    // A deadline before 24:01 answers the earlier bus.
     let earlier = latest_departure(&net, "s0", "s1", Some(24 * 3600), 4).unwrap();
     assert_eq!(earlier.itinerary.expect("the 22:00 reaches").arrival_secs, 22 * 3600 + 54 * 60);
-    // A deadline before every arrival answers nothing.
     assert!(latest_departure(&net, "s0", "s1", Some(22 * 3600), 4).unwrap().itinerary.is_none());
 }
 
-/// Arriving where you already are: you may leave at the deadline.
 #[test]
 fn from_is_to_leaves_at_the_deadline() {
     let trips = vec![TripSpec { stops: vec![0, 1], start: 8 * 3600, step: 600 }];

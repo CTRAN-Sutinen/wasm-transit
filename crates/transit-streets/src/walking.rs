@@ -1,20 +1,6 @@
-//! Walking along the streets: how long a rider walks between two
-//! stops.
-//!
-//! The walking profile is strict: a rider walks every class but
-//! motorway, ramp, and unknown, and walks a one-way street either way
-//! (one-way restricts vehicles). A walk is a stop's walk to its
-//! nearest walkable street (the graph's snap neighborhood), the street
-//! distance, and the walk from the street to the other stop, at the
-//! walking speed, rounded up to the second; a walk past the limit is
-//! no walk, and a stop with no walkable street nearby walks nowhere.
-//!
-//! The walk table ([`WalkTable`]) is a document derived from a streets
-//! document and a network: the router plans its transfers over it
-//! instead of straight lines. A point off the network (a tapped spot,
-//! the rider's location) walks the same way a stop there would
-//! ([`WalkGraph::walks_from`]), each walk with the path the rider
-//! walks: the ends of a trip from any point.
+//! A walk allows a one-way street in either direction, because one-way
+//! restricts vehicles. The router plans transfers over the walk table
+//! ([`WalkTable`]) instead of straight lines.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -22,17 +8,13 @@ use ts_rs::TS;
 use crate::model::{StreetClass, Streets};
 use crate::{StreetNetwork, StreetPoint, StreetPosition};
 
-/// The default walking speed, meters per second.
 pub const WALK_SPEED_MPS: f64 = 1.3;
-/// The default walk limit: ten minutes.
 pub const MAX_WALK_SECS: u32 = 600;
 
-/// Whether a rider walks a street of this class.
 pub fn walkable(class: StreetClass) -> bool {
     !matches!(class, StreetClass::Motorway | StreetClass::Ramp | StreetClass::Unknown)
 }
 
-/// One walk: `from` to `to`, in seconds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Walk {
@@ -41,9 +23,6 @@ pub struct Walk {
     pub walk_secs: u32,
 }
 
-/// One walk from a point to a stop, and the path the rider walks: the
-/// point, its street, along the streets to the stop's street, the
-/// stop.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PointWalk {
@@ -52,8 +31,7 @@ pub struct PointWalk {
     pub path: Vec<StreetPoint>,
 }
 
-/// The walk from a point straight to another, and its path (empty
-/// when the walk is given by its seconds alone).
+/// `path` is empty when the walk is given by its seconds alone.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DirectWalk {
@@ -63,7 +41,6 @@ pub struct DirectWalk {
 }
 
 transit_version::kind_tag!(
-    /// The walk table's kind tag: always `"walks"`.
     WalksKind = "walks"
 );
 
@@ -75,24 +52,17 @@ impl transit_version::Versioned for WalkTable {
     }
 }
 
-/// Every walk between a network's stops within the limit, and what
-/// it derives from: the streets and network documents' hashes,
-/// the speed, the limit. Walks in (from, to) order; symmetric.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct WalkTable {
-    /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1.
     #[serde(default)]
     #[ts(type = "\"walks\"")]
     pub kind: WalksKind,
     #[serde(default)]
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
-    /// The streets document the table walks (a blob in the store).
     #[schemars(extend("format" = "content-hash", "x-references" = "streets"))]
     pub streets_hash: String,
-    /// The network whose stops it walks between.
     #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
     pub network_hash: String,
     pub speed_mps: f64,
@@ -100,7 +70,7 @@ pub struct WalkTable {
     pub walks: Vec<Walk>,
 }
 
-/// The graph a rider walks: the walkable streets, every one two-way.
+/// The walkable streets, every one two-way.
 pub struct WalkGraph(StreetNetwork);
 
 impl WalkGraph {
@@ -114,8 +84,6 @@ impl WalkGraph {
         WalkGraph(StreetNetwork::build(&Streets { kind: Default::default(), schema_version: Default::default(), ways }))
     }
 
-    /// Every walk between `stops` (id, lat, lon) within `max_walk_secs`
-    /// at `speed_mps`, in (from, to) order.
     pub fn walks(&self, stops: &[(String, f64, f64)], speed_mps: f64, max_walk_secs: u32) -> Vec<Walk> {
         let net = &self.0;
         let limit_m = max_walk_secs as f64 * speed_mps;
@@ -129,8 +97,8 @@ impl WalkGraph {
                 continue;
             }
             net.reach(from, limit_m - from.dist_m, &mut dist, &mut touched);
-            // Each pair once, both ways: a walk is symmetric by
-            // construction, never two searches rounding apart.
+            // Each pair runs once and gives both directions, so two
+            // searches never round the two directions apart.
             for (j, to) in snapped.iter().enumerate().skip(i + 1) {
                 let Some(to) = *to else { continue };
                 let meters = from.dist_m + net.meters_to(from, &dist, to) + to.dist_m;
@@ -150,10 +118,6 @@ impl WalkGraph {
         out
     }
 
-    /// Every walk from the point (`lat`, `lon`) to `stops` within
-    /// `max_walk_secs` at `speed_mps`, the walks a stop at the point would
-    /// have, each with its path, nearest first (ties in `stops` order). A
-    /// point with no walkable street nearby walks nowhere.
     pub fn walks_from(
         &self,
         lat: f64,
@@ -182,8 +146,6 @@ impl WalkGraph {
         out
     }
 
-    /// The point, its street, the streets between, the stop's street,
-    /// the stop, with consecutive repeats dropped.
     fn path(&self, from: StreetPosition, a: (f64, f64), to: StreetPosition, b: (f64, f64)) -> Option<Vec<StreetPoint>> {
         let mut points = vec![StreetPoint { lat: a.0, lon: a.1 }, StreetPoint { lat: from.lat, lon: from.lon }];
         points.extend(self.0.route(from, to)?);
@@ -193,7 +155,6 @@ impl WalkGraph {
     }
 }
 
-/// [`WalkGraph::walks_from`] over a streets document, built once.
 pub fn walks_from(
     streets: &Streets,
     lat: f64,
@@ -205,7 +166,6 @@ pub fn walks_from(
     WalkGraph::new(streets).walks_from(lat, lon, stops, speed_mps, max_walk_secs)
 }
 
-/// [`WalkGraph::walks`] over a streets document, built once.
 pub fn walks(streets: &Streets, stops: &[(String, f64, f64)], speed_mps: f64, max_walk_secs: u32) -> Vec<Walk> {
     WalkGraph::new(streets).walks(stops, speed_mps, max_walk_secs)
 }

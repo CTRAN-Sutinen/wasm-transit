@@ -1,7 +1,6 @@
 {
   "$defs": {
     "AlertCause": {
-      "description": "Why an alert was raised (GTFS-rt's cause, by name).",
       "enum": [
         "unknown",
         "other",
@@ -20,7 +19,6 @@
       "type": "string"
     },
     "AlertEffect": {
-      "description": "What an alert does to service (GTFS-rt's effect, by name).",
       "enum": [
         "no_service",
         "reduced_service",
@@ -37,7 +35,7 @@
       "type": "string"
     },
     "AlertPeriod": {
-      "description": "A span of time in Unix seconds; an open end is unbounded.",
+      "description": "Unix seconds. An open end is unbounded.",
       "properties": {
         "end": {
           "format": "uint64",
@@ -59,17 +57,16 @@
       "type": "object"
     },
     "AlertScope": {
-      "description": "One informed entity, resolved: every present field must match\n(route 12 at stop 6277); all absent means the whole agency. A trip\nwithout a start names every instance of the trip.",
       "properties": {
         "date": {
-          "description": "A trip-scoped alert's instance service date, \"YYYY-MM-DD\", as the\nfeed states it (GTFS-rt `start_date`); absent, the current service\nday's (the spec's reading: [`LiveDay::on`]).",
+          "description": "\"YYYY-MM-DD\". Absent is the current service day ([`LiveDay::on`]).",
           "type": [
             "string",
             "null"
           ]
         },
         "direction": {
-          "description": "One of the route's model directions (GTFS-rt's `direction_id`,\nresolved; D-204). It is present only with `route`.",
+          "description": "A model direction of `route` (D-204). Present only with `route`.",
           "type": [
             "string",
             "null"
@@ -105,7 +102,6 @@
       "type": "object"
     },
     "AlertSeverity": {
-      "description": "How serious the agency says an alert is.",
       "enum": [
         "unknown",
         "info",
@@ -115,7 +111,6 @@
       "type": "string"
     },
     "LiveAlert": {
-      "description": "A service alert in force at the document's moment, in model\nvocabulary. The text is the feed's untagged translation, else its\nfirst.",
       "properties": {
         "cause": {
           "$ref": "#/$defs/AlertCause"
@@ -133,18 +128,17 @@
           "type": "string"
         },
         "id": {
-          "description": "The rt entity id.",
           "type": "string"
         },
         "impact": {
-          "description": "When service is affected (the impact period, else the active\nperiod); empty means for as long as the alert is shown.",
+          "description": "The impact period, else the active period. Empty means for as long as\nthe alert is shown.",
           "items": {
             "$ref": "#/$defs/AlertPeriod"
           },
           "type": "array"
         },
         "scopes": {
-          "description": "What it informs about: one scope for each entity it selects\n(GTFS-rt adds one `informed_entity` for each affected entity, and\neach applies to its own). Never empty: an alert whose entities\nall fail to resolve is counted, not kept.",
+          "description": "An alert whose entities all fail to resolve is counted in\n`unmatched_alerts`, not kept, so this is never empty.",
           "items": {
             "$ref": "#/$defs/AlertScope"
           },
@@ -175,26 +169,16 @@
       "const": "live"
     },
     "LiveStatus": {
-      "description": "A delay, classified under a window.",
-      "oneOf": [
-        {
-          "enum": [
-            "early",
-            "on_time",
-            "late",
-            "very_late"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "no_prediction",
-          "description": "No delay is known: schedule only.",
-          "type": "string"
-        }
-      ]
+      "enum": [
+        "early",
+        "on_time",
+        "late",
+        "very_late",
+        "no_prediction"
+      ],
+      "type": "string"
     },
     "LiveStop": {
-      "description": "One stop of a live trip: the delay the rt feed states (or carries\ndownstream, under GTFS-rt's propagation rule) and the predicted\ndeparture. Stops before the first stated delay are absent.",
       "properties": {
         "arrival_delay": {
           "format": "int32",
@@ -211,7 +195,6 @@
           ]
         },
         "predicted_departure": {
-          "description": "When the vehicle should actually leave: schedule + delay.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -220,7 +203,7 @@
           ]
         },
         "scheduled_departure": {
-          "description": "The base schedule's departure here (seconds after the service-\nday anchor). The delay is relative to it.",
+          "description": "Seconds after the service-day anchor. The delay is relative to it.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -229,7 +212,6 @@
           ]
         },
         "skipped": {
-          "description": "The vehicle does not stop here (GTFS-rt SKIPPED). The visit\ndoes not happen, but the trip still runs. A skipped stop states no\ndelay of its own. Absent when false.",
           "type": "boolean"
         },
         "stop": {
@@ -242,14 +224,12 @@
       "type": "object"
     },
     "LiveTrip": {
-      "description": "One trip instance the snapshot speaks about: the network's trip\n(the rt trip id is the model's) and the instance's start.",
       "properties": {
         "canceled": {
-          "description": "The instance does not run (GTFS-rt CANCELED or DELETED): no\nvisit of it happens, and it is not late or on time\n(`no_prediction`). Absent when false.",
           "type": "boolean"
         },
         "date": {
-          "description": "The instance's service date, \"YYYY-MM-DD\", as the feed states\nit (GTFS-rt `start_date`); absent, the current service day's\n(the spec's reading: [`LiveDay::on`]).",
+          "description": "\"YYYY-MM-DD\". Absent is the current service day ([`LiveDay::on`]).",
           "type": [
             "string",
             "null"
@@ -262,7 +242,6 @@
           ]
         },
         "route_name": {
-          "description": "The route's name as the network names it.",
           "type": [
             "string",
             "null"
@@ -286,7 +265,6 @@
           "type": "string"
         },
         "worst_delay_secs": {
-          "description": "The worst delay the snapshot states on the trip: its headline\nlateness.",
           "format": "int32",
           "type": [
             "integer",
@@ -303,7 +281,6 @@
       "type": "object"
     },
     "LiveVehicle": {
-      "description": "One live vehicle, on its trip instance when the trip resolves.",
       "properties": {
         "bearing": {
           "format": "float",
@@ -313,14 +290,13 @@
           ]
         },
         "date": {
-          "description": "Its trip instance's service date, \"YYYY-MM-DD\", as the feed states\nit (GTFS-rt `start_date`); absent, the current service day's\n(the spec's reading: [`LiveDay::on`]).",
+          "description": "\"YYYY-MM-DD\". Absent is the current service day ([`LiveDay::on`]).",
           "type": [
             "string",
             "null"
           ]
         },
         "delay_secs": {
-          "description": "Its trip's worst stated delay (the same headline as the trip).",
           "format": "int32",
           "type": [
             "integer",
@@ -328,11 +304,10 @@
           ]
         },
         "key": {
-          "description": "Stable per snapshot: the vehicle id, else the rt entity id.",
+          "description": "The vehicle id, else the rt entity id, so it is stable per snapshot.",
           "type": "string"
         },
         "label": {
-          "description": "The user-visible bus number.",
           "type": [
             "string",
             "null"
@@ -347,7 +322,6 @@
           "type": "number"
         },
         "next_stop": {
-          "description": "The stop the vehicle is at or heading to.",
           "type": [
             "string",
             "null"
@@ -360,7 +334,6 @@
           ]
         },
         "route_name": {
-          "description": "The route's name as the network names it.",
           "type": [
             "string",
             "null"
@@ -378,7 +351,6 @@
           "$ref": "#/$defs/LiveStatus"
         },
         "trip": {
-          "description": "The trip instance it runs: absent when the rt trip does not\nresolve (or the vehicle names no trip).",
           "type": [
             "string",
             "null"
@@ -400,23 +372,20 @@
       "type": "object"
     },
     "OnTimeWindow": {
-      "description": "The agency's on-time policy: how early and how late still count\nas on time, and where late becomes very late. A policy input, never\na constant in a view.",
       "properties": {
         "early_secs": {
           "default": 0,
-          "description": "Seconds early that still count as on time. Early is not on\ntime: the default (and an absent bound) is 0: a bus that\nleaves before its time is a missed bus.",
+          "description": "The default is 0, because a bus that leaves before its time is a\nmissed bus.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
         "late_secs": {
-          "description": "Up to this many seconds late is on time.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
         "very_late_secs": {
-          "description": "Past this many seconds late is very late.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -434,11 +403,9 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The live document: one rt moment, in model vocabulary.",
   "properties": {
     "alerts": {
       "default": [],
-      "description": "The service alerts in force at the snapshot's moment.",
       "items": {
         "$ref": "#/$defs/LiveAlert"
       },
@@ -446,8 +413,7 @@
     },
     "kind": {
       "$ref": "#/$defs/LiveKind",
-      "default": "live",
-      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1. Version 2: a trip instance carries its service\ndate."
+      "default": "live"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",
@@ -461,13 +427,11 @@
     },
     "unmatched_alerts": {
       "default": 0,
-      "description": "Alerts none of whose informed entities name anything in the\nnetwork: reported, never silently dropped.",
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
     },
     "unmatched_trips": {
-      "description": "Trip updates naming no trip instance of the network (an\nunknown trip, or a start that is not one of its instances):\nreported, never silently dropped.",
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
@@ -479,8 +443,7 @@
       "type": "array"
     },
     "window": {
-      "$ref": "#/$defs/OnTimeWindow",
-      "description": "The window that classifies every status in this document."
+      "$ref": "#/$defs/OnTimeWindow"
     }
   },
   "required": [

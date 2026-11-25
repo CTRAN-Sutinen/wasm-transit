@@ -1,31 +1,6 @@
-//! The codec fixpoint: `export ∘ import` is the identity on the
-//! image of import, the publish path. A planner imports a feed,
-//! edits the document, and publishes. The published artifact must
-//! represent the same network the planner sees. The generator is
-//! adversarial inside the spec (colliding starts, run-time variation,
-//! shared blocks), so the round trip is exercised on exactly the feeds
-//! inference is worst at.
-//!
-//! The API these laws require: `transit_codec::import(&Feed) ->
-//! ImportOutcome { network, notes, boundary }` and
-//! `transit_codec::export(&Network, &Boundary) -> Result<Feed, String>`
-//! (`Boundary` is the import's serialization residue: stop_sequence
-//! numbering; `Boundary::default()` for an authored network).
-//!
-//! Laws:
-//!
-//! * **Document fixpoint**: `import(export(import(F)))` equals
-//!   `import(F)`: the network, ids included, and the boundary. No
-//!   exemptions: service ids, calendars, and trip ids all survive.
-//! * **Semantic fixpoint**: the materialized trips on every probed
-//!   date (weekday, weekend, out of range) survive exactly: same
-//!   trip ids, routes, times, stop visits.
-//! * **Determinism**: the round trip is a pure function.
-//! * **Three views, one document**: the runcut, the materialized
-//!   day, and the published artifact agree: every block trip is a
-//!   trip the day runs, every materialized trip is published under
-//!   its own id with its exact times, and the block a trip belongs to
-//!   is the block the export says runs it.
+//! The published artifact represents the network that the planner sees:
+//! `export` after `import` is the identity on the image of `import`. The
+//! generator uses colliding starts, run-time variation, and shared blocks.
 
 use std::io::Write;
 
@@ -42,9 +17,8 @@ struct GenTrip {
     start_slot: u16,
     stops: Vec<u8>,
     leg_min: u8,
-    /// GTFS direction_id (or none), and a headsign from a small pool
-    /// (or none), mixed within a direction, so the naming tie-break
-    /// and the no-headsign fallback both run.
+    /// Headsigns mix within a direction, so the naming tie-break and the
+    /// no-headsign fallback both run.
     direction: Option<u8>,
     headsign: Option<u8>,
 }
@@ -73,9 +47,8 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         })
 }
 
-/// Blocks that respect the spec: a block's trips on one service day
-/// never overlap (one vehicle), so a trip joins its block only where
-/// it fits.
+/// The spec says one vehicle runs a block, so its trips on one service day
+/// never overlap.
 fn blocks(trips: &[GenTrip]) -> Vec<Option<u8>> {
     let mut taken: std::collections::BTreeMap<(u8, u8), Vec<(u32, u32)>> = Default::default();
     trips
@@ -148,7 +121,6 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-/// The materialized trips of a document on `date`, with their ids.
 fn trips_of(
     net: &transit_network::Network,
     date: NaiveDate,
@@ -178,7 +150,7 @@ fn round_trip(first: &transit_codec::ImportOutcome) -> transit_codec::ImportOutc
     transit_codec::import(&transit_codec::Feed::from_zip_bytes(&feed.to_zip_bytes()).expect("exports read"))
 }
 
-/// GTFS time text → seconds (the oracle's own reader).
+/// An oracle that shares no code with the codec.
 fn secs(text: &str) -> u32 {
     let p: Vec<u32> = text.split(':').map(|x| x.parse().unwrap()).collect();
     p[0] * 3600 + p[1] * 60 + p[2]
@@ -187,7 +159,8 @@ fn secs(text: &str) -> u32 {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// Document fixpoint: the re-import is the import, exactly.
+    /// `import(export(import(F)))` equals `import(F)`, ids and boundary
+    /// included.
     #[test]
     fn round_trip_preserves_the_document(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let first = import(&gen_feed(&trips));
@@ -198,8 +171,8 @@ proptest! {
         prop_assert_eq!(&second.boundary, &first.boundary);
     }
 
-    /// Semantic fixpoint: the materialized trips survive the round
-    /// trip on every probed date: weekday, weekend, and out of range.
+    /// The materialized trips survive the round trip on weekdays, weekends,
+    /// and dates out of range.
     #[test]
     fn materialized_trips_survive_the_round_trip(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let first = import(&gen_feed(&trips));
@@ -215,7 +188,7 @@ proptest! {
         }
     }
 
-    /// Determinism: the round trip is a pure function of the feed.
+    /// The round trip is a pure function of the feed.
     #[test]
     fn round_trip_is_deterministic(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let first = import(&gen_feed(&trips));
@@ -227,9 +200,10 @@ proptest! {
         prop_assert_eq!(x.notes, y.notes);
     }
 
-    /// Three views of one document agree: every materialized trip is
-    /// published under its own id with exactly its times, and every
-    /// block trip is a trip the day runs, published under that block.
+    /// The runcut, the materialized day, and the published artifact agree:
+    /// every materialized trip is published under its own id with its exact
+    /// times, and every block trip is a trip the day runs, published under
+    /// that block.
     #[test]
     fn runcut_day_and_export_agree(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let outcome = import(&gen_feed(&trips));

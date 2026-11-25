@@ -1,12 +1,5 @@
-//! An imported feed becomes a pick (D-140, D-228): the laws, from the
-//! user's intent:
-//!
-//! * a feed that carries no plan id is stamped as a pick on its first
-//!   service date, under the id and name the host gives it, as one
-//!   `set_plan` edit;
-//! * a document that is a pick already (it carries a plan id) is not
-//!   stamped, and a feed that runs no service has no date to stamp: no
-//!   edit in either case.
+//! An imported feed becomes a pick (D-140, D-228). A document that already
+//! carries a plan id, or runs no service, gets no stamp.
 
 use transit_network::{apply_edits, stamp_as_pick, first_service_date, Network, NetworkEdit};
 

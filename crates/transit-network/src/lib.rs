@@ -1,66 +1,39 @@
-//! transit-network: the authored network model (the planner's authority).
+//! The authored network model. A trip is a stored record with its own id,
+//! departure, and time at every pattern stop. A pattern's timing profiles
+//! only produce the times of a new trip ([`produce_times`]). A trip instance
+//! is addressed by (trip, start).
 //!
-//! Patterns, service types, trips, alignments, and the runcut are the
-//! authored truth. A trip is a stored record with its own id, departure,
-//! and time at every pattern stop. A pattern's timing profiles only produce
-//! a new trip's times. They are never the schedule. A day's instances are
-//! materialized per date ([`materialize`]). A trip instance is addressed by
-//! (trip, start) everywhere.
+//! The model covers all of GTFS Schedule in its own words. transit-codec
+//! translates at the boundary, and nothing here knows the GTFS format.
 //!
-//! GTFS is not this model or its shape. transit-codec translates at the
-//! boundary. Nothing here knows the format. The model still covers all of
-//! GTFS Schedule in its own words (`operators`, `places`, `fares`, `demand`).
-//! transit-stops reads this crate. This crate reads no stops document.
+//! These conventions differ from GTFS.
 //!
-//! Conventions that differ from GTFS:
-//!
-//! * Ids are opaque strings owned by the model.
+//! * Ids are opaque strings that the model owns.
 //! * Times are `u32` seconds after the service-day anchor ([`Anchor`]).
 //!   Values past 86400 are trips after midnight.
-//! * Distances are meters, per pattern stop.
-//! * Maps are `BTreeMap`. One network serializes to the same bytes on every
-//!   host (per-record LWW sync depends on it).
-//! * Everything is pure: no I/O and no clock.
+//! * Distances are meters, for each pattern stop.
+//! * Maps are `BTreeMap`, so one network serializes to the same bytes on
+//!   every host. Per-record LWW sync depends on this.
+//! * The crate does no I/O and reads no clock.
 //!
-//! Rules other code depends on:
+//! Other code depends on these rules.
 //!
-//! * A service combination is the set of service types that run together on
-//!   a date. Every date with service is in exactly one combination. So types
-//!   that never share a day are never pooled. Its dates fold into spans, with
-//!   a break after a gap of more than seven days (D-55, D-94;
-//!   tests/combination_law_test).
-//! * A block runs each trip whole, and it is judged day by day. The recovery
-//!   a wait needs is one rule, `required_recovery` (D-9). A work rule that the
-//!   caller holds wins. Otherwise it is the smallest authored layover at that
-//!   terminal. A layover's own length is slack, never the requirement
-//!   (tests/recovery_law_test).
-//! * Patterns run an alignment by reference, and many patterns may share one.
-//!   A pattern's line is its alignment, else its stops joined. A redraw names
-//!   whether it moves one pattern or every pattern on the alignment. It
-//!   reports what it touched (D-11).
-//! * Where a bus is going is one rule (`signs::visit_destination`): the
-//!   visit's headsign, else the trip's, else the final stop's place. Every
-//!   board row and itinerary leg reads it.
-//! * A transfer point is a flag on a stop. It covers the stop's walking group
-//!   (its parent and siblings).
-//! * Every document is a service plan (`PlanMeta`). An empty identity is an
-//!   unversioned import. The page's plan set is [`plan_set`].
+//! * Every date with service is in exactly one service combination, so
+//!   types that never share a day are never pooled (D-55, D-94).
+//! * `required_recovery` is the only rule for the recovery that a wait
+//!   needs (D-9).
+//! * `signs::visit_destination` is the only rule for where a bus is going.
+//!   Every board row and itinerary leg reads it.
+//! * A transfer point is a flag on a stop. It covers the walking group of
+//!   the stop (its parent and siblings).
+//! * An empty `PlanMeta` identity is an unversioned import.
 //! * An edit ([`apply_edits`]) answers the next document and never changes
-//!   the last. A removal refuses while something references the entity. A
-//!   gesture is one edit per planner act, and it keeps its own coherence
-//!   rule. Timetable gestures act on a route and direction across its
-//!   patterns. A kept trip keeps its id and blocks. A new trip is unassigned.
-//!   A fork to a period end carries each weekly calendar still running in its
-//!   last week to that end (D-41, D-112).
+//!   the last. A kept trip keeps its id and blocks. A new trip is
+//!   unassigned. A fork to a period end carries each weekly calendar that
+//!   still runs in its last week to that end (D-41, D-112).
 //! * Validation issues gate. Warnings never gate.
-//! * The timetable's rows are `materialize_service`'s trips. They are never a
-//!   second derivation.
-//! * Stop search is fuzzy on the feed's own names: exact, then a sign
-//!   abbreviation, then a typo. There are no authored aliases, because they
-//!   would be a hand-kept dataset. A geocoder covers everyday names (D-36,
-//!   D-48, D-91).
-//! * The document is `"kind": "network"`. The version chain (`version`) is
-//!   kept forever. It brings any older document forward.
+//! * There are no authored stop aliases, because people would keep them by
+//!   hand. A geocoder covers everyday names (D-36, D-48, D-91).
 
 pub mod demand;
 pub mod combinations;

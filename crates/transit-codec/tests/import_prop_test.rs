@@ -1,49 +1,28 @@
-//! The inference law: `import` is valid by construction over every
-//! spec-valid feed. The inferred document passes the model's own
-//! validation, so a planner can always edit a derived network
-//! immediately. (A failure seen on the real C-TRAN feed: 187 issues, the
-//! derived document unloadable.) The generator is adversarial toward
-//! the inference's failure modes while staying inside the GTFS spec:
-//! colliding trip starts, trip ids whose lexical order ignores time,
-//! per-trip run-time variation inside one pattern, and shared blocks
-//! (a block's trips on one service day never overlap, one vehicle,
-//! as the spec has it).
-//! Garbage beyond the spec is the panic-fuzz layer's job
-//! (panic_fuzz_test.rs); this law assumes a well-formed feed.
+//! Over every spec-valid feed (collisions in trip starts, trip ids that
+//! ignore time, run-time variation inside a pattern, shared blocks):
 //!
-//! Laws:
+//! 1. `validation_issues(import(feed))` is empty, so a planner can edit a
+//!    derived network at once.
+//! 2. The same feed yields the same outcome on every host.
 //!
-//! 1. `validation_issues(import(feed))` is empty, always.
-//!    Validation is the gate that blocks *authored* edits. The
-//!    bootstrap path must never hand the planner a document the gate
-//!    rejects.
-//! 2. The import is deterministic. The same feed yields the same
-//!    outcome on every host (the sync thesis needs that).
-//!
-//! What the import keeps (the agency's trip ids, every scheduled time,
-//! frequency trips, blocks) is `trip_import_law_test.rs`. That the whole
-//! feed survives export is `spec_round_trip_test.rs`.
+//! Garbage beyond the spec is `panic_fuzz_test.rs`.
 
 use std::io::Write;
 
 use proptest::prelude::*;
 
-/// One generated trip. Everything about it is adversarial by default.
-/// Starts come from a small pool (collisions are intended). The per-trip
-/// `leg` varies run time inside one pattern. Blocks come from a small
-/// pool so chains are long (a trip joins only where it fits: `blocks`).
-/// Trip ids are assigned per index in `gen_feed`, unique as the spec's
-/// primary key. Their lexical order ignores start time.
+/// Starts come from a small pool, so collisions are intended. Blocks come
+/// from a small pool, so chains are long.
 #[derive(Clone, Debug)]
 struct GenTrip {
     route: u8,
     service: u8,
     block: Option<u8>,
-    /// Start as a 10-minute slot index (0..=96 → 00:00..16:00).
+    /// A 10-minute slot index (0..=96 is 00:00..16:00).
     start_slot: u16,
-    /// Ordered distinct stop indices (2..=4 of the 6 stops).
+    /// Distinct, in order: 2..=4 of the 6 stops.
     stops: Vec<u8>,
-    /// Minutes between stops (1..=30): run-time variation.
+    /// Minutes between stops (1..=30).
     leg_min: u8,
 }
 
@@ -57,7 +36,6 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         1u8..30, // leg minutes
     )
         .prop_map(|(route, service, block, start_slot, stops, leg_min)| {
-            // Distinct, order-preserving stop sequence.
             let mut seq: Vec<u8> = stops.into_iter().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
             if seq.len() < 2 {
                 seq = vec![0, 1];
@@ -66,9 +44,8 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         })
 }
 
-/// Blocks that respect the spec: a block's trips on one service day
-/// never overlap (one vehicle), so a trip joins its block only where
-/// it fits.
+/// The spec says one vehicle runs a block, so its trips on one service day
+/// never overlap.
 fn blocks(trips: &[GenTrip]) -> Vec<Option<u8>> {
     let mut taken: std::collections::BTreeMap<(u8, u8), Vec<(u32, u32)>> = Default::default();
     trips
@@ -118,8 +95,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
                         "{},{},{},{},",
                         t.route,
                         t.service,
-                        // Index ids: unique (the spec's primary key),
-                        // and lexically unordered against start times.
+                        // Unique, and lexically unordered against start times.
                         format!("t{i}"),
                         blocks[i].map(|b| b.to_string()).unwrap_or_default()
                     )
@@ -149,16 +125,13 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Law 1 (and 2): any feed imports to a document the model itself
-    /// accepts, and imports deterministically.
+    /// Properties 1 and 2.
     #[test]
     fn imported_network_is_valid_by_construction(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("generated feeds read");
         let outcome = transit_codec::import(&feed);
         let issues = transit_network::validation_issues(&outcome.network);
         prop_assert!(issues.is_empty(), "the model rejects its own import: {:?}", issues);
-        // Determinism: same feed, same document, same notes, same
-        // boundary, in the same order.
         prop_assert_eq!(transit_codec::import(&feed), outcome);
     }
 }

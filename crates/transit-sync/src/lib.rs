@@ -1,27 +1,8 @@
-//! transit-sync: the sync document and its pure operations. cap-sync is the
-//! seam the Go server calls; cap-divert is the authoring seam.
-//!
-//! The document is the contract: every host holds the same structures, so
-//! agreement is about document identity, not shared mutable state. The
-//! feed artifact is immutable and content-addressed ([`FeedManifest`]).
-//! The operator's edit document belongs to the dispatcher and lives here,
-//! not in the GTFS codec.
-//!
-//! * An edit record carries exactly one payload: a `Diversion` or a
-//!   `TripCancel` (one instance or all, on one date; D-45, D-101). An
-//!   absent payload is omitted from the bytes.
-//! * Records are keyed by id, whole, last-writer-wins per id, and retired
-//!   (a tombstone), never removed. `merge` is a property-tested
-//!   semilattice. There is no CRDT: that is a non-goal.
-//! * Pure: callers stamp `updated_at` and `rev`; `submit` takes the host's
-//!   clock.
-//! * `read_document` reads a received document in this build's version,
-//!   dropping and counting records that do not parse or lack exactly one
-//!   payload.
-//! * A revert of the disruptions log writes each record back, or retires
-//!   one the write created, at the next rev and the host's clock, so it
-//!   wins the merge over a copy a page still holds (`revert_record`,
-//!   D-193).
+//! The edit document keeps records whole, keyed by id, with last-writer-wins
+//! per id and `retired` as the tombstone, so `merge` is a semilattice.
+//! Callers stamp `updated_at` and `rev`. A revert writes the record back at
+//! the next rev, so it wins the merge over a copy that a page still holds
+//! (`revert_record`, D-193).
 
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
@@ -30,7 +11,6 @@ pub mod version;
 pub mod load;
 pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
 
-/// One vertex of a drawn detour polyline.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DetourPoint {
@@ -38,37 +18,28 @@ pub struct DetourPoint {
     pub lon: f64,
 }
 
-/// One operator edit, serializable so the UI can persist it next to
-/// the feed bytes and replay it after a reload. The edit document belongs
-/// to the dispatcher. It lives here, in the sync contract, not in the GTFS
-/// codec. GTFS is a serialization for external data sharing. This document
-/// never crosses that boundary. Its fields reference routes and stops by
-/// the ids the network model carries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Diversion {
     pub id: String,
     #[schemars(extend("x-references" = "network.route"))]
     pub route_id: String,
-    /// `None` = both directions. (GTFS's direction_id, kept for the
-    /// boundary path; the model matches patterns, not directions.)
+    /// `None` means both directions.
     #[serde(default)]
     pub direction_id: Option<u8>,
-    /// Board/anchor points on the normal alignment: the detour happens
-    /// between them, and they stay served.
+    /// The detour runs between the kept stops, and they stay served.
     #[schemars(extend("x-references" = "network.stop"))]
     pub first_kept_stop: String,
     #[schemars(extend("x-references" = "network.stop"))]
     pub last_kept_stop: String,
-    /// Interior stops the detour skips (must not include the anchors).
+    /// Never includes the kept stops.
     #[serde(default)]
     #[schemars(extend("x-references" = "network.stop"))]
     pub skipped_stops: Vec<String>,
-    /// Drawn detour polyline; `None` = alignment unchanged (skip only).
+    /// `None` skips the stops and leaves the alignment unchanged.
     #[serde(default)]
     pub detour: Option<Vec<DetourPoint>>,
-    /// Extra running time through the detour, applied from the last
-    /// anchor onward.
+    /// Seconds of running time, added from the last kept stop onward.
     #[serde(default)]
     pub added_secs: u32,
     #[serde(with = "iso_date")]
@@ -79,67 +50,49 @@ pub struct Diversion {
     #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub end_date: chrono::NaiveDate,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
 impl Diversion {
-    /// Is this edit in force on `date`?
     pub fn covers(&self, date: chrono::NaiveDate) -> bool {
         self.start_date <= date && date <= self.end_date
     }
 }
 
-/// A whole trip taken out of service on one service date (D-45): the
-/// trip does not run, so no board offers it as a departure and the
-/// router never rides it. The boards list it as cancelled among the
-/// visits the day's edits took away (D-100). The trip is the model's
-/// stored trip (`Network::trip`); a frequency trip's instances share
-/// it, so `start_secs` names one instance, and `None` cancels every
-/// instance it runs that day. Partial cancellation (from a stop on),
-/// cover, hold, and swap are not this payload's (D-45: later).
-// The doc comment above is in the locked schema (edit_records.v2), so
-// it stays as frozen. Cover, hold, and swap are not edits at all: they
-// belong to CAD/AVL (D-212). Only partial cancellation is still later.
+/// The boards list a cancelled trip among the visits that the edits of the
+/// day took away (D-100). It cancels the whole trip, never from a stop on
+/// (D-45).
+/// Cover, hold, and swap belong to CAD/AVL (D-212).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TripCancel {
-    /// The cancel's own domain id (stable across re-proposals of one
-    /// record, like a diversion's).
     pub id: String,
     #[schemars(extend("x-references" = "network.trip"))]
     pub trip_id: String,
-    /// One instance (seconds after the service-day anchor); `None` =
-    /// every instance of the trip on the date.
+    /// Seconds after the service-day anchor. `None` cancels every instance.
     #[serde(default)]
     pub start_secs: Option<u32>,
-    /// The one service date it is cancelled on (D-101).
     #[serde(with = "iso_date")]
     #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub date: chrono::NaiveDate,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
 impl TripCancel {
-    /// Is this cancel in force on `date`?
     pub fn covers(&self, date: chrono::NaiveDate) -> bool {
         self.date == date
     }
 
-    /// Does it take away the instance (`trip`, `start_secs`)?
     pub fn cancels(&self, trip: &str, start_secs: u32) -> bool {
         self.trip_id == trip && self.start_secs.is_none_or(|s| s == start_secs)
     }
 }
 
-/// Serialize/deserialize dates on the JS boundary as "YYYY-MM-DD",
-/// matching the string format every wasm entry point takes.
 mod iso_date {
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -159,41 +112,28 @@ mod iso_date {
     }
 }
 
-/// Lifecycle of an edit record. `retired` is the tombstone: the record
-/// stays in the document (sync needs to see the deletion), but it is
-/// not in force, and the UI hides it.
+/// `Retired` is the tombstone: the record stays so that sync sees the
+/// deletion, and the UI hides it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum EditStatus {
-    /// Created locally, not yet submitted anywhere.
     Draft,
-    /// Pushed to an ops server; still intended to run.
     Submitted,
-    /// Accepted by the ops authority; in force.
     Accepted,
-    /// Withdrawn or failed revalidation against a new feed artifact.
-    /// Kept as evidence and as a sync tombstone.
     Retired,
 }
 
 impl EditStatus {
-    /// Is an edit in this status operationally in force? Retired is
-    /// the only tombstone state; drafts run locally so the dispatcher
-    /// can preview them.
+    /// Drafts count as in force, so the dispatcher can preview them.
     pub fn in_force(self) -> bool {
         !matches!(self, EditStatus::Retired)
     }
 }
 
-/// One operator edit plus its sync envelope. The payload is the domain
-/// content: exactly one of `diversion` and `cancel`. A record with
-/// neither or both is not a record: [`sanitize`] drops it. The
-/// envelope fields are what any sync partner needs to merge, order,
-/// and retire records without understanding the domain. An absent
-/// payload is omitted, never `null`. So a diversion record keeps its
-/// bytes, and every edit document keeps its hash. The cancel payload
-/// adds no key to them.
+/// Exactly one of `diversion` and `cancel`. [`sanitize_records`] drops a
+/// record with neither or both. An absent payload is omitted, never `null`,
+/// so a diversion record keeps its bytes and its hash.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditRecord {
@@ -203,62 +143,45 @@ pub struct EditRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel: Option<TripCancel>,
     pub status: EditStatus,
-    /// Monotonic per id; bumped on every change by the writer.
+    /// Monotonic per id. The writer bumps it on every change.
     #[ts(type = "number")]
     pub rev: u64,
-    /// Unix epoch milliseconds, stamped by the writer.
+    /// Unix epoch milliseconds.
     #[ts(type = "number")]
     pub updated_at: u64,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
 impl EditRecord {
-    /// Exactly one payload. Every record must have this shape.
     pub fn well_formed(&self) -> bool {
         self.diversion.is_some() != self.cancel.is_some()
     }
 }
 
-/// Validation result for one record: what a client needs after pushing
-/// a document, or what a server returns from a validation endpoint. The
-/// record itself is display data. The report only carries the verdict.
-/// The verdict is model-native, against an authored network document
-/// (transit-dispatch). Nothing validates an edit against a feed.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditReport {
     pub id: String,
     pub valid: bool,
-    /// Human-readable reason when `valid` is false (unknown stop after
-    /// a feed republish, degenerate anchors, ...).
     pub error: Option<String>,
-    /// How many trips the edit touches (0 = no-op even when valid).
+    /// 0 means a no-op, even when `valid`.
     pub affected_trips: usize,
 }
 
-/// The authority pointer: which feed artifact is current, published by
-/// whom, when. Schedules change by artifact replacement. The planner
-/// persona publishes a new manifest with a new `feed_hash`. Everyone
-/// else re-pins and revalidates their edits against it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FeedManifest {
-    /// Content hash (sha256) of the authoritative GTFS zip.
+    /// sha256 of the authoritative GTFS zip.
     pub feed_hash: String,
-    /// Human-facing version from `feed_info.txt`, if the feed has one.
     pub feed_version: Option<String>,
-    /// Unix epoch seconds of publication.
+    /// Unix epoch seconds.
     #[ts(type = "number")]
     pub generated_at: u64,
-    /// Who published (authoring system or agency), for provenance.
     pub publisher: Option<String>,
 }
 
-/// The diversions of a document that are in force on a given service
-/// date. They are the patch set the effective feed is built from.
 pub fn in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<Diversion> {
     records
         .iter()
@@ -269,8 +192,6 @@ pub fn in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<Diver
         .collect()
 }
 
-/// The trip cancels of a document in force on a given service date.
-/// They are the instances the effective day does not run.
 pub fn cancels_in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<TripCancel> {
     records
         .iter()
@@ -281,20 +202,9 @@ pub fn cancels_in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> V
         .collect()
 }
 
-// ---------------------------------------------------------------------
-// Sync: last-writer-wins merge and the submit transition
-// ---------------------------------------------------------------------
-
-/// Does `a` win over `b` in the LWW order? The order is a strict total
-/// order on records. That makes merge a semilattice, so it is convergent.
-/// Every node, running the same bytes, reaches the same document, whatever
-/// the merge order.
-///
-/// 1. later `updated_at` wins;
-/// 2. tie: higher `rev` wins;
-/// 3. full tie (same clock tick and rev, differing content; only a
-///    buggy writer): the lexicographically greater serialized record
-///    wins, deterministically, everywhere.
+/// The LWW order is a strict total order, so `merge` is a semilattice. A
+/// later `updated_at` wins, then a higher `rev`, then the greater serialized
+/// record (a tie that only a buggy writer makes).
 fn wins(a: &EditRecord, b: &EditRecord) -> bool {
     match a.updated_at.cmp(&b.updated_at) {
         std::cmp::Ordering::Greater => return true,
@@ -309,11 +219,8 @@ fn wins(a: &EditRecord, b: &EditRecord) -> bool {
     serde_json::to_string(a).unwrap_or_default() > serde_json::to_string(b).unwrap_or_default()
 }
 
-/// Merge two documents: per record id, last writer wins. The result is
-/// sorted by id, so equal inputs always serialize identically on
-/// every host. Tombstones take part like any record. A retirement with a
-/// later timestamp beats an older in-force version, and stays retired
-/// (deletions propagate through sync).
+/// The result is sorted by id, so equal inputs serialize identically on every
+/// host. A later retirement beats an older in-force version.
 pub fn merge(local: &[EditRecord], remote: &[EditRecord]) -> Vec<EditRecord> {
     let mut by_id: std::collections::BTreeMap<String, EditRecord> = std::collections::BTreeMap::new();
     for record in local.iter().chain(remote) {
@@ -331,10 +238,6 @@ pub fn merge(local: &[EditRecord], remote: &[EditRecord]) -> Vec<EditRecord> {
     by_id.into_values().collect()
 }
 
-/// The submit transition: an ops server ingests a document and every
-/// `draft` becomes `submitted` (rev bumped, timestamp = now), marking
-/// "this record has been pushed to the authority". Called by the
-/// `sync_edits` op. Hosts pass the clock. The artifact owns the rule.
 pub fn submit(records: Vec<EditRecord>, now_ms: u64) -> Vec<EditRecord> {
     records
         .into_iter()
@@ -349,21 +252,10 @@ pub fn submit(records: Vec<EditRecord>, now_ms: u64) -> Vec<EditRecord> {
         .collect()
 }
 
-// ---------------------------------------------------------------------
-// Authoring the edit document: the envelope rules every writer follows
-// ---------------------------------------------------------------------
-
-/// Propose a diversion: the next document with `record_id` carrying
-/// `diversion` as a draft, stamped `now_ms`. A new id appends at rev 1;
-/// an existing id is replaced whole (LWW per record; the record is the
-/// unit) with its rev bumped. The input is never mutated.
 pub fn propose(records: &[EditRecord], record_id: &str, diversion: Diversion, now_ms: u64) -> Vec<EditRecord> {
     put(records, record_id, Some(diversion), None, now_ms)
 }
 
-/// Propose a trip cancel: the same envelope rule as [`propose`]. A
-/// new id appends at rev 1 as a draft, an existing one is replaced
-/// whole with its rev bumped, the input never mutated.
 pub fn propose_cancel(records: &[EditRecord], record_id: &str, cancel: TripCancel, now_ms: u64) -> Vec<EditRecord> {
     put(records, record_id, None, Some(cancel), now_ms)
 }
@@ -397,11 +289,6 @@ fn put(
     next
 }
 
-/// Retire (`retired: true`, the tombstone) or restore (back to a
-/// draft, so the next sync re-submits it) one record: the next
-/// document with its rev bumped and `now_ms` stamped. Retiring a
-/// retired record, or restoring an in-force one, is a no-op answer
-/// (the same document, with no rev churn). An unknown id is an error.
 pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_ms: u64) -> Result<Vec<EditRecord>, String> {
     let mut next = records.to_vec();
     let r = next
@@ -416,14 +303,6 @@ pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_m
     Ok(next)
 }
 
-// ---------------------------------------------------------------------
-// The stored document: envelope, schema version, the receive path
-// ---------------------------------------------------------------------
-
-
-/// The kind of a stored document, as its envelope spells it
-/// (`docs/FORMATS.md`). GTFS stays the interchange for published
-/// products; these kinds cover what GTFS cannot express.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -436,22 +315,16 @@ pub enum DocumentKind {
     Policy,
 }
 
-/// The typed envelope stored next to every blob: the hash names the
-/// bytes, the envelope says how to read them. `produced_by` pins the
-/// producing module's hash (`cap-sync@sha256:…`), or `server` for
-/// host-owned documents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Envelope {
     pub kind: DocumentKind,
     pub schema_version: u32,
-    /// e.g. "cap-sync@sha256:<hex>" or "server".
     pub produced_by: String,
 }
 
-/// The names of the fields `records` carry that this build does not
-/// know (D-167), in name order: kept in each record, and flagged by the
-/// receive path for a person, never refused.
+/// A person sees these fields flagged. The write path never refuses them
+/// (D-167).
 pub fn unknown_fields(records: &[EditRecord]) -> Vec<String> {
     let mut names = std::collections::BTreeSet::new();
     for r in records {
@@ -466,10 +339,8 @@ pub fn unknown_fields(records: &[EditRecord]) -> Vec<String> {
     names.into_iter().collect()
 }
 
-/// The receive path's clock rule (D-56): a record claiming a future
-/// `updated_at` is treated as written now. Clamping is idempotent.
-/// Clamping a clamped document changes nothing. So at-least-once
-/// redelivery still converges to the same hash.
+/// A record that claims a future `updated_at` counts as written now (D-56).
+/// Clamping twice changes nothing, so redelivery converges.
 pub fn clamp_timestamps(records: &[EditRecord], now_ms: u64) -> Vec<EditRecord> {
     records
         .iter()
@@ -481,18 +352,12 @@ pub fn clamp_timestamps(records: &[EditRecord], now_ms: u64) -> Vec<EditRecord> 
         .collect()
 }
 
-/// Compaction (D-57): drop tombstones older than the horizon. Only
-/// `retired` records with `updated_at < now_ms - horizon_ms` go;
-/// in-force records are never dropped, and the input is never mutated.
-/// Returns the compacted document and how many records were dropped.
 pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<EditRecord>, usize) {
     compact_keeping(records, now_ms, horizon_ms, &std::collections::BTreeSet::new())
 }
 
-/// [`compact`], except that a record whose id is in `keep` is never
-/// dropped (D-231): a live reference names it, and dropping it would
-/// break the reference. It leaves in a later compaction, when nothing
-/// names it.
+/// Like [`compact`], but a record whose id is in `keep` stays, because a live
+/// reference names it (D-231).
 pub fn compact_keeping(records: &[EditRecord], now_ms: u64, horizon_ms: u64, keep: &std::collections::BTreeSet<String>) -> (Vec<EditRecord>, usize) {
     let horizon = now_ms.saturating_sub(horizon_ms);
     let mut dropped = 0;
@@ -510,12 +375,10 @@ pub fn compact_keeping(records: &[EditRecord], now_ms: u64, horizon_ms: u64, kee
     (kept, dropped)
 }
 
-/// The record a revert writes back (D-193): the record as it was before
-/// the reverted write (`prior`), or, when that write created it, the
-/// record now (`now`) retired. Either is stamped with the next rev and
-/// `now_ms`, so it wins the merge over a copy that a page still holds
-/// (LWW would bring the reverted copy back otherwise). Absent when the
-/// record was absent both before and now.
+/// The record that a revert writes back (D-193): the record before the
+/// reverted write, or, when that write created it, the current record
+/// retired. Either gets the next rev and `now_ms`, so it wins the merge over
+/// the reverted copy.
 pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_ms: u64) -> Option<EditRecord> {
     let next_rev = now.map_or(0, |r| r.rev).max(prior.map_or(0, |r| r.rev)) + 1;
     match (prior, now) {
@@ -525,14 +388,10 @@ pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_m
     }
 }
 
-/// Read a received edit document (a POST body, a stored head, a
-/// file) as the base of a merge, in the version this build reads. An
-/// older one is refused with the op that brings it forward (the
-/// migration capability), and a newer one naming both versions. The one
-/// exception is the next version where this build reads one version
-/// ahead (`Versioned::AHEAD`, D-186): a lossless step reads it down, and
-/// a read-only one refuses the write, naming both. Its records are
-/// [`sanitize_records`]'s.
+/// An older document is refused with the op that brings it forward, and a
+/// newer one naming both versions. A document one version ahead is read down
+/// by a lossless step. A read-only step refuses the write (`Versioned::AHEAD`,
+/// D-186).
 pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), String> {
     use transit_version::{ReadAs, Versioned};
     let found = version::schema_version_of(document)?;
@@ -546,11 +405,8 @@ pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usiz
     Ok((EditDocument::new(records), dropped))
 }
 
-/// The records of an edit document: every one that deserializes under
-/// the current schema and carries exactly one payload, and how many did
-/// not. Serde fills the defaults that an older record lacks. A malformed
-/// record is dropped and counted. It never wedges the document. Anything
-/// but an array is no records, with nothing dropped.
+/// A malformed record is dropped and counted, so it never wedges the
+/// document. Anything but an array holds no records.
 pub fn sanitize_records(items: &serde_json::Value) -> (Vec<EditRecord>, usize) {
     let Some(items) = items.as_array() else { return (Vec::new(), 0) };
     let mut kept = Vec::new();
@@ -658,9 +514,6 @@ mod tests {
 
     #[test]
     fn a_diversion_record_keeps_its_bytes_and_a_cancel_omits_the_diversion() {
-        // The cancel payload is additive. A diversion record serializes
-        // with no "cancel" key and no null. So every edit document keeps
-        // its hash.
         let json = serde_json::to_string(&record(EditStatus::Submitted)).unwrap();
         assert_eq!(
             json,
@@ -800,12 +653,9 @@ mod receive_tests {
         let honest = rec("e2", EditStatus::Draft, 1, 4_000);
         assert_eq!(clamp_timestamps(&[honest], 5_000)[0].updated_at, 4_000, "honest stamps untouched");
 
-        // Idempotent: clamping twice == clamping once, so redelivery converges.
         let once = clamp_timestamps(&[future], 5_000);
         assert_eq!(clamp_timestamps(&once, 5_000), once);
 
-        // And the clamp actually bounds the LWW order: the future-dated
-        // record does not beat a later honest write.
         let server = vec![rec("e1", EditStatus::Retired, 4, 6_000)];
         let merged = merge(&clamped, &server);
         assert_eq!(merged.len(), 1);
@@ -828,7 +678,6 @@ mod receive_tests {
         assert!(kept.iter().all(|r| r.id != "old-retired"));
         assert_eq!(docs.len(), 4, "the input is never mutated");
 
-        // Idempotent: compacting a compacted document drops nothing.
         let (again, dropped_again) = compact(&kept, now, horizon);
         assert_eq!(dropped_again, 0);
         assert_eq!(again, kept);
@@ -836,8 +685,6 @@ mod receive_tests {
 
     #[test]
     fn compact_keeping_never_drops_a_named_record() {
-        // D-231: a retired record that a live reference names stays until
-        // nothing names it; every other old tombstone still goes.
         let now = 1_000_000u64;
         let docs = vec![
             rec("named", EditStatus::Retired, 2, now - 200_000),
@@ -903,8 +750,6 @@ mod merge_tests {
         }
     }
 
-    /// The same envelope carrying a trip cancel instead (D-45): one id
-    /// may hold a diversion on one replica and a cancel on another.
     fn sample_cancel(id: u8, rev: u64, updated_at: u64, status: EditStatus) -> EditRecord {
         EditRecord {
             diversion: None,
@@ -920,8 +765,6 @@ mod merge_tests {
     }
 
     fn doc_strategy() -> impl Strategy<Value = Vec<EditRecord>> {
-        // Small id space forces collisions; the clock range forces ties;
-        // both payloads compete for one id.
         vec(
             (
                 0u8..4,
@@ -947,9 +790,6 @@ mod merge_tests {
     }
 
     proptest! {
-        /// A revert's record (D-193) wins the merge over the copy it
-        /// reverts, whichever side holds it: the state before the write
-        /// comes back, and a record the write created stays retired.
         #[test]
         fn a_reverted_record_wins_the_merge(prior in proptest::option::of(doc_strategy()), now in doc_strategy(), at in 0u64..10) {
             let Some(now) = now.into_iter().next() else { return Ok(()) };
@@ -971,17 +811,14 @@ mod merge_tests {
         let b = sample_record(1, 2, 200, EditStatus::Retired);
         let older = sample_record(1, 1, 50, EditStatus::Accepted);
 
-        // Later timestamp wins; retirement propagates.
         let merged = merge(&[a.clone()], &[b.clone()]);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].status, EditStatus::Retired);
         assert_eq!(merged[0].updated_at, 200);
 
-        // The older record loses to both.
         let merged = merge(&[older], &[b]);
         assert_eq!(merged[0].updated_at, 200);
 
-        // Disjoint ids union.
         let merged = merge(&[sample_record(1, 1, 1, EditStatus::Draft)], &[sample_record(2, 1, 1, EditStatus::Draft)]);
         assert_eq!(merged.len(), 2);
         assert!(merged[0].id < merged[1].id, "sorted by id");
@@ -989,8 +826,6 @@ mod merge_tests {
 
     #[test]
     fn tie_breaks_deterministically_regardless_of_order() {
-        // Same clock tick and rev, differing content: only a buggy
-        // writer produces this, but convergence still must hold.
         let mut a = sample_record(1, 5, 100, EditStatus::Draft);
         a.diversion.as_mut().unwrap().added_secs = 1;
         let mut b = a.clone();
@@ -1009,7 +844,6 @@ mod merge_tests {
         assert_eq!(out[0].status, EditStatus::Submitted);
         assert_eq!(out[0].rev, 2);
         assert_eq!(out[0].updated_at, 1000);
-        // Non-drafts untouched.
         assert_eq!(out[1].status, EditStatus::Submitted);
         assert_eq!(out[1].rev, 3);
         assert_eq!(out[1].updated_at, 100);
@@ -1020,23 +854,17 @@ mod merge_tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
-        /// Commutativity: every node reaches the same document no
-        /// matter which side it holds locally.
         #[test]
         fn merge_is_commutative(a in doc_strategy(), b in doc_strategy()) {
             assert_eq!(merge(&a, &b), merge(&b, &a));
         }
 
-        /// Idempotence: re-merging an already-merged document is a
-        /// no-op (pulling twice must not change anything).
         #[test]
         fn merge_is_idempotent(a in doc_strategy(), b in doc_strategy()) {
             let once = merge(&a, &b);
             assert_eq!(merge(&once, &once), once);
         }
 
-        /// Associativity: three-way convergence. Merge in any
-        /// grouping and every node ends at the same document.
         #[test]
         fn merge_is_associative(
             a in doc_strategy(), b in doc_strategy(), c in doc_strategy(),
@@ -1044,8 +872,6 @@ mod merge_tests {
             assert_eq!(merge(&merge(&a, &b), &c), merge(&a, &merge(&b, &c)));
         }
 
-        /// Merging never changes a record's payload: every merged record
-        /// is one of the inputs, whole, so a cancel stays a cancel.
         #[test]
         fn merge_keeps_records_whole(a in doc_strategy(), b in doc_strategy()) {
             for r in merge(&a, &b) {
@@ -1054,8 +880,6 @@ mod merge_tests {
             }
         }
 
-        /// A document never gains or loses records through merging,
-        /// and tombstone winners stay tombstones.
         #[test]
         fn merge_preserves_ids_and_tombstone_wins(
             a in doc_strategy(), b in doc_strategy(),
@@ -1067,9 +891,8 @@ mod merge_tests {
                 let winner = a.iter().chain(&b).filter(|x| x.id == r.id)
                     .max_by_key(|x| (x.updated_at, x.rev)).unwrap();
                 if winner.status == EditStatus::Retired && winner.updated_at == r.updated_at && winner.rev == r.rev {
-                    // the LWW winner was the tombstone; only a same-tick
-                    // tiebreak could differ, which the commutativity law
-                    // already pins down
+                    // Only a same-tick tiebreak could differ. Commutativity
+                    // pins it.
                 }
             }
         }

@@ -1,8 +1,6 @@
-//! What a stop's display shows, the next departures of each route to each
-//! destination (crates/cap-board/OPS.md "grouped_board"; the user's directive
-//! for the stop display, 2026-10-29; D-23, D-24, D-73). The oracle recomputes
-//! each answer from the generated schedule (start + offset + the live delay),
-//! sharing nothing with the board.
+//! `grouped_board` (crates/cap-board/OPS.md "grouped_board"; D-23, D-24,
+//! D-73). The oracle recomputes each answer from the generated schedule (start
+//! + offset + the live delay) and shares nothing with the board.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,14 +20,10 @@ fn date() -> NaiveDate {
     NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap()
 }
 
-/// How a pattern meets the board's stop X.
 #[derive(Debug, Clone, Copy)]
 enum Shape {
-    /// A → X → terminal: departs X.
     Through(usize),
-    /// X → terminal: starts at X.
     Starts(usize),
-    /// A → X: ends at X. This is an arrival, never a departure.
     Ends,
 }
 
@@ -37,18 +31,14 @@ enum Shape {
 struct GenPattern {
     shape: Shape,
     starts: Vec<u32>,
-    /// Per start: the live delay at X, if predicted.
     delays: Vec<Option<i32>>,
-    /// Per start: whether it runs at X, as the live document says.
     gone: Vec<Gone>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Gone {
     Runs,
-    /// The trip is cancelled.
     Canceled,
-    /// The trip runs but skips X.
     Skipped,
 }
 
@@ -109,7 +99,6 @@ fn trip_id(r: usize, p: usize, start: u32) -> String {
     format!("r{r}p{p}@{start}")
 }
 
-/// The pattern's stops and the offset of X along it.
 fn stops_of(shape: Shape) -> (Vec<String>, Option<u32>) {
     match shape {
         Shape::Through(k) => (vec!["A".into(), "X".into(), terminal(k)], Some(600)),
@@ -195,8 +184,6 @@ fn build(routes: &[GenRoute]) -> Network {
     net
 }
 
-/// The live document: each predicted visit to X, at its delay, each
-/// cancelled trip, and each visit to X skipped.
 fn live(routes: &[GenRoute]) -> LiveDay {
     let mut trips = Vec::new();
     for (r, route) in routes.iter().enumerate() {
@@ -257,18 +244,14 @@ fn live(routes: &[GenRoute]) -> LiveDay {
     }
 }
 
-/// One departure from X, recomputed from the generated schedule.
 #[derive(Debug, Clone, PartialEq)]
 struct Expected {
     route: String,
     destination: String,
     trip: String,
     start: u32,
-    /// When it leaves: the prediction when live, else the schedule.
     at: u32,
     expected: Option<u32>,
-    /// It leaves at all: neither cancelled nor skipping X, by the live
-    /// document.
     runs: bool,
 }
 
@@ -299,7 +282,6 @@ fn departures(routes: &[GenRoute], with_live: bool) -> Vec<Expected> {
     out
 }
 
-/// The display order: sort order (none last), route id, destination.
 fn order_key(routes: &[GenRoute], route: &str, destination: &str) -> (bool, u32, String, String) {
     let r: usize = route[1..].parse().unwrap();
     let so = routes[r].sort_order;
@@ -325,9 +307,8 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     /// There is one group per route and destination that leaves the stop at any
-    /// time of the day, however late it is asked, and however many of its trips
-    /// are cancelled (D-73). A group whose departures have all gone stays. No
-    /// other pair forms a group: a pattern ending here makes none.
+    /// time of the day, however late it is asked and however many of its trips
+    /// are cancelled (D-73). A pattern ending here makes no group.
     #[test]
     fn the_groups_are_the_days_routes_and_destinations((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -342,10 +323,9 @@ proptest! {
         prop_assert_eq!(board.live, with_live);
     }
 
-    /// Each group holds its next `per_group` departures that run,
-    /// by when the bus actually leaves.
-    /// A late bus not yet gone is still next. An early one already gone is not.
-    /// A cancelled or skipping one never is. Soonest first.
+    /// Each group holds its next `per_group` departures that run, soonest
+    /// first, by when the bus actually leaves. A late bus not yet gone is still
+    /// next. An early one already gone is not.
     #[test]
     fn each_group_holds_its_next_departures((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -368,8 +348,6 @@ proptest! {
         }
     }
 
-    /// Uncut, the groups together are the board,
-    /// with nothing added and nothing lost.
     #[test]
     fn uncut_the_groups_are_the_board((routes, from, _per_group, with_live) in case()) {
         let net = build(&routes);
@@ -383,8 +361,6 @@ proptest! {
         prop_assert_eq!(flat, stop_board(&net, &day, "X", from, usize::MAX, live, None).rows);
     }
 
-    /// Groups list by `route_sort_order` (routes without one last, by id), then
-    /// by destination (D-23).
     #[test]
     fn the_groups_list_in_display_order((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -397,8 +373,6 @@ proptest! {
         prop_assert_eq!(keys, sorted);
     }
 
-    /// Every row, on the grouped board and on the board, says how long until it
-    /// leaves (D-24). The wait counts from when it actually leaves.
     #[test]
     fn every_row_says_how_long_until_it_leaves((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -418,8 +392,6 @@ proptest! {
     }
 }
 
-/// The edges of the wait (D-24): 59 s is due, 60 s one minute, 3 599 s
-/// fifty-nine minutes, 3 600 s the clock.
 #[test]
 fn the_wait_turns_at_a_minute_and_an_hour() {
     let routes = vec![GenRoute {
@@ -435,7 +407,6 @@ fn the_wait_turns_at_a_minute_and_an_hour() {
     assert_eq!(wait(36_000 - 119), Wait::Minutes { minutes: 1 });
     assert_eq!(wait(36_000 - 3_599), Wait::Minutes { minutes: 59 });
     assert_eq!(wait(36_000 - 3_600), Wait::Clock { secs: 36_000 });
-    // After its last departure the group stays, with nothing left.
     let late = grouped_board(&net, &day, "X", 36_001, 3, None, None);
     assert_eq!(late.groups.len(), 1);
     assert!(late.groups[0].departures.is_empty());

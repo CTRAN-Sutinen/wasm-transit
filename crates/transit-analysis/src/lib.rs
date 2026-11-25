@@ -1,34 +1,19 @@
-//! Planner analysis: the questions a network planner asks of an authored
-//! document, at the network, route, and stop level, plus coverage against
-//! a weighted layer (`coverage`). cap-analysis wraps it.
+//! Every answer is computed here, so every host gets the same numbers. A
+//! document in the middle of an edit can carry broken services. Analysis
+//! answers for the parts that work, and validation does the gating.
 //!
-//! Everything is computed here, never in a host, so every host has the
-//! same numbers. Stats are best-effort: a document mid-edit can carry
-//! broken services, and analysis still answers for the parts that work.
-//! Validation gates; analysis never does.
-//!
-//! Rules other code depends on:
-//!
-//! * A service group is a service combination: the types that run on the
-//!   same dates, shown with those dates and pooled only there. No
-//!   representative day stands in, because pooling types that never run
-//!   together overcounted C-TRAN's trips (2,130 against 1,774). Any rule
-//!   that groups, labels, or ranks combinations ("weekday", "regular") is
-//!   the user's call (D-55).
-//! * Frequencies use the trips' own gaps, never regularized. "Frequent"
-//!   counts departures only, so a terminal where nobody boards is never
-//!   frequent (D-6; `a_terminal_nobody_boards_at_is_never_frequent`).
-//! * Coverage takes any layer of points or polygons with any numeric
-//!   weight and a planner's label, because the system has no opinion on
-//!   what a planner weights (D-47, D-97). A polygon's weight spreads over
-//!   its area on a lattice (D-98), and every answer states its
-//!   resolution. A comparison names its two sides (D-99).
-//! * The worklist's findings are keyed, so a plan reads each as new,
-//!   moved, resolved, or watched against its baseline (D-136). Waits and
-//!   near misses: D-133, D-134; day types: D-137.
-//! * A transfer point is the feed's flag, never inferred (D-10).
-//!
-//! Regression numbers on C-TRAN: tests/regression_test.
+//! - A service group is a combination of the types that run on the same dates.
+//!   Its numbers pool only over those dates, and no representative day stands
+//!   in (D-55).
+//! - Frequencies use the trips' own gaps. "Frequent" counts departures only, so
+//!   a terminal where nobody boards is never frequent (D-6;
+//!   `a_terminal_nobody_boards_at_is_never_frequent`).
+//! - Coverage takes any layer with any numeric weight and a planner's label
+//!   (D-47, D-97). A polygon's weight spreads over a lattice (D-98), and a
+//!   comparison names its two sides (D-99).
+//! - Worklist findings are keyed, so a plan reads each as new, moved, resolved,
+//!   or watched (D-136; D-133, D-134, D-137).
+//! - A transfer point is the feed's flag, never inferred (D-10).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,72 +31,42 @@ pub use coverage::{
 };
 use coverage::coverage_of_members;
 
-/// One stop's activity on a service date.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct StopStats {
     pub stop_id: String,
     pub name: String,
-    /// Routes with at least one visit (count; ids live in the UI from
-    /// the document itself, so stats stay small).
     pub routes: u32,
     pub departures: u32,
     pub first_arrival_secs: Option<u32>,
     pub last_arrival_secs: Option<u32>,
-    /// (last − first) / (departures − 1): the even-spacing headway the
-    /// day's visits boil down to. Null below two visits.
     pub typical_headway_secs: Option<u32>,
-    /// The stop's authored transfer-point flag.
     pub transfer: bool,
-    /// Transfer points only: how many stops pool into the walking group. The
-    /// group holds the stop, siblings sharing a parent, children, and the
-    /// parent. Transfers happen across a street or down a block.
     pub transfer_group: Option<u32>,
-    /// Transfer points only: ordered route pairs with at least one usable timed
-    /// connection across the walking group on this date. A connection is an
-    /// arrival of one route, followed within the window (1 to 15 min, the walk
-    /// folded into the bounds) by a departure of the other. Zero pairs means
-    /// the flag is aspirational today.
+    /// Ordered route pairs with a usable timed connection. Zero means the flag
+    /// is aspirational today.
     pub transfer_pairs: Option<u32>,
 }
 
-/// One route's activity on a service date.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteStats {
     pub route_id: String,
     pub name: String,
     pub patterns: u32,
-    /// Distinct stops across the route's patterns.
     pub stops: u32,
-    /// Trips on the date (all of the route's patterns, all services).
     pub trips: u32,
     pub first_start_secs: Option<u32>,
     pub last_arrival_secs: Option<u32>,
-    /// The route's headway today: the number a planner reads as "every N
-    /// minutes". It is the median gap between consecutive departures at the
-    /// route's busiest stop (`headway_stop`). Departures only: a trip's final
-    /// visit is an arrival. The median keeps a short-lived variant or a
-    /// clustered pair of trips from standing in for the route. Null below four
-    /// departures at the headway stop. A 3-trip route has no typical gap, and
-    /// the median would read as a headway nobody runs (QAF-55).
+    /// Median gap between departures at the busiest stop (`headway_stop`). Null
+    /// below four departures, because a median over fewer is a headway nobody
+    /// runs.
     pub typical_headway_secs: Option<u32>,
-    /// Where the headway was measured: the stop with the most
-    /// departures of this route today (ties by stop id).
     pub headway_stop: Option<String>,
-    /// The route's revenue hours today: the sum of its trips'
-    /// runtimes (arrival − start), the cost basis per route.
     pub revenue_hours: f64,
-    /// The route's revenue miles today: the sum of its trips' pattern
-    /// distances. Each is the last stop's distance minus the first's, from the
-    /// authored alignment length the feed's shape_dist_traveled keeps. Miles
-    /// are the other cost basis. Every cost model is per hour and per mile.
     pub revenue_miles: f64,
 }
 
-/// One service type's own numbers: its authored service (every trip it keys),
-/// on no date. A date never stands in for a type (D-55). The service a rider
-/// gets on a day is a combination of types ([`service_groups`]).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeSummary {
@@ -124,8 +79,6 @@ pub struct ServiceTypeSummary {
     pub revenue_miles: f64,
 }
 
-/// One schedule of a service type, counted: the drill-down's
-/// schedule list row.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct PatternTripsSummary {
@@ -135,40 +88,28 @@ pub struct PatternTripsSummary {
     pub trips: u32,
 }
 
-/// The service group's drill-down: a combination of service types that run
-/// together (D-55), pooled over its members' authored service. Routes and
-/// headways answer for the combination, not a bare id. Service ids key trips,
-/// never routes (the 164 lesson). The combination is the service on every date
-/// it holds.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeDetail {
-    /// The combination: its id (members joined " + ") and members.
     pub group: String,
     pub members: Vec<String>,
     pub trips: u32,
     pub revenue_hours: f64,
     pub revenue_miles: f64,
     pub transfer_stops: u32,
-    /// Routes running under this type (active rows only).
     pub routes: Vec<RouteStats>,
-    /// Stops served under this type (served rows only).
     pub stops: Vec<StopStats>,
     pub pattern_trips: Vec<PatternTripsSummary>,
 }
 
-/// The drill-down: one service combination expanded. `None` for a
-/// member set that never runs together on a date. Lookups answer
-/// empty for unknown ids; errors are for hash addresses (QAF-19's
-/// convention).
+/// `None` when the members never run together on a date.
 pub fn service_type_detail(net: &Network, members: &[String]) -> Option<ServiceTypeDetail> {
     let combination = transit_network::service_combination(net, members)?;
     Some(pooled_detail(net, &combination.members))
 }
 
-/// The members' pooled authored service, whether or not they run
-/// together in `net` (a baseline the combination is new to runs what
-/// its members run there).
+/// A baseline that the combination is new to still runs what its members run
+/// there.
 fn pooled_detail(net: &Network, members: &[String]) -> ServiceTypeDetail {
     let group: BTreeSet<String> = members.iter().cloned().collect();
     let stats = family_stats(net, &group);
@@ -203,19 +144,11 @@ fn pooled_detail(net: &Network, members: &[String]) -> ServiceTypeDetail {
     }
 }
 
-/// One pattern's schedule texture on the day: the headway uniformity and
-/// clockface alignment of its starts. Starts are pooled across every schedule
-/// that runs the pattern that day. The same pattern runs under several service
-/// ids. Route 164's weekday trips split across 1-WKDY and its overlays. A
-/// texture read per service id would slice the corridor into thin, wrong
-/// headways. Gaps run between consecutive pooled starts (sorted). The median
-/// carries the same four-start floor as every median here. A median over fewer
-/// is a headway nobody runs (QAF-55).
+/// Starts pool across every schedule that runs the pattern, because one pattern
+/// runs under several service ids and a per-id read gives thin, wrong headways.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct PatternTexture {
-    /// How many service ids feed the pattern that day: the split
-    /// the pooling folded (1 = the pattern runs under one type).
     pub schedules: u32,
     pub route: String,
     pub pattern: String,
@@ -223,19 +156,9 @@ pub struct PatternTexture {
     pub min_gap_secs: Option<u32>,
     pub median_gap_secs: Option<u32>,
     pub max_gap_secs: Option<u32>,
-    /// Starts on the quarter-hour grid (start % 900 == 0, the
-    /// clockface convention). A 15-minute headway run off-grid
-    /// reads "every 15 minutes" but never on the quarter-hour.
     pub on_clockface: u32,
 }
 
-/// The service group's schedule texture. The planner's unit is a service group,
-/// not a service id: a planner designs "weekday service". A group is a
-/// combination of the types that run together (D-55). It has one row per
-/// pattern, sorted by id, with the members' pooled starts. Keying by service id
-/// would slice the corridor into thin, wrong headways (route 164's weekday
-/// trips split across 1-WKDY and its overlays). `None` for a member set that
-/// never runs together, the convention of service_type_detail (QAF-19).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ScheduleTexture {
@@ -248,9 +171,7 @@ pub struct ScheduleTexture {
 
 pub fn schedule_texture(net: &Network, members: &[String]) -> Option<ScheduleTexture> {
     let combination = transit_network::service_combination(net, members)?;
-    // The combination: the types that run together on its dates.
     let group: BTreeSet<String> = combination.members.iter().cloned().collect();
-    // The scope: every pattern the group's schedules run.
     let mut patterns: BTreeSet<String> = BTreeSet::new();
     for entry in net.pattern_trips.values() {
         if group.contains(&entry.service_type) {
@@ -261,8 +182,6 @@ pub fn schedule_texture(net: &Network, members: &[String]) -> Option<ScheduleTex
     let mut trips = 0u32;
     let mut on_clockface = 0u32;
     for pattern in &patterns {
-        // The combination's pooled starts: every schedule its members
-        // run on this pattern. They all run on each of its dates.
         let mut starts: Vec<u32> = Vec::new();
         let mut schedules = 0u32;
         for entry in net.pattern_trips.values() {
@@ -276,10 +195,8 @@ pub fn schedule_texture(net: &Network, members: &[String]) -> Option<ScheduleTex
             starts.extend(entry.trips.iter().flat_map(|t| t.departs.instances()));
         }
         starts.sort_unstable();
-        // Two service ids running the pattern at the same second is
-        // real service (trips counts both), but no gap. The spine
-        // the gaps read is the distinct starts (the stop_gaps
-        // convention).
+        // Two service ids that start at the same second count as two trips but
+        // make no gap.
         let trips_on_pattern = starts.len() as u32;
         starts.dedup();
         let gaps: Vec<u32> = starts.windows(2).map(|w| w[1] - w[0]).collect();
@@ -310,11 +227,6 @@ pub fn schedule_texture(net: &Network, members: &[String]) -> Option<ScheduleTex
     })
 }
 
-/// A proposal against its baseline under one service combination
-/// (D-55): both sides' pooled numbers over its members, and the
-/// routes whose numbers changed (route id order). A route only one
-/// side runs has `None` on the other. What a planner reads first when
-/// asking "what does this change do?".
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeComparison {
@@ -323,17 +235,13 @@ pub struct ServiceTypeComparison {
     pub base: ComparedTotals,
     pub proposal: ComparedTotals,
     pub routes: Vec<RouteChange>,
-    /// Routes running on both sides with the same numbers.
     pub unchanged_routes: u32,
 }
 
-/// One side's totals under the combination.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ComparedTotals {
-    /// The dates the combination holds on this side (0: its members
-    /// never run together here. A baseline the combination is new
-    /// to still counts what its members run).
+    /// 0 when the members never run together on this side.
     pub days: u32,
     pub trips: u32,
     pub revenue_hours: f64,
@@ -341,8 +249,6 @@ pub struct ComparedTotals {
     pub routes: u32,
 }
 
-/// One route whose numbers differ between the baseline and the
-/// proposal.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteChange {
@@ -352,10 +258,8 @@ pub struct RouteChange {
     pub proposal: Option<RouteStats>,
 }
 
-/// The comparison: `None` when the members never run together in the
-/// proposal. Unknown ids answer empty, never an error (QAF-19's
-/// convention; errors are for hash addresses). The baseline side
-/// pools the same members, whether or not they run together there.
+/// The baseline side pools the same members, whether or not they run together
+/// there.
 pub fn service_type_compare(base: &Network, proposal: &Network, members: &[String]) -> Option<ServiceTypeComparison> {
     let combination = transit_network::service_combination(proposal, members)?;
     let p = pooled_detail(proposal, &combination.members);
@@ -403,18 +307,9 @@ pub fn service_type_compare(base: &Network, proposal: &Network, members: &[Strin
     })
 }
 
-/// One service group: a combination of service types that run together on the
-/// same dates (D-55). It shows the dates on which it holds. It also shows its
-/// members' pooled authored service. That service is the service on every one
-/// of those dates. No date stands in for it. Members that never share a day are
-/// never pooled. C-TRAN's weekday is 1-WKDY + 1-WKDY/30 in one period and
-/// 1-WKDY + 1-WKDY/31 in the next, two rows.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceGroup {
-    /// The combination: its id (members joined " + "), its members, and the
-    /// dates it holds on with their spans. The drill-down's address is its
-    /// members.
     #[serde(flatten)]
     #[ts(flatten)]
     pub combination: transit_network::ServiceCombination,
@@ -425,18 +320,11 @@ pub struct ServiceGroup {
     pub revenue_miles: f64,
 }
 
-/// The service groups: one row per combination
-/// (`transit_network::service_combinations`, most days first). Each row has its
-/// members' pooled numbers. The group, not the bare service id or a calendar
-/// date, is the axis a planner designs.
 pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
     transit_network::service_combinations(net)
         .into_iter()
         .map(|combination| {
             let members: BTreeSet<&str> = combination.members.iter().map(String::as_str).collect();
-            // The combination's pooled authored service: every
-            // member's schedules, their trips, routes, stops, runtime
-            // and miles.
             let mut trips = 0u32;
             let mut routes: BTreeSet<String> = BTreeSet::new();
             let mut stops: BTreeSet<String> = BTreeSet::new();
@@ -446,9 +334,6 @@ pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
                 if !members.contains(entry.service_type.as_str()) {
                     continue;
                 }
-                // A mid-edit document can carry services that fail to
-                // materialize; analysis skips them (validation reports
-                // them).
                 let Ok(materialized) = transit_network::materialize_service(net, schedule_id) else {
                     continue;
                 };
@@ -476,9 +361,6 @@ pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
         .collect()
 }
 
-/// One combination inside a day type: the dates it holds on inside
-/// the period, their spans, and the days of the week they fall on
-/// (Monday first).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct DayTypeGroup {
@@ -489,31 +371,18 @@ pub struct DayTypeGroup {
     pub weekdays: Vec<bool>,
 }
 
-/// A day type: the combinations that serve the same days of the week
-/// in a period: its regular service first, then the combinations that
-/// run on fewer of its days.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct DayType {
-    /// The weekdays it is the service of (Monday first). Its regular group runs
-    /// on more than half of that weekday's dates in the period. A holiday it
-    /// also runs on does not count. If there are none, use every weekday it
-    /// runs on.
+    /// A day type's regular group runs on more than half of a weekday's dates
+    /// in the period. Otherwise the type takes every weekday it runs on.
     pub weekdays: Vec<bool>,
     pub groups: Vec<DayTypeGroup>,
 }
 
-/// The service combinations inside a period (`from` and `through`, each
-/// optional and inclusive). They are arranged by the days of the week their
-/// dates fall on (D-137). The period runs from `from` (else the first in-period
-/// date any combination holds) to `through` (else the last). Combinations are
-/// walked with the most in-period dates first, then first date, then id. A
-/// combination whose dates all fall on an earlier day type's weekdays joins the
-/// first such type. Any other starts a new type as its regular service. The
-/// type's weekdays are those it runs on for more than half of that weekday's
-/// dates in the period. A combination with no date in the period is left out.
-/// This is the planner's "weekday, Saturday, Sunday" read. Every combination is
-/// still named by its members and its dates (D-55).
+/// An absent `from` or `through` is the first or last in-period date that any
+/// combination holds. A combination with no date in the period is left out
+/// (D-137).
 pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDate>) -> Vec<DayType> {
     use chrono::Datelike;
     let mut groups: Vec<DayTypeGroup> = transit_network::service_combinations(net)
@@ -544,7 +413,6 @@ pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDa
     groups.sort_by(|a, b| {
         b.dates.len().cmp(&a.dates.len()).then_with(|| a.dates[0].cmp(&b.dates[0])).then_with(|| a.id.cmp(&b.id))
     });
-    // The period's dates by weekday.
     let first = from.or_else(|| groups.iter().filter_map(|g| g.dates.first()).min().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()));
     let last = through.or_else(|| groups.iter().filter_map(|g| g.dates.last()).max().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()));
     let mut period = [0u32; 7];
@@ -573,7 +441,6 @@ pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDa
     types
 }
 
-/// One group of a day type, with what the proposal changes in it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct DayTypeGroupComparison {
@@ -581,7 +448,6 @@ pub struct DayTypeGroupComparison {
     pub comparison: Option<ServiceTypeComparison>,
 }
 
-/// One day type of the proposal, each group compared.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct DayTypeComparison {
@@ -589,10 +455,6 @@ pub struct DayTypeComparison {
     pub groups: Vec<DayTypeGroupComparison>,
 }
 
-/// The proposal against its baseline across every day type of its
-/// period: [`day_types`] of the proposal, each group carrying
-/// [`service_type_compare`] for its members. The whole proposal in
-/// one answer, not one group at a time.
 pub fn plan_compare(
     base: &Network,
     proposal: &Network,
@@ -615,27 +477,16 @@ pub fn plan_compare(
         .collect()
 }
 
-/// The overview table: every service type's own numbers (its authored
-/// service, on no date). The planner's design axis is the combinations
-/// ([`service_groups`]); this is the per-id read under them.
 pub fn service_type_overview(net: &Network) -> Vec<ServiceTypeSummary> {
     service_type_summaries(net, None)
 }
 
-/// One service combination's coverage of a weighted layer (D-55): the
-/// service types that run together, pooled over their authored service
-/// with no date standing in, and the dates it holds on beside it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct CombinationCoverage {
-    /// The combination's name: its members joined " + ".
     pub group: String,
-    /// The service types that run together, sorted.
     pub members: Vec<String>,
-    /// The dates it holds on, folded into spans.
     pub spans: Vec<transit_network::DateSpan>,
-    /// The layer weight within the radius of a stop it serves, and of
-    /// a stop it serves frequently.
     pub served: f64,
     pub frequent: f64,
     pub served_pct: f64,
@@ -644,12 +495,8 @@ pub struct CombinationCoverage {
     pub frequent_stops: u32,
 }
 
-/// A combination's coverage: "what share of the jobs (people, households: the
-/// layer's weight) does weekday service cover?" It runs over the members'
-/// pooled authored service. On any date the combination holds, exactly its
-/// members run. So this is what each of those dates covers. `window` judges
-/// frequency inside a time window (see [`CoverageWindow`]). `None` is the
-/// whole-day average. None when the members never run together.
+/// `window` judges frequency inside a time window ([`CoverageWindow`]). `None`
+/// is the whole-day average.
 pub fn type_coverage(
     net: &Network,
     weights: &Weights,
@@ -674,10 +521,8 @@ pub fn type_coverage(
     })
 }
 
-/// Per-type numbers: each type's authored service. With `running_on`, only the
-/// types whose calendar runs on that date are listed. This is the date-scoped
-/// read (QAF-2: each date reads only the types that run on it). `None` lists
-/// every type (the overview's axis scan).
+/// With `running_on`, only the types whose calendar runs on that date are
+/// listed.
 fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<ServiceTypeSummary> {
     let mut out = Vec::with_capacity(net.service_types.len());
     for (type_id, service_type) in &net.service_types {
@@ -721,7 +566,6 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
     out
 }
 
-/// The whole network on one service date.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct NetworkStats {
@@ -731,23 +575,11 @@ pub struct NetworkStats {
     pub active_stops: u32,
     pub first_start_secs: Option<u32>,
     pub last_arrival_secs: Option<u32>,
-    /// Sum of trip runtimes (arrival minus start), in hours. These are revenue
-    /// hours. Layovers belong to the runcut, not the schedule.
     pub revenue_hours: f64,
-    /// Sum of trip pattern distances, in miles (last stop's distance minus
-    /// first's, per trip). This is the per-mile cost basis that pairs with
-    /// revenue_hours. Average operating speed follows from the two.
     pub revenue_miles: f64,
-    /// Transfer points active on the date (flagged stops whose
-    /// walking group is served by at least two routes today).
     pub transfer_stops: u32,
-    /// The design axis, date-scoped: the service types whose calendar runs on
-    /// this date. Each has its own authored service's numbers (QAF-2: each date
-    /// lists only the types that run on it).
     pub service_types: Vec<ServiceTypeSummary>,
-    /// Every route, sorted by id. Zero-trip routes are analysis too.
     pub routes: Vec<RouteStats>,
-    /// Every stop, sorted by id.
     pub stops: Vec<StopStats>,
 }
 
@@ -759,18 +591,12 @@ struct StopActivity {
     last: Option<u32>,
 }
 
-/// A usable timed connection is an arrival followed by a departure. The
-/// departure leaves at least this far after the arrival. A rider needs a minute
-/// to move.
+/// Seconds a rider needs to move between an arrival and a departure.
 const TRANSFER_WINDOW_MIN_SECS: u32 = 60;
-/// The departure leaves at most this long after the arrival. Beyond 15 minutes
-/// the connection is not a timed transfer. The walk across the street or down
-/// the block is folded into these bounds.
+/// Beyond 15 minutes the connection is not a timed transfer. The walk across a
+/// street or down a block is folded into these bounds.
 const TRANSFER_WINDOW_MAX_SECS: u32 = 900;
 
-/// Ordered route pairs with at least one usable timed connection:
-/// `from`-route arrival, then a `to`-route departure inside the
-/// window. Times are sorted arrival lists per route.
 fn usable_transfer_pairs(pooled: &BTreeMap<&str, Vec<u32>>) -> u32 {
     let usable = |from: &[u32], to: &[u32]| {
         from.iter().any(|&a| {
@@ -806,11 +632,9 @@ impl StopActivity {
     }
 }
 
-/// The median gap between consecutive times (sorted here). None below four
-/// times: a median over fewer than three gaps is not a typical gap. A 3-trip
-/// route reading "every 664 minutes" is a headway nobody runs (QAF-55). A
-/// median, not the span average, so a busy hour and a quiet evening each count
-/// for what they are.
+/// None below four times, because a median over fewer than three gaps is a
+/// headway nobody runs. The median, not the span average, keeps a busy hour and
+/// a quiet evening in proportion.
 fn median_gap_secs(times: &[u32]) -> Option<u32> {
     if times.len() < 4 {
         return None;
@@ -825,19 +649,13 @@ fn median_gap_secs(times: &[u32]) -> Option<u32> {
     Some(gaps[gaps.len() / 2])
 }
 
-/// Network stats for one service date. Best-effort: services that
-/// fail to materialize (a document mid-edit) are skipped, not fatal.
 pub fn network_stats(net: &Network, date: NaiveDate) -> NetworkStats {
     day_stats(net, date, None)
 }
 
-/// Meters per mile. The per-mile cost basis is reported in miles.
 const METERS_PER_MILE: f64 = 1609.344;
 
-/// One trip's pattern distance, in meters: the last stop's distance minus the
-/// first's. This is the authored alignment length the import keeps from the
-/// feed's shape_dist_traveled (QAF-56). Zero for a pattern with no distances,
-/// as an authored document states.
+/// Zero for a pattern with no distances.
 fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f64 {
     let Some(pattern) = net.patterns.get(&trip.pattern) else {
         return 0.0;
@@ -848,29 +666,16 @@ fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f
     }
 }
 
-/// The stats engine's fold: one pass over the schedules the `include` filter
-/// names. The date-scoped views filter by calendar: a type that runs on that
-/// date. The combination view pools its members' authored service with no date
-/// filter. On every date the combination holds, exactly its members run. So the
-/// pooled starts are that day's service (D-55).
 fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) -> NetworkStats {
-    // Per-pattern trip starts on the date: per-direction headways.
     let mut pattern_starts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-    // Per-route accumulators.
     let mut route_trips: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_first: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_last: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_stop_sets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut route_runtime: BTreeMap<String, u64> = BTreeMap::new();
-    // Per-route pattern distance, meters (revenue miles' numerator).
     let mut route_meters: BTreeMap<String, f64> = BTreeMap::new();
-    // (route, stop) → departure times on the date (final visits are
-    // arrivals and never count): where the route's headway is read.
     let mut route_departures: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
-    // Per-stop accumulators.
     let mut stop_activity: BTreeMap<String, StopActivity> = BTreeMap::new();
-    // (stop, route) → arrival times on the date: the pooled view a
-    // transfer point's timed connections are measured against.
     let mut times_at: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
 
     let mut trips = 0u32;
@@ -883,8 +688,6 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
         if !include(&service.service_type) {
             continue;
         }
-        // A mid-edit document can carry services that fail to
-        // materialize; analysis skips them (validation reports them).
         let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
             continue;
         };
@@ -943,8 +746,6 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
     let mut routes = Vec::with_capacity(net.routes.len());
     for (route_id, route) in &net.routes {
         let route_trips = *route_trips.get(route_id).unwrap_or(&0);
-        // The busiest stop (most departures; the first by id on a
-        // tie, in BTreeMap order) and its median departure gap.
         let busiest = route_departures
             .iter()
             .filter(|((r, _), _)| r == route_id)
@@ -980,9 +781,8 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
     let mut transfer_stops = 0u32;
     for (stop_id, stop) in &net.stops {
         let activity = stop_activity.get(stop_id);
-        // Transfer points: the flag marks a place, not a single stop. The group
-        // and its timed connections pool across the walking group (across a
-        // street or down a block).
+        // The flag marks a place, so the group and its connections pool across
+        // the walking group.
         let (transfer_group, transfer_pairs) = if stop.transfer {
             let group = transit_network::walking_group(net, stop_id);
             let mut pooled: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
@@ -1030,17 +830,12 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
         revenue_hours: runtime_secs as f64 / 3600.0,
         revenue_miles: meters / METERS_PER_MILE,
         transfer_stops,
-        // The wrappers decide whether the design axis rides along
-        // (the network view wants it; the family drill-down pools
-        // its own numbers).
         service_types: Vec::new(),
         routes,
         stops,
     }
 }
 
-/// The date-scoped view: every schedule whose service type runs on
-/// the date (optionally one type's alone). The day-shape read.
 fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> NetworkStats {
     let mut stats = stats_fold(net, |sid| {
         net.service_types
@@ -1052,68 +847,37 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     stats
 }
 
-/// The combination view: the members' authored service, pooled with
-/// no date filter. On every date a combination holds, exactly its
-/// members run, so the pooled trips are that day's service (the laws
-/// pin the equality with `network_stats` on each of its dates). The
-/// fold's `date` is unused here (the detail reports no date).
 fn family_stats(net: &Network, group: &BTreeSet<String>) -> NetworkStats {
     stats_fold(net, |sid| group.contains(sid), NaiveDate::MIN)
 }
 
-// ---------------------------------------------------------------------
-// One stop's day: the gap view
-// ---------------------------------------------------------------------
 
-/// One hour of a stop's service day. The hour is the service-day hour (0..47).
-/// After-midnight departures are legitimate, not errors. A gap belongs to the
-/// hour it starts in. So a 23:50 departure followed by a 00:30 one is hour 23's
-/// gap.
+/// The hour is the service-day hour, 0..47. A gap belongs to the hour it starts
+/// in.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct StopHourGaps {
     pub hour: u32,
-    /// Every trip departing in the hour. Two routes leaving
-    /// together is real service and counts twice.
     pub departures: u32,
-    /// The largest gap starting in the hour (between consecutive
-    /// distinct departure times).
     pub max_gap_secs: Option<u32>,
-    /// The hour's median gap, with the same floor as every median here: None
-    /// below four gaps. A median over fewer is not a typical gap (QAF-55).
     pub median_gap_secs: Option<u32>,
 }
 
-/// One stop's day folded into gaps. This is the service-quality read of "how
-/// long until the next bus?". Gaps run between consecutive distinct departure
-/// times. Two routes leaving together is no gap at all. `departures` still
-/// counts every trip. An unknown stop, or one nothing serves on the date,
-/// answers zero, None, or empty. It never answers with an error (an id lookup).
+/// Two routes that leave together make no gap, and `departures` counts both.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct StopGaps {
     pub stop_id: String,
     pub name: String,
     pub departures: u32,
-    /// The day's first and last departure at the stop.
     pub first_departure_secs: Option<u32>,
     pub last_departure_secs: Option<u32>,
-    /// The day's largest gap and the departure it follows. None
-    /// below two distinct departures. A one-departure day has no
-    /// gap to read.
+    /// None below two distinct departures.
     pub max_gap_secs: Option<u32>,
     pub max_gap_after_secs: Option<u32>,
-    /// Every hour that departs or gaps, sorted.
     pub hourly: Vec<StopHourGaps>,
 }
 
-/// The stop's day as gaps: departures on the service date folded into the max
-/// gap, the departure it follows, and the per-hour profile (departures, max and
-/// median gap starting in the hour). Final-stop visits are arrivals, not
-/// departures. They never count (the same line the route headway reads). A
-/// station's waits are its bays'. When a stop is asked for, and other stops
-/// name it as parent, their departures pool with its own. Nothing departs from
-/// a GTFS station itself. A bay, or a plain stop, reads itself alone.
 pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
     let pooled: BTreeSet<&str> = std::iter::once(stop_id)
         .chain(
@@ -1132,8 +896,6 @@ pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
         {
             continue;
         }
-        // A mid-edit document can carry services that fail to
-        // materialize; analysis skips them (validation reports them).
         let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
             continue;
         };
@@ -1145,12 +907,10 @@ pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
             }
         }
     }
-    // Distinct departure times, sorted. The gap spine.
     let distinct: BTreeSet<u32> = departures.iter().copied().collect();
     let spine: Vec<u32> = distinct.into_iter().collect();
     let mut max_gap = None;
     let mut max_after = None;
-    // The hour's gaps (starting in the hour), for the per-hour rows.
     let mut gaps_by_hour: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for w in spine.windows(2) {
         let gap = w[1] - w[0];
@@ -1192,32 +952,16 @@ pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
     }
 }
 
-/// One stop in the network's longest-waits ranking.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct StopWait {
     pub stop_id: String,
     pub name: String,
-    /// Departures inside the window (the whole day without one).
     pub departures: u32,
-    /// The stop's longest wait for the next departure, and when it
-    /// starts (a departure, or the window's start).
     pub longest_wait_secs: u32,
     pub wait_from_secs: u32,
 }
 
-/// Where riders wait longest (service-design question 8): every stop
-/// that departs on the date, ranked by its longest wait. Longest
-/// first, then by stop id, and cut to `limit`. Without a window the
-/// wait is the largest gap between distinct departure times (a stop
-/// with fewer than two has none and is no row). With one it is
-/// coverage's reading of a window ([`CoverageWindow`]): from the
-/// window's start to the first departure in it, between departures,
-/// and from the last to the window's end; a stop that departs that
-/// day but not inside the window waits the whole window. Each stop
-/// reads alone. A station's bays rank one by one, the boarding
-/// places riders stand at. Departures only (a final visit is an
-/// arrival); every route at the stop pools, as a rider sees it.
 pub fn longest_waits(
     net: &Network,
     date: NaiveDate,
@@ -1253,7 +997,6 @@ pub fn longest_waits(
                 (deps.iter().filter(|t| inside(t)).count() as u32, edges)
             }
         };
-        // The first largest gap along the edges.
         let mut best: Option<(u32, u32)> = None;
         for e in edges.windows(2) {
             if best.map_or(true, |(g, _)| e[1] - e[0] > g) {
@@ -1276,9 +1019,7 @@ pub fn longest_waits(
     rows
 }
 
-/// One service hour of one service type's day: how many trips start in the
-/// hour. The hour is the service-day hour (0..47). After-midnight starts are
-/// legitimate, not errors.
+/// The hour is the service-day hour, 0..47.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct HourlyTypeTrips {
@@ -1286,9 +1027,6 @@ pub struct HourlyTypeTrips {
     pub trips: u32,
 }
 
-/// One service hour of the day: every running service type's trip
-/// count, sorted by type id. Only hours with at least one trip are
-/// rows. The empty hours are the span's edges, not holes.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct HourlyTrips {
@@ -1297,12 +1035,7 @@ pub struct HourlyTrips {
     pub service_types: Vec<HourlyTypeTrips>,
 }
 
-/// The day's service profile: trips per hour, per service type,
-/// bucketed by trip start. The planner's first texture question
-/// (where the service is thick, where it tapers). The materialized
-/// day on the date, nothing else.
 pub fn hourly_trips(net: &Network, date: NaiveDate) -> Vec<HourlyTrips> {
-    // hour → (service type → trips), sorted structures throughout.
     let mut by_hour: BTreeMap<u32, BTreeMap<String, u32>> = BTreeMap::new();
     for (service_id, service) in &net.pattern_trips {
         if !net
@@ -1336,36 +1069,18 @@ pub fn hourly_trips(net: &Network, date: NaiveDate) -> Vec<HourlyTrips> {
         .collect()
 }
 
-/// Two routes that meet: the corridor-overlap read. Stop sharing is
-/// where they meet; segment sharing (consecutive stops in the same
-/// order) is where they run together, the corridor. The stack is
-/// where the two routes' service piles up: the shared stop with
-/// the most combined departures on the date.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteOverlap {
-    /// The pair, route ids sorted (a < b).
     pub a: String,
     pub b: String,
-    /// Stops both routes serve on the date.
     pub shared_stops: u32,
-    /// Consecutive stop pairs both routes run, in the same order:
-    /// the shared segments (the corridor proper).
     pub shared_segments: u32,
-    /// The shared stop where the two routes' departures stack
-    /// highest, and the combined departures there on the date.
     pub stack_stop: Option<String>,
     pub stack_departures: u32,
 }
 
-/// Which routes share stops or segments, and how much service
-/// stacks there. The corridor question (the Vine Green/Red read):
-/// every pair of routes that shares at least one stop on the date,
-/// with the shared-stop count, the shared-segment count (same-order
-/// consecutive pairs), and the busiest shared stop by combined
-/// departures. Pairs sorted by (a, b).
 pub fn route_overlap(net: &Network, date: NaiveDate) -> Vec<RouteOverlap> {
-    // Per route: served stops, ordered segments, departures per stop.
     struct RouteDay {
         stops: BTreeSet<String>,
         segs: BTreeSet<(String, String)>,
@@ -1436,12 +1151,9 @@ pub fn route_overlap(net: &Network, date: NaiveDate) -> Vec<RouteOverlap> {
     out
 }
 
-/// The hub connection window a caller brings. A wait counts as a transfer when
-/// min_secs <= wait <= max_secs. Defaults apply when omitted. They follow the
-/// transfer-point convention: a rider needs a minute to move (60 s). Beyond 15
-/// minutes it is not a timed transfer. The walk across the street or down the
-/// block is folded into those bounds. A hub with widely separated bays gets a
-/// wider window.
+/// A wait is a transfer when `min_secs <= wait <= max_secs`. The defaults are
+/// the transfer-point bounds: 60 s and 900 s. A hub with widely separated bays
+/// needs a wider window.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct TransferWindow {
@@ -1455,11 +1167,6 @@ impl Default for TransferWindow {
     }
 }
 
-/// One usable timed connection at a hub: an arrival of one route followed by a
-/// departure of another within the connection window. The window is the
-/// caller's, else the 60 to 900 s transfer-point convention. Stops are the
-/// concrete bays. A connection crosses the hub's walking group (across a street
-/// or down a block).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct TimedTransfer {
@@ -1472,12 +1179,6 @@ pub struct TimedTransfer {
     pub wait_secs: u32,
 }
 
-/// The hub's timed-transfer view: every arrival-to-departure pair across routes
-/// within the connection window. The window is the caller's, else the 60 to 900
-/// s convention the transfer-point pairs use. Pairs pool over the stop's
-/// walking group. This answers the station board's question, "who can make what
-/// here?". It is more than pooled departures. Sorted by arrival time, then
-/// routes. An unknown stop answers empty, never an error.
 pub fn timed_transfers(
     net: &Network,
     date: NaiveDate,
@@ -1513,9 +1214,6 @@ pub fn timed_transfers(
     out
 }
 
-/// A hub's day as (route, stop, time) visits, pooled over the stop's
-/// walking group: arrivals are every visit; departures are every
-/// visit but the trip's last (final stops are arrivals).
 type Visits = Vec<(String, String, u32)>;
 fn hub_visits(net: &Network, date: NaiveDate, stop_id: &str) -> (Visits, Visits) {
     let group = transit_network::walking_group(net, stop_id);
@@ -1550,13 +1248,9 @@ fn hub_visits(net: &Network, date: NaiveDate, stop_id: &str) -> (Visits, Visits)
     (arrivals, departures)
 }
 
-/// How far before an arrival a departure still counts as just
-/// missed, when the caller names no `miss_secs`: five minutes (the
-/// provisional answer, D-133).
+/// Seconds. The default is provisional (D-133).
 pub const MISS_SECS: u32 = 300;
 
-/// One near miss at a hub: an arrival of one route and a departure of
-/// another that leaves before the rider can make it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct MissedConnection {
@@ -1566,22 +1260,10 @@ pub struct MissedConnection {
     pub arrival_stop: String,
     pub departure_secs: u32,
     pub departure_stop: String,
-    /// How much later the departure would have had to leave for the
-    /// rider to make it (the window's minimum after the arrival).
     pub missed_by_secs: u32,
-    /// The route's first departure from the hub the rider can make,
-    /// or none that day.
     pub next_departure_secs: Option<u32>,
 }
 
-/// The hub's just-missed connections (service-design question 9). Over the
-/// stop's walking group, take every arrival of one route and departure of
-/// another. The departure leaves from `miss_secs` before the arrival (default
-/// [`MISS_SECS`]). It leaves up to, but not including, the connection window's
-/// minimum after the arrival. The rider sees it go. No near miss is a timed
-/// transfer. Each names the route's next departure the rider can make. So a
-/// frequent route's misses read as the short waits they are. Sorted as
-/// `timed_transfers` sorts. An unknown stop answers empty, never an error.
 pub fn missed_connections(
     net: &Network,
     date: NaiveDate,
@@ -1627,40 +1309,26 @@ pub fn missed_connections(
     out
 }
 
-// ---------------------------------------------------------------------
-// The worklist: what is weak, as findings a change can resolve
-// ---------------------------------------------------------------------
 
-/// What the worklist calls weak (D-136, provisional). Each threshold
-/// is the caller's to change; omitted, the op's default holds.
+/// Provisional thresholds (D-136).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct FindingParams {
-    /// A frequency hole: an hour whose longest gap is at least this
-    /// many times the longer of its two neighbours' (default 1.5).
     #[serde(default)]
     #[ts(optional)]
     pub hole_factor: Option<f64>,
-    /// A long wait: at least this long (default 3600 s).
     #[serde(default)]
     #[ts(optional)]
     pub wait_secs: Option<u32>,
-    /// A costly near miss: the next departure is at least this long
-    /// after the arrival, or there is none (default 900 s).
     #[serde(default)]
     #[ts(optional)]
     pub miss_cost_secs: Option<u32>,
-    /// Hours (for holes), waits (as `longest_waits` reads a window),
-    /// and arrivals (for misses) inside this window only.
     #[serde(default)]
     #[ts(optional)]
     pub window: Option<CoverageWindow>,
-    /// Each kind cut to this many, after its sort.
     #[serde(default)]
     #[ts(optional)]
     pub limit: Option<u32>,
-    /// Keys the planner watches: each answered in `watched`, now and
-    /// in the baseline, whatever the limit cuts.
     #[serde(default)]
     #[ts(optional)]
     pub watch: Option<Vec<String>>,
@@ -1670,25 +1338,23 @@ const HOLE_FACTOR: f64 = 1.5;
 const LONG_WAIT_SECS: u32 = 3600;
 const MISS_COST_SECS: u32 = 900;
 
-/// A route-hour whose longest gap stands out from both neighbours'.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct FrequencyHole {
-    /// "hole|<route>|<hour>": the same hole in another version.
+    /// The key is "hole|<route>|<hour>", so the same hole in another version
+    /// has the same key.
     pub key: String,
     pub route_id: String,
     pub name: String,
     pub hour: u32,
     pub longest_gap_secs: u32,
-    /// The longer of the neighbouring hours' longest gaps.
     pub around_gap_secs: u32,
 }
 
-/// A stop riders wait long at (a `longest_waits` row).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct LongWait {
-    /// "wait|<stop>".
+    /// The key is "wait|<stop>".
     pub key: String,
     pub stop_id: String,
     pub name: String,
@@ -1696,22 +1362,17 @@ pub struct LongWait {
     pub wait_from_secs: u32,
 }
 
-/// One route pair's costly near misses at a hub.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct CostlyMiss {
-    /// "miss|<hub>|<from route>|<to route>".
+    /// The key is "miss|<hub>|<from route>|<to route>".
     pub key: String,
     pub hub_id: String,
     pub hub_name: String,
     pub from_route: String,
     pub to_route: String,
-    /// Near misses whose next departure is long after, or never.
     pub misses: u32,
-    /// The longest of those waits for the next departure (none when
-    /// every one has no later departure).
     pub worst_wait_secs: Option<u32>,
-    /// Near misses with no later departure that day.
     pub stranded: u32,
 }
 
@@ -1719,7 +1380,6 @@ pub struct CostlyMiss {
 #[ts(export)]
 pub struct HoleRow {
     pub now: FrequencyHole,
-    /// The baseline's finding under the same key; none when new.
     pub base: Option<FrequencyHole>,
 }
 
@@ -1737,7 +1397,6 @@ pub struct MissRow {
     pub base: Option<CostlyMiss>,
 }
 
-/// A finding of any kind, tagged.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1747,8 +1406,6 @@ pub enum AnyFinding {
     Miss(CostlyMiss),
 }
 
-/// A watched key: its finding now and in the baseline. None where
-/// that version has no such finding (a fix reads now: none).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct Watched {
@@ -1757,7 +1414,6 @@ pub struct Watched {
     pub base: Option<AnyFinding>,
 }
 
-/// The baseline's findings this version no longer has.
 #[derive(Debug, Clone, Default, Serialize, TS)]
 #[ts(export)]
 pub struct ResolvedFindings {
@@ -1766,19 +1422,17 @@ pub struct ResolvedFindings {
     pub misses: Vec<CostlyMiss>,
 }
 
-/// The worklist under one service combination.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct NetworkFindings {
     pub group: String,
-    /// The date the waits and misses are read on: the combination's
-    /// first (every date it holds answers alike (D-55); an address).
+    /// Every date that the combination holds answers alike (D-55), so this is
+    /// the first.
     pub date: String,
     pub holes: Vec<HoleRow>,
     pub waits: Vec<WaitRow>,
     pub misses: Vec<MissRow>,
     pub resolved: ResolvedFindings,
-    /// `params.watch`, in its order.
     pub watched: Vec<Watched>,
 }
 
@@ -1801,7 +1455,6 @@ impl Found {
     }
 }
 
-/// Every finding of one version, sorted, uncut.
 fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<Found> {
     let combination = transit_network::service_combination(net, members)?;
     let date_text = combination.dates.first()?.clone();
@@ -1849,8 +1502,6 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
         })
         .collect();
 
-    // The hubs: stations, and transfer-flagged stops a station does
-    // not already stand for.
     let cost = p.miss_cost_secs.unwrap_or(MISS_COST_SECS);
     let mut folded: BTreeMap<(String, String, String), (u32, Option<u32>, u32)> = BTreeMap::new();
     for (hub, stop) in &net.stops {
@@ -1892,14 +1543,6 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
     Some(Found { group: combination.id, date: date_text, holes, waits, misses })
 }
 
-/// The worklist (D-136): under one service combination (`members`),
-/// the network's frequency holes, long waits, and costly near misses
-/// at its hubs, each kind sorted and cut to `limit`. Against a
-/// baseline (`base`, its own combination of the same members), each
-/// finding carries the baseline's finding under the same key. None
-/// when the change made it. The baseline's findings with no key
-/// now are listed as resolved. None when the members never run
-/// together in `net`.
 pub fn network_findings(
     net: &Network,
     base: Option<&Network>,
@@ -1951,9 +1594,6 @@ pub fn network_findings(
     })
 }
 
-/// One route pair's timed connections at a hub: how many the day makes. Also
-/// the shortest and longest wait, and the median wait. The median has the floor
-/// every median here carries: None below four (QAF-55).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteConnections {
@@ -1965,10 +1605,6 @@ pub struct RouteConnections {
     pub median_wait_secs: Option<u32>,
 }
 
-/// The hub as a route-pair matrix: `timed_transfers` folded by
-/// (from route, to route): who connects to whom here, how often,
-/// and how long the wait runs. Pairs in route order; a pair with no
-/// connection is no row. An unknown stop answers empty.
 pub fn hub_connections(
     net: &Network,
     date: NaiveDate,
@@ -1995,33 +1631,19 @@ pub fn hub_connections(
         .collect()
 }
 
-// ---------------------------------------------------------------------
-// The frequency grid: each route's day by hour
-// ---------------------------------------------------------------------
 
-/// One hour of a route's day at its headway stop. A gap belongs to
-/// the hour it starts in, between consecutive distinct departure
-/// times; the gaps are the trips' own. A target headway adjusted
-/// through the day for traffic, layover and reliefs reads as the
-/// range it runs, never rounded to a grid.
+/// A target headway that varies through the day reads as the range it runs,
+/// never rounded to a grid.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteHourGaps {
-    /// The service-day hour (0..47).
     pub hour: u32,
-    /// Every departure in the hour at the headway stop.
     pub departures: u32,
     pub shortest_gap_secs: Option<u32>,
     pub longest_gap_secs: Option<u32>,
-    /// None below four gaps (QAF-55's floor).
     pub median_gap_secs: Option<u32>,
 }
 
-/// One route's row of the grid: where its headway is read (the stop
-/// with the most departures, lowest id on a tie: `RouteStats`'
-/// `headway_stop`), that stop's hours, and the route's numbers under
-/// the group (`service_type_detail`'s row for it). One row the grid
-/// reads whole.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteFrequencyRow {
@@ -2032,8 +1654,6 @@ pub struct RouteFrequencyRow {
     pub stats: RouteStats,
 }
 
-/// The service group's frequency grid: every route that departs under the
-/// combination (route id order), hour by hour.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteFrequency {
@@ -2042,23 +1662,16 @@ pub struct RouteFrequency {
     pub routes: Vec<RouteFrequencyRow>,
 }
 
-/// How often each route comes, hour by hour, under a service
-/// combination: the members `service_type_detail` pools, read at each
-/// route's headway stop. `None` for a member set that never runs
-/// together (QAF-19).
 pub fn route_frequency(net: &Network, members: &[String]) -> Option<RouteFrequency> {
     let combination = transit_network::service_combination(net, members)?;
     let group: BTreeSet<String> = combination.members.iter().cloned().collect();
     let mut stats: BTreeMap<String, RouteStats> =
         family_stats(net, &group).routes.into_iter().map(|r| (r.route_id.clone(), r)).collect();
-    // route → stop → departures (final visits are arrivals).
     let mut departures: BTreeMap<String, BTreeMap<String, Vec<u32>>> = BTreeMap::new();
     for (id, entry) in &net.pattern_trips {
         if !group.contains(&entry.service_type) {
             continue;
         }
-        // A mid-edit document can carry services that fail to
-        // materialize; analysis skips them (validation reports them).
         let Ok(day) = transit_network::materialize_service(net, id) else {
             continue;
         };
@@ -2082,8 +1695,6 @@ pub fn route_frequency(net: &Network, members: &[String]) -> Option<RouteFrequen
     let routes = departures
         .into_iter()
         .filter_map(|(route_id, stops)| {
-            // The busiest stop: most departures, the first by id on a
-            // tie (BTreeMap order): the stats fold's rule.
             let (stop, times) = stops.into_iter().fold(None::<(String, Vec<u32>)>, |best, (stop, times)| match best {
                 Some((_, ref b)) if b.len() >= times.len() => best,
                 _ => Some((stop, times)),

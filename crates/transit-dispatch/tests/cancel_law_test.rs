@@ -1,5 +1,5 @@
-//! What a trip cancel in the edit document does to the effective day and to
-//! the boards (D-45; the cancelled visit's listing, D-100).
+//! A trip cancel in the edit document changes the effective day and the
+//! boards (D-45; the cancelled visit's listing, D-100).
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -31,8 +31,6 @@ fn trip(id: &str, departs: Departs) -> Trip {
     }
 }
 
-/// Route 10 A→C→B: two one-start trips (08:00 and 09:00), and a frequency trip
-/// every 30 min 10:00–11:00 (instances 10:00 and 10:30).
 fn network() -> Network {
     let mut net = Network { name: "Cancel test".into(), ..Default::default() };
     for (id, name) in [("A", "Main & 1st"), ("B", "Main & 2nd"), ("C", "Main & 3rd")] {
@@ -103,9 +101,6 @@ fn instances(trips: &[transit_network::MaterializedTrip]) -> Vec<(String, u32)> 
 const ALL: [(&str, u32); 4] = [("t0800", 28_800), ("t0900", 32_400), ("tfreq", 36_000), ("tfreq", 37_800)];
 
 proptest! {
-    /// A cancel in force removes exactly the instances it names, and every
-    /// other trip is the materialized trip, unchanged. The input day is never
-    /// mutated.
     #[test]
     fn a_cancel_removes_exactly_its_instances(picks in proptest::collection::vec((0usize..3, proptest::option::of(0usize..4)), 0..4)) {
         let net = network();
@@ -127,7 +122,6 @@ proptest! {
     }
 }
 
-/// The effective day loses the cancelled trip and keeps the rest.
 #[test]
 fn the_effective_day_drops_a_cancelled_trip_and_keeps_the_rest() {
     let net = network();
@@ -139,7 +133,6 @@ fn the_effective_day_drops_a_cancelled_trip_and_keeps_the_rest() {
     assert_eq!(instances(&d.trips), ALL[1..].iter().map(|(t, s)| (t.to_string(), *s)).collect::<Vec<_>>());
 }
 
-/// A cancel holds on its one date only. A retired cancel never holds.
 #[test]
 fn a_cancel_holds_on_its_date_only_and_never_retired() {
     let net = network();
@@ -151,7 +144,6 @@ fn a_cancel_holds_on_its_date_only_and_never_retired() {
     assert_eq!(d.trips, plain);
 }
 
-/// A frequency trip's cancel names one instance or all of them.
 #[test]
 fn a_frequency_cancel_names_one_instance_or_all() {
     let net = network();
@@ -162,8 +154,6 @@ fn a_frequency_cancel_names_one_instance_or_all() {
     assert!(all.trips.iter().all(|t| t.trip != "tfreq"));
 }
 
-/// A cancelled visit is never a board row. It is listed among the visits the
-/// edits took away, marked with the cancel's id (D-100).
 #[test]
 fn a_cancelled_visit_is_listed_cancelled_never_a_row() {
     let net = network();
@@ -177,8 +167,6 @@ fn a_cancelled_visit_is_listed_cancelled_never_a_row() {
     assert_eq!((s.departure.trip.as_str(), s.departure.departure_secs), ("t0800", 28_800));
     assert_eq!((s.cancel.as_deref(), s.diversion.as_deref()), (Some("c-t0800"), None));
 
-    // The display group keeps it among the visits taken away. It takes no place
-    // among the next departures.
     let grouped = grouped_board(&net, &d.trips, "A", 0, 3, None, d.edits.as_ref());
     assert_eq!(grouped.groups.len(), 1);
     let g = &grouped.groups[0];
@@ -187,7 +175,6 @@ fn a_cancelled_visit_is_listed_cancelled_never_a_row() {
     assert_eq!(g.skipped.iter().filter_map(|s| s.cancel.as_deref()).collect::<Vec<_>>(), vec!["c-t0800"]);
 }
 
-/// A stop's display group keeps a cancelled visit.
 #[test]
 fn a_group_whose_only_trip_is_cancelled_stays_with_it() {
     let mut net = network();
@@ -200,8 +187,6 @@ fn a_group_whose_only_trip_is_cancelled_stays_with_it() {
     assert_eq!(grouped.groups[0].skipped[0].cancel.as_deref(), Some("c-t0800"));
 }
 
-/// An unknown trip, or an instance the trip never runs, is invalid: reported,
-/// never rejected.
 #[test]
 fn a_cancel_reports_against_the_network() {
     let net = network();
@@ -222,7 +207,6 @@ fn a_cancel_reports_against_the_network() {
     assert!(reports[4].error.as_deref().unwrap().contains("no instance"));
 }
 
-/// The edit document's list shows a cancel by the trip's route and ends.
 #[test]
 fn the_list_shows_a_cancel_by_route_and_ends() {
     let net = network();
@@ -238,8 +222,6 @@ fn the_list_shows_a_cancel_by_route_and_ends() {
     assert!(transit_dispatch::diversion_rows(&net, &records).is_empty(), "a cancel is not a diversion row");
 }
 
-/// A cancel is authored (`cancel_of`) only for a trip instance that runs on its
-/// date. Anything else names the problem.
 #[test]
 fn a_cancel_is_authored_only_for_an_instance_that_runs_that_day() {
     let net = network();

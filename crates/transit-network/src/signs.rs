@@ -1,16 +1,13 @@
-//! Where a bus is going, as its sign says it. One rule for every
-//! reader (the board, the planner's legs): the visit's own headsign
-//! (it overrides the trip's at that visit only), else the trip's,
-//! else the final stop, named as the place (its parent station), not
-//! the bay the trip pulls into.
+//! The final stop is named as its place (its parent station), not as the
+//! bay that the trip pulls into.
 
 use crate::materialize::MaterializedTrip;
 use crate::model::Network;
 
-/// The headsign at one visit of a materialized trip (`visit` indexes
-/// `trip.stop_times`). A patched trip that skips stops still reads
-/// its pattern's headsigns: the visit is matched to its pattern stop
-/// by stop and occurrence (a loop visits a stop twice).
+/// The headsign of the visit overrides the headsign of the trip at that
+/// visit only. A patched trip that skips stops still reads the headsigns of
+/// its pattern, because a visit matches its pattern stop by stop and
+/// occurrence (a loop visits a stop twice).
 pub fn visit_destination(network: &Network, trip: &MaterializedTrip, visit: usize) -> String {
     visit_headsign(network, trip, visit)
         .or_else(|| {
@@ -37,7 +34,6 @@ fn visit_headsign(network: &Network, trip: &MaterializedTrip, visit: usize) -> O
         .clone()
 }
 
-/// The final stop's place: its parent station's name, else its own.
 fn final_place(network: &Network, trip: &MaterializedTrip) -> String {
     let Some(last) = trip.stop_times.last() else { return String::new() };
     let Some(stop) = network.stops.get(&last.stop) else { return last.stop.clone() };

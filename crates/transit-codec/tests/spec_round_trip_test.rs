@@ -1,54 +1,32 @@
-//! The spec round-trip law: for every spec-valid GTFS feed,
-//! `export(import(feed))` is the same feed, over the whole GTFS
-//! Schedule reference, every file and every field.
+//! For every spec-valid GTFS feed, `export(import(feed))` is the same feed,
+//! over every file and field of the GTFS Schedule reference. The oracle is the
+//! feed itself, read as raw CSV against the spec table below, so a file or
+//! column that the codec drops is a loss here. (The document fixpoint in
+//! `codec_prop_test.rs` cannot see a field that the import drops.) There is
+//! one property for each file. A failure shrinks `families` and `density`
+//! toward the smallest feed that loses something from that file.
 //!
-//! This is the law that sees import-side loss. The document fixpoint
-//! (`codec_prop_test.rs`) holds `import(export(import(F))) ==
-//! import(F)`, which cannot fail on anything the import drops: a
-//! dropped field never enters the first document. Here the oracle is
-//! the feed itself.
+//! These are the only equivalences:
 //!
-//! The oracle is independent of the code under test: both zips are
-//! read as raw CSV tables against the spec table below, never
-//! through a parser the codec owns, so a file or column the parser
-//! ignores is a loss here, not an invisible one. The generator writes
-//! every file and field the spec defines, with the cross-file
-//! references and conditional requirements the spec states.
-//!
-//! What "the same feed" means. These are the only equivalences allowed:
-//!
-//! * CSV encoding: file order, row order, COLUMN order, quoting, line
-//!   endings, a BOM. A row is a map from column to value.
-//! * An empty cell is an absent cell (the spec's own reading of an
-//!   optional field), and so is a cell holding the value the spec
-//!   says empty means ("0 or empty", "1 or empty"; `SPEC_DEFAULTS`).
-//!   Only where the spec says so: an empty `fare_attributes.transfers`
-//!   is unlimited, not 0, and an empty stop-time continuous_* inherits
-//!   the route's, so neither has a default here.
-//! * Typed values compare by value: integers and enums as integers,
-//!   floats as f64 (`45.50` ≡ `45.5`), times as seconds (`8:00:00` ≡
-//!   `08:00:00`), colors without case. Text, ids, URLs, and dates
-//!   compare exactly.
+//! * CSV encoding: file order, row order, column order, quoting, line endings,
+//!   and a BOM.
+//! * An empty cell equals a cell holding the value that the spec says empty
+//!   means (`SPEC_DEFAULTS`). An empty `fare_attributes.transfers` is
+//!   unlimited, not 0, and an empty stop-time continuous_* inherits the
+//!   route's, so neither has a default.
+//! * Integers and enums compare as integers, floats as f64 (`45.50` equals
+//!   `45.5`), times as seconds (`8:00:00` equals `08:00:00`), and colors
+//!   without case. Text, ids, URLs, and dates compare exactly.
 //! * `locations.geojson` compares as a JSON value.
 //!
-//! Nothing else. Ids survive (trip, service, shape, fare; realtime
-//! feeds and every downstream consumer key on them); a calendar
-//! published as calendar.txt stays calendar.txt; two trips with
+//! Ids survive, because realtime feeds and downstream consumers key on them.
+//! A calendar published as calendar.txt stays calendar.txt. Two trips with
 //! identical times are two trips.
-//!
-//! One law per file, so the failing set is the codec's to-do list:
-//! a proptest failure shrinks `families` and `density` toward the
-//! smallest feed that loses something from that file.
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
 use proptest::prelude::*;
-
-// ===================================================================
-// The codec's round trip. Only these lines name the codec's API.
-// When the codec's API moves, only this changes.
-// ===================================================================
 
 fn round_trip(feed: &[u8]) -> Result<Vec<u8>, String> {
     let feed = transit_codec::Feed::from_zip_bytes(feed)
@@ -59,22 +37,14 @@ fn round_trip(feed: &[u8]) -> Result<Vec<u8>, String> {
     Ok(exported.to_zip_bytes())
 }
 
-// ===================================================================
-// The spec table: every file and field of the GTFS Schedule
-// reference, with the type its value compares as.
-// ===================================================================
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {
-    /// Ids, names, URLs, emails, phones, timezones, languages,
-    /// currency codes, dates: exact text.
+    /// Ids, names, URLs, and dates compare exactly.
     Text,
-    /// Integers and enums.
     Int,
     Float,
-    /// HH:MM:SS, hours may exceed 24 and may be one digit.
+    /// Hours may exceed 24 and may be one digit.
     Time,
-    /// Six hex digits; case is not significant.
     Color,
 }
 use Kind::*;
@@ -224,8 +194,8 @@ const SPEC: &[FileSpec] = &[
     ] },
 ];
 
-/// (file, column, the value an empty cell means). These are the spec's
-/// "N or empty" enums.
+/// (file, column, the value an empty cell means), from the spec's "N or
+/// empty" enums.
 const SPEC_DEFAULTS: &[(&str, &str, &str)] = &[
     ("agency.txt", "cemv_support", "0"),
     ("stops.txt", "location_type", "0"),
@@ -237,8 +207,7 @@ const SPEC_DEFAULTS: &[(&str, &str, &str)] = &[
     ("trips.txt", "cars_allowed", "0"),
     ("stop_times.txt", "pickup_type", "0"),
     ("stop_times.txt", "drop_off_type", "0"),
-    // Empty means exact on a row that carries times; the generator
-    // only leaves times off rows it marks approximate (0).
+    // The generator leaves times off only rows that it marks approximate.
     ("stop_times.txt", "timepoint", "1"),
     ("frequencies.txt", "exact_times", "0"),
     ("transfers.txt", "transfer_type", "0"),
@@ -252,13 +221,6 @@ const SPEC_DEFAULTS: &[(&str, &str, &str)] = &[
 fn spec(file: &str) -> &'static FileSpec {
     SPEC.iter().find(|f| f.name == file).unwrap_or_else(|| panic!("{file} is not in the spec table"))
 }
-
-// ===================================================================
-// The generator: a spec-valid feed exercising every file and field.
-// `families` gates the optional files (shrinks to the core schedule),
-// `density` the optional fields (shrinks to required fields only);
-// the seed drives every value.
-// ===================================================================
 
 const CALENDAR_DATES: u16 = 1 << 0;
 const SHAPES: u16 = 1 << 1;
@@ -274,17 +236,14 @@ const ATTRIBUTIONS: u16 = 1 << 10;
 const TWO_AGENCIES: u16 = 1 << 11;
 const ALL_FAMILIES: u16 = 1 << 12;
 
-/// One scheduled trip: the adversarial core of `import_prop_test.rs`
-/// (colliding starts, run-time variation, shared blocks), plus
-/// after-midnight starts.
+/// The core of `import_prop_test.rs`, plus after-midnight starts.
 #[derive(Clone, Debug)]
 struct GenTrip {
     route: u8,
     service: u8,
     block: Option<u8>,
-    /// Start as a 10-minute slot (0..150 → 00:00..25:00).
+    /// A 10-minute slot (0..150 is 00:00..25:00).
     start_slot: u16,
-    /// Ordered distinct stop indices into s0..s5.
     stops: Vec<u8>,
     leg_min: u8,
 }
@@ -318,7 +277,6 @@ struct SpecFeed {
 
 fn gen_spec_feed() -> impl Strategy<Value = SpecFeed> {
     (
-        // At least one trip: trips.txt and stop_times.txt are required.
         proptest::collection::vec(gen_trip(), 1..=6),
         0u16..ALL_FAMILIES,
         0u8..=100,
@@ -347,7 +305,7 @@ impl Rng {
     fn pick<'a>(&mut self, xs: &[&'a str]) -> &'a str {
         xs[self.below(xs.len() as u64) as usize]
     }
-    /// Text with the characters CSV and UTF-8 handling get wrong.
+    /// Includes the characters that CSV and UTF-8 handling get wrong.
     fn text(&mut self) -> String {
         let base = self.pick(&[
             "Main St", "Gare, Centrale", "The \"Express\"", "Café Nord", "Ünïcode ✓", "x",
@@ -368,8 +326,7 @@ impl Rng {
         let c = format!("{:06x}", self.below(0x100_0000));
         if self.below(2) == 0 { c.to_ascii_uppercase() } else { c }
     }
-    /// A coordinate written the ways real feeds write them: short
-    /// decimals, trailing zeros, and full 15–17 digit doubles.
+    /// Short decimals, trailing zeros, and full 15 to 17 digit doubles.
     fn coord(&mut self, base: f64) -> String {
         let x = base + (self.below(1_000_000) as f64) / 10_000_000.0;
         match self.below(3) {
@@ -384,7 +341,6 @@ impl Rng {
     fn lon(&mut self) -> String {
         self.coord(-122.7)
     }
-    /// HH:MM:SS, sometimes with the one-digit hour the spec allows.
     fn time(&mut self, secs: u32) -> String {
         let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
         if h < 10 && self.below(4) == 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{h:02}:{m:02}:{s:02}") }
@@ -401,11 +357,9 @@ struct Builder {
 }
 
 impl Builder {
-    /// Whether an optional field is filled.
     fn opt(&mut self) -> bool {
         self.rng.below(100) < self.density as u64
     }
-    /// Push an optional cell, valued by `value`, when `opt()` says so.
     fn maybe(&mut self, row: &mut Row, col: &'static str, value: impl FnOnce(&mut Rng) -> String) {
         if self.opt() {
             let v = value(&mut self.rng);
@@ -425,8 +379,8 @@ fn build(feed: &SpecFeed) -> Builder {
     let tz = b.rng.pick(&["America/Los_Angeles", "UTC", "Europe/Paris"]).to_string();
 
     // ---- agency.txt ----
-    // agency_id is required with two agencies, optional with one; a
-    // route names its agency only when the agency has an id.
+    // The spec requires agency_id with two agencies. A route names its agency
+    // only when the agency has an id.
     let two = has(TWO_AGENCIES);
     let mut agency_ids: Vec<Option<String>> = Vec::new();
     let mut agency_names: Vec<String> = Vec::new();
@@ -1018,10 +972,8 @@ fn build(feed: &SpecFeed) -> Builder {
     b
 }
 
-/// The generated feed as zip bytes. Each file's header is the
-/// union of its rows' columns in a seeded order (column order is
-/// not significant), and every column is checked against the spec
-/// table. A typo in the generator fails here, not as a fake loss.
+/// Every column is checked against the spec table, so a typo in the
+/// generator fails here and not as a fake loss.
 fn zip_feed(feed: &SpecFeed) -> Vec<u8> {
     let mut built = build(feed);
     let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1063,11 +1015,6 @@ fn zip_feed(feed: &SpecFeed) -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-// ===================================================================
-// The oracle: raw tables, typed by the spec table.
-// ===================================================================
-
-/// A row: column → normalized value, empty cells omitted.
 type Normalized = BTreeMap<String, String>;
 
 fn members(zip_bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, String> {
@@ -1142,7 +1089,6 @@ fn table(file: &FileSpec, bytes: Option<&Vec<u8>>) -> Result<Vec<Normalized>, St
     Ok(rows)
 }
 
-/// Rows in `a` and not in `b`, as multisets.
 fn missing<'x>(a: &'x [Normalized], b: &'x [Normalized]) -> Vec<Normalized> {
     let mut counts: BTreeMap<&'x Normalized, i64> = BTreeMap::new();
     for row in b {
@@ -1164,8 +1110,6 @@ fn show(rows: &[Normalized]) -> String {
     format!("{}{}", shown.join("\n"), if more > 0 { format!("\n  … {more} more") } else { String::new() })
 }
 
-/// The law for one file: the source feed's rows are exactly the
-/// round-tripped feed's rows.
 fn file_survives(feed: &SpecFeed, file: &str) -> Result<(), TestCaseError> {
     file_survives_through(feed, file, round_trip)
 }
@@ -1209,10 +1153,6 @@ fn file_survives_through(
     Ok(())
 }
 
-// ===================================================================
-// The laws: one per file of the spec.
-// ===================================================================
-
 macro_rules! every_file_survives {
     ($($law:ident => $file:expr),* $(,)?) => {
         proptest! {
@@ -1225,7 +1165,6 @@ macro_rules! every_file_survives {
             )*
         }
 
-        /// The law list covers the spec table, and nothing else.
         #[test]
         fn every_spec_file_has_a_law() {
             let mut laws: Vec<&str> = vec![$($file),*];
@@ -1273,9 +1212,7 @@ every_file_survives! {
     attributions_survive => "attributions.txt",
 }
 
-/// The oracle itself: a feed compared with itself is the same feed,
-/// and the generator's output is readable as raw tables, so a
-/// failing law above is the codec's loss, never the oracle's.
+/// A failing property above must be the codec's loss, never the oracle's.
 #[test]
 fn the_oracle_accepts_the_identity() {
     let trip = |route, start_slot| GenTrip {
@@ -1305,9 +1242,8 @@ fn the_oracle_accepts_the_identity() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// The codec's serialization layer alone reads and writes every
-    /// spec file without loss, so a failing law above is a loss in
-    /// the network import or export, never in the feed layer.
+    /// A failure above is then a loss in the import or export, not in the
+    /// feed layer.
     #[test]
     fn the_feed_layer_is_lossless(feed in gen_spec_feed()) {
         let through_feed = |bytes: &[u8]| -> Result<Vec<u8>, String> {

@@ -1,8 +1,3 @@
-//! The realtime capability's worked examples, under its `examples` feature.
-//! Each example gives the documents to load and a request. The generator runs
-//! them through this crate's `invoke` and records the answers. They read the
-//! e2e fixture payload, the bytes that the browser tests replay.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -20,7 +15,6 @@ pub fn examples() -> Vec<Example> {
     let alerts = fixtures::fixture_alerts().checked().expect("the fixture alerts pass");
     let feed = transit_rt::encode_alerts(&net.network, &alerts, fixtures::ALERTS_NOW).bytes;
     vec![
-        // The raw protobuf on the bulk lane (op 0).
         Example { bytes: Some((0, payload.clone())), kinds: vec![], op: "decode", loads: vec![], request: json!({ "op": "decode", "bytes": "<the raw GTFS-rt protobuf — bulk-bytes op 0>" }) },
         Example {
             bytes: None, kinds: vec![],
@@ -41,14 +35,12 @@ pub fn examples() -> Vec<Example> {
             loads: joined(),
             request: json!({ "op": "late_trips", "network_hash": ctx.network_hash, "rt_hash": ctx.rt_hash, "min_delay_secs": 60, "vp_hash": null }),
         },
-        // The fixture alerts' feed read back into the document.
         Example {
             bytes: None, kinds: vec![],
             op: "read_alerts",
             loads: vec![fixtures::load_network(&net.derived)],
             request: json!({ "op": "read_alerts", "network_hash": net.network_hash, "bytes": feed }),
         },
-        // The fixture alerts as the Alerts feed riders' apps read.
         Example {
             bytes: None, kinds: vec![],
             op: "encode_alerts",

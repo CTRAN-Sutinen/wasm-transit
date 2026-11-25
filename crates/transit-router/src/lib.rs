@@ -1,29 +1,16 @@
-//! transit-router: RAPTOR trip planning over the network model's day.
-//!
-//! Pure and GTFS-free. It takes the network, a materialized day (plain or
-//! effective, the caller's choice), and optionally the live document. It does
-//! no I/O, clock, or calendar work. [`network`] builds the routing network (an
-//! edited trip rides its own pattern). [`raptor`] runs the rounds.
-//! [`walk_path`] draws walk legs. [`notice`] is the one place that tells a
-//! rider about a compared plan.
-//!
-//! Rules:
+//! transit-router plans trips with RAPTOR over a materialized day. It does no
+//! I/O, clock, or calendar work.
 //!
 //! * With a live document, an instance rides its predicted times where stated.
-//!   The times are clamped so a trip never runs backwards. A cancelled trip or
-//!   a skipped stop is not in the world planned over.
-//! * A plan's end is a stop or a place off the network (named by its walks to
-//!   nearby stops). A direct walk between the ends wins ties (D-33).
-//! * Arrive-by runs the same rounds backward. With no deadline, it answers the
-//!   last bus home.
-//! * An itinerary is door to door (D-40, D-92). It leaves at the first boarding
-//!   minus the walk before it. "Leave in N min" is the board's `wait` rule.
-//!   Only `Itinerary::new` derives these. Host arithmetic over legs would put
-//!   an answer outside the module.
-//! * Transfers are straight-line footpaths (300 m at 1.3 m/s) until
-//!   `with_walks` replaces them with exactly a walk table's walks (D-32).
-//! * A plan's legs bound rides, never walks. With its arrival and rides fixed,
-//!   it then walks the least it can (D-35).
+//!   The times are clamped so that a trip never runs backwards. A cancelled
+//!   trip or a skipped stop is not in the planned world.
+//! * A direct walk between the ends wins ties (D-33).
+//! * Only `Itinerary::new` derives the door-to-door values (D-40, D-92), so no
+//!   host does arithmetic over legs.
+//! * Transfers are straight-line footpaths until `with_walks` replaces them
+//!   with the walks of a walk table (D-32).
+//! * The legs of a plan bound its rides and not its walks. With the arrival
+//!   and the rides fixed, the plan walks the least it can (D-35).
 
 pub mod network;
 pub mod notice;

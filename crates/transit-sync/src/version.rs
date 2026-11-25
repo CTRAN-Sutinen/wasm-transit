@@ -1,16 +1,6 @@
-//! The edit document's version: its tag, and its migration chain.
-//!
-//! The edit document names its kind and version inside it (D-62,
-//! D-115): `{"kind":"edit_records","schema_version":2,"records":[…]}`.
-//! Version 1 is the bare array of records. No copy of it carries a tag.
-//! The store's sidecar names v1.
-//!
-//! The chain is kept forever (D-66): one pure step per version,
-//! preserving every record, reporting every loss as a
-//! [`MigrationNote`]. The migration capability wraps it; a consumer
-//! reads the current version only.
-//!
-//! - v1 → v2: the array becomes the document's `records`, unchanged.
+//! Version 1 is the bare array of records, which carries no tag. Each
+//! migration step stays forever (D-66), keeps every record, and reports every
+//! loss as a [`MigrationNote`].
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -18,13 +8,10 @@ use ts_rs::TS;
 
 use crate::EditRecord;
 
-/// The kind an edit document names itself (the store envelope's kind).
 pub const KIND: &str = "edit_records";
 
-/// The edit document version this build reads and writes.
 pub const SCHEMA_VERSION: u32 = 2;
 
-/// The edit document's kind tag: always `"edit_records"`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EditsKind;
 
@@ -54,8 +41,6 @@ impl schemars::JsonSchema for EditsKind {
     }
 }
 
-/// The operator edit document: every edit record, whole, keyed by id
-/// (LWW per id, retirement the tombstone; `merge`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditDocument {
@@ -63,13 +48,11 @@ pub struct EditDocument {
     pub kind: EditsKind,
     pub schema_version: u32,
     pub records: Vec<EditRecord>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// A copy with no `schema_version`, the bare array, is v1.
 impl transit_version::Versioned for EditDocument {
     const KIND: &'static str = KIND;
     const READS: u32 = SCHEMA_VERSION;
@@ -79,7 +62,6 @@ impl transit_version::Versioned for EditDocument {
 }
 
 impl EditDocument {
-    /// A current-version document over these records.
     pub fn new(records: Vec<EditRecord>) -> Self {
         EditDocument { kind: EditsKind, schema_version: SCHEMA_VERSION, records, extra: Default::default() }
     }
@@ -91,19 +73,15 @@ impl Default for EditDocument {
     }
 }
 
-/// One loss a migration step applied. It is reported, never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "transit_sync/")]
 pub struct MigrationNote {
-    /// The version the step started from.
     pub from: u32,
     pub kind: String,
     pub field: String,
     pub count: u32,
 }
 
-/// The version an edit document is in: 1 for a bare array, else its
-/// `schema_version`. Anything else is no edit document.
 pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     if doc.is_array() {
         return Ok(1);
@@ -121,8 +99,6 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
         .ok_or_else(|| "an edit document object names its schema_version (2 or later)".into())
 }
 
-/// One step: a document in version `from` to `from + 1`, and what it
-/// lost.
 pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let found = schema_version_of(&doc)?;
     if found != from {
@@ -140,8 +116,6 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>)
     }
 }
 
-/// A document brought to version `to` through every step between.
-/// Refuses a document already at or past `to`.
 pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let from = schema_version_of(&doc)?;
     if to > SCHEMA_VERSION {

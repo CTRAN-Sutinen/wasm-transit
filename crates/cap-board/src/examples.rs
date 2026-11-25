@@ -1,7 +1,3 @@
-//! The board capability's worked examples, under its `examples` feature.
-//! Each example gives the documents to load and a request. The generator
-//! runs them through this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -11,14 +7,12 @@ pub fn examples() -> Vec<Example> {
     let watchlist = fixtures::fixture_watchlist();
     let network = || fixtures::load_network(&net.derived);
     let with_live = || vec![network(), fixtures::load("load_live", "live", &live)];
-    // Read through the type, so the request is serde's own bytes.
     let alert: transit_alerts::ServiceAlert = serde_json::from_value(json!({
         "status": "published", "header": [{ "text": "Main & 1st: route 10 boards across the street" }],
         "informed": [{ "route": "10", "stop": "A" }, { "stop": "STN" }]
     }))
     .expect("the example alert reads");
     vec![
-        // 08:01 at A: t10 (08:00, +120 s) has not left yet.
         Example {
             bytes: None, kinds: vec![],
             op: "stop_board",
@@ -26,15 +20,12 @@ pub fn examples() -> Vec<Example> {
             request: json!({ "op": "stop_board", "network_hash": net.network_hash, "stop_id": "A", "date": "2026-10-23",
                              "from_secs": 28860, "limit": 5, "live_hash": live_hash }),
         },
-        // Route 10 at stop A, and the station. The first reaches route 10's
-        // two departures at A. The second reaches none at the station's bays.
         Example {
             bytes: None, kinds: vec![],
             op: "alert_reach",
             loads: vec![network()],
             request: json!({ "op": "alert_reach", "network_hash": net.network_hash, "date": "2026-10-23", "alert": alert }),
         },
-        // 08:01 at A: the 10's next three (t10 late, +120 s), the 20's one.
         Example {
             bytes: None, kinds: vec![],
             op: "grouped_board",

@@ -1,22 +1,12 @@
-//! Native dispatch tests for the street-graph capability. These test the
-//! seam without wasm. The Elbow route must follow street geometry (the
-//! corner, not the diagonal). The seam must be total: unknown hashes and
-//! garbage bytes are error outcomes, never panics.
-//!
-//! The streets document's identity: the streets document is the host's. Its
-//! hash is the streets' hash. The module answers the same hash for the
-//! import. It also answers the same hash for the document handed back (as
-//! JSON or on bulk op 1), and for the same streets read from a differently
-//! ordered file. A document that is not canonical is refused. It is never
-//! registered under a second hash.
+//! Native dispatch tests for cap-streets without wasm (`OPS.md`). A route
+//! follows street geometry, and every bad input is an error outcome, never a
+//! panic. The streets' hash is the same for the import, the document handed
+//! back, and a reordered file. A non-canonical document is refused.
 
-// The module's seam, as a host calls it: the kernel's loads answer there.
 use cap_streets::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response, OP_IMPORT};
 use serde_json::{json, Value};
 
-/// The Elbow: one horizontal street, one vertical. Routing A→B must bend
-/// at the corner node. The committed geometry starts there. The trace follows
-/// streets, not chords.
+/// One horizontal street and one vertical, so a route bends at the corner.
 const ELBOW: &str = r#"{"type":"FeatureCollection","features":[
     {"type":"Feature","geometry":{"type":"LineString",
         "coordinates":[[-73.5030,45.5040],[-73.5080,45.5040],[-73.5080,45.5090]]}}
@@ -33,7 +23,6 @@ fn load_elbow() -> (String, u32, u32) {
 fn load_registers_and_reports_the_graph() {
     let (streets_hash, segments, nodes) = load_elbow();
     assert_eq!((segments, nodes), (2, 3), "two segments, three nodes (the corner welds)");
-    // Idempotent: the same streets are the same graph, one registry entry.
     let again = match dispatch(Request::Import { bytes: ELBOW.as_bytes().to_vec() }).unwrap() {
         Response::Import { streets_hash: hash, segments, nodes, .. } => (hash, segments, nodes),
         _ => panic!("reimport"),
@@ -68,9 +57,8 @@ fn snap_and_route_follow_street_geometry() {
     };
     match dispatch(Request::Route { streets_hash, from: a, to: b, confirm: None }).unwrap() {
         Response::Route { points, length_m, .. } => {
-            // Around the Elbow's corner: 0.005° of longitude (~390 m at
-            // 45.5°N) plus 0.004° of latitude (~445 m). That is about 835 m
-            // along the streets. The diagonal is ~592 m.
+            // 0.005 degrees of longitude (about 390 m) plus 0.004 of latitude
+            // (about 445 m). The diagonal is about 592 m.
             let length = length_m.expect("a path has a length");
             assert!((800.0..870.0).contains(&length), "the street length, not the diagonal: {length} m");
             assert_eq!(points.len(), 2, "the corner, then the target");
@@ -93,7 +81,7 @@ fn snap_far_from_the_network_answers_null() {
 
 #[test]
 fn route_between_disconnected_parts_answers_empty() {
-    // Nowhere Rd: an island. The Elbow and it share no nodes.
+    // Nowhere Rd is an island that shares no node with the Elbow.
     const ISLANDS: &str = r#"{"type":"FeatureCollection","features":[
         {"type":"Feature","geometry":{"type":"LineString",
             "coordinates":[[-73.5030,45.5040],[-73.5080,45.5040],[-73.5080,45.5090]]}},
@@ -126,7 +114,6 @@ fn route_between_disconnected_parts_answers_empty() {
 #[test]
 fn the_json_seam_round_trips_and_errors_totally() {
     let (streets_hash, _, _) = load_elbow();
-    // The typed request crosses as JSON and answers identically.
     let text = format!(
         r#"{{"op":"snap","streets_hash":"{streets_hash}","lat":45.5040,"lon":-73.5030}}"#
     );
@@ -134,24 +121,16 @@ fn the_json_seam_round_trips_and_errors_totally() {
     assert!(outcome.contains(r#""ok":{"op":"snap""#), "{outcome}");
     assert!(outcome.contains(r#""dist_m":0.0"#), "the snapped position serializes: {outcome}");
 
-    // Unknown hashes are error outcomes, never panics.
     let missing = dispatch_json(r#"{"op":"snap","streets_hash":"sha256:missing","lat":0.0,"lon":0.0}"#);
     assert!(missing.contains("unknown street network"), "{missing}");
 
-    // Garbage bytes are an error outcome too (the bulk seam).
     let bad = dispatch_bytes(0, b"not geojson");
     assert!(bad.contains("street layer"), "{bad}");
-    // Unknown bulk op codes error, never trap.
     let unknown = dispatch_bytes(9, ELBOW.as_bytes());
     assert!(unknown.contains("unknown bulk op"), "{unknown}");
-    // Invalid JSON requests error through the standard outcome.
     let invalid = dispatch_json("{");
     assert!(invalid.contains("invalid request"), "{invalid}");
 }
-
-// ---------------------------------------------------------------------
-// The document's identity
-// ---------------------------------------------------------------------
 
 const FIXTURE: &str = include_str!("../../../web/e2e/fixtures/streets.geojson");
 
@@ -228,10 +207,6 @@ fn what_is_not_canonical_or_not_streets_is_an_error() {
     assert!(err(unknown).contains("unknown street network"));
 }
 
-// ---------------------------------------------------------------------
-// The walk table over a registered network
-// ---------------------------------------------------------------------
-
 const NETWORK_LOAD: &str = include_str!("../../../web/public/caps/sample-network-load.json");
 
 fn load_network() -> String {
@@ -275,12 +250,8 @@ fn the_walk_table_names_what_it_walks_and_is_its_hash() {
     assert!(walks(json!({ "streets_hash": "sha256:missing" })).contains("unknown street network"));
 }
 
-// ---------------------------------------------------------------------
-// The walks from a point
-// ---------------------------------------------------------------------
-
-/// Station Rd (residential) runs through the station's bays; Station
-/// Expy (motorway) crosses it.
+/// Station Rd (residential) runs through the station's bays. Station Expy
+/// (motorway) crosses it.
 const WALK_STREETS: &str = include_str!("../../../web/e2e/fixtures/walk-streets.geojson");
 
 #[test]
@@ -288,7 +259,6 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
     let network_hash = load_network();
     let streets_hash =
         ok(dispatch_bytes(OP_IMPORT, WALK_STREETS.as_bytes()))["streets_hash"].as_str().unwrap().to_string();
-    // ~22 m north of Station Rd, west of the bays.
     let point = json!({ "lat": 45.5152, "lon": -73.5165 });
     let to = json!({ "lat": 45.5148, "lon": -73.5135 });
     let answer = ok(dispatch_json(
@@ -301,7 +271,7 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
     assert_eq!(order, ["SA", "STN", "SB"], "the bays and the station, nearest first; A, B, C are kilometers off");
     let secs: Vec<_> = walks.iter().map(|w| w["walk_secs"].as_u64().unwrap()).collect();
     assert!(secs.windows(2).all(|p| p[0] <= p[1]), "{secs:?}");
-    // 22 m to the street, 78 m along it: 77 s at 1.3 m/s.
+    // 22 m to the street and 78 m along it is 77 s at 1.3 m/s.
     assert!(secs[0].abs_diff(77) <= 1, "{secs:?}");
     for w in walks {
         let path = w["path"].as_array().unwrap();
@@ -312,8 +282,6 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
     assert!(direct["walk_secs"].as_u64().unwrap().abs_diff(214) <= 1, "{direct}");
     assert_eq!(direct["path"].as_array().unwrap().last().unwrap(), &to);
 
-    // Without `to`, there is no direct walk. A point far from every walkable
-    // street walks nowhere.
     let far = ok(dispatch_json(
         &json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash,
                  "point": { "lat": 45.6, "lon": -73.6 } }).to_string(),
@@ -331,9 +299,8 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
     assert!(access(point.clone(), json!({ "network_hash": "sha256:missing" })).contains("load_network first"));
 }
 
-/// The bus profile (D-26): a bus is drawn down any street. The streets that
-/// the data does not clearly allow come back to confirm. The Elbow carries no
-/// class, so it is `unknown`. It is drawn and named.
+/// The Elbow carries no class, so it is `unknown` and the default profile
+/// asks to confirm it (D-26).
 #[test]
 fn a_route_names_its_streets_and_the_ones_to_confirm() {
     let (streets_hash, _, _) = load_elbow();
@@ -354,14 +321,11 @@ fn a_route_names_its_streets_and_the_ones_to_confirm() {
     assert_eq!(streets[0].class, transit_streets::StreetClass::Unknown);
     assert!((streets[0].length_m - length_m.unwrap()).abs() < 1e-9);
     assert_eq!(to_confirm, streets, "the default profile confirms an unknown class");
-    // The profile is the op's parameter: an empty list confirms nothing,
-    // and the path is the same.
     let (same, _, _, none) = route(Some(vec![]));
     assert_eq!(same, points);
     assert!(none.is_empty());
     let (_, _, _, local) = route(Some(vec![transit_streets::StreetClass::Local]));
     assert!(local.is_empty(), "only the classes asked are confirmed");
-    // On the wire: omitted means the bus profile's default.
     let wire: Value = serde_json::from_str(&dispatch_json(&json!({
         "op": "route", "streets_hash": streets_hash, "from": a, "to": b
     }).to_string())).unwrap();

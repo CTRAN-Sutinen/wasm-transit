@@ -1,14 +1,7 @@
-//! What a rider is told about a compared plan. This is the one place the notice
-//! is computed.
-//!
-//! A compared plan is the same query over two worlds. One is the day with the
-//! edits in force (active: diversions patched, cancelled trips out). The other
-//! is the unpatched day (baseline). The rider hears about any change the edits
-//! make to their trip. That covers no trip at all, a later arrival (a cancelled
-//! trip's rider takes the next), or a ride on a diverted trip. A diverted trip
-//! is a trip instance whose patched stop times differ from its unpatched
-//! instance. The rider hears about these changes, not only when the active
-//! world has no trip.
+//! A compared plan is the same query over two worlds: the day with the edits
+//! in force (the active world) and the unpatched day (the baseline). A
+//! diverted trip is a trip instance whose patched stop times differ from its
+//! unpatched instance.
 
 use std::collections::HashMap;
 
@@ -18,45 +11,31 @@ use ts_rs::TS;
 
 use crate::raptor::{fmt_time, Itinerary, Leg};
 
-/// Which change the notice reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum NoticeKind {
-    /// No trip in either world within the legs searched.
     NoTrip,
-    /// No trip while the diversion is active; the unpatched day has
-    /// one.
     Unreachable,
-    /// The active trip arrives later than the unpatched day's.
     Later,
-    /// The active trip arrives no later, but rides a diverted trip.
     Diverted,
 }
 
-/// The rider's notice: structured, plus one text line.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PlanNotice {
     pub kind: NoticeKind,
-    /// `later`: seconds the diversion costs (active arrival minus
-    /// baseline arrival).
     pub delay_secs: Option<u32>,
-    /// `later`: the same loss in whole minutes, rounded up.
     pub minutes_lost: Option<u32>,
-    /// The unpatched day's arrival, when it has a trip.
     pub baseline_arrival_secs: Option<u32>,
-    /// The route labels of the diverted trips either plan rides, in
-    /// order of first appearance.
     pub routes: Vec<String>,
-    /// The stop ids those trips skip, in order of first appearance.
     pub skipped_stops: Vec<String>,
     pub text: String,
 }
 
-/// The day's diverted trip instances: (trip, start) → the stops its
-/// patched instance no longer visits (empty when it only runs at
-/// other times).
+/// Maps each diverted `(trip, start)` to the stops that its patched instance
+/// no longer visits. The list is empty when the instance only runs at other
+/// times.
 #[derive(Debug, Clone, Default)]
 pub struct DivertedTrips {
     trips: HashMap<(String, u32), Vec<String>>,
@@ -67,17 +46,11 @@ impl DivertedTrips {
         self.trips.is_empty()
     }
 
-    /// The stops a diverted instance skips; `None` when the instance
-    /// is not diverted.
     pub fn skipped(&self, trip: &str, start_secs: u32) -> Option<&[String]> {
         self.trips.get(&(trip.to_string(), start_secs)).map(Vec::as_slice)
     }
 }
 
-/// Compare the unpatched day with the patched one: every trip
-/// instance whose stop times differ is diverted. A patched-away
-/// instance (absent from the patched day) is not ridden by any plan,
-/// so it needs no entry.
 pub fn diverted_instances(baseline: &[MaterializedTrip], patched: &[MaterializedTrip]) -> DivertedTrips {
     let base: HashMap<(&str, u32), &MaterializedTrip> =
         baseline.iter().map(|t| ((t.trip.as_str(), t.start_secs), t)).collect();
@@ -87,7 +60,6 @@ pub fn diverted_instances(baseline: &[MaterializedTrip], patched: &[Materialized
         if b.stop_times == p.stop_times {
             continue;
         }
-        // The multiset difference: a loop's second visit is its own.
         let mut left: Vec<&str> = p.stop_times.iter().map(|s| s.stop.as_str()).collect();
         let mut skipped = Vec::new();
         for st in &b.stop_times {
@@ -103,10 +75,6 @@ pub fn diverted_instances(baseline: &[MaterializedTrip], patched: &[Materialized
     DivertedTrips { trips }
 }
 
-/// The notice for a compared plan, or `None` when the diversion
-/// changes nothing for this trip: the active plan exists, arrives no
-/// later than the baseline (or there is no baseline), and rides no
-/// diverted trip.
 pub fn plan_notice(
     network: &Network,
     active: Option<&Itinerary>,
@@ -114,7 +82,6 @@ pub fn plan_notice(
     max_legs: u32,
     diverted: &DivertedTrips,
 ) -> Option<PlanNotice> {
-    // The diverted trips either plan rides: their routes and skips.
     let mut routes: Vec<String> = Vec::new();
     let mut skipped_stops: Vec<String> = Vec::new();
     let mut rides_diverted = false;

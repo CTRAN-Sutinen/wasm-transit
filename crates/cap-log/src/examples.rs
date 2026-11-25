@@ -1,7 +1,3 @@
-//! The log capability's worked examples (its `examples` feature): each
-//! request, over the fixture stops log. The generator runs them through
-//! this crate's `invoke` and records the answers.
-
 use cap_abi::manifest::Example;
 use serde_json::json;
 
@@ -9,7 +5,6 @@ pub fn examples() -> Vec<Example> {
     let (fold, entries) = fixtures::fixture_stops_log();
     let stored: Vec<transit_log::Stored> =
         entries.iter().map(|e| transit_log::Stored { seq: e.seq, text: cap_abi::canonical_bytes(e).expect("an entry's bytes") }).collect();
-    // A shelter added to the first stop, over the fold.
     let (stops, _) = fixtures::fixture_log_records();
     let mut next = stops[0].clone();
     if let Some(events) = next.records.values_mut().next().and_then(|v| v.as_array_mut()) {
@@ -31,7 +26,7 @@ pub fn examples() -> Vec<Example> {
         Example { bytes: None, kinds: vec![], op: "fold", loads: vec![], request: json!({ "op": "fold", "log": "stops", "entries": stored }) },
         Example { bytes: None, kinds: vec![], op: "revert", loads: vec![], request: json!({ "op": "revert", "log": "stops", "entries": stored, "target": 2, "header": revert }) },
         Example { bytes: None, kinds: vec![], op: "close_gap", loads: vec![], request: json!({ "op": "close_gap", "header": gap }) },
-        // A stop request naming a stop the stops log does not hold.
+        // A stop request names a stop that the stops log does not hold.
         Example {
             bytes: None, kinds: vec![],
             op: "references",
@@ -47,7 +42,7 @@ pub fn examples() -> Vec<Example> {
                     "stop_request": {"R-1": {"version": 1, "value": {"stop": "6124"}}, "R-2": {"version": 1, "value": {"stop": "7001"}}}
                 }} }),
         },
-        // A frozen version that names a network a revert dropped.
+        // A frozen version names a network that a revert dropped.
         Example {
             bytes: None, kinds: vec![],
             op: "naming",

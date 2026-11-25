@@ -1,11 +1,10 @@
-//! Scenario tests on a hand-built feed:
+//! Scenarios on a hand-built feed.
 //!
 //! A --t1--> B --t2--> C      (t0 runs A -> C directly, but later)
 //!                 C --walk--> D
 //!
-//! Planning A -> C must transfer at B (08:30 beats t0's 09:10);
-//! planning A -> D must additionally walk the last leg; D -> A is
-//! unreachable.
+//! A to C transfers at B, which arrives 08:30 and beats t0's 09:10. A to D
+//! adds the last walk. D to A is unreachable.
 
 use std::io::Write;
 
@@ -58,8 +57,6 @@ fn transfers_beat_later_direct_trips() {
     assert_eq!(it.legs.len(), 2, "two transit legs");
     match &it.legs[0] {
         Leg::Transit { trip, start_secs, board_stop_id, alight_stop_id, .. } => {
-            // The trip instance ridden: the network's trip (the feed's own id)
-            // and its start. t1 departs A at 08:00.
             assert_eq!((trip.as_str(), *start_secs), ("t1", 8 * 3600));
             assert_eq!(board_stop_id, "A");
             assert_eq!(alight_stop_id, "B");
@@ -83,13 +80,11 @@ fn walking_extends_the_plan() {
         .expect("query")
         .expect("A -> D reachable via walk from C");
 
-    // t1 + t2 + the C -> D footpath.
     assert_eq!(it.legs.len(), 3);
     let walk_secs = match &it.legs[2] {
         Leg::Walk { from_stop_id, to_stop_id, walk_secs, .. } => {
             assert_eq!(from_stop_id, "C");
             assert_eq!(to_stop_id, "D");
-            // ~55 m at 1.3 m/s.
             assert!((30..90).contains(walk_secs), "implausible walk_secs {walk_secs}");
             *walk_secs
         }
@@ -102,18 +97,15 @@ fn walking_extends_the_plan() {
 fn unreachable_and_trivial_queries() {
     let net = router(&fixture_zip());
 
-    // D has no transit and nothing walks anywhere useful from it.
     let plan = earliest_arrival(&net, "D", "A", 8 * 3600, 4).expect("query");
     assert!(plan.is_none(), "D -> A should be unreachable");
 
-    // Same stop: zero legs, arrival = departure.
     let it = earliest_arrival(&net, "A", "A", 8 * 3600, 4)
         .expect("query")
         .expect("trivially reachable");
     assert!(it.legs.is_empty());
     assert_eq!(it.arrival_secs, 8 * 3600);
 
-    // Unknown stops are errors, not empty plans.
     assert!(earliest_arrival(&net, "ZZZ", "A", 8 * 3600, 4).is_err());
 }
 
@@ -123,7 +115,6 @@ fn a_compared_plan_tells_the_rider_what_it_cost() {
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
     let found = earliest_arrival(&net, "A", "B", 8 * 3600, 4).expect("query").expect("A -> B runs");
     let none = DivertedTrips::default();
-    // Nothing diverted, nothing later: nothing to tell.
     assert_eq!(plan_notice(&network, Some(&found), None, 6, &none), None);
     assert_eq!(plan_notice(&network, Some(&found), Some(&found), 6, &none), None);
     let lost = plan_notice(&network, None, Some(&found), 6, &none).unwrap();
@@ -137,7 +128,6 @@ fn a_compared_plan_tells_the_rider_what_it_cost() {
 
 #[test]
 fn calendar_filters_trips_from_the_network() {
-    // A second feed where the only A -> B trip runs on Sunday.
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     let add = |w: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>, name: &str, body: &str| {
@@ -154,9 +144,6 @@ fn calendar_filters_trips_from_the_network() {
         "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,08:00:00,08:00:00,A,1\nt1,08:10:00,08:10:00,B,2\n");
     let bytes = w.finish().unwrap().into_inner();
 
-    // Calendar filtering is the model's materialize (the day carries
-    // only the trips whose service runs); the router rides the day
-    // it is handed.
     let friday = {
         let (network, day) = model_day(&bytes, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap());
         RouterNetwork::build_from_day(&network, &day, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap())

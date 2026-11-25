@@ -1,7 +1,5 @@
-//! The walk table's references (D-232). Each field that names another
-//! record or thing declares its target in the schema (`x-references`).
-//! The kind table carries them. The record checks read them. A new
-//! reference field fails this law until it is declared and listed here.
+//! Pins the references that the walk table's schema declares (`x-references`,
+//! D-232). A new reference field fails until it is listed here.
 
 use transit_version::{references, Reference};
 

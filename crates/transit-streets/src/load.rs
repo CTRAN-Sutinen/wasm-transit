@@ -1,13 +1,8 @@
-//! The kernel's load of a walk table and a streets document (D-239). Its
-//! line in the kind list (`crates/cap-abi/src/kinds.rs`) names this impl.
-
-/// What `load_walks` answers.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct WalksLoaded {
     pub walks_hash: String,
 }
 
-/// Walk tables (cap-streets `walks` makes them).
 impl transit_version::Load for crate::walking::WalkTable {
     const ID: &'static str = "walks";
     const NAME: &'static str = "walk table";
@@ -29,8 +24,6 @@ impl transit_version::Load for crate::walking::WalkTable {
     }
 }
 
-/// What `load_streets` answers: the document's size as its graph will be:
-/// its streets, their segments, and their distinct points.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StreetsLoaded {
     pub streets_hash: String,
@@ -39,8 +32,6 @@ pub struct StreetsLoaded {
     pub nodes: u32,
 }
 
-/// Streets documents, refused unless valid, so a registered document
-/// hashes as its import did.
 impl transit_version::Load for crate::Streets {
     const ID: &'static str = "streets";
     const NAME: &'static str = "street network";

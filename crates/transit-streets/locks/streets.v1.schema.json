@@ -5,34 +5,25 @@
       "type": "integer"
     },
     "StreetClass": {
-      "description": "What kind of street a way is (D-30). What each mode may use is a\nmode profile's question (D-26), never the import's.",
-      "oneOf": [
-        {
-          "enum": [
-            "motorway",
-            "primary",
-            "secondary",
-            "local",
-            "ramp",
-            "service",
-            "track",
-            "path",
-            "steps"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "unknown",
-          "description": "A street whose layer gives no class the import knows.",
-          "type": "string"
-        }
-      ]
+      "description": "A mode profile decides what each mode may use (D-26). The import does\nnot (D-30).",
+      "enum": [
+        "motorway",
+        "primary",
+        "secondary",
+        "local",
+        "ramp",
+        "service",
+        "track",
+        "path",
+        "steps",
+        "unknown"
+      ],
+      "type": "string"
     },
     "StreetsKind": {
       "const": "streets"
     },
     "Way": {
-      "description": "One street line.",
       "properties": {
         "class": {
           "$ref": "#/$defs/StreetClass"
@@ -44,11 +35,9 @@
           ]
         },
         "oneway": {
-          "description": "Travel only from the first point to the last.",
           "type": "boolean"
         },
         "points": {
-          "description": "`[lat, lon]` in microdegrees.",
           "items": {
             "items": {
               "format": "int32",
@@ -69,12 +58,10 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The street network: its ways, in canonical order.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/StreetsKind",
-      "default": "streets",
-      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+      "default": "streets"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",

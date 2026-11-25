@@ -1,33 +1,18 @@
-//! The service alerts document and the alert templates document
-//! (D-206..D-210, D-216). cap-alerts is the seam; transit-rt writes the
-//! feed.
+//! The service alerts document and the alert templates document (D-206..D-210,
+//! D-216).
 //!
-//! An alert is what the agency tells riders: cause, effect, severity, its
-//! texts in every language, communication and impact periods (Unix
-//! seconds; the host converts local times, D-205), and informed entities
-//! in the network's ids. Every field an entity names must match; an entity
-//! with none is the whole agency. Rules:
+//! An alert is its own record in its own document, not a payload of the edit
+//! document, because an alert changes no service. The board and router patch
+//! the day from edits only.
 //!
-//! * An alert is its own record in its own document, not a payload of the
-//!   edit document, because an alert changes no service; the board and
-//!   router patch the day from edits only.
-//! * GTFS-rt is its serialization, both ways. The record keeps every
-//!   translation; the live document carries one (D-20).
-//! * Dispatch and the communications staff write, and every team reads one
-//!   list (D-207). There is no review step: the write role publishes at
-//!   once, and the log records who wrote what.
-//! * An alert explains a disruption by naming it (`explains`): an edit
-//!   record, a stop's suspension, or a trip instance the live feed
-//!   cancels, because on C-TRAN the feed is where cancels come from
-//!   (D-213). Nothing writes an alert from a disruption. What no alert
-//!   explains is transit-disruptions' gap list (D-218).
-//! * Records change whole, by id. Nothing is deleted: `retired`, or an end
-//!   ([`ServiceAlerts::end`]). The chain from v1 is in `version`.
-//! * [`ServiceAlerts::checked`] refuses only what makes a record wrong
-//!   (D-152); [`ServiceAlerts::flags`] tells a person of an unknown id or
-//!   a missing translation.
-//! * A template's blanks are filled by [`fill`], so names and dates read
-//!   the same in every alert. A blank it cannot fill stays and is named.
+//! The record keeps every translation, and the live document carries one
+//! (D-20). An alert can explain a trip instance that the live feed cancels,
+//! because on C-TRAN the feed is where cancels come from (D-213). Nothing
+//! writes an alert from a disruption. What no alert explains is
+//! transit-disruptions' gap list (D-218).
+//!
+//! [`fill`] fills a template's blanks, so names and dates read the same in
+//! every alert. A blank that it cannot fill stays and is named.
 
 #![forbid(unsafe_code)]
 
@@ -38,13 +23,11 @@ use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-
 pub mod version;
 pub mod load;
 
 pub use version::{ALERTS_VERSION, TEMPLATES_VERSION};
 
-/// Why an alert was raised (GTFS-rt's cause, by name).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -65,7 +48,6 @@ pub enum AlertCause {
     SpecialEvent,
 }
 
-/// What an alert does to service (GTFS-rt's effect, by name).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -84,7 +66,6 @@ pub enum AlertEffect {
     AccessibilityIssue,
 }
 
-/// How serious the agency says an alert is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -96,7 +77,7 @@ pub enum AlertSeverity {
     Severe,
 }
 
-/// A span of time in Unix seconds; an open end is unbounded.
+/// Unix seconds. An open end is unbounded.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertPeriod {
@@ -107,12 +88,10 @@ pub struct AlertPeriod {
 }
 
 transit_version::kind_tag!(
-    /// The service alerts document's kind tag: always `"service_alerts"`.
     ServiceAlertsKind = "service_alerts"
 );
 
 transit_version::kind_tag!(
-    /// The alert templates document's kind tag: always `"alert_templates"`.
     AlertTemplatesKind = "alert_templates"
 );
 
@@ -132,17 +111,9 @@ impl transit_version::Versioned for AlertTemplates {
     }
 }
 
-// ---------------------------------------------------------------------
-// The service alerts document
-// ---------------------------------------------------------------------
-
-/// Every service alert, by its id. The id is the alert's GTFS-rt entity
-/// id.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceAlerts {
-    /// The kind tag and version (D-115). A copy without the version is
-    /// version 1, which cap-migrate brings forward ([`version`]).
     #[serde(default)]
     #[ts(type = "\"service_alerts\"")]
     pub kind: ServiceAlertsKind,
@@ -156,22 +127,17 @@ pub struct ServiceAlerts {
     pub extra: transit_version::Extra,
 }
 
-/// An alert's state. There is no review step (D-207): a person with
-/// the write role publishes at once.
+/// There is no review step (D-207).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertStatus {
-    /// Saved, not yet told to riders.
     #[default]
     Draft,
-    /// Told to riders while a communication period holds.
     Published,
-    /// Withdrawn. It is kept, and is never told to riders.
     Retired,
 }
 
-/// One service alert.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceAlert {
@@ -182,32 +148,20 @@ pub struct ServiceAlert {
     pub effect: AlertEffect,
     #[serde(default)]
     pub severity: AlertSeverity,
-    /// The header in each language. At least one text is not blank.
     pub header: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertText>>")]
     pub description: Vec<AlertText>,
-    /// A link to more about it, in each language.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertText>>")]
     pub url: Vec<AlertText>,
-    /// When to show it, in Unix seconds (the host converts the agency's
-    /// local times; D-205). None means for as long as it is published.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertPeriod>>")]
     pub communication: Vec<AlertPeriod>,
-    /// When service is affected, in Unix seconds. Each impact period is
-    /// inside a communication period (the GTFS-rt spec's rule).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertPeriod>>")]
     pub impact: Vec<AlertPeriod>,
-    /// What it is about: one entity for each affected entity, each
-    /// applying on its own. The fields of one entity are joined by AND.
-    /// At least one.
     pub informed: Vec<AlertEntity>,
-    /// The disruptions it tells riders about: a diversion or trip
-    /// cancel, or a suspended stop. Nothing writes an alert from these
-    /// automatically.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertSource>>")]
     pub explains: Vec<AlertSource>,
@@ -228,9 +182,6 @@ pub struct AlertText {
     pub text: String,
 }
 
-/// One informed entity, in the network's ids. Every present field must
-/// match (route 12 AT stop 6277). With every field absent, it is the
-/// whole agency.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertEntity {
@@ -238,11 +189,9 @@ pub struct AlertEntity {
     #[ts(optional)]
     #[schemars(extend("x-references" = "network.route"))]
     pub route: Option<String>,
-    /// Every route published under this GTFS route type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub route_type: Option<u16>,
-    /// One of the route's model directions. It needs `route` (D-204).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub direction: Option<String>,
@@ -250,18 +199,14 @@ pub struct AlertEntity {
     #[ts(optional)]
     #[schemars(extend("x-references" = "network.stop"))]
     pub stop: Option<String>,
-    /// A trip, by the model's trip id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[schemars(extend("x-references" = "network.trip"))]
     pub trip: Option<String>,
-    /// The trip instance's service date, "YYYY-MM-DD". None means the
-    /// trip on every date.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub date: Option<String>,
-    /// The trip instance's start, in seconds after the service-day
-    /// anchor. It needs `trip`.
+    /// Seconds after the service-day anchor. Needs `trip`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub start_secs: Option<u32>,
@@ -271,26 +216,19 @@ pub struct AlertEntity {
     pub extra: transit_version::Extra,
 }
 
-/// A disruption that an alert tells riders about.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AlertSource {
-    /// A record of the edit document (a diversion or a trip cancel), by
-    /// its record id.
     Edit {
         #[schemars(extend("x-references" = "edit_record"))]
         id: String,
     },
-    /// A stop's suspension in the stops document, by the stop's lasting
-    /// id.
     Stop {
         #[schemars(extend("x-references" = "stop"))]
         stop: String,
     },
-    /// A trip instance that the live feed cancels (D-216): the model's
-    /// trip id, its service date ("YYYY-MM-DD"), and its start in seconds
-    /// after the service-day anchor. Version 2.
+    /// A trip instance that the live feed cancels (D-216). Version 2.
     #[schemars(extend("x-references" = "trip_instance"))]
     Trip { trip: String, date: String, start_secs: u32 },
 }
@@ -300,41 +238,27 @@ fn in_periods(periods: &[AlertPeriod], t: u64) -> bool {
 }
 
 impl ServiceAlert {
-    /// Is it told to riders at `t` (Unix seconds)? Only a published
-    /// alert is, while a communication period holds; with none, always.
     pub fn in_force(&self, t: u64) -> bool {
         self.status == AlertStatus::Published && in_periods(&self.communication, t)
     }
 
-    /// Have its communication periods all ended by `t`? An alert with
-    /// none never ends.
     pub fn ended_by(&self, t: u64) -> bool {
         !self.communication.is_empty() && self.communication.iter().all(|p| p.end.is_some_and(|e| e < t))
     }
 
-    /// Does any communication period start after `t`, and none hold at
-    /// `t`?
     fn upcoming_at(&self, t: u64) -> bool {
         !in_periods(&self.communication, t) && self.communication.iter().any(|p| p.start.is_some_and(|s| s > t))
     }
 }
 
 impl ServiceAlerts {
-    /// One alert placed by id, new or replacing the one held. Every
-    /// other alert as it was. Unchecked: a write passes
-    /// [`ServiceAlerts::checked`].
+    /// Unchecked. A write passes [`ServiceAlerts::checked`].
     pub fn put(&self, id: &str, alert: ServiceAlert) -> ServiceAlerts {
         let mut next = self.clone();
         next.alerts.insert(id.to_string(), alert);
         next
     }
 
-    /// Alert `id` ended at `at` (Unix seconds): a period that holds at
-    /// `at` or later ends at `at`, and a period that starts after `at`
-    /// goes. Nothing up to `at` changes. An alert with no period gets
-    /// one that ends at `at`. An alert with no period left at or before
-    /// `at` was never told to riders, so it is withdrawn (`retired`).
-    /// None for an id the document does not hold.
     pub fn end(&self, id: &str, at: u64) -> Option<ServiceAlerts> {
         let mut next = self.clone();
         let a = next.alerts.get_mut(id)?;
@@ -360,8 +284,6 @@ impl ServiceAlerts {
         Some(next)
     }
 
-    /// The agency's list at `now` (Unix seconds). Every alert is in one
-    /// group, in id order.
     pub fn list(&self, now: u64) -> AlertList {
         let mut list = AlertList::default();
         for (id, a) in &self.alerts {
@@ -386,8 +308,6 @@ impl ServiceAlerts {
         list
     }
 
-    /// The document, if a write may store it, or every reason it may
-    /// not.
     pub fn checked(self) -> Result<Self, Vec<AlertRefusal>> {
         let refusals: Vec<AlertRefusal> = self
             .alerts
@@ -402,10 +322,6 @@ impl ServiceAlerts {
         }
     }
 
-    /// What a person is told about the alerts that are not retired: each
-    /// id the network does not have, and each text with no translation
-    /// for a language of `languages` (the deployment's). Never a reason
-    /// to refuse a write.
     pub fn flags(&self, network: &transit_network::Network, languages: &[String]) -> Vec<AlertFlag> {
         let mut out = Vec::new();
         for (id, a) in self.alerts.iter().filter(|(_, a)| a.status != AlertStatus::Retired) {
@@ -443,33 +359,25 @@ impl ServiceAlerts {
     }
 }
 
-/// The agency's list of alerts at a moment (D-207).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertList {
-    /// Published and told to riders now.
     pub in_force: Vec<AlertRow>,
-    /// Published, and told to riders later.
     pub upcoming: Vec<AlertRow>,
-    /// Published and ended, or withdrawn.
     pub ended: Vec<AlertRow>,
     pub drafts: Vec<AlertRow>,
 }
 
-/// One alert in the list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertRow {
     pub id: String,
     pub alert: ServiceAlert,
-    /// For an alert in force with no end: how long it has been told to
-    /// riders, in seconds. A long-open alert is made visible by it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub open_secs: Option<u64>,
 }
 
-/// Why a write is refused: the alert, and the problem.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertRefusal {
@@ -477,29 +385,18 @@ pub struct AlertRefusal {
     pub problem: AlertProblem,
 }
 
-/// What is wrong with an alert.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AlertProblem {
-    /// An alert with an empty id.
     NoId,
-    /// No informed entity: the alert is about nothing.
     NoEntity,
-    /// No header text that is not blank.
     NoHeader,
-    /// A period that ends before it starts.
     EndBeforeStart,
-    /// An impact period outside every communication period.
     ImpactOutsideCommunication,
-    /// A direction with no route (GTFS-rt requires `route_id` with
-    /// `direction_id`).
     DirectionWithoutRoute,
-    /// A trip instance's date or start with no trip.
     InstanceWithoutTrip,
-    /// A date that is not "YYYY-MM-DD".
     BadDate { date: String },
-    /// Two texts of one field in the same language.
     RepeatedLanguage { field: String, lang: Option<String> },
 }
 
@@ -520,7 +417,6 @@ impl fmt::Display for AlertRefusal {
     }
 }
 
-/// What a person is told about an alert that passes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertFlag {
@@ -528,7 +424,6 @@ pub struct AlertFlag {
     pub notice: AlertNotice,
 }
 
-/// A consequence of an alert, for a person to look at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -537,7 +432,6 @@ pub enum AlertNotice {
     UnknownDirection { route: String, direction: String },
     UnknownStop { stop: String },
     UnknownTrip { trip: String },
-    /// A language the deployment names has no text in this field.
     MissingTranslation { field: String, lang: String },
 }
 
@@ -612,21 +506,11 @@ fn check(a: &ServiceAlert) -> Vec<AlertProblem> {
     out
 }
 
-// ---------------------------------------------------------------------
-// The alert templates document
-// ---------------------------------------------------------------------
-
-/// The blanks a template's text may hold, each written in braces
-/// ("{stop}").
 pub const BLANKS: [&str; 4] = ["stop", "route", "start date", "end date"];
 
-/// Every alert template, by its id: the agency's standard language
-/// (D-207, D-210).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertTemplates {
-    /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1.
     #[serde(default)]
     #[ts(type = "\"alert_templates\"")]
     pub kind: AlertTemplatesKind,
@@ -634,14 +518,11 @@ pub struct AlertTemplates {
     #[ts(type = "number")]
     pub schema_version: transit_version::Version<1>,
     pub templates: BTreeMap<String, AlertTemplate>,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// One template: its name in the menu, the cause, effect, and severity
-/// it sets, and its texts with blanks.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertTemplate {
@@ -659,17 +540,14 @@ pub struct AlertTemplate {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertText>>")]
     pub url: Vec<AlertText>,
-    /// No longer offered in the menu. It is kept.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub retired: bool,
-    /// Fields this build does not know, kept as written (D-167).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: transit_version::Extra,
 }
 
-/// Why a template write is refused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TemplateRefusal {
@@ -677,7 +555,6 @@ pub struct TemplateRefusal {
     pub problem: TemplateProblem,
 }
 
-/// What is wrong with a template.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -685,7 +562,6 @@ pub enum TemplateProblem {
     NoId,
     NoName,
     NoHeader,
-    /// A blank that is not one of [`BLANKS`]: it could never be filled.
     UnknownBlank { blank: String },
     RepeatedLanguage { field: String, lang: Option<String> },
 }
@@ -703,7 +579,6 @@ impl fmt::Display for TemplateRefusal {
     }
 }
 
-/// The blanks written in a text, in order.
 fn blanks_in(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -716,7 +591,6 @@ fn blanks_in(text: &str) -> Vec<&str> {
     out
 }
 
-/// One template as a menu offers it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TemplateRow {
@@ -728,8 +602,6 @@ pub struct TemplateRow {
 }
 
 impl AlertTemplates {
-    /// The templates offered, by name, then id. A retired template is
-    /// kept and not offered.
     pub fn offered(&self) -> Vec<TemplateRow> {
         let mut rows: Vec<TemplateRow> = self
             .templates
@@ -741,16 +613,13 @@ impl AlertTemplates {
         rows
     }
 
-    /// One template placed by id, new or replacing the one held.
-    /// Unchecked: a write passes [`AlertTemplates::checked`].
+    /// Unchecked. A write passes [`AlertTemplates::checked`].
     pub fn put(&self, id: &str, template: AlertTemplate) -> AlertTemplates {
         let mut next = self.clone();
         next.templates.insert(id.to_string(), template);
         next
     }
 
-    /// The document, if a write may store it, or every reason it may
-    /// not.
     pub fn checked(self) -> Result<Self, Vec<TemplateRefusal>> {
         let mut refusals = Vec::new();
         for (id, t) in &self.templates {
@@ -791,9 +660,7 @@ impl AlertTemplates {
     }
 }
 
-/// What a template's blanks are filled with: the stops and routes by
-/// the network's ids, and the dates as "YYYY-MM-DD" (the host's, in the
-/// agency's zone).
+/// Dates are "YYYY-MM-DD", the host's, in the agency's zone.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FillInput {
@@ -803,8 +670,6 @@ pub struct FillInput {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
     pub routes: Vec<String>,
-    /// The alert's informed entities: each route and stop in them is
-    /// named once, after the `routes` and `stops` above.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<AlertEntity>>")]
     pub informed: Vec<AlertEntity>,
@@ -817,14 +682,12 @@ pub struct FillInput {
 }
 
 impl FillInput {
-    /// The stops to name: those the input lists, then the informed
-    /// entities' stops, each once.
+    /// The input's stops, then the informed entities' stops, each once.
     fn stop_ids(&self) -> Vec<String> {
         unique(self.stops.iter().cloned().chain(self.informed.iter().filter_map(|e| e.stop.clone())))
     }
 
-    /// The routes to name: those the input lists, then the informed
-    /// entities' routes, each once.
+    /// The input's routes, then the informed entities' routes, each once.
     fn route_ids(&self) -> Vec<String> {
         unique(self.routes.iter().cloned().chain(self.informed.iter().filter_map(|e| e.route.clone())))
     }
@@ -840,8 +703,6 @@ fn unique(ids: impl Iterator<Item = String>) -> Vec<String> {
     out
 }
 
-/// A template written out: its cause, effect, and severity, its texts
-/// with the blanks filled, and each blank it could not fill.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Filled {
@@ -851,12 +712,9 @@ pub struct Filled {
     pub header: Vec<AlertText>,
     pub description: Vec<AlertText>,
     pub url: Vec<AlertText>,
-    /// Each blank left in a text, for a person to fill by hand.
     pub unfilled: Vec<Unfilled>,
 }
 
-/// A blank the fill left in a text: the field, the text's language, and
-/// the blank.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Unfilled {
@@ -867,13 +725,12 @@ pub struct Unfilled {
     pub blank: String,
 }
 
-/// Is this text in English (the only language whose dates and lists the
-/// fill writes)? No language is the agency's default, taken as English.
+/// The fill writes dates and lists in English only. No language is the
+/// agency's default, taken as English.
 fn english(lang: Option<&str>) -> bool {
     lang.is_none_or(|l| l == "en" || l.starts_with("en-"))
 }
 
-/// "A", "A and B", "A, B, and C".
 fn english_list(items: &[String]) -> String {
     match items {
         [] => String::new(),
@@ -883,7 +740,6 @@ fn english_list(items: &[String]) -> String {
     }
 }
 
-/// "Monday, August 17".
 fn english_date(d: NaiveDate) -> String {
     const MONTHS: [&str; 12] =
         ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -899,10 +755,6 @@ fn english_date(d: NaiveDate) -> String {
     format!("{weekday}, {} {}", MONTHS[d.month0() as usize], d.day())
 }
 
-/// The value of one blank in a text of `lang`, or none when the fill
-/// cannot write it: nothing given, an id the network does not have, a
-/// date that is not "YYYY-MM-DD", or a date or a list of two or more in
-/// a language other than English.
 fn value(blank: &str, lang: Option<&str>, network: &transit_network::Network, input: &FillInput) -> Option<String> {
     let names = |ids: &[String], name: &dyn Fn(&str) -> Option<String>| -> Option<String> {
         if ids.is_empty() || (ids.len() > 1 && !english(lang)) {
@@ -924,9 +776,6 @@ fn value(blank: &str, lang: Option<&str>, network: &transit_network::Network, in
     }
 }
 
-/// The template written out for `input`. Each blank the fill can write
-/// is replaced; each it cannot is left as written and named in
-/// `unfilled`.
 pub fn fill(template: &AlertTemplate, network: &transit_network::Network, input: &FillInput) -> Filled {
     let mut unfilled = Vec::new();
     let mut texts = |field: &str, texts: &[AlertText]| -> Vec<AlertText> {

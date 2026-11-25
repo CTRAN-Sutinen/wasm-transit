@@ -1,20 +1,14 @@
-//! Native dispatch tests for the network capability. These test the seam
-//! without wasm, over the real fixture: the e2e sample feed, the same bytes
-//! the caps smoke loads. The module answers the planner's whole bootstrap,
-//! author, and publish flow (import, validate, export). The produced artifact
-//! is a first-class feed document. The exported zip parses back to the same
-//! identity.
+//! Native tests of the network ops over the e2e sample feed, the same bytes
+//! the caps smoke loads (cap-network/OPS.md).
 
 use cap_network::{dispatch, invoke as dispatch_json, Request, Response};
 use sha2::Digest;
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 
-/// The shared authored-network fixture. The smoke test and the manifest's
-/// sample load request both carry this document.
+/// The smoke test and the manifest's sample load request carry this document.
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
-/// The kernel's load_feed, through the module's seam: its hash and summary.
 fn load_feed(bytes: &[u8]) -> (String, transit_codec::FeedSummary) {
     let (hash, feed) = cap_abi::kernel::kind::<transit_codec::Feed>().register_bytes(bytes).expect("the feed parses");
     let outcome: serde_json::Value =
@@ -32,7 +26,6 @@ fn load_feed_registers_under_the_content_hash() {
     let (hash, summary) = load_fixture();
     assert_eq!(hash, format!("sha256:{:x}", sha2::Sha256::digest(FIXTURE)));
     assert_eq!(summary.stops, 6, "A, B, C, the station pin, two bays");
-    // Idempotent: the same bytes load to the same hash.
     let (again, _) = load_fixture();
     assert_eq!(again, hash);
 }
@@ -45,30 +38,23 @@ fn import_infers_and_registers_the_document() {
             Response::Import { network, notes, network_hash, .. } => (network, notes, network_hash),
             _ => panic!("import"),
         };
-    // Valid by construction. This is the codec's law.
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
     assert_eq!(network.stops.len(), 6, "A, B, C, the station pin, two bays");
     assert_eq!(network.patterns.len(), 6, "10's A→B with and without its shape, A→C→B, 20, the shuttle both ways");
-    // The fixture's single-stop trip is a reported loss, never silent.
     assert!(!notes.is_empty(), "the dropped single-stop trip is reported: {notes:?}");
 
-    // The module is the hash authority: the canonical serialization
-    // of the returned document hashes to the returned hash.
     let canonical = serde_json::to_string(&network).unwrap();
     let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
     assert_eq!(network_hash, expect);
 
-    // And the derived document is immediately addressable.
     match dispatch(Request::Validate { network_hash }).unwrap() {
         Response::Validate { issues, .. } => assert!(issues.is_empty()),
         _ => panic!("validate"),
     }
 }
 
-/// The import's boundary registers beside its document, and an export
-/// naming it writes the imported numbering back: the published feed
-/// re-imports to the same document and the same boundary.
+/// The published feed re-imports to the same document and the same boundary.
 #[test]
 fn an_export_naming_the_import_boundary_round_trips() {
     let (feed_hash, _) = load_fixture();
@@ -109,7 +95,6 @@ fn validate_reports_every_issue_without_throwing() {
         _ => panic!("validate"),
     }
 
-    // A referential break: one defect, the whole list, no throw.
     let broken = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
     let doc: transit_network::Network = serde_json::from_str(&broken).unwrap();
     let broken_hash = cap_abi::kernel::kind::<transit_network::Network>().register(doc).unwrap().0;
@@ -121,8 +106,7 @@ fn validate_reports_every_issue_without_throwing() {
     }
 }
 
-/// A standard base64 decoder (test-side): the export payload must
-/// decode to exactly the bytes whose hash the op returned.
+/// The export payload must decode to the bytes whose hash the op returned.
 fn base64_decode(text: &str) -> Vec<u8> {
     const ALPHABET: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -156,15 +140,9 @@ fn export_is_the_publish_path_and_the_identity_law() {
     assert_eq!(summary.stops, 3);
     assert_eq!(summary.trips, 3);
 
-    // The hash authority: the returned hash is the content hash of the
-    // decoded payload. Any module returns the same identity for the same
-    // bytes.
     let zip = base64_decode(&zip_b64);
     assert_eq!(feed_hash, format!("sha256:{:x}", sha2::Sha256::digest(&zip)));
 
-    // The exported artifact is a first-class feed. Loading the bytes back
-    // lands on the same hash. This is the composition moment: the handoff a
-    // host asserts.
     let (again, reparsed) = load_feed(&zip);
     assert_eq!(again, feed_hash, "the exported zip loads to its own advertised hash");
     assert_eq!(
@@ -222,9 +200,6 @@ fn json_seam_round_trips_the_tagged_form() {
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
-    // The bare document on the kernel's bulk op is parsed straight into the
-    // model, with no request envelope. It answers exactly what the JSON op
-    // answers. Garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
         serde_json::from_str(&cap_network::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
@@ -236,16 +211,11 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// The publish path's identity. A host that stores a network (the server's
-/// `plan.<id>` pointer) stores the module's canonical bytes under the
-/// module's hash. It never stores the bytes it was sent. Those may be any
-/// serialization of the same document. A browser's JSON.stringify writes
-/// 1.0 as 1. The answer carries the plan frame, so the host never reads the
-/// document.
+/// A host stores the module's canonical bytes, never the bytes it was sent.
+/// A browser's JSON.stringify writes 1.0 as 1.
 #[test]
 fn document_answers_the_canonical_bytes_the_hash_names() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    // Any serialization of the same document: pretty-printed here.
     let pretty = serde_json::to_string_pretty(&doc).unwrap();
     let loaded: serde_json::Value =
         serde_json::from_str(&cap_network::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, pretty.as_bytes())).unwrap();
@@ -263,9 +233,6 @@ fn document_answers_the_canonical_bytes_the_hash_names() {
     assert!(dispatch(Request::Document { network_hash: "sha256:00".into() }).is_err());
 }
 
-/// The host turns its clock into the agency's date: import and
-/// document answer the network's zone beside its hash (the fixture's
-/// agency_timezone), so the host never reads the document.
 #[test]
 fn import_answers_the_networks_timezone() {
     let (feed_hash, _) = load_fixture();
@@ -276,9 +243,7 @@ fn import_answers_the_networks_timezone() {
     assert_eq!(timezone.as_deref(), network.timezone());
 }
 
-/// An imported feed picks on its first service date (D-140): the
-/// import answers it. The fixture's weekday calendar starts Thursday
-/// 2026-01-01.
+/// The fixture's weekday calendar starts Thursday 2026-01-01 (D-140).
 #[test]
 fn import_answers_the_first_service_date() {
     let (feed_hash, _) = load_fixture();
@@ -289,10 +254,7 @@ fn import_answers_the_first_service_date() {
     assert_eq!(first_service_date, transit_network::first_service_date(&network).map(|d| d.to_string()));
 }
 
-/// What stops a network from being published, answered by the module
-/// (D-76). These are its validation issues, and the warnings that refuse
-/// publication: a pick that runs no service in its period. The other
-/// warnings ride along and never refuse.
+/// A pick that runs no service in its period is refused (D-76).
 #[test]
 fn publishable_answers_what_refuses_a_pick() {
     let mut doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
@@ -316,9 +278,7 @@ fn publishable_answers_what_refuses_a_pick() {
     }
 }
 
-/// The stored plan set at the module seam: its plans by store id, as
-/// stored, and a refusal naming both versions for a newer set (the
-/// laws: transit-network `plan_set_test.rs`).
+/// The properties of the plan set are in transit-network `plan_set_test.rs`.
 #[test]
 fn stored_plans_answers_a_set_and_refuses_a_newer_one() {
     let answer: serde_json::Value = serde_json::from_str(&cap_network::invoke(

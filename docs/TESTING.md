@@ -93,13 +93,15 @@ done: `just test-release`, `just e2e-release`, `just check-release`
 For a narrower loop, run one owner's tests directly: `cargo test -p
 <crate>`, or `go test -race -run <Test> .` in `server/`.
 
-`just test` ends with `just prune` (`tools/prune-target.mjs`). It
-deletes each artifact in `target/` that the gate's own cargo commands
-do not use. A `-p` run unifies features over fewer packages, so it
-builds its own copy of a shared dependency and every crate above it.
-Cargo never deletes those copies. After the prune, the next `cargo
-test -p <crate>` builds its copy again. After a toolchain upgrade, run
-`cargo clean` instead: every artifact is stale.
+`target/` grows without end. Cargo never deletes an old copy of a
+build. A `-p` run unifies features over fewer packages, so it builds
+its own copy of a shared dependency and of every crate above it. A
+dependency change or a toolchain upgrade adds new copies of
+everything. `just test` first checks the size of `target/`. Over 40 GB
+(`TARGET_LIMIT_GB`), it runs `cargo clean --workspace`, which deletes
+every copy of the workspace's own crates and keeps the third-party
+dependencies. That gate then rebuilds the workspace crates. After a
+toolchain upgrade, run `cargo clean`: every artifact is stale.
 
 Publishing the registry is its own gate. `just registry` runs `cargo
 test` and the module smoke, then `just reproducible`. That recipe makes

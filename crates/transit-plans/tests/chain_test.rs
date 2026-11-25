@@ -1,8 +1,5 @@
-//! The service-plan chain's law tests. They are pure functions, the exact
-//! code every host dispatches through cap-plans. The chain is
-//! derived: resolution, windows, and validity recomputed from the
-//! plan set's metadata on every call, deterministic and
-//! order-insensitive whatever order the set arrives in.
+//! The chain is derived from the plan set's metadata on every call, and
+//! does not depend on input order (D-75, D-76).
 
 use chrono::NaiveDate;
 use transit_plans::{periods, resolve, validate, PlanInfo};
@@ -30,11 +27,9 @@ fn resolution_picks_the_latest_effective_plan() {
         "the latest pick at or before the date wins"
     );
 
-    // Unversioned imports never resolve.
     let imported = vec![info("", "imported", None)];
     assert_eq!(resolve(&imported, date("2026-10-24")).unwrap(), None);
 
-    // Invalid dates are an error.
     assert!(resolve(&chain, NaiveDate::MAX).is_ok());
 }
 
@@ -59,7 +54,6 @@ fn validation_reports_every_invariant() {
     assert!(kinds.contains(&"duplicate_plan_id".to_string()), "{kinds:?}");
     assert!(kinds.contains(&"plan_missing_effective_date".to_string()), "{kinds:?}");
     assert!(kinds.contains(&"duplicate_effective_date".to_string()), "{kinds:?}");
-    // Unversioned imports are standalone. They are never flagged.
     assert!(!kinds.iter().any(|k| k.contains("undated")), "{kinds:?}");
 }
 
@@ -77,8 +71,6 @@ fn windows_are_derived_not_stored() {
     assert_eq!(windows[0].until.as_deref(), Some("2026-09-07"), "the next pick closes the window");
     assert_eq!(windows[1].until, None, "the last pick runs open-ended");
 
-    // A duplicate pick date still windows deterministically (the
-    // later id wins the boundary).
     let dup = vec![info("a", "A", Some("2026-03-01")), info("x", "X", Some("2026-03-01"))];
     let windows = periods(&dup);
     assert_eq!(windows.len(), 2);
@@ -87,10 +79,6 @@ fn windows_are_derived_not_stored() {
 
 #[test]
 fn the_chain_is_order_insensitive() {
-    // The chain is a set: the same metadata in any input order
-    // resolves, validates, and windows identically. An invalid
-    // chain with duplicate dates still resolves deterministically
-    // (ties broken by id), so every host agrees.
     let a = vec![
         info("fall", "Fall 2026", Some("2026-09-07")),
         info("spring", "Spring 2026", Some("2026-03-01")),

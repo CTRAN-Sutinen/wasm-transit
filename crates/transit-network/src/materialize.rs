@@ -1,22 +1,14 @@
-//! Materialization: the stored trips as a day's concrete instances.
+//! These rules set the stop times.
 //!
-//! `materialize(network, date)` is the bridge from layer A (the authored
-//! model) to layer B (the service view that RAPTOR and dispatch consume).
-//! For every pattern trips whose service type runs on `date`, it gives every
-//! instance of every trip, with its stop times.
-//!
-//! The function is total. It never panics. It returns `Err` for any input
-//! that fails validation, rather than guessing. On a validated network it
-//! cannot fail.
-//!
-//! Stop-time conventions (the single source of truth for these):
-//!
-//! * An instance's times are its start plus the trip's own offsets. They are
-//!   never a profile's.
+//! * The times of an instance are its start plus the offsets of the trip.
+//!   They never come from a profile.
 //! * A stop scheduled on one side only uses that time for both.
 //! * An unscheduled stop gets one time, interpolated by distance between its
-//!   scheduled neighbours (the previous one's departure, the next one's
-//!   arrival; equal distances give the earlier time).
+//!   scheduled neighbours (the departure of the previous one and the arrival
+//!   of the next one). Equal distances give the earlier time.
+//!
+//! The functions return `Err` for any input that fails validation. They
+//! cannot fail on a validated network.
 
 use ts_rs::TS;
 use chrono::NaiveDate;
@@ -24,21 +16,19 @@ use chrono::NaiveDate;
 use crate::error::NetworkError;
 use crate::model::{Departs, Network, Pattern, Trip};
 
-/// One trip instance for one service date.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct MaterializedTrip {
-    /// The stored trip's id (a frequency trip's instances share it).
+    /// The instances of a frequency trip share it.
     pub trip: String,
     pub pattern_trips: String,
     pub route: String,
     pub pattern: String,
-    /// Seconds after the service-day anchor (see `Network::anchor`).
+    /// Seconds after the service-day anchor.
     pub start_secs: u32,
     pub stop_times: Vec<StopTime>,
 }
 
-/// One stop visit. Times are seconds after the service-day anchor.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopTime {
@@ -48,16 +38,13 @@ pub struct StopTime {
     pub timepoint: bool,
 }
 
-/// Arrival at the final stop of the trip's instance starting at
-/// `start_secs`. The runcut checks feasibility against it.
+/// The runcut checks feasibility against it.
 pub fn trip_arrival_end_secs(trip: &Trip, start_secs: u32) -> Option<u32> {
     trip.run_secs().map(|run| start_secs + run)
 }
 
-/// Materialize every trip of one pattern trips, regardless of date.
-/// Trip *times* don't depend on the date (only whether the service
-/// runs at all does), so this is what an authoring UI previews. On a
-/// validated network it cannot fail. Instances by start, then id.
+/// Trip times do not depend on the date, so an authoring UI previews this.
+/// Instances sort by start, then id.
 pub fn materialize_service(
     network: &Network,
     pattern_trips_id: &str,
@@ -109,10 +96,8 @@ pub fn materialize_service(
     Ok(trips)
 }
 
-/// One instance of a trip, date-free: the trip at `start_secs` when
-/// that start is one of its instances: a one-start trip's start, an
-/// exact frequency trip's grid, or (riders promised the headway, not
-/// the minutes) any start inside a non-exact frequency trip's band.
+/// A start inside the band of a non-exact frequency trip is an instance,
+/// because riders get the headway, not the minutes.
 pub fn trip_instance(network: &Network, trip: &str, start_secs: u32) -> Option<MaterializedTrip> {
     let (pattern_trips_id, service, t) = network.trip(trip)?;
     let runs = match &t.departs {
@@ -145,9 +130,7 @@ pub fn trip_instance(network: &Network, trip: &str, start_secs: u32) -> Option<M
     })
 }
 
-/// Materialize every trip that runs on `date`, sorted by start time
-/// (ties by pattern trips id, then trip id). Empty result means
-/// "nothing runs today".
+/// Sorted by start time, then pattern trips id, then trip id.
 pub fn materialize(
     network: &Network,
     date: NaiveDate,
@@ -175,8 +158,6 @@ pub fn materialize(
     Ok(trips)
 }
 
-/// The trip's (arrival, departure) offset at every pattern stop, with
-/// one-sided stops repeated and unscheduled stops interpolated.
 pub(crate) fn offsets(pattern: &Pattern, trip: &Trip) -> Result<Vec<(u32, u32)>, NetworkError> {
     if trip.times.len() != pattern.stops.len() {
         return Err(NetworkError::TripTimesMismatch {
@@ -216,12 +197,10 @@ pub(crate) fn offsets(pattern: &Pattern, trip: &Trip) -> Result<Vec<(u32, u32)>,
     Ok(out)
 }
 
-/// Times for a new trip of `pattern` starting at `start_secs`,
-/// produced from the profile covering it: timepoints carry the
-/// profile's offsets (arrival = departure), other stops are left
-/// unscheduled. `None` when no profile covers the start, the profile
-/// does not fit the pattern, or an endpoint is not a timepoint (its
-/// time cannot be produced).
+/// Timepoints carry the offsets of the covering profile (arrival equals
+/// departure), and other stops stay unscheduled. `None` when no profile
+/// covers the start, the profile does not fit the pattern, or an endpoint is
+/// not a timepoint.
 pub fn produce_times(pattern: &Pattern, start_secs: u32) -> Option<Vec<crate::model::StopOffset>> {
     let profile = pattern.profile_for(start_secs)?;
     let timepoints = pattern.timepoint_positions();

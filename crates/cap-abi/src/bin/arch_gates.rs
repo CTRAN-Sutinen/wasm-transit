@@ -1,8 +1,4 @@
-//! arch-gates: the architecture gates over the workspace as it is
-//! (`just test`): the dependency graph (`cargo metadata`), the kernel's
-//! closure (only the libraries its code names), and every capability
-//! crate's source (no state of its own, `unsafe` forbidden).
-//! The gates' logic and its broken fixtures: `common/gates.rs`,
+//! The logic is in `common/gates.rs`, and the broken fixtures are in
 //! `tests/arch_gates_test.rs`.
 
 use std::fs;
@@ -24,8 +20,7 @@ fn main() {
     let packages = gates::packages_from_metadata(&metadata);
     let mut violations = gates::dependency_violations(&packages);
 
-    // The kernel's closure: its library's source (its bins, gen-assemblies
-    // and the arch gates, are not in any module).
+    // The bins are in no module, so the kernel source skips them.
     let kernel = packages.iter().find(|p| p.name == "cap-abi").expect("the kernel is a workspace package");
     let mut kernel_source = String::new();
     let mut stack = vec![root.join("crates/cap-abi/src")];
@@ -60,9 +55,7 @@ fn main() {
         }
     }
 
-    // No hand-written list names a capability: the generator, the
-    // kernel (its gates' own allowlists aside), and the manifests that
-    // build them.
+    // The allowlists in gates.rs are the exception.
     let ids: Vec<String> = packages
         .iter()
         .filter(|p| gates::class(&p.name) == Some(gates::Class::Capability))

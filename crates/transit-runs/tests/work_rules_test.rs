@@ -1,15 +1,6 @@
-//! The work-rule document (D-50): generic, every rule optional, an
-//! agency's values as data. Its recovery requirement (D-9) and its
-//! interlining (D-46, per route pair) are what blocking reads today;
-//! the run rules (platform, spread, report and clear, pieces, meals,
-//! relief points, pay) are what the runs cut will read.
-//!
-//! API notes: `WorkRules::checked()` validates and normalizes (rules
-//! and pairs sorted, each pair's routes in order). The kernel's load
-//! runs it, so two orderings of one document are one identity;
-//! `recovery_secs(&RecoveryAt)` answers the most specific rule's
-//! requirement; `interlines(a, b)`; `required(Option<&WorkRules>)`
-//! is the closure `validation_issues_under` takes.
+//! The work-rule document (D-50). The recovery requirement (D-9) and
+//! interlining per route pair (D-46) drive blocking. The run rules are for
+//! the runs cut.
 
 use proptest::prelude::*;
 use transit_network::RecoveryAt;
@@ -90,8 +81,8 @@ fn the_most_specific_rule_answers() {
 }
 
 proptest! {
-    /// Minutes and a percentage of the run: the larger, the percentage
-    /// rounded up to the second.
+    /// The larger of minutes and a percentage of the run, rounded up to the
+    /// second.
     #[test]
     fn a_rule_requires_the_larger_of_its_minimum_and_its_share(min in proptest::option::of(0u32..2000), pct in proptest::option::of(0u32..100), run in 0u32..10_000) {
         prop_assume!(min.is_some() || pct.is_some());
@@ -101,7 +92,6 @@ proptest! {
         prop_assert_eq!(rules.recovery_secs(&at("5", "wk", run)), want);
     }
 
-    /// One document, however its rules and pairs are ordered.
     #[test]
     fn order_is_not_identity(swap in any::<bool>(), flip in any::<bool>()) {
         let mut recovery = vec![rule(Some("5"), None, Some(500), None), rule(None, None, Some(300), None)];

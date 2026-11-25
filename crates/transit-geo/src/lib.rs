@@ -1,25 +1,11 @@
-//! The one distance between two coordinates (D-250). It depends on no other
-//! crate, so any library can use it.
-//!
-//! - [`distance_m`] is the great-circle distance in meters on a sphere of
-//!   the mean earth radius, 6,371,000 m (haversine). Every library that
-//!   reports a distance or compares one with a radius uses it, so two
-//!   answers about the same two points agree. It ends in `2·asin(√a)`, as
-//!   the libraries that used it before wrote it, so their answers keep the
-//!   same bytes.
-//! - [`METERS_PER_DEGREE`] and [`meters_per_degree_lon`] are the local
-//!   frame on the same sphere, for code that must work in flat coordinates
-//!   (a projection onto a segment, a grid, an area). Within 5 km it agrees
-//!   with [`distance_m`] to 0.1%.
+//! `distance_m` ends in `2·asin(√a)`, as the libraries that used it before
+//! wrote it, so their answers keep the same bytes (D-250). Within 5 km the
+//! local frame agrees with it to 0.1%.
 
-/// The mean earth radius in meters.
 pub const EARTH_RADIUS_M: f64 = 6_371_000.0;
 
-/// Meters in one degree of latitude, on the same sphere.
 pub const METERS_PER_DEGREE: f64 = EARTH_RADIUS_M * std::f64::consts::PI / 180.0;
 
-/// The great-circle distance in meters between two coordinates in
-/// degrees (haversine).
 pub fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
     let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
@@ -28,7 +14,6 @@ pub fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * EARTH_RADIUS_M * a.sqrt().min(1.0).asin()
 }
 
-/// Meters in one degree of longitude at a latitude in degrees.
 pub fn meters_per_degree_lon(lat: f64) -> f64 {
     METERS_PER_DEGREE * lat.to_radians().cos()
 }

@@ -1,41 +1,27 @@
-//! A document's canonical bytes: RFC 8785, the JSON Canonicalization
-//! Scheme (D-169). Any implementation of the standard writes the same
-//! bytes for the same JSON value, so a document's identity (the sha256
-//! of these bytes) can be checked in any language, without this repo.
+//! A document's canonical bytes under RFC 8785, the JSON Canonicalization
+//! Scheme (D-169). Any implementation of the standard writes the same bytes
+//! for the same value, so a document's identity can be checked in any
+//! language without this repo.
 //!
-//! The rules:
+//! The writer never holds the whole document, because wasm memory never
+//! shrinks back from a peak and a network is megabytes:
 //!
-//! - every object's keys in the order of their UTF-16 code units;
-//! - no whitespace;
-//! - a number as ECMAScript writes it (the shortest digits that read
-//!   back to the same double, `1` for `1.0`, `0` for `-0`); a number
-//!   that is not finite has no JSON form and is refused;
-//! - a string with only `"`, `\`, and the control characters escaped
-//!   (the five short escapes, else `\u00xx` in lower case), and every
-//!   other character as its UTF-8.
+//! - An object whose keys arrive in order (a `BTreeMap`, most maps) streams.
+//! - An object with few keys out of order (a struct) is serialized once for
+//!   each key, in canonical order. Each pass writes only that key's entry.
+//! - An object with many keys out of order (rare) has its entries buffered
+//!   and written sorted.
 //!
-//! The writer never holds the whole document. Wasm memory never shrinks
-//! back from a peak, and a network is megabytes. So:
-//!
-//! - an object whose keys arrive in order (a `BTreeMap`, most maps)
-//!   streams;
-//! - an object whose keys arrive out of order, with few keys (a struct),
-//!   is serialized once for each key, in canonical order. Each pass writes
-//!   only that key's entry. It skips the rest without visiting them;
-//! - one with many keys out of order (rare) has its entries buffered and
-//!   written sorted.
-//!
-//! The writer learns which way an object takes by writing it. Below the
-//! root and its fields, a value is staged in a small buffer. There an
-//! object is written whole as it arrives. It is taken back if a key comes
-//! out of order. The root and its fields hold the whole document. So their
-//! keys are read first, by a pass that does not descend into the values.
+//! The writer learns which way an object takes by writing it. Below the root
+//! and its fields, a value is staged in a small buffer. There an object is
+//! written whole and taken back if a key comes out of order. The root and
+//! its fields hold the whole document, so a pass that does not descend into
+//! the values reads their keys first.
 
 use std::fmt;
 
 use serde::ser::{self, Impossible, Serialize};
 
-/// Where canonical bytes go: a buffer, or a digest.
 pub trait Sink {
     fn put(&mut self, bytes: &[u8]);
 }
@@ -47,8 +33,7 @@ impl Sink for Vec<u8> {
     }
 }
 
-/// Why a value has no canonical form. Boxed, so a result passed up the
-/// writer's calls is one word.
+/// Boxed, so a result passed up the writer's calls is one word.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error(Option<Box<String>>);
 
@@ -57,8 +42,8 @@ impl Error {
         Error(Some(Box::new(message.into())))
     }
 
-    /// The writer's own signal, never an answer. An object written whole
-    /// found a key out of order. It costs no allocation.
+    /// The writer's own signal that an object written whole found a key out
+    /// of order. It is never an answer, and it costs no allocation.
     fn unsorted() -> Error {
         Error(None)
     }
@@ -82,40 +67,30 @@ impl ser::Error for Error {
     }
 }
 
-/// An object with more keys than this, arriving out of order, is
-/// buffered rather than serialized once per key.
 const PASSES_UP_TO: usize = 64;
 
-/// A value this deep or deeper, bound for a digest, is staged in a
-/// buffer first: there an object can be written whole at once and taken
-/// back if its keys arrive out of order. The root and its fields are
-/// read first instead; they hold the whole document, and only they.
 const STAGE_FROM: u32 = 2;
 
 thread_local! {
     static STAGED: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Write `value`'s canonical bytes into `sink`.
 pub fn write<T: Serialize + ?Sized, S: Sink + ?Sized>(value: &T, sink: &mut S) -> Result<(), Error> {
     emit(value, &mut DynSink(sink), 0)
 }
 
-/// `value`'s canonical bytes.
 pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
     let mut out = Vec::new();
     emit(value, &mut out, 0)?;
     Ok(out)
 }
 
-/// `value`'s canonical text.
 pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
-    // The writer only writes UTF-8: keys and strings as given, and ASCII.
     Ok(String::from_utf8(to_vec(value)?).expect("canonical JSON is UTF-8"))
 }
 
-/// Keys in canonical order: by their UTF-16 code units. Two ASCII keys
-/// compare as their bytes do (the same order, without the walk).
+/// Orders keys by UTF-16 code units. Two ASCII keys compare as their bytes
+/// do, which is the same order without the walk.
 #[inline]
 pub fn key_order(a: &str, b: &str) -> std::cmp::Ordering {
     if a.is_ascii() && b.is_ascii() {
@@ -124,13 +99,11 @@ pub fn key_order(a: &str, b: &str) -> std::cmp::Ordering {
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
-/// A key: a struct's field name as declared, or a map key's text.
 type Key = std::borrow::Cow<'static, str>;
 
 struct DynSink<'a, S: Sink + ?Sized>(&'a mut S);
 
-/// The writer's output. A buffer can take back what it was given since
-/// a mark; a digest cannot.
+/// A buffer can take back what it was given since a mark. A digest cannot.
 trait Out {
     fn put(&mut self, bytes: &[u8]);
     #[inline]
@@ -162,19 +135,6 @@ impl Out for Vec<u8> {
     }
 }
 
-// ---------------------------------------------------------------------
-// one value
-// ---------------------------------------------------------------------
-
-/// Write one value at `depth` (the root is 0).
-///
-/// - Into a buffer: the value is written whole. An object checks its
-///   keys as they arrive; one out of order takes the object back and
-///   writes it key by key.
-/// - Into a digest, deep: the value is staged in a buffer as above, then
-///   passed on.
-/// - Into a digest, near the root: the value's shape is read first,
-///   without descending, and it is written whole or key by key.
 fn emit<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u32) -> Result<(), Error> {
     if let Some(mark) = out.mark() {
         return match value.serialize(Writer { out: &mut *out, only: None, depth }) {
@@ -186,8 +146,8 @@ fn emit<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u
         };
     }
     if depth >= STAGE_FROM {
-        // One staging buffer, reused: staging never nests (a buffer
-        // takes back what it was given, so nothing under it stages).
+        // Staging never nests, because a buffer takes back what it was
+        // given. So one staging buffer is reused.
         let mut staged = STAGED.with(|s| std::mem::take(&mut *s.borrow_mut()));
         staged.clear();
         let written = emit(value, &mut staged, depth);
@@ -201,9 +161,6 @@ fn emit<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u
     }
 }
 
-/// Write an object whose keys arrive out of order: once for each key in
-/// canonical order, writing only that key's entry, or, with many keys,
-/// its entries buffered and sorted.
 fn by_key<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u32) -> Result<(), Error> {
     let keys = Probe::keys(value)?;
     if keys.len() <= PASSES_UP_TO {
@@ -292,24 +249,15 @@ fn integer<I: itoa::Integer, O: Out + ?Sized>(v: I, out: &mut O) {
     out.put(buffer.format(v).as_bytes());
 }
 
-// ---------------------------------------------------------------------
-// the probe: a value's shape, and an object's keys, without descending
-// ---------------------------------------------------------------------
-
 enum Shape {
-    /// Not an object, or an object of one key.
     Other,
-    /// An object whose keys arrive in canonical order, each once.
     Sorted,
-    /// An object whose keys do not.
     Unsorted,
-    /// An object's keys, as they arrive (a collecting probe).
     Keys(Vec<Key>),
 }
 
-/// Reads a value's shape without descending into it. By default it only
-/// checks the order of an object's keys and keeps none of them; with
-/// `collect`, it keeps them all.
+/// Reads a value's shape without descending into it. With `collect` it keeps
+/// the keys. Otherwise it only checks their order.
 struct Probe {
     collect: bool,
 }
@@ -317,7 +265,6 @@ struct Probe {
 struct Keys {
     collect: bool,
     keys: Vec<Key>,
-    /// The last key seen, and the map key being read (buffers reused).
     last: String,
     pending: String,
     seen: bool,
@@ -428,7 +375,6 @@ impl ser::Serializer for Probe {
         value.serialize(self)
     }
     fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _: &'static str, _: u32, _: &'static str, _: &T) -> Result<Shape, ProbeError> {
-        // `{"variant": value}`: one key, so in order.
         Ok(Shape::Other)
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, ProbeError> {
@@ -450,13 +396,11 @@ impl ser::Serializer for Probe {
         Ok(Keys::new(self.collect))
     }
     fn serialize_struct_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeStructVariant, ProbeError> {
-        // `{"variant": {...}}`: one key, so in order.
         Err(ProbeError::Stop)
     }
 }
 
-/// Why the probe stopped: at a sequence or a struct variant (it is not
-/// an object, or it has one key: never an error), or at a real error.
+/// `Stop` is at a sequence or a struct variant. Neither is an error.
 #[derive(Debug)]
 enum ProbeError {
     Stop,
@@ -513,7 +457,6 @@ impl ser::SerializeStruct for Keys {
     }
 }
 
-// The probe's early stops read as "not an object".
 impl Probe {
     fn shape<T: Serialize + ?Sized>(value: &T) -> Result<Shape, Error> {
         match value.serialize(Probe { collect: false }) {
@@ -531,10 +474,6 @@ impl Probe {
         }
     }
 }
-
-// ---------------------------------------------------------------------
-// a map key: its text, into a buffer the caller reuses
-// ---------------------------------------------------------------------
 
 struct KeyInto<'s>(&'s mut String);
 
@@ -755,12 +694,8 @@ impl ser::Serializer for KeyText {
     }
 }
 
-// ---------------------------------------------------------------------
-// the writer: a value's canonical bytes. An object is written whole
-// (its braces, every entry in the order they arrive, each key checked to
-// come after the one before), or, with `only`, as that one entry and no
-// braces (the caller writes them, and the entries in canonical order).
-// ---------------------------------------------------------------------
+// With `only`, the writer writes that one entry and no braces, and the
+// caller writes the braces and the entries in canonical order.
 
 struct Writer<'a, 'k, O: Out + ?Sized> {
     out: &'a mut O,
@@ -773,11 +708,7 @@ struct Entries<'a, 'k, O: Out + ?Sized> {
     only: Option<&'k str>,
     depth: u32,
     first: bool,
-    /// The key written last, while the object is written whole (a
-    /// buffer reused for every entry).
     last: String,
-    /// The key of the map entry whose value comes next (a buffer reused
-    /// for every entry).
     pending: String,
 }
 
@@ -815,7 +746,6 @@ struct Items<'a, O: Out + ?Sized> {
     out: &'a mut O,
     depth: u32,
     first: bool,
-    /// Closes a variant's wrapping object too.
     close: &'static [u8],
 }
 
@@ -829,7 +759,6 @@ impl<O: Out + ?Sized> Items<'_, O> {
     }
 }
 
-/// A struct variant: `{"variant":{...}}`, its inner object canonical.
 struct VariantFields<'a, O: Out + ?Sized> {
     out: &'a mut O,
     depth: u32,
@@ -1081,10 +1010,6 @@ impl<O: Out + ?Sized> ser::SerializeStructVariant for VariantFields<'_, O> {
     }
 }
 
-// ---------------------------------------------------------------------
-// the buffer: a large object out of order, each entry's bytes kept
-// ---------------------------------------------------------------------
-
 struct Buffer<'e> {
     entries: &'e mut Vec<(String, Vec<u8>)>,
     depth: u32,
@@ -1119,7 +1044,7 @@ impl<'e> ser::Serializer for Buffer<'e> {
     fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _: &'static str, value: &T) -> Result<(), Error> {
         value.serialize(self)
     }
-    // The probe said this value is an object: nothing else reaches here.
+    // The probe has said that this value is an object.
     fn serialize_bool(self, _: bool) -> Result<(), Error> {
         Err(not_object())
     }

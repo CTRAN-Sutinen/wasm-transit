@@ -1,14 +1,9 @@
-//! Native dispatch tests for the realtime capability. These test the seam
-//! without wasm. The bytes are built with the same generated prost types the
-//! decoder uses. For the fixture leg, they use the e2e protobuf that the
-//! browser tests replay.
+//! Native dispatch of cap-rt (OPS.md), over the generated prost types and the
+//! e2e fixture pair: sample-gtfs.zip and sample-rt.pb, where t10 is +120 s at A
+//! and +180 s at B, with one vehicle on t10.
 
-// The module's seam, as a host calls it: the kernel's loads answer there.
 use cap_rt::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response};
 
-/// The fixture network and its boundary, registered: (network_hash,
-/// boundary_hash). The network goes on the kernel's bulk op, the way
-/// hosts send it.
 fn load_fixture() -> (String, String) {
     let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
     let imported = transit_codec::import(&feed);
@@ -21,9 +16,6 @@ fn load_fixture() -> (String, String) {
 
 #[test]
 fn decode_reports_delays_and_vehicles() {
-    // A minimal GTFS-rt feed, encoded here with the same generated
-    // prost types the decoder uses: t10 delayed +120 s at A, plus one
-    // vehicle on t10.
     use prost::Message;
     use transit_rt::gtfs_rt as rt;
     let msg = rt::FeedMessage {
@@ -57,8 +49,6 @@ fn decode_reports_delays_and_vehicles() {
                         ..Default::default()
                     }),
                     stop_id: Some("A".into()),
-                    // The descriptor carries the bus number: internal
-                    // id and the rider-visible label.
                     vehicle: Some(rt::VehicleDescriptor {
                         id: Some("4201".into()),
                         label: Some("4201".into()),
@@ -88,14 +78,11 @@ fn decode_reports_delays_and_vehicles() {
         _ => panic!("decode response"),
     }
 
-    // Garbage bytes decode to an error, not a panic.
     assert!(dispatch(Request::Decode { bytes: vec![0xff, 0xff] }).is_err());
 }
 
 #[test]
 fn the_e2e_fixture_decodes_on_the_bulk_seam() {
-    // The fixture the browser e2e replays: t10 delayed +120/+180, with one
-    // vehicle. This goes through the bulk-bytes op that the runner also uses.
     let bytes = include_bytes!("../../../web/e2e/fixtures/sample-rt.pb");
     let outcome = dispatch_bytes(cap_rt::OP_DECODE, bytes);
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
@@ -103,7 +90,6 @@ fn the_e2e_fixture_decodes_on_the_bulk_seam() {
     assert_eq!(parsed["ok"]["overview"]["trip_updates"], 1);
     assert_eq!(parsed["ok"]["overview"]["vehicles"], 1);
 
-    // And through the JSON seam, byte-compatible with every module.
     let json = dispatch_json(&format!(
         r#"{{"op":"decode","bytes":{}}}"#,
         serde_json::to_string(bytes.as_ref()).unwrap()
@@ -111,15 +97,10 @@ fn the_e2e_fixture_decodes_on_the_bulk_seam() {
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert!(parsed["ok"]["overview"]["trips"].is_array(), "{json}");
 
-    // Unknown ops error, never panic.
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
 }
 
-/// The join, as one op: a trip's schedule, delays, and predictions. It also
-/// gives the ranked late view with the DELAYED-BUT-DARK signal. All of it runs
-/// over the real e2e fixture pair (sample-gtfs.zip and sample-rt.pb). t10 is
-/// +120 s at A and +180 s at B, with one vehicle on t10.
 #[test]
 fn trip_progress_joins_schedule_and_delays() {
     let (network_hash, boundary_hash) = load_fixture();
@@ -151,8 +132,6 @@ fn trip_progress_joins_schedule_and_delays() {
     assert_eq!(p.stops[1].predicted_arrival, Some(8 * 3600 + 600 + 180), "08:13");
     assert_eq!(p.worst_delay_secs, 180);
 
-    // A trip the snapshot does not mention answers from the schedule alone,
-    // with no delay. The answer is still a plan.
     let plain = cap_rt::dispatch(cap_rt::Request::TripProgress {
         network_hash: network_hash.clone(),
         boundary_hash: Some(boundary_hash.clone()),
@@ -165,8 +144,6 @@ fn trip_progress_joins_schedule_and_delays() {
     assert!(p.stops.iter().all(|s| s.arrival_delay.is_none()));
     assert_eq!(p.worst_delay_secs, 0);
 
-    // A trip the NETWORK does not carry answers null (the rt feed
-    // named a trip the network never had).
     let missing = cap_rt::dispatch(cap_rt::Request::TripProgress {
         network_hash,
         boundary_hash: None,
@@ -177,13 +154,10 @@ fn trip_progress_joins_schedule_and_delays() {
     let cap_rt::Response::TripProgress { progress: None } = missing else { panic!("progress") };
 }
 
-/// The ranked view: worst first, and the dark-vehicle signal. A trip with a
-/// delay but no position naming it is dark.
 #[test]
 fn late_trips_rank_and_flag_the_dark_ones() {
     let (network_hash, _) = load_fixture();
 
-    // The fixture payload: t10 is late and HAS a vehicle (4201).
     let payload = include_bytes!("../../../web/e2e/fixtures/sample-rt.pb").to_vec();
     let cap_rt::Response::Decode { rt_hash, .. } =
         cap_rt::dispatch(cap_rt::Request::Decode { bytes: payload.clone() }).unwrap()
@@ -204,18 +178,12 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"), "the internal id rides along with the label");
     assert!(trips[0].has_position, "the fixture's vehicle names t10");
     assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "located on its own trip");
-    // The names a rider uses (QAF-122): the route's name, the trip's
-    // start, first stop, and headsign, and the stop of the bus's own
-    // trip nearest its position.
     assert_eq!(trips[0].route_name.as_deref(), Some("10"));
     assert_eq!(trips[0].start_secs, Some(28800));
     assert_eq!(trips[0].first_stop.as_ref().map(|s| (s.id.as_str(), s.name.as_deref())), Some(("A", Some("Main & 1st"))));
     assert_eq!(trips[0].headsign.as_deref(), Some("Downtown"));
     assert!(trips[0].near_stop.as_ref().is_some_and(|s| ["A", "B"].contains(&s.id.as_str())), "a stop of t10's own pattern");
 
-    // The DARK case: a synthetic payload whose trip update carries a delay, but
-    // no vehicle names it. The op surfaces this "delayed but dark" fact,
-    // instead of a host-side set-difference.
     use prost::Message;
     use transit_rt::gtfs_rt as rt;
     let dark = rt::FeedMessage {
@@ -255,10 +223,8 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     assert_eq!(trips[0].vehicle_label, None);
     assert_eq!(trips[0].vehicle_id, None);
 
-    // The BLOCK law (found dogfooding C-TRAN live, QAF-30). t20's delay is
-    // propagated from t10, the trip before it on block B1. The positions
-    // snapshot shows bus 4201 running t10. The bus is out, finishing the
-    // previous trip, so it is late, not dark.
+    // t20's delay propagates from t10, the trip before it on block B1, and
+    // bus 4201 is finishing t10. The bus is late, not dark.
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
         network_hash: network_hash.clone(),
         rt_hash: dark_hash.clone(),
@@ -273,11 +239,8 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "the trip the bus is actually on");
     assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"));
 
-    // The SPLIT-FEED law (found dogfooding C-TRAN live). TripUpdates and
-    // VehiclePositions are separate feeds. Looking up positions in the delays
-    // snapshot alone marked every late trip DARK. A TU-only delays snapshot,
-    // with the positions snapshot named by vp_hash, finds the bus. It is not
-    // dark.
+    // TripUpdates and VehiclePositions are separate feeds, so a delays-only
+    // snapshot with `vp_hash` finds the bus.
     let tu_only = rt::FeedMessage {
         header: rt::FeedHeader { gtfs_realtime_version: "2.0".into(), ..Default::default() },
         entity: vec![rt::FeedEntity {
@@ -298,8 +261,6 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     let cap_rt::Response::Decode { rt_hash: tu_hash, .. } =
         cap_rt::dispatch(cap_rt::Request::Decode { bytes: tu_only }).unwrap()
     else { panic!("decode") };
-    // Same vp_hash as before. The fixture snapshot carries the vehicle, but the
-    // DELAYS are the split snapshot.
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
         network_hash,
         rt_hash: tu_hash,
@@ -337,10 +298,6 @@ fn unknown_hashes_are_errors_not_panics() {
     assert!(err.contains("unknown rt snapshot"), "{err}");
 }
 
-/// The live document through the seam, over the real fixture pair. The
-/// snapshot resolves against the network into trip instances. Statuses
-/// classify under the window the request names. The summary is the status
-/// panel's whole answer.
 #[test]
 fn live_resolves_the_snapshot_into_model_vocabulary() {
     let (network_hash, boundary_hash) = load_fixture();
@@ -366,21 +323,19 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     let cap_rt::Response::Live { live_hash, live: day, summary } = live(None).unwrap() else { panic!("live") };
     let day = day.expect("the document by default");
     let canonical = cap_abi::canonical_bytes(&day).unwrap();
-    assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module is the hash authority");
+    assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module answers the hash of the canonical bytes");
     assert!(day.trips.iter().any(|t| t.trip == "t10" && t.start_secs == 8 * 3600));
     assert_eq!(summary.vehicles, 1);
     assert_eq!(summary.counts.late, 1, "+180 s is late under the default window");
     assert_eq!(summary.late[0].delay_secs, 180);
     assert!(!summary.late_are_predictions);
 
-    // The window is the caller's policy: five seconds late is very late.
     let strict = transit_live::OnTimeWindow { early_secs: 0, late_secs: 0, very_late_secs: 5 };
     let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else { panic!("live") };
     assert_eq!(summary.counts.very_late, 1);
 
-    // The live document registers where it was minted. A host whose readers
-    // are linked beside rt declines it, and reads it by hash. It gets the same
-    // document and the same summary (QAF-49).
+    // A host whose readers are linked beside rt declines the document and reads
+    // it by hash, with the same document and summary (QAF-49).
     let bare = cap_rt::dispatch(cap_rt::Request::Live {
         network_hash: network_hash.clone(),
         boundary_hash: Some(boundary_hash.clone()),
@@ -397,8 +352,6 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     assert_eq!(again.counts.late, 1);
     assert_eq!(*cap_abi::kernel::kind::<transit_live::LiveDay>().require(&live_hash).unwrap(), day, "registered under its hash");
 
-    // No snapshot at all is a request error; an unknown boundary is a
-    // missing-document error.
     let err = cap_rt::dispatch(cap_rt::Request::Live {
         network_hash: network_hash.clone(),
         boundary_hash: None,
@@ -425,9 +378,6 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     assert!(err.contains("unknown boundary"), "{err}");
 }
 
-/// Service alerts reach the live document from their own snapshot:
-/// an Alerts feed alone is enough, and its informed entities name the
-/// network's routes.
 #[test]
 fn live_carries_the_alerts_in_force() {
     use prost::Message;
@@ -465,10 +415,8 @@ fn live_carries_the_alerts_in_force() {
     assert_eq!(live.alerts[0].scopes[0].route.as_deref(), Some("10"));
 }
 
-/// The agency's own alerts: encode_alerts writes the service alerts
-/// document as an Alerts feed, registered as a snapshot, so `live`
-/// reads it as a rider's app would. A direction with no GTFS code is
-/// named, not widened.
+/// `live` reads the encoded feed as a rider's app would. A direction with no
+/// GTFS code is named, not widened.
 #[test]
 fn encode_alerts_writes_a_feed_that_live_reads_back() {
     let (network_hash, boundary_hash) = load_fixture();
@@ -505,8 +453,6 @@ fn encode_alerts_writes_a_feed_that_live_reads_back() {
     assert_eq!(live.alerts[0].scopes[0].direction.as_deref(), Some("1"));
 }
 
-/// read_alerts is encode_alerts' inverse: a feed read back registers the
-/// document under the hash the kernel's load answers for it.
 #[test]
 fn read_alerts_reads_a_feed_into_the_document() {
     let (network_hash, _) = load_fixture();

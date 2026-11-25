@@ -1,13 +1,9 @@
-//! The inventory and the locks name the same kinds (docs/FORMATS.md,
-//! "Versions" and "The schema lock"): every kind in the inventory's
-//! table has a locked schema (`crates/<owner>/locks/`, or a host-owned
-//! one in `server/schemas/`), every locked kind is in the table, and a
-//! kind in the table with no schema names its reason here.
+//! The Versions table of docs/FORMATS.md and the schema locks name the same
+//! kinds. A kind in the table with no schema names its reason in `NOT_LOCKED`.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
-/// Each kind in the table with no locked schema, and why.
 const NOT_LOCKED: &[(&str, &str)] = &[
     ("diversion_draft", "never persisted yet: it gains its tags when something first persists one"),
     ("manifest", "its schema is the HTTP contract's (server/openapi.json)"),
@@ -18,7 +14,6 @@ fn root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The kinds the first column of the Versions table names.
 fn inventory() -> BTreeSet<String> {
     let text = std::fs::read_to_string(root().join("docs/FORMATS.md")).unwrap();
     let start = text.find("\n## Versions\n").expect("docs/FORMATS.md has a \"## Versions\" section");
@@ -34,8 +29,6 @@ fn inventory() -> BTreeSet<String> {
     out
 }
 
-/// The kinds with a locked schema: each owning crate's locks, and the
-/// host-owned schemas.
 fn locked() -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for owner in std::fs::read_dir(root().join("crates")).unwrap().flatten() {

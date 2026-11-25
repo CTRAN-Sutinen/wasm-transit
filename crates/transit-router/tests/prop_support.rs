@@ -1,4 +1,4 @@
-//! Shared fixture-building helpers for transit-router tests.
+//! Fixture builders and the brute-force oracle that the router tests share.
 use std::io::Write;
 
 use chrono::NaiveDate;
@@ -10,10 +10,6 @@ pub struct TripSpec {
     pub step: u32,
 }
 
-/// A fixture feed through the sanctioned path: the codec's import
-/// (feed → network document), then the model's own materialize for
-/// the date. The same composition the capability performs, never
-/// the GTFS substrate in router code.
 pub fn model_day(
     zip: &[u8],
     date: NaiveDate,
@@ -24,7 +20,6 @@ pub fn model_day(
     (outcome.network, day)
 }
 
-/// Serialize a generated spec into a GTFS zip.
 #[allow(dead_code)]
 pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
     let timed: Vec<(Vec<u32>, Vec<u32>)> = trips
@@ -34,9 +29,9 @@ pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
     build_zip_timed(n_stops, 0.0008, &timed)
 }
 
-/// [`build_zip`] with the stops `spacing_deg` of latitude apart
-/// (0.0008° ≈ 89 m: every near pair walkable; 0.003° ≈ 333 m: no
-/// footpaths at all).
+/// [`build_zip`] with the stops `spacing_deg` of latitude apart. 0.0008° is
+/// about 89 m, so every near pair is walkable. 0.003° is about 333 m, so no
+/// footpaths exist.
 #[allow(dead_code)]
 pub fn build_zip_spaced(n_stops: usize, spacing_deg: f64, trips: &[TripSpec]) -> Vec<u8> {
     let timed: Vec<(Vec<u32>, Vec<u32>)> = trips
@@ -46,9 +41,6 @@ pub fn build_zip_spaced(n_stops: usize, spacing_deg: f64, trips: &[TripSpec]) ->
     build_zip_timed(n_stops, spacing_deg, &timed)
 }
 
-/// Serialize trips with explicit per-visit times (arrival =
-/// departure) into a GTFS zip: trip `i` is `t{i}`, stop `n` is
-/// `s{n}`, one route, one every-day service.
 #[allow(dead_code)]
 pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec<u32>)]) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -91,14 +83,12 @@ pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec
     w.finish().unwrap().into_inner()
 }
 
-/// Unreachable in [`oracle_arrival`].
 #[allow(dead_code)]
 pub const INF: u32 = u32::MAX;
 
-/// The earliest-arrival oracle is brute force: Bellman-Ford-style relaxation
-/// over every (trip, board, alight) triple and every footpath of the built
-/// network, to a fixpoint, with no leg bound. It shares no code with the
-/// round-based search.
+/// The oracle relaxes every (trip, board, alight) triple and every footpath
+/// to a fixpoint, with no leg bound. It shares no code with the round-based
+/// search.
 #[allow(dead_code)]
 pub fn oracle_arrival(net: &transit_router::RouterNetwork, from: usize, to: usize, depart: u32) -> u32 {
     let n = net.stops.len();
@@ -142,10 +132,6 @@ pub fn oracle_arrival(net: &transit_router::RouterNetwork, from: usize, to: usiz
     }
 }
 
-/// An itinerary makes chronological sense from `depart`: legs connect
-/// stop to stop, nothing boards before the previous leg ended, every
-/// transit leg alights at or after it boards, and the last leg ends
-/// at the promised arrival at the destination.
 #[allow(dead_code)]
 pub fn assert_feasible(it: &transit_router::Itinerary, depart: u32) {
     use transit_router::Leg;

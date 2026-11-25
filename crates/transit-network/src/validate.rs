@@ -1,10 +1,6 @@
-//! Network invariants.
-//!
-//! `validation_issues` reports every problem a network document can
-//! carry: referential integrity, pattern/service/calendar/block
-//! structure. An authoring UI can show the whole list at once.
-//! `validate` gates on the first. `Ok(())` is the contract
-//! `materialize` relies on: it cannot fail on a validated network.
+//! `validation_issues` reports every problem, so an authoring UI can show the
+//! whole list. `Ok(())` from `validate` is the contract that `materialize`
+//! relies on: it cannot fail on a validated network.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,17 +9,15 @@ use chrono::NaiveDate;
 use crate::error::{NetworkError, NetworkWarning, RecoverySource};
 use crate::model::{Departs, Network, Trip};
 
-/// All issues, in a deterministic order (entity map order, then
-/// check order). Empty = valid. A layover is judged against the
-/// terminal's floor ([`recovery_floors`]); a caller holding a
-/// work-rule policy asks [`validation_issues_under`].
+/// Issues come in entity map order, then check order. A layover is judged
+/// against the floor of its terminal
+/// ([`recovery_floors`]). A caller that holds a work-rule policy asks
+/// [`validation_issues_under`].
 pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
     validation_issues_under(network, &|_| None)
 }
 
-/// What a recovery requirement is asked about: the trip before the
-/// wait (its route, service type, and run time) and where the vehicle
-/// waits (the layover's `at`, else the stop the trip ends at).
+/// `terminal` is the `at` of the layover, else the stop where the trip ends.
 #[derive(Debug, Clone, Copy)]
 pub struct RecoveryAt<'a> {
     pub route: &'a str,
@@ -32,10 +26,8 @@ pub struct RecoveryAt<'a> {
     pub terminal: &'a str,
 }
 
-/// The derived recovery floor (D-9): per terminal, the smallest authored
-/// layover waiting there. It is the recovery that the network itself shows
-/// is enough at that stop. A layover waits at its `at`. Otherwise it waits at
-/// the last stop of the trip before it.
+/// For each terminal, the smallest authored layover that waits there (D-9).
+/// A layover waits at its `at`, else at the last stop of the trip before it.
 pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     let ends = trip_ends(network);
     let mut floors: BTreeMap<String, u32> = BTreeMap::new();
@@ -54,10 +46,9 @@ pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     floors
 }
 
-/// The recovery required after a trip (D-9). Every reader applies this one
-/// rule. The policy's requirement wins when it has one. Otherwise, for a pair
-/// that carries an authored layover, it is the floor at the terminal.
-/// Otherwise there is none, and the pair is judged for order only.
+/// Every reader applies this rule (D-9). The requirement of the policy wins.
+/// Otherwise a pair with an authored layover requires the floor at the
+/// terminal. Any other pair is judged for order only.
 pub fn required_recovery(
     floors: &BTreeMap<String, u32>,
     policy: Option<u32>,
@@ -71,7 +62,6 @@ pub fn required_recovery(
     }
 }
 
-/// Trip id → (route, last stop) for trips whose pattern resolves.
 fn trip_ends(network: &Network) -> BTreeMap<&str, (&str, &str)> {
     network
         .pattern_trips
@@ -84,15 +74,12 @@ fn trip_ends(network: &Network) -> BTreeMap<&str, (&str, &str)> {
         .collect()
 }
 
-/// [`validation_issues`] with a work-rule policy's recovery requirement.
-/// `policy` answers the seconds required after a trip, and it wins. It answers
-/// `None` where no rule applies. Then the terminal's floor judges a pair that
-/// carries an authored layover. A pair with no layover is judged for order
-/// only. With a requirement, every adjacent pair of distinct trips is judged.
+/// `policy` answers the seconds required after a trip, or `None` where no
+/// rule applies. Recovery then follows [`required_recovery`]. With a
+/// requirement, every adjacent pair of distinct trips is judged.
 pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -> Option<u32>) -> Vec<NetworkError> {
     let mut issues = Vec::new();
 
-    // --- Stops: parent references -------------------------------
     for (stop_id, stop) in &network.stops {
         if let Some(parent) = &stop.parent {
             if !network.stops.contains_key(parent) {
@@ -104,7 +91,6 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         }
     }
 
-    // --- Patterns ------------------------------------------------
     for (pattern_id, pattern) in &network.patterns {
         match network.routes.get(&pattern.route) {
             None => issues.push(NetworkError::UnknownRoute {
@@ -133,7 +119,7 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
             issues.push(NetworkError::PatternTooShort {
                 pattern: pattern_id.clone(),
             });
-            continue; // the remaining checks need two stops
+            continue;
         }
         for ps in &pattern.stops {
             if !network.stops.contains_key(&ps.stop) {
@@ -193,12 +179,8 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         }
     }
 
-    // --- Transfer points ---------------------------------------------
-        // A transfer flag is composed intent. What matters is the routes that
-        // meet across the stop's walking group (see [`walking_group`]).
-        // Transfers happen across a street or down a block, not only at one
-        // pin. Fewer than two routes in the group means the flag has no
-        // meaning.
+    // Routes across the walking group count ([`walking_group`]), because
+    // transfers happen across a street or down a block.
     {
         let index = stop_route_index(network);
         for (stop_id, stop) in &network.stops {
@@ -211,7 +193,6 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         }
     }
 
-    // --- Service types ----------------------------------------------
     for (service_type_id, service_type) in &network.service_types {
         for (i, r) in service_type.rule.ranges.iter().enumerate() {
             if r.start > r.end {
@@ -223,7 +204,6 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         }
     }
 
-    // --- Pattern trips and their trips --------------------------------
     let mut homes: BTreeMap<&str, &str> = BTreeMap::new();
     for (pattern_trips_id, service) in &network.pattern_trips {
         let pattern = network.patterns.get(&service.pattern);
@@ -259,7 +239,6 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         }
     }
 
-    // --- Blocks (the runcut) --------------------------------------
     let index: BTreeMap<&str, (&str, &Trip)> = network
         .pattern_trips
         .values()
@@ -313,14 +292,10 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
             }
         }
         if !resolved {
-            continue; // feasibility needs every trip
+            continue;
         }
-                // Feasibility, day by day. On each combination of service types
-                // that run together on some date, the block's trips that run
-                // that day must follow one another in block order. This
-                // includes every instance of a frequency trip. Each trip
-                // arrives before the next departs. The layover between adjacent
-                // trips is counted.
+        // Judge feasibility day by day, on each combination of service
+        // types that run together on some date.
         let types: BTreeSet<&str> = block.trips.iter().map(|t| index[t.trip.as_str()].0).collect();
         'days: for day in days.signatures(&types) {
             // (block index, trip, start, arrival) of the previous instance.
@@ -335,8 +310,6 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
                 starts.sort_unstable();
                 for start in starts {
                     if let Some((pi, ptrip, pstart, arrival)) = prev {
-                        // The recovery required after the trip before,
-                        // when the two are adjacent in the block.
                         let required = if pi + 1 == i && arrival <= start {
                             let authored = block.layovers.iter().find(|l| l.after_trip == pi);
                             let (pservice, ptrip_model) = index[ptrip];
@@ -389,7 +362,7 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
     issues
 }
 
-/// One trip's own invariants, against its pattern when it resolves.
+/// The invariants of one trip, checked against its pattern when it resolves.
 fn trip_issues(trip: &Trip, pattern: Option<&crate::model::Pattern>, issues: &mut Vec<NetworkError>) {
     if let Departs::Every { bands, .. } = &trip.departs {
         if bands.is_empty() {
@@ -436,10 +409,7 @@ fn trip_issues(trip: &Trip, pattern: Option<&crate::model::Pattern>, issues: &mu
     }
 }
 
-/// The combinations of service types that run together on some date,
-/// restricted to a block's types: each type alone, plus every set
-/// observed on a date one of them runs. Per-type date sets are
-/// computed once per network.
+/// The date set of each type is computed once for each network.
 struct DaySignatures<'a> {
     network: &'a Network,
     dates: BTreeMap<&'a str, BTreeSet<NaiveDate>>,
@@ -485,9 +455,6 @@ impl<'a> DaySignatures<'a> {
     }
 }
 
-/// Every planning concern that is not an invalidity (see
-/// [`NetworkWarning`]), in deterministic order: unassigned trips by
-/// schedule id, then the plan-period check.
 pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
     let mut warnings = Vec::new();
 
@@ -531,10 +498,8 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
     warnings
 }
 
-/// The warnings that refuse publication (D-76): a pick that runs no
-/// service in its period would hand every rider an empty schedule on
-/// its date. Every other warning names what validity lets through and
-/// publishes; issues never publish (validate first).
+/// A pick that runs no service in its period would hand every rider an empty
+/// schedule (D-76). Every other warning publishes. Issues never publish.
 pub fn publish_refusals(network: &Network) -> Vec<NetworkWarning> {
     validation_warnings(network)
         .into_iter()
@@ -542,11 +507,8 @@ pub fn publish_refusals(network: &Network) -> Vec<NetworkWarning> {
         .collect()
 }
 
-/// What a network is as a published pick: its validation issues, the
-/// warnings that refuse publication ([`publish_refusals`]), and the
-/// other warnings, which publish. A pick publishes when `issues` and
-/// `refusals` are both empty. cap-network's `publishable` answers it,
-/// and cap-plans runs it on every pick it writes.
+/// A pick publishes when `issues` and `refusals` ([`publish_refusals`]) are
+/// both empty. cap-plans runs it on every pick that it writes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PublishCheck {
     pub issues: Vec<NetworkError>,
@@ -555,29 +517,23 @@ pub struct PublishCheck {
 }
 
 impl PublishCheck {
-    /// Whether the network publishes.
     pub fn publishes(&self) -> bool {
         self.issues.is_empty() && self.refusals.is_empty()
     }
 }
 
-/// [`PublishCheck`] of a network.
 pub fn publish_check(network: &Network) -> PublishCheck {
     let refusals = publish_refusals(network);
     let warnings = validation_warnings(network).into_iter().filter(|w| !refusals.contains(w)).collect();
     PublishCheck { issues: validation_issues(network), refusals, warnings }
 }
 
-/// First-issue gate: `Ok` iff the network is valid.
 pub fn validate(network: &Network) -> Result<(), NetworkError> {
     network.validate()
 }
 
-/// The walking group of a stop: itself, its siblings sharing a parent, its
-/// children, and its parent. These are the places a rider at this stop can
-/// walk to for a connection. Transfers happen across a street or down a block,
-/// not only at one pin. GTFS models transfer centers with parents. The walking
-/// group is the model's word for the same reality.
+/// The stop, its siblings that share a parent, its children, and its parent.
+/// A rider can walk to these places for a connection.
 pub fn walking_group(network: &Network, stop_id: &str) -> BTreeMap<String, ()> {
     let mut group: BTreeMap<String, ()> = BTreeMap::new();
     let Some(stop) = network.stops.get(stop_id) else {
@@ -595,8 +551,6 @@ pub fn walking_group(network: &Network, stop_id: &str) -> BTreeMap<String, ()> {
     group
 }
 
-/// stop → routes serving it, across every pattern. The base index
-/// for transfer-point composition.
 pub fn stop_route_index(network: &Network) -> BTreeMap<String, BTreeSet<String>> {
     let mut index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for pattern in network.patterns.values() {
@@ -610,7 +564,6 @@ pub fn stop_route_index(network: &Network) -> BTreeMap<String, BTreeSet<String>>
     index
 }
 
-/// The routes meeting at a stop, pooled across its walking group.
 pub fn routes_meeting_at(
     network: &Network,
     index: &BTreeMap<String, BTreeSet<String>>,
@@ -625,8 +578,6 @@ pub fn routes_meeting_at(
     routes
 }
 
-/// Do any of the (start, end) ranges overlap? Sort by start; any pair
-/// where the next start is before the current end overlaps.
 fn overlapping(ranges: &[(u32, u32)]) -> bool {
     let mut sorted = ranges.to_vec();
     sorted.sort_unstable();

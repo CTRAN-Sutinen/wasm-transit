@@ -1,8 +1,5 @@
-//! A stored plan set read back (docs/FORMATS.md, "Versions"): the
-//! tagged set in this version answers its plans as stored, a bare map
-//! of plans by store id (the shape written before the set had its tag)
-//! reads as the set, and another kind or version is refused, naming
-//! both. A page never writes over a set it refuses.
+//! The stored plan set (docs/FORMATS.md, "Versions"; cap-network/OPS.md,
+//! `stored_plans`).
 
 use serde_json::json;
 use transit_network::plan_set::stored_plans;

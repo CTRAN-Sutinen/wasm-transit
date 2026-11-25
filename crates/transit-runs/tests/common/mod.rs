@@ -1,7 +1,6 @@
-//! A shuttle world for the runs laws: stops A and C (and C2, a bay of
-//! station CS with C), routes 5 and 6 running A → C and back, every
-//! trip 20 minutes, weekday service. Trips are built from
-//! (route, outbound, start) triples; blocks are optional.
+//! The shuttle world has stops A and C (and C2, a bay of station CS with C),
+//! routes 5 and 6 from A to C and back, and weekday service. Every trip takes
+//! 20 minutes.
 
 #![allow(dead_code)]
 
@@ -14,7 +13,6 @@ use transit_network::{
 pub const H: u32 = 3600;
 pub const RUN: u32 = 1200;
 
-/// A weekday (Friday).
 pub fn date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 10, 23).unwrap()
 }
@@ -31,13 +29,10 @@ fn pattern(route: &str, from: &str, to: &str) -> Pattern {
     }
 }
 
-/// The trip id of a triple.
 pub fn trip_id(route: &str, outbound: bool, start: u32) -> String {
     format!("{route}{}@{start}", if outbound { "o" } else { "i" })
 }
 
-/// The world with these trips and blocks (each block: trip ids in
-/// order, layovers left to the caller).
 pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Network {
     let stop = |lat: f64, parent: Option<&str>| Stop {
         name: "s".into(),
@@ -117,7 +112,6 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
     net
 }
 
-/// A layover after trip `after` of block `block`.
 pub fn layover(net: &mut Network, block: &str, after: usize, secs: u32) {
     net.blocks.get_mut(block).unwrap().layovers.push(Layover { after_trip: after, secs, at: None, extra: Default::default() });
 }

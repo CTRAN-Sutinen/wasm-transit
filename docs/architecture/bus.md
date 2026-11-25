@@ -238,8 +238,8 @@ fixture.
    assembly, in either order of its capabilities. A shared derived
    entry is only a cache, never a dependency.
 
-**The module is the hash authority.** Hosts never mint a document's
-identity. The canonical form is RFC 8785, so another tool can check an
+**The module computes a document's hash.** A host does not compute
+it. The canonical form is RFC 8785, so another tool can check an
 identity, but `JSON.stringify` is not that form: it keeps keys in the
 order they were inserted. Query with the hash the module returned.
 
@@ -266,8 +266,8 @@ module that answers it.
 
 **The kernel keeps every document.** The documents are in
 `cap_abi::registry::Registry` statics that only the kernel constructs.
-The module owns what it holds, because it is the hash authority. The
-host names what survives, because it owns the documents.
+The host decides which documents survive, because the host owns them.
+The kernel drops the rest.
 
 - Short-lived kinds bound themselves. rt snapshots keep their last 8,
   and live documents keep their last 4.

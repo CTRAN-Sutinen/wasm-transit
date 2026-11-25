@@ -6,7 +6,6 @@
     },
     "WatchStop": {
       "additionalProperties": true,
-      "description": "One watched stop.",
       "properties": {
         "id": {
           "type": "string"
@@ -27,12 +26,10 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "A rider's saved stops, in the order the rider saved them.",
   "properties": {
     "kind": {
       "$ref": "#/$defs/WatchlistKind",
-      "default": "watchlist",
-      "description": "The kind tag and version (D-115)."
+      "default": "watchlist"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",

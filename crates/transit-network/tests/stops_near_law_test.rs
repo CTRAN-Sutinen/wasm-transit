@@ -1,32 +1,22 @@
-//! The directory's stop question, asked from a point: the places a
-//! rider can walk to, nearest first. The laws, from the
-//! intent ("stops near me"), never from the implementation:
+//! `stops_near` and `stops_near_walked` (D-34; cap-directory/OPS.md,
+//! `stops_near`). The expected answers come from the intent, not the
+//! implementation.
 //!
-//! 1. rows are ordered by great-circle distance (meters, haversine)
-//!   : monotone non-decreasing, ties by stop id;
-//! 2. with a radius, every row lies within it, and every place
-//!    within it answers (up to the limit);
-//! 3. the nearest place is first, at the distance of the nearest
-//!    point of it;
-//! 4. never more rows than the limit;
-//! 5. one row per place: a station's bays answer as the station
-//!    (the walking group the station board pools), at the distance
-//!    of its nearest member; a stop with no station is its own place.
+//! 1. Rows are ordered by great-circle distance in meters, ties by stop id.
+//! 2. With a radius, every row lies within it, and every place within it
+//!    answers, up to the limit.
+//! 3. The nearest place is first, at the distance of its nearest point.
+//! 4. There are never more rows than the limit.
+//! 5. A station's bays answer as one row, the station, at the distance of the
+//!    nearest member. A stop with no station is its own place.
 //!
-//! Asked with the point's walks to stops (cap-streets `access`, along
-//! the streets: crates/transit-streets/src/lib.rs; D-34):
+//! With the point's walks to stops (cap-streets `access`):
 //!
-//! 6. the places a walk reaches come first, by walk (then distance,
-//!    then id); the rest follow by distance, ties by id: a place
-//!    across a freeway is no nearer for being near;
-//! 7. a place's walk is the shortest walk to any of its members, and
-//!    a walk to a stop the network does not hold reaches nothing;
-//! 8. the walks reorder the rows and nothing else: the same places
-//!    answer within the radius (laws 2, 4, 5 hold as asked without).
-//!
-//! API: `transit_network::listing::stops_near(network, lat, lon,
-//! limit, radius_m) -> Vec<NearbyStop>`, and `stops_near_walked(…,
-//! walks: &[(stop id, walk_secs)])`.
+//! 6. The places a walk reaches come first, by walk, then distance, then id.
+//!    The rest follow by distance.
+//! 7. A place's walk is the shortest walk to any member. A walk to a stop that
+//!    the network lacks reaches nothing.
+//! 8. The walks reorder the rows and change nothing else.
 
 use std::collections::BTreeSet;
 
@@ -34,8 +24,7 @@ use proptest::prelude::*;
 use transit_network::listing::{stops_near, stops_near_walked, NearbyStop};
 use transit_network::{Network, Stop};
 
-/// The test's own great-circle distance (the spec's formula, mean
-/// earth radius): independent of the library's.
+/// The spec's formula with the mean earth radius, independent of the library.
 fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
     let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
@@ -47,8 +36,6 @@ fn stop(name: &str, lat: f64, lon: f64, parent: Option<&str>) -> Stop {
     Stop { name: name.into(), lat, lon, parent: parent.map(Into::into), ..Default::default() }
 }
 
-/// The place a stop belongs to: its station when the network holds
-/// it, else itself.
 fn place_of<'a>(net: &'a Network, id: &'a str) -> &'a str {
     match net.stops[id].parent.as_deref() {
         Some(p) if net.stops.contains_key(p) => p,
@@ -56,8 +43,6 @@ fn place_of<'a>(net: &'a Network, id: &'a str) -> &'a str {
     }
 }
 
-/// Every place's distance: the nearest of its members (the station
-/// and its bays).
 fn place_distances(net: &Network, lat: f64, lon: f64) -> std::collections::BTreeMap<String, f64> {
     let mut out: std::collections::BTreeMap<String, f64> = Default::default();
     for (id, s) in &net.stops {
@@ -68,9 +53,6 @@ fn place_distances(net: &Network, lat: f64, lon: f64) -> std::collections::BTree
     out
 }
 
-/// A random network around a small area (~2 km): plain stops,
-/// stations, bays of those stations, and the odd bay whose station
-/// the network does not hold.
 fn arb_network() -> impl Strategy<Value = Network> {
     prop::collection::vec(
         (0.0f64..0.02, 0.0f64..0.02, 0u8..4, any::<prop::sample::Index>()),
@@ -78,7 +60,6 @@ fn arb_network() -> impl Strategy<Value = Network> {
     )
     .prop_map(|raw| {
         let mut net = Network::default();
-        // Stations first: every fourth entry (kind 0) is a station.
         let stations: Vec<String> =
             raw.iter().enumerate().filter(|(_, r)| r.2 == 0).map(|(i, _)| format!("S{i:02}")).collect();
         for (i, (dlat, dlon, kind, pick)) in raw.iter().enumerate() {
@@ -173,8 +154,6 @@ proptest! {
     }
 }
 
-/// Walks from the point to some of the network's stops (and to a stop
-/// it does not hold).
 fn arb_walks(net: &Network) -> impl Strategy<Value = Vec<(String, u32)>> {
     let mut ids: Vec<String> = net.stops.keys().cloned().collect();
     ids.push("NOWHERE".into());
@@ -188,7 +167,6 @@ fn case() -> impl Strategy<Value = (Network, Vec<(String, u32)>)> {
     })
 }
 
-/// Every place's walk: the shortest walk to any of its members.
 fn place_walks(net: &Network, walks: &[(String, u32)]) -> std::collections::BTreeMap<String, u32> {
     let mut out: std::collections::BTreeMap<String, u32> = Default::default();
     for (id, secs) in walks {
@@ -241,9 +219,8 @@ proptest! {
     }
 }
 
-/// The worked case: a station whose bays sit nearer than its pin
-/// answers once, as the station, at its nearest bay's distance: the
-/// place a rider walks to, not three rows of one transit center.
+/// A station whose bays sit nearer than its pin answers once, as the station,
+/// at its nearest bay's distance.
 #[test]
 fn a_station_answers_once_at_its_nearest_bay() {
     let mut net = Network::default();
@@ -259,7 +236,6 @@ fn a_station_answers_once_at_its_nearest_bay() {
     assert!((rows[0].distance_m - haversine_m(45.6, -122.5, 45.601, -122.5)).abs() < 1e-6);
     assert!(rows[1].transfer, "the row carries the stop's transfer flag");
 
-    // A radius short of everything answers nothing; no stops, nothing.
     assert!(stops_near(&net, 45.6000, -122.5000, 10, Some(50.0)).is_empty());
     assert!(stops_near(&Network::default(), 45.6, -122.5, 10, None).is_empty());
 }

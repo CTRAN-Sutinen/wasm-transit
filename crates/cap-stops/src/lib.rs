@@ -1,21 +1,9 @@
-//! cap-stops: what is a stop on a date? (OPS.md has every op.)
+//! cap-stops wraps transit-stops. A pick only reads the stops document
+//! (D-157), and a plan copies a stop's record and never writes it (D-173).
 //!
-//! The seam over transit-stops. Rules that the ops share:
-//!
-//! * The module is the hash authority. `validate` answers every refusal,
-//!   or the canonical document and its hash, and the kernel's
-//!   `load_stops` registers only what `validate` would pass. A host stores
-//!   exactly those bytes.
-//! * A pick only reads the stops document (D-157). The ops that take a
-//!   pick's period derive it from the published plan set, so no host
-//!   does. A plan copies a stop's record (`records`, `take_stops`; D-173)
-//!   and never writes the document.
-//! * GTFS out and in carry the stops' history (D-150, D-151). Amenities,
-//!   site answers, and references are the document's alone.
-//! * `receive` writes the stops log whole (D-197, D-228). The stops and
-//!   the stop requests are one log, because one entry can change a stop
-//!   and the request it carries out, so this module also links
-//!   transit-requests. Surveys are attributed before any check.
+//! `receive` writes the stops log whole (D-197, D-228). The stops and the
+//! stop requests are one log, because one entry can change a stop and the
+//! request it carries out. So this crate also links transit-requests.
 
 #![forbid(unsafe_code)]
 
@@ -26,7 +14,6 @@ use ts_rs::TS;
 pub use transit_stops::{Answer, Event, Refusal, Status, StatusCount, StopOn, Stops};
 use transit_requests::{RequestRefusal, StopRequest, StopRequests, WorkOrder};
 
-/// One core site question (D-158) and the kind of answer it takes.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_stops/")]
 pub struct SiteQuestion {
@@ -38,17 +25,10 @@ pub struct SiteQuestion {
 #[ts(export, export_to = "cap_stops/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What a write must pass. The answer is every refusal (its stop, its
-    /// event's index, its problem). When there is none, it is the canonical
-    /// document and its hash.
     Validate {
         #[ts(as = "Stops")]
         stops: cap_abi::Base<Stops>,
     },
-    /// Every stop as its events make it on `date`, in id order. Only
-    /// `stop_ids`, where given, and only those at `statuses`, where given.
-    /// The stops on the date are counted by status. A stop not yet there
-    /// on the date is not listed.
     StopsOn {
         stops_hash: String,
         date: String,
@@ -59,10 +39,6 @@ pub enum Request {
         #[ts(optional)]
         statuses: Option<Vec<Status>>,
     },
-    /// The stops nearest a point on `date`, nearest first (ties by id),
-    /// each with its great-circle distance: at most `limit` (default 10),
-    /// none farther than `radius_m` where given, only those at `statuses`
-    /// where given.
     StopsNear {
         stops_hash: String,
         date: String,
@@ -78,16 +54,7 @@ pub enum Request {
         #[ts(optional)]
         statuses: Option<Vec<Status>>,
     },
-    /// One stop on `date` (null before it exists), with every event it has,
-    /// oldest first. This is the card's record and its history. It also
-    /// gives what the stop may become that day: the lifecycle events a
-    /// write would accept.
     Stop { stops_hash: String, stop_id: String, date: String },
-    /// The rule of each request's reference to its stop on `date`, the
-    /// agency's today (transit-stops `request_rule`, D-238): each request
-    /// that breaks it, with why, in request id order. Only the requests
-    /// of `stop` when given. What a request's page shows before any
-    /// write.
     RequestWarnings {
         stops_hash: String,
         requests_hash: String,
@@ -96,17 +63,7 @@ pub enum Request {
         #[ts(optional)]
         stop: Option<String>,
     },
-    /// A stops document from a network's stops. Each stop has one
-    /// `in_service` event with no date. The event carries its point and
-    /// details. The document is registered and answered with its hash.
     Seed { network_hash: String },
-    /// The document with `event` added to stop `stop_id` in its place by
-    /// date. An id the document does not hold begins a stop. The document
-    /// is then checked as a write is: every refusal, or the document
-    /// registered and answered with its hash.
-    ///
-    /// With `new`, the write says the stop is new (D-228): an id the
-    /// document holds is refused (`stop_exists`), and nothing is added.
     AddEvent {
         stops_hash: String,
         stop_id: String,
@@ -115,14 +72,7 @@ pub enum Request {
         #[ts(optional)]
         new: Option<bool>,
     },
-    /// The lists a stop's answers come from: its statuses, in the order a
-    /// stop goes through them. The op reads no document.
     Vocabulary {},
-    /// The document with the event `event_id` of stop `stop_id` corrected.
-    /// The event is taken out, and `event` is placed by date and keeps its
-    /// id. With no `event`, the event is only taken out. Then the document
-    /// is checked as a write is. A correction edits the event that was
-    /// wrong (D-153), named by its id (D-166).
     CorrectEvent {
         stops_hash: String,
         stop_id: String,
@@ -130,36 +80,11 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         event: Option<Event>,
-        /// The canonical hash of the event as the writer read it. When
-        /// the document holds the event changed since, the answer is a
-        /// conflict that names it, and nothing is corrected (D-166).
         #[serde(default)]
         #[ts(optional)]
         saw: Option<String>,
     },
-    /// The stops document as the stops log's records (D-197): one record
-    /// of kind `stop` for each stop, its events whole.
     LogRecords { stops_hash: String },
-    /// A write to the stops log, whole (D-228): each op of the write's
-    /// intent over the documents at the head (`heads.stops`,
-    /// `heads.stop_requests`, registered by the host; absent: none), then
-    /// the entry that records what changed. The ops:
-    ///
-    /// - `stops`: `add_event`, `correct_event` (`{stop_id, ...}`, as the
-    ///   ops of the same name take them, with no `stops_hash`);
-    ///   `validate` (`{stops, from}`), a whole document over the head
-    ///   `from`; `import_events` (`{network_hash, feed, on}`), a feed's
-    ///   differences, over a network the host registered;
-    /// - `requests`: `put`, `record_work_order` (as cap-requests takes
-    ///   them, with no `requests_hash`); `validate` (`{requests, from}`);
-    /// - `migrate`, under either: the documents at the head recorded as
-    ///   they are (an empty log's first entry, from the existing pointers).
-    ///
-    /// Every survey a written stops document adds names `by` (D-158;
-    /// absent: the header's writer), then each written document is
-    /// checked. A refused op answers its refusals, an op that does not
-    /// run answers why (`failed`), and an event changed since the writer
-    /// read it answers `conflict`: no entry in each case.
     Receive {
         #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
         write: transit_log::Write,
@@ -168,53 +93,27 @@ pub enum Request {
         heads: std::collections::BTreeMap<String, String>,
         #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
         ops: Vec<transit_log::OpCall>,
-        /// The writer's name, as the host verified it.
         #[serde(default)]
         #[ts(optional)]
         by: Option<String>,
     },
-    /// The stops document assembled from the stops log's `stop` records,
-    /// registered and answered as its canonical bytes and hash. A record
-    /// in another version is refused, naming both.
     LogDocument {
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
         records: std::collections::BTreeMap<String, transit_log::Held>,
-        /// The document's own record (absent: the empty document's).
         #[serde(default)]
         #[ts(optional, type = "{ version: number, value: unknown }")]
         document: Option<transit_log::Held>,
     },
-    /// The pick with each stop's record as the stops document has it on
-    /// `on`, its first date (D-157: a pick only reads the stops). The pick
-    /// is registered and answered with its hash.
     ReadRecords { network_hash: String, stops_hash: String, on: String },
-    /// The named stops' records in the network's terms on `on`. A plan
-    /// takes these when its planner picks a stop that the stops document
-    /// holds (D-173). A stop not there yet that day, or not held, is not
-    /// answered.
     Records { stops_hash: String, stop_ids: Vec<String>, on: String },
-    /// The edits that take stops into a plan (D-173, D-228): `upsert_stop`
-    /// for each of `stop_ids` that the plan does not hold, once each, in
-    /// order, with its record on `on`. A stop not answered on `on`
-    /// refuses the take.
     TakeStops { network_hash: String, stops_hash: String, stop_ids: Vec<String>, on: String },
-    /// What a pick reads of the stops over the period the published set
-    /// gives it (D-228). This is the pick with each stop's record on its
-    /// first date. It also has the warnings of the stops it visits that are
-    /// not in service over the period. The result is registered and
-    /// answered with its hash.
     ReadPick {
         network_hash: String,
         stops_hash: String,
-        /// The published plan set (the plans document), none before the
-        /// first publish.
         #[serde(default)]
         #[ts(optional)]
         published: Option<transit_plans::PublishedPlans>,
     },
-    /// The pick with the stops' history over the period the published
-    /// set gives it, in GTFS terms (D-151, D-228): what `export_versions`
-    /// answers, for the pick's own dates.
     ExportPick {
         network_hash: String,
         stops_hash: String,
@@ -222,9 +121,6 @@ pub enum Request {
         #[ts(optional)]
         published: Option<transit_plans::PublishedPlans>,
     },
-    /// What the planner is told of the stops the pick visits over
-    /// `[from, until)`: each not in service, and each suspended for the
-    /// whole period or with no end. These are warnings, never refusals.
     VisitWarnings {
         network_hash: String,
         stops_hash: String,
@@ -233,11 +129,6 @@ pub enum Request {
         #[ts(optional)]
         until: Option<String>,
     },
-    /// The network over `[from, until)` with the stops' history in GTFS
-    /// terms (D-151): one stop per version of a stop whose record
-    /// changes inside the dates. Each visiting pattern splits at them. The
-    /// network is registered and answered with its hash, for cap-network's
-    /// export.
     ExportVersions {
         network_hash: String,
         stops_hash: String,
@@ -246,37 +137,18 @@ pub enum Request {
         #[ts(optional)]
         until: Option<String>,
     },
-    /// A feed's stops (an imported network) recorded on `on`, its first
-    /// service date (D-150). Each difference becomes an event dated that
-    /// day, checked as a write is. The answer is registered. It holds the
-    /// events added, the stops the feed does not list, and those whose
-    /// difference does not fit their history.
     ImportEvents {
         stops_hash: String,
         network_hash: String,
-        /// The feed's first service date; omitted, the feed's own (the
-        /// earliest date any of its service runs).
         #[serde(default)]
         #[ts(optional)]
         on: Option<String>,
-        /// The feed's id (its hash): every event recorded names it
-        /// (`from_feed`), so the planner is shown what the feed did.
         #[serde(default)]
         #[ts(optional)]
         feed: Option<String>,
     },
-    /// The events the document holds that the feed `feed` (its id)
-    /// recorded. This is what the planner is shown of an import (D-150).
     FeedEvents { stops_hash: String, feed: String },
-    /// What a survey asks (D-158): the core site questions in the
-    /// worksheet's order, each with the kind of answer it takes, and
-    /// the core amenity names (D-154). Reads no document.
     Questions {},
-    /// A write's surveys attributed to the signed-in writer `by`, as the
-    /// receive path takes them (D-158): every survey event the held
-    /// document (`stops_hash`; none for a first write) does not hold
-    /// names `by`, whatever name the client sent. Unchecked: validate
-    /// follows.
     AttributeSurveys {
         #[serde(default)]
         #[ts(optional)]
@@ -286,9 +158,6 @@ pub enum Request {
     },
 }
 
-/// A request that breaks the rule of its reference to its stop: the
-/// request, its stop, and why, as the end of the sentence a page shows
-/// ("… names stop B, which was retired on 2026-10-01").
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_stops/")]
 pub struct RequestWarning {
@@ -305,9 +174,6 @@ pub enum Response {
         refusals: Vec<Refusal>,
         document: Option<String>,
         document_hash: Option<String>,
-        /// The fields the document carries that this build does not
-        /// know (D-167): kept in it, and flagged for a person, never
-        /// refused. Absent when every field is known.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<String>>")]
         unknown_fields: Vec<String>,
@@ -328,39 +194,25 @@ pub enum Response {
         refusals: Vec<Refusal>,
         stops_hash: Option<String>,
         stops: Option<Stops>,
-        /// The event the writer read has changed since: its id. Nothing
-        /// is corrected.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         conflict: Option<String>,
     },
     LogRecords {
-        /// The records of each kind, as the log capability's `compose`
-        /// takes them: the collection's records, and the document's own
-        /// record (`document`), which keeps the fields outside the
-        /// collection.
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
-    /// What the write adds to the stops log (`heads`: the documents it
-    /// wrote, by store kind).
     Receive(transit_log::Received),
     LogDocument {
-        /// The document's hash (`stops_hash`).
         document_hash: String,
-        /// The document's canonical bytes, which a host serves under
-        /// `document_hash`.
         document: String,
     },
-    /// The pick as its canonical bytes exactly (RFC 8785, D-169): a
-    /// host stores and serves it under `network_hash` as it stands.
+    /// RFC 8785 canonical bytes, so a host stores what the hash covers (D-169).
     ReadRecords {
         network_hash: String,
         #[ts(as = "transit_network::Network")]
         network: cap_abi::Canonical<transit_network::Network>,
     },
-    /// `period` is none when the pick has no id or no date: it is no
-    /// pick, and the network comes back as it was, with no warnings.
     ReadPick {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -386,7 +238,6 @@ pub enum Response {
     ImportEvents {
         stops_hash: String,
         stops: Stops,
-        /// The date the differences were recorded on.
         on: String,
         added: Vec<transit_stops::stop_record::AddedEvent>,
         unlisted: Vec<String>,
@@ -401,8 +252,6 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
 }
 
-/// The typed dispatch (native hosts call this directly). Failures
-/// are `{"error": ...}`, never panics. It is a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::AttributeSurveys { stops_hash, stops, by } => {
@@ -417,7 +266,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             amenities: transit_stops::AMENITIES.iter().map(|a| a.to_string()).collect(),
         }),
         Request::Validate { stops } => {
-            // A received document: the base of a write (cap_abi::Base).
             Ok(match stops.0.identified().checked() {
                 Ok(stops) => {
                     let document = cap_abi::canonical_bytes(&stops)?;
@@ -626,8 +474,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// An op of a write to the stops log over the stops document, as a page
-/// sends it.
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum StopsIntent {
@@ -660,7 +506,6 @@ enum StopsIntent {
     Migrate {},
 }
 
-/// An op of a write to the stops log over the stop requests document.
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum RequestsIntent {
@@ -682,15 +527,12 @@ enum RequestsIntent {
     Migrate {},
 }
 
-/// The documents a write runs over: each one at the head and now, the
-/// last op that wrote it, and the unknown fields of the whole documents
-/// written.
 #[derive(Default)]
 struct Heads {
     held_stops: Option<String>,
     stops: Option<String>,
-    /// Whether an op other than `migrate` wrote the stops document: only
-    /// then are its surveys attributed and the document checked.
+    /// False when only `migrate` wrote the stops document. Then its surveys
+    /// are not attributed and the document is not checked.
     check_stops: bool,
     requests: Option<String>,
     wrote_stops: Option<usize>,
@@ -702,12 +544,9 @@ fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
     serde_json::to_value(v).map_err(|e| e.to_string())
 }
 
-/// The ops a write to the stops log takes, for an op it does not take.
 const STOPS_LOG_OPS: &str = "stops: add_event, correct_event, validate, import_events, migrate; requests: put, record_work_order, validate, migrate";
 
-/// One op over the stops document: none when it ran, the answer that
-/// ends the write when it is refused, moved, or in conflict, or the
-/// error of an op that did not run.
+/// None when the op ran. Otherwise the answer that ends the write.
 fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Option<transit_log::Received>, String> {
     let refused = |refusals: &[Refusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
     let held = || heads.stops.clone().ok_or_else(|| "no stops document yet".to_string());
@@ -732,8 +571,6 @@ fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Optio
             heads.unknown_fields.extend(unknown);
         }
         StopsIntent::ImportEvents { network_hash, on, feed } => {
-            // A feed is recorded over a stops document: with none, it
-            // records nothing.
             let Some(stops_hash) = heads.stops.clone() else { return Ok(None) };
             match dispatch(Request::ImportEvents { stops_hash, network_hash, on, feed })? {
                 Response::ImportEvents { added, .. } if added.is_empty() => {}
@@ -747,7 +584,6 @@ fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Optio
     Ok(None)
 }
 
-/// One op over the stop requests document, as [`step_stops`] answers.
 fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result<Option<transit_log::Received>, String> {
     let refused = |refusals: &[RequestRefusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
     let held = |hash: &Option<String>| -> Result<StopRequests, String> {
@@ -769,8 +605,6 @@ fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result
             if from != heads.requests.clone().unwrap_or_default() {
                 return Ok(Some(transit_log::Received::moved(heads.requests.clone())));
             }
-            // An older document comes forward first (transit-requests'
-            // chain), as the library reads it.
             let (doc, unknown) = cap_abi::read_base::<StopRequests>(transit_requests::version::forward(requests)?)?;
             heads.unknown_fields.extend(unknown);
             doc
@@ -784,14 +618,12 @@ fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result
     Ok(None)
 }
 
-/// `migrate`: each document at the head recorded as it is, unchecked.
 fn migrate(heads: &mut Heads, op: usize) -> Option<transit_log::Received> {
     heads.wrote_stops = heads.wrote_stops.or(heads.stops.as_ref().map(|_| op));
     heads.wrote_requests = heads.wrote_requests.or(heads.requests.as_ref().map(|_| op));
     None
 }
 
-/// A write's ops over the heads, then its entry (`Request::Receive`).
 fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>, by: Option<String>) -> Result<Response, String> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
@@ -818,9 +650,8 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         next.extend(records);
         written.insert("stops".to_string(), now);
     } else if let (Some(op), Some(now)) = (heads.wrote_stops, heads.stops.clone()) {
-        // The surveyor is the signed-in writer (D-158): every survey the
-        // held document does not hold names them, whatever name the
-        // client sent. Then the document is checked as a write is.
+        // The signed-in writer is the surveyor, whatever name the client sent
+        // (D-158).
         let by = by.as_deref().unwrap_or(&write.header.writer);
         let now = (*kind::<transit_stops::Stops>().require(&now)?).clone();
         let attributed = match &heads.held_stops {
@@ -840,8 +671,6 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         next.extend(transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)?);
         written.insert("stop_requests".to_string(), now);
     }
-    // The rule of each request's reference to its stop (D-233, D-238):
-    // refused as of what the writer read, warned as of now.
     let after_stops = written.get("stops").cloned().or_else(|| heads.stops.clone());
     let rules = judge_requests(&write, given.get("stops"), given.get("stop_requests"), after_stops.as_ref(), heads.requests.as_ref())?;
     if !rules.refused.is_empty() {
@@ -859,22 +688,14 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
     answer(received)
 }
 
-/// The requests a write breaks the stop rule for
-/// (`transit_stops::request_rule`): refused, and warned.
 #[derive(Default)]
 struct Judged {
     refused: Vec<transit_log::Broken>,
     warned: Vec<transit_log::Broken>,
 }
 
-/// The stop rule over a write (D-233, D-238), on the write's date
-/// (`write.today`; absent: not judged). Judged as of the read: each
-/// request the write changes, against the stops the writer read
-/// (`write.read`) with the write's own stop changes, refused unless it
-/// is already broken before the write, so a person can still change or
-/// cancel it. Judged as of now: each request the write changes and each
-/// request on a stop the write changes, against the heads after the
-/// write, warned.
+/// A request that is already broken before the write is not refused, so a
+/// person can still change or cancel it (D-233, D-238).
 fn judge_requests(
     write: &transit_log::Write,
     stops_before: Option<&String>,
@@ -931,8 +752,7 @@ fn judge_requests(
     Ok(out)
 }
 
-/// The stops document from the stops log's records as a fold holds
-/// them. None when they do not make one in this build's version: a
+/// None when the records do not make a document in this build's version. A
 /// check that cannot judge refuses nothing.
 fn stops_of(records: &transit_log::Records) -> Option<Stops> {
     let stops = records.get("stop").cloned().unwrap_or_default();
@@ -941,21 +761,16 @@ fn stops_of(records: &transit_log::Records) -> Option<Stops> {
     transit_log::assemble(template, own.as_ref(), "stops", &stops, false).ok()
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}` out.
-/// Its bytes are compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The stops take their questions inline; a document registers on the
-/// kernel's `load_stops` (bulk op 270), a stop requests document on
-/// `load_stop_requests` (271).
+/// A document registers on the kernel's `load_stops` (270) or
+/// `load_stop_requests` (271), so this crate has no bytes ops.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: a stops document registers on the kernel's load_stops") }).to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
 #[cfg(feature = "examples")]
 pub mod examples;
 

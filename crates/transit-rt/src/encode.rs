@@ -1,18 +1,3 @@
-//! The service alerts document written as a GTFS-rt Alerts feed, and an
-//! Alerts feed read into the document.
-//!
-//! GTFS-rt is the alerts' serialization, as GTFS is the network's. The
-//! feed is a full dataset of the published alerts not yet ended at the
-//! feed's moment. It holds one entity for each, under the alert's id, in
-//! id order. The bytes are the same for the same document and moment.
-//!
-//! An entity is written as authored, in the network's ids. A direction
-//! is written as the GTFS code the export gives it
-//! (`transit_codec::gtfs_direction`). A direction with no code cannot
-//! be written as the author meant it. So the entity is left out and
-//! named in [`EncodedAlerts::skipped`]. It is never widened to the whole
-//! route. An alert left with no entity is not written.
-
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlerts};
@@ -25,15 +10,12 @@ use crate::gtfs_rt::{
     FeedMessage, TimeRange, TranslatedString, TripDescriptor,
 };
 
-/// The encoded feed, and each entity it could not write.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EncodedAlerts {
     pub bytes: Vec<u8>,
     pub skipped: Vec<SkippedEntity>,
 }
 
-/// An informed entity left out of the feed: the alert, the entity's
-/// index in its `informed` list, and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SkippedEntity {
@@ -42,26 +24,16 @@ pub struct SkippedEntity {
     pub reason: String,
 }
 
-/// One authored entity read as the feed reads it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EntityReading {
-    /// The `informed_entity` the feed carries for it, or why the
-    /// encoder leaves it out.
     pub published: Result<crate::overview::InformedView, String>,
-    /// The scopes a reader resolves it to over the network: none when
-    /// a field names nothing in it, several for a route type.
     pub scopes: Vec<transit_live::AlertScope>,
-    /// What it names, in the network's words.
     pub names: EntityNames,
 }
 
-/// What one entity names, in the network's words. Each field is the
-/// entity's own; a name the network does not hold is its id, marked
-/// unknown.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct EntityNames {
-    /// It names nothing but the agency: every rider.
     pub agency: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -69,7 +41,6 @@ pub struct EntityNames {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub route_type: Option<u16>,
-    /// The route's model direction, by its name where it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub direction: Option<String>,
@@ -89,9 +60,6 @@ pub struct EntityRoute {
     pub known: bool,
 }
 
-/// A stop an entity names. A station (a stop that is the parent of
-/// others) counts its bays: departures leave from the bays, not the
-/// station.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct EntityStop {
@@ -101,8 +69,6 @@ pub struct EntityStop {
     pub bays: u32,
 }
 
-/// A trip an entity names: its route's public name, the instance's
-/// start where it resolves to one, its date, and its headsign.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct EntityTrip {
@@ -150,8 +116,8 @@ fn names(network: &Network, e: &AlertEntity, scopes: &[transit_live::AlertScope]
     }
 }
 
-/// One entity through the feed's own path: the encoder's selector,
-/// then the reader's resolution. What a rider's app reads of it.
+/// Runs the entity through the encoder's selector and then the reader's
+/// resolution, so it shows what a rider's app reads.
 pub fn entity_reading(network: &Network, e: &AlertEntity) -> EntityReading {
     let agency = network.operators.keys().next().cloned().unwrap_or_default();
     match selector(network, &agency, e) {
@@ -164,8 +130,6 @@ pub fn entity_reading(network: &Network, e: &AlertEntity) -> EntityReading {
     }
 }
 
-/// The published alerts not yet ended at `timestamp` (Unix seconds),
-/// as a GTFS-rt `FeedMessage`.
 pub fn encode_alerts(network: &Network, alerts: &ServiceAlerts, timestamp: u64) -> EncodedAlerts {
     let agency = network.operators.keys().next().cloned().unwrap_or_default();
     let mut skipped = Vec::new();
@@ -223,8 +187,7 @@ fn translated(texts: &[AlertText]) -> Option<TranslatedString> {
     })
 }
 
-/// "HH:MM:SS"; past 24:00:00 for a trip after midnight, as GTFS writes
-/// it.
+/// Past 24:00:00 for a trip after midnight.
 fn clock(secs: u32) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
 }
@@ -302,13 +265,6 @@ fn severity(s: AlertSeverity) -> alert::SeverityLevel {
     }
 }
 
-// ---------------------------------------------------------------------
-// Reading an Alerts feed into the document
-// ---------------------------------------------------------------------
-
-/// A feed read into the service alerts document: the document, each
-/// informed entity it could not read as written, and each alert it left
-/// out.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadAlerts {
     pub alerts: ServiceAlerts,
@@ -316,8 +272,6 @@ pub struct ReadAlerts {
     pub dropped: Vec<DroppedAlert>,
 }
 
-/// An alert left out of the document, and why: no entity left, or no
-/// header. A write would refuse it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DroppedAlert {
@@ -325,14 +279,6 @@ pub struct DroppedAlert {
     pub reason: String,
 }
 
-/// An Alerts feed read into the service alerts document over the
-/// network: the inverse of [`encode_alerts`]. Each alert is published,
-/// under its entity id, with every translation (an empty language is
-/// none), its communication periods (else the deprecated active
-/// periods), its impact periods, and its entities in the network's ids.
-/// An entity naming only the agency is the whole agency. A direction
-/// maps to the route's model direction by the export's code. What
-/// cannot be read as written is named, never guessed.
 pub fn read_alerts(network: &Network, bytes: &[u8]) -> crate::Result<ReadAlerts> {
     let message = crate::decode(bytes)?;
     let mut doc = ServiceAlerts::default();

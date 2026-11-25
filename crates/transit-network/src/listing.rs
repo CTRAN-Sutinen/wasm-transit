@@ -1,21 +1,7 @@
-//! What exists, as the planner lists it. One row per entity of a kind,
-//! narrowed the way a filter box's typing narrows it. A route's composition
-//! lists its patterns, the stops they visit, and its schedules. Schedules
-//! group by service type, with the trips each one runs. A stop's composition
-//! lists the routes whose patterns visit it. The trip count is every trip's
-//! instances. This is the expansion that materialize runs, so a list never
-//! promises a trip the day does not have.
-//!
-//! The planner's timetable: one route, one direction, one service type. It
-//! has every trip of the direction's patterns, including bay and short-turn
-//! variants. It has one row per trip and one column per stop, in the route's
-//! order. Rows are `materialize_service`'s trips, so the timetable is the day
-//! the model runs. It is never a second derivation.
-//!
-//! The stop question, asked from a point, lists the places nearest it. A
-//! station's bays answer as the station. Asked from what a rider types, it
-//! lists the stops a query finds. Exact matches come first, then a sign's
-//! abbreviations, then typos (D-48, [`find_stops`]).
+//! A trip count is the number of trip instances, as `materialize` expands
+//! them, so a list never promises a trip that the day does not have. The rows
+//! of a timetable are the trips of `materialize_service`, so the timetable is
+//! the day that the model runs.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -24,25 +10,18 @@ use crate::geometry::EntityKind;
 use crate::materialize::materialize_service;
 use crate::model::{Departs, Network};
 
-/// One entity as a list shows it. `context` is what places it (a
-/// pattern's route, a schedule's pattern and service type); `trips`
-/// is what a schedule runs or a block chains.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EntityRow {
     pub id: String,
     pub name: String,
     pub context: Option<String>,
-    /// A designated transfer point (stops only).
     pub transfer: bool,
     pub trips: Option<u32>,
-    /// A route's long name ("Lincoln") beside its short one (routes
-    /// only; `None` for a route without one).
     #[serde(default)]
     pub long_name: Option<String>,
 }
 
-/// One service type's schedules on a route.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PatternTripsGroup {
@@ -51,10 +30,6 @@ pub struct PatternTripsGroup {
     pub pattern_trips: Vec<EntityRow>,
 }
 
-/// A route's composition: its patterns, the stops they visit (first
-/// visit order, pattern by pattern), its pattern trips by service
-/// type (the design axis), and its patterns by direction (what a
-/// timetable is asked for).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RouteDetail {
@@ -64,44 +39,25 @@ pub struct RouteDetail {
     pub directions: Vec<DirectionGroup>,
 }
 
-/// One direction's patterns on a route. `direction` is `None` for the
-/// patterns placed in none (listed last, when there are any).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DirectionGroup {
     pub direction: Option<String>,
     pub name: String,
     pub patterns: Vec<EntityRow>,
-    /// The ways a rider can ride the direction, most trips first.
     #[serde(default)]
     pub variants: Vec<RouteVariant>,
 }
 
-/// One way a rider can ride a direction: the direction's patterns that
-/// visit the same places in the same order. A station's bays are one place
-/// (the walking group its board departs across). So patterns that differ
-/// only by the bay they use read as one. Any other difference (a branch, a
-/// stop served only at some hours, a short trip) is its own variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RouteVariant {
-    /// "First place → last place"; when another variant of the
-    /// direction shares its ends, what sets it apart from the one with
-    /// the most trips: "via" a place only it visits, else "skips" the
-    /// first place it does not.
     pub name: String,
-    /// Its patterns, by id.
     pub patterns: Vec<String>,
-    /// Its places, in order.
     pub stops: Vec<VariantStop>,
-    /// The trips its patterns' schedules run, every service type
-    /// (instances, as the day expands them).
     pub trips: u32,
 }
 
-/// One place on a variant: the station, or the stop when it is in no
-/// station the network holds. It has the stops its patterns use there (a
-/// station's bays, in pattern order).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct VariantStop {
@@ -110,39 +66,22 @@ pub struct VariantStop {
     pub stops: Vec<String>,
 }
 
-/// A timetable: one route, one direction, one service combination (D-55).
-/// A combination is the service types that run together on the same dates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Timetable {
     pub route: String,
     pub route_name: String,
-    /// The route's long name, when it has one.
     pub route_long_name: Option<String>,
     pub direction: Option<String>,
     pub direction_name: String,
-        /// The combination this timetable pools. It has its id (members joined
-        /// " + ") and its members. The service ids key trips. The combination
-        /// is the day a rider gets.
     pub group: String,
     pub members: Vec<String>,
-    /// The columns: every stop the direction's patterns visit, in
-    /// route order (a variant's stops sit where it leaves and rejoins
-    /// the others).
     pub stops: Vec<TimetableStop>,
-    /// The direction's patterns under this service type, most trips
-    /// first. It is the legend a row's `pattern` points into.
     pub patterns: Vec<TimetablePattern>,
-    /// Every trip, by start (then pattern trips id).
     pub trips: Vec<TimetableTrip>,
-    /// Asked against a baseline (`timetable_against`): the baseline's
-    /// trips this timetable no longer runs, by start. Empty otherwise.
     pub removed: Vec<RemovedTrip>,
 }
 
-/// A baseline trip instance that the proposal no longer runs. A trip that
-/// the proposal keeps under a new start is not removed. It reads as retimed
-/// (`TimetableTrip::retimed_from_secs`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RemovedTrip {
@@ -152,19 +91,16 @@ pub struct RemovedTrip {
     pub pattern: String,
 }
 
-/// One timetable column.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimetableStop {
     pub stop: String,
     pub name: String,
-    /// A timepoint on some pattern visiting it (a public timetable's
-    /// columns are its timepoints).
+    /// A timepoint on some pattern that visits it. A public timetable shows
+    /// its timepoints as columns.
     pub timepoint: bool,
 }
 
-/// One pattern in a timetable, with the pattern trips that run it
-/// under the service type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimetablePattern {
@@ -172,39 +108,24 @@ pub struct TimetablePattern {
     pub name: String,
     pub pattern_trips: Vec<String>,
     pub trips: u32,
-    /// Some of its trips are frequency trips.
     pub headway: bool,
 }
 
-/// One trip instance: its trip's id, its pattern trips, start and
-/// pattern, the block carrying it, and its departure at each column
-/// (`None` where its pattern does not stop).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimetableTrip {
     pub trip: String,
     pub pattern_trips: String,
-    /// The service key the trip runs under (its pattern trips').
     pub service_type: String,
     pub start_secs: u32,
     pub pattern: String,
     pub block: Option<String>,
     pub times: Vec<Option<u32>>,
-    /// The trip's running time end to end: its last stop's arrival
-        /// The trip's running time end to end: its last stop's arrival less its
-        /// start. Each trip has its own time, so a slower evening reads as it
-        /// runs.
     pub run_secs: u32,
-    /// Asked against a baseline: the baseline does not run this trip.
     pub added: bool,
-        /// Asked against a baseline: the baseline runs this one-start trip (the
-        /// same trip id) at another start. The baseline start is given there. A
-        /// moved trip is kept. It is not removed and added (QAF-64).
     pub retimed_from_secs: Option<u32>,
 }
 
-/// One route a service key carries: the pattern trips under the key
-/// on that route, and the trips they run.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceKeyRoute {
@@ -214,25 +135,16 @@ pub struct ServiceKeyRoute {
     pub trips: u32,
 }
 
-/// One service key as authored: its name, its calendar rule (weekdays, date
-/// ranges, exceptions), and what runs on it. The calendar edits change the
-/// rule.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceKey {
     pub id: String,
     pub name: String,
     pub rule: crate::model::CalendarRule,
-    /// Its trips (materialized: a frequency trip counts its instances).
     pub trips: u32,
-    /// The routes it carries, id order; a route it runs nothing on is
-    /// no row.
     pub routes: Vec<ServiceKeyRoute>,
 }
 
-/// The service keys, in id order: each one's calendar as authored and
-/// the routes and trips it carries. A planner edits these when the
-/// calendar changes, and what moves when trips change keys.
 pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
     network
         .service_types
@@ -272,63 +184,42 @@ pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
         .collect()
 }
 
-/// A stop's composition: the routes whose patterns visit it (the
-/// board's rule: a station pin answers its walking group's), the
-/// stop's own record, and every pattern position that visits the stop
-/// itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopDetail {
     pub routes: Vec<EntityRow>,
-    /// The stop as authored.
     #[serde(default)]
     pub stop: crate::Stop,
-    /// Every visit of this stop (never its walking group's), by route,
-    /// then pattern id, then position.
     #[serde(default)]
     pub visits: Vec<StopVisit>,
 }
 
-/// One pattern position that visits a stop: where it is on the
-/// network (route, direction, pattern, position), and what runs it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopVisit {
     pub route: String,
-    /// The route's label.
     pub route_name: String,
-    /// The pattern's direction (`None`: in none).
     pub direction: Option<String>,
-    /// The direction's name, when the pattern is in one.
     pub direction_name: Option<String>,
     pub pattern: String,
     pub pattern_name: String,
-    /// The visit's position in the pattern (0-based).
+    /// 0-based.
     pub index: u32,
-    /// The pattern's first or last stop.
     pub endpoint: bool,
     pub timepoint: bool,
-    /// The trips the pattern runs under the members asked (every
-    /// service type when none were named): every trip's instances, the
-    /// expansion materialize runs.
     pub trips: u32,
-    /// The stop before this one on the pattern (none at its first
-    /// stop), and the stop after it (none at its last).
     pub previous: Option<Neighbour>,
     pub next: Option<Neighbour>,
 }
 
-/// A stop beside a visit on its pattern, and how far apart they are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Neighbour {
     pub stop: String,
-    /// Its name (the id where the network has no such stop).
+    /// The id, where the network has no such stop.
     pub name: String,
-    /// The distance along the pattern between the two, in metres.
+    /// Meters along the pattern.
     pub metres: f64,
-    /// Whether both distances were published by the agency; otherwise
-    /// at least one is the import's estimate.
     pub published: bool,
 }
 
@@ -336,7 +227,6 @@ fn row(id: &str, name: &str) -> EntityRow {
     EntityRow { id: id.to_string(), name: name.to_string(), context: None, transfer: false, trips: None, long_name: None }
 }
 
-/// A route's row: its label, and its long name beside it.
 fn route_row(network: &Network, id: &str) -> EntityRow {
     match network.routes.get(id) {
         Some(r) => EntityRow { long_name: r.long_name.clone(), ..row(id, r.label()) },
@@ -379,9 +269,6 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
     }
 }
 
-/// Every entity of `kind`, in id order, whose id, name, and long name
-/// (routes) together hold every whitespace-separated term of `query`
-/// (case-insensitive; an empty query keeps all).
 pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<EntityRow> {
     let rows: Vec<EntityRow> = match kind {
         EntityKind::Stop => network.stops.keys().map(|id| stop_row(network, id)).collect(),
@@ -404,7 +291,6 @@ pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<Enti
         .collect()
 }
 
-/// The route's composition; `None` for an unknown route.
 pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
     network.routes.get(route)?;
     let pattern_ids: Vec<&String> =
@@ -453,8 +339,6 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
     })
 }
 
-/// The place a rider walks to for a stop: its station when the network
-/// holds one, else the stop itself (`stops_near`'s rule).
 fn place_of<'a>(network: &'a Network, stop: &'a str) -> &'a str {
     match network.stops.get(stop).and_then(|s| s.parent.as_deref()) {
         Some(p) if network.stops.contains_key(p) => p,
@@ -462,8 +346,6 @@ fn place_of<'a>(network: &'a Network, stop: &'a str) -> &'a str {
     }
 }
 
-/// The patterns grouped by the places they visit, in order. See
-/// [`RouteVariant`].
 fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
     let name_of = |id: &str| network.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
     let mut groups: std::collections::BTreeMap<Vec<&str>, Vec<&String>> = Default::default();
@@ -513,8 +395,6 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
         .collect();
     out.sort_by(|a, b| b.1.trips.cmp(&a.1.trips).then_with(|| a.1.patterns.cmp(&b.1.patterns)));
 
-    // Variants sharing their ends are named by what sets each apart
-    // from the one with the most trips.
     let bases: Vec<String> = out.iter().map(|(_, v)| v.name.clone()).collect();
     for i in 0..out.len() {
         let Some(main) = (0..i).find(|&j| bases[j] == bases[i]) else { continue };
@@ -531,21 +411,16 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
     out.into_iter().map(|(_, v)| v).collect()
 }
 
-/// The timetable of `route` in `direction` (`None`: its patterns in no
-/// direction) under the service combination `members` (D-55). Every member's
-/// trips on the direction's patterns are pooled. The types run together on
-/// its dates. The service ids key trips, and they never own the route. `None`
-/// for an unknown route or direction, or a member set that never runs
-/// together on a date. A pattern whose trips cannot materialize (an invalid
-/// document mid-edit) contributes none. Validation names it.
+/// D-55 defines the service combination. A pattern whose trips cannot
+/// materialize, as in a document in the middle of an edit, contributes no
+/// trips, and validation names it.
 pub fn timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
     let combination = crate::service_combination(network, members)?;
     pooled_timetable(network, route, direction, &combination.members)
 }
 
-/// The timetable over `members`' trips, whether or not they run
-/// together in this network (a baseline the combination is new to
-/// runs what its members run there).
+/// Unlike [`timetable`], this does not check that the members run together,
+/// so a baseline that the combination is new to runs what its members run.
 fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
     let r = network.routes.get(route)?;
     let direction_name = match direction {
@@ -556,8 +431,6 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
     members.sort();
     members.dedup();
 
-    // The direction's patterns under the combination, with their
-    // trips. Every member's schedules pool (service ids key trips).
     let family: std::collections::BTreeSet<&str> = members.iter().map(String::as_str).collect();
     let mut by_pattern: std::collections::BTreeMap<&str, (Vec<String>, Vec<crate::MaterializedTrip>, bool)> =
         Default::default();
@@ -574,9 +447,9 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
     let mut order: Vec<&str> = by_pattern.keys().copied().collect();
     order.sort_by(|a, b| by_pattern[b].1.len().cmp(&by_pattern[a].1.len()).then(a.cmp(b)));
 
-    // Columns: the busiest pattern's stops, then each other pattern's
-    // stops slotted in after the last stop it shares (greedy, so the
-    // columns are a supersequence of every pattern's stops).
+    // The columns are the stops of the busiest pattern, then the stops of each
+    // other pattern slotted in after the last stop that it shares. This greedy
+    // rule makes the columns a supersequence of the stops of every pattern.
     let mut columns: Vec<&str> = Vec::new();
     for pid in &order {
         let mut at: Option<usize> = None;
@@ -676,14 +549,6 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
     })
 }
 
-/// The proposal's timetable, marked against a baseline. A trip's id is its
-/// identity. A one-start trip that both run at different starts is retimed.
-/// It carries its baseline start. A trip that only the proposal runs is
-/// `added`. A trip that only the baseline runs is `removed`. A frequency
-/// trip's instances share its id. Each instance is matched by (trip, start)
-/// and is kept, added, or removed. The baseline side runs what the
-/// combination's members run there. A baseline without this route, direction,
-/// or members runs none of them.
 pub fn timetable_against(
     network: &Network,
     base: &Network,
@@ -732,13 +597,6 @@ fn neighbour(network: &Network, here: &crate::model::PatternStop, there: &crate:
     }
 }
 
-/// The routes serving a stop, in id order. `None` for an unknown stop. The
-/// board's rule: a stop with service of its own answers its own routes. It
-/// never pools. A stop that no pattern visits answers what its walking group
-/// answers. This is the case of a station pin whose patterns visit only its
-/// bays. The walking group is the group the station board departs across.
-/// Beside them, the stop's record and its own visits. Each visit has the
-/// trips its pattern runs under `members` (every service type when `None`).
 pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) -> Option<StopDetail> {
     let record = network.stops.get(stop)?.clone();
     let mut visits = Vec::new();
@@ -786,10 +644,6 @@ pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) ->
     Some(StopDetail { routes, stop: record, visits })
 }
 
-/// One place near a point, as the directory's stop question answers
-/// it from a location: the stop's identity, name, point and
-/// walking-group structure (the same fields a `stops` row carries),
-/// and how far it is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct NearbyStop {
@@ -797,17 +651,9 @@ pub struct NearbyStop {
     pub name: String,
     pub lat: f64,
     pub lon: f64,
-    /// The parent station: `None` for every place but a bay whose
-    /// station the network does not hold (a bay of a held station
-    /// answers as that station).
     pub parent: Option<String>,
-    /// A designated transfer point.
     pub transfer: bool,
-    /// Great-circle meters from the point to the place's nearest
-    /// member (the station's pin or any of its bays).
     pub distance_m: f64,
-    /// Seconds on foot from the point to the place's nearest member,
-    /// when the question named the point's walks and one reaches it.
     pub walk_secs: Option<u32>,
 }
 
@@ -819,21 +665,11 @@ pub(crate) fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * 6_371_000.0 * a.sqrt().asin()
 }
 
-/// The places nearest a point, nearest first (ties by id), at most `limit`.
-/// Given `radius_m`, none is farther than it. A place is what a rider walks
-/// to. A station with its bays answers once, as the station, which is the
-/// walking group its board departs across. It answers at the distance of its
-/// nearest member. A stop with no station held by the network is its own
-/// place.
 pub fn stops_near(network: &Network, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>) -> Vec<NearbyStop> {
     stops_near_walked(network, lat, lon, limit, radius_m, &[])
 }
 
-/// [`stops_near`] with the point's walks to stops. Each walk is `(stop id,
-/// walk_secs)`, cap-streets `access` along the streets. A place's walk
-/// is the shortest to any of its members. The places that a walk reaches come
-/// first, by walk, then distance, then id. The rest follow by distance (D-34).
-/// The walks reorder the places and change nothing else.
+/// D-34 decides the order by walk.
 pub fn stops_near_walked(
     network: &Network,
     lat: f64,
@@ -888,30 +724,15 @@ pub fn stops_near_walked(
         .collect()
 }
 
-/// How a typed query answers a stop's name (D-48; thresholds D-91),
-/// best first: the order a picker lists matches in.
+/// The variants run best first, because a picker lists matches in this order
+/// (D-48, D-91).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NameMatch {
-    /// Every term is a substring of the name or the id.
     Exact,
-    /// At least one term is answered by an abbreviation on the sign
-    /// ("Van" for "vancouver", "St" for "street"), the rest exactly.
     Abbreviation,
-    /// At least one term is answered only within a typo of a name word.
     Typo,
 }
 
-/// How `query` answers a stop named `name` with id `id`. Each
-/// whitespace-separated term is case-insensitive, and each must be answered.
-/// A term is answered as a substring of the name or the id (exact). It is
-/// answered by a name word that abbreviates it. That word is three letters or
-/// more and begins the term, or it is a subsequence of the term that shares
-/// its first and last letter. Or the term is within a typo of a name word or
-/// of a word's start. A typo is one edit: a letter substituted, added,
-/// dropped, or two neighbours swapped. It applies from four letters with one
-/// edit, and from eight letters with two. It never applies under four
-/// letters. The worst term's answer is the stop's. `None` when a term has
-/// none. An empty query answers every stop exactly.
 pub fn name_match(query: &str, name: &str, id: &str) -> Option<NameMatch> {
     let haystack = format!("{name} {id}").to_lowercase();
     let words: Vec<Vec<char>> = name
@@ -939,8 +760,6 @@ pub fn name_match(query: &str, name: &str, id: &str) -> Option<NameMatch> {
     Some(worst)
 }
 
-/// The stops `query` finds ([`name_match`]), best match first, then by
-/// name, then id: the pickers' order. With no query, every stop by name.
 pub fn find_stops(network: &Network, query: &str) -> Vec<String> {
     let mut found: Vec<(NameMatch, &str, &String)> = network
         .stops
@@ -951,7 +770,6 @@ pub fn find_stops(network: &Network, query: &str) -> Vec<String> {
     found.into_iter().map(|(_, _, id)| id.clone()).collect()
 }
 
-/// A sign's word `w` abbreviates the typed term `t`.
 fn abbreviates(w: &[char], t: &[char]) -> bool {
     if w.len() >= t.len() || w.len() < 2 {
         return false;
@@ -966,7 +784,6 @@ fn abbreviates(w: &[char], t: &[char]) -> bool {
     w.iter().all(|c| rest.any(|x| x == c))
 }
 
-/// The typed term `t` is within a typo of the word `w` or of its start.
 fn within_typo(t: &[char], w: &[char]) -> bool {
     let budget = match t.len() {
         0..=3 => return false,
@@ -978,8 +795,8 @@ fn within_typo(t: &[char], w: &[char]) -> bool {
     (lo..=hi).any(|k| edits(t, &w[..k]) <= budget)
 }
 
-/// The optimal-string-alignment distance: substitutions, insertions,
-/// deletions, and adjacent transpositions.
+/// The optimal string alignment distance. It counts substitutions,
+/// insertions, deletions, and adjacent transpositions.
 fn edits(a: &[char], b: &[char]) -> usize {
     let (n, m) = (a.len(), b.len());
     let mut d = vec![vec![0usize; m + 1]; n + 1];

@@ -1,23 +1,17 @@
-//! The two checks that run every capability's dispatch over the locked
-//! schemas (docs/FORMATS.md, "The schema lock"). The generated
-//! gen-manifest crate runs them as its tests, over the capabilities it
-//! links ([`crate::Linked`]), so this code names no capability.
+//! The generated gen-manifest crate runs these checks as its tests, over the
+//! capabilities it links ([`crate::Linked`]), so this code names no
+//! capability. The schemas are the locks (docs/FORMATS.md, "The schema
+//! lock").
 //!
-//! - [`real_output`]: the schemas describe the real bytes. Every
-//!   capability's worked examples run through the capability's own
-//!   dispatch (the code its module runs) over the e2e fixture feed, and
-//!   every document in every answer matches the locked schema of its tag
-//!   and version. This is where `schemars` and serde can disagree
-//!   (`skip_serializing_if`, `untagged`, `flatten`). The examples are the
-//!   manifest's (`just caps` writes web/public/caps/manifest.json). A kind
-//!   that a worked example's recorded answer holds must be checked from a
-//!   real answer too.
-//! - [`soak`]: the real-data soak (`just soak`). The agency's own feed
-//!   goes through the ops a server runs on it: the network capability's
-//!   import answers the network and its boundary, and the plans
-//!   capability's publish of a pick answers the published plans. Hermetic
-//!   runs skip it. Set SOAK_FEED to the feed (`just soak` sets it to
-//!   testdata/ctran-gtfs.zip). A mismatch is a QA finding.
+//! [`real_output`] runs every capability's worked examples through the
+//! capability's own dispatch over the e2e fixture feed. It checks every
+//! document in every answer against the locked schema of its tag and
+//! version, which is where `schemars` and serde can disagree
+//! (`skip_serializing_if`, `untagged`, `flatten`).
+//!
+//! [`soak`] runs the agency's own feed through the ops that a server runs on
+//! it (`just soak` sets SOAK_FEED to `testdata/ctran-gtfs.zip`). Hermetic runs
+//! skip it. A mismatch is a QA finding.
 
 use std::path::Path;
 
@@ -28,14 +22,11 @@ use crate::Linked;
 
 use cap_abi::kernel::Load;
 
-/// A capability's two lanes, by id.
 fn lanes(caps: &[Linked], id: &str) -> (fn(&str) -> String, fn(u32, &[u8]) -> String) {
     let linked = caps.iter().find(|c| c.declared.id == id).unwrap_or_else(|| panic!("capability {id} is not linked"));
     (linked.declared.invoke, linked.declared.invoke_bytes)
 }
 
-/// The real-output gate. It panics with every document that does not
-/// match its schema.
 pub fn real_output(caps: &[Linked]) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: Value = serde_json::from_str(
@@ -44,8 +35,7 @@ pub fn real_output(caps: &[Linked]) {
     .unwrap();
     let feed = std::fs::read(root.join("web/e2e/fixtures/sample-gtfs.zip")).unwrap();
     let rt = std::fs::read(root.join("web/e2e/fixtures/sample-rt.pb")).unwrap();
-    // The street fixtures the streets examples name (the generator
-    // imports the same files).
+    // The generator imports the same street fixtures.
     let load_streets: Vec<String> = ["streets.geojson", "walk-streets.geojson"]
         .iter()
         .map(|file| {
@@ -54,16 +44,15 @@ pub fn real_output(caps: &[Linked]) {
             json!({"op": "load_streets", "streets": streets}).to_string()
         })
         .collect();
-    // The kernel's worked loads, by the kind each one registers.
     let loads: Vec<(&str, &str)> =
         cap_abi::kinds::KINDS.iter().filter_map(|k| k.load).map(|l| (l.op, l.id)).collect();
     let locks = Locks::read();
 
     let mut failures = Vec::new();
     let mut checked = std::collections::BTreeMap::<String, usize>::new();
-    // Each kind a worked example's recorded answer holds, and the first
-    // op that holds it: the real answers must check it too, so a setup
-    // that leaves an op unanswered cannot pass by checking nothing.
+    // Each kind that a recorded answer holds, with the first op that holds
+    // it. A real answer must hold it too, so a setup that leaves an op
+    // unanswered cannot pass by checking nothing.
     let mut promised = std::collections::BTreeMap::<String, String>::new();
     for cap in manifest["capabilities"].as_array().unwrap() {
         let id = cap["id"].as_str().unwrap();
@@ -124,7 +113,6 @@ fn ok(answer: String, what: &str) -> Value {
     answer.get("ok").cloned().unwrap_or_else(|| panic!("{what}: {answer}"))
 }
 
-/// The real-data soak. It skips when SOAK_FEED is not set.
 pub fn soak(caps: &[Linked]) {
     let Ok(feed) = std::env::var("SOAK_FEED") else {
         eprintln!("skipped: set SOAK_FEED to a GTFS zip (just soak)");

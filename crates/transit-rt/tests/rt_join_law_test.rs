@@ -1,28 +1,7 @@
-//! The rt join laws: realtime speaks about the network's own trips.
-//! An rt trip id is a model trip id; the instance it means is the
-//! trip's start, or, for a frequency trip, the update's start_time
-//! (on the grid when the trip runs exact times, anywhere in a band
-//! when it does not, as GTFS-rt defines it). Stop updates pair with
-//! the schedule by the publisher's stop_sequence (the import's
-//! `Boundary`; 1..n when it has none), by stop id only when the update
-//! names no sequence. A stated delay carries downstream, never
-//! upstream.
-//!
-//! Written before the implementation, as the definition of the
-//! behavior; the expected answers are recomputed here from the
-//! generated input.
-//!
-//! The API these laws require:
-//!
-//! * `transit_network::trip_instance(&Network, trip, start_secs) ->
-//!   Option<MaterializedTrip>`.
-//! * `TripUpdateView.start_time: Option<String>` ("HH:MM:SS").
-//! * `transit_rt::trip_progress(&Network, &Boundary, &RtOverview,
-//!   trip_id) -> Option<TripProgress>` with `TripProgress.start_secs`.
-//! * `transit_rt::live_day(&Network, &Boundary, delays, positions, alerts,
-//!   window) -> LiveDay`; `LiveTrip { trip, start_secs, .. }`,
-//!   `LiveVehicle { trip, start_secs, .. }`, `LiveDay::visit(trip,
-//!   start_secs, stop, scheduled_departure)`.
+//! An rt trip id is a model trip id, and stop updates pair with the schedule
+//! by stop_sequence (cap-rt/OPS.md, `trip_progress` and `live`). A frequency
+//! trip's instance is the update's start_time: on the grid when the trip runs
+//! exact times, anywhere in a band when it does not.
 
 use std::collections::BTreeMap;
 
@@ -35,38 +14,25 @@ use transit_network::{
 };
 use transit_rt::{live_day, trip_progress, RtOverview, StopUpdateView, TripUpdateView, VehicleView};
 
-// ===================================================================
-// Generator: valid by construction.
-// ===================================================================
-
 #[derive(Clone, Debug)]
 enum GenDeparts {
     At(u32),
-    /// (band start, band length, headway, exact)
     Every(u32, u32, u32, bool),
 }
 
 #[derive(Clone, Debug)]
 struct GenTrip {
-    /// Stop indices into s0..s4; a loop may revisit a stop (never
-    /// back to back).
     stops: Vec<usize>,
-    /// Per stop: (leg seconds to reach it, dwell seconds).
     legs: Vec<(u32, u32)>,
     departs: GenDeparts,
-    /// The publisher's stop_sequence numbering, when not 1..n.
     sequences: Option<Vec<u32>>,
 }
 
-/// What the rt snapshot says about one trip.
 #[derive(Clone, Debug)]
 struct GenUpdate {
-    /// Index into the trips, or past the end for an id the network
-    /// does not have.
     trip: usize,
-    /// For a frequency trip: which start the update names: an
-    /// instance (0), a time inside a band off the grid (1), or a time
-    /// outside every band (2).
+    /// A frequency trip's update names an instance (0), a time inside a band
+    /// off the grid (1), or a time outside every band (2).
     start_kind: u8,
     start_pick: u32,
     /// (stop index, delay, name it by sequence?)
@@ -124,8 +90,6 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
     })
 }
 
-/// Offsets from the start: (arrival, departure) per stop, every stop
-/// scheduled.
 fn offsets(t: &GenTrip) -> Vec<(u32, u32)> {
     let mut at = 0u32;
     t.legs
@@ -217,8 +181,6 @@ fn hms(secs: u32) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
 }
 
-/// The instance an update names, as GTFS-rt defines it: `None` when
-/// the trip is unknown or the start names no instance.
 fn expected_start(spec: &Spec, u: &GenUpdate) -> Option<u32> {
     let t = spec.trips.get(u.trip)?;
     match t.departs {
@@ -232,7 +194,6 @@ fn expected_start(spec: &Spec, u: &GenUpdate) -> Option<u32> {
     }
 }
 
-/// The start_time an update carries (only frequency trips carry one).
 fn picked_start(t: &GenTrip, u: &GenUpdate) -> Option<u32> {
     let GenDeparts::Every(s, len, h, _) = t.departs else { return None };
     let slots = len.div_ceil(h);
@@ -301,8 +262,6 @@ fn overview(spec: &Spec) -> RtOverview {
     }
 }
 
-/// The delay each stop of the trip carries under an update: stated,
-/// carried downstream, unknown upstream of the first statement.
 fn expected_delays(t: &GenTrip, u: &GenUpdate) -> Vec<Option<i32>> {
     let mut stated: BTreeMap<usize, i32> = BTreeMap::new();
     for (k, delay, _) in &u.stops {
@@ -321,16 +280,9 @@ fn expected_delays(t: &GenTrip, u: &GenUpdate) -> Vec<Option<i32>> {
         .collect()
 }
 
-// ===================================================================
-// The laws.
-// ===================================================================
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// A trip's instances, date-free: a one-start trip at its start, an
-    /// exact frequency trip on its grid, a non-exact one at any start
-    /// inside a band, each at its stored offsets.
     #[test]
     fn a_trip_instance_is_its_start_plus_its_times(spec in spec_strategy(), pick in any::<u32>()) {
         let (net, _) = build(&spec);
@@ -352,12 +304,7 @@ proptest! {
         }
     }
 
-    /// Progress pairs updates by the publisher's sequence (by stop id
-    /// only when no sequence is named), carries a stated delay
-    /// downstream and never upstream, and predicts schedule + delay.
-    /// A trip the snapshot does not mention answers its schedule alone
-    /// when it has one start; a frequency trip names no instance
-    /// without an update, and answers none.
+    /// A frequency trip with no update names no instance and answers none.
     #[test]
     fn progress_pairs_by_the_publishers_sequence(spec in spec_strategy()) {
         let (net, boundary) = build(&spec);
@@ -401,9 +348,6 @@ proptest! {
         }
     }
 
-    /// The live document names each resolved update by the model's
-    /// own address, (trip, start), and counts every update that
-    /// names no trip instance as unmatched.
     #[test]
     fn the_live_document_speaks_in_trip_instances(spec in spec_strategy()) {
         let (net, boundary) = build(&spec);
@@ -428,7 +372,6 @@ proptest! {
         }
     }
 
-    /// A vehicle on a resolvable trip rides that trip instance.
     #[test]
     fn a_vehicle_rides_its_trip_instance(spec in spec_strategy()) {
         let (net, boundary) = build(&spec);

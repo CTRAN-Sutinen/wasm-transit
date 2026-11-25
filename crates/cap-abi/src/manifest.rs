@@ -1,80 +1,52 @@
-//! The capability manifest: the assembly itself. A deployment is a
-//! manifest.
+//! The TS bindings of these types are generated into `types/cap_abi/`.
 //!
-//! The types are the contract the browser's bus worker, the (future) Go
-//! assembler, and the registry tooling hang off. They live here, next to
-//! the ABI, with TS bindings generated into `types/cap_abi/`.
-//!
-//! Two parts that only matter together:
-//!
-//! * **Compatibility**: `speaks` (which document versions a module
-//!   understands directly) and `migrates` (which version steps it can
-//!   bridge). The assembler's version arithmetic is: local document at
-//!   version V, module speaking W, migration path V→…→W available →
-//!   migrate (immutably; the old bytes stay addressable). Otherwise the
-//!   module is unavailable for that document, and the assembly
-//!   degrades per capability.
-//! * **Agent context**: `purpose` and `op_docs` are the discovery
-//!   surface for agents that assemble apps from a registry. They say
-//!   what the capability is for, and what each op does. They give a
-//!   worked request→response example per op. For an op whose argument
-//!   is a tagged vocabulary (cap-author `apply`'s edits), they give one
-//!   worked example per kind. The context versions with the capability,
-//!   and its diff is reviewable like any other contract change.
+//! If a document is at version V and a module speaks W, and a migration path
+//! V to W exists, the assembler migrates the document. The migration is
+//! immutable, and the old bytes stay addressable. If no path exists, the
+//! module is unavailable for that document, and the assembly degrades for
+//! each capability.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The document-kernel version this build speaks. A module rejects a
-/// document whose version is not its own at load (the seam), never
-/// deep in an op.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct CapManifest {
+    /// A module rejects a document with another version at load, not later
+    /// inside an op.
     pub kernel: u32,
-    /// The kernel ops: bulk ops numbered from 256 that mean the same
-    /// thing in every module that answers them (the registry ops in
-    /// every module), each with its worked example.
     #[serde(default)]
     pub kernel_ops: Vec<KernelOp>,
     pub capabilities: Vec<Capability>,
-    /// The linked assemblies: per generated UI, one module linking the
-    /// capabilities it uses (D-77), over one kernel registry. Each
-    /// capability above is also built alone (its `url`), for runners,
-    /// agents, and the server.
+    /// Each capability above is also built alone, at its `url`, for runners,
+    /// agents, and the server (D-77).
     #[serde(default)]
     pub assemblies: Vec<LinkedAssembly>,
 }
 
-/// One linked module: the capabilities it links (in index order: a
-/// capability's bulk op carries its index in the high 16 bits), and
-/// its exact bytes, pinned like a capability's.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct LinkedAssembly {
-    /// The generated UI it is for (`web/src/uis/<ui>/`).
     pub ui: String,
-    /// "sha256:<hex>" of the module bytes.
+    /// "sha256:<hex>".
     pub hash: String,
-    /// Where the bytes are served (hash-addressed).
+    /// Contains the hash.
     pub url: String,
     pub bytes: u64,
-    /// The capability ids it links, in index order.
+    /// In index order, because a bulk op carries the capability's index in
+    /// the high 16 bits.
     pub capabilities: Vec<String>,
 }
 
-/// One kernel op: its bulk op code, its name, what it does, and a
-/// worked request (the bytes, as JSON) → response pair.
+/// The request of its worked example is the bytes, as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct KernelOp {
     pub code: u32,
     pub name: String,
-    /// The kind a load registers, as `capability! { documents: [...] }`
-    /// names it (`crates/cap-abi/src/kinds.rs`). Absent for an op that
-    /// is not a load.
+    /// Absent for an op that is not a load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub kind: Option<String>,
@@ -82,44 +54,33 @@ pub struct KernelOp {
     pub example: Option<OpExample>,
 }
 
-/// One capability module: what it is, the exact bytes it is (hash-
-/// pinned; the host verifies fetched bytes against this), what it
-/// answers, what it can read, and what it can bridge.
+/// The host verifies the fetched bytes against the hash.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct Capability {
-    /// The identity screens declare needs by ("router", "gtfs", ...).
     pub id: String,
-    /// "sha256:<hex>" of the module bytes.
+    /// "sha256:<hex>".
     pub hash: String,
-    /// Where the module bytes are served (hash-addressed).
+    /// Contains the hash.
     pub url: String,
-    /// Module size in bytes. The size budget watches this.
     pub bytes: u64,
-    /// The JSON ops this capability's dispatch answers (the kernel's
-    /// loads are not among them. They are `kernel_ops`).
+    /// The kernel loads are not among them, because they are `kernel_ops`.
     pub ops: Vec<String>,
-    /// The kernel document kinds it reads ("network", "edits", …): the
-    /// kernel loads every module linking it answers.
+    /// Every module that links the capability answers the kernel loads of
+    /// these kinds.
     #[serde(default)]
     pub documents: Vec<String>,
-    /// Registry edges: document kind -> producing capability id.
+    /// Each kind maps to the id of the capability that answers it.
     pub consumes: BTreeMap<String, String>,
-    /// Document kinds -> versions the module understands directly.
     pub speaks: BTreeMap<String, Vec<u32>>,
-    /// Document kinds -> version steps the module can bridge. Each
-    /// step is a pure, deterministic op over document bytes: the old
-    /// copy stays addressable (migrations are immutable; rollback is
-    /// moving the current pointer back along `produced_by`).
+    /// Each step is a pure, deterministic op over document bytes. The old
+    /// copy stays addressable, because migrations are immutable. A rollback
+    /// moves the current pointer back along `produced_by`.
     pub migrates: BTreeMap<String, Vec<MigrationSpec>>,
-    /// Agent context, versioned with the capability: what this
-    /// module is for and when to assemble it.
     pub purpose: String,
-    /// Per-op agent context: description plus a worked example.
     pub op_docs: BTreeMap<String, OpDoc>,
 }
 
-/// One migration step a module can perform.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct MigrationSpec {
@@ -127,23 +88,19 @@ pub struct MigrationSpec {
     pub to: u32,
 }
 
-/// Agent-facing documentation for one op: what it does, plus a worked
-/// request→response pair. Examples are raw JSON, so the float_roundtrip
-/// workspace feature keeps them exact.
+/// The examples are raw JSON, so the float_roundtrip workspace feature keeps
+/// them exact.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct OpDoc {
     pub description: String,
     pub example: Option<OpExample>,
-    /// An op whose argument is a tagged vocabulary (cap-author
-    /// `apply`'s edits): one worked example per kind, so every kind's
-    /// shape is readable here, not only in the generated types.
+    /// One example for each tag of an op whose argument is a tagged
+    /// vocabulary, such as the edits of cap-author `apply`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<KindExample>,
 }
 
-/// One kind of an op's tagged argument, worked: the kind's tag and a
-/// value of it that the op accepts.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct KindExample {
@@ -152,14 +109,10 @@ pub struct KindExample {
     pub example: serde_json::Value,
 }
 
-/// A capability's worked example of one op, as its crate gives it
-/// (its `examples` feature): the kernel loads to run first, each a JSON
-/// load request, and the op's request. The generator runs both through
-/// the capability's own `invoke` and records what it answers, so an
-/// example cannot differ from dispatch. An op on the bulk lane gives its
-/// code and bytes (`bytes`): the generator runs `invoke_bytes`, and
-/// `request` describes the bytes for a reader. An op whose argument is a
-/// tagged vocabulary gives one value of each tag (`kinds`).
+/// The generator runs `loads`, then `request`, through the capability's
+/// `invoke` and records the answer, so an example cannot differ from the
+/// dispatch. A bulk op gives `bytes`, which the generator runs through
+/// `invoke_bytes`, and `request` describes the bytes for a reader.
 #[derive(Debug, Clone)]
 pub struct Example {
     pub bytes: Option<(u32, Vec<u8>)>,
@@ -172,7 +125,7 @@ pub struct Example {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_abi/")]
 pub struct OpExample {
-    /// Raw JSON. The agent reads the shape; TS sees only `unknown`.
+    /// TS sees only `unknown`.
     #[ts(type = "unknown")]
     pub request: serde_json::Value,
     #[ts(type = "unknown")]

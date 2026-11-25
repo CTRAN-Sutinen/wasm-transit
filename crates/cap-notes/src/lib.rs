@@ -1,12 +1,3 @@
-//! cap-notes: what has the agency noted about this? (D-214; OPS.md has the
-//! ops.)
-//!
-//! The seam over transit-notes. The module is the hash authority:
-//! `validate` answers every refusal or the canonical document and its
-//! hash, and a host stores exactly those bytes. A note is stamped with the
-//! writer and time the host gives; `receive` (D-228) stamps each write
-//! with the entry header's writer and clock, never the page's.
-
 #![forbid(unsafe_code)]
 
 use cap_abi::kernel::kind;
@@ -19,16 +10,10 @@ pub use transit_notes::{Note, NoteRefusal, NoteRow, NoteTarget, Notes};
 #[ts(export, export_to = "cap_notes/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// What a write must pass: every refusal, or, when there is none,
-    /// the canonical document and its hash.
     Validate {
         #[ts(as = "Notes")]
         notes: cap_abi::Base<Notes>,
     },
-    /// The document with note `id` written by `by` at `at` (Unix
-    /// seconds): a new note, or an edit of the held one's text. The host
-    /// gives the verified writer and its clock. A document absent
-    /// (`notes_hash` omitted) is an empty one.
     Write {
         #[serde(default)]
         #[ts(optional)]
@@ -40,16 +25,12 @@ pub enum Request {
         #[ts(type = "number")]
         at: u64,
     },
-    /// The notes about `target`, oldest first. A document absent is an
-    /// empty one.
     On {
         #[serde(default)]
         #[ts(optional)]
         notes_hash: Option<String>,
         target: NoteTarget,
     },
-    /// The notes written in `[from, to)` (Unix seconds), newest first. A
-    /// document absent is an empty one.
     Between {
         #[serde(default)]
         #[ts(optional)]
@@ -59,22 +40,11 @@ pub enum Request {
         #[ts(type = "number")]
         to: u64,
     },
-    /// The document as the notes log's records (D-197): a `note` record
-    /// for each note, and the document's own record. A document left out
-    /// gives no records.
     LogRecords {
         #[serde(default)]
         #[ts(optional)]
         notes_hash: Option<String>,
     },
-    /// A write to the notes log, whole (D-228): each op of the write's
-    /// intent over the document at the head (`heads.notes`, registered
-    /// by the host; absent: the empty document), each note stamped with
-    /// the writer and the clock of the entry's header, then the entry
-    /// that records what changed. The ops are `write` (`{cap: "notes",
-    /// op: "write", args: {id, target, text}}`). A refused op answers its
-    /// refusals, and an op that does not run answers why (`failed`): no
-    /// entry either way.
     Receive {
         #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
         write: transit_log::Write,
@@ -84,13 +54,9 @@ pub enum Request {
         #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
         ops: Vec<transit_log::OpCall>,
     },
-    /// The notes document assembled from the notes log's records,
-    /// registered and answered as its canonical bytes and hash. A record
-    /// in another version is refused, naming both.
     LogDocument {
         #[ts(type = "Record<string, { version: number, value: unknown }>")]
         records: std::collections::BTreeMap<String, transit_log::Held>,
-        /// The document's own record (absent: the empty document's).
         #[serde(default)]
         #[ts(optional, type = "{ version: number, value: unknown }")]
         document: Option<transit_log::Held>,
@@ -105,9 +71,6 @@ pub enum Response {
         refusals: Vec<NoteRefusal>,
         document: Option<String>,
         document_hash: Option<String>,
-        /// The fields the document carries that this build does not
-        /// know (D-167): kept in it, and flagged for a person, never
-        /// refused. Absent when every field is known.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(optional, as = "Option<Vec<String>>")]
         unknown_fields: Vec<String>,
@@ -116,19 +79,12 @@ pub enum Response {
     On { notes: Vec<NoteRow> },
     Between { notes: Vec<NoteRow> },
     LogRecords {
-        /// The records of each kind, as the log capability's `compose`
-        /// takes them.
         #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
         next: Vec<transit_log::KindRecords>,
     },
-    /// What the write adds to the notes log (`heads.notes`: the
-    /// document after it).
     Receive(transit_log::Received),
     LogDocument {
-        /// The document's hash (`notes_hash`).
         document_hash: String,
-        /// The document's canonical bytes, which a host serves under
-        /// `document_hash`.
         document: String,
     },
 }
@@ -140,8 +96,6 @@ fn held(hash: Option<&str>) -> Result<std::sync::Arc<Notes>, String> {
     }
 }
 
-/// The typed dispatch (native hosts call this directly). Failures are
-/// `{"error": ...}`, never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Validate { notes } => Ok(match notes.0.checked() {
@@ -186,9 +140,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// A write's ops over the head, then its entry (`Request::Receive`).
-/// An op of a write to the notes log, as a page sends it: never who
-/// wrote it or when, which the entry's header gives.
+/// An op names neither who wrote it nor when. The entry's header gives both.
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Intent {
@@ -229,20 +181,14 @@ fn receive(write: transit_log::Write, heads: std::collections::BTreeMap<String, 
     Ok(Response::Receive(received))
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
-/// out, byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The notes take their questions inline; a document registers on the
-/// kernel's `load_notes` (bulk op 274).
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     serde_json::json!({ "error": format!("unknown bulk op {op}: a notes document registers on the kernel's load_notes") }).to_string()
 }
 
-/// The worked examples, which the generator runs (no module build turns
-/// the feature on).
 #[cfg(feature = "examples")]
 pub mod examples;
 

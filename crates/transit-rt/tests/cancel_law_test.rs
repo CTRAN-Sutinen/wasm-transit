@@ -1,30 +1,6 @@
-//! Cancellation laws: a trip the rt feed cancels, or a stop it skips,
-//! does not run there. The live document says so in the model's
-//! vocabulary, so no reader shows or rides it.
-//!
-//! The intent (the user, 2026-11-04, on the stop display showing a
-//! cancelled 34 as leaving in three minutes): a cancelled trip leaves
-//! the board silently (D-73). GTFS-rt states it two ways:
-//!
-//! 1. TripDescriptor.schedule_relationship CANCELED: the trip
-//!    instance does not run. DELETED: it does not run and should not
-//!    be shown to riders at all. Both mean no visit of the instance
-//!    happens: the live trip is `canceled`.
-//! 2. StopTimeUpdate.schedule_relationship SKIPPED: the vehicle does
-//!    not stop there. The trip still runs. The live stop is `skipped`,
-//!    and a skipped stop states no delay of its own: the delay stated
-//!    before it carries past it to the stops after.
-//!
-//! `LiveDay::runs(trip, start, stop, scheduled_departure)` is the one
-//! question a reader asks: false for every visit of a cancelled
-//! instance and for a skipped visit, true otherwise (including every
-//! trip the snapshot does not mention).
-//!
-//! Written before the implementation, from the GTFS-rt spec.
-//!
-//! The API these laws require: `TripUpdateView.canceled: bool`,
-//! `StopUpdateView.skipped: bool`, `LiveTrip.canceled: bool`,
-//! `LiveStop.skipped: bool`, `LiveDay::runs`.
+//! A trip that the rt feed cancels, or a stop that it skips, does not run
+//! there, and no reader shows or rides it (D-73, cap-rt/OPS.md `live`).
+//! `LiveDay::runs` is false for a cancelled instance and a skipped visit.
 
 use prost::Message;
 use transit_live::{LiveStatus, OnTimeWindow};
@@ -99,8 +75,6 @@ fn the_live_document_says_what_does_not_run() {
     let day = live_day(net, boundary, Some(&rt), None, None, OnTimeWindow::default());
     assert_eq!(day.unmatched_trips, 0);
 
-    // Cancelled instances: named, cancelled, no prediction, and no
-    // visit of them runs.
     for (trip, start) in [("t20", H8 + 1200), ("t10", H8)] {
         let t = day.trips.iter().find(|t| t.trip == trip).unwrap();
         assert!(t.canceled, "{trip} is cancelled");
@@ -110,8 +84,6 @@ fn the_live_document_says_what_does_not_run() {
         assert!(!day.runs(trip, start, "B", start + 600), "{trip} does not reach B");
     }
 
-    // t30 runs, skipping C: C is skipped, states no delay, and the
-    // minute stated at A carries past it to B.
     let t30 = day.trips.iter().find(|t| t.trip == "t30").unwrap();
     assert!(!t30.canceled);
     let c = t30.stops.iter().find(|s| s.stop == "C").expect("a skipped stop is in the document");
@@ -124,14 +96,13 @@ fn the_live_document_says_what_does_not_run() {
     assert!(!day.runs("t30", H8 + 2400, "C", H8 + 2700), "the skipped visit does not happen");
     assert!(day.runs("t30", H8 + 2400, "B", H8 + 3000));
 
-    // A trip the snapshot does not mention runs.
     assert!(day.runs("t40", H8 + 900, "SA", H8 + 900));
 }
 
 #[test]
 fn nothing_cancelled_changes_no_bytes() {
-    // A document with no cancellation serializes as it did before the
-    // fields existed: their hashes stay put.
+    // A document with no cancellation serializes as before, so its hashes
+    // stay put.
     let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
     let imported = transit_codec::import(&feed);
     let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();

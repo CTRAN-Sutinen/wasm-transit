@@ -1,15 +1,6 @@
 #![allow(deprecated)]
-//! Service alerts at the boundary: the Alerts entities of an rt
-//! snapshot decode into the overview, and the live document keeps the
-//! ones in force at the snapshot's moment (its communication period,
-//! else the deprecated active period; none = always), each informed
-//! entity resolved into the network's routes, stops, and trip
-//! instances. A selector naming something the network does not have
-//! resolves to nothing; an alert none of whose selectors resolve is
-//! counted, never silently dropped.
-//!
-//! Over the e2e fixture network: route 10 (bus), stops A B C, trip t10
-//! at 08:00.
+//! Service alerts at the boundary (cap-rt/OPS.md, `live`). Over the e2e
+//! fixture network: route 10 (bus), stops A B C, trip t10 at 08:00.
 
 use prost::Message;
 use transit_codec::Boundary;
@@ -109,13 +100,10 @@ fn the_deprecated_active_period_counts_when_no_communication_period_is_given() {
 #[test]
 fn selectors_resolve_or_count() {
     let rt = snapshot(vec![
-        // Agency-wide: every field absent.
         alert_entity("agency", vec![EntitySelector { agency_id: Some("any".into()), ..selector() }], vec![]),
-        // A route_type names the routes published under it (the
-        // fixture's routes are all buses, 3).
+        // The fixture's routes are all buses (3).
         alert_entity("buses", vec![EntitySelector { route_type: Some(3), ..selector() }], vec![]),
         alert_entity("ferries", vec![EntitySelector { route_type: Some(4), ..selector() }], vec![]),
-        // A trip resolves to its instance.
         alert_entity(
             "trip",
             vec![EntitySelector {
@@ -124,7 +112,6 @@ fn selectors_resolve_or_count() {
             }],
             vec![],
         ),
-        // One unknown selector among known ones: the known one stays.
         alert_entity(
             "mixed",
             vec![
@@ -133,7 +120,6 @@ fn selectors_resolve_or_count() {
             ],
             vec![],
         ),
-        // Nothing resolves: counted.
         alert_entity("ghost", vec![EntitySelector { route_id: Some("99".into()), ..selector() }], vec![]),
         alert_entity("ghost-stop", vec![EntitySelector { route_id: Some("10".into()), stop_id: Some("Z".into()), ..selector() }], vec![]),
     ]);
@@ -164,12 +150,8 @@ fn alerts_from_several_snapshots_are_one_set() {
     assert_eq!(day.alerts.len(), 1);
 }
 
-/// GTFS-rt's `direction_id` (D-204). The spec requires `route_id` with
-/// it. The code maps to the route's model direction by the export's
-/// rule, so the scope names that direction alone. An entity with a
-/// direction and no route, or a code the route does not have, names
-/// nothing and is counted. The fixture's route 40 runs directions
-/// 0 and 1; route 10 runs direction 0 only.
+/// A `direction_id` needs a `route_id` (D-204). Route 40 runs directions 0
+/// and 1, and route 10 runs direction 0 only.
 #[test]
 fn a_direction_scopes_the_alert_to_that_direction_of_its_route() {
     let rt = snapshot(vec![

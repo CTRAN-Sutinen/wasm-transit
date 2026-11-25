@@ -1,22 +1,17 @@
-//! Every authored kind keeps the fields it does not know (D-167). The
-//! laws, derived from the decision and written before the receive
-//! path's flag:
+//! Every authored kind keeps the fields it does not know (D-167). Properties:
 //!
-//! * every record of an authored kind says in its schema that it takes
-//!   fields this build does not know (`additionalProperties: true`); a
-//!   value (a point, a stop's two times, a set of weekdays) is not a
-//!   record, and these are the only types that do not;
-//! * a field this build does not know, written into every record of a
-//!   real document, survives a typed read and a write unchanged, so a
-//!   writer on an older build does not drop what a newer one wrote.
+//! 1. Every record's schema takes unknown fields (`additionalProperties:
+//!    true`). A value type (`VALUES`) takes none.
+//! 2. An unknown field written into every record of a real document survives
+//!    a typed read and a write, so an older build does not drop what a newer
+//!    one wrote.
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 
-/// The values: types that are not records and carry no unknown fields.
+/// Types that are not records.
 const VALUES: &[&str] = &["AlignmentPoint", "Coord", "StopOffset", "WeekdaySet", "DetourPoint"];
 
-/// The unknown field the laws write into each record.
 const UNKNOWN: &str = "zz_from_a_newer_build";
 
 fn schema<T: schemars::JsonSchema>() -> Value {
@@ -37,8 +32,6 @@ fn is_record(node: &Value) -> bool {
     node.get("properties").is_some() && node.get("additionalProperties") == Some(&Value::Bool(true))
 }
 
-/// Every object type in the schema with named properties, by name,
-/// and whether it takes unknown fields.
 fn object_defs(root: &Value) -> Vec<(String, bool)> {
     let mut out = vec![];
     if let Some(defs) = root.get("$defs").and_then(Value::as_object) {
@@ -51,10 +44,7 @@ fn object_defs(root: &Value) -> Vec<(String, bool)> {
     out
 }
 
-/// Write the unknown field into every record of `doc`, guided by the
-/// schema: a record gets it; a map's values and an array's items are
-/// visited by their schema; an enum's alternatives are visited where
-/// the object fits them.
+/// An enum's alternatives are visited where the object fits them.
 fn inject(root: &Value, node: &Value, doc: &mut Value, count: &mut usize) {
     let node = resolve(root, node);
     for key in ["oneOf", "anyOf", "allOf"] {
@@ -99,8 +89,6 @@ fn inject(root: &Value, node: &Value, doc: &mut Value, count: &mut usize) {
     }
 }
 
-/// Whether an object can be this alternative: every required key is
-/// there, and every constant property (a tag) matches.
 fn fits(alt: &Value, doc: &Value) -> bool {
     let Some(map) = doc.as_object() else { return alt.get("type").and_then(Value::as_str) != Some("object") };
     let required = alt.get("required").and_then(Value::as_array).map(|r| r.iter().filter_map(Value::as_str).all(|k| map.contains_key(k))).unwrap_or(true);
@@ -113,8 +101,6 @@ fn fits(alt: &Value, doc: &Value) -> bool {
     required && consts.unwrap_or(true) && alt.get("properties").is_some()
 }
 
-/// The law for one kind: its schema marks every record, and an unknown
-/// field in every record of `doc` survives a read and a write.
 fn keeps_unknown_fields<T: Serialize + DeserializeOwned + schemars::JsonSchema>(kind: &str, doc: &T, at_least: usize) {
     let root = schema::<T>();
     for (name, record) in object_defs(&root) {

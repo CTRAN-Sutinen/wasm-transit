@@ -1,32 +1,17 @@
-//! cap-migrate: what is this older document in the version this build
-//! reads? (OPS.md has the ops.)
-//!
-//! Every authored kind's chain is kept forever in the library that owns
-//! the kind (D-66): one pure step per version, keeping every record id and
-//! reporting every loss. This module wraps the chains as one op, so a
-//! consumer reads the current version only and refuses any other at load.
-//! A host links it only where an older document arrives: the server's
-//! receive and startup, a browser's restore, `caps-run --load`
-//! (docs/FORMATS.md, "Versions").
-//!
-//! Migration never destroys: the answer is a new document with its own
-//! hash, and the caller keeps the old bytes. A document at or past the
-//! target is refused, so an older reader never writes a newer document.
+//! The chains live in the libraries that own each kind (D-66).
+//! Migration never destroys, and an older reader never writes a newer
+//! document (docs/FORMATS.md, "Versions").
 
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_migrate/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Bring `document`, of `kind`, to version `to` (omitted: the
-    /// version this build reads) through every step between.
     Migrate {
-        /// "network", "edit_records" or "watchlist".
         kind: String,
         #[ts(type = "unknown")]
         document: serde_json::Value,
@@ -34,8 +19,6 @@ pub enum Request {
         #[ts(optional)]
         to: Option<u32>,
     },
-    /// The version a document is in, and the version this build reads. This
-    /// says whether it needs `migrate`, without migrating it.
     Version {
         kind: String,
         #[ts(type = "unknown")]
@@ -43,17 +26,12 @@ pub enum Request {
     },
 }
 
-/// One loss that a step applied. It is reported, never silent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_migrate/")]
 pub struct MigrationNote {
-    /// The version the step started from.
     pub from: u32,
-    /// What happened ("dropped_field", …).
     pub kind: String,
-    /// The field it happened to.
     pub field: String,
-    /// How many records it touched.
     pub count: u32,
 }
 
@@ -62,11 +40,8 @@ pub struct MigrationNote {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Migrate {
-        /// The migrated document, as JSON.
         #[ts(type = "unknown")]
         document: serde_json::Value,
-        /// Its canonical bytes and their hash. This is the identity a host
-        /// stores it under. The module is the hash authority.
         canonical: String,
         document_hash: String,
         from: u32,
@@ -75,12 +50,10 @@ pub enum Response {
     },
     Version {
         version: u32,
-        /// The version this build reads (and `migrate` targets).
         reads: u32,
     },
 }
 
-/// The kinds this module migrates, and the version each reads.
 pub const KINDS: &[(&str, u32)] = &[
     (transit_network::KIND, transit_network::SCHEMA_VERSION),
     (transit_sync::KIND, transit_sync::SCHEMA_VERSION),
@@ -135,12 +108,12 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
     }
 }
 
-/// A current-version document's canonical bytes and hash: through its
-/// type (RFC 8785, D-169), as every module that loads it hashes it.
+/// Hashes through the type (RFC 8785, D-169), as every module that loads the
+/// document does.
 fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), String> {
     fn typed<T: serde::de::DeserializeOwned + Serialize>(doc: &serde_json::Value) -> Result<(String, String), String> {
-        // Read through the kernel's own parse (one deserializer for the
-        // type in a linked assembly, not a second one over JSON values).
+        // The kernel's parse is the one deserializer for the type in a linked
+        // assembly.
         let text = serde_json::to_string(doc).expect("documents serialize");
         let typed: T = cap_abi::parse_document(text.as_bytes()).map_err(|e| format!("the migrated document does not read: {e}"))?;
         Ok((cap_abi::canonical_bytes(&typed)?, cap_abi::canonical_hash(&typed)?))
@@ -155,16 +128,14 @@ fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), St
     }
 }
 
-/// An intermediate version has no type in this build: its canonical
-/// bytes as a JSON value (RFC 8785, D-169).
+/// An intermediate version has no type in this build, so it hashes as a JSON
+/// value (RFC 8785, D-169).
 fn loose(doc: &serde_json::Value) -> Result<(String, String), String> {
     let text = cap_abi::canonical_bytes(doc)?;
     let hash = cap_abi::content_hash(text.as_bytes());
     Ok((text, hash))
 }
 
-/// The typed dispatch. Native hosts call this directly. Failures are
-/// `{"error": ...}`. It never panics: a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Migrate { kind, document, to } => {
@@ -190,20 +161,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` or `{"error": ...}` out.
-/// The bytes match every other capability module.
 pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// Documents travel inline. There is no bulk op of its own. The seam
-/// answers with an error instead of silently ignoring the bulk bytes.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: migrate takes its document inline")))
 }
 
-/// The worked examples. The generator runs them. No module build turns
-/// the feature on.
 #[cfg(feature = "examples")]
 pub mod examples;
 

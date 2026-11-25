@@ -2,7 +2,7 @@
   "$defs": {
     "MealBreak": {
       "additionalProperties": true,
-      "description": "A meal break: at least `min_secs` off within the first\n`within_secs` of work.",
+      "description": "At least `min_secs` off within the first `within_secs` of work.",
       "properties": {
         "min_secs": {
           "format": "uint32",
@@ -23,7 +23,7 @@
     },
     "Pay": {
       "additionalProperties": true,
-      "description": "What a run is paid, in time (D-51: no dollars, because operators'\nrates vary by seniority).",
+      "description": "Pay is in time, not dollars, because operators' rates vary by seniority\n(D-51).",
       "properties": {
         "guarantee_secs": {
           "description": "A run is paid at least this long.",
@@ -73,7 +73,7 @@
     },
     "RecoveryRule": {
       "additionalProperties": true,
-      "description": "One recovery requirement: the larger of `min_secs` and\n`pct_of_run` percent of the run before the wait (rounded up to the\nsecond). Scoped by route and/or service type; neither = every trip.",
+      "description": "The larger of `min_secs` and `pct_of_run` percent of the run before the\nwait, rounded up to the second. With no route or service type, the rule\ncovers every trip.",
       "properties": {
         "min_secs": {
           "format": "uint32",
@@ -84,7 +84,7 @@
           ]
         },
         "pct_of_run": {
-          "description": "A whole percent of the run time (0–1000).",
+          "description": "A whole percent of the run time (0 to 1000).",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -109,7 +109,6 @@
     },
     "RoutePair": {
       "additionalProperties": true,
-      "description": "Two routes one vehicle may run back to back, either order.",
       "properties": {
         "a": {
           "type": "string"
@@ -126,7 +125,6 @@
     },
     "RunRules": {
       "additionalProperties": true,
-      "description": "The rules a run is cut under. Each is optional. The runs cut reads\nthem (`docs/units/runs-layer.md`).",
       "properties": {
         "clear_secs": {
           "description": "Paid time after the last piece (pull-in, sign-off).",
@@ -182,7 +180,7 @@
           ]
         },
         "relief_points": {
-          "description": "Where one operator may relieve another (stop ids). Empty: at\nthe ends of a block's trips only.",
+          "description": "Stop ids where one operator may relieve another. When empty, only at\nthe ends of a block's trips.",
           "items": {
             "type": "string"
           },
@@ -210,10 +208,10 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
-  "description": "The rules work is cut under: generic, every rule optional, an\nagency's values as data. Nothing unset is written, so an empty\ndocument is `{\"kind\":\"work_rules\",\"schema_version\":1}`.",
+  "description": "An empty document is `{\"kind\":\"work_rules\",\"schema_version\":1}`.",
   "properties": {
     "interline": {
-      "description": "The route pairs one vehicle may run back to back (D-46: set per\npair, either order). A route always follows itself; a pair not\nlisted is not interlined.",
+      "description": "Set per pair, in either order (D-46). A route follows itself. An\nunlisted pair never interlines.",
       "items": {
         "$ref": "#/$defs/RoutePair"
       },
@@ -222,10 +220,9 @@
     "kind": {
       "$ref": "#/$defs/WorkRulesKind",
       "default": "work_rules",
-      "description": "The kind tag (D-115): `\"work_rules\"`; a copy without one reads\nas work rules."
+      "description": "A copy without a kind tag reads as work rules (D-115)."
     },
     "name": {
-      "description": "What the agency calls this rule set (\"Winter 2027 agreement\").",
       "type": "string"
     },
     "pay": {
@@ -236,24 +233,22 @@
         {
           "type": "null"
         }
-      ],
-      "description": "What a run is paid."
+      ]
     },
     "recovery": {
-      "description": "The recovery a wait after a trip requires (D-9). The most\nspecific rule answers: route and service type, then route, then\nservice type, then neither. If no rule applies, the terminal's\nfloor (the smallest authored layover there).",
+      "description": "The most specific rule answers. Specificity runs from route with\nservice type, to route, to service type, to neither. With no rule,\nthe terminal's floor applies, which is the smallest authored layover\nthere (D-9).",
       "items": {
         "$ref": "#/$defs/RecoveryRule"
       },
       "type": "array"
     },
     "runs": {
-      "$ref": "#/$defs/RunRules",
-      "description": "The rules a run is cut under."
+      "$ref": "#/$defs/RunRules"
     },
     "schema_version": {
       "$ref": "#/$defs/SchemaVersion",
       "default": 1,
-      "description": "The document's version, as every kind names it; a copy without\none is version 1."
+      "description": "A copy without a version is version 1."
     }
   },
   "title": "WorkRules",
