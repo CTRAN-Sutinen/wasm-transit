@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// Every stop the stops document holds on a date, coloured by its
-  /// status there (cap-stops `stops_on`); the open stop marked, and
-  /// brought close while a task on it is under way (`focus`); the
-  /// device's location, when the page asked for it (`me`). A click
-  /// on a stop opens it; while the page is choosing a point (a new stop,
-  /// a move), a click anywhere chooses it, and the point is marked. A
-  /// RENDER component: the stops come in as props; the map computes no
-  /// geometry.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -26,15 +18,12 @@
   }: {
     stops: StopOn[];
     selected: string;
-    /// A click chooses a point, not a stop.
     picking: boolean;
     point: { lat: number; lon: number } | null;
-    /// The device's location and how far off it may be (metres).
     me?: { lat: number; lon: number; accuracy: number } | null;
-    /// Bring the open stop close (a survey, a change on it).
     focus?: boolean;
-    /// Where the map opens, close in (a stop's own map): it starts there
-    /// rather than framing every stop and flying in.
+    /// The map opens here, close in. It starts there rather than framing every
+    /// stop and flying in.
     at?: { lat: number; lon: number } | null;
     onstop: (stop: string) => void;
     onpoint: (lat: number, lon: number) => void;
@@ -64,8 +53,8 @@
       // svelte-ignore state_referenced_locally
       if (at) framed = true;
       map = new maplibregl.Map({ container, style, ...start });
-      // Kept while hidden (the page keeps the stops' map under another
-      // screen): it sizes itself again when shown.
+      // The map stays mounted while hidden, since the page keeps it under another
+      // screen. It sizes itself again when shown.
       const sized = new ResizeObserver(() => map?.resize());
       sized.observe(container);
       map.on("remove", () => sized.disconnect());
@@ -106,8 +95,8 @@
           paint: { "circle-radius": 8, "circle-color": "#16a34a", "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
         });
         map!.on("click", (e) => {
-          // A click is no finer than a pixel: six decimals (about 0.1 m)
-          // say all it knows. A measured point is typed (PointFields).
+          // A click is no finer than a pixel, so six decimals (about 0.1 m) say all it
+          // knows. A measured point is typed (PointFields).
           if (pickingNow) return onpoint(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6));
           const hit = map!.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
           const id = hit?.properties?.stop_id;
@@ -144,7 +133,6 @@
       properties: { stop_id: s.stop_id, name: s.name ?? s.stop_id, status: s.status },
     }));
     (map.getSource("stops") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
-    // Frame the stops once; after that the view stays.
     if (framed || stops.length === 0) return;
     const first: [number, number] = [stops[0].lon, stops[0].lat];
     const bounds = stops.reduce((b, s) => b.extend([s.lon, s.lat]), new maplibregl.LngLatBounds(first, first));
@@ -156,14 +144,10 @@
     if (!loaded || !map) return;
     const features = point ? [{ type: "Feature", geometry: { type: "Point", coordinates: [point.lon, point.lat] }, properties: {} }] : [];
     (map.getSource("point") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
-    // A typed point off screen is brought into view (one the map can
-    // draw; whether it is on the earth is the receive path's to say).
     if (point && Math.abs(point.lat) < 85 && Math.abs(point.lon) <= 180 && !map.getBounds().contains([point.lon, point.lat]))
       map.easeTo({ center: [point.lon, point.lat] });
   });
 
-  // The open stop marked, and brought into view when it is off screen —
-  // or close, to street level, while a task on it is under way.
   $effect(() => {
     if (!loaded || !map) return;
     map.setFilter("stop-open", ["==", ["get", "stop_id"], selected]);
@@ -172,7 +156,6 @@
     else if (s && !map.getBounds().contains([s.lon, s.lat])) map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15) });
   });
 
-  // The device's location, brought into view when it is first given.
   let metMe = "";
   $effect(() => {
     if (!loaded || !map) return;

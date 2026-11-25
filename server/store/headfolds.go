@@ -5,10 +5,8 @@ import (
 	"strings"
 )
 
-// HeadFolds folds each log under logs/ to its head through fold: its
-// newest checkpoint and the entries after it. The answer is each log's
-// fold at its head (the checkpoint's bytes), and its seq. An empty log
-// is left out. The existence check reads them (D-233; `store revert`).
+// HeadFolds answers each log's fold at its head, as the checkpoint's
+// bytes, with its seq. It leaves out an empty log (D-233).
 func HeadFolds(ctx context.Context, b Backend, fold LogFolder) (map[string][]byte, map[string]int64, error) {
 	s := New(b)
 	objs, err := b.List(ctx, "logs/", "")

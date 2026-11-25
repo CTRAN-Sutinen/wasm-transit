@@ -1,38 +1,18 @@
-// Package store is the content-addressed document store the sync
-// server keeps when run with -store (docs/architecture/storage.md; docs/FORMATS.md). Its home is an object store (D-113): the
-// engine runs over a Backend (backend.go) and assumes only its
-// contract — a whole-object create of an absent key, a consistent read
-// and list after write, metadata, delete, a modified time.
+// Package store is the content-addressed document store the sync server
+// keeps when run with -store (docs/architecture/storage.md, which holds
+// the key layout; D-113).
 //
-// Layout (keys under the store URL's prefix):
+// The pointer is its highest record: there is no pointer object. A
+// commit creates the blob, then creates record N+1, which succeeds only
+// when no record N+1 exists. That conditional create is the CAS, so any
+// number of processes may share one bucket. A crash between the creates
+// orphans the blob, and the offline collector (gc.go) deletes it later.
 //
-//	blobs/<hex>                            one immutable blob — the document's
-//	                                       exact bytes; its envelope is the
-//	                                       object's metadata
-//	pointers/<name>/<seq, 20 digits>.json  one commit record (LogEntry)
-//	logs/<log>/entries/<seq>.json          one entry of an append-only log
-//	logs/<log>/checkpoints/<seq>.json      the log's fold up to seq (log.go)
-//	layout, README, kinds/, schemas/       the store's description (describe.go)
-//
-// The pointer is its highest record — there is no pointer object. A
-// commit is two creates: the blob, then record N+1, which lands only
-// when no record N+1 exists — the conditional create is the CAS, so any
-// number of processes may share one bucket — and then a re-read of its
-// blob, re-created if missing. A crash between the creates orphans the
-// blob; the offline collector (gc.go, `store gc`) deletes blobs nothing
-// names, past the grace period — a build's record names its files too
-// (build.go), and a field a stored schema marks content-hash names its
-// blob (describe.go). Serving processes never delete
-// (D-117). Nothing is ever overwritten, appended, renamed, or locked.
-// The store never mints document identity for bus documents: callers
-// pass the module-produced hash and the store asserts sha256(bytes) ==
-// hash, failing loudly on mismatch.
-//
-// The invariants: every pointer, current or historical, names a
-// durable blob; the log is append-only and each record's `from` is the
-// prior `to`; GC never deletes a referenced blob; a failed CAS leaves
-// authority untouched — model-checked for processes sharing a bucket
-// with the offline GC beside them (store.tla, `just spec`).
+// The invariants are model-checked for processes that share a bucket
+// with the offline GC (store.tla, `just spec`): every pointer, current
+// or historical, names a durable blob. Each record's `from` is the
+// prior `to`. GC never deletes a referenced blob. A failed CAS changes
+// nothing.
 package store
 
 import (
@@ -49,33 +29,26 @@ import (
 )
 
 // OrphanGrace is how long an unreferenced blob survives before GC
-// collects it — long enough that a crash mid-commit is never data
-// loss, short enough that orphans do not pile up.
+// collects it. It must outlast a crash in the middle of a commit.
 const OrphanGrace = 7 * 24 * time.Hour
 
-// OrphanGraceMs is OrphanGrace in milliseconds.
 const OrphanGraceMs = int64(OrphanGrace / time.Millisecond)
 
 // FreshnessWindow bounds how far a read may trail another process's
-// commit: a read probes for the next record at most once per window per
-// pointer, and only when a read asks (an idle night makes no requests).
+// commit. A read probes for the next record at most once per window per
+// pointer, and only when a read asks.
 const FreshnessWindow = 2 * time.Second
 
-// envelopeMeta is the metadata key a blob's envelope rides under.
 const envelopeMeta = "envelope"
 
-// fetchWorkers bounds the parallel record reads when a log loads.
 const fetchWorkers = 16
 
-// Envelope is the typed metadata stored with every blob: the hash
-// names the bytes, the envelope says how to read them.
 type Envelope struct {
 	Kind          string `json:"kind"` // network_document, edit_records, diversion_draft, manifest, plans, policy
 	SchemaVersion uint32 `json:"schema_version"`
 	ProducedBy    string `json:"produced_by"` // "cap-sync@sha256:<hex>", or "server" for host-owned documents
 }
 
-// LogEntry is one commit record in a pointer's append-only log.
 type LogEntry struct {
 	Seq           int64   `json:"seq"`
 	From          string  `json:"from"` // the prior `to`; "" on create
@@ -88,10 +61,8 @@ type LogEntry struct {
 	AtMs          int64   `json:"at_ms"`  // host clock, Unix epoch ms
 }
 
-// Head is a pointer's current value: its highest record. While the
-// bucket does not answer (D-119) it is this process's cached head, or
-// its disk cache's (diskcache.go, D-224), Stale, as of the last time
-// the bucket confirmed it.
+// While the bucket does not answer, a Head is the cached one, marked
+// Stale, as of the last time the bucket confirmed it (D-119, D-224).
 type Head struct {
 	Name     string   `json:"name"`
 	Hash     string   `json:"hash"` // "" when the pointer does not exist
@@ -102,8 +73,6 @@ type Head struct {
 	Stale    bool     `json:"stale,omitempty"` // the bucket did not answer this read
 }
 
-// ConflictError is a failed CAS: the pointer moved since the writer
-// last saw it. Current is the hash to re-read and retry against.
 type ConflictError struct {
 	Pointer string
 	Current string
@@ -114,11 +83,10 @@ func (e *ConflictError) Error() string {
 	return fmt.Sprintf("store: pointer %q moved (current %s, seq %d)", e.Pointer, e.Current, e.Seq)
 }
 
-// ErrNotFound is a missing blob, pointer, or object.
 var ErrNotFound = errors.New("store: not found")
 
-// pointer is this process's view of one pointer: its head and the
-// records it has read (records are immutable, so a read one is final).
+// pointer is this process's view of one pointer. Records are immutable,
+// so a cached record is final.
 type pointer struct {
 	mu     sync.Mutex // serializes this process's refreshes and commits
 	loaded bool
@@ -128,13 +96,11 @@ type pointer struct {
 	atMs   int64
 	recs   map[int64]LogEntry
 	probed time.Time
-	// fromCache: the head is the disk cache's (diskcache.go). The next
-	// read the bucket answers lists the pointer again from the start.
+	// fromCache means the head came from the disk cache. The next read
+	// that the bucket answers lists the pointer again from the start.
 	fromCache bool
 }
 
-// Store is one store over a backend. Safe for concurrent use, and for
-// any number of processes over one bucket.
 type Store struct {
 	b       Backend
 	serving bool
@@ -144,14 +110,11 @@ type Store struct {
 	ptrs    map[string]*pointer
 	logs    map[string]*logState // the append-only logs (log.go)
 	now     func() time.Time
-	// afterList runs between a GC pass's listing and its deletes (tests:
-	// the commit that lands there).
+	// afterList runs between a GC pass's listing and its deletes, so a
+	// test can land a commit there.
 	afterList func()
 }
 
-// Open opens the store a URL names (OpenBackend) for a tool —
-// `store gc`, `verify`, `copy` — with every operation the credentials
-// allow.
 func Open(url string) (*Store, error) {
 	b, err := OpenBackend(context.Background(), url)
 	if err != nil {
@@ -160,8 +123,6 @@ func Open(url string) (*Store, error) {
 	return New(b), nil
 }
 
-// OpenServing opens the store a URL names for a serving process: it
-// creates, reads, and lists, and never deletes (NewServing).
 func OpenServing(url string) (*Store, error) {
 	b, err := OpenBackend(context.Background(), url)
 	if err != nil {
@@ -170,37 +131,28 @@ func OpenServing(url string) (*Store, error) {
 	return NewServing(b), nil
 }
 
-// New answers a store over a backend. Nothing is read until a pointer
-// is asked for.
 func New(b Backend) *Store {
 	return &Store{b: guarded{b}, cache: newBlobCache(BlobCacheBytes), ptrs: map[string]*pointer{}, now: time.Now}
 }
 
-// NewServing answers the store a serving process holds (D-117): its
-// backend refuses every delete and the store refuses GC, whatever the
-// credentials allow — so a compromised server cannot erase history, and
-// the bucket can carry the provider's immutability.
+// NewServing refuses every delete and GC, whatever the credentials
+// allow. A compromised server then cannot erase history (D-117).
 func NewServing(b Backend) *Store {
 	s := New(servingBackend{b})
 	s.serving = true
 	return s
 }
 
-// ErrServingNeverDeletes is a delete asked of a serving store.
 var ErrServingNeverDeletes = errors.New("store: a serving process never deletes (D-117; run `store gc`)")
 
 type servingBackend struct{ Backend }
 
 func (servingBackend) Delete(context.Context, string) error { return ErrServingNeverDeletes }
 
-// Close releases nothing — a store holds no lock — and is kept so the
-// server's shutdown stays one call.
 func (s *Store) Close() error { return nil }
 
-// ValidPointerName reports whether name may be a pointer: one key
-// segment under pointers/ that cannot reach another pointer's records
-// or hide as a dotfile — letters, digits, '.', '_' and '-', starting
-// with a letter or digit, at most 128 bytes.
+// ValidPointerName accepts one key segment that cannot reach another
+// pointer's records or hide as a dotfile.
 func ValidPointerName(name string) bool {
 	if name == "" || len(name) > 128 {
 		return false
@@ -217,7 +169,6 @@ func ValidPointerName(name string) bool {
 	return true
 }
 
-// ParseHash validates "sha256:<hex>" and returns the hex.
 func ParseHash(hash string) (string, error) {
 	if !strings.HasPrefix(hash, "sha256:") {
 		return "", fmt.Errorf("not a content hash: %q", hash)
@@ -232,7 +183,6 @@ func ParseHash(hash string) (string, error) {
 	return hexPart, nil
 }
 
-// HashOf is the store's content hash: "sha256:<hex>" of the bytes.
 func HashOf(data []byte) string { return hashOf(data) }
 
 func hashOf(data []byte) string {
@@ -246,7 +196,6 @@ func recordKey(name string, seq int64) string {
 	return fmt.Sprintf("%s%020d.json", recordPrefix(name), seq)
 }
 
-// recordSeq parses a record key's seq; ok is false for any other key.
 func recordSeq(key string) (name string, seq int64, ok bool) {
 	rest, found := strings.CutPrefix(key, "pointers/")
 	if !found {
@@ -264,11 +213,9 @@ func recordSeq(key string) (name string, seq int64, ok bool) {
 	return name, seq, true
 }
 
-// PutBlob stores data under its content hash with its envelope. It is
-// idempotent: an existing blob is returned as-is (same key, same
-// bytes). wantHash, when non-empty, is the module-produced document
-// hash the caller asserts against sha256(data) — the store never mints
-// bus-document identity.
+// PutBlob stores data under its content hash. wantHash, when non-empty,
+// is the hash that the module computed. The store checks it against
+// sha256(data) and never computes a bus document's identity itself.
 func (s *Store) PutBlob(data []byte, env Envelope, wantHash string) (string, error) {
 	return s.putBlob(data, env, wantHash)
 }
@@ -298,14 +245,11 @@ func (s *Store) putBlob(data []byte, env Envelope, wantHash string) (string, err
 	return hash, nil
 }
 
-// keepBlob keeps a blob the bucket holds in memory and in the disk
-// cache.
 func (s *Store) keepBlob(hash string, data []byte, env Envelope) {
 	s.cache.put(hash, data, env)
 	s.disk.putBlob(hash, data, env)
 }
 
-// GetBlob reads a blob and its envelope.
 func (s *Store) GetBlob(hash string) ([]byte, Envelope, error) {
 	h, err := ParseHash(hash)
 	if err != nil {
@@ -344,7 +288,6 @@ func (s *Store) pointer(name string) *pointer {
 	return p
 }
 
-// getRecord reads one record, from this process's cache or the bucket.
 // Caller holds p.mu.
 func (s *Store) getRecord(p *pointer, name string, seq int64) (LogEntry, error) {
 	if e, ok := p.recs[seq]; ok {
@@ -365,8 +308,7 @@ func (s *Store) getRecord(p *pointer, name string, seq int64) (LogEntry, error) 
 	return e, nil
 }
 
-// loadRange reads records lo..hi into the cache, in parallel. Caller
-// holds p.mu.
+// Caller holds p.mu.
 func (s *Store) loadRange(p *pointer, name string, lo, hi int64) error {
 	var missing []int64
 	for seq := lo; seq <= hi; seq++ {
@@ -414,8 +356,6 @@ func (s *Store) loadRange(p *pointer, name string, lo, hi int64) error {
 	return nil
 }
 
-// advance moves the cached head to the highest record the bucket lists
-// after it, checking that each new record chains from the one before.
 // Caller holds p.mu.
 func (s *Store) advance(p *pointer, name string) error {
 	after := ""
@@ -461,15 +401,12 @@ func (s *Store) advance(p *pointer, name string) error {
 	return nil
 }
 
-// keepHead writes the pointer's confirmed head to the disk cache.
 // Caller holds p.mu.
 func (s *Store) keepHead(p *pointer, name string) {
 	s.disk.putHead(name, cachedHead{Seq: p.seq, To: p.to, Envelope: p.env, AtMs: p.atMs, AsOfMs: p.probed.UnixMilli()})
 }
 
-// fromDisk loads the disk cache's head of a pointer this process has
-// not read: the head it serves, stale, while the bucket does not
-// answer. Caller holds p.mu.
+// Caller holds p.mu.
 func (s *Store) fromDisk(p *pointer, name string) bool {
 	h, ok := s.disk.head(name)
 	if !ok {
@@ -481,8 +418,8 @@ func (s *Store) fromDisk(p *pointer, name string) bool {
 	return true
 }
 
-// relist lists a pointer the disk cache loaded again from the start.
-// On a failure it keeps the cache's head. Caller holds p.mu.
+// relist keeps the cache's head when the listing fails. It requires
+// p.mu.
 func (s *Store) relist(p *pointer, name string) error {
 	seq, to, env, atMs, probed := p.seq, p.to, p.env, p.atMs, p.probed
 	p.seq, p.to, p.env, p.atMs, p.loaded = 0, "", Envelope{}, 0, false
@@ -494,10 +431,9 @@ func (s *Store) relist(p *pointer, name string) error {
 	return nil
 }
 
-// fresh brings the cached head within the freshness window of the
-// bucket: a first read lists the pointer; later, at most once per
-// window, one Stat of record seq+1 (absent = the cache is current).
-// Caller holds p.mu.
+// fresh requires p.mu. After the first listing, it makes at most one
+// Stat of record seq+1 per window. An absent record means the cache is
+// current.
 func (s *Store) fresh(p *pointer, name string) error {
 	if !p.loaded {
 		return s.advance(p, name)
@@ -522,8 +458,6 @@ func (p *pointer) head(name string) Head {
 	return Head{Name: name, Hash: p.to, Seq: p.seq, Envelope: p.env, AtMs: p.atMs, AsOfMs: p.probed.UnixMilli()}
 }
 
-// Head returns a pointer's current value. found is false when the
-// pointer has no commits yet (or is no pointer name).
 func (s *Store) Head(name string) (Head, bool, error) {
 	if !ValidPointerName(name) {
 		return Head{Name: name}, false, nil
@@ -538,7 +472,7 @@ func (s *Store) Head(name string) (Head, bool, error) {
 		if !errors.Is(err, ErrUnavailable) || !p.loaded {
 			return Head{Name: name}, false, err
 		}
-		// D-119: the bucket did not answer — the cached head, labelled.
+		// The bucket did not answer, so serve the cached head, marked Stale (D-119).
 		if p.seq == 0 {
 			return Head{Name: name, Stale: true, AsOfMs: p.probed.UnixMilli()}, false, nil
 		}
@@ -552,13 +486,10 @@ func (s *Store) Head(name string) (Head, bool, error) {
 	return p.head(name), true, nil
 }
 
-// CAS commits data as the pointer's next value. from is the hash the
-// writer last saw ("" = the pointer must not exist). On a moved
-// pointer it returns *ConflictError with the current hash; the caller
-// re-reads, re-merges (the kind's module op), and retries. The blob is
-// created first, then record N+1 — created only if absent, which is the
-// commit and the CAS at once — then the blob is read again and
-// re-created if a GC pass removed it in between (store.tla, Check).
+// CAS commits data as the pointer's next value. from is the hash that
+// the writer last saw, and "" means the pointer must not exist. After a
+// commit, CAS reads the blob again and re-creates it if a GC pass
+// removed it in between (store.tla).
 func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writer string, atMs int64) (string, int64, error) {
 	if !ValidPointerName(name) {
 		return "", 0, fmt.Errorf("store: %q is not a pointer name", name)
@@ -589,9 +520,8 @@ func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writ
 		}
 	}
 	if p.seq > 0 && p.to == hash {
-		// Idempotent redelivery: the same document is already the head —
-		// no record, no seq bump (at-least-once converges to the same
-		// hash AND the same seq).
+		// Redelivery of the head adds no record, so at-least-once
+		// delivery converges to the same hash and the same seq.
 		return hash, p.seq, nil
 	}
 	if _, err := s.putBlob(data, env, ""); err != nil {
@@ -622,9 +552,9 @@ func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writ
 	p.seq, p.to, p.env, p.atMs = entry.Seq, hash, env, atMs
 	p.probed = s.now()
 	s.keepHead(p, name)
-	// Check: a commit that reused an aged orphan may have had it deleted
-	// under it; the bytes are content-addressed, so the re-create is the
-	// same object. A crash before this line is `store verify`'s to find.
+	// A commit that reused an aged orphan may have had it deleted under
+	// it. The re-create is the same object. A crash before this line is
+	// for `store verify` to find.
 	if _, err := s.b.Stat(context.Background(), blobKey(strings.TrimPrefix(hash, "sha256:"))); errors.Is(err, ErrNotFound) {
 		if _, err := s.putBlob(data, env, ""); err != nil {
 			return "", 0, fmt.Errorf("commit %s seq %d: re-create its blob: %w", name, entry.Seq, err)
@@ -635,10 +565,9 @@ func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writ
 	return hash, entry.Seq, nil
 }
 
-// Log returns the records after the latest record whose To is since
-// ("" = every record). found is false when since is not in the log —
-// the caller then falls back to the whole current document (delta sync
-// outside the log's history) — and when the pointer has no commits.
+// Log returns the records after the latest record whose To is since,
+// or every record when since is "". found is false when since is not in
+// the log. The caller then falls back to the whole current document.
 func (s *Store) Log(name, since string) (entries []LogEntry, found bool, err error) {
 	if !ValidPointerName(name) {
 		return nil, false, nil
@@ -682,9 +611,8 @@ func (s *Store) Log(name, since string) (entries []LogEntry, found bool, err err
 	return nil, false, nil
 }
 
-// Input reads inputs/<key>: an input an operator placed in the bucket
-// for servers to boot from (D-118; `-feed bucket:<key>`). The store
-// never writes there.
+// Input reads inputs/<key>, which an operator places in the bucket.
+// The store never writes there (D-118).
 func (s *Store) Input(key string) ([]byte, ObjectInfo, error) {
 	if key == "" || strings.HasPrefix(key, "/") || strings.Contains(key, "..") {
 		return nil, ObjectInfo{}, fmt.Errorf("store: %q is not an input key", key)
@@ -698,8 +626,6 @@ func (s *Store) Input(key string) ([]byte, ObjectInfo, error) {
 	return data, info, err
 }
 
-// InputModified answers inputs/<key>'s modified time — the cheap
-// re-check before a read.
 func (s *Store) InputModified(key string) (ObjectInfo, error) {
 	return s.b.Stat(context.Background(), "inputs/"+key)
 }

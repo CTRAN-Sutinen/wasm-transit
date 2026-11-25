@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// A new route, as a task in three steps: the route (its id
-  /// and names), each way it runs (a name, its stops picked in order —
-  /// the plan's, or ones the stops record holds — and the time end to
-  /// end; the way back starts as the way out reversed), and its trips
-  /// (per way and service key: the first and last departures and the
-  /// minutes between). Create hands the whole route to the host as one
-  /// change; what refuses it is said beside the actions. A RENDER
-  /// component.
   import "./forms.css";
   import TaskFrame from "./TaskFrame.svelte";
   import Combobox from "./Combobox.svelte";
@@ -49,12 +41,10 @@
   ]);
   type Row = { key: string; first: string; last: string; every: string };
   let rows = $state<Row[][]>([[], []]);
-  /// What is typed in each direction's stop box, cleared once a stop is added.
   let adding = $state(["", ""]);
 
   const byId = $derived(new Map(stops.map((s) => [s.value, s])));
   const stopName = (s: string) => byId.get(s)?.label ?? s;
-  /// The way back, while it follows the way out: its stops reversed.
   const wayStops = (i: number) => (i === 1 && ways[1].reversed ? [...ways[0].stops].reverse() : ways[i].stops);
   const live = $derived([0, 1].filter((i) => ways[i].on));
   const idTaken = $derived(routeIds.includes(id.trim()));

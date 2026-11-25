@@ -1,7 +1,7 @@
 package main
 
-// Attachments (D-162): a bucket of their own, each file named by its
-// content hash; reading needs a signed-in person when sign-in is on.
+// Attachments (D-162). Reading needs a signed-in person when sign-in is
+// on.
 
 import (
 	"bytes"

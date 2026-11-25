@@ -1,9 +1,7 @@
 package main
 
-// The round-trip proof: the server hosts the SYNC CAPABILITY
-// (cap-sync) and gets the same converged edit document the browser
-// and Node compute — the "same contracts everywhere" claim,
-// executed, not asserted.
+// Pins that the server hosts cap-sync and converges the same edit
+// document as the browser and Node.
 
 import (
 	"bytes"
@@ -19,7 +17,7 @@ import (
 
 const date = "2026-10-23" // Friday: WK + HOL both run
 
-// fixtureZip mirrors the e2e fixture (web/e2e/make_fixtures.py).
+// fixtureZip mirrors web/e2e/make_fixtures.py.
 func fixtureZip(t *testing.T) []byte {
 	t.Helper()
 	files := map[string]string{
@@ -59,11 +57,8 @@ func newTestHost(t *testing.T) *WasmHost {
 	return host
 }
 
-// The sync capability's round trip through the Go host: the protocol's
-// one step — a draft client against an empty server converges to the
-// submitted document, a newer tombstone wins LWW, and validation is
-// NOT the op's business (what a record amounts to on the network is
-// cap-divert's reports, asked through the bus).
+// Pins one step of the protocol: a draft against an empty server
+// converges to the submitted document, and a newer tombstone wins LWW.
 func TestSyncRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	host := newTestHost(t)
@@ -102,7 +97,6 @@ func TestSyncRoundTrip(t *testing.T) {
 		t.Fatalf("submit bumps rev and stamps the host clock: %+v", resp.Records[0])
 	}
 
-	// LWW: a newer tombstone beats the submitted record.
 	var lww struct {
 		Records []map[string]any `json:"records"`
 	}
@@ -117,7 +111,6 @@ func TestSyncRoundTrip(t *testing.T) {
 		t.Fatalf("the tombstone (newer timestamp) won: %+v", lww.Records)
 	}
 
-	// Empty documents converge to empty — the protocol's zero case.
 	var empty struct {
 		Records []map[string]any `json:"records"`
 	}
@@ -130,17 +123,13 @@ func TestSyncRoundTrip(t *testing.T) {
 		t.Fatalf("empty documents converge to empty: %+v", empty.Records)
 	}
 
-	// The manifest's version field: the host reads the feed's own
-	// feed_info.txt row (one boundary CSV field — the module owns
-	// the format, the host owns files).
+	// The host reads one CSV field of feed_info.txt for the manifest's
+	// version.
 	if v := feedInfoVersion(fixtureZip(t)); v != "2026.10.1" {
 		t.Fatalf("feed_info version: %q", v)
 	}
 }
 
-// TestModuleIsTheDeployedBytes pins the module the tests run to the
-// file the server hosts — same bytes, by construction of this test
-// reading that exact path.
 func TestModuleIsTheDeployedBytes(t *testing.T) {
 	host := newTestHost(t)
 	sum := sha256File(t, "../web/pkg/cap_sync.wasm")
@@ -149,9 +138,6 @@ func TestModuleIsTheDeployedBytes(t *testing.T) {
 	}
 }
 
-// TestEditsSyncEndpoint exercises POST/GET /edits through real HTTP:
-// the client document merges with the server's (LWW in the artifact),
-// drafts submit, tombstones propagate, and persistence round-trips.
 func TestEditsSyncEndpoint(t *testing.T) {
 	host := newTestHost(t)
 
@@ -178,7 +164,6 @@ func TestEditsSyncEndpoint(t *testing.T) {
 		return resp.StatusCode, string(body)
 	}
 
-	// Push a draft; the server must submit it.
 	code, body := post(editJSON("e1", "draft", 1, 100))
 	if code != 200 {
 		t.Fatalf("post: %d %s", code, body)
@@ -187,11 +172,9 @@ func TestEditsSyncEndpoint(t *testing.T) {
 		t.Fatalf("draft not submitted: %s", body)
 	}
 
-	// A second push with a newer tombstone for the same id: LWW. The
-	// receive path clamps the future stamp to the server's now (D-56),
-	// which can equal the submit stamp to the millisecond — the retire
-	// bumps the rev past the submitted rev 2, as a client's retire does,
-	// so it wins the tie.
+	// The server clamps the future stamp to its now (D-56), which can
+	// equal the submit stamp to the millisecond. The retire bumps the rev
+	// past the submitted rev 2, so it wins the tie.
 	code, body = post(editJSON("e1", "retired", 3, time.Now().UnixMilli()+60_000))
 	if code != 200 {
 		t.Fatalf("post 2: %d %s", code, body)
@@ -200,7 +183,6 @@ func TestEditsSyncEndpoint(t *testing.T) {
 		t.Fatalf("tombstone did not win: %s", body)
 	}
 
-	// GET returns the merged document.
 	resp, err := http.Get(base + "/edits")
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -211,7 +193,6 @@ func TestEditsSyncEndpoint(t *testing.T) {
 		t.Fatalf("get: %s", got)
 	}
 
-	// Persistence: a fresh server with the same path restores the doc.
 	s2 := &server{wasm: host, edits: loadEdits(s.editsPath), editsPath: s.editsPath}
 	mux2 := http.NewServeMux()
 	mux2.HandleFunc("/edits", s2.handleEdits)

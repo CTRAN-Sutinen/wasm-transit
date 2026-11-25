@@ -1,12 +1,8 @@
 package main
 
-// Store-mode round trips (server with -store): the edit document lives
-// in the content-addressed store as the edits pointer, /edits is its
-// specialization, the generic /pointers and /blobs surface serves CAS
-// and delta sync, and the manifest is the root pointer
-// (docs/FORMATS.md). Pinned here: persistence through a restart, CAS
-// conflict answering the current hash, idempotent redelivery, delta
-// sync over the log, and the D-56 clock clamp through the receive path.
+// Store-mode round trips (docs/FORMATS.md): persistence through a
+// restart, CAS conflict, idempotent redelivery, delta sync over the
+// log, and the D-56 clock clamp.
 
 import (
 	"context"
@@ -22,8 +18,7 @@ import (
 	"rustwasm/server/store"
 )
 
-// newStoreServer is a store-mode server over a bucket; a second one
-// over the same backend is a restarted (or a second) process.
+// A second newStoreServer over the same backend is a restarted process.
 func newStoreServer(t *testing.T, b store.Backend) *server {
 	t.Helper()
 	s := &server{wasm: newTestHost(t), retentionDays: 90}
@@ -48,8 +43,8 @@ func editDoc(id, status string, rev, at int64) string {
 	return `{"kind":"edit_records","schema_version":2,"records":` + editRecords(id, status, rev, at) + `}`
 }
 
-// editRecords is the same record as a bare array: an edit document v1,
-// the shape a client on an older build posts.
+// editRecords is the same record as a bare array, the edit document v1
+// that a client on an older build posts.
 func editRecords(id, status string, rev, at int64) string {
 	diversion := `{"id":"d-` + id + `","route_id":"10","direction_id":null,` +
 		`"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],` +
@@ -81,9 +76,7 @@ func httpGet(t *testing.T, url string) (int, http.Header, string) {
 	return resp.StatusCode, resp.Header, string(b)
 }
 
-// The unit's headline pin: an edit document syncs through a RESTARTED
-// server (a fresh process over the same bucket) and the
-// document — tombstone included — is intact.
+// An edit document, tombstone included, survives a restart.
 func TestStoreEditsSurviveRestart(t *testing.T) {
 	bucket := store.NewMemory()
 	s1 := newStoreServer(t, bucket)
@@ -95,14 +88,13 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 	}
 	etag := strings.Trim(hdr.Get("ETag"), `"`)
 
-	// The retire bumps the rev past the submitted rev 2 (a same-
-	// millisecond stamp ties on updated_at).
+	// The retire bumps the rev past the submitted rev 2, because a
+	// same-millisecond stamp ties on updated_at.
 	code, _, body = httpPost(t, base+"/edits", editDoc("e1", "retired", 3, time.Now().UnixMilli()))
 	if code != 200 || !strings.Contains(body, `"status":"retired"`) {
 		t.Fatalf("post tombstone: %d %s", code, body)
 	}
 
-	// Restart: a new server (new store handle) over the same bucket.
 	s1.store.Close()
 	s2 := newStoreServer(t, bucket)
 	base2 := httptest.NewServer(storeMux(s2)).URL
@@ -115,9 +107,6 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 		t.Fatal("etag must move on a new commit")
 	}
 
-	// The disruptions log is the audit: two entries, the second naming
-	// the record's hash before it, each by the module that answered it
-	// (cap-sync's receive op).
 	log := logEntries(t, base2, 0)
 	if log.Head != 2 || len(log.Entries) != 2 || log.Entries[0].Seq != 1 || log.Entries[1].Seq != 2 {
 		t.Fatalf("the log: %+v", log)
@@ -129,7 +118,6 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 	}
 }
 
-// loggedEntry is the part of a disruptions log entry the tests read.
 type loggedEntry struct {
 	Kind    string `json:"kind"`
 	Seq     int64  `json:"seq"`
@@ -173,10 +161,8 @@ func logEntries(t *testing.T, base string, since int64) logAnswer {
 	return a
 }
 
-// CAS conflict over HTTP: a POST /pointers/edits with a stale from
-// answers 409 with the current hash; the client re-reads and retries.
-// Idempotent redelivery: re-POSTing the same document converges to the
-// same head hash.
+// A stale from answers 409 with the current hash. Re-posting the same
+// document converges to the same head hash.
 func TestStoreCASConflictAndRedelivery(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
@@ -193,7 +179,6 @@ func TestStoreCASConflictAndRedelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A stale from ("" = must not exist, but it does) conflicts.
 	req, _ := json.Marshal(map[string]any{"from": "", "client": json.RawMessage(editDoc("e2", "draft", 1, 100))})
 	resp, err := http.Post(base+"/pointers/edits", "application/json", strings.NewReader(string(req)))
 	if err != nil {
@@ -213,24 +198,21 @@ func TestStoreCASConflictAndRedelivery(t *testing.T) {
 		t.Fatalf("409 must carry the current hash: %q vs %q", ce.Current, head.Hash)
 	}
 
-	// Redelivery of the same client document: converges (submit is
-	// idempotent given the same clock domain — the head may move once
-	// for the new record, but re-POSTing the identical document again
-	// must not change the head hash).
+	// The head may move once for the new record. Posting the identical
+	// document again must not change the head hash.
 	_, _, b1 := httpPost(t, base+"/edits", editDoc("e2", "draft", 1, 100))
 	_, _, head1 := httpGet(t, base+"/pointers/edits")
 	_, _, b2 := httpPost(t, base+"/edits", editDoc("e2", "draft", 1, 100))
 	_, _, head2 := httpGet(t, base+"/pointers/edits")
 	_ = b1
 	_ = b2
-	if head1 != head2 { // same document re-POSTed: same hash AND same seq
+	if head1 != head2 { // the same hash and the same seq
 		t.Fatalf("redelivering the same document changed the head: %s -> %s", head1, head2)
 	}
 }
 
-// Delta sync over the disruptions log: a reader holding entry N gets
-// only the later entries. GET /edits serves the fold with its hash as
-// the ETag, and revalidates for 304.
+// A reader holding entry N gets only the later entries. GET /edits
+// revalidates for 304 on the fold's hash.
 func TestStoreDeltaSyncAndRevalidation(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
@@ -270,10 +252,9 @@ func TestStoreDeltaSyncAndRevalidation(t *testing.T) {
 	}
 }
 
-// A revert over HTTP: entry 2 retired e1; its revert puts e1 back in
-// force as a new entry, a page that resends the retired copy does not
-// undo it, and a second revert of entry 2 is refused (409) naming the
-// record, because entry 3 changed it since.
+// A revert puts e1 back in force as a new entry. A page that resends
+// the retired copy does not undo it. A second revert of entry 2 is
+// refused (409), because entry 3 changed the record since.
 func TestStoreRevertIsANewEntry(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
@@ -305,15 +286,13 @@ func TestStoreRevertIsANewEntry(t *testing.T) {
 	}
 }
 
-// An entry that does not read is quarantined: the fold skips it, names
-// it, and goes on. A gap stops writes (503) until an entry that names
-// the cause closes it.
+// The fold skips an entry that does not read and names it. A gap stops
+// writes (503) until an entry that names the cause closes it.
 func TestStoreQuarantineAndGap(t *testing.T) {
 	bucket := store.NewMemory()
 	s := newStoreServer(t, bucket)
 	base := httptest.NewServer(storeMux(s)).URL
 	httpPost(t, base+"/edits", editDoc("e1", "accepted", 1, 100))
-	// Someone writes a bad entry 2 by hand; e2 then lands at 3.
 	if err := s.store.AppendEntry(disruptionsLog, 2, []byte(`{"kind":"log_entry"`)); err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +303,6 @@ func TestStoreQuarantineAndGap(t *testing.T) {
 		t.Fatalf("entry 2 is named: %+v", a)
 	}
 
-	// Someone deletes the bad entry 2 by hand: a fresh process sees the gap.
 	bucket.Delete(context.Background(), "logs/disruptions/entries/00000000000000000002.json")
 	s2 := newStoreServer(t, bucket)
 	base2 := httptest.NewServer(storeMux(s2)).URL
@@ -348,8 +326,7 @@ func TestStoreQuarantineAndGap(t *testing.T) {
 	}
 }
 
-// A server stores a checkpoint every checkpointEvery entries, and a
-// fresh process boots from it and serves the same document.
+// A fresh process boots from a checkpoint and serves the same document.
 func TestStoreBootsFromACheckpoint(t *testing.T) {
 	bucket := store.NewMemory()
 	s := newStoreServer(t, bucket)
@@ -374,9 +351,8 @@ func TestStoreBootsFromACheckpoint(t *testing.T) {
 	}
 }
 
-// D-56 through the receive path: a client whose clock runs 10 h fast
-// cannot mint a record that wins past now — the stored stamp is clamped
-// to the server clock.
+// A client whose clock runs 10 h fast cannot create a record that wins past now
+// (D-56). The stored stamp is clamped to the server clock.
 func TestStoreReceiveClampsTheClock(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
@@ -403,9 +379,8 @@ func TestStoreReceiveClampsTheClock(t *testing.T) {
 	}
 }
 
-// The manifest is the root pointer in store mode: GET /manifest commits
-// it once and serves the pointer's blob (ETag = its hash); a second GET
-// revalidates for 304 and does not append a log entry.
+// GET /manifest commits the manifest once. A second GET revalidates for
+// 304 and appends no log entry.
 func TestStoreManifestPointer(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
@@ -443,9 +418,8 @@ func TestStoreManifestPointer(t *testing.T) {
 	}
 }
 
-// The generic raw-commit path: a host-owned document kind (policy, the
-// kind an admin rotates through POST /pointers/policy) posts verbatim
-// with a from-CAS, and a wrong document_hash is rejected.
+// A host-owned kind such as policy posts verbatim with a from-CAS, and
+// a wrong document_hash is rejected.
 func TestStoreRawPointerCommit(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
@@ -459,12 +433,10 @@ func TestStoreRawPointerCommit(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("create policy: %d %s", code, body)
 	}
-	// A wrong asserted hash fails loudly (the store never mints identity).
 	code, body = mk("", `{}`, "sha256:"+strings.Repeat("ff", 32))
 	if code == 200 {
 		t.Fatalf("wrong document_hash must fail: %s", body)
 	}
-	// Move with the right from: create answered the head hash.
 	_, _, headBody := httpGet(t, base+"/pointers/policy")
 	var head struct {
 		Hash string `json:"hash"`

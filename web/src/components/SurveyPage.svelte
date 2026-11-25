@@ -1,32 +1,15 @@
 <script lang="ts" module>
-  /// A survey half filled (answers as typed, "" not recorded). The host
-  /// keeps it on the device until it is saved or discarded (D-158).
   export type SurveyDraft = {
     on: string;
     site: Record<string, string>;
     amenities: Record<string, string>;
     refs: Record<string, string>;
     note: string;
-    /// Photos added while surveying (their hashes; the files are kept
-    /// by the deployment as each is added).
     attachments?: { hash: string; type: string; name?: string; caption?: string; taken_on?: string }[];
   };
 </script>
 
 <script lang="ts">
-  /// A stop's site survey (D-158) as the worksheet it replaces: one page,
-  /// every section under its own heading — the Service Stop Worksheet's
-  /// sections, then amenities, external IDs, and photos and notes — with
-  /// a section index beside it (each section's answered count and its
-  /// changes since the record; a click goes there) and a summary column
-  /// with the survey date, what changed, and Save. Every answer starts
-  /// from what the stop records, shown beside it, so a resurvey is a
-  /// pass of confirmations. On a phone the index is a bar across the
-  /// top and the summary follows the form. The questions and the answers
-  /// each takes are cap-stops `questions`'; the words are stopWords'.
-  /// Every change is reported as the draft (the host keeps it on the
-  /// device); the survey saves as one `changed` event carrying every
-  /// answer recorded. A RENDER component.
   import "./forms.css";
   import type { Event } from "../types/Event";
   import type { Refusal } from "../types/Refusal";
@@ -58,7 +41,6 @@
     draft: SurveyDraft | null;
     ondraft: (draft: SurveyDraft | null) => void;
     onsave: (event: Event, done: string) => void;
-    /// Left unsaved: the draft stays on the device.
     onclose: () => void;
     refusals: Refusal[];
     error: string;
@@ -108,7 +90,6 @@
   const amenityAnswer = (v: string) => (v === "yes" ? "There" : v === "no" ? "Not there" : "");
   const slug = (t: string) => `s-${t.toLowerCase().replaceAll(/[^a-z]+/g, "-")}`;
 
-  /// Each section of the index: answered of asked, and changed.
   const index = $derived.by(() => {
     const site = siteSections.map((g) => ({
       title: g.title,
@@ -172,7 +153,6 @@
     extraRef = "";
   }
 
-  /// Every answer in a section put back to what the stop records.
   function revert(title: string) {
     const g = siteSections.find((x) => x.title === title);
     if (g) for (const k of g.keys) d.site[k] = recorded.site[k] ?? "";
@@ -193,8 +173,8 @@
     const event: Event = {
       on: d.on,
       event: "changed",
-      // the surveyor is the signed-in writer: the server names them
-      // (cap-stops attribute_surveys), whatever this says
+      // The surveyor is the signed-in writer. The server names them (cap-stops
+      // attribute_surveys), whatever this says.
       surveyed_by: "",
       ...(Object.keys(site).length ? { site } : {}),
       ...(Object.keys(refs).length ? { refs } : {}),
@@ -388,8 +368,6 @@
   .save { margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem; padding-top: 1rem; }
   .primary { min-height: 2.8rem; background: var(--accent); color: var(--surface); border: 1px solid var(--accent); border-radius: 6px; font-weight: 600; font-size: 1rem; cursor: pointer; }
   .primary:disabled { opacity: 0.5; }
-  /* A tablet: the summary goes under the form. A phone: one column, the
-     index a bar of sections across the top, Save held at the bottom. */
   @media (max-width: 1100px) {
     .survey-page { grid-template-columns: 13rem minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top top" "index form" "summary summary"; }
     .summary { border-left: 0; border-top: 1px solid var(--line); max-height: 40dvh; }

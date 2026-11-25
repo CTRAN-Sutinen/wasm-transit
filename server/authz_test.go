@@ -1,10 +1,8 @@
 package main
 
-// Authorization round trips: the IdP authenticates (here: a test JWKS
-// over httptest, RS256 and ES256), the server verifies the JWT and
-// asks cap-authz over the store's policy pointer — fail-closed, reads
-// public, writes role-gated (D-58..D-61), and the verified subject
-// lands in the store log as `writer`.
+// Authorization round trips with a test JWKS (RS256 and ES256): the
+// policy is fail-closed, reads are public, writes are role-gated
+// (D-58..D-61), and the verified subject lands in the log as `writer`.
 
 import (
 	"context"
@@ -80,7 +78,6 @@ func ecJWK(kid string, key *ecdsa.PublicKey) map[string]any {
 	}
 }
 
-// jwksServer serves a mutable JWKS so the test can rotate keys.
 type jwksServer struct {
 	mu   sync.Mutex
 	keys []map[string]any
@@ -123,8 +120,6 @@ func newAuthzTestHost(t *testing.T) *WasmHost {
 	return host
 }
 
-// newAuthServer builds a store-mode server with auth on: JWKS over
-// httptest, policy seeded from a file into the store's policy pointer.
 func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -194,7 +189,6 @@ func TestAuthzPublicReadAuthedWrite(t *testing.T) {
 		return c
 	}
 
-	// D-58: GET is public.
 	code, body := func() (int, string) {
 		resp, err := http.Get(base + "/edits")
 		if err != nil {
@@ -208,30 +202,24 @@ func TestAuthzPublicReadAuthedWrite(t *testing.T) {
 		t.Fatalf("GET /edits must be public: %d %s", code, body)
 	}
 
-	// No token → 401.
 	if code, _ := bearerPost(t, base+"/edits", "", `[{"id":"e1"}]`); code != 401 {
 		t.Fatalf("no token: want 401, got %d", code)
 	}
-	// alg=none → 401.
 	if code, _ := bearerPost(t, base+"/edits", "eyJhbGciOiJub25lIn0.e30.", `[]`); code != 401 {
 		t.Fatalf("alg=none must be rejected: %d", code)
 	}
-	// Expired → 401.
 	expired := signRS256(t, rsaKey, "k1", claims([]string{"dispatcher"}, map[string]any{"exp": now - 3600}))
 	if code, _ := bearerPost(t, base+"/edits", expired, `[]`); code != 401 {
 		t.Fatalf("expired token: want 401, got %d", code)
 	}
-	// Wrong audience → 401.
 	wrongAud := signRS256(t, rsaKey, "k1", claims([]string{"dispatcher"}, map[string]any{"aud": "other"}))
 	if code, _ := bearerPost(t, base+"/edits", wrongAud, `[]`); code != 401 {
 		t.Fatalf("wrong aud: want 401, got %d", code)
 	}
-	// Role without a matching rule → 403.
 	rider := signRS256(t, rsaKey, "k1", claims([]string{"rider"}, nil))
 	if code, _ := bearerPost(t, base+"/edits", rider, editDoc("e1", "draft", 1, 100)); code != 403 {
 		t.Fatalf("rider writing edits: want 403, got %d", code)
 	}
-	// Dispatcher with write on edits → 200, and the log's writer is the sub.
 	dispatcher := signRS256(t, rsaKey, "k1", claims([]string{"dispatcher"}, nil))
 	code, body = bearerPost(t, base+"/edits", dispatcher, editDoc("e1", "draft", 1, 100))
 	if code != 200 || !strings.Contains(body, `"submitted"`) {
@@ -279,12 +267,10 @@ func TestAuthzES256AndKidRotation(t *testing.T) {
 		"sub": "dispatcher-9", "roles": []string{"dispatcher"},
 		"exp": now + 3600,
 	}
-	// ES256 token → 200.
 	tok := signES256(t, ecKey, "ec1", claims)
 	if code, _ := bearerPost(t, base+"/edits", tok, editDoc("e9", "draft", 1, 100)); code != 200 {
 		t.Fatalf("ES256 post: want 200, got %d", code)
 	}
-	// Unknown kid → 401; after the JWKS gains the key, the same token works.
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	rotated := signRS256(t, rsaKey, "k2", claims)
 	if code, _ := bearerPost(t, base+"/edits", rotated, `[]`); code != 401 {
@@ -312,24 +298,19 @@ func TestAuthzPolicyChangesAreAuditedCommits(t *testing.T) {
 		"sub": "dispatcher-7", "roles": []string{"dispatcher"}, "exp": now + 3600,
 	})
 
-	// The admin rewrites the policy (write on pointer "policy"), dropping
-	// the dispatcher rule — a CAS'd, audited commit.
 	newPolicy := `{"schema_version":1,"rules":[{"name":"admin-all","roles":["admin"],"pointers":["*"],"actions":["*"]}]}`
 	req, _ := json.Marshal(map[string]any{"from": mustHead(t, s, "policy"), "kind": "policy", "document": newPolicy})
 	code, body := bearerPost(t, base+"/pointers/policy", admin, string(req))
 	if code != 200 {
 		t.Fatalf("policy rewrite: %d %s", code, body)
 	}
-	// Now the dispatcher is denied (fail-closed against the new policy).
 	if code, _ := bearerPost(t, base+"/edits", dispatcher, editDoc("e1", "draft", 1, 100)); code != 403 {
 		t.Fatalf("dispatcher after policy change: want 403, got %d", code)
 	}
-	// And the policy pointer's log has the seed + the rewrite, chained.
 	entries, _, err := s.store.Log("policy", "")
 	if err != nil || len(entries) != 2 || entries[1].Writer != "admin-1" || entries[1].Kind != "policy" {
 		t.Fatalf("policy log: %v %v", entries, err)
 	}
-	// The manifest pins the new policy hash in store mode.
 	if head, found, _ := s.store.Head("policy"); !found || head.Hash != entries[1].To {
 		t.Fatalf("policy head: %+v", head)
 	}
@@ -340,7 +321,6 @@ func TestAuthzFailClosedWithoutPolicy(t *testing.T) {
 	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})
 	defer jwks.srv.Close()
 
-	// Auth on, but no policy seeded (no -policy source): writes deny.
 	s := &server{wasm: newTestHost(t), retentionDays: 90}
 	st := store.NewServing(store.NewMemory())
 	s.store = st
@@ -366,9 +346,7 @@ func TestAuthzFailClosedWithoutPolicy(t *testing.T) {
 	}
 }
 
-// The policy document never leaves the server: the manifest may pin its
-// hash (opaque), but the blob itself is 404 even for an authenticated
-// admin — the audited path to policy changes is the pointer log.
+// The manifest pins the policy hash, but the blob is 404 even for an admin.
 func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})
@@ -377,7 +355,6 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 
 	policyHash := mustHead(t, s, "policy")
 
-	// Anonymous: 404. The blob exists (the store has it) but is withheld.
 	resp, err := http.Get(base + "/blobs/" + policyHash)
 	if err != nil {
 		t.Fatal(err)
@@ -387,8 +364,6 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 		t.Fatalf("policy blob anonymous: want 404, got %d", resp.StatusCode)
 	}
 
-	// Authenticated admin: still 404 (even admins get the policy only
-	// through the audited log, never the blob).
 	now := time.Now().Unix()
 	admin := signRS256(t, rsaKey, "k1", map[string]any{
 		"iss": "https://idp.example", "aud": "transit-server",
@@ -405,7 +380,6 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 		t.Fatalf("policy blob as admin: want 404, got %d", resp2.StatusCode)
 	}
 
-	// A normal blob (an edit document) still serves fine, publicly.
 	editsHash, err := s.store.PutBlob([]byte(editDoc("e1", "draft", 1, 100)), s.syncEnvelope(), "")
 	if err != nil {
 		t.Fatal(err)
@@ -421,11 +395,8 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 	}
 }
 
-// The pointer log carries writer identities, so it is authenticated:
-// no token → 401; a read rule without an audit rule → 200 with writers
-// redacted; an audit rule → full writers. The disruptions log's entries
-// carry their writers inside their bytes, so /logs/disruptions needs
-// the audit rule: a reader without it gets 403.
+// The pointer log is authenticated because it carries writer identities.
+// /logs/disruptions needs the audit rule for the same reason.
 func TestAuthzLogWriterRedaction(t *testing.T) {
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})
@@ -453,9 +424,6 @@ func TestAuthzLogWriterRedaction(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 
-	// One write as the dispatcher, so the logs have a writer to leak:
-	// the disruptions log through POST /edits, and the edits pointer's
-	// history as an older build wrote it.
 	if code, _ := bearerPost(t, base+"/edits", mk("dispatcher-7", []string{"dispatcher"}), editDoc("e1", "draft", 1, 100)); code != 200 {
 		t.Fatalf("post: %d", code)
 	}
@@ -474,11 +442,9 @@ func TestAuthzLogWriterRedaction(t *testing.T) {
 	}
 	logURL := base + "/pointers/edits/log"
 
-	// No token → 401 (the log is not public when auth is on).
 	if code, _ := bearerGet(logURL, ""); code != 401 {
 		t.Fatalf("log anonymous: want 401, got %d", code)
 	}
-	// Read on edits but no audit → 200, writers redacted.
 	code, body := bearerGet(logURL, mk("dispatcher-7", []string{"dispatcher"}))
 	if code != 200 || strings.Contains(body, "dispatcher-7") {
 		t.Fatalf("log for reader without audit: want 200 redacted, got %d %s", code, body)
@@ -486,24 +452,20 @@ func TestAuthzLogWriterRedaction(t *testing.T) {
 	if !strings.Contains(body, `"writer":""`) {
 		t.Fatalf("writer must be redacted, got %s", body)
 	}
-	// Audit rule → full writers.
 	if _, body := bearerGet(logURL, mk("aud-1", []string{"auditor"})); !strings.Contains(body, "dispatcher-7") {
 		t.Fatalf("auditor must see writers, got %s", body)
 	}
-	// Admin wildcard covers audit too.
 	if _, body := bearerGet(logURL, mk("admin-1", []string{"admin"})); !strings.Contains(body, "dispatcher-7") {
 		t.Fatalf("admin must see writers, got %s", body)
 	}
-	// The head endpoint stays public and carries no identity.
 	if code, _ := bearerGet(base+"/pointers/edits", ""); code != 200 {
 		t.Fatalf("head must stay public: %d", code)
 	}
 	_ = s
 }
 
-// GET /permissions serves the policy AS IT APPLIES TO THE CALLER: the
-// projection (own roles + merged capabilities), never the policy
-// document — no other roles, no rule list. The policy blob stays 404.
+// GET /permissions serves the caller's projection of the policy, never
+// the policy document.
 func TestAuthzPermissionsProjection(t *testing.T) {
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})
@@ -536,12 +498,9 @@ func TestAuthzPermissionsProjection(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 
-	// No token → 401.
 	if code, _ := get(""); code != 401 {
 		t.Fatalf("permissions anonymous: want 401, got %d", code)
 	}
-	// Dispatcher: sees its own capabilities on edits — and NOT the other
-	// roles or the rule structure.
 	code, body := get(mk("dispatcher-7", []string{"dispatcher"}))
 	if code != 200 {
 		t.Fatalf("permissions: %d %s", code, body)
@@ -554,12 +513,10 @@ func TestAuthzPermissionsProjection(t *testing.T) {
 			t.Fatalf("policy internals leaked to the client (%q): %s", leak, body)
 		}
 	}
-	// Auditor: sees its wildcard audit capability, nothing else.
 	_, body = get(mk("aud-1", []string{"auditor"}))
 	if !strings.Contains(body, `"audit"`) || strings.Contains(body, "edits") {
 		t.Fatalf("auditor projection: %s", body)
 	}
-	// The policy blob itself is still withheld even for the admin.
 	policyHash := mustHead(t, s, "policy")
 	req, _ := http.NewRequest("GET", permBase+"/blobs/"+policyHash, nil)
 	req.Header.Set("Authorization", "Bearer "+mk("admin-1", []string{"admin"}))
@@ -582,9 +539,8 @@ func mustHead(t *testing.T, s *server, pointer string) string {
 	return head.Hash
 }
 
-// The person's name is the configured claim (D-158, -oidc-name-claim):
-// Entra's display name or its UPN, a nested path, and the sub when the
-// token has no such claim.
+// D-158 (-oidc-name-claim): the name is the configured claim, a nested
+// path, or the sub when the token has none.
 func TestAuthzNameIsTheConfiguredClaim(t *testing.T) {
 	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})

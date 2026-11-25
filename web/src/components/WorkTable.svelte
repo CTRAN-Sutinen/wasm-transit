@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// The work across every stop (cap-requests `list`, D-159), as the
-  /// table a planning team works from: each request's id, stop, job,
-  /// status, request date, work order, and note; the statuses (with
-  /// their counts, every request whatever is shown) and jobs as filters
-  /// above it; a column heading sorts by it; a row opens the request. A
-  /// RENDER component: the requests, the counts, and the stops they
-  /// concern come in as props.
   import type { IdRequest } from "../types/cap_requests/IdRequest";
   import type { RequestCount } from "../types/RequestCount";
   import type { StopOn } from "../types/StopOn";
@@ -23,7 +16,6 @@
   }: {
     requests: IdRequest[];
     counts: RequestCount[];
-    /// The requests' stops on the date, to name each.
     stops: StopOn[];
     statuses: string[];
     jobs: string[];

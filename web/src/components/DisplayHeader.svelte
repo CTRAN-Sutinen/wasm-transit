@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// A stop display's header — a RENDER component: which stop this is
-  /// (the directory's name and id), the time now (the host's clock),
-  /// and whether the times are live.
   import { clockText } from "./rideFormat";
 
   let {
@@ -14,7 +11,6 @@
     name: string;
     stopId: string;
     nowSecs: number;
-    /// A live document fed the board.
     live: boolean;
     onsetup: () => void;
   } = $props();

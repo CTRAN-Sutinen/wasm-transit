@@ -5,16 +5,14 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
-// Pages: the picker (/) and every generated UI —
-// one per `src/uis/<id>/` directory, served from `<id>.html` at the
-// bundle's root (asset fetches are relative, so every page lives at
-// the root of wherever the bundle is served). Adding a UI is adding its directory and its html; a
-// directory without its page fails the build here, not at runtime.
+// Each `src/uis/<id>/` directory is a generated UI, served from `<id>.html`
+// at the bundle's root. A directory without its page fails the build here,
+// not at runtime.
 const root = path.dirname(fileURLToPath(import.meta.url));
 const uis = fs
   .readdirSync(path.join(root, "src/uis"), { withFileTypes: true })
-  // A hidden directory (an editor's or a tool's) is never a UI; the
-  // justfile's UI gate skips it the same way.
+  // The justfile's UI gate also skips hidden directories, which an editor
+  // or a tool creates.
   .filter((d) => d.isDirectory() && !d.name.startsWith("."))
   .map((d) => d.name);
 for (const id of uis) {
@@ -27,15 +25,13 @@ const input = {
   ...Object.fromEntries(uis.map((id) => [id, `${id}.html`])),
 };
 
-// ONE UI, deployable on its own (`UI=<id> vite build` → dist-ui/<id>/;
-// `just export <id> …`, D-131): only that page, its scripts, and what
-// it runs — the capability manifest, its linked assembly and, for the
-// fallback a page takes when the assembly does not load (D-88), each
-// of its capabilities alone; the deployment's live-feeds.json; the
-// documents' schemas (/schemas/); the
-// basemap's files only when the page draws a map (its code includes
-// src/basemap.ts). index.html forwards to the page. Without UI the
-// build is every page (the sync server's).
+// `UI=<id> vite build` writes dist-ui/<id>/ for `just export <id> …`
+// (D-131). It holds only that page and what it runs: the capability
+// manifest, its linked assembly, each of its capabilities alone (the
+// fallback when the assembly does not load, D-88), live-feeds.json, the
+// schemas, and the basemap files only when the page imports
+// src/basemap.ts. Without UI the build is every page, as the sync server
+// serves it.
 const only = process.env.UI || null;
 if (only && !uis.includes(only)) throw new Error(`UI=${only}: no generated UI by that id (${uis.join(", ")})`);
 function oneUi(id) {
@@ -64,7 +60,6 @@ function oneUi(id) {
         for (const cap of caps.capabilities.filter((c) => linked.capabilities.includes(c.id))) copy(cap.url);
       }
       copy("live-feeds.json");
-      // The documents' schemas, served at /schemas/ by every deployment.
       copy("schemas");
       if (drawsMap) {
         copy("basemap.pmtiles");
@@ -78,19 +73,14 @@ function oneUi(id) {
   };
 }
 
-// The service worker (web/service-worker.js — D-63, D-65): written to
-// <outDir>/sw.js after the build with the build's identity and the
-// shell it precaches above the template (and OFFLINE, those UIs' ids)
-// — the pages of every UI whose
-// ui.json says `"offline": true`, every hashed asset, the capability
-// manifest, and those UIs' linked assemblies. BUILD hashes the shell's
-// bytes, so a build that changes any of them is a byte-different
-// worker the browser's update check installs (and leaves waiting).
-// A UI whose ui.json says `"precache_assembly": false` (the staff pages,
-// D-223) keeps its assembly out of the shared shell: a rider's install
-// never downloads a planner's modules. The worker keeps that assembly
-// forever on its first use (it is hash-named), and a one-UI build
-// (`only`) precaches its own assembly.
+// Writes web/service-worker.js to <outDir>/sw.js (D-63, D-65). The shell is
+// the pages of every UI whose ui.json says `"offline": true`, every hashed
+// asset, the capability manifest, and those UIs' linked assemblies. BUILD
+// hashes the shell's bytes, so a build that changes any of them is a
+// byte-different worker that the browser's update check installs.
+// A UI with `"precache_assembly": false` (the staff pages, D-223) stays
+// out of the shared shell, so a rider's install never downloads a
+// planner's modules. A one-UI build (`only`) precaches its own assembly.
 const uiJson = (id) => JSON.parse(fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8"));
 const offline = uis.filter((id) => (!only || id === only) && uiJson(id).offline === true);
 const precached = offline.filter((id) => only || uiJson(id).precache_assembly !== false);
@@ -126,30 +116,21 @@ function serviceWorker() {
 }
 
 export default defineConfig({
-  // Relative: the built pages reference their assets beside them, so
-  // a deployment serves them from any path — a static host's prefix
-  // (/ride/, D-131) as well as the sync server's root.
+  // Relative, so a deployment can serve the pages from any path, such as a
+  // static host's prefix (/ride/, D-131).
   base: "./",
   plugins: [svelte(), ...(only ? [oneUi(only)] : []), serviceWorker()],
   build: only
     ? { target: "esnext", outDir: `dist-ui/${only}`, rollupOptions: { input: { [only]: `${only}.html` } } }
     : { target: "esnext", rollupOptions: { input } },
-  // One UI copies only what it runs from public/ (oneUi).
   publicDir: only ? false : "public",
-  // The bus worker (src/bus.worker.ts) is a module worker.
   worker: { format: "es" },
   server: {
-    // `npm run dev` proxies the sync server's routes (server/main.go):
-    // the published documents, the manifest, edit sync and the store,
-    // the geocoder, and /rt — the dev feed relay the dev
-    // live-feeds.json names, for feeds that send no CORS header (D-67;
-    // `just dev` runs the server with -rt-proxy). A key is a path prefix,
-    // or a pattern when it begins with ^: the stops document's writes are
-    // `/stops` exactly, never the stops page (`/stops.html`); the stop
-    // requests' writes are `/stop-requests` and the work order system's
-    // adapter `/stop-requests/work-order`; photos are `/attachments`;
-    // the alerts' writes are `/service-alerts` and `/alert-templates`,
-    // a note's `/notes`, and a log's writes and its revert `/logs/<log>`.
+    // `npm run dev` proxies the sync server's routes (server/main.go).
+    // `/rt` is the feed relay for feeds that send no CORS header (D-67;
+    // `just dev` runs the server with -rt-proxy). A route that begins with
+    // ^ is a pattern. `^/stops$` matches the document's writes and not the
+    // stops page, `/stops.html`.
     proxy: Object.fromEntries(
       ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/logs", "^/stops$", "^/stop-requests(/|$)", "/attachments", "/service-alerts", "/alert-templates", "^/notes$", "/feed", "/geocode"].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).

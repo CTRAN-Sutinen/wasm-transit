@@ -1,15 +1,15 @@
 package store
 
-// The store describes itself (D-203). The laws:
+// These tests pin D-203.
 //   - the description is created once and never written over;
 //   - a schema whose bytes are not its hash is refused, and one in the
 //     store is a break;
 //   - a field marked content-hash names a blob, through $ref, anyOf,
 //     items, and additionalProperties, and an unmarked one names none;
-//   - verify follows the marks from each blob and from each log record,
-//     and a missing blob is a break that names what refers to it;
-//   - gc keeps every blob a mark names, from a blob or a log record, and
-//     still collects an orphan.
+//   - verify follows the marks, and a missing blob is a break that names
+//     what refers to it;
+//   - gc keeps every blob that a mark names and still collects an
+//     orphan.
 
 import (
 	"context"
@@ -20,8 +20,8 @@ import (
 	"time"
 )
 
-// A pick-like kind: a set whose items name a network by a marked field,
-// and a note that is not marked.
+// A pick-like kind has items that name a network by a marked field, and
+// a note that is not marked.
 const testSetSchema = `{"$defs":{"Pick":{"type":"object","properties":{"id":{"type":"string"},"network_hash":{"type":"string","format":"content-hash"},"note":{"type":"string"},"also":{"anyOf":[{"type":"null"},{"type":"string","format":"content-hash"}]}}}},"type":"object","properties":{"kind":{"const":"set"},"picks":{"type":"array","items":{"$ref":"#/$defs/Pick"}},"by_hash":{"type":"object","additionalProperties":{"$ref":"#/$defs/Pick"}}}}`
 
 func testTable() []byte {
@@ -82,7 +82,6 @@ func TestAMarkNamesABlobAndNothingElseDoes(t *testing.T) {
 	}
 }
 
-// pickEntry is a log_entry with one change of a pick record.
 func pickEntry(log string, seq int, after string) []byte {
 	return []byte(`{"kind":"log_entry","schema_version":1,"log":"` + log + `","seq":` + itoa(seq) + `,"writer":"w","at_ms":1,"module":"m","intent":{"op":"t"},"changes":[{"kind":"pick","version":1,"id":"a","after":` + after + `}]}`)
 }
@@ -129,7 +128,6 @@ func TestVerifyNamesTheBlobThatRefersToAMissingOne(t *testing.T) {
 	if !errors.As(err, &ve) || !strings.Contains(ve.Reason, strings.TrimPrefix(hash, "sha256:")) {
 		t.Fatalf("the break names the blob that refers: %v", err)
 	}
-	// A schema in the store that is not its hash is a break.
 	b2 := NewMemory()
 	b2.Create(context.Background(), schemaKey("set", 1, "sha256:"+strings.Repeat("1", 64)), []byte(`{}`), nil)
 	if _, err := Verify(context.Background(), b2); !errors.As(err, &ve) || !strings.Contains(ve.Reason, "hash to") {

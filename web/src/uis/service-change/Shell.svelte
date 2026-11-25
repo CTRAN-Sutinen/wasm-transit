@@ -1,15 +1,6 @@
 <script lang="ts">
   import SignInControl from "../../components/SignInControl.svelte";
   import { signin as signinState, signIn, signOut } from "../../signin.svelte";
-  /// The service-change UI's layout: PLACEMENT ONLY. One selection bar
-  /// (plan, day type, hours, route) over the stage that is open — the
-  /// plan and its calendar, the scan, one route's day with a hub beside
-  /// it, the stops (each on its own card, apart from any route),
-  /// vehicles and hours, the proposal — each with the page's full
-  /// width. The plan compared against is chosen on the Proposal, the
-  /// stage it serves; the scan and the route mark the change only once
-  /// one is chosen. Every prop is the host's answers state; every
-  /// event calls a host function.
   import {
     sc,
     STAGES,
@@ -94,7 +85,7 @@
   import Unavailable from "../../components/Unavailable.svelte";
   import { today } from "../kit";
 
-  // Can the open plan change? A published pick cannot (D-139): it forks.
+  // A published pick cannot change (D-139). It forks.
   const openRow = $derived(sc.plans.find((p) => p.key === sc.activeKey));
   const framed = $derived(!!openRow && !openRow.published && !!openRow.id);
   const locked = $derived(
@@ -106,7 +97,6 @@
   const routeRow = $derived(sc.routes.find((r) => r.route_id === sc.route) ?? null);
   const routeOptions = $derived(sc.routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.long_name ?? undefined })));
   const stopOptions = $derived(sc.stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
-  // The hubs to read beside the route: the stops of its timetable.
   const routeStops = $derived((sc.timetable?.stops ?? []).map((s) => ({ value: s.stop, label: s.name, sub: s.stop })));
   const alsoIn = $derived(
     sc.dayTypes.flatMap((t) => t.groups).filter((g) => g.id !== sc.group && g.members.includes(sc.editType)).map((g) => g.id),
@@ -389,8 +379,7 @@
   .map { flex: 1; min-height: 70vh; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
   .stops { display: grid; grid-template-columns: 1fr minmax(18rem, 26rem); gap: 0.9rem; align-items: start; }
   .find { max-width: 26rem; }
-  /* A definite height: the map inside fills 100% of it (a min-height
-     alone leaves the canvas at its own minimum). */
+  /* A min-height alone leaves the map canvas at its own minimum, so the height is definite. */
   .stops .map { flex: none; height: calc(100vh - 12rem); min-height: 24rem; }
   .route { display: grid; grid-template-columns: 1fr minmax(18rem, 26rem); gap: 0.9rem; align-items: start; }
   .work { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }

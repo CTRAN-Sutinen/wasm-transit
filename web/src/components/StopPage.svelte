@@ -1,15 +1,4 @@
 <script lang="ts">
-  /// One stop in the stops document (cap-stops `stop`, D-157) as a page:
-  /// its header (name, id and code, where it stands on the date, and the
-  /// things done at a stop — Survey, Request work, Report issue, Record
-  /// change, the last offering only what the stop may become that day,
-  /// the op's `next`, and a move and new details), and its record below
-  /// under headings, in as many columns as the screen holds: Location
-  /// (the point, on a map of the stops around it), Details, Amenities,
-  /// Routes (in the schedule running that day), Open work (its requests,
-  /// D-159), Last survey (D-158), and History (every event, newest first,
-  /// each correctable). A short change opens as a card under the header
-  /// (the page places it, `change`). A RENDER component.
   import "./forms.css";
   import type { Snippet } from "svelte";
   import type { Event } from "../types/Event";
@@ -42,23 +31,18 @@
     stopId: string;
     card: { stop: StopOn | null; events: Event[]; next: string[] };
     served: StopDetail | null;
-    /// Why the routes have no answer (the directory did not load, or it
-    /// refused): the card says so, never "no routes".
+    /// The directory did not load or refused. The card says so and never reads
+    /// "no routes".
     servedError?: string;
     date: string;
     busy: boolean;
     questions: { site: SiteQuestion[]; amenities: string[] };
     requests: IdRequest[];
-    /// A survey draft is kept on this device for the stop.
     draft: boolean;
     attachments?: { src: (hash: string) => Promise<string | null> } | null;
-    /// The map of the stop and the stops around it (the page's).
     map: Snippet;
-    /// The change under way, placed under the header (the page's).
     change?: Snippet;
     backLabel: string;
-    /// A task begun: "change:<kind>", "fix:<index>", "survey",
-    /// "request", or "report".
     ontask: (task: string) => void;
     onrequest: (id: string) => void;
     onback: () => void;
@@ -74,9 +58,6 @@
     const other = Object.entries(site).filter(([k, v]) => v && !named.has(k));
     return [...groups, { title: "Other", rows: other }].filter((g) => g.rows.length);
   });
-  /// The stop's visits as a person reads them: one line per route,
-  /// direction, and the stops either side (patterns that agree on those
-  /// read as one).
   const visits = $derived.by(() => {
     const seen = new Map<string, { key: string; route: string; direction: string; timepoint: boolean; previous: Neighbour | null; next: Neighbour | null }>();
     for (const v of served?.visits ?? []) {

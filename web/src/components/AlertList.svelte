@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// Service alerts — a RENDER component over the live document's
-  /// alerts in force (all of them, or the ones cap-board's `stop_board`
-  /// says speak about a stop). Which alerts apply is the op's; this
-  /// shows each one's header, text, link, and what it names.
   import type { AlertEffect } from "../types/AlertEffect";
   import type { LiveAlert } from "../types/LiveAlert";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
@@ -27,7 +23,6 @@
     return EFFECT[a.effect] ?? "Alert";
   }
 
-  /// The routes and stops an alert names, as the rider reads them.
   function scope(a: LiveAlert): string {
     if (a.scopes.some((s) => !s.route && !s.stop && !s.trip)) return "All service";
     const rs = [...new Set(a.scopes.map((s) => s.route).filter((r): r is string => !!r))].map((r) => names.get(r) ?? r);

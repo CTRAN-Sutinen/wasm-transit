@@ -1,7 +1,3 @@
-// What every LRP session walk shares: PASS/FAIL checks, the pick date,
-// the stage and route openers, and the server the walk publishes to.
-// The walks run under tools/ui-shot.mjs (LRP/run.sh).
-
 const results = [];
 
 export function check(name, ok, saw = "") {
@@ -18,16 +14,13 @@ export function done(step) {
 
 export const clean = (s) => (s ?? "").replace(/\s+/g, " ").trim();
 
-/// The sync server the page talks to (LRP/run.sh sets it; `just qa`'s
-/// by default).
 export const SERVER = process.env.LRP_SERVER ?? "http://127.0.0.1:8091";
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-/// The Sunday at least `weeks` weeks out: a pick date, as a planner
-/// sets one. The C-TRAN test feed runs through 2027-01-09, so a session
-/// run later needs a newer feed.
+// The C-TRAN test feed runs through 2027-01-09, so a session run later
+// needs a newer feed.
 export function sundayAfter(weeks) {
   const d = new Date();
   d.setDate(d.getDate() + weeks * 7);
@@ -48,14 +41,12 @@ export function helpers(page, settle) {
       await page.getByRole("navigation", { name: "Stages" }).getByRole("button", { name: new RegExp(name) }).first().click();
       await settle();
     },
-    /// Fork the open plan as `name`, picking on `date`; the fork opens.
     fork: async (name, date) => {
       await T("fork-name").fill(name);
       await T("fork-date").fill(date);
       await page.getByRole("button", { name: "Fork" }).click();
       await settle();
     },
-    /// Open a plan already on the device by its name (Plan & calendar).
     openPlan: async (name) => {
       const row = T("pick-row").filter({ hasText: name }).first();
       if (await row.getByRole("button", { name: "Open" }).count()) {
@@ -76,7 +67,6 @@ export function helpers(page, settle) {
       const edit = page.getByRole("button", { name: "Edit", exact: true });
       if (await edit.count()) { await edit.click(); await settle(); }
     },
-    /// The span form: fill only the ends given, Apply; the status after.
     span: async (first, last) => {
       const f = T("gesture-span");
       if (first) await f.getByLabel("first trip").fill(first);
@@ -85,7 +75,6 @@ export function helpers(page, settle) {
       await settle();
     },
     spanNow: async () => clean(await T("span-now").textContent()),
-    /// The trip list's starts, in order.
     starts: async () => {
       const rows = page.locator("tr");
       const out = [];
@@ -98,8 +87,6 @@ export function helpers(page, settle) {
   };
 }
 
-/// The served feed on `date` (`GET /feed`): routes.txt and trips.txt
-/// as rows of cells, or null.
 export async function servedFeed(date) {
   const { execFileSync } = await import("node:child_process");
   const fs = await import("node:fs");

@@ -1,9 +1,8 @@
 package main
 
-// The stop requests document in store mode (D-159): a write goes through
-// the receive path — cap-requests validates it and answers its canonical
-// bytes, a stale write is refused, the manifest pins the head, and a raw
-// pointer commit is refused.
+// Pins D-159 in store mode: cap-requests validates a write, a stale
+// write is refused, the manifest pins the head, and a raw pointer commit
+// is refused.
 
 import (
 	"context"
@@ -62,12 +61,10 @@ func TestStopRequestsWritesAreValidated(t *testing.T) {
 	}
 }
 
-// The work order system through its adapter (D-165): with none
-// configured the server answers 501 and the manifest offers nothing (a
-// request's work order is entered by hand); with the stub, opening a work
-// order for a request writes its reference on it — the request ordered,
-// the writer the system — and reading its status writes the status and
-// the day it was read.
+// Pins D-165. With no adapter the server answers 501 and the manifest
+// offers nothing. With the stub, opening a work order writes its
+// reference on the request, with the system as the writer, and reading
+// its status writes the status and the day it was read.
 func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
@@ -145,7 +142,6 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	}
 }
 
-// countingWorkOrders counts the work orders the system is asked to open.
 type countingWorkOrders struct {
 	workOrderSystem
 	opened int
@@ -156,9 +152,8 @@ func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.R
 	return c.workOrderSystem.Open(ctx, id, request)
 }
 
-// An outbox's resend of a work order whose answer was lost (D-189): its
-// key landed, so the server answers the work order the request holds,
-// and the system is not asked to open a second one.
+// A resend whose key landed gets the held work order, and the system is not
+// asked to open a second one (D-189).
 func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)

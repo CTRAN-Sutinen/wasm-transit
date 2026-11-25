@@ -1,6 +1,4 @@
 <script lang="ts">
-  /// The hours every read narrows to: from and to as service-day
-  /// hours, or the whole day. Events out; the host owns the window.
   let {
     window,
     onwindow,

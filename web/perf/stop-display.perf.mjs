@@ -1,20 +1,18 @@
 // The stop display's perf baseline (docs/TESTING.md, "Performance
-// baselines"): the real feed, the agency's recorded live feeds
-// replayed one snapshot per poll, and a display left running at a
-// transit center: the screen D-64 puts on a Raspberry Pi 4. The run
-// reports costs. It has no budget (D-187).
+// baselines"). It uses the real feed, the agency's recorded live feeds
+// replayed one snapshot per poll, and a display left running at a transit
+// center, the screen that D-64 puts on a Raspberry Pi 4. It has no budget
+// (D-187).
 //
-//   1. Boot: the setup picks the routes layout and the stop by name;
-//      the published network registers and the groups answer live.
-//   2. One poll tick, profiled: what the 20 s re-read costs.
-//   3. The soak: the display left open while the recording replays
-//      PERF_LOOPS times over (default 3 — the clock keeps moving, so a
-//      looped snapshot's predictions age; the soak measures what the
-//      session holds, not what it shows), memory sampled after a
-//      collection every SAMPLE_EVERY ticks, with each module's held
-//      documents and resets.
+//   1. Boot with the routes layout and the stop picked by name.
+//   2. One poll tick, profiled, to show what the 20 s re-read costs.
+//   3. The soak: the recording replays PERF_LOOPS times (default 3).
+//      The clock keeps moving, so a looped snapshot's predictions age.
+//      The soak measures what the session holds, not what it shows.
+//      Memory is sampled after a collection every SAMPLE_EVERY ticks,
+//      with each module's held documents and resets.
 //
-// It reports (web/perf-results/<stamp>/); it never fails on a number.
+// It writes web/perf-results/<stamp>/. It never fails on a number.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -64,8 +62,8 @@ test("stop display: boot, the poll, the soak", async ({ page }) => {
     await settle();
   }
 
-  // 1. Boot (a same-origin page first, so the profiler follows the
-  // renderer across the navigation).
+  // Load a same-origin page first, so the profiler follows the renderer
+  // across the navigation.
   await page.goto("/live-feeds.json");
   await probe.step("boot: setup → a stop's groups, live", async () => {
     await page.goto("/stop-display.html");
@@ -82,10 +80,8 @@ test("stop display: boot, the poll, the soak", async ({ page }) => {
   const stopName = await page.getByTestId("display-stop").textContent();
   await probe.sample("after boot");
 
-  // 2. One poll, profiled.
   await probe.step("poll tick", pollTick);
 
-  // 3. The soak.
   const ticks = [];
   const total = snaps.length * LOOPS;
   while (tick < total - 1) {

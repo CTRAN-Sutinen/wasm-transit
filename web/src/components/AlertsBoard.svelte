@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The Alerts view: the disruptions no alert explains (disruptions
-  /// `gaps`), each starting an alert, and the agency's alerts (alerts
-  /// `list`) in force, upcoming, ended, and drafts, each to edit or end.
-  /// A RENDER component.
   import { openText, timeText, whenText } from "./disruptionsFormat";
   import type { AlertGap } from "../types/AlertGap";
   import type { AlertSource } from "../types/AlertSource";

@@ -1,11 +1,9 @@
 package store
 
 // The backend contract (docs/units/store-durability.md, "The portable
-// contract"): every backend passes the same laws. mem:// runs in
-// `just test`; a real bucket runs only when STORE_TEST_URL names one
-// (s3://bucket/prefix?endpoint=…, credentials from the environment) —
-// never in `just test`'s required path. Each test gets its own fresh
-// prefix in that bucket.
+// contract"): every backend passes the same tests. mem:// runs in
+// `just test`. A real bucket runs only when STORE_TEST_URL names one
+// (s3://bucket/prefix?endpoint=..., credentials from the environment).
 
 import (
 	"context"
@@ -27,8 +25,6 @@ type testBackend struct {
 	mk   func(t *testing.T) Backend
 }
 
-// backends answers mem:// always, and the bucket STORE_TEST_URL names
-// when it is set — each call a fresh, empty prefix.
 func backends(t *testing.T) []testBackend {
 	out := []testBackend{{"mem", func(*testing.T) Backend { return NewMemory() }}}
 	if url := os.Getenv("STORE_TEST_URL"); url != "" {
@@ -47,9 +43,8 @@ func backends(t *testing.T) []testBackend {
 	return out
 }
 
-// ensureBucket creates the bucket (container) a local emulator starts
-// without — tests only: the adapters never create one, a deployment's
-// bucket is provisioned with its retention settings.
+// ensureBucket is for tests only: the adapters never create a bucket. A
+// deployment provisions its bucket with retention settings.
 func ensureBucket(t *testing.T, b Backend) {
 	t.Helper()
 	ensureOnce.Lock()
@@ -95,8 +90,6 @@ var (
 	ensured    = map[string]bool{}
 )
 
-// withSubPrefix appends one path segment to a store URL's prefix,
-// keeping its query.
 func withSubPrefix(url, seg string) string {
 	base, query, _ := strings.Cut(url, "?")
 	base = strings.TrimSuffix(base, "/") + "/" + seg
@@ -119,7 +112,6 @@ func TestContractCreateIsConditionalAndWhole(t *testing.T) {
 		if err := b.Create(ctx, "k/one", []byte("first"), meta); err != nil {
 			t.Fatalf("create: %v", err)
 		}
-		// The second create of a present key fails and leaves the object.
 		if err := b.Create(ctx, "k/one", []byte("second"), nil); !errors.Is(err, ErrExists) {
 			t.Fatalf("a create over a present key must be ErrExists: %v", err)
 		}
@@ -133,7 +125,6 @@ func TestContractCreateIsConditionalAndWhole(t *testing.T) {
 		if _, _, err := b.Get(ctx, "k/absent"); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("an absent key must be ErrNotFound: %v", err)
 		}
-		// An empty object is an object.
 		if err := b.Create(ctx, "k/empty", nil, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +223,6 @@ func TestContractStatAndDelete(t *testing.T) {
 		if err := b.Delete(ctx, "d/x"); err != nil {
 			t.Fatalf("deleting an absent key is not an error: %v", err)
 		}
-		// A deleted key can be created again (GC's orphan, re-put).
 		if err := b.Create(ctx, "d/x", []byte("y"), nil); err != nil {
 			t.Fatalf("create after delete: %v", err)
 		}

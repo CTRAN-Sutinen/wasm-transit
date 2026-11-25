@@ -1,13 +1,10 @@
-// The map's GeoJSON shaping — and nothing else. Every line the map
-// draws is an ANSWER from the bus (an itinerary's legs: cap-router
-// itinerary_paths; a route or entity: cap-directory focus); this
-// module only turns [{lat, lon}] into GeoJSON's [lon, lat]. No
-// geometry is computed here.
+// Every line the map draws is an answer from the bus. This file only
+// reorders [{lat, lon}] into GeoJSON's [lon, lat] and computes no
+// geometry.
 
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
 import type { Coord } from "./types/Coord";
 
-/// GeoJSON order: [lon, lat].
 export type MapPoint = [number, number];
 
 export type LineFeature = {
@@ -27,8 +24,6 @@ export type StopFeatureCollection = {
   features: StopFeature[];
 };
 
-/// The stops layer: what exists in the network, with coordinates —
-/// the directory's subject, drawn.
 export function stopsFeatures(stops: DirectoryStop[]): StopFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -40,15 +35,12 @@ export function stopsFeatures(stops: DirectoryStop[]): StopFeatureCollection {
   };
 }
 
-/// A path the bus answered ([{lat, lon}]) as a GeoJSON line — null
-/// below two points.
 export function lineFeature(path: Coord[], props: Record<string, string | number | null>): LineFeature | null {
   return path.length >= 2
     ? { type: "Feature", geometry: { type: "LineString", coordinates: lonLat(path) }, properties: props }
     : null;
 }
 
-/// GeoJSON order for a path the bus answered.
 export function lonLat(path: Coord[]): MapPoint[] {
   return path.map((c) => [c.lon, c.lat]);
 }

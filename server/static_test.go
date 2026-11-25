@@ -9,11 +9,8 @@ import (
 	"testing"
 )
 
-// The shell's caching: a file whose name carries its content hash —
-// Vite's hashed build output under assets/, the hash-addressed modules
-// under caps/ — is the same bytes forever, so it is served immutable;
-// everything else (the pages, caps/manifest.json, the deployment's
-// config) revalidates on every use, so an open page meets the new build.
+// Pins that a file named by its content hash (assets/, caps/) is served
+// immutable and everything else revalidates.
 func TestStaticCacheHeaders(t *testing.T) {
 	dist := t.TempDir()
 	hex := strings.Repeat("ab", 32)
@@ -46,7 +43,6 @@ func TestStaticCacheHeaders(t *testing.T) {
 			t.Errorf("%s: Cache-Control %q, want %q", name, got, want)
 		}
 	}
-	// The root is the picker page: no-cache.
 	w := httptest.NewRecorder()
 	s.handleStatic(w, httptest.NewRequest("GET", "/", nil))
 	if got := w.Header().Get("Cache-Control"); got != "no-cache" {

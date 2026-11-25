@@ -1,14 +1,6 @@
 // Where a map's camera starts and when it frames the whole network
-// (src/viewport.ts) — pure rules, no browser. They exist so a map
-// opens on the view the rider will end up on: every camera move before
-// that one fetches tiles that are thrown away.
-//
-//   1. The start view: a rider's last known fix, when tiles cover it;
-//      else the view the network was last framed on; else the
-//      archive's own center; else the world.
-//   2. Framing the whole network is the answer only when nothing
-//      better is known — not while a fix is pending, not when the
-//      camera already sits inside the network.
+// (src/viewport.ts), as pure rules with no browser. Every camera move before the
+// final view fetches tiles that are thrown away.
 
 import { test, expect } from "@playwright/test";
 import { RIDER_ZOOM, archiveView, boundsOf, sameView, shouldFrameNetwork, startView, within } from "../src/viewport.ts";
@@ -16,7 +8,7 @@ import { RIDER_ZOOM, archiveView, boundsOf, sameView, shouldFrameNetwork, startV
 // A metro-sized archive (Portland–Vancouver), as `just basemap` extracts.
 const metro = { minLon: -123.2, minLat: 45.25, maxLon: -122.1, maxLat: 45.95 };
 const downtown = { lat: 45.6266, lon: -122.6746 };
-const elsewhere = { lat: 48.4, lon: -123.4 }; // outside the archive
+const elsewhere = { lat: 48.4, lon: -123.4 };
 
 test("the archive's view is its center, zoomed to its width", () => {
   const v = archiveView(metro);

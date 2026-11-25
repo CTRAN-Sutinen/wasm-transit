@@ -1,49 +1,34 @@
-/// The page's side of the bus worker (src/bus.worker.ts): the one
-/// Worker, spawned on first use, and its calls as promises. Only the
-/// engine (src/engine.ts) imports this file; it carries messages and
-/// decides nothing.
+// Only the engine (src/engine.ts) imports this file.
 
 import type { Capability } from "./types/cap_abi/Capability";
 
 export type CapStatus = "unavailable" | "ready";
 
-/// A call to the worker.
 export type BusRequest =
   | { type: "init"; base: string }
-  /// Assemble capabilities: inside the page's linked assembly when `ui`
-  /// names one that links them (the manifest's `assemblies`), each in
-  /// its own module otherwise.
   | { type: "ensure"; caps: string[]; ui: string | null }
-  /// A JSON op; `load` marks a registration (never preceded by a reset).
+  // `load` marks a registration, which is never preceded by a reset.
   | { type: "text"; cap: string; text: string; load: boolean }
-  /// A bulk op over bytes (the module's own op, or a kernel op from 256).
+  // Kernel ops start at 256.
   | { type: "bytes"; cap: string; op: number; bytes: Uint8Array; load: boolean }
   | { type: "inspect"; cap: string }
   | { type: "ceiling"; bytes: number; minResetMs: number }
-  /// Start the journal (src/bus.worker.ts), or read it.
   | { type: "journal"; run: string }
   | { type: "journal-read" };
 
-/// The worker's answer: a value, or the error the call threw. An op's
-/// value is the module's outcome text; `reset` says the instance was
-/// replaced before it answered (it holds no documents now).
+// `reset` says the instance was replaced before it answered, so it holds
+// no documents.
 export type BusReply = { ok: unknown; reset?: boolean } | { error: string };
 
-/// Where a capability answers: the module instance it lives in (its
-/// key, and the module's pinned hash), its index there (a capability
-/// bulk op carries it in the high 16 bits), and whether the module
-/// links several (a JSON request then names its capability).
+// A capability's bulk op carries `index` in its high 16 bits. A JSON
+// request names its capability when the module is `linked`.
 export type Route = { module: string; hash: string; index: number; linked: boolean };
 
-/// What `ensure` answers: per capability, whether it assembled, its
-/// manifest entry and its route when it did, and why it did not.
 export type Assembly = {
   statuses: Record<string, CapStatus>;
   caps: Record<string, Capability>;
   routes: Record<string, Route>;
   errors: Record<string, string>;
-  /// Each kind's kernel load, by the kind: its bulk op's code (the
-  /// manifest's kernel ops; crates/cap-abi/src/kinds.rs).
   loads: Record<string, number>;
 };
 
@@ -73,7 +58,6 @@ function post(request: BusRequest): Promise<BusReply> {
   });
 }
 
-/// One call: its value, or the worker's error thrown.
 export async function call(request: BusRequest): Promise<{ ok: unknown; reset: boolean }> {
   bus();
   const reply = await post(request);

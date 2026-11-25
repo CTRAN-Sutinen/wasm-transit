@@ -1,19 +1,10 @@
 package main
 
-// Document versions at the server's receive boundaries
-// (docs/FORMATS.md, "Versions"):
-//
-//   - a POST in an older version (an edit document v1, the bare array
-//     a client on an older build sends) comes forward through
-//     cap-migrate before the merge; the head is always the current
-//     version;
-//   - a server started on a store holding an older head commits it
-//     forward as an ordinary logged CAS (writer migrate:<module hash>),
-//     and the older blob stays readable under its hash;
-//   - a server started on a store whose picks in use (the pick in
-//     force, and those still to come) hold an older network commits
-//     each network forward and republishes the set through cap-plans;
-//     a pick that stopped governing stays in its version.
+// Document versions at the server's receive boundaries (docs/FORMATS.md,
+// "Versions"). An older POST comes forward through cap-migrate before the
+// merge. A store with an older head commits it forward as a logged CAS,
+// and the older blob stays readable. A pick that stopped governing stays
+// in its version.
 
 import (
 	"context"
@@ -26,9 +17,8 @@ import (
 	"rustwasm/server/store"
 )
 
-// isCurrentEdits reports whether body is an edit document in the
-// current version, as its canonical bytes (RFC 8785, D-169) write it:
-// keys sorted, so the records sit between the two tags.
+// The canonical bytes (RFC 8785, D-169) sort the keys, so the records sit
+// between the two tags.
 func isCurrentEdits(body string) bool {
 	return strings.HasPrefix(body, `{"kind":"edit_records","records":[`) && strings.HasSuffix(strings.TrimSpace(body), `],"schema_version":2}`)
 }
@@ -53,7 +43,6 @@ func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 		t.Fatalf("the head is the migrated document, its record kept: %s", data)
 	}
 
-	// The same through the generic pointer surface.
 	req := `{"from":"` + head.Hash + `","client":` + editRecords("e2", "accepted", 1, 2000) + `}`
 	if code, _, body := httpPost(t, ts.URL+"/pointers/edits", req); code != 200 {
 		t.Fatalf("POST /pointers/edits with a v1 client: %d %s", code, body)
@@ -71,11 +60,8 @@ func TestANewerEditDocumentIsRefusedNamingBoth(t *testing.T) {
 	}
 }
 
-// A store an older build wrote, with the edit document as the edits
-// pointer in an older version: at startup the disruptions log gets its
-// first entry from that head (brought forward through cap-migrate),
-// written by migrate:edits and naming the head's hash. The pointer and
-// its blob stay as they were.
+// The first entry is written by migrate:edits and names the old head's
+// hash. The pointer and its blob stay as they were.
 func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 	bucket := store.NewMemory()
 	old := []byte(editRecords("e1", "accepted", 3, 1000))
@@ -86,7 +72,7 @@ func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 	}
 	st.Close()
 
-	s := newStoreServer(t, bucket) // seeds the log
+	s := newStoreServer(t, bucket)
 	entries, err := s.store.Entries(disruptionsLog, 0, 0)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("one entry: %d %v", len(entries), err)
@@ -128,14 +114,12 @@ func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 		t.Fatalf("GET /edits serves the fold in the current version: %d %s", code, body)
 	}
 
-	// A second start writes nothing.
 	newStoreServer(t, bucket)
 	if again, _ := s.store.Entries(disruptionsLog, 0, 0); len(again) != 1 {
 		t.Fatalf("a seeded log is not seeded again: %d entries", len(again))
 	}
 }
 
-// v1Network is a pick's network as an older build wrote it: untagged.
 func v1Network(t *testing.T, id, effectiveFrom string) []byte {
 	t.Helper()
 	network := fixtureNetwork(t, id, id+" pick", effectiveFrom)
@@ -152,9 +136,6 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 	bucket := store.NewMemory()
 	s, _ := newPlansServer(t, bucket)
 
-	// A store an older build wrote: three picks, each an untagged v1
-	// network under its plan.<id> pointer, and the set naming them.
-	// The fixture runs through 2026-12-31.
 	picks := []struct{ id, from string }{{"summer", "2026-08-03"}, {"fall", "2026-09-07"}, {"winter", "2026-11-02"}}
 	oldHashes := map[string]string{}
 	var set json.RawMessage = json.RawMessage("null")
@@ -177,15 +158,11 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The startup order: the plans log seeds from the old pointer, then
-	// the picks in use come forward.
 	s.seedKept(nil)
 	if got := plansHash(t, s); got != oldSet {
 		t.Fatalf("the seeded log holds the pointer's set: %s, want %s", got, oldSet)
 	}
 
-	// Fall is in force, winter is still to come, and summer stopped
-	// governing when fall took effect.
 	s.fixedToday = "2026-10-01"
 	s.commitPicksForward()
 
@@ -239,7 +216,7 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 		t.Fatalf("the plans log's last entry names the migration module: %+v", last)
 	}
 	// Each frozen version brought forward pins the version it came from
-	// (D-232), not only words in its purpose.
+	// (D-232).
 	_, frozenDoc, _, err := s.keptHead("frozen_versions")
 	var frozen struct {
 		Versions map[string]struct {
@@ -259,7 +236,6 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 		}
 	}
 
-	// Already current: a second start commits nothing.
 	s.commitPicksForward()
 	if after, _ := s.store.LogHeadOf("plans"); after.Seq != head.Seq {
 		t.Fatalf("current picks are not committed again: entry %d, want %d", after.Seq, head.Seq)

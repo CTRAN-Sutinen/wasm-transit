@@ -1,11 +1,6 @@
 <script lang="ts">
-  /// One trip, as a timeline — a RENDER component over cap-router's
-  /// itinerary: each ride (its route, the sign the bus shows, where you
-  /// board and get off, and how far a live prediction moved each time)
-  /// and each walk between. Nothing is added up here: the trip's span
-  /// is door to door (D-40) — the router's `leave_secs` (the first
-  /// boarding minus the walk before it), `duration_secs`, and, for a
-  /// trip leaving now, its `leave` wait ("Leave in 7 min").
+  /// Nothing is added up here. The trip's span is door to door and comes from
+  /// the router (D-40).
   import type { Itinerary } from "../types/Itinerary";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { clock, clockText, delayText, durationText, leaveText, routeColor, walkText } from "./rideFormat";

@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// A route's directions as tabs — cap-directory `route_detail`
-  /// `directions` (named directions in id order, then the patterns in
-  /// none). RENDER only: picking one is an event.
   import type { DirectionGroup } from "../types/DirectionGroup";
   import { roving } from "./roving";
 

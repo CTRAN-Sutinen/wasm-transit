@@ -1,31 +1,5 @@
-/// The disruptions UI's host layer: the ONLY file of this UI that asks
-/// the capability bus. It owns I/O (its inputs, declared in its ui.json
-/// and read by the kit: the deployment's manifest, the network, the
-/// edit document from GET /edits, the stops, service alerts, templates,
-/// and notes by the manifest's hashes, and the agency's live feeds),
-/// the clock, the
-/// selection, and the outbox (D-189): each alert and note is written as
-/// its intent (POST /logs/alerts, /logs/notes), which waits on the
-/// device while the server does not answer. The page installs and
-/// boots offline on its last documents, and says how old they are. Every list, count, and line it writes into `dz` is an
-/// op's answer, adopted as-is.
-///
-/// One question underlies the page: what is disrupted today, and does
-/// an alert explain it (cap-disruptions, D-213, D-218)? The views read
-/// it for different people:
-///
-/// - Status: each affected route as a card, for anyone who answers a
-///   rider. A search narrows it to one route or one stop.
-/// - Dispatch: the buses late now, the detours, the cancelled trips,
-///   and today's notes.
-/// - A disruption opened: what it is, the stops it takes away, and its
-///   notes (D-214). A cancelled trip draws its path on the map.
-///
-/// The map is always on screen: the live buses by status, the cancelled
-/// trips at their first stops, the closed stops, and the stops a detour
-/// skips. The kit reads its inputs with one poll while the page is
-/// visible. The view, the search,
-/// and the open disruption live in the URL hash.
+// The only file of this UI that asks the bus. The rules and the failure table are in
+// docs/architecture/generated-uis/disruptions.md.
 
 import { ask, assemble, available, keep, load, produced, readManifest, served, servedNetwork, servedNetworkPin, Doc, type DeploymentManifest } from "../../engine";
 import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabel, clockLabelAt, inputGraph, inputLabel, installApp, nowSecs, previousDay, readFeed, readHeadKept, readLiveFeeds, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type LiveUrls, type Reader } from "../kit";
@@ -59,116 +33,78 @@ import type { NoteRow } from "../../types/NoteRow";
 import type { Today } from "../../types/Today";
 import type { TripStopView } from "../../types/TripStopView";
 
-// This page's capabilities answer inside its linked assembly (D-77).
 assemble("disruptions");
 
 export type View = "status" | "alerts" | "dispatch";
 const VIEWS: View[] = ["status", "alerts", "dispatch"];
 
-/// The alert open in the form: its id, whether it is new, the alert as
-/// it stands, and the blanks the last fill left (alerts `fill`).
-/// `startsNow`: riders are told from the moment it is saved; the start
-/// is stamped then.
+// `startsNow` stamps the start when the alert is saved, so riders are told
+// from that moment.
 export type AlertForm = { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[]; startsNow: boolean };
 
-/// How often the answers on the clock are asked again, and the writes
-/// that wait are sent. The inputs' intervals are in its ui.json.
+// The inputs' intervals are in ui.json.
 const POLL_MS = 30_000;
-/// How many search results of each kind the box shows.
 const FOUND = 8;
 
-/// The search's pick: one route or one stop, with the name it was
-/// picked by.
 export type Pick = { kind: "route" | "stop"; id: string; label: string };
 
 export const dz = $state({
-  /// A message the last step left. What the page holds of the network
-  /// is `status()`.
   status: "",
   alert: false,
-  /// The agency's date and wall clock, as of the last poll.
   date: "",
   clock: "",
-  /// The agency's zone (the manifest's `timezone`): the components
-  /// format Unix times in it.
   zone: undefined as string | undefined,
   view: "status" as View,
-  /// The search: the text typed, its results, and the pick.
   query: "",
   found: null as { routes: EntityRow[]; stops: DirectoryStop[] } | null,
   pick: null as Pick | null,
-  /// The day by route (disruptions `today`): narrowed by the pick, and
-  /// whole for the map and Dispatch.
+  // `status_` is the day narrowed by the pick, and `day` is whole for the
+  // map and Dispatch.
   status_: null as Today | null,
   day: null as Today | null,
-  /// The live document (its buses and its on-time window), and the
-  /// trips late now (rt `late_trips`).
   live: null as LiveDay | null,
   late: [] as LateTrip[],
-  /// Today's notes, newest first (notes `between`).
   notes: [] as NoteRow[],
-  /// The disruption open, by its source; its notes, oldest first
-  /// (notes `on`), and a cancelled trip's stops and path.
   open: null as AlertSource | null,
-  /// The open disruption as the day's answer gives it; null while the
-  /// day does not hold it (a cancel the feed dropped).
+  // Null while the day does not hold it, such as a cancel that the feed
+  // dropped.
   openItem: null as Disruption | null,
-  /// The open disruption's route, by its public name ("" for none).
   openRoute: "",
   openNotes: [] as NoteRow[],
   openStops: [] as TripStopView[],
   openPath: [] as Coord[],
-  /// Where a late bus picked in Dispatch is: the map goes to it.
   bus: null as { lat: number; lon: number } | null,
-  /// Each frame that shows no answer, and why.
-  /// The host's clock, Unix seconds, as of the last poll.
+  // The host's clock in Unix seconds, as of the last poll.
   now: 0,
-  /// The agency's alerts (alerts `list`), the disruptions no alert
-  /// explains (disruptions `gaps`), the templates offered (alerts
-  /// `templates`), and every route (directory `routes`: names and
-  /// colors).
   alerts: null as AlertList | null,
   gaps: [] as AlertGap[],
   templates: [] as TemplateRow[],
   routes: [] as DirectoryRoute[],
-  /// The alert open in the form, its stops by name (directory
-  /// `stops_by_ids`), what a write must pass, what a person is told
-  /// (alerts `flags`), and the rider preview: a stop's board with the
-  /// alert published (alerts `put`, rt `encode_alerts`, rt `live`,
-  /// board `stop_board`) and the feed's bytes.
   form: null as AlertForm | null,
   formStops: [] as { stop_id: string; name: string }[],
-  /// What the form's alert reaches today, entity by entity (board
-  /// `alert_reach`), and every stop, for the map that picks them.
   reach: null as { entities: EntityReach[]; reach: Reach } | null,
   allStops: [] as DirectoryStop[],
-  /// The rider preview, open in its dialog.
   previewOpen: false,
   refusals: [] as AlertRefusal[],
   flags: [] as AlertFlag[],
   previewStop: null as { id: string; name: string } | null,
-  /// The preview's own stop search.
   previewQuery: "",
   previewFound: null as { routes: EntityRow[]; stops: DirectoryStop[] } | null,
   preview: null as StopBoard | null,
-  /// The preview waits on the form: what Publish needs is missing.
+  // True while what Publish needs is missing from the form.
   previewWaits: false,
   previewFeed: "",
-  /// A write under way, and why the last one was refused (in words).
   busy: false,
   writeError: "",
   noteRefusals: [] as NoteRefusal[],
-  /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
   frames: {} as Record<string, FrameState>,
-  /// What the page holds of each input (the kit's).
   inputs: {} as Record<string, InputState>,
 });
 
-/// The seq of each log's fold the page's documents came from (the
-/// manifest's log_seqs): a write names them, so the server checks the
-/// write against the records it changes (D-189), and each reference it
-/// adds against what the page read (D-233).
+// A write names these seqs, so the server checks it against the records it
+// changes (D-189) and each reference it adds against what the page read
+// (D-233).
 let logSeqs: Record<string, number> = {};
 
 let network: Doc<Network> | null = null;
@@ -191,12 +127,10 @@ function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
-/// The host's clock, Unix seconds: what an alert explains now.
 function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
 }
 
-/// The documents the day reads, as the disruptions ops take them.
 function documents() {
   return {
     network_hash: network!,
@@ -206,22 +140,18 @@ function documents() {
     alerts_hash: alerts ?? undefined,
     notes_hash: notes ?? undefined,
     date: dz.date,
-    // The clock the page last read (each poll, and each write).
     now: dz.now,
   };
 }
 
-// ---------------------------------------------------------------------
-// This UI's answer graph (src/uis/kit.ts). Inputs: "network", "docs"
-// (the edit document, the stops, the alerts, the notes), "snapshot"
-// (the decoded live feeds), "clock", "view", "query", "pick", "open".
-// ---------------------------------------------------------------------
-
+// The graph's inputs are "network", "docs" (the edit document, the stops,
+// the alerts, the notes), "snapshot" (the decoded live feeds), "clock",
+// "view", "query", "pick", and "open".
 const request = answerGraph(
   [
     {
-      // THE live document over the feeds fetched: the map draws its
-      // buses, and the day reads its cancels and lateness by hash.
+      // The map draws its buses, and the day reads its cancels and lateness
+      // by hash.
       id: "rt.live",
       frame: "Map",
       needs: ["network", "snapshot"],
@@ -243,7 +173,6 @@ const request = answerGraph(
       },
     },
     {
-      // The day, whole: the map and Dispatch.
       id: "disruptions.today",
       frame: "Day",
       needs: ["network", "docs", "rt.live", "clock"],
@@ -257,15 +186,13 @@ const request = answerGraph(
       },
     },
     {
-      // The open disruption, held again from the day (it may have
-      // left it).
+      // The day may no longer hold the open disruption.
       id: "selection.open",
       frame: "",
       needs: ["open"],
       run: async () => hold(),
     },
     {
-      // The day narrowed to the search's pick: the Status view.
       id: "disruptions.today?pick",
       frame: "Status",
       needs: ["network", "docs", "rt.live", "clock", "pick", "view"],
@@ -284,7 +211,6 @@ const request = answerGraph(
       },
     },
     {
-      // The trips late now, worst first.
       id: "rt.late_trips",
       frame: "Late",
       needs: ["network", "snapshot", "rt.live", "view"],
@@ -298,14 +224,12 @@ const request = answerGraph(
             network_hash: network,
             rt_hash: snapshots.trips,
             vp_hash: snapshots.vehicles,
-            // The live document's own window: late is what it calls late.
             min_delay_secs: dz.live.window.late_secs,
           })
         ).trips;
       },
     },
     {
-      // Today's notes, newest first.
       id: "notes.between",
       frame: "Notes",
       needs: ["docs", "clock", "view"],
@@ -319,7 +243,6 @@ const request = answerGraph(
       },
     },
     {
-      // The search box: routes and stops by name or id.
       id: "directory.entities+stops?query",
       frame: "Search",
       needs: ["network", "query"],
@@ -334,9 +257,7 @@ const request = answerGraph(
       },
     },
     {
-      // The open disruption's notes, oldest first. A disruption's
-      // source names the same thing as a note's target, in the same
-      // shape (D-217).
+      // A disruption's source has the same shape as a note's target (D-217).
       id: "notes.on",
       frame: "OpenNotes",
       needs: ["docs", "open"],
@@ -348,9 +269,8 @@ const request = answerGraph(
       },
     },
     {
-      // A cancelled trip opened: its stops and its path as scheduled.
-      // The edit document's cancel takes the trip out of the patched
-      // day, so the schedule is what the cancel takes away.
+      // The edit document's cancel takes the trip out of the patched day, so
+      // `edits_hash: null` asks for the schedule that the cancel takes away.
       id: "runcut.trip_stops+trip_path",
       frame: "OpenTrip",
       needs: ["network", "disruptions.today", "open"],
@@ -375,8 +295,6 @@ const request = answerGraph(
       },
     },
     {
-      // Every route, by name and color: the preview's badges and the
-      // form's route names.
       id: "directory.routes",
       frame: "",
       needs: ["network"],
@@ -418,7 +336,6 @@ const request = answerGraph(
       },
     },
     {
-      // The form's stops by name.
       id: "directory.stops_by_ids",
       frame: "",
       needs: ["network", "form"],
@@ -428,8 +345,6 @@ const request = answerGraph(
       },
     },
     {
-      // What a write of the form's alert must pass, and what a person
-      // is told about it.
       id: "alerts.put+flags",
       frame: "Form",
       needs: ["network", "docs", "form"],
@@ -446,7 +361,6 @@ const request = answerGraph(
       },
     },
     {
-      // Every stop: the reach map's stops to pick.
       id: "directory.stops[all]",
       frame: "",
       needs: ["network", "form"],
@@ -458,8 +372,6 @@ const request = answerGraph(
       },
     },
     {
-      // What the alert reaches today, read as a rider's app reads the
-      // feed.
       id: "board.alert_reach",
       frame: "Reach",
       needs: ["network", "docs", "form", "clock"],
@@ -473,9 +385,8 @@ const request = answerGraph(
       },
     },
     {
-      // What a rider would see at the preview stop with the alert
-      // published: the board over a live document whose alerts are the
-      // agency's feed encoded with it.
+      // The board over a live document whose alerts are the agency's feed
+      // encoded with this alert published.
       id: "preview",
       frame: "Preview",
       needs: ["network", "docs", "snapshot", "form", "preview-stop", "clock", "preview-open"],
@@ -522,9 +433,8 @@ const request = answerGraph(
   dz.inputs,
 );
 
-/// The open disruption held from the day: the first with its source
-/// (a closed stop is listed on each route that serves it), with its
-/// route's name. Null when the day does not hold it.
+// A closed stop is listed on each route that serves it, so this takes the
+// first disruption with the open source.
 function hold(): void {
   dz.openItem = null;
   dz.openRoute = "";
@@ -539,11 +449,8 @@ function hold(): void {
       }
 }
 
-/// The service date's span in Unix seconds, from its midnight to the
-/// next, in the agency's zone: the notes written that day.
 function dayBounds(date: string): [number, number] {
   const at = (d: string) => {
-    // The zone's offset at that midnight, read back from the clock.
     const guess = Date.parse(`${d}T00:00:00Z`);
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: dz.zone,
@@ -561,10 +468,6 @@ function dayBounds(date: string): [number, number] {
   const next = new Date(Date.parse(`${date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
   return [at(date), at(next)];
 }
-
-// ---------------------------------------------------------------------
-// the URL hash: the view, the pick, and the open disruption
-// ---------------------------------------------------------------------
 
 let writing = false;
 
@@ -610,28 +513,19 @@ function followHash(): void {
 addEventListener("hashchange", followHash);
 addEventListener("popstate", followHash);
 
-// ---------------------------------------------------------------------
-// The inputs (its ui.json's `inputs`, read by the kit): each reader
-// answers its document, null for none, or throws when the read fails.
-// ---------------------------------------------------------------------
-
 type Served = { network: Doc<Network>; boundary: Doc<Boundary>; pin: string };
 type Manifest = DeploymentManifest & { log_seqs?: Record<string, number> };
 
-/// The modules that read the network, in order: its pin is checked in
-/// the first that assembles.
+// The network's pin is checked in the first of these that assembles.
 const NETWORK_READERS = ["disruptions", "rt", "directory", "runcut"] as const;
 
 let manifest: Manifest | null = null;
 
-/// Name what the modules keep: the documents this page holds now.
 function release(): Promise<void> {
   return keep([network, boundary, edits, stops, alerts, notes, templates, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
 }
 
-/// One of the deployment's logged documents, by the hash the manifest
-/// pins: read again only when the pin moved. None while the deployment
-/// keeps none.
+// Read again only when the pin moved.
 function logged(kind: string, adopt: (doc: Doc | null) => void): Reader<Doc> {
   return {
     read: async ({ signal, held }) => {
@@ -649,10 +543,8 @@ function logged(kind: string, adopt: (doc: Doc | null) => void): Reader<Doc> {
   };
 }
 
-/// One live feed the deployment names: its bytes decoded into a
-/// snapshot (cap-rt registers it). A feed that does not answer drops
-/// its snapshot (it keeps none): the page shows the schedule's day,
-/// never a stale bus as live.
+// A feed that does not answer drops its snapshot, so the page shows the
+// schedule's day and never a stale bus as live.
 function liveFeed(kind: keyof typeof snapshots): Reader<Doc> {
   return {
     read: async ({ signal }) => {
@@ -674,12 +566,10 @@ const readers: Record<string, Reader<any>> = {
     },
     adopt: (m: Manifest | null) => {
       manifest = m;
-      // The seq of each log's fold the page's documents came from: a
-      // write names them (D-189, D-233).
       logSeqs = m?.log_seqs ?? {};
       setAgencyZone(m?.timezone);
-      // A zone learned or changed: the clock reads it now, not at the
-      // next tick (the first tick ran before the first read).
+      // The first tick ran before the first read, so a new zone reaches the
+      // clock now and not at the next tick.
       const moved = m?.timezone != null && m.timezone !== dz.zone;
       dz.zone = m?.timezone;
       if (moved) tickClock();
@@ -690,9 +580,7 @@ const readers: Record<string, Reader<any>> = {
     adopt: (u: Partial<LiveUrls> | null) => void (urls = u ?? {}),
   },
   network: {
-    // The deployment's network on today's date: the pick in force, else
-    // its import. It follows the deployment as it moves (D-63): only a
-    // moved pin reads the network again.
+    // Only a moved pin reads the network again (D-63).
     read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
       if (!manifest) throw new Error("the deployment's manifest is not read");
       const pin = await servedNetworkPin(today(), { manifest, signal });
@@ -709,8 +597,7 @@ const readers: Record<string, Reader<any>> = {
     },
   },
   edits: {
-    // The edit document (detours and cancels), over the network the
-    // page holds, kept on the device: the page boots offline on it.
+    // Kept on the device, so the page boots offline on it.
     read: async ({ signal }) => {
       if (!network) return null;
       const got = await readHeadKept("disruptions", "edits", signal);
@@ -739,16 +626,12 @@ const readers: Record<string, Reader<any>> = {
 
 const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, dz.inputs, request);
 
-/// The inputs a write moves: the manifest, and what it pins.
 const WRITTEN = ["manifest", "edits", "stops", "service_alerts", "notes", "alert_templates"];
 
-/// What the page says of an input ("" when it is current).
 export function label(input: string): string {
   return inputLabel(dz.inputs[input]);
 }
 
-/// The page's status line: a message the last step left, else what it
-/// holds of the network.
 export function status(): string {
   if (dz.status) return dz.status;
   const state = dz.inputs.network;
@@ -758,15 +641,11 @@ export function status(): string {
   return "";
 }
 
-/// Whether the server did not answer the last read of the manifest:
-/// the page works from its last documents.
 export function offline(): boolean {
   const m = dz.inputs.manifest;
   return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
 }
 
-/// When the server last confirmed the documents the page works from
-/// ("4:05 PM"), while it is offline; else "".
 export function asOf(): string {
   const m = dz.inputs.manifest;
   if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
@@ -775,24 +654,17 @@ export function asOf(): string {
 
 const FEEDS = ["trips", "vehicles", "alerts"] as const;
 
-/// When the live feeds last answered, on the agency's clock ("" when
-/// none has).
 export function liveAt(): string {
   const at = Math.max(0, ...FEEDS.map((k) => dz.inputs[k]).map((s) => (s?.kind === "answered" ? s.atMs : 0)));
   return at ? clockLabelAt(at) : "";
 }
 
-/// The feeds whose last read failed, and why ("" when none).
 export function liveError(): string {
   return FEEDS.map((k) => dz.inputs[k])
     .filter((s): s is Extract<InputState, { kind: "failed" }> => s?.kind === "failed")
     .map((s) => `${s.input}: ${s.message}`)
     .join("; ");
 }
-
-// ---------------------------------------------------------------------
-// boot, and the clock
-// ---------------------------------------------------------------------
 
 export async function boot(): Promise<void> {
   void installApp();
@@ -808,7 +680,6 @@ export async function boot(): Promise<void> {
   } catch (e) {
     say(`Error: ${message(e)}`, true);
   }
-  // The answers on the clock, and the writes that wait on the device.
   clockEvery(POLL_MS, () => {
     tickClock();
     void sendWaiting();
@@ -817,16 +688,11 @@ export async function boot(): Promise<void> {
   });
 }
 
-/// The agency's date, wall clock, and Unix time, now.
 function tickClock(): void {
   dz.date = today();
   dz.clock = clockLabel();
   dz.now = nowUnix();
 }
-
-// ---------------------------------------------------------------------
-// the selection
-// ---------------------------------------------------------------------
 
 export function setView(view: View): Promise<void> {
   dz.view = view;
@@ -839,7 +705,6 @@ export function setQuery(text: string): Promise<void> {
   return request("query");
 }
 
-/// A route or a stop picked in the search, or the pick cleared.
 export function setPick(pick: Pick | null): Promise<void> {
   dz.pick = pick;
   dz.query = "";
@@ -848,7 +713,6 @@ export function setPick(pick: Pick | null): Promise<void> {
   return request("pick");
 }
 
-/// A disruption opened (or closed, with null).
 export function openDisruption(source: AlertSource | null): Promise<void> {
   dz.open = source;
   dz.bus = null;
@@ -856,31 +720,20 @@ export function openDisruption(source: AlertSource | null): Promise<void> {
   return request("open");
 }
 
-/// A late bus picked: the map goes to it.
 export function showBus(at: { lat: number; lon: number }): void {
   dz.bus = at;
 }
 
-// ---------------------------------------------------------------------
-// the alert form
-// ---------------------------------------------------------------------
-
-/// A new alert, from what cap-disruptions `start_alert` answers: blank,
-/// or started from a disruption's gap (its effect, the riders it
-/// informs, and what it explains), told to riders from now until someone
-/// sets an end. The preview opens at the stop the op names.
 export async function newAlert(source: AlertSource | null = null): Promise<void> {
   if (!network) return;
   const start = await ask("disruptions", "start_alert", { ...documents(), source: source ?? undefined });
   return openForm({ id: newId("alert"), fresh: true, alert: start.alert, template: "", unfilled: [], startsNow: true }, start.preview_stop ?? null);
 }
 
-/// An alert started from a disruption opened (disruptions `start_alert`).
 export function startAlertFor(source: AlertSource): Promise<void> {
   return newAlert(source);
 }
 
-/// An alert of the agency's list, opened to edit.
 export function editAlert(id: string, alert: ServiceAlert): Promise<void> {
   return openForm({ id, fresh: false, alert: $state.snapshot(alert) as ServiceAlert, template: "", unfilled: [], startsNow: false }, null);
 }
@@ -901,16 +754,12 @@ async function openForm(form: AlertForm, stop: string | null): Promise<void> {
   await request("form", "preview-stop", "view", "open");
 }
 
-/// The form's alert as it would be saved now: a "Starts now" alert is
-/// told from the host's clock.
 function stamped(form: AlertForm): ServiceAlert {
   if (!form.startsNow) return form.alert;
   const [first, ...rest] = form.alert.communication ?? [{ start: null, end: null }];
   return { ...form.alert, communication: [{ ...first, start: dz.now }, ...rest] };
 }
 
-/// "Starts now" set or cleared: cleared, the start is the clock's now,
-/// to change from there.
 export function setStartsNow(on: boolean): Promise<void> {
   if (!dz.form) return Promise.resolve();
   dz.form = on ? { ...dz.form, startsNow: true } : { ...dz.form, startsNow: false, alert: stamped({ ...dz.form, startsNow: true }) };
@@ -922,7 +771,6 @@ export function openPreview(open: boolean): Promise<void> {
   return request("preview-open");
 }
 
-/// A stop clicked on the reach map: added to where the alert applies.
 export function addStop(stop: string): Promise<void> {
   if (!dz.form) return Promise.resolve();
   return changeAlert({ ...dz.form.alert, informed: [...dz.form.alert.informed, { stop }] });
@@ -935,12 +783,9 @@ export function closeForm(): Promise<void> {
   return request("form");
 }
 
-/// The form's alert as edited.
 export async function changeAlert(alert: ServiceAlert): Promise<void> {
   if (!dz.form) return;
   dz.form = { ...dz.form, alert };
-  // The preview follows the first stop the alert names, until one is
-  // picked.
   const stop = dz.previewStop ? null : alert.informed.find((e) => e.stop)?.stop;
   if (stop && network) {
     const [s] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [stop] })).stops;
@@ -950,7 +795,6 @@ export async function changeAlert(alert: ServiceAlert): Promise<void> {
   return request("form");
 }
 
-/// The stop the preview shows.
 export function setPreviewStop(stop: { id: string; name: string } | null): Promise<void> {
   dz.previewStop = stop;
   dz.previewQuery = "";
@@ -963,9 +807,6 @@ export function setPreviewQuery(text: string): Promise<void> {
   return request("preview-query");
 }
 
-/// A template written out for the form's routes, stops, and dates
-/// (alerts `fill`): its cause, effect, severity, and texts replace the
-/// form's. A blank it cannot fill is kept and named.
 export async function fillTemplate(template: string): Promise<void> {
   const form = dz.form;
   if (!form || !network || !templates) return;
@@ -990,10 +831,9 @@ export async function fillTemplate(template: string): Promise<void> {
   await request("form");
 }
 
-/// The form's alert saved: as a draft, or published to riders. Alerts
-/// `put` checks it here first, then the write goes as its intent
-/// (POST /logs/alerts), which the server runs over the head it holds.
-/// True when it was kept (sent, or waiting on the device).
+// Alerts `put` checks the alert here first, then the write goes as its
+// intent (POST /logs/alerts). Returns true when the write was kept, sent or
+// waiting on the device.
 export function saveAlert(publish: boolean): Promise<boolean> {
   const form = dz.form;
   if (!form) return Promise.resolve(false);
@@ -1004,14 +844,13 @@ export function saveAlert(publish: boolean): Promise<boolean> {
   );
 }
 
-/// An alert ended now (alerts `end`): its periods end at the host's
-/// clock, or it is withdrawn when riders were never told. The time is
-/// the person's act, so it travels in the write's arguments (D-222).
+// The time is the person's act, so it travels in the write's arguments
+// (D-222).
 export function endAlert(id: string): Promise<boolean> {
   if (!alerts) return Promise.resolve(false);
   const doc = alerts;
   const at = nowUnix();
-  // A period holds through its end second: the list is read once that
+  // A period holds through its end second, so the list is read once that
   // second has passed.
   return writeAlerts("Ended.", `End alert ${id}`, { cap: "alerts", op: "end", args: { id, at } }, () => ask("alerts", "end", { alerts_hash: doc, id, at }), at + 1);
 }
@@ -1035,7 +874,6 @@ async function writeAlerts(
     const outcome = await queueWrite({ log: "alerts", ops: [op], readSeq: logSeqs.alerts, readSeqs: logSeqs, label });
     if (!(await settled(outcome, "alerts"))) return false;
     dz.form = null;
-    // The list reads the clock the write was made at.
     dz.now = Math.max(nowUnix(), readAt);
     say(outcome.state === "sent" ? done : waitingText());
     if (outcome.state === "sent") await afterWrite();
@@ -1049,19 +887,17 @@ async function writeAlerts(
   }
 }
 
-/// What the page says of a write that waits on the device.
 function waitingText(): string {
   return outbox.needsSignIn ? "Saved on this device. Sign in to send it." : "Saved on this device. It is sent when the server answers.";
 }
 
-/// A write the server kept: the documents read again.
 async function afterWrite(): Promise<void> {
   await inputs.read(...WRITTEN);
 }
 
-/// The outcome of a write the person just saved. A write the server
-/// refused at once stays in its form with the server's reasons, so the
-/// outbox does not keep a second copy. True when it was kept.
+// A write that the server refused at once stays in its form with the
+// server's reasons, so the outbox does not keep a second copy. Returns true
+// when the write was kept.
 async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<boolean> {
   if (outcome.state !== "held") return true;
   const w = outbox.held.find((h) => h.key === outcome.key);
@@ -1078,14 +914,10 @@ async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<bool
   return false;
 }
 
-// ---------------------------------------------------------------------
-// notes (D-214): written as their intent (POST /logs/notes); the
-// server names the writer and the time
-// ---------------------------------------------------------------------
+// Notes are written as their intent (POST /logs/notes), and the server
+// names the writer and the time (D-214).
 
-/// A note written about `target`, or a note's text edited (`id`). The
-/// note keeps the id it was made with, through every resend. True when
-/// it was kept (sent, or waiting on the device).
+// The note keeps the id it was made with through every resend.
 export async function writeNote(target: NoteTarget, text: string, id: string | null = null): Promise<boolean> {
   dz.busy = true;
   dz.writeError = "";
@@ -1105,50 +937,39 @@ export async function writeNote(target: NoteTarget, text: string, id: string | n
   }
 }
 
-// ---------------------------------------------------------------------
-// the outbox and the build, as the page shows them
-// ---------------------------------------------------------------------
-
-/// The writes the server refused, each with its reasons in words.
 export function heldWrites(): { key: string; label: string; reason: string }[] {
   return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
 }
 
-/// Send what waits now.
 export function sendNow(): Promise<void> {
   return sendWaiting();
 }
 
-/// A refused write sent again, over the documents the page reads now.
 export async function retryHeld(key: string): Promise<void> {
   await inputs.read(...WRITTEN);
   const w = outbox.held.find((h) => h.key === key);
   await retryWrite(key, { readSeq: w?.log ? logSeqs[w.log] : undefined, readSeqs: logSeqs });
 }
 
-/// The person drops a refused write.
 export function discardHeld(key: string): Promise<void> {
   return discardWrite(key);
 }
 
-/// The person accepts the new version: never over a form being written.
+// Never over a form being written.
 export function applyUpdate(): void {
   if (dz.form || dz.busy) return;
   applyBuild();
 }
 
-/// A new record's id: the agency's date and a random part.
 function newId(kind: string): string {
   return `${kind}-${dz.date}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-/// The agency's date of a Unix time, "YYYY-MM-DD".
 function zonedDate(unix: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: dz.zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(unix * 1000));
   return parts;
 }
 
-/// The feed the preview encoded, as a file to keep.
 export function downloadFeed(): void {
   if (!dz.previewFeed) return;
   const bytes = Uint8Array.from(atob(dz.previewFeed), (c) => c.charCodeAt(0));
@@ -1160,12 +981,11 @@ export function downloadFeed(): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/// Why a frame has no answer, as text ("" when it answered).
 export function why(frame: string): string {
   return reason(dz.frames[frame]);
 }
 
-/// Each failed frame asks again: errors are never cached.
+// Errors are never cached.
 export function retry(): Promise<void> {
   return request.retry();
 }

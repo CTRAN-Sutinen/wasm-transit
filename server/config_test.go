@@ -1,11 +1,10 @@
 package main
 
-// The settings file's laws: a file sets what the command line does not;
-// the command line beats every file, a later file beats an earlier; a
-// [table] prefixes its keys; a relative path is read from the file's
-// directory while a URL or bucket key passes as given; a key that names
-// no flag, or a value no flag takes, refuses the boot. And dev.toml, the
-// defaults `just serve` reads, names only real flags.
+// The command line beats every file, and a later file beats an earlier
+// one. A [table] prefixes its keys. A relative path is read from the
+// file's directory, and a URL or bucket key passes as given. A key that
+// names no flag, or a value that no flag takes, refuses the boot.
+// dev.toml, the defaults that `just serve` reads, names only real flags.
 
 import (
 	"flag"
@@ -155,8 +154,7 @@ func TestDevConfigNamesRealFlags(t *testing.T) {
 	}
 }
 
-// dev.toml shows every setting the server has: each flag is a key there,
-// set or commented out, so the file is the list of what can be set.
+// Each flag is a key in dev.toml, set or commented out.
 func TestDevConfigShowsEverySetting(t *testing.T) {
 	body, err := os.ReadFile("dev.toml")
 	if err != nil {
@@ -183,9 +181,9 @@ func TestDevConfigShowsEverySetting(t *testing.T) {
 	})
 }
 
-// The module setting's law: each capability's module is cap_<id>.wasm in
-// -modules, unless the capability's own flag names a file; and a
-// relative -modules in a settings file is read from the file's folder.
+// Each capability's module is cap_<id>.wasm in -modules, unless the
+// capability's own flag names a file. A relative -modules in a settings
+// file is read from the file's folder.
 func TestEachModuleIsReadFromTheModulesFolder(t *testing.T) {
 	_, f := parsed(t, "-modules", "/m", "-notes-wasm", "/elsewhere/notes.wasm")
 	for id := range f.moduleFlags() {
@@ -212,8 +210,7 @@ func TestEachModuleIsReadFromTheModulesFolder(t *testing.T) {
 	}
 }
 
-// The hosted modules follow the kind table: every capability a kind
-// names is hosted, from the modules folder, with no line in the server.
+// Every capability that a kind names is hosted from the modules folder.
 func TestHostedModulesFollowTheKindTable(t *testing.T) {
 	s := &server{modulesDir: "/m", moduleFiles: map[string]string{"notes": "/x/notes.wasm"}}
 	s.kinds = &kindTable{Kinds: []kindEntry{{StoreKind: "test_kind", Module: "testkind", Receive: "testlog"}}}

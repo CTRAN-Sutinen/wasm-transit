@@ -1,55 +1,26 @@
-/// The offline pages' service worker (D-63, D-65, D-189) — ONE
-/// lifecycle for updates and offline, for every page whose ui.json says
-/// `"offline": true` (the rider pages and the staff pages). `npm run
-/// build` writes it to dist/sw.js with BUILD (the build's identity: a
-/// hash over the shell's files) and SHELL (the files it precaches)
-/// above this text (vite.config.ts, "the service worker"), so every
-/// build is a byte-different worker and the browser's update check
-/// finds it.
-///
-/// - Install precaches the shell — the offline pages, their scripts
-///   and styles, the capability manifest, and each offline page's
-///   linked assembly — and WAITS: a new build never takes over an open
-///   page. The page applies it (src/uis/kit.ts, "the app's build"): a
-///   rider's or a staff page's at the next cold start or navigation, or
-///   when the person accepts "a new version is ready"; a display at its
-///   next poll while the server answers. `apply` is the page's message.
-/// - Activate takes the open pages and keeps this build's shell and the
-///   one before it (a page another tab moved past still loads the
-///   files of the build it runs); older shells are dropped.
-/// - The worker answers for the offline pages (OFFLINE, their UI ids)
-///   only. Its scope is the deployment's root, so every other page on
-///   the origin (the picker) is controlled by it too: that page's
-///   capability manifest — asked with `?ui=<id>` by the bus worker —
-///   comes from the network, never the shell's copy, which names this
-///   build's modules and goes stale at the next build. Hash-named
-///   files are safe to share: their bytes never change.
-/// - Fetch answers: the shell from its precache; content-addressed
-///   files (Vite's hashed assets, the hash-named modules, every
-///   published document at blobs/<hash>[.gz]) from a cache filled on
-///   first use, forever; the deployment's published documents and
-///   config from the network, else the last copy — a page boots
-///   offline on the last manifest it had, and so on the network it
-///   pins (D-65). Paths are
-///   read relative to the worker's scope, so a deployment under a
-///   prefix (a static host's /ride/, D-131) matches as one at the root.
-///   Never cached: live feeds and the dev relay (a prediction is never
-///   replayed as live), the edit document (offline, the boards are the
-///   schedule and say so; the disruptions page keeps its own last copy,
-///   src/uis/kit.ts `lastGoodText`), writes (a staff page's outbox keeps
-///   them, src/outbox.svelte.ts), and the geocoder.
+// The offline pages' service worker (D-63, D-65, D-189). The lifecycle is
+// in docs/architecture/updates-offline.md. `npm run build` writes it to
+// dist/sw.js with BUILD, SHELL, and OFFLINE above this text
+// (vite.config.js), so every build is a byte-different worker.
+//
+// The worker's scope is the deployment's root, so it also controls the
+// picker. That page's capability manifest, asked with `?ui=<id>`, must
+// come from the network, because the shell's copy names this build's
+// modules and goes stale at the next build. Hash-named files are safe to
+// share, because their bytes never change.
+//
+// Paths are read relative to the scope, so a deployment under a prefix (a
+// static host's /ride/, D-131) matches as one at the root.
 
 /* global BUILD, SHELL, OFFLINE */
 
 const SHELL_CACHE = `shell-${BUILD}`;
 const FOREVER = "content-addressed";
 const LAST = "last-published";
-/// The builds activated, oldest first (one JSON response).
 const BUILDS = "builds";
 
 const SCOPE = new URL(self.registration.scope).pathname;
 const SHELL_URLS = new Set(SHELL.map((p) => new URL(p, self.registration.scope).pathname));
-/// Scope-relative paths (no leading slash).
 const HASHED = [/^assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/, /^caps\/[^/]+-[0-9a-f]{64}\.wasm$/, /^blobs\/sha256:[0-9a-f]{64}(\.gz)?$/];
 const PUBLISHED = ["manifest", "network", "network/document", "network/boundary", "streets", "walks", "live-feeds.json"];
 
@@ -99,15 +70,12 @@ self.addEventListener("fetch", (event) => {
   if (PUBLISHED.includes(rel) || rel.startsWith("basemap-assets/")) event.respondWith(networkElseLast(request));
 });
 
-/// The shell's copy (a page's query string is the page's state, not
-/// another file).
+// A page's query string is the page's state, not another file.
 async function fromShell(request, path) {
   const cache = await caches.open(SHELL_CACHE);
   return (await cache.match(path)) ?? (await caches.match(path)) ?? fetch(request);
 }
 
-/// Content-addressed: the bytes never change, so the first copy is
-/// kept forever.
 async function forever(request) {
   const cache = await caches.open(FOREVER);
   const hit = await cache.match(request);
@@ -117,10 +85,8 @@ async function forever(request) {
   return resp;
 }
 
-/// The deployment's current copy, kept as the last one; when the
-/// server does not answer, the last copy — marked `X-Served-From:
-/// last-copy`, so a page can tell the server did not answer (a display
-/// applies a waiting build only while it does).
+// The `X-Served-From: last-copy` marker lets a page tell that the server
+// did not answer. A display applies a waiting build only while it does.
 async function networkElseLast(request) {
   const cache = await caches.open(LAST);
   try {

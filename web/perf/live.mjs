@@ -1,11 +1,10 @@
-// The recorded live feeds a perf spec replays (docs/TESTING.md,
-// "Performance baselines"): `node web/perf/record-rt.mjs` writes
-// <dir>/<n>-<kind>.pb; a spec serves snapshot n at poll n.
+// Replays the live feeds that `node web/perf/record-rt.mjs` records
+// (docs/TESTING.md, "Performance baselines"). A spec serves snapshot n at
+// poll n.
 
 import fs from "node:fs";
 import path from "node:path";
 
-/// The recorded snapshots, in order: [{ trips, vehicles }] as bytes.
 export function snapshots(rtDir) {
   const byN = new Map();
   for (const f of fs.readdirSync(rtDir).sort()) {
@@ -17,8 +16,8 @@ export function snapshots(rtDir) {
   return [...byN.values()];
 }
 
-/// The FeedHeader's timestamp (FeedMessage field 1, header field 3):
-/// the clock starts where the recording did.
+// The timestamp is FeedMessage field 1, header field 3. The spec's clock
+// starts where the recording did.
 export function headerSecs(buf) {
   const varint = (i) => {
     let x = 0, s = 1;

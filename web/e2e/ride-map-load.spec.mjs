@@ -1,19 +1,7 @@
-// How the ride map loads (src/viewport.ts, src/basemap.ts): it opens
-// on the view the rider will end up on, so the camera makes no move
-// whose tiles are thrown away, and it asks for its tile archive once.
-//
-//   1. A rider who shared a location before opens on it: the camera
-//      starts at the last fix, and neither framing the network nor
-//      the fix's arrival moves it — the camera makes no move at all.
-//   2. A first visit with a fix pending goes to the fix in ONE move —
-//      the network is not framed on the way.
-//   3. A rider who shares no location sees the network framed, once —
-//      and the next load opens on that frame and does not move.
-//   4. The archive's header is fetched once, with no probe before it.
-//
-// 1–3 run on the fallback style (the archive stubbed away, OpenFreeMap
-// stubbed to an empty style) so they need neither; 4 needs the local
-// basemap.pmtiles and skips without it.
+// The ride map opens on the view the rider ends on, so the camera makes no
+// move whose tiles are thrown away, and it asks for its tile archive once
+// (src/viewport.ts, src/basemap.ts). The first three tests run on the fallback
+// style. The archive test needs the local basemap.pmtiles and skips without it.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -21,24 +9,19 @@ import path from "node:path";
 import fs from "node:fs";
 
 const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// Main Station, inside the fixture network (stops A..C span 45.50–45.52,
-// -73.52..-73.50; their center is ~1.4 km from here).
+// Main Station. The center of stops A..C is about 1.4 km away.
 const fix = { latitude: 45.515, longitude: -73.515 };
 const near = (a, b) => Math.abs(a - b) < 0.002;
 
-// The server that publishes the fixture network (:8083, as
-// published-network.spec.mjs): the map has stops to frame.
+// The server on :8083 publishes the fixture network, so the map has stops to frame.
 test.use({ baseURL: "http://127.0.0.1:8083", timezoneId: "UTC", geolocation: fix, permissions: ["geolocation"] });
 
-/// The live feeds and the edit document the page polls, answered so
-/// the spec is the only thing on the wire it looks at.
 async function quiet(page) {
   await page.route(/\/rt\?url=/, (route) => route.fulfill({ status: 404 }));
   await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
 }
 
-/// The fallback style, hermetic: no archive, and OpenFreeMap's style
-/// is an empty one (nothing to fetch, so the map loads offline).
+/// OpenFreeMap's style is empty here, so the map loads offline.
 async function fallbackStyle(page) {
   await page.route("**/basemap.pmtiles", (route) => route.fulfill({ status: 404 }));
   await page.route("https://tiles.openfreemap.org/**", (route) =>
@@ -46,8 +29,6 @@ async function fallbackStyle(page) {
   );
 }
 
-/// Record the camera: where the map opened (`open`, when the page
-/// gets its instance) and where every move ended.
 async function recordCamera(page) {
   await page.addInitScript(() => {
     window.__camera = [];
@@ -65,8 +46,6 @@ async function recordCamera(page) {
   });
 }
 
-/// The camera, once the stops are drawn and the page has had time to
-/// settle (the fix, delayed or not, has arrived and been acted on).
 async function settledCamera(page) {
   await expect(page.getByTestId("ride-map")).not.toHaveAttribute("data-stops", "0", { timeout: 10_000 });
   await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toBeVisible({ timeout: 10_000 });
@@ -74,7 +53,6 @@ async function settledCamera(page) {
   return page.evaluate(() => window.__camera);
 }
 
-/// A fix that takes `ms` to arrive, as a phone's first one can.
 async function slowFix(page, ms) {
   await page.addInitScript((ms) => {
     const ask = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
@@ -85,11 +63,9 @@ async function slowFix(page, ms) {
 test("a rider who shared a location before opens on it and the camera never leaves", async ({ page }) => {
   await quiet(page);
   await fallbackStyle(page);
-  // The first visit: the fix is shared and remembered.
   await page.goto("/ride-now.html");
   await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toBeVisible({ timeout: 10_000 });
 
-  // The next one, the fix slow to arrive.
   await recordCamera(page);
   await slowFix(page, 2000);
   await page.reload();
@@ -147,7 +123,6 @@ test.describe("no location shared", () => {
     const moves = (await page.evaluate(() => window.__camera)).filter((c) => c.when === "moveend");
 
     expect(moves).toHaveLength(1);
-    // The whole network in view — wider than the rider's zoom.
     expect(moves[0].zoom).toBeLessThan(15);
   });
 });

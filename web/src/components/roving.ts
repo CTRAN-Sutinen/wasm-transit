@@ -1,10 +1,8 @@
-/// Arrow-key movement for a group of `role="radio"` or `role="tab"`
-/// buttons (the ARIA radio group and tabs patterns). Put the action on
-/// the group's element. The group must give the selected item
-/// `tabindex="0"` and the others `tabindex="-1"`, so Tab enters the
-/// group once. An arrow key (or Home or End) focuses the next item and
-/// selects it, as a native radio group does. Host glue only: it moves
-/// focus and clicks, and answers nothing.
+/// Arrow-key movement for a group of `role="radio"` or `role="tab"` buttons. Put
+/// the action on the group's element. The group must give the selected item
+/// `tabindex="0"` and the others `tabindex="-1"`, so Tab enters the group once.
+/// An arrow key, Home, or End focuses the next item and selects it, as a native
+/// radio group does.
 export function roving(group: HTMLElement) {
   const onkey = (e: KeyboardEvent) => {
     const items = [...group.querySelectorAll<HTMLElement>('[role="radio"], [role="tab"]')];

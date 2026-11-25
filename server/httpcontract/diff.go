@@ -1,18 +1,11 @@
-// Package httpcontract holds the server's HTTP contract to expand, then
-// contract (D-81). The contract is server/openapi.json. The lock,
-// server/openapi.lock.json, is the contract as last released. Breaks
-// lists every change from the lock that a client or a server on the
-// other build cannot take.
+// Package httpcontract compares server/openapi.json with the lock,
+// server/openapi.lock.json, the contract as last released (D-81).
 //
-// The rule has two directions. A request is what an older client
-// sends, so the new contract must accept every request the lock
-// accepts. A response is what an older client reads, so the new
-// contract may answer only what the lock answers. A removal (a path, a
-// method, a parameter, a field) is a break unless the lock already
-// marks it `deprecated`: the expand step must be released first.
-//
-// The schemas use a subset of JSON Schema. Breaks refuses a keyword
-// outside it, so the comparison never passes a schema it cannot read.
+// The new contract must accept every request that the lock accepts, and
+// may answer only what the lock answers. A removal is a break unless the
+// lock already marks it `deprecated`, so the expand step is released
+// first. The schemas use a subset of JSON Schema, and Breaks refuses a
+// keyword outside it.
 package httpcontract
 
 import (
@@ -24,10 +17,8 @@ import (
 	"strings"
 )
 
-// Doc is a parsed OpenAPI document.
 type Doc = map[string]any
 
-// Load reads an OpenAPI document from a file.
 func Load(path string) (Doc, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -40,8 +31,6 @@ func Load(path string) (Doc, error) {
 	return d, nil
 }
 
-// Break is one change that a deployed part on the other build cannot
-// take. Where names the place in the contract. Why says what fails.
 type Break struct {
 	Where string
 	Why   string
@@ -49,10 +38,8 @@ type Break struct {
 
 func (b Break) String() string { return b.Where + ": " + b.Why }
 
-// Methods are the operation keys of a path item.
 var Methods = []string{"get", "head", "post", "put", "patch", "delete", "options"}
 
-// Breaks compares the new contract with the lock.
 func Breaks(lock, next Doc) []Break {
 	c := &comparer{old: lock, new: next}
 	c.unknownKeywords(lock, "lock")
@@ -94,22 +81,18 @@ type comparer struct {
 
 func (c *comparer) add(where, why string) { c.breaks = append(c.breaks, Break{where, why}) }
 
-// allowed are the schema keywords the comparison reads.
 var allowed = map[string]bool{
 	"type": true, "properties": true, "required": true, "additionalProperties": true,
 	"items": true, "enum": true, "const": true, "oneOf": true, "$ref": true,
 	"description": true, "deprecated": true, "title": true, "examples": true,
 	"x-document": true,
-	"format": true, "pattern": true, "minimum": true, "maximum": true,
+	"format":     true, "pattern": true, "minimum": true, "maximum": true,
 	"minLength": true, "maxLength": true, "minItems": true, "maxItems": true,
 }
 
-// constraints are the keywords that narrow a value. A new or changed
-// one is compared by equality.
+// A new or changed constraint is compared by equality.
 var constraints = []string{"format", "pattern", "minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems"}
 
-// unknownKeywords refuses a schema keyword outside the subset, in every
-// schema the document holds.
 func (c *comparer) unknownKeywords(d Doc, name string) {
 	var walk func(s any, where string)
 	walk = func(s any, where string) {
@@ -182,7 +165,6 @@ func params(item, op map[string]any) map[paramKey]map[string]any {
 }
 
 func (c *comparer) operation(where string, oldItem, oldOp, newItem, newOp map[string]any) {
-	// Parameters: what an older client sends.
 	oldPs, newPs := params(oldItem, oldOp), params(newItem, newOp)
 	keys := make([]paramKey, 0, len(oldPs)+len(newPs))
 	for k := range oldPs {
@@ -251,10 +233,9 @@ func (c *comparer) operation(where string, oldItem, oldOp, newItem, newOp map[st
 }
 
 // subset reports where schema a admits a value that schema b does not.
-// For a request, a is the lock's and b the new one's (the new contract
-// accepts every old request). For a response, a is the new one's and b
-// the lock's (an older client reads every new response). oldIsA names
-// which side is the lock's, for the removal rule.
+// For a request, a is the lock's and b the new one's. For a response, a
+// is the new one's and b the lock's. oldIsA names the lock's side, for
+// the removal rule.
 func (c *comparer) subset(where string, a, b any, oldIsA bool) {
 	aDoc, bDoc := c.new, c.old
 	if oldIsA {
@@ -340,7 +321,6 @@ func (c *comparer) subset(where string, a, b any, oldIsA bool) {
 		}
 	}
 
-	// Objects.
 	aProps, bProps := obj(am["properties"]), obj(bm["properties"])
 	oldProps, newProps := bProps, aProps
 	if oldIsA {
@@ -380,7 +360,6 @@ func (c *comparer) subset(where string, a, b any, oldIsA bool) {
 	}
 }
 
-// fitsSome says whether a fits some branch, with no break recorded.
 func (c *comparer) fitsSome(a any, branches []any, oldIsA bool) bool {
 	for _, b := range branches {
 		trial := &comparer{old: c.old, new: c.new, seen: c.seen}
@@ -392,8 +371,7 @@ func (c *comparer) fitsSome(a any, branches []any, oldIsA bool) bool {
 	return false
 }
 
-// resolve follows local $refs. It answers the schema and the last ref
-// it followed ("" for none).
+// resolve answers "" as the ref when it followed none.
 func resolve(d Doc, s any) (map[string]any, string) {
 	m := obj(s)
 	ref := ""

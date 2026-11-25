@@ -1,36 +1,13 @@
 package main
 
-// The generic store surface (store mode, -store <url>): pointers and
-// blobs over the content-addressed store (docs/FORMATS.md,
-// docs/architecture/storage.md). /edits is the edit_records
-// specialization of POST /pointers/edits (edits.go). The edits pointer's
-// head and its POST are the disruptions log's (disruptions.go); its log
-// is the pointer's history before the disruptions log, read only.
+// The pointer and blob routes over the content-addressed store
+// (docs/architecture/storage.md; routes in openapi.json).
 //
-//	GET  /pointers/{name}              -> {name, hash, seq, envelope} (404 when absent)
-//	GET  /pointers/{name}/log?since=H  -> {entries, since_found, current}
-//	POST /pointers/{name}              -> the CAS: 200 + new head, 409 + {current}
-//	GET  /blobs/{hash}                 -> raw bytes, ETag the hash, envelope in headers;
-//	                                      Accept: application/gzip -> the same bytes gzipped
-//	                                      (transport only), for a page that registers a
-//	                                      document compressed (kernel op 256)
-//	GET  /blobs/{hash}.gz              -> the same gzipped bytes by path, the layout a
-//	                                      static host serves too (export.go)
-//
-// /blobs also answers the published documents (the network, its
-// boundary, the streets, the walk table — publishedBlob) with or
-// without the store. In store mode they are blobs too (derived.go).
-//
-// POST bodies: for the edits pointer, {"from", "client": <document>}
-// — the server brings an older document forward (cap-migrate), runs
-// cap-sync's read_edits on both sides and sync_edits (receive-clamped,
-// D-56), and writes the change as one entry of the disruptions log. The published plan set and the picks' networks
-// (kinds plans and network_document, pointers plans and plan.<id>) are
-// refused here: they publish through POST /plans (plans.go). So are the
-// derived documents and their derivation records (derived.go). Other
-// kinds take {"from", "kind"? (on create),
-// "document": "<raw text>", "document_hash"?} verbatim; document_hash,
-// when present, is asserted against sha256 of the bytes.
+// /blobs also answers the published documents (publishedBlob) with or
+// without the store. The edits pointer's log is the pointer's history
+// before the disruptions log, read only. The published plan set, the
+// picks' networks, and the derived documents are refused here: they
+// publish through POST /plans and derived.go.
 
 import (
 	"context"
@@ -46,21 +23,17 @@ import (
 	"rustwasm/server/store"
 )
 
-// editsVersion is the edit document version the hosted modules read
-// (transit_sync::SCHEMA_VERSION); a document in an older one comes
-// forward through cap-migrate at receive.
+// editsVersion and networkVersion mirror transit_sync::SCHEMA_VERSION and
+// transit_network::SCHEMA_VERSION. An older document comes forward
+// through cap-migrate at receive.
 const editsVersion = 2
 
-// networkVersion is the network document version the hosted modules
-// read and cap-network writes (transit_network::SCHEMA_VERSION).
 const networkVersion = 2
 
-// emptyEdits is the edit document with no records, in that version.
 const emptyEdits = `{"kind":"edit_records","schema_version":2,"records":[]}`
 
-// syncEnvelope is the envelope every edit_records commit carries: the
-// kind, the schema version, and the producing module's hash — the
-// conflict function is content-addressed with it.
+// The conflict function is content-addressed with the producing module's
+// hash, so the envelope carries it.
 func (s *server) syncEnvelope() store.Envelope {
 	return store.Envelope{
 		Kind:          "edit_records",
@@ -69,11 +42,10 @@ func (s *server) syncEnvelope() store.Envelope {
 	}
 }
 
-// defaultMigrateWasm is where `just caps` puts the migration module.
 const defaultMigrateWasm = "../web/pkg/cap_migrate.wasm"
 
-// migrator is the hosted migration capability (cap-migrate), loaded on
-// first use: most receives are already current and never need it.
+// migrator loads cap-migrate on first use: most receives are already
+// current.
 func (s *server) migrator() (*WasmHost, error) {
 	s.migrateOnce.Do(func() {
 		path := s.migrateWasm
@@ -85,11 +57,8 @@ func (s *server) migrator() (*WasmHost, error) {
 	return s.migrateHost, s.migrateErr
 }
 
-// forward brings a document of kind to the version the hosted modules
-// read, through cap-migrate: a current (or newer) document comes back
-// as it is — a newer one is refused by the module that reads it,
-// naming both versions, never rewritten here. migrated reports whether
-// it moved; the answer is the migrated document's canonical bytes.
+// forward returns a current or newer document unchanged. The module that
+// reads a newer one refuses it, so the host never rewrites it.
 func (s *server) forward(kind string, raw json.RawMessage) (doc json.RawMessage, migrated bool, err error) {
 	m, err := s.migrator()
 	if err != nil {
@@ -114,15 +83,11 @@ func (s *server) forward(kind string, raw json.RawMessage) (doc json.RawMessage,
 	return json.RawMessage(out.Canonical), true, nil
 }
 
-// syncOp invokes the sync module. The host serializes invokes already
-// (WasmHost.call); the module is not reentrant.
+// The module is not reentrant. WasmHost.call serializes invokes.
 func (s *server) syncOp(req map[string]any, out any) error {
 	return s.wasm.Invoke(context.Background(), req, out)
 }
 
-// readEdits reads a received document at the receive boundary — an
-// older version brought forward by cap-migrate first — and returns its
-// records plus the canonical document bytes and hash.
 func (s *server) readEdits(raw json.RawMessage) (records json.RawMessage, document string, hash string, dropped int, err error) {
 	if raw, _, err = s.forward("edit_records", raw); err != nil {
 		return nil, "", "", 0, err
@@ -140,11 +105,9 @@ func (s *server) readEdits(raw json.RawMessage) (records json.RawMessage, docume
 	return resp.Records, resp.Document, resp.DocumentHash, resp.Dropped, nil
 }
 
-// mergeEdits runs the sync protocol's merge step over the receive path:
-// both documents migrate at receive, the client's clock is clamped to
-// the server's (D-56), merge + submit run in the module, and the answer
-// is the canonical converged document and its hash, with the fields
-// the client's records carry that this build does not know (D-167).
+// mergeEdits clamps the client's clock to the server's (D-56). The answer
+// carries the fields that the client's records have and this build lacks
+// (D-167).
 func (s *server) mergeEdits(clientRaw, serverRaw json.RawMessage, nowMs int64) (document string, hash string, unknown []string, err error) {
 	clientRec, _, _, _, err := s.readEdits(clientRaw)
 	if err != nil {
@@ -213,8 +176,6 @@ func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
 	if name == "edits" {
-		// The edit document's head is the disruptions log's fold: its
-		// hash, the log's seq, and the document's envelope.
 		_, head, err := s.disruptionsNow()
 		if err != nil {
 			fail(w, err, http.StatusInternalServerError)
@@ -247,8 +208,7 @@ func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name s
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	// Writer identities leave the store only for audit-granted callers
-	// (auth on); the log stays redacted for everyone else.
+	// Writer identities leave the store only for audit-granted callers.
 	canAudit := true
 	if v := r.Context().Value(auditKey); v != nil {
 		canAudit, _ = v.(bool)
@@ -290,9 +250,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	writer := writerOf(r, "anonymous")
 	nowMs := time.Now().UnixMilli()
 
-	// The edit document is written as one entry of the disruptions log
-	// (disruptions.go): one attempt on the client's last-seen hash, and
-	// the caller retries on 409 (POST /edits retries itself).
+	// One attempt on the client's last-seen hash. The caller retries on 409.
 	if name == "edits" || req.Kind == "edit_records" {
 		if name != "edits" {
 			http.Error(w, "the edit document is the edits pointer, written as the disruptions log", http.StatusBadRequest)
@@ -338,9 +296,6 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		return
 	}
 
-	// The kind table governs the write (kinds.go): a kind with its own
-	// route or with no entry is refused, and a pointer kind is checked
-	// by its module, which answers the bytes stored.
 	entry, refusal, err := s.pointerRefusal(name, kind)
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
@@ -421,8 +376,8 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if gz || strings.Contains(r.Header.Get("Accept"), "application/gzip") {
-			// Content-Type, never Content-Encoding: the page hands the
-			// compressed bytes to the modules without unzipping them.
+			// Content-Type, never Content-Encoding: the page hands the compressed
+			// bytes to the modules without unzipping them.
 			w.Header().Set("Content-Type", "application/gzip")
 			w.Write(compressed())
 			return
@@ -430,8 +385,6 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(plain)
 	}
-	// The store's blob first (it carries its envelope), else the
-	// published document of that hash.
 	var data []byte
 	var env store.Envelope
 	err := store.ErrNotFound
@@ -439,7 +392,6 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		data, env, err = s.store.GetBlob(hash)
 	}
 	if err == store.ErrNotFound {
-		// The logs' documents, served under the hashes the manifest pins.
 		kind, doc, ok := s.keptDoc(hash)
 		if ok {
 			version := docVersion(doc)
@@ -465,11 +417,9 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusBadRequest)
 		return
 	}
-	// Server-internal config documents are never served to clients:
-	// the policy blob is the authorization structure itself (roles,
-	// rules, pointers) — a client gets the manifest's policy_hash
-	// (opaque, for rotation detection), never the document. The log
-	// endpoint is the audited path to policy CHANGES, gated by auth.
+	// The policy blob is the authorization structure itself. A client gets
+	// the manifest's policy_hash, never the document. The log endpoint is the
+	// audited path to policy changes.
 	if s.restricted(env.Kind) {
 		http.NotFound(w, r)
 		return
@@ -482,10 +432,10 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	send(data, func() []byte { return s.gzippedBlob(hash, data) })
 }
 
-// gzippedBlob compresses a blob for transport, caching the last few:
-// a published network is fetched by every page that loads it, and
-// compressing 10 MB per request would be the server's whole budget.
-// Never durable — compression is transport only (docs/FORMATS.md).
+// gzippedBlob caches the last few compressed blobs: every page that loads
+// a published network fetches it, and compressing 10 MB per request would
+// use the server's whole budget. Compression is transport only
+// (docs/FORMATS.md).
 func (s *server) gzippedBlob(hash string, data []byte) []byte {
 	s.gzMu.Lock()
 	defer s.gzMu.Unlock()
@@ -500,8 +450,6 @@ func (s *server) gzippedBlob(hash string, data []byte) []byte {
 	return gz
 }
 
-// docVersion is the schema version a log's document says it is (its
-// `schema_version`), 1 when it says none.
 func docVersion(doc []byte) uint32 {
 	var tag struct {
 		SchemaVersion uint32 `json:"schema_version"`

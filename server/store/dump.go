@@ -1,10 +1,9 @@
 package store
 
-// Dump writes a whole store to a folder, to read it with no object
-// storage tools (`store dump`): every object at <dir>/<key>, as its
-// exact bytes, and its metadata, when it has any (a blob's envelope),
-// beside it at <dir>/<key>.meta.json. It reads the store and writes
-// nothing to it. A folder is never a store: nothing reads a dump back.
+// Dump writes a whole store to a folder (`store dump`), to read it with no
+// object storage tools: each object at <dir>/<key> as its exact bytes,
+// and its metadata (a blob's envelope) at <dir>/<key>.meta.json. Nothing
+// reads a dump back.
 
 import (
 	"context"
@@ -17,15 +16,13 @@ import (
 	"strings"
 )
 
-// DumpReport is what a dump wrote.
 type DumpReport struct {
 	Dir     string `json:"dir"`
 	Objects int    `json:"objects"`
 	Bytes   int64  `json:"bytes"`
 }
 
-// Dump writes every object of the store to dir, which must be absent or
-// empty, so a dump never mixes with other files.
+// dir must be absent or empty, so a dump never mixes with other files.
 func Dump(ctx context.Context, b Backend, dir string) (DumpReport, error) {
 	r := DumpReport{Dir: dir}
 	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {

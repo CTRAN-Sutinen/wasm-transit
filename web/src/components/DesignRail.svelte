@@ -1,6 +1,4 @@
 <script lang="ts">
-  /// The view rail: one button per view, numbered for its key (1–6).
-  /// Keys are the shell's to bind; this only renders and emits.
   let {
     views,
     active,

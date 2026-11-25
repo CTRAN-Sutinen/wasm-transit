@@ -1,22 +1,4 @@
-/// THE BUS WORKER — the page's one Worker, and the only wasm loader
-/// (docs/architecture/web.md, "The bus worker").
-///
-/// Every module a page assembles lives here, off the thread the UI
-/// renders on: the manifest is validated at the seam, each module's
-/// bytes are verified against its pinned hash, instantiated, and answer
-/// ops posted from the page. A generated UI's page runs ONE module —
-/// its linked assembly (the manifest's `assemblies`, D-77): every
-/// capability it uses over one kernel registry, so a document registers
-/// once per page. A capability outside it (or every one, when the
-/// assembly does not load) runs in its own module.
-///
-/// It answers nothing of its own: the engine (src/engine.ts, through
-/// src/bus.ts) is the one caller, and decides what every call means.
-/// What lives here is the runtime: instances, and the memory ceiling —
-/// wasm linear memory never shrinks, so an instance whose memory
-/// passed the ceiling is dropped and instantiated fresh before its
-/// next op, and the engine registers the documents it needs again
-/// (modules are pure, so the fresh instance answers the same bytes).
+// The design is in docs/architecture/web.md, "The bus worker".
 
 /// <reference lib="webworker" />
 
@@ -25,9 +7,6 @@ import type { Capability } from "./types/cap_abi/Capability";
 import type { LinkedAssembly } from "./types/cap_abi/LinkedAssembly";
 import type { BusRequest, BusReply, CapStatus, Route } from "./bus";
 
-/// The flat ABI every capability module exports: four functions, no
-/// imports (a capability differs in which ops it answers, never in
-/// how it is called).
 type CapExports = {
   memory: WebAssembly.Memory;
   transit_alloc(len: number): number;
@@ -38,14 +17,12 @@ type CapExports = {
 
 const KERNEL_VERSION = 1;
 
-/// One live instance of a verified module.
 class Instance {
   readonly #exports: CapExports;
-  /// Ops answered since instantiation (registrations and refusals
-  /// excluded): a fresh instance always answers one op before it may
-  /// be reset — its first op may be refused for the documents the reset
-  /// dropped, and registering them must not reset it again — so a
-  /// ceiling below its working set cannot loop.
+  // Registrations and refusals do not count. A fresh instance answers one
+  // op before it may be reset, because its first op may be refused for the
+  // documents that the reset dropped. Without this, a ceiling below the
+  // working set would loop.
   ops = 0;
 
   constructor(exports: WebAssembly.Exports) {
@@ -77,42 +54,30 @@ class Instance {
   }
 }
 
-/// One assembled module (a linked assembly or a capability alone): its
-/// verified, compiled bytes (kept, so a reset re-instantiates without
-/// fetching) and its live instance.
+// The compiled module is kept so a reset re-instantiates without fetching.
 type Assembled = { key: string; hash: string; module: WebAssembly.Module; instance: Instance; resets: number; resetAt: number };
 
-/// The memory ceiling per instance, and the least time between two
-/// resets of one module (a working set above the ceiling must not
-/// thrash). The ceiling sits at twice the largest measured working
-/// set (D-70: service-design holding five C-TRAN networks, 66 MB; a
-/// rider page holds one, 16–18 MB); the engine may lower it (the e2e
-/// forces a reset).
+// The ceiling is twice the largest measured working set (D-70). The engine
+// may lower it, and the e2e does to force a reset.
 let ceiling = 128 * 1024 * 1024;
 let minResetMs = 60_000;
 
 let base = "";
 let manifest: Promise<CapManifest> | null = null;
-/// Modules by key ("ui:<id>" for a linked assembly, "cap:<id>" alone).
+// Keys are "ui:<id>" for a linked assembly and "cap:<id>" for a capability alone.
 const assembled = new Map<string, Promise<Assembled | null>>();
-/// Where each assembled capability answers.
 const routes = new Map<string, Route>();
 const errors: Record<string, string> = {};
 
-/// sha256 of bytes as "sha256:<hex>" — the manifest's format, the
-/// same formula the generator and the Rust side use.
 async function contentHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   return "sha256:" + hex;
 }
 
-/// Load the manifest and validate it AT THE SEAM: wrong kernel, no
-/// content hash, or duplicate ids are assembly errors, not runtime
-/// surprises.
-/// The request names the page (`?ui=<id>`): the service worker answers
-/// only its offline pages' manifest from its precache, and any other
-/// page's from the network (web/service-worker.js).
+// The request names the page (`?ui=<id>`). The service worker answers only
+// its offline pages' manifest from its precache and any other page's from
+// the network (web/service-worker.js).
 async function loadManifest(ui: string | undefined): Promise<CapManifest> {
   const url = new URL("caps/manifest.json", base);
   if (ui) url.searchParams.set("ui", ui);
@@ -129,17 +94,14 @@ async function loadManifest(ui: string | undefined): Promise<CapManifest> {
   return loaded;
 }
 
-/// One module, demand-driven and memoized: fetched by manifest url,
-/// VERIFIED against the pinned hash, compiled and instantiated. A
-/// failure resolves null — the assembly degrades, never fails
-/// wholesale.
+// A failure resolves null, so the assembly degrades and does not fail
+// wholesale.
 function assemble(key: string, entry: { url: string; hash: string }): Promise<Assembled | null> {
   let pending = assembled.get(key);
   if (!pending) {
     pending = (async () => {
       try {
         const bytes = new Uint8Array(await (await fetch(new URL(entry.url, base))).arrayBuffer());
-        // Integrity at the seam: the manifest pins the exact bytes.
         const hash = await contentHash(bytes);
         if (hash !== entry.hash) {
           throw new Error(`module ${key} hash mismatch: fetched ${hash}, manifest pins ${entry.hash}`);
@@ -157,8 +119,6 @@ function assemble(key: string, entry: { url: string; hash: string }): Promise<As
   return pending;
 }
 
-/// The module a capability answers in: the page's linked assembly when
-/// it links the capability and loads, the capability alone otherwise.
 async function place(cap: Capability, linked: LinkedAssembly | undefined): Promise<Route | null> {
   if (linked?.capabilities.includes(cap.id)) {
     const key = `ui:${linked.ui}`;
@@ -170,7 +130,6 @@ async function place(cap: Capability, linked: LinkedAssembly | undefined): Promi
   return (await assemble(key, cap)) ? { module: key, hash: cap.hash, index: 0, linked: false } : null;
 }
 
-/// The module instance a capability answers in.
 async function assembledOf(cap: string): Promise<Assembled> {
   const route = routes.get(cap);
   const got = route && (await assembled.get(route.module));
@@ -178,9 +137,8 @@ async function assembledOf(cap: string): Promise<Assembled> {
   return got;
 }
 
-/// Before an op (never a registration): an instance past the ceiling
-/// that has answered since it was made, and was not reset too
-/// recently, is dropped for a fresh one. True when it was.
+// Returns true when it replaced the instance. Called before an op, never
+// before a registration.
 async function reclaim(a: Assembled): Promise<boolean> {
   const now = Date.now();
   if (a.instance.memory <= ceiling || a.instance.ops === 0 || now - a.resetAt < minResetMs) return false;
@@ -190,19 +148,16 @@ async function reclaim(a: Assembled): Promise<boolean> {
   return true;
 }
 
-/// The journal: every module call, as hashes, in the format the runner
-/// replays (tools/journal.mjs; `caps-run replay FILE.json`). It is off
-/// until the engine starts it, because it keeps every request's bytes.
-/// A line's place is taken when the module answers, so the lines keep
-/// the order of the calls while their hashes are computed.
+// Off until the engine starts it, because it keeps every request's bytes.
+// A line's place is taken when the module answers, so the lines keep the
+// order of the calls while their hashes are computed.
 type Journal = { run: string; lines: (string | null)[]; blobs: Map<string, Uint8Array>; pending: Promise<void>[] };
 let journal: Journal | null = null;
 
-/// The refusal the engine recovers from by registering the document:
-/// not journaled. The kernel's label for the kind is free text.
+// The engine recovers from this refusal by registering the document, so
+// it is not journaled. The kernel's label for the kind is free text.
 const UNKNOWN_DOCUMENT = /^\{"error":"unknown (.+?) (sha256:[0-9a-f]{64}): (load_[a-z_]+) first"\}$/;
-/// The op a JSON request names: the engine writes `cap` (in a linked
-/// assembly) and `op` first.
+// The engine writes `cap` (in a linked assembly) and `op` first.
 const OP_NAME = /^\{(?:"cap":"[a-z_]+",)?"op":"([a-z_]+)"/;
 
 function record(a: Assembled, cap: string, call: "json" | number, payload: Uint8Array, outcome: string): void {

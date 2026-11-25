@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// The unserved WHERE (analysis `unserved_points`): every layer
-  /// feature with weight beyond the radius of every stop the selected
-  /// service group (a combination of service types, D-55) serves — a
-  /// point as a circle sized by its unserved weight, a polygon as its
-  /// shape, shaded by the share of its area unserved; the selected one
-  /// outlined and framed. A RENDER component — places in, a tapped
-  /// place out.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";

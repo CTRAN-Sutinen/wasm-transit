@@ -1,16 +1,7 @@
-// A fully serverless deployment that follows the agency's GTFS URL
-// (D-132): the export names the feed (`-feed-url`) instead of
-// importing it, and each page fetches the zip itself, imports it in its
-// own assembly, and checks the URL again once a day — a changed zip is
-// re-imported and adopted without a reload, an unchanged one is not.
-// The service worker keeps the last zip, so a device boots offline on
-// the schedule it last had.
-//
-// Its host (playwright.config.mjs, :8088) serves the stop display's
-// bundle under /display/, ride-now's under /ride/, and the feed at
-// /feeds/feed.zip with CORS; the manifest names
-// the feed by another origin (localhost against 127.0.0.1), as an
-// agency's feed host is.
+// A serverless deployment that follows the agency's GTFS URL (D-132). Each
+// page imports the zip itself and checks the URL once a day. The server on
+// :8088 serves the feed at /feeds/feed.zip with CORS, and the manifest names it
+// by another origin (localhost against 127.0.0.1), as an agency's feed host is.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -83,16 +74,13 @@ test("a changed feed is adopted at the next daily check, without a reload", asyn
     const fetches = () => asked.filter((u) => u === FEED_URL).length;
     const booted = fetches();
 
-    // The agency publishes a new zip.
     fs.copyFileSync(path.join(fixtures, "overnight-gtfs.zip"), feedFile);
 
-    // A poll within the day neither fetches nor re-pins.
     await page.clock.fastForward(20_000);
     await page.clock.fastForward(20_000);
     expect(fetches(), "the feed is checked once a day, not every poll").toBe(booted);
     expect(await networks(page)).toEqual([held]);
 
-    // A day on: the next poll checks the URL and adopts the new network.
     await page.clock.fastForward(24 * 3600_000);
     await expect.poll(async () => (await networks(page)).length === 1 && (await networks(page))[0] !== held, { timeout: 15_000 }).toBe(true);
     expect(await page.evaluate(() => window.__notReloaded)).toBe(true);

@@ -1,21 +1,7 @@
 package main
 
-// The static bundle (D-131; docs/architecture/static-deployment.md). `-export DIR` boots as the server does — the
-// same modules import the feed and the street layer and derive the walk
-// table — then writes the deployment as files and exits:
-//
-//	DIR/<the pages>         -dist, byte for byte
-//	DIR/manifest            the manifest the server answers at /manifest
-//	DIR/blobs/<hash>        each published document's JSON (sha256 = hash)
-//	DIR/blobs/<hash>.gz     the same bytes gzipped
-//	DIR/live-feeds.json     -live-feeds when given, else -dist's copy
-//	DIR/_headers            the headers the pages must send (headers.go):
-//	                        caching, security, and the policy of each page
-//
-// The server answers the same paths (/manifest, /blobs/<hash>[.gz] —
-// pointers.go), so a page reads either deployment through one layout.
-// The export is the server's publishing without the serving: it adds
-// nothing a running server does not answer.
+// The static bundle uses the paths that the server answers, so a page
+// reads either deployment through one layout (D-131).
 
 import (
 	"encoding/json"
@@ -29,11 +15,8 @@ import (
 	"sort"
 )
 
-// publishedBlob answers a published document by its hash — the
-// network, its boundary, the streets, the walk table — as served
-// (servedDoc: its bytes, and gzipped). False when no published document
-// has that hash. In store mode the store holds them too (derived.go),
-// and /blobs answers the store's blob first.
+// In store mode the store holds these documents too (derived.go), and
+// /blobs answers the store's blob first.
 func (s *server) publishedBlob(hash string) (servedDoc, bool) {
 	docs, err := s.publishedDocs()
 	if err != nil {
@@ -47,8 +30,6 @@ func (s *server) publishedBlob(hash string) (servedDoc, bool) {
 	return servedDoc{}, false
 }
 
-// publishedDocs lists the documents the manifest pins, each under the
-// hash it pins.
 func (s *server) publishedDocs() ([]servedDoc, error) {
 	var docs []servedDoc
 	if s.feeder != nil {
@@ -77,11 +58,11 @@ func (s *server) publishedDocs() ([]servedDoc, error) {
 	return docs, nil
 }
 
-// export writes the static bundle into dir, which must be absent or
-// empty — an export never writes over files (uploading a bundle keeps
-// every blob an earlier one wrote, so an open page pinned to the old
-// manifest still finds its documents). liveFeeds, when not "", is the
-// deployment's live-feeds.json, replacing -dist's dev copy.
+// export requires dir to be absent or empty. An export never writes
+// over files, because uploading a bundle keeps every blob that an
+// earlier one wrote, so an open page pinned to the old manifest still
+// finds its documents. liveFeeds, when not "", replaces -dist's copy of
+// live-feeds.json.
 func (s *server) export(dir, liveFeeds string) error {
 	if s.store != nil {
 		return errors.New("-export publishes the configured feed and streets; it does not export a store's picks (run it without -store)")
@@ -141,8 +122,6 @@ func (s *server) export(dir, liveFeeds string) error {
 			log.Printf("export: live-feeds.json names the relay %q, which a static host does not serve — pass the deployment's own with -live-feeds (D-67)", config.Proxy)
 		}
 	}
-	// The headers the host must send: the origins in the policy are the
-	// ones this bundle's live-feeds.json and feed URL name.
 	var pages []string
 	for page := range riderPages {
 		if _, err := os.Stat(filepath.Join(dir, page)); err == nil {
@@ -159,8 +138,6 @@ func (s *server) export(dir, liveFeeds string) error {
 	return nil
 }
 
-// copyTree copies every regular file under src to the same path under
-// dst.
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

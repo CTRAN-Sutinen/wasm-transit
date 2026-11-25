@@ -1,16 +1,12 @@
 package main
 
-// The static bundle (D-131; docs/architecture/static-deployment.md): `-export DIR`
-// writes the deployment as files any static host serves — the pages,
-// the manifest, and every published document under its content hash —
-// and the server serves the SAME paths, so one page reads either
-// deployment. These laws pin the layout both share:
+// The static bundle (D-131; docs/architecture/static-deployment.md):
+// `-export DIR` writes files that the server serves at the same paths.
+// These tests pin the layout both share:
 //
-//   - every published document is `blobs/<hash>` (its JSON, whose
-//     sha256 is the hash) and `blobs/<hash>.gz` (the same bytes gzipped);
+//   - every published document is `blobs/<hash>` and `blobs/<hash>.gz`;
 //   - the manifest names a blob for every pin it carries;
-//   - the bundle's files are byte-for-byte what the server serves at
-//     the same paths.
+//   - the bundle's files are byte-for-byte what the server serves.
 
 import (
 	"bytes"
@@ -29,8 +25,6 @@ import (
 	"testing"
 )
 
-// exportServer is a server over the e2e fixture feed and the walking
-// street layer, its pages a small -dist.
 func exportServer(t *testing.T) *server {
 	t.Helper()
 	zip, err := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
@@ -79,8 +73,6 @@ func gunzip(t *testing.T, b []byte) []byte {
 	return out
 }
 
-// fetch GETs a path with no content negotiation (what a static host
-// answers is what any client gets).
 func fetch(t *testing.T, url string) (*http.Response, []byte) {
 	t.Helper()
 	req, _ := http.NewRequest("GET", url, nil)
@@ -103,7 +95,6 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 	srv := httptest.NewServer(s.routes())
 	t.Cleanup(srv.Close)
 
-	// The manifest: the server's, every pin present.
 	raw, err := os.ReadFile(filepath.Join(bundle, "manifest"))
 	if err != nil {
 		t.Fatalf("bundle manifest: %v", err)
@@ -131,9 +122,6 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 		}
 	}
 
-	// Every pinned document: blobs/<hash> hashes to its name, its .gz is
-	// the same bytes, and the server answers both paths with those bytes,
-	// cached forever.
 	for name, hash := range pins {
 		plain, err := os.ReadFile(filepath.Join(bundle, "blobs", hash))
 		if err != nil {
@@ -166,8 +154,6 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 		}
 	}
 
-	// The modules register the gzipped blobs under their pins — the
-	// page's check.
 	gzNetwork, _ := os.ReadFile(filepath.Join(bundle, "blobs", exported.NetworkHash+".gz"))
 	var network struct {
 		NetworkHash string `json:"network_hash"`
@@ -183,7 +169,6 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 		t.Fatalf("streets blob registers as %q (%v), pinned %s", streets.StreetsHash, err, exported.StreetsHash)
 	}
 
-	// The pages: every -dist file, byte for byte.
 	err = filepath.WalkDir(s.dist, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -201,9 +186,8 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 	}
 }
 
-// A deployment names its own live feeds: -live-feeds replaces the
-// dev copy -dist carries (its `proxy` names a relay a static host does
-// not have).
+// -live-feeds replaces the dev copy that -dist carries, whose `proxy`
+// names a relay that a static host lacks.
 func TestTheExportTakesTheDeploymentsLiveFeeds(t *testing.T) {
 	s := exportServer(t)
 	feeds := filepath.Join(t.TempDir(), "live-feeds.json")
@@ -219,9 +203,8 @@ func TestTheExportTakesTheDeploymentsLiveFeeds(t *testing.T) {
 	}
 }
 
-// An export never writes over files: a bundle directory that holds
-// anything is refused (uploading keeps what earlier bundles wrote; the
-// export starts clean).
+// A bundle directory that holds anything is refused: uploading keeps what
+// earlier bundles wrote.
 func TestTheExportRefusesANonEmptyDirectory(t *testing.T) {
 	s := exportServer(t)
 	bundle := t.TempDir()
@@ -231,9 +214,8 @@ func TestTheExportRefusesANonEmptyDirectory(t *testing.T) {
 	}
 }
 
-// A serverless deployment that follows the agency's GTFS URL (D-132):
-// the export names the feed for the pages to fetch and imports none —
-// the manifest pins no network, and no network blob is written.
+// The export names the feed URL, imports none, pins no network, and writes no
+// network blob (D-132).
 func TestTheExportNamesAFeedURLAndImportsNothing(t *testing.T) {
 	s := exportServer(t)
 	s.feeder, s.streets = nil, nil

@@ -5,7 +5,7 @@
 //
 // Each generated UI declares its inputs in its ui.json (`inputs`). Each
 // input names the rows of the UI's failure table that say what the page
-// does while its reads fail (`fails_as`). This file reads both as data:
+// does while its reads fail (`fails_as`). This file reads both as data.
 //
 // - `uiDocs(root)`: generated-uis.md, then each UI's file under
 //   generated-uis/, as one text.
@@ -26,21 +26,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/// A UI section starts with its id and folder in code spans:
-/// "`stops` (`src/uis/stops/`)".
 const SECTION = /^`([a-z][a-z0-9-]*)` \(`src\/uis\/\1\/`\)/;
-/// The table's header row.
 const HEADER = /^\| Input, and how it fails \|/;
-/// "Its failure table is service design's." The other UI, in words.
 const SAME = /Its failure table is ([a-z][a-z -]*)'s\b/;
 
-/// The name of a row: its first cell, to the colon.
 export function rowName(cell) {
   const i = cell.indexOf(":");
   return (i < 0 ? cell : cell.slice(0, i)).trim();
 }
 
-/// Each UI's failure table: { [id]: { rows: [{ name, cells }], same: id | null } }.
 export function failureTables(markdown) {
   const lines = markdown.split("\n");
   const tables = {};
@@ -57,8 +51,6 @@ export function failureTables(markdown) {
     const same = SAME.exec(line);
     if (same) tables[ui].same = same[1].trim().replace(/ /g, "-");
     if (!HEADER.test(line)) continue;
-    // The header, the rule, then the rows to the first line that is not
-    // a row.
     for (i += 2; i < lines.length && lines[i].startsWith("|"); i++) {
       const cells = lines[i].split("|").slice(1, -1).map((c) => c.trim());
       tables[ui].rows.push({ name: rowName(cells[0]), cells });
@@ -71,8 +63,6 @@ export function failureTables(markdown) {
   return tables;
 }
 
-/// The UI docs as one text: generated-uis.md, then each UI's file in
-/// generated-uis/, in name order.
 export function uiDocs(root) {
   const main = path.join(root, "docs/architecture/generated-uis.md");
   const dir = path.join(root, "docs/architecture/generated-uis");
@@ -82,7 +72,6 @@ export function uiDocs(root) {
   return [main, ...files].map((f) => fs.readFileSync(f, "utf8")).join("\n");
 }
 
-/// Each UI's declared inputs: { [id]: InputDeclaration[] }.
 export function declaredInputs(root) {
   const uis = path.join(root, "web/src/uis");
   const out = {};
@@ -95,7 +84,6 @@ export function declaredInputs(root) {
   return out;
 }
 
-/// The gate's findings, one sentence each.
 export function check(root) {
   const tables = failureTables(uiDocs(root));
   const findings = [];

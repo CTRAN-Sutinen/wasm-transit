@@ -1,11 +1,8 @@
 package main
 
-// Health, readiness, and graceful shutdown: what a load balancer or an
-// orchestrator reads. Liveness never reads the bucket; readiness stays
-// 200 while degraded reads serve (every instance shares the bucket, so
-// pulling them all would turn a write outage into a read outage), is
-// 503 with nothing to serve, and is 503 "draining" once shutdown
-// starts; a request in flight at shutdown finishes.
+// Liveness never reads the bucket. Readiness stays 200 while degraded
+// reads serve, is 503 with nothing to serve, and is 503 "draining" once
+// shutdown starts. A request in flight at shutdown finishes.
 
 import (
 	"encoding/json"
@@ -72,7 +69,6 @@ func TestReadinessFollowsTheBucket(t *testing.T) {
 func TestReadinessWithNothingCachedIsUnavailable(t *testing.T) {
 	bucket := &flakyBucket{Backend: store.NewMemory()}
 	bucket.down.Store(true)
-	// A process whose bucket never answered holds no head to serve.
 	s := &server{store: store.NewServing(bucket)}
 	if code, rd := readyz(t, s); code != 503 || rd.Status != "unavailable" || rd.Error == "" {
 		t.Fatalf("nothing cached: %d %+v", code, rd)
@@ -111,7 +107,6 @@ func TestShutdownDrainsThenFinishesRequestsInFlight(t *testing.T) {
 	<-started
 	syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 
-	// During the drain the listener still answers, and readiness is 503.
 	deadline := time.Now().Add(150 * time.Millisecond)
 	for !s.draining.Load() && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)

@@ -1,24 +1,20 @@
-// A plain static host for e2e/static-deploy.spec.mjs (D-131): files
-// from a directory, a content type by extension, and nothing else — no
-// content negotiation, no ETag or Last-Modified, no Range, no
-// compression, no routes. What a bucket or a bare web server does at
-// its least, so a page that boots here boots on any static host. One
-// thing it does beyond that, as Cloudflare Workers and Netlify do: it
-// sends the headers the bundle's `_headers` file names (a path
-// pattern, then indented `Name: value` lines; `*` matches anything),
-// so the specs run each page under the policy the export wrote.
+// A plain static host for e2e/static-deploy.spec.mjs (D-131). It serves files
+// from a directory with a content type by extension, and does no content
+// negotiation, ETag, Range, compression, or routing, so a page that boots here
+// boots on any static host. Like Cloudflare Workers and Netlify, it sends the
+// headers that the bundle's `_headers` file names. The specs then run each page
+// under the policy that the export wrote.
 //
 //   node e2e/static-server.mjs <root> <port> [cors | forward=<server URL>]
 //
-// `cors` adds `Access-Control-Allow-Origin: *`, as an agency's feed
-// host sends it (e2e/static-feed-url.spec.mjs).
+// `cors` adds `Access-Control-Allow-Origin: *`, as an agency's feed host sends
+// it (e2e/static-feed-url.spec.mjs).
 //
-// `forward=<server URL>` makes it a UI's own host (D-171;
-// e2e/ui-origins.spec.mjs): the UI's bundle from <root>, and the data
-// paths forwarded to the server, so the page is same-origin with its
-// data. The data paths are every route of the server's HTTP contract
-// (server/openapi.json, each path's `x-mux`) but the static files, and
-// the basemap, which is the deployment's map data.
+// `forward=<server URL>` makes it a UI's own host (D-171; e2e/ui-origins.spec.mjs).
+// It serves the UI's bundle from <root> and forwards the data paths to the
+// server, so the page is same-origin with its data. The data paths are every
+// route of the server's HTTP contract (server/openapi.json, each path's
+// `x-mux`) except the static files and the basemap.
 
 import http from "node:http";
 import fs from "node:fs";
@@ -28,7 +24,7 @@ const [root, port, mode = ""] = process.argv.slice(2);
 const corsHeaders = mode === "cors" ? { "Access-Control-Allow-Origin": "*" } : {};
 const upstream = mode.startsWith("forward=") ? mode.slice("forward=".length).replace(/\/+$/, "") : null;
 
-/// The server's data paths: a pattern that ends in "/" is a prefix.
+/// A pattern that ends in "/" is a prefix.
 function dataPaths() {
   const contract = JSON.parse(fs.readFileSync(new URL("../../server/openapi.json", import.meta.url), "utf8"));
   const patterns = new Set(Object.values(contract.paths).map((item) => item["x-mux"]));
@@ -38,7 +34,6 @@ function dataPaths() {
 const forwarded = upstream ? dataPaths() : [];
 const isData = (pathname) => forwarded.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p));
 
-/// Forward a request to the server as it is, and its answer back.
 function forward(req, res) {
   const target = new URL(req.url, upstream);
   const out = http.request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, (answer) => {
@@ -60,7 +55,6 @@ const types = {
   ".png": "image/png",
 };
 
-/// The `_headers` rules of the bundle in `dir`, read on each request.
 function headerRules(dir) {
   let text = "";
   try {
@@ -82,9 +76,8 @@ function headerRules(dir) {
   return rules;
 }
 
-/// The headers for a path: the rules of the bundle at the host's root,
-/// or of the one under the path's first segment (/ride/, /display/).
-/// A rule's pattern is relative to its bundle.
+/// A rule's pattern is relative to its bundle, which is the host's root or the
+/// directory under the path's first segment (/ride/, /display/).
 function headersFor(pathname) {
   const segment = pathname.split("/")[1] ?? "";
   const sent = {};

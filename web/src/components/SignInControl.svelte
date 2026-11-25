@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// Who is signed in to write, with the control to sign in or out —
-  /// shown only where the deployment asks for sign-in (D-58: reads are
-  /// public, a write carries the person's token). A RENDER component:
-  /// the state and the actions are the page's (src/signin.svelte.ts).
   let {
     available,
     name,

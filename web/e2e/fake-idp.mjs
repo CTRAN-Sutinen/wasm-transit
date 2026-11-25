@@ -1,9 +1,5 @@
-// A stand-in OpenID Connect provider for the e2e sign-in tests: the
-// discovery document, an authorize endpoint that signs "Rosa Ortiz" in
-// at once (no login screen) and redirects back with a code, a token
-// endpoint that checks the PKCE verifier and answers RS256 tokens (and
-// refreshes them), and the JWKS the server verifies them with. CORS is
-// open, as a real provider's is for a single-page application client.
+// A stand-in OpenID Connect provider for the e2e sign-in tests. The authorize
+// endpoint signs "Rosa Ortiz" in at once, with no login screen.
 //
 //   node e2e/fake-idp.mjs <port> <audience>
 
@@ -15,7 +11,7 @@ const audience = process.argv[3] ?? "transit-server";
 const issuer = `http://127.0.0.1:${port}`;
 const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwk = { ...publicKey.export({ format: "jwk" }), kid: "k1", alg: "RS256", use: "sig" };
-const codes = new Map(); // code → { challenge, client_id }
+const codes = new Map();
 
 const b64u = (b) => Buffer.from(b).toString("base64url");
 function sign(claims) {

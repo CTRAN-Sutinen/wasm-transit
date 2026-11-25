@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The service groups (analysis `service_groups`): one row per
-  /// combination of service types that run together (D-55), with the
-  /// dates it holds on and its members' pooled numbers. A row selects
-  /// the group every view reads.
   import type { ServiceGroup } from "../types/ServiceGroup";
   import { count, fixed, spansText } from "./designFormat";
 

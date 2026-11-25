@@ -1,23 +1,9 @@
 package main
 
-// Authentication + authorization (docs/architecture/server.md;
-// D-58..D-61).
-//
-// Authentication is the IdP's: this file only VERIFIES the bearer JWT —
-// signature against the IdP's JWKS (cached by kid, refetched on an
-// unknown kid) or a pinned PEM key (D-60), RS256/ES256 only (alg=none
-// and HS* are rejected — the IdP signs with a private key), iss/aud
-// exact, exp/nbf with 60 s leeway — and extracts the identity: `sub`
-// plus the roles at the configured claim path (D-59). Authorization is
-// a domain decision, so it runs in the cap-authz MODULE over the
-// policy document (the store's `policy` pointer, seeded from a -policy
-// file at first boot — D-61): fail-closed, every write denied when
-// there is no valid token or no matching rule (D-58: reads stay
-// public, writes are authenticated).
-//
-// The host stays scaffolding: it owns the token, the clock and the
-// HTTP; the module owns the verdict. A verified subject becomes the
-// store log's `writer` — the audit trail ties commits to identities.
+// The host verifies the bearer JWT and the cap-authz module decides
+// (docs/architecture/server.md; D-58..D-61). Every write is denied when
+// there is no valid token or no matching rule. A verified subject becomes
+// the store log's `writer`.
 
 import (
 	"context"
@@ -44,7 +30,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// oidcConfig is the deployment's IdP wiring (D-60).
 type oidcConfig struct {
 	issuer     string
 	jwksURL    string
@@ -56,8 +41,8 @@ type oidcConfig struct {
 	scope      string // the scopes a page asks for
 }
 
-// authzState is the auth-enabled server state: nil means auth is OFF
-// (dev default — logged loudly at startup, writes unauthenticated).
+// A nil authzState means auth is off: the dev default, which writes
+// unauthenticated.
 type authzState struct {
 	cfg    oidcConfig
 	wasm   *WasmHost // cap-authz
@@ -68,9 +53,8 @@ type authzState struct {
 	jwksFetched     time.Time
 	jwksMinInterval time.Duration // refetch rate limit; loadAuthz sets 30s, tests 0
 
-	// policyBytes is the policy document used when there is no store
-	// (the dev store); with -store it is read from the `policy` pointer
-	// per request (changes are audited CAS commits).
+	// policyBytes is the policy when there is no store. With -store, each
+	// request reads the `policy` pointer instead.
 	policyMu    sync.RWMutex
 	policyBytes []byte
 }
@@ -131,7 +115,6 @@ func b64url(s string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(s)
 }
 
-// jwk is one JWKS key (RSA or EC P-256).
 type jwk struct {
 	Kid string `json:"kid"`
 	Kty string `json:"kty"`
@@ -183,8 +166,7 @@ func (k jwk) publicKey() (crypto.PublicKey, error) {
 
 var jwksHTTP = &http.Client{Transport: outbound, Timeout: 10 * time.Second}
 
-// keyFor returns the verification key for kid, fetching the JWKS on a
-// miss (rate-limited: at most one refetch per 30 s).
+// keyFor fetches the JWKS on a miss, at most once per jwksMinInterval.
 func (a *authzState) keyFor(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	if a.pinned != nil {
 		return a.pinned, nil
@@ -242,19 +224,18 @@ func (a *authzState) keyFor(ctx context.Context, kid string) (crypto.PublicKey, 
 	return key, nil
 }
 
-// identity is the verified subject + roles (D-59).
 type identity struct {
 	Sub   string   `json:"sub"`
 	Roles []string `json:"roles"`
-	// Name is the configured name claim (-oidc-name-claim), else the sub:
-	// what a record names the person by (a survey's surveyor, D-158).
+	// Name is the configured name claim (-oidc-name-claim), else the sub.
+	// A record names the person by it (a survey's surveyor, D-158).
 	Name string `json:"-"`
 }
 
 const clockLeeway = 60 * time.Second
 
-// verifyJWT authenticates one bearer token (D-60): signature, alg
-// allowlist, iss/aud, exp/nbf, then the roles claim path.
+// verifyJWT accepts RS256 and ES256 only, so `none` and HS* tokens fail
+// (D-60).
 func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -355,8 +336,6 @@ func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, er
 	return &identity{Sub: sub, Roles: rolesAtClaim(claims, a.cfg.rolesClaim), Name: name}, nil
 }
 
-// stringAtClaim reads a dotted claim path whose leaf is a string ("" when
-// it is missing or not a string).
 func stringAtClaim(claims map[string]any, path string) string {
 	cur := any(claims)
 	for _, seg := range strings.Split(path, ".") {
@@ -372,9 +351,7 @@ func stringAtClaim(claims map[string]any, path string) string {
 	return strings.TrimSpace(s)
 }
 
-// rolesAtClaim reads a dotted claim path; the leaf must be a string
-// array (missing or wrong-typed → no roles, and no roles means no rule
-// matches — fail-closed).
+// A missing or mistyped leaf gives no roles, and then no rule matches.
 func rolesAtClaim(claims map[string]any, path string) []string {
 	cur := any(claims)
 	for _, seg := range strings.Split(path, ".") {
@@ -408,9 +385,6 @@ const (
 	auditKey    ctxKey = "audit"    // may the caller see writer identities in the log?
 )
 
-// policyDocument returns the current policy document bytes: the
-// store's `policy` pointer in store mode (audited), else the -policy
-// file's bytes (the dev store). Absent → nil (fail-closed at the op).
 func (s *server) policyDocument() []byte {
 	if s.store != nil {
 		head, found, err := s.store.Head("policy")
@@ -431,8 +405,7 @@ func (s *server) policyDocument() []byte {
 	return s.authz.policyBytes
 }
 
-// authorize asks cap-authz the one question. Fail-closed: any error —
-// no policy, module error, malformed answer — is a deny.
+// authorize denies on any error, so it fails closed.
 func (s *server) authorize(r *http.Request, id *identity, action, pointer string) (bool, string) {
 	policy := s.policyDocument()
 	if len(policy) == 0 {
@@ -461,13 +434,10 @@ func (s *server) authorize(r *http.Request, id *identity, action, pointer string
 	return true, resp.Decision.Reason
 }
 
-// protectWrite wraps a write endpoint (D-58: reads stay public —
-// EXCEPT the pointer log, which carries writer identities and is
-// authenticated: a read on the pointer, with writers redacted unless
-// the identity also holds an "audit" rule). pointerOf names the
-// pointer ("edits" for /edits, the path segment for /pointers/{name}).
-// With auth disabled (no -oidc flags) everything passes through — dev
-// mode, logged loudly at startup.
+// protectWrite leaves reads public (D-58), except the pointer log, which
+// carries writer identities. That read needs read on the pointer, and
+// the writers stay redacted unless the identity holds an "audit" rule.
+// pointerOf names the pointer. With auth disabled, everything passes.
 func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		isLog := r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/log")
@@ -489,10 +459,8 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 		ctx := context.WithValue(r.Context(), identityKey, id)
 		ctx = context.WithValue(ctx, writerKey, id.Sub)
 		if isLog {
-			// The log endpoint needs read on the pointer — and an "audit"
-			// rule implies it. The log's `writer` fields are shown to an
-			// audit rule and redacted otherwise (an agent's choice, open
-			// as D-164; the policy itself is what stays private, D-61).
+			// An "audit" rule implies read. The log's `writer` fields are
+			// shown to an audit rule and redacted otherwise (D-164).
 			allowRead, reason := s.authorize(r, id, "read", pointer)
 			canAudit, _ := s.authorize(r, id, "audit", pointer)
 			if !allowRead && !canAudit {
@@ -514,10 +482,6 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 	}
 }
 
-// logPointer is the pointer whose rules govern a log's endpoints: its
-// first kind's rule (edits for the disruptions log, service_alerts for
-// the alerts log), and the log's own name for a log the table does not
-// name.
 func (s *server) logPointer(path string) string {
 	name, _, _ := strings.Cut(strings.TrimPrefix(path, "/logs/"), "/")
 	if l := s.keptLog(name); l != nil && len(l.kinds) > 0 {
@@ -526,8 +490,6 @@ func (s *server) logPointer(path string) string {
 	return name
 }
 
-// mayWrite asks the policy whether the verified caller may write the
-// pointer. With auth disabled every write passes.
 func (s *server) mayWrite(r *http.Request, pointer string) (bool, string) {
 	if s.authz == nil {
 		return true, ""
@@ -539,15 +501,11 @@ func (s *server) mayWrite(r *http.Request, pointer string) (bool, string) {
 	return s.authorize(r, id, "write", pointer)
 }
 
-// protectLog wraps the logs' endpoints (/logs/<log>, its revert and
-// close-gap). Every call, a read too, needs the "audit" grant on the
-// log's pointer (edits for the disruptions log, stops for the stops
-// log): an entry names its writer inside its bytes, so the server
-// cannot redact it, and a revert or a closed gap is an auditor's act.
-// POST /logs/<log> of a log a receive op writes is a page's intent
-// write: it needs a valid token here, and the write rule of each
-// document it writes (logkinds.go). With auth
-// disabled everything passes through, as for every endpoint.
+// protectLog needs the "audit" grant on the log's pointer for every
+// call, a read too. An entry names its writer inside its bytes, so the
+// server cannot redact it. An intent write (POST /logs/<log>) needs only
+// a valid token here, and the write rule of each document it writes
+// (logkinds.go).
 func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.authz == nil {
@@ -580,21 +538,16 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// isIntentWrite is whether a POST to this path is a log's intent write:
-// one to a log a receive op writes.
 func (s *server) isIntentWrite(path string) bool {
 	name, ok := strings.CutPrefix(path, "/logs/")
 	return ok && s.keptLog(name) != nil
 }
 
-// pointerNameOf extracts the pointer name from /pointers/{name}[/log].
 func pointerNameOf(r *http.Request) string {
 	rest := strings.TrimPrefix(r.URL.Path, "/pointers/")
 	return strings.Split(rest, "/")[0]
 }
 
-// requireAuth wraps an endpoint that needs any valid token (no pointer
-// decision): the identity is verified and becomes the log's writer.
 func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.authz == nil {
@@ -617,11 +570,9 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// handlePermissions serves the client's view of the policy: GET
-// /permissions (authenticated) → the projection of the policy onto the
-// caller — its roles and merged capabilities, nothing else. The policy
-// document itself is never served (its blob is withheld, /blobs 404s
-// kind "policy"); this endpoint is the only client-readable form.
+// handlePermissions is the only client-readable form of the policy. The
+// policy document itself is never served: /blobs answers 404 for kind
+// "policy" (D-61).
 func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
@@ -664,11 +615,9 @@ func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp.Effective)
 }
 
-// seedPolicy commits the -policy source (a URL, bucket:<key>, or a dev
-// file — D-118) as the store's `policy` pointer when it does not exist
-// yet (D-61 bootstrap). The blob is the source's bytes; the hash is the
-// shared formula (the policy is host-authored at seed — later changes
-// are normal CAS commits).
+// seedPolicy commits the -policy source (D-118) as the `policy` pointer
+// when it does not exist yet (D-61). Later changes are ordinary CAS
+// commits.
 func (s *server) seedPolicy(policyFile string) {
 	if s.store == nil || policyFile == "" {
 		return
@@ -689,9 +638,7 @@ func (s *server) seedPolicy(policyFile string) {
 	log.Printf("policy seeded into the store from %s", policyFile)
 }
 
-// nameOf is how a record names the person writing (a survey's
-// surveyor, D-158): the verified token's configured name claim when auth
-// ran, else the caller's label (X-Writer), else fallback.
+// nameOf prefers the verified token's name claim (D-158).
 func nameOf(r *http.Request, fallback string) string {
 	if id, ok := r.Context().Value(identityKey).(*identity); ok && id != nil && id.Name != "" {
 		return id.Name
@@ -699,8 +646,6 @@ func nameOf(r *http.Request, fallback string) string {
 	return writerOf(r, fallback)
 }
 
-// writerOf returns the verified subject when auth ran, else the
-// caller's label — this becomes the store log's `writer`.
 func writerOf(r *http.Request, fallback string) string {
 	if v := r.Context().Value(writerKey); v != nil {
 		if s, ok := v.(string); ok && s != "" {

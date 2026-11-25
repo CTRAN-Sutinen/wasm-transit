@@ -1,11 +1,7 @@
-// The host contract suite, the browser's side
-// (web/src/uis/host-contract.json; docs/architecture/hosts.md, "The
-// rules every host keeps"). Each scenario runs one input through the
-// kit's runner (inputs.ts) and the head reader (heads.ts), with the
-// server as its upstream. The server runs the same scenarios over its
-// bucket (server/hostcontract_test.go). Both hosts must give the same
-// state for each step: current, stale with the upstream's age, or
-// failed.
+// Runs web/src/uis/host-contract.json (docs/architecture/hosts.md, "The
+// rules every host keeps"). The server runs the same scenarios in
+// server/hostcontract_test.go, and both hosts must give the same state
+// for each step.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,7 +15,6 @@ const EVERY_S = 30;
 const LIMIT_S = 10;
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-/// A host with a clock the test moves (as inputs.test.mjs's).
 function host() {
   let now = 1_000_000;
   let timers = [];
@@ -46,8 +41,8 @@ function host() {
       if (!next || next.at > until) break;
       timers.shift();
       now = next.at;
-      // A poll's tick waits on its reads, and a read on its time limit:
-      // the clock runs each timer and moves on.
+      // A poll's tick waits on its reads, so the clock runs each timer and
+      // moves on.
       void next.fn();
     }
     now = until;
@@ -56,7 +51,6 @@ function host() {
   return h;
 }
 
-/// The host's state, in the contract's words.
 function seen(state) {
   if (state.kind === "answered") return state.asOfMs == null ? "current" : "stale";
   if (state.kind === "failed") return state.held ? "stale" : "failed";

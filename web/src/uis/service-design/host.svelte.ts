@@ -1,22 +1,9 @@
-/// The service-design UI's host layer — the ONLY file of this UI that
-/// calls the capability bus. It owns I/O (feed and layer bytes, the
-/// export download, the URL hash), the plan set (plans.svelte.ts:
-/// JS owns the documents, and the undo stack is earlier versions of
-/// them), and the selection.
-/// Every number, list, and line it writes into `sd` is an op's answer,
-/// adopted as-is; the shell's components take these as props and emit
-/// events back here.
-///
-/// The UI is six views over one selection (docs/units/ui-service-
-/// design.md, "The views"): plans, network, coverage, hubs, route,
-/// proposal. The selection — plan, baseline, service group (a
-/// combination of service types that run together, D-55), route,
-/// direction, stop, and the hour window — lives in the URL hash, so
-/// a view can be bookmarked and returned to.
-///
-/// Every frame fails on its own: the answer graph writes why a frame
-/// has no answer into `sd.frames` (src/uis/answers.ts), and the frame
-/// says so while the rest of the view answers.
+// Only this file of the UI calls the bus. Every number, list, and line that it
+// writes into `sd` is an op's answer, adopted as given.
+//
+// The selection (plan, baseline, service group, route, direction, stop, hour
+// window) lives in the URL hash, so a view can be bookmarked. A service group
+// is a combination of service types that run together (D-55).
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, load, produced, publishedPlanSet, readManifest, served, servedNetworkValue, stopWarnings, withStopVersions, Doc, type DeploymentManifest } from "../../engine";
@@ -25,8 +12,7 @@ import descriptor from "./ui.json";
 
 import { resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting } from "../../outbox.svelte";
-// This page's capabilities answer inside its linked assembly — one
-// module, one registry: each document registers once (D-77).
+// Each document registers once in the page's one linked module (D-77).
 assemble("service-design");
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
@@ -70,15 +56,13 @@ export const VIEWS: { id: View; label: string }[] = [
 
 export type PlanRow = { key: string; id: string; name: string; effectiveFrom: string | null };
 export type CoverageParams = { radius_m: number; frequent_secs: number; min_departures: number };
-/// The hour window, service-day hours [from, to).
+/// Service-day hours, [from, to).
 export type HourWindow = { from: number; to: number };
 
 export const sd = $state({
-  /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
   status: "Load a GTFS feed to begin.",
-  /// The status is something the planner must not miss: a refusal, an
-  /// error, a change that left the plan with issues.
+  /// Set when the planner must not miss the status (a refusal, an error, a change that left the plan with issues).
   alert: false,
   busy: false,
   view: "network" as View,
@@ -90,19 +74,13 @@ export const sd = $state({
   issues: [] as NetworkError[],
   warnings: [] as NetworkWarning[],
   groups: [] as ServiceGroup[],
-  /// The selected group: a combination's id (its members joined " + ").
   group: "",
-  /// The service type the route view's gestures change — one member
-  /// of the group (D-8: gestures stay per service type; the panel
-  /// warns what else runs with it, D-95).
+  /// One member of the group. Gestures stay per service type (D-8), and the panel warns what else runs with it (D-95).
   editType: "",
   hourly: null as HourlyTrips[] | null,
   dayStats: null as NetworkStats | null,
   frequency: null as RouteFrequency | null,
   comparison: null as ServiceTypeComparison | null,
-  /// The group's day blocked (runcut `suggest_blocks`, D-46): the
-  /// authored blocks' peak, and the vehicles the trips no block
-  /// carries add when the suggestion is adopted.
   vehicles: null as Suggestion | null,
   routes: [] as DirectoryRoute[],
   route: "",
@@ -114,10 +92,8 @@ export const sd = $state({
   window: null as HourWindow | null,
   layer: null as LayerInfo | null,
   coverageParams: { radius_m: 400, frequent_secs: 900, min_departures: 2 } as CoverageParams,
-  /// The selected combination's coverage (null: none selected, or its
-  /// members never run together).
+  /// Null when none is selected, or when its members never run together.
   coverage: null as CombinationCoverage | null,
-  /// How the coverage op read the layer (its label, field, resolution).
   coverageReading: null as LayerReading | null,
   unserved: null as UnservedPoint[] | null,
   overlaps: null as RouteOverlap[] | null,
@@ -126,7 +102,6 @@ export const sd = $state({
   connections: null as RouteConnections[] | null,
   gaps: null as StopGaps | null,
   missed: null as MissedConnection[] | null,
-  /// The network's stops ranked by their longest wait, in the window.
   waits: null as StopWait[] | null,
   editing: false,
   /// The picked trip on the string-line: "trip@start".
@@ -135,22 +110,11 @@ export const sd = $state({
   canUndo: false,
   canRedo: false,
   exported: "",
-  /// The last publish's answer, as the server gave it: the published
-  /// set's hash, or why the pick was refused (D-74, D-76).
   published: null as { plans_hash: string } | null,
   publishRefused: [] as object[],
-  /// Each frame's failure, by frame: why it has no answer (a
-  /// capability that did not assemble, or an op that refused).
-  /// Each frame that shows no answer, and why (the answer graph's,
-  /// and an action's failure: export, publish).
   frames: {} as Record<string, FrameState>,
-  /// What the page holds of each input (the kit's).
   inputs: {} as Record<string, InputState>,
 });
-
-// ---------------------------------------------------------------------
-// documents
-// ---------------------------------------------------------------------
 
 function active(): Network | null {
   return getAllPlans()[sd.activeKey] ?? null;
@@ -164,29 +128,20 @@ function selectedGroup(): ServiceGroup | null {
   return sd.groups.find((g) => g.id === sd.group) ?? null;
 }
 
-/// The selected combination's members — what its pooled reads ask by.
 function groupMembers(): string[] {
   return selectedGroup()?.members ?? [];
 }
 
-/// The date the day-scoped ops (hourly_trips, route_overlap, the hub
-/// reads) are asked on: the combination's first
-/// date. Every date a combination holds on runs exactly its members
-/// (the D-55 law: the date-scoped reads answer alike on each), so this
-/// is an address, never a label — the views name the combination and
-/// its spans.
+/// Every date that a combination holds runs exactly its members (D-55), so its first date works as an address.
 function groupDay(): string {
   return selectedGroup()?.dates[0] ?? "";
 }
 
-/// Keep the gestures' service type a member of the selected group.
 function syncEditType(): void {
   const members = groupMembers();
   if (!members.includes(sd.editType)) sd.editType = members[0] ?? "";
 }
 
-/// What the views call a network with no plan frame: the base every
-/// fork copies (an import, or the deployment's published network).
 const BASE_NAME = "Base network";
 
 function syncPlanRows(): void {
@@ -198,21 +153,13 @@ function syncPlanRows(): void {
   }));
 }
 
-/// The issues and warnings cap-author answered with a document it
-/// authored (its `apply` validates the result) — the health node adopts
-/// them instead of registering that document in cap-network to ask
-/// again. Every other document's are network `validate`'s.
+/// The health node adopts these instead of registering the authored document in cap-network to ask again.
 const authoredHealth = new WeakMap<Network, { issues: NetworkError[]; warnings: NetworkWarning[] }>();
 
-/// A weighted layer as the coverage frame shows it: what the load
-/// answered, and the planner's reading of it — which field is the
-/// weight and what it means (D-47).
+/// The planner's reading of the layer: the weight field and what it means (D-47).
 export type LayerInfo = { features: number; points: number; polygons: number; fields: LayerField[]; field: string; label: string };
-/// The layer's document, by which the coverage ops read it.
 let layer: Doc | null = null;
 
-/// One engine document per plan version (JS owns the documents; the
-/// engine registers each version once per module).
 const docs = new WeakMap<Network, Doc<Network>>();
 function docOf(network: Network): Doc<Network> {
   let doc = docs.get(network);
@@ -220,17 +167,12 @@ function docOf(network: Network): Doc<Network> {
   return doc;
 }
 
-/// A stored plan read into the current version: one saved in an older
-/// version comes forward through the migration capability (a network
-/// with no schema_version is v1 — every plan saved before the tag),
-/// then cap-author's `apply` with no edits answers the canonical
-/// document. Null when the authoring capability did not assemble.
-/// The stored plan set, read through the network capability: its plans
-/// by store id, or a refusal naming both versions.
 async function readStoredSet(stored: unknown): Promise<Record<string, unknown>> {
   return (await ask("network", "stored_plans", { document: stored })).plans;
 }
 
+/// A plan saved in an older version comes forward through the migration capability.
+/// A network with no schema_version is v1. Null when the authoring capability did not assemble.
 async function readStoredNetwork(stored: unknown): Promise<ReadPlan | null> {
   if (!(await available("author"))) return null;
   let migrated = false;
@@ -246,17 +188,11 @@ async function readStoredNetwork(stored: unknown): Promise<ReadPlan | null> {
   return { network: answer.network, migrated };
 }
 
-/// Name what the modules keep: each plan's current network (the
-/// compare baseline is one of them) and the layer. Every `apply` mints
-/// a network, and networks are durable, so without this a session
-/// would hold every version it made. A version on the undo stack is
-/// dropped too; undo registers it again (the engine's recovery).
+/// Every `apply` creates a network, and networks are durable, so without this a session would hold every version it made. A version on the undo stack is dropped too, and undo registers it again (the engine's recovery).
 function release(): Promise<void> {
   return keep([...Object.values(getAllPlans()).map(docOf), layer]);
 }
 
-/// Earlier versions of each plan (JS owns the documents): undo puts
-/// the last one back; nothing is inverted.
 const undo: Record<string, Network[]> = {};
 const redo: Record<string, Network[]> = {};
 
@@ -265,11 +201,6 @@ function syncHistory(): void {
   sd.canRedo = (redo[sd.activeKey]?.length ?? 0) > 0;
 }
 
-// ---------------------------------------------------------------------
-// failure, per frame
-// ---------------------------------------------------------------------
-
-/// The status line: what just happened, in one sentence.
 function say(text: string, alert = false): void {
   sd.status = text;
   sd.alert = alert;
@@ -279,10 +210,7 @@ function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
-/// Run one frame's answer: a throw becomes that frame's failure and
-/// clears what it shows; the next answer clears the failure.
-/// An action's failure (an export, a publish) belongs to its frame, as
-/// a node's does: the frame says why, and its next answer clears it.
+/// A throw becomes the frame's failure and clears what it shows. The next answer clears the failure.
 async function act(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
   try {
     await run();
@@ -293,13 +221,6 @@ async function act(frame: string, clear: () => void, run: () => Promise<void>): 
     console.error(frame, e);
   }
 }
-
-// ---------------------------------------------------------------------
-// This UI's answer graph (src/uis/kit.ts, "the answer graph").
-// Inputs: "active" / "compare" / "plans" (the documents),
-// "group" / "route" / "direction" / "stop" / "window" (the selection),
-// "view" (which view is on screen), "layer" / "coverage-params".
-// ---------------------------------------------------------------------
 
 const on = (...views: View[]) => () => views.includes(sd.view);
 
@@ -323,8 +244,6 @@ const request = answerGraph(
         const doc = active();
         if (!doc) return;
         sd.groups = (await ask("analysis", "service_groups", { network_hash: docOf(doc) })).groups;
-        // The selection keys on a combination's id; it stays while
-        // the new answer still holds that combination.
         if (!sd.groups.some((g) => g.id === sd.group)) {
           sd.group = sd.groups[0]?.id ?? "";
           touch("group");
@@ -372,8 +291,6 @@ const request = answerGraph(
       },
     },
     {
-      // The day's numbers beside its shape, on the same date: when
-      // service runs, how many stops it serves, where routes meet.
       id: "analysis.network_stats",
       frame: "DayProfile",
       needs: ["document.active", "group", "view"],
@@ -418,10 +335,7 @@ const request = answerGraph(
       },
     },
     {
-      // The vehicles the plan needs on the group's day (D-46): the
-      // authored blocks, and the trips a change added on no block,
-      // chained by the suggestion — under the terminals' recovery
-      // floors, since this UI loads no work rules.
+      // Runs under the terminals' recovery floors, since this UI loads no work rules (D-46).
       id: "runcut.suggest_blocks",
       frame: "Vehicles",
       needs: ["document.active", "group"],
@@ -537,8 +451,6 @@ const request = answerGraph(
       },
     },
     {
-      // The stops by name: the hub picker, and the route view's
-      // insert-a-stop picker.
       id: "directory.stops",
       frame: "HubPicker",
       needs: ["document.active", "view"],
@@ -608,8 +520,6 @@ const request = answerGraph(
       },
     },
     {
-      // The ranking a planner scans before picking a hub: the
-      // longest waits on the group's day, in the hour window.
       id: "analysis.longest_waits",
       frame: "LongestWaits",
       needs: ["document.active", "group", "window", "view"],
@@ -641,9 +551,7 @@ const request = answerGraph(
       },
     },
     {
-      // The plan's health — last: registering the document in
-      // cap-network is the cost, and cap-author already answered it
-      // for a document it authored.
+      // Last, because registering the document in cap-network is the cost, and cap-author already answered it for a document it authored.
       id: "network.validate",
       frame: "Readiness",
       needs: ["document.active", "published", "stops-doc"],
@@ -655,8 +563,7 @@ const request = answerGraph(
         const { issues, warnings } =
           authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
         sd.issues = issues;
-        // and the stops it visits that are not in service over its
-        // period, as the stops document records them (D-157)
+        // Stops that the plan visits and that are not in service over its period also warn, as the stops document records them (D-157).
         sd.warnings = [...warnings, ...(await stopWarnings(docOf(doc), heldPlans, heldStops))];
       },
     },
@@ -669,8 +576,7 @@ const request = answerGraph(
   sd.inputs,
 );
 
-/// One host step at a time: ops run on this thread, so the status
-/// paints a frame before a real-size feed's work starts.
+/// Ops run on this thread, so the status paints a frame before a real-size feed's work starts.
 async function step<T>(label: string, run: () => Promise<T>): Promise<T | undefined> {
   sd.busy = true;
   say(label);
@@ -693,9 +599,7 @@ function planStatus(): void {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/// After a change, the status says what the plan's health now is, as
-/// the answer gave it — a change that breaks a block says so where
-/// the planner made it, not only on the Proposal view.
+/// A change that breaks a block says so where the planner made it, not only on the Proposal view.
 function changeStatus(done: string): void {
   const health =
     sd.issues.length || sd.warnings.length
@@ -703,10 +607,6 @@ function changeStatus(done: string): void {
       : "The plan has no issues.";
   say(`${done} ${health}`, sd.issues.length > 0);
 }
-
-// ---------------------------------------------------------------------
-// the URL hash — the selection, bookmarkable
-// ---------------------------------------------------------------------
 
 function writeHash(): void {
   const q = new URLSearchParams();
@@ -737,24 +637,16 @@ function readHash(): void {
   if (base && getAllPlans()[base]) sd.compareKey = base;
 }
 
-/// Set inputs and answer what reads them, then keep the hash.
 async function select(...inputs: string[]): Promise<void> {
   writeHash();
   await request(...inputs);
   writeHash();
 }
 
-// ---------------------------------------------------------------------
-// The inputs (its ui.json's `inputs`, read by the kit): each reader
-// answers its document, null for none, or throws when the read fails.
-// ---------------------------------------------------------------------
-
 type Manifest = DeploymentManifest;
 
 let manifest: Manifest | null = null;
-/// The documents the inputs hold: the published plan set, the stops
-/// document a plan reads (D-157), and the published network a first
-/// plan forks (read only while no plan is open).
+/// The published network is read only while no plan is open.
 let heldPlans: PublishedPlans | null = null;
 let heldStops: Doc | null = null;
 let servedBase: { network: Doc<Network>; boundary: Doc<Boundary> } | null = null;
@@ -794,8 +686,7 @@ const readers: Record<string, Reader<any>> = {
     adopt: (doc: Doc | null) => void (heldStops = doc),
   },
   network: {
-    // The published network (GET /network), the base a first plan
-    // forks: read only while the device holds no plan.
+    // The base that a first plan forks. Read only while the device holds no plan.
     read: async ({ signal }) => {
       if (Object.keys(getAllPlans()).length) return null;
       const got = await servedNetworkValue(signal);
@@ -804,44 +695,29 @@ const readers: Record<string, Reader<any>> = {
     adopt: (got) => void (servedBase = got),
   },
 };
-/// The pin of the plan set the page holds.
 let heldPlansPin: string | null = null;
 
 const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, sd.inputs, request);
 
-/// The inputs a publish moves: the manifest, and what it pins.
 const WRITTEN = ["manifest", "plans", "stops"];
 
-/// Whether the server did not answer the last read of the manifest:
-/// the page works from its last documents.
 export function offline(): boolean {
   const m = sd.inputs.manifest;
   return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
 }
 
-/// When the server last confirmed the documents the page works from
-/// ("4:05 PM"), while it is offline; else "".
 export function asOf(): string {
   const m = sd.inputs.manifest;
   if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
   return clockLabelAt(m.asOfMs);
 }
 
-// ---------------------------------------------------------------------
-// boot and loaders
-// ---------------------------------------------------------------------
-
-/// The plan set restores as stored; a plan is read into the current
-/// shape when it is first opened (`document.*` nodes).
 export async function boot(): Promise<void> {
-  // The agency's zone before anything reads the date (the pick in
-  // force is the agency's today's).
   void installApp();
   onBuildReady(() => (sd.updateReady = true));
   await Promise.all([restorePlans(readStoredSet), resumeSignIn()]);
   await openOutbox("service-design", () => void published());
   await inputs.start();
-  // The writes that wait on the device, and a new build.
   clockEvery(POLL_MS, () => {
     void sendWaiting();
     sd.updateReady = buildWaiting();
@@ -853,8 +729,7 @@ export async function boot(): Promise<void> {
     await openPlan(sd.activeKey);
     return;
   }
-  // A server started with -feed publishes its network: the base
-  // every fork copies, with no import here.
+  // A server started with -feed publishes its network, the base that every fork copies. No import is needed here.
   const key = await step("Loading the published network…", async () => {
     const base = sd.inputs.network;
     if (base?.kind === "failed") throw new Error(inputLabel(base));
@@ -872,8 +747,6 @@ export async function boot(): Promise<void> {
   else if (!sd.status.startsWith("Error")) say("Load a GTFS feed to begin.");
 }
 
-/// A feed becomes a plan: the network capability imports it into an
-/// unframed document (the base every fork copies).
 export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
   const key = await step(`Importing ${label}…`, async () => {
     const feed = new Doc("feed", { bytes });
@@ -896,8 +769,7 @@ export async function loadLayerBytes(bytes: Uint8Array): Promise<void> {
     const loaded = await load("analysis", doc);
     layer = doc;
     const fields = (loaded.fields ?? []) as LayerField[];
-    // The first weight until the planner picks one; its name until
-    // they say what it means.
+    // The first field is the weight until the planner picks one.
     const field = fields[0]?.name ?? "";
     sd.layer = {
       features: Number(loaded.features),
@@ -911,17 +783,11 @@ export async function loadLayerBytes(bytes: Uint8Array): Promise<void> {
   await select("layer");
 }
 
-/// The planner's reading of the layer: which field is the weight, and
-/// what it means.
 export function setLayerReading(field: string, label: string): Promise<void> {
   if (!sd.layer) return Promise.resolve();
   sd.layer = { ...sd.layer, field, label: label.trim() || field };
   return select("layer");
 }
-
-// ---------------------------------------------------------------------
-// the plan set and the chain
-// ---------------------------------------------------------------------
 
 export async function openPlan(key: string): Promise<void> {
   if (!getAllPlans()[key]) return;
@@ -938,10 +804,7 @@ export function setCompare(key: string): Promise<void> {
   return select("compare");
 }
 
-/// The service-change workflow: the fork is the active document under
-/// a new plan frame (a set_plan edit; the host mints the identity).
-/// `through` (optional) is the period's last day: the edit carries every
-/// weekly calendar to it (D-41).
+/// The fork is the active document under a new plan frame (a set_plan edit). `through` is the period's last day: the edit carries every weekly calendar to it (D-41).
 export async function fork(name: string, effectiveFrom: string, through = ""): Promise<void> {
   const doc = active();
   if (!doc || !name.trim() || !effectiveFrom) {
@@ -966,10 +829,6 @@ export async function fork(name: string, effectiveFrom: string, through = ""): P
   say(`Forked "${name.trim()}" from ${sd.plans.find((p) => p.key === from)?.name}.`);
 }
 
-// ---------------------------------------------------------------------
-// the selection — each handler sets its input and requests it
-// ---------------------------------------------------------------------
-
 export function setView(view: View): Promise<void> {
   sd.view = view;
   return select("view");
@@ -981,12 +840,10 @@ export function selectGroup(group: string): Promise<void> {
   return select("group");
 }
 
-/// Which member of the group the gestures change (D-8).
 export function setEditType(type: string): void {
   sd.editType = type;
 }
 
-/// A route chosen anywhere opens the route view.
 export function openRoute(route: string): Promise<void> {
   if (sd.route !== route) sd.selectedStop = "";
   sd.route = route;
@@ -1009,7 +866,6 @@ export function selectTimetableStop(stop: string): void {
   sd.selectedStop = sd.selectedStop === stop ? "" : stop;
 }
 
-/// A stop chosen anywhere opens the hubs view on it.
 export function openStop(stop: string): Promise<void> {
   sd.stop = stop;
   sd.view = "hubs";
@@ -1038,12 +894,11 @@ export function pickUnserved(i: number): void {
   sd.unservedPick = i;
 }
 
-/// Why a frame has no answer, as text ("" when it answered).
 export function why(frame: string): string {
   return reason(sd.frames[frame]);
 }
 
-/// Each failed frame asks again: errors are never cached.
+/// Errors are never cached.
 export function retry(): Promise<void> {
   return request.retry();
 }
@@ -1052,10 +907,6 @@ export function setCoverageParams(params: CoverageParams): Promise<void> {
   sd.coverageParams = params;
   return select("coverage-params");
 }
-
-// ---------------------------------------------------------------------
-// changes — NetworkEdits through cap-author, the answer adopted
-// ---------------------------------------------------------------------
 
 async function apply(doc: Network, edits: NetworkEdit[]) {
   if (!(await available("author"))) {
@@ -1087,9 +938,7 @@ async function adopt(next: Network, health: { issues: NetworkError[]; warnings: 
   changeStatus(done);
 }
 
-/// Apply a change to the ACTIVE plan and re-answer everything that
-/// reads it. The base import is never edited in place: changing an
-/// unframed plan asks for a fork first.
+/// The base import is never edited in place. Changing an unframed plan asks for a fork first.
 export async function change(edits: NetworkEdit[]): Promise<void> {
   const doc = active();
   if (!doc) return;
@@ -1120,23 +969,17 @@ export async function redoChange(): Promise<void> {
   await adopt(next, null, "Redone.");
 }
 
-/// The edits omit `direction` for the patterns in none. A gesture
-/// acts on one service type (D-8), the member the panel names.
+/// A gesture acts on one service type (D-8), the member the panel names.
 function where() {
   return { route: sd.route, direction: sd.direction ?? undefined, service_type: sd.editType };
 }
 
-/// The route view's gestures, stated against the selected route,
-/// direction, and group (cap-author owns every rule). A frequency
-/// target is not here: what it keeps of the trips already there is
-/// D-54, and the op's rigid grid is QAF-90.
+/// A frequency target is not here. What it keeps of the trips already there is D-54, and the op's rigid grid is QAF-90.
 export const gestures = {
   span: (first_secs: number | null, last_secs: number | null) =>
     change([{ edit: "set_span", ...where(), first_secs: first_secs ?? undefined, last_secs: last_secs ?? undefined }]),
   running: (from_secs: number, to_secs: number, delta_secs: number) =>
     change([{ edit: "adjust_running_time", ...where(), from_secs, to_secs, delta_secs }]),
-  /// One trip moved on its own: it keeps its id, running times, and
-  /// block.
   retime: (trip: string, to_secs: number) => change([{ edit: "retime_trip", trip, to_secs }]),
   insertStop: (stop: string, after: string) =>
     change([{ edit: "insert_direction_stop", route: sd.route, direction: sd.direction ?? undefined, stop, after }]),
@@ -1146,22 +989,13 @@ export const gestures = {
     }),
 };
 
-// ---------------------------------------------------------------------
-// the publish path — the network's export, downloaded; and the pick
-// published to the deployment (POST /plans), its answer shown as given
-// ---------------------------------------------------------------------
-
-/// Publish the active plan as a pick: the server's modules validate it
-/// and decide whether it is refused (server/openapi.json, POST /plans); the
-/// page sends the document and shows what came back.
+/// The server's modules validate the pick and decide whether it is refused (server/openapi.json, POST /plans). The page shows what came back.
 export async function publishPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   sd.published = null;
   sd.publishRefused = [];
-  // The publish runs when it is sent, against the published plans as
-  // they are then (D-189): while the server does not answer, it waits
-  // on this device.
+  // The publish runs when it is sent, against the published plans as they are then (D-189). While the server does not answer, it waits on this device.
   await act("Publish", () => {}, async () => {
     const outcome = await queueWrite({ url: "plans", body: doc, label: `Publish "${doc.plan?.name ?? "plan"}"` });
     if (outcome.state === "waiting") {
@@ -1199,43 +1033,30 @@ export async function exportPlan(): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------
-// the outbox and the build, as the page shows them (D-189)
-// ---------------------------------------------------------------------
-
-/// How often the page sends what waits and looks for a new build. The
-/// inputs' intervals are in its ui.json.
 const POLL_MS = 30_000;
 
-/// A publish that waited was kept: the published plans read again.
 async function published(): Promise<void> {
   say("A publish that waited on this device was sent.");
   await inputs.read(...WRITTEN);
 }
 
-/// The writes the server refused, each with its reasons in words.
 export function heldWrites(): { key: string; label: string; reason: string }[] {
   return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
 }
 
-/// Send what waits now.
 export function sendNow(): Promise<void> {
   return sendWaiting();
 }
 
-/// A refused publish sent again, against the published plans as they
-/// are now.
 export async function retryHeld(key: string): Promise<void> {
   await retryWrite(key);
 }
 
-/// The person drops a refused write.
 export function discardHeld(key: string): Promise<void> {
   return discardWrite(key);
 }
 
-/// The person accepts the new version. The plans live on the device, so
-/// a reload keeps them; it waits while a change is under way.
+/// The plans live on the device, so a reload keeps them. It waits while a change is under way.
 export function applyUpdate(): void {
   if (sd.busy) return;
   applyBuild();

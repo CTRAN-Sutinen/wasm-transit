@@ -1,7 +1,5 @@
-// The docs site: `node tools/docs-site.mjs OUT` writes static HTML from
-// the registry. These tests check that the site lists every capability,
-// every op, every kernel op, and every document kind, and that it links
-// without a broken link.
+// Tests `node tools/docs-site.mjs OUT`: the site lists every capability,
+// op, kernel op, and document kind, and has no broken link.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
@@ -65,8 +63,8 @@ test("every local link in every page points at a page that exists", () => {
   }
 });
 
-// The architecture page draws from cargo's view of the workspace and
-// from the registry. These tests read the same sources, so a crate, a
+// The architecture page draws from cargo's view of the workspace and from
+// the registry. These tests read the same sources, so a crate, a
 // dependency, or a read that the page leaves out fails here.
 const metadata = JSON.parse(
   execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps", "--offline"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }),

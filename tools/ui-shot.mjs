@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-/// The UI QA driver: open one generated UI's page in a real browser,
-/// optionally run steps on it, and save a screenshot — printing what a
-/// reviewer needs beside the picture: the page's status line, its URL
-/// hash (the selection), and every page error and console error.
+/// The UI QA driver. It opens one generated UI's page in a real browser,
+/// optionally runs steps on it, and saves a screenshot. It prints the
+/// page's status line, its URL hash (the selection), and every page error
+/// and console error.
 ///
-/// It runs against `just qa` (vite on :5174 over a sync server on the
-/// QA feed) and keeps ONE browser profile in .qa/profile, so the plans
-/// a walk forked stay in IndexedDB between runs — a walk forks once.
+/// It runs against `just qa` (vite on :5174 over a sync server on the QA
+/// feed). It keeps one browser profile in .qa/profile, so the plans that a
+/// walk forked stay in IndexedDB between runs and a walk forks once.
 ///
 ///   node tools/ui-shot.mjs <ui> [options]
 ///
@@ -32,8 +32,8 @@
 ///                                     profile): a second loop on other
 ///                                     ports keeps its own plans
 ///
-/// Service workers are blocked (a worker would serve the last build's
-/// files, not the dev server's).
+/// Service workers are blocked, because a worker would serve the last
+/// build's files instead of the dev server's.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -82,8 +82,7 @@ page.on("console", (m) => {
 page.on("dialog", (d) => d.accept());
 
 const status = async () => (await page.getByTestId("status").first().textContent({ timeout: 1000 }).catch(() => ""))?.trim() ?? "";
-/// Until the page is not busy (its status line leads with "…" while
-/// it reads), up to a minute, then `wait` more for the views to paint.
+// The page is busy while its status line leads with "…".
 async function settle() {
   const until = Date.now() + 60_000;
   await page.waitForTimeout(300);

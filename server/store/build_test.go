@@ -9,15 +9,13 @@ import (
 	"time"
 )
 
-// A build (D-80, docs/FORMATS.md "Builds") names other blobs: every
-// file the release built is a blob, and the build document lists them. Every build the `build` pointer ever
-// logged stays whole — its document and every file it names — so a
-// rollback is a pointer move to bytes that still exist.
+// D-80, docs/FORMATS.md "Builds". Every build the `build` pointer ever
+// logged stays whole, so a rollback is a pointer move to bytes that still
+// exist.
 
 var buildEnv = Envelope{Kind: BuildKind, SchemaVersion: 1, ProducedBy: "server"}
 var fileEnv = Envelope{Kind: BuildFileKind, SchemaVersion: 1, ProducedBy: "server"}
 
-// build makes a build document over the given files (path → bytes).
 func build(t *testing.T, files map[string]string) ([]byte, map[string][]byte) {
 	t.Helper()
 	doc := BuildDoc{Kind: BuildKind, SchemaVersion: 1}
@@ -73,9 +71,8 @@ func TestEveryLoggedBuildKeepsItsFilesThroughGC(t *testing.T) {
 	})
 }
 
-// A UI's builds (D-171) are logged on a pointer of their own,
-// build.<id>. GC and verify read a build by its record's kind, so a
-// UI's logged builds keep their files the same way.
+// A UI's builds are logged on build.<id> (D-171). GC and verify read a build by
+// its record's kind.
 func TestAUIsLoggedBuildsKeepTheirFilesThroughGC(t *testing.T) {
 	each(t, func(t *testing.T, b Backend, s *Store) {
 		a, aFiles := build(t, map[string]string{"index.html": "stops A", "sw.js": "stops build A"})

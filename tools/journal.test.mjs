@@ -1,5 +1,5 @@
-// The journal and replay (tools/journal.mjs), over fake modules: a
-// journal that replays, and one that breaks each rule.
+// Tests tools/journal.mjs over fake modules: a journal that replays, and
+// one that breaks each rule.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

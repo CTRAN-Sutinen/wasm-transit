@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// The routes — a RENDER component over the directory's `entities`
-  /// answer for routes, narrowed by the filter's words (the op
-  /// matches; this emits what is typed, a beat after typing pauses).
   import type { EntityRow } from "../types/EntityRow";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { routeColor } from "./rideFormat";
@@ -16,7 +13,6 @@
     onback,
   }: {
     rows: EntityRow[] | null;
-    /// The directory's routes — each badge takes its route's color.
     routes: DirectoryRoute[];
     query: string;
     off: boolean;

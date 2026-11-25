@@ -1,25 +1,15 @@
 package main
 
-// The derived documents in the record (D-199; docs/architecture/storage.md,
-// "Derived documents"; docs/FORMATS.md, "Derivations"). In store mode a
-// document the server derives from its inputs is stored when it is made:
+// The derived documents (D-199; docs/architecture/storage.md, "Derived
+// documents"; docs/FORMATS.md, "Derivations"):
 //
 //	network, boundary  cap-network's import of the GTFS zip (source.feed)
 //	streets            cap-streets' import of the street layer (source.streets)
 //	walks              cap-streets' walk table over the streets and the network
 //
-// Each document is the head of the pointer of its tag, with the module
-// that made it in its envelope. A derivation record then names the
-// inputs, the module, the documents, and the rest of the module's answer
-// (an import's notes, its zone, and its first service date). It is
-// committed last, on derived.<what>, so it is the commit point: a crash
-// before it leaves the documents' pointers ahead, and the next boot
+// The derivation record is committed last, so it is the commit point. A
+// crash before it leaves the documents' pointers ahead, and the next boot
 // derives again and commits the same bytes.
-//
-// A boot reads the record. When its inputs are the hashes of the inputs
-// just read, and each document is stored in the version this build
-// writes, the server serves the stored documents and runs no module. An
-// input whose bytes changed is derived once more.
 
 import (
 	"bytes"
@@ -33,40 +23,30 @@ import (
 	"rustwasm/server/store"
 )
 
-// DerivationKind is the derivation record's kind.
 const DerivationKind = "derivation"
 
-// The derivation records' pointers.
 const (
 	derivedNetworkPointer = "derived.network"
 	derivedStreetsPointer = "derived.streets"
 	derivedWalksPointer   = "derived.walks"
 )
 
-// Derivation names what a module made from which inputs. It is a
-// host-owned kind (server/schemas/derivation.v1.schema.json).
+// Derivation is a host-owned kind (server/schemas/derivation.v1.schema.json).
 type Derivation struct {
-	Kind          string `json:"kind"`
-	SchemaVersion int    `json:"schema_version"`
-	// Inputs are the hashes the module read, in the order it read them.
-	Inputs []string `json:"inputs"`
-	// Module is the module that made the documents: "<role>@sha256:<hex>".
-	Module string `json:"module"`
-	// Documents are what it made, each the head of the pointer of its tag.
+	Kind          string   `json:"kind"`
+	SchemaVersion int      `json:"schema_version"`
+	Inputs        []string `json:"inputs"`
+	// Module is "<role>@sha256:<hex>".
+	Module    string            `json:"module"`
 	Documents []DerivedDocument `json:"documents"`
-	// Answer is the rest of the module's answer, as it answered it.
-	Answer json.RawMessage `json:"answer"`
+	Answer    json.RawMessage   `json:"answer"`
 }
 
-// DerivedDocument is one document a derivation made: its tag (the
-// pointer it heads) and its hash.
 type DerivedDocument struct {
 	Tag  string `json:"tag"`
 	Hash string `json:"hash"`
 }
 
-// derivedDoc is a document to store: its tag, its envelope's kind and
-// version, its canonical bytes, and their hash.
 type derivedDoc struct {
 	tag       string
 	storeKind string
@@ -75,8 +55,7 @@ type derivedDoc struct {
 	hash      string
 }
 
-// derivedKinds is each derived tag's envelope kind and the version this
-// build writes. A stored document in another version is derived again.
+// A stored document in another version is derived again.
 var derivedKinds = map[string]struct {
 	storeKind string
 	version   uint32
@@ -87,8 +66,6 @@ var derivedKinds = map[string]struct {
 	"walks":    {"walks", 1},
 }
 
-// isDerivedPointer says whether name is a pointer only the server's
-// derivations write.
 func isDerivedPointer(name string) bool {
 	if _, ok := derivedKinds[name]; ok {
 		return true
@@ -96,10 +73,6 @@ func isDerivedPointer(name string) bool {
 	return name == derivedNetworkPointer || name == derivedStreetsPointer || name == derivedWalksPointer
 }
 
-// storedDerivation answers the stored derivation on pointer when it was
-// made from inputs and holds the documents tags, each in the version
-// this build writes: the module's answer and each document's bytes by
-// tag. False when the server must derive again.
 func storedDerivation(st *store.Store, pointer string, inputs []string, tags ...string) (json.RawMessage, map[string][]byte, bool) {
 	head, found, err := st.Head(pointer)
 	if err != nil || !found {
@@ -138,10 +111,8 @@ func storedDerivation(st *store.Store, pointer string, inputs []string, tags ...
 	return d.Answer, docs, true
 }
 
-// commitDerivation stores each document as the head of its tag's
-// pointer, then the derivation record on pointer. A failed commit is
-// logged, never fatal: the documents stand in memory, and the next
-// derivation tries again.
+// A failed commit is logged, never fatal: the documents stand in memory,
+// and the next derivation tries again.
 func commitDerivation(st *store.Store, pointer string, inputs []string, module string, answer json.RawMessage, docs ...derivedDoc) {
 	d := Derivation{Kind: DerivationKind, SchemaVersion: 1, Inputs: inputs, Module: module, Documents: []DerivedDocument{}, Answer: answer}
 	for _, doc := range docs {
@@ -163,10 +134,9 @@ func commitDerivation(st *store.Store, pointer string, inputs []string, module s
 	}
 }
 
-// commitHead makes body the head of pointer under writer. Another process that
-// committed the same bytes first is a success. Another head is retried
-// over, a few times: a derivation of the same inputs makes the same
-// bytes, so the last commit of the inputs just read stands.
+// Another process that committed the same bytes first is a success. A
+// derivation of the same inputs makes the same bytes, so another head is
+// retried over a few times.
 func commitHead(st *store.Store, pointer string, body []byte, env store.Envelope, wantHash, writer string) error {
 	for attempt := 0; ; attempt++ {
 		head, found, err := st.Head(pointer)
@@ -192,8 +162,6 @@ func commitHead(st *store.Store, pointer string, body []byte, env store.Envelope
 	}
 }
 
-// answerWith answers the module's answer with fields set to the
-// documents' bytes, as they are.
 func answerWith(answer json.RawMessage, fields map[string][]byte) (json.RawMessage, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(answer, &m); err != nil {
@@ -205,8 +173,6 @@ func answerWith(answer json.RawMessage, fields map[string][]byte) (json.RawMessa
 	return jsonBytes(m)
 }
 
-// answerWithout answers the module's answer with keys removed: the
-// documents a derivation stores apart.
 func answerWithout(answer json.RawMessage, keys ...string) (json.RawMessage, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(answer, &m); err != nil {
@@ -218,8 +184,8 @@ func answerWithout(answer json.RawMessage, keys ...string) (json.RawMessage, err
 	return jsonBytes(m)
 }
 
-// jsonBytes marshals v with its strings as they are (no HTML escapes),
-// and with no trailing newline: one value, one set of bytes.
+// jsonBytes writes no HTML escapes and no trailing newline, so one value
+// has one set of bytes.
 func jsonBytes(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

@@ -1,20 +1,16 @@
 package store
 
-// The append-only logs (D-190; docs/FORMATS.md, "The logs"). A log is
-// the record of one consistency domain. Each entry is one transaction.
-// The current state is a fold of the entries, which the module that
-// owns the log's kinds computes. This file only orders and keeps the
-// entries. It treats them as opaque bytes.
+// The append-only logs (D-190; docs/FORMATS.md, "The logs"). The store
+// treats entries as opaque bytes.
 //
 //	logs/<log>/entries/<seq, 20 digits>.json      one entry
 //	logs/<log>/checkpoints/<seq, 20 digits>.json  the fold up to seq
 //
-// An entry is committed by a create of seq+1 that lands only if the key
-// is absent, the same CAS as a pointer record. After the create, the
-// engine reads the entry back and compares the bytes, so a store that
-// ignored the condition is caught at once (rule 6). A missing seq below
-// the head is a gap. A gap stops writes to the log until an entry that
-// names the cause closes it (rule 4).
+// An entry commits by a create of seq+1 that lands only if the key is
+// absent. The store then reads the entry back and compares the bytes, so
+// a store that ignored the condition is caught at once (rule 6). A
+// missing seq below the head is a gap. It stops writes until an entry
+// that names the cause closes it (rule 4).
 
 import (
 	"bytes"
@@ -27,14 +23,11 @@ import (
 	"time"
 )
 
-// StoredEntry is one entry as the bucket holds it: the seq in its key,
-// and its bytes.
 type StoredEntry struct {
 	Seq  int64  `json:"seq"`
 	Text string `json:"text"`
 }
 
-// LogHead is a log's state as the bucket lists it.
 type LogHead struct {
 	Log string `json:"log"`
 	// Seq is the highest entry listed (0: the log is empty).
@@ -46,14 +39,13 @@ type LogHead struct {
 	Checkpoint int64 `json:"checkpoint"`
 	// AsOfMs is when the bucket last confirmed the head (Unix ms).
 	AsOfMs int64 `json:"as_of_ms"`
-	// Stale: the bucket did not answer this read, and the head is this
-	// process's, or its disk cache's, as of AsOfMs (D-119).
+	// Stale means the bucket did not answer this read, so the head is the
+	// one that this process or its disk cache held at AsOfMs (D-119).
 	Stale bool `json:"stale,omitempty"`
 }
 
-// EntryConflictError is a lost race: another writer created the seq
-// first. The caller reads the log again, runs its receive path again,
-// and retries (rule 2).
+// EntryConflictError means another writer created the seq first. The
+// caller reads the log again and retries (rule 2).
 type EntryConflictError struct {
 	Log string
 	Seq int64
@@ -63,8 +55,6 @@ func (e *EntryConflictError) Error() string {
 	return fmt.Sprintf("store: log %q entry %d exists (another writer took it)", e.Log, e.Seq)
 }
 
-// GapError is a write to a log that has a gap. Only an entry at a
-// missing seq is accepted until the gap closes.
 type GapError struct {
 	Log  string
 	Gaps []int64
@@ -74,19 +64,17 @@ func (e *GapError) Error() string {
 	return fmt.Sprintf("store: log %q has a gap at %v: writes stop until an entry that names the cause closes it", e.Log, e.Gaps)
 }
 
-// ErrOverwritten is an entry whose bytes, read back after its create,
-// are not the bytes written: the store did not honor the conditional
-// create. It is never a lost race. An operator must look at the store.
+// ErrOverwritten means the store did not honor the conditional create.
+// It is never a lost race, and an operator must look at the store.
 var ErrOverwritten = errors.New("store: an entry read back differs from the bytes written (the store ignored the create condition)")
 
-// logState is this process's view of one log.
 type logState struct {
 	mu     sync.Mutex
 	loaded bool
 	head   LogHead
 	probed time.Time
-	// fromCache: the head is the disk cache's. The next list the bucket
-	// answers starts again from the checkpoints.
+	// fromCache means the head is the disk cache's. The next list that
+	// the bucket answers starts again from the checkpoints.
 	fromCache bool
 }
 
@@ -100,8 +88,6 @@ func checkpointKey(name string, seq int64) string {
 	return fmt.Sprintf("%s%020d.json", checkpointsPrefix(name), seq)
 }
 
-// keySeq parses the seq of a key under prefix; ok is false for any
-// other key.
 func keySeq(prefix, key string) (int64, bool) {
 	file, found := strings.CutPrefix(key, prefix)
 	if !found {
@@ -132,9 +118,9 @@ func (s *Store) logState(name string) *logState {
 	return l
 }
 
-// listLog reads the log's head from the bucket. A first read lists the
-// checkpoints, then the entries after the newest one. A later read
-// lists only the entries after the cached head. Caller holds l.mu.
+// listLog lists the checkpoints on a first read, then the entries after
+// the newest one. Later reads list only the entries after the cached
+// head. The caller holds l.mu.
 func (s *Store) listLog(l *logState, name string) error {
 	ctx := context.Background()
 	head := l.head
@@ -190,8 +176,6 @@ func (s *Store) listLog(l *logState, name string) error {
 	return nil
 }
 
-// keepLogHead writes the log's confirmed head to the disk cache.
-// Caller holds l.mu.
 func (s *Store) keepLogHead(l *logState, name string) {
 	if s.disk == nil {
 		return
@@ -202,8 +186,7 @@ func (s *Store) keepLogHead(l *logState, name string) {
 	s.disk.putLogHead(name, h)
 }
 
-// relistLog lists a log the disk cache loaded again from the start. On
-// a failure it keeps the cache's head. Caller holds l.mu.
+// relistLog keeps the cache's head on a failure.
 func (s *Store) relistLog(l *logState, name string) error {
 	saved, probed := l.head, l.probed
 	l.head, l.loaded = LogHead{Log: name}, false
@@ -215,8 +198,6 @@ func (s *Store) relistLog(l *logState, name string) error {
 	return nil
 }
 
-// listFresh lists the log: from the start when the disk cache loaded
-// it. Caller holds l.mu.
 func (s *Store) listFresh(l *logState, name string) error {
 	if l.fromCache {
 		return s.relistLog(l, name)
@@ -224,9 +205,8 @@ func (s *Store) listFresh(l *logState, name string) error {
 	return s.listLog(l, name)
 }
 
-// freshLog brings the cached head within the freshness window: a first
-// read lists the log; later, at most once per window, one Stat of the
-// next entry. Caller holds l.mu.
+// freshLog does one Stat of the next entry at most once per
+// FreshnessWindow. The caller holds l.mu.
 func (s *Store) freshLog(l *logState, name string) error {
 	if !l.loaded || l.fromCache || len(l.head.Gaps) > 0 {
 		return s.listFresh(l, name)
@@ -244,10 +224,9 @@ func (s *Store) freshLog(l *logState, name string) error {
 	return s.listLog(l, name)
 }
 
-// LogHeadOf answers a log's head: its highest entry, its gaps, and its
-// newest checkpoint. While the bucket does not answer, it answers the
-// head this process last confirmed, else the disk cache's, Stale; with
-// neither, the error.
+// LogHeadOf answers the head this process last confirmed, else the disk
+// cache's, marked Stale, while the bucket does not answer. With neither,
+// it answers the error.
 func (s *Store) LogHeadOf(name string) (LogHead, error) {
 	if !ValidPointerName(name) {
 		return LogHead{Log: name}, fmt.Errorf("store: %q is not a log name", name)
@@ -272,15 +251,13 @@ func (s *Store) LogHeadOf(name string) (LogHead, error) {
 	return h, nil
 }
 
-// AppendEntry creates the entry at seq, which must be the log's next
-// seq, from a log with no gap. A lost race answers *EntryConflictError.
-// After the create, the entry is read back and compared.
+// AppendEntry needs seq to be the next seq of a log with no gap. A lost
+// race answers *EntryConflictError.
 func (s *Store) AppendEntry(name string, seq int64, data []byte) error {
 	return s.createEntry(name, seq, data, false)
 }
 
-// CloseGap creates the entry at a missing seq below the head: the entry
-// that names why the seq was missing (rule 4). Any other seq is refused.
+// CloseGap refuses any seq except a missing one below the head (rule 4).
 func (s *Store) CloseGap(name string, seq int64, data []byte) error {
 	return s.createEntry(name, seq, data, true)
 }
@@ -330,11 +307,9 @@ func (s *Store) createEntry(name string, seq int64, data []byte, gap bool) error
 	return s.listLog(l, name)
 }
 
-// Entries reads the entries after seq `after`, up to `upto` (0: the
-// head), in order. A missing entry in the range is a gap, and is
-// skipped: the caller sees it in LogHead.Gaps. While the bucket does not
-// answer, the disk cache answers when it holds every entry in the range
-// up to the head it kept.
+// Entries reads the entries after `after`, up to `upto` (0 is the head).
+// It skips a gap, which LogHead.Gaps names. While the bucket does not
+// answer, the disk cache answers when it holds every entry in the range.
 func (s *Store) Entries(name string, after, upto int64) ([]StoredEntry, error) {
 	if !ValidPointerName(name) {
 		return nil, fmt.Errorf("store: %q is not a log name", name)
@@ -354,8 +329,6 @@ func (s *Store) Entries(name string, after, upto int64) ([]StoredEntry, error) {
 	return out, nil
 }
 
-// cachedEntries answers Entries from the disk cache, or false when it
-// does not hold the whole range.
 func (s *Store) cachedEntries(name string, after, upto int64) ([]StoredEntry, bool) {
 	head, ok := s.disk.logHead(name)
 	if !ok {
@@ -425,9 +398,8 @@ func (s *Store) entries(name string, after, upto int64) ([]StoredEntry, error) {
 	return out, nil
 }
 
-// PutCheckpoint stores the fold at seq. It is create only: a checkpoint
-// that exists with the same bytes is a success, and one with other
-// bytes is an error, because two folds of the same entries must agree.
+// PutCheckpoint is create only. A checkpoint that exists with other bytes
+// is an error, because two folds of the same entries must agree.
 func (s *Store) PutCheckpoint(name string, seq int64, data []byte) error {
 	if !ValidPointerName(name) {
 		return fmt.Errorf("store: %q is not a log name", name)
@@ -457,8 +429,6 @@ func (s *Store) PutCheckpoint(name string, seq int64, data []byte) error {
 	return nil
 }
 
-// Checkpoints lists a log's checkpoint seqs, oldest first. While the
-// bucket does not answer, it lists the disk cache's.
 func (s *Store) Checkpoints(name string) ([]int64, error) {
 	objs, err := s.b.List(context.Background(), checkpointsPrefix(name), "")
 	if errors.Is(err, ErrUnavailable) && s.disk != nil {
@@ -478,8 +448,6 @@ func (s *Store) Checkpoints(name string) ([]int64, error) {
 	return out, nil
 }
 
-// Checkpoint reads the checkpoint at seq, from the bucket, else from
-// the disk cache while the bucket does not answer.
 func (s *Store) Checkpoint(name string, seq int64) ([]byte, error) {
 	data, _, err := s.b.Get(context.Background(), checkpointKey(name, seq))
 	if errors.Is(err, ErrUnavailable) {

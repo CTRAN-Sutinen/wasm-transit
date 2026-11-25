@@ -1,7 +1,3 @@
-/// The words a stop's life is shown in (D-157): its statuses, its
-/// events, why a change was refused, and the amenity names (D-154).
-/// FORMATTING only — the statuses, what a stop may become, and every
-/// refusal are cap-stops' answers.
 
 export const STATUS_WORDS: Record<string, string> = {
   planned: "Planned",
@@ -12,7 +8,6 @@ export const STATUS_WORDS: Record<string, string> = {
   retired: "Retired",
 };
 
-/// Each status's colour on the map and its key (fill, outline).
 export const STATUS_COLORS: Record<string, [string, string]> = {
   planned: ["#ede9fe", "#7c3aed"],
   permitted: ["#dbeafe", "#2563eb"],
@@ -33,7 +28,6 @@ export const EVENT_WORDS: Record<string, string> = {
   retired: "Retired",
 };
 
-/// The button that records each lifecycle event.
 export const ACTION_WORDS: Record<string, string> = {
   planned: "Planned",
   permitted: "Permitted",
@@ -68,8 +62,6 @@ export function problemWords(kind: string): string {
   return PROBLEMS[kind] ?? kind.replaceAll("_", " ");
 }
 
-/// The amenity names (D-154; the list a page offers is cap-stops
-/// `questions`') as a person reads them.
 const AMENITY_WORDS: Record<string, string> = {
   shelter: "Shelter",
   bench: "Bench",
@@ -89,16 +81,12 @@ export function amenityWords(name: string): string {
   return AMENITY_WORDS[name] ?? plain(name);
 }
 
-/// A name or an answer with no words of its own, readable.
 function plain(name: string): string {
   const t = name.replaceAll(":", " ").replaceAll("_", " ");
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/// The site questions (D-158; the questions and their answers are
-/// cap-stops `questions`') as the worksheet words them, grouped as it
-/// groups them. A question the library adds and no group names shows
-/// under "Other".
+/// A question that the library adds and no group names shows under "Other".
 const SITE_WORDS: Record<string, string> = {
   on_street: "On street",
   cross_street: "Cross street",
@@ -164,8 +152,6 @@ export function answerWords(value: string): string {
   return ANSWER_WORDS[value] ?? plain(value);
 }
 
-/// The other systems a stop or its parts are named in (D-160), as the
-/// worksheets name them; the agency may add its own.
 export const REFS: [string, string][] = [
   ["sign", "Sign ID"],
   ["tms", "TMS"],
@@ -178,7 +164,6 @@ export function refWords(name: string): string {
   return REFS.find(([k]) => k === name)?.[1] ?? plain(name);
 }
 
-/// Why a request was refused (cap-requests' refusals, D-159), in words.
 export function requestProblemWords(p: { kind: string; field?: string; value?: string; date?: string }): string {
   switch (p.kind) {
     case "no_id":
@@ -204,8 +189,6 @@ export function requestProblemWords(p: { kind: string; field?: string; value?: s
   }
 }
 
-/// A request's job (cap-requests `vocabulary`), as the planner chooses
-/// it: its name, and what it means at the stop.
 export const JOB_WORDS: Record<string, [string, string]> = {
   new: ["New stop", "Install sign, post, and amenities."],
   reinstall: ["Reinstall", "Replace a removed sign or fixture."],
@@ -218,7 +201,6 @@ export function jobWords(job: string): string {
   return JOB_WORDS[job]?.[0] ?? plain(job);
 }
 
-/// A request's status (cap-requests `vocabulary`), in words.
 export const REQUEST_STATUS_WORDS: Record<string, string> = {
   drafted: "Draft",
   submitted: "Submitted",
@@ -231,10 +213,6 @@ export function requestStatusWords(status: string): string {
   return REQUEST_STATUS_WORDS[status] ?? plain(status);
 }
 
-/// What each change offered on a stop says it does — the choice's name
-/// and a line under it. `in_service` reads as a return when the stop is
-/// suspended. The changes a stop may take are cap-stops `stop`'s `next`.
-/// What was saved, as the status line says it.
 export function changedWords(kind: string, status: string | undefined, name: string, from: string, until: string): string {
   const till = until ? ` until ${until}` : "";
   switch (kind) {

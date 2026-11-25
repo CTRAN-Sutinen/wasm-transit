@@ -1,42 +1,6 @@
-/// THE ENGINE — the one piece of host code that calls a module op
-/// (docs/architecture/web.md, "The engine"). A host layer asks questions as
-/// data — `ask(capability, op, args)` — and holds DOCUMENTS, never
-/// modules or hashes:
-///
-/// - A `Doc` is one document version: its kind, its bytes or its value
-///   (JS owns the documents), and what it is read over (an edit
-///   document's network — kept with it). The host makes one when a
-///   document crosses in (a fetch, a file, IndexedDB) and passes it
-///   wherever an op argument is a `*_hash`; the engine registers it in
-///   that module instance on first use, through the kernel's load of
-///   its kind, and substitutes its hash.
-/// - A generated UI's page runs ONE module, its linked assembly (D-77;
-///   `assemble(ui)` names it before the first ask): every capability it
-///   uses over one kernel registry, so a document registers ONCE per
-///   page however many capabilities read it, and a document a
-///   capability mints there (the live document) is read by hash
-///   without crossing back. A capability outside it runs alone.
-/// - The engine checks the hash that a module answers for a document.
-///   Every module must answer the same hash. A served document must
-///   answer the hash that its server pins, so the check holds between a
-///   page's assembly and the server. A disagreement is an error.
-/// - An answer is cached under the journal's key: the module's bytes
-///   (its pinned hash — the assembly's, in a linked page) and the exact
-///   request bytes, which name the capability and every input by hash.
-///   Modules are pure, so a hit is the same answer.
-/// - The modules live on the bus worker (src/bus.worker.ts), off the
-///   thread the page renders on; every call here is async data.
-/// - A module may drop what it holds: an ephemeral kind bounds itself
-///   (rt snapshots and live documents keep their last few), the host
-///   names what survives (`keep`), and the worker replaces an instance
-///   whose memory passed its ceiling (every capability's state in it
-///   together). Asking for a dropped document is the module's
-///   unknown-hash error; the engine registers the document again (or
-///   mints it again, for one the page never received) and asks once
-///   more, so a host never sees it.
-///
-/// It knows the ABI (which op loads which kind) and nothing of the
-/// domain: if a departure, a trip, or a stop appears here, it leaked.
+// The design is in docs/architecture/web.md, "The engine". It knows the ABI
+// (which op loads which kind) and nothing of the domain. A departure, a
+// trip, or a stop here is a leak.
 
 import { noteRefusal } from "./versions";
 import { ReadFailed } from "./uis/inputs";
@@ -85,12 +49,6 @@ import type { PublishedPlan } from "./types/cap_plans/PublishedPlan";
 import type { PublishedPlans } from "./types/cap_plans/PublishedPlans";
 import type { WalkTable } from "./types/WalkTable";
 
-// ---------------------------------------------------------------------
-// the contract: capabilities, ops, and documents
-// ---------------------------------------------------------------------
-
-/// The capabilities the generated UIs assemble, each with its
-/// generated request and response types.
 type Caps = {
   alerts: [AlertsRequest, AlertsResponse];
   analysis: [AnalysisRequest, AnalysisResponse];
@@ -113,40 +71,29 @@ type Caps = {
 export type CapId = keyof Caps;
 export type OpOf<C extends CapId> = Caps[C][0]["op"];
 type RequestOf<C extends CapId, O> = Extract<Caps[C][0], { op: O }>;
-/// The answer to an op: tagged like its request.
 export type Answer<C extends CapId, O> = Extract<Caps[C][1], { op: O }>;
-/// An op's arguments: the request without its tag, every `*_hash`
-/// field taking a document instead of a hash.
 type DocFields<T> = { [K in keyof T]: K extends `${string}_hash` ? Doc | Exclude<T[K], string> : T[K] };
 export type Args<C extends CapId, O> = DocFields<Omit<RequestOf<C, O>, "op">>;
 
-/// A document kind that crosses into modules by a load op, by the id
-/// its line in the kind list gives it (crates/cap-abi/src/kinds.rs).
-/// The manifest's kernel ops answer its load.
+// The id is the kind's line in crates/cap-abi/src/kinds.rs.
 export type Kind = string;
 
-/// One document version. Immutable: a new version is a new Doc.
 export class Doc<V = unknown> {
   readonly kind: Kind;
-  /// The document as JS holds it (absent for a document that crossed
-  /// in as bytes only — the page never parses those).
+  // Undefined for a document that crossed in as bytes only. The page never
+  // parses those.
   readonly value: V | undefined;
-  /// The document this one is read over (an edit document's network).
   readonly over: Doc | null;
-  /// The hash a server pins for it; the first registration must answer it.
   readonly pin: string | null;
   #bytes: Uint8Array | null;
-  /// The identity, once a module answered it.
   #hash: string | null = null;
-  /// Per module instance: the load's answer (the hash plus what the
-  /// load reported — a feed's summary, a layer's headcount).
   readonly #loads = new Map<string, Promise<LoadAnswer>>();
-  /// For a document the page never received (minted by an op, declined
-  /// as an answer): the ask that mints it again where it was dropped.
+  // For a document the page never received: the ask that creates it again
+  // where an instance dropped it.
   remint: (() => Promise<unknown>) | null = null;
 
-  /// `{ minted: true }`: a document an op minted that the page declined
-  /// to receive — it lives only in the instance that minted it.
+  // `{ minted: true }` is a document that an op created and the page
+  // declined to receive. It lives only in the instance that created it.
   constructor(kind: Kind, source: { value: V } | { bytes: Uint8Array } | { minted: true }, opts: { over?: Doc; pin?: string | null } = {}) {
     this.kind = kind;
     this.value = "value" in source ? source.value : undefined;
@@ -155,19 +102,14 @@ export class Doc<V = unknown> {
     this.pin = opts.pin ?? null;
   }
 
-  /// Whether the document crossed in as bytes.
   get hasBytes(): boolean {
     return this.#bytes !== null;
   }
 
-  /// The document's identity, once any module has answered it (null
-  /// before its first registration).
   get hash(): string | null {
     return this.#hash;
   }
 
-  /// The document's bytes: as they crossed in, or its value's JSON
-  /// (encoded once, however many modules register it).
   bytes(): Uint8Array {
     if (this.#bytes === null && this.value === undefined) {
       throw new Error(`the ${this.kind} document never crossed to the page — it cannot be registered from here`);
@@ -176,8 +118,6 @@ export class Doc<V = unknown> {
     return this.#bytes;
   }
 
-  /// Record the identity a module answered — the pin first, then the
-  /// identity every other module answered.
   witness(cap: string, hash: string): void {
     if (this.pin && hash !== this.pin) {
       throw new Error(`the served ${this.kind} registers as ${hash}, the server pins ${this.pin}`);
@@ -188,8 +128,6 @@ export class Doc<V = unknown> {
     this.#hash = hash;
   }
 
-  /// The registration in one module instance (memoized by `slot`: the
-  /// module and its instance generation).
   loadIn(slot: string, run: () => Promise<LoadAnswer>): Promise<LoadAnswer> {
     let load = this.#loads.get(slot);
     if (!load) {
@@ -200,18 +138,13 @@ export class Doc<V = unknown> {
     return load;
   }
 
-  /// The module dropped it: the next use registers it again.
   forget(slot: string): void {
     this.#loads.delete(slot);
   }
 }
 
-/// A load op's answer: the document's hash in that module, and the
-/// rest of what the load reported.
 export type LoadAnswer = { hash: string; [field: string]: unknown };
 
-/// A frame's capability did not assemble (it failed to fetch, verify,
-/// or instantiate): the frame says so and every other frame answers.
 export class Unavailable extends Error {
   readonly cap: CapId;
   constructor(cap: CapId) {
@@ -220,39 +153,21 @@ export class Unavailable extends Error {
   }
 }
 
-// ---------------------------------------------------------------------
-// the ABI: how each kind is registered
-// ---------------------------------------------------------------------
-
-/// Each kind's kernel load, by the kind: the bulk op that registers a
-/// document of it from its bytes (cap_abi::kernel — the same op and the
-/// same hash in every module whose capabilities read the kind). The
-/// worker answers them from the manifest with the first assembly.
+// Each kind's bulk op code. The worker answers it from the manifest with
+// the first assembly.
 let kernelLoads: Record<string, number> | null = null;
 
-// ---------------------------------------------------------------------
-// the calls
-// ---------------------------------------------------------------------
-
-/// The generated UI this page is (its linked assembly answers every
-/// capability it links).
 let page: string | null = null;
 
-/// Name the page's generated UI, before its first ask: its capabilities
-/// answer inside its linked assembly (the manifest's `assemblies`).
 export function assemble(ui: string): void {
   if (assembly.size > 0 && page !== ui) throw new Error(`assemble("${ui}") after the first ask — name the page first`);
   page = ui;
 }
 
-/// A capability as the worker assembled it: its manifest entry and
-/// where it answers.
 type Placed = Capability & { route: Route };
 
-/// The capabilities asked for so far (null when one did not assemble).
 const assembly = new Map<string, Promise<Placed | null>>();
 
-/// The capability as the worker assembled it, or Unavailable.
 async function capOf(cap: CapId): Promise<Placed> {
   let got = assembly.get(cap);
   if (!got) {
@@ -269,15 +184,11 @@ async function capOf(cap: CapId): Promise<Placed> {
   return entry;
 }
 
-/// Whether the capabilities answer in one module instance (the page's
-/// linked assembly): a document one of them mints is read by the others
-/// by hash, so the page need not receive it.
 export async function together(...caps: CapId[]): Promise<boolean> {
   const placed = await Promise.all(caps.map((cap) => capOf(cap).then((p) => p.route.module, () => null)));
   return placed.every((m) => m !== null && m === placed[0]);
 }
 
-/// Whether a capability assembles (a frame's `off` flag reads this).
 export async function available(cap: CapId): Promise<boolean> {
   return capOf(cap).then(
     () => true,
@@ -285,9 +196,9 @@ export async function available(cap: CapId): Promise<boolean> {
   );
 }
 
-/// Per module instance, its generation: the worker replaced the
-/// instance (the memory ceiling) when it rises, and every registration
-/// memo of the old generation is void — for every capability in it.
+// The generation of each module instance rises when the worker replaces
+// the instance, which voids every registration memo of the old generation
+// for every capability in it.
 const generations = new Map<string, number>();
 const modules = new Map<string, string>();
 const slot = (cap: string): string => {
@@ -295,8 +206,6 @@ const slot = (cap: string): string => {
   return `${module}@${generations.get(module) ?? 0}`;
 };
 
-/// One call into a module: its outcome's value, or its error thrown. A
-/// reset instance voids the generation's registrations first.
 async function invoke(
   cap: CapId,
   call_: { text: string } | { op: number; bytes: Uint8Array },
@@ -310,22 +219,19 @@ async function invoke(
   if (reset) generations.set(route.module, (generations.get(route.module) ?? 0) + 1);
   const outcome = JSON.parse(ok as string) as { ok: unknown } | { error: string };
   if ("error" in outcome) {
-    // A document another build wrote asks for the deployment's build
-    // (src/versions.ts). The error is thrown as answered.
+    // A document that another build wrote asks for the deployment's build
+    // (src/versions.ts).
     noteRefusal(outcome.error);
     throw new Error(outcome.error);
   }
   return outcome.ok;
 }
 
-/// The module's unknown-hash error (`unknown <kind> <hash>: <load op>
-/// first`, cap_abi::registry): the hash it no longer holds.
 function unknownHash(error: unknown): string | null {
   const match = /^unknown .+ (sha256:[0-9a-f]{64}): .+ first$/.exec(error instanceof Error ? error.message : "");
   return match ? match[1] : null;
 }
 
-/// The documents a call names, and what each is read over.
 function docsOf(values: unknown[]): Doc[] {
   const out: Doc[] = [];
   for (let value of values) {
@@ -337,11 +243,8 @@ function docsOf(values: unknown[]): Doc[] {
   return out;
 }
 
-/// Run `attempt` (which registers `docs` and asks): when the module
-/// answers that it no longer holds one of them, the document is
-/// registered again — or minted again, for one the page never received
-/// — and the call made once more, at most once per document, so a
-/// module that keeps refusing surfaces its error.
+// Retries at most once per document, so a module that keeps refusing
+// surfaces its error.
 async function recovering<T>(cap: CapId, docs: Doc[], attempt: () => Promise<T>): Promise<T> {
   for (let tries = 0; ; tries++) {
     try {
@@ -355,17 +258,12 @@ async function recovering<T>(cap: CapId, docs: Doc[], attempt: () => Promise<T>)
   }
 }
 
-/// Register a document in a capability (once per document version and
-/// module instance), answering the load op's whole answer — its hash,
-/// and what the load reported.
 export function load(cap: CapId, doc: Doc): Promise<LoadAnswer> {
   return recovering(cap, docsOf([doc.over]), () => register(cap, doc));
 }
 
 function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
   return doc.loadIn(slot(cap), async () => {
-    // A document the page never received is minted again where it is
-    // needed — the module that minted it registers it there.
     if (doc.value === undefined && !doc.hasBytes) {
       if (!doc.remint || !doc.hash) throw new Error(`the ${doc.kind} document never crossed to the page — it cannot be registered in ${cap}`);
       await doc.remint();
@@ -375,8 +273,8 @@ function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
     const code = kernelLoads?.[doc.kind];
     if (code === undefined) throw new Error(`the manifest has no kernel load for a ${doc.kind} document`);
     const answer = (await invoke(cap, { op: code, bytes: doc.bytes() }, true)) as Record<string, unknown>;
-    // A load answers the document's identity in one `<name>_hash` field
-    // (its library's `transit_version::Load::answer`), beside what it reports.
+    // A load answers the identity in one `<name>_hash` field
+    // (`transit_version::Load::answer`).
     const hashes = Object.keys(answer).filter((field) => field.endsWith("_hash"));
     const hash = hashes.length === 1 ? answer[hashes[0]] : undefined;
     if (typeof hash !== "string") throw new Error(`${cap} answered no one hash for a ${doc.kind} document`);
@@ -385,13 +283,10 @@ function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
   });
 }
 
-/// A document an op produced (an import's network, an applied edit's
-/// next network, the live document): the module that answered it
-/// already holds it under `hash` — and so does every capability linked
-/// beside it — so it is never registered there again (while that
-/// instance lives). A document the page declined to receive (`value`
-/// undefined) carries the ask that mints it: `remint` names it, asked
-/// again past the answer cache when an instance dropped it.
+// The module that answered the document, and every capability linked
+// beside it, already holds it under `hash`, so it is not registered there
+// again while that instance lives. `remint` is asked again past the answer
+// cache when an instance drops a document that the page declined to receive.
 export function produced<V>(
   kind: Kind,
   value: V | undefined,
@@ -403,25 +298,19 @@ export function produced<V>(
   doc.witness(cap, hash);
   if (opts.remint) {
     const { op, args } = opts.remint;
-    // A registration, not an op: it never resets the instance it mints in.
+    // A registration, so it never resets the instance that it creates in.
     doc.remint = () => asked(cap, op, args, false, true);
   }
   void doc.loadIn(slot(cap), () => Promise.resolve({ hash }));
   return doc;
 }
 
-/// The answers kept, by journal key — most recently used last.
+// Ordered by use, most recent last.
 const answers = new Map<string, unknown>();
 const ANSWERS_KEPT = 256;
 
-/// The last op asked of each capability (the e2e replays it).
 const lastAsked = new Map<string, { op: string; args: Record<string, unknown> }>();
 
-/// Ask a capability one op. Every `*_hash` argument may be a document
-/// (registered in that module first); the answer is cached by the
-/// module's bytes and the request's bytes. Throws Unavailable when the
-/// capability did not assemble, and the module's error when it
-/// refuses.
 export async function ask<C extends CapId, O extends OpOf<C>>(cap: C, op: O, args: Args<C, O>): Promise<Answer<C, O>> {
   return (await asked(cap, op, args as Record<string, unknown>, true)) as Answer<C, O>;
 }
@@ -431,7 +320,6 @@ async function asked(cap: CapId, op: string, args: Record<string, unknown>, cach
   const moduleHash = route.hash;
   lastAsked.set(cap, { op, args });
   return recovering(cap, docsOf(Object.values(args)), async () => {
-    // A module linking several capabilities is told which one is asked.
     const request: Record<string, unknown> = route.linked ? { cap, op } : { op };
     for (const [field, value] of Object.entries(args)) {
       request[field] = value instanceof Doc ? (await register(cap, value)).hash : value;
@@ -451,16 +339,12 @@ async function asked(cap: CapId, op: string, args: Record<string, unknown>, cach
   });
 }
 
-/// The journal: every module call this page makes, as hashes, in the
-/// format the runner replays (tools/journal.mjs). It is off by default,
-/// because it keeps the bytes of every request (each document and each
-/// rt snapshot). Start it before the first ask.
+// Start the journal before the first ask. It is off by default because it
+// keeps the bytes of every request.
 export async function startJournal(): Promise<void> {
   await call({ type: "journal", run: `${new Date().toISOString()}-page` });
 }
 
-/// The journal as one file: `caps-run replay FILE.json` replays it on
-/// the page's own assembly (docs/architecture/web.md, "The journal").
 export async function readJournal(): Promise<{ journal: string; blobs: Record<string, string> }> {
   const { ok } = await call({ type: "journal-read" });
   const { journal, blobs } = ok as { journal: string; blobs: Record<string, Uint8Array> };
@@ -472,24 +356,15 @@ export async function readJournal(): Promise<{ journal: string; blobs: Record<st
   return { journal, blobs: Object.fromEntries(Object.entries(blobs).map(([hash, bytes]) => [hash, base64(bytes)])) };
 }
 
-/// The kernel's registry ops (cap_abi::registry), answered by every
-/// module.
 const OP_EVICT = 257;
 const OP_HELD = 258;
 
-/// Name what survives: every module instance this page assembled drops
-/// every document not named here (nor read over by one named — an edit
-/// document keeps its network). A host calls it when it lets documents
-/// go (a new network replaces the old); the kinds that bound
-/// themselves (rt snapshots, live documents) need no call. A dropped
-/// document a host still holds is registered again on its next use.
 export async function keep(docs: (Doc | null | undefined)[]): Promise<void> {
   const hashes = docsOf(docs.filter((d): d is Doc => d instanceof Doc))
     .map((d) => d.hash)
     .filter((h): h is string => h !== null);
   const bytes = new TextEncoder().encode(JSON.stringify({ keep: hashes }));
-  // One call per module instance: a linked assembly holds every
-  // capability's documents in one registry.
+  // A linked assembly holds every capability's documents in one registry.
   const byModule = new Map<string, CapId>();
   for (const cap of assembly.keys()) {
     const placed = await assembly.get(cap);
@@ -498,10 +373,6 @@ export async function keep(docs: (Doc | null | undefined)[]): Promise<void> {
   await Promise.all([...byModule.values()].map(async (cap) => (await invoke(cap, { op: OP_EVICT, bytes }, true)) as Evicted));
 }
 
-/// Inspection the e2e and the perf probe read (window.__bus): the
-/// capabilities asked for, what a module holds, its linear memory and
-/// resets, the ceiling, and the last op asked of a capability asked
-/// again past the answer cache.
 const inspection = {
   caps: async (): Promise<CapId[]> => {
     const ids = [...assembly.keys()] as CapId[];
@@ -509,8 +380,6 @@ const inspection = {
     return ids.filter((_, i) => ok[i]);
   },
   held: async (cap: CapId): Promise<Holding> => (await invoke(cap, { op: OP_HELD, bytes: new Uint8Array() }, true)) as Holding,
-  /// The module instance a capability answers in ("ui:<id>" for the
-  /// page's linked assembly, "cap:<id>" alone).
   module: async (cap: CapId): Promise<string> => (await capOf(cap)).route.module,
   memory: async (cap: CapId): Promise<{ memory: number; resets: number }> => {
     await capOf(cap);
@@ -528,53 +397,28 @@ const inspection = {
 if (typeof window !== "undefined") window.__bus = inspection;
 export type Inspection = typeof inspection;
 
-// ---------------------------------------------------------------------
-// the deployment's published documents
-// ---------------------------------------------------------------------
-
-/// The deployment's manifest and published documents live at one
-/// layout, whoever serves it — the sync server or a static host
-/// (D-131; docs/architecture/static-deployment.md): `manifest`, and
-/// each document by its hash at `blobs/<hash>` (its JSON) and
-/// `blobs/<hash>.gz` (the same bytes gzipped — fetched as bytes, so a
-/// module registers them compressed and the text never exists whole on
-/// the page). Paths are relative to the page, so a deployment may live
-/// under a prefix. Every pin is the manifest's, never a response
-/// header's.
+// The sync server and a static host serve one layout (D-131). Paths are
+// relative to the page, so a deployment may live under a prefix. Every pin
+// is the manifest's, never a response header's.
 export type DeploymentManifest = {
   network_hash?: string;
   boundary_hash?: string;
   plans_hash?: string;
-  /// Each published document the deployment keeps, by its kind
-  /// (`<kind>_hash`, one for each logged kind).
   [pin: `${string}_hash`]: string | undefined;
-  /// The agency's feed the deployment imported (its zip's hash).
   feed_hash?: string;
-  /// How a page signs in to write (the server's -oidc-client-id): the
-  /// provider's issuer, the pages' public client, the scopes it asks for.
   auth?: { issuer: string; client_id: string; scope: string };
   streets_hash?: string;
   walks_hash?: string;
-  /// A serverless deployment that follows the agency's GTFS URL (D-132).
   feed_url?: string;
-  /// The agency's time zone (IANA), the zone every host's clock reads.
   timezone?: string;
 };
 
-// ---------------------------------------------------------------------
-// reads of the deployment — each one answers a document, null when the
-// deployment keeps none, or throws ReadFailed when the read failed
-// (QAF-131). A page's inputs (src/uis/inputs.ts) read through these:
-// each takes the input's `signal` (its time limit) and the manifest the
-// page holds, so one manifest read names every pin of one poll.
-// ---------------------------------------------------------------------
+// A read answers null when the deployment keeps no document, and throws
+// ReadFailed when the read fails (QAF-131). Each read takes the manifest
+// that the page holds, so one manifest read names every pin of one poll.
 
-/// What a read takes: the input's signal (the runner aborts it at the
-/// time limit), and the manifest the page holds (read now when absent).
 export type ReadOptions = { signal?: AbortSignal; manifest?: DeploymentManifest };
 
-/// The upstream's Retry-After, in ms (seconds or an HTTP date), else
-/// null.
 function retryAfterOf(resp: Response): number | null {
   const v = resp.headers.get("Retry-After");
   if (!v) return null;
@@ -584,9 +428,6 @@ function retryAfterOf(resp: Response): number | null {
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : null;
 }
 
-/// GET a URL that must answer: the response, or ReadFailed — no answer,
-/// or a status other than 2xx. An `absent` status answers null: the
-/// upstream keeps none.
 async function getOk(url: string, signal: AbortSignal | undefined, { absent = [] as number[], cache }: { absent?: number[]; cache?: RequestCache } = {}): Promise<Response | null> {
   let resp: Response;
   try {
@@ -599,13 +440,10 @@ async function getOk(url: string, signal: AbortSignal | undefined, { absent = []
   throw new ReadFailed(`HTTP ${resp.status}`, { retryAfterMs: retryAfterOf(resp) });
 }
 
-/// The deployment's manifest as it stands now, revalidated, with its
-/// age. `asOfMs` is when the upstream last confirmed it, when the
-/// answer is a working copy: the server's (`X-Store-Stale`,
-/// `X-Store-As-Of`), or the service worker's last copy
-/// (`X-Served-From: last-copy`, its `Date`). It is null when the answer
-/// is current. `answered`: the server answered, not the worker. Throws
-/// ReadFailed when neither answers.
+// `asOfMs` is when the upstream last confirmed the manifest, and is set
+// only when the answer is a working copy: the server's (`X-Store-Stale`,
+// `X-Store-As-Of`) or the service worker's last copy (`X-Served-From:
+// last-copy`, its `Date`). `answered` is false when the worker answered.
 export async function readManifest(signal?: AbortSignal): Promise<{ manifest: DeploymentManifest; asOfMs: number | null; why: string | null; answered: boolean }> {
   const resp = (await getOk("manifest", signal, { cache: "no-cache" }))!;
   let manifest: DeploymentManifest;
@@ -627,29 +465,19 @@ export async function readManifest(signal?: AbortSignal): Promise<{ manifest: De
   return { manifest, asOfMs, why, answered: !lastCopy };
 }
 
-/// The manifest a read names its pins by: the one the page holds, else
-/// read now.
 async function manifestOf(opts: ReadOptions): Promise<DeploymentManifest> {
   return opts.manifest ?? (await readManifest(opts.signal)).manifest;
 }
 
-// ---------------------------------------------------------------------
-// a deployment that names its GTFS URL (D-132): with no server to
-// import it, the page fetches the zip, imports it in its own assembly
-// (network `import`), and checks the URL once a day — a changed zip is
-// imported and adopted, an unchanged one is not. The last zip is kept
-// in Cache Storage, so a device boots offline on the schedule it had.
-// ---------------------------------------------------------------------
+// With no server to import the feed (D-132), the page fetches the zip,
+// imports it in its own assembly, and checks the URL once a day. Cache
+// Storage keeps the last zip, so a device boots offline on the schedule it
+// had.
 
 const FEED_CHECK_MS = 24 * 3600_000;
-/// A check that found the URL unanswered (and read the kept copy, or
-/// nothing) retries after this, not at the next poll nor a day later.
 const FEED_RETRY_MS = 3600_000;
 const FEED_CACHE = "gtfs-feed";
 
-/// What this page knows of the deployment's GTFS URL: when it last
-/// checked it, the zip's hash then, the network it imported from that
-/// zip (null until imported), and a fetched zip not yet imported.
 let followed: { url: string; checkedAt: number; zipHash: string; networkHash: string | null; pending: Uint8Array<ArrayBuffer> | null } | null = null;
 
 async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
@@ -657,9 +485,6 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/// The zip at `url` — fetched (`fresh`), and kept as the last copy;
-/// when the URL does not answer, the last copy this device kept.
-/// Throws ReadFailed when neither.
 async function feedZip(url: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array<ArrayBuffer>; fresh: boolean }> {
   const kept = typeof caches === "undefined" ? null : await caches.open(FEED_CACHE).catch(() => null);
   let failure = "no answer";
@@ -671,18 +496,14 @@ async function feedZip(url: string, signal?: AbortSignal): Promise<{ bytes: Uint
     }
     failure = `HTTP ${resp.status}`;
   } catch {
-    // unreachable: the last copy below
   }
   const hit = await kept?.match(url).catch(() => undefined);
   if (hit) return { bytes: new Uint8Array(await hit.arrayBuffer()), fresh: false };
   throw new ReadFailed(`the agency's GTFS URL: ${failure}`);
 }
 
-/// Check the URL (at most once a day): the hash of the network the
-/// page should hold — the one it imported, while the zip is unchanged;
-/// for a changed zip, a pin no network holds (`feed:<zip hash>`), so the
-/// page adopts `servedNetwork`'s import of it. Throws ReadFailed when
-/// the URL does not answer and nothing was imported yet.
+// A changed zip answers a pin that no network holds (`feed:<zip hash>`),
+// so the page adopts `servedNetwork`'s import of it.
 async function followedPin(url: string, signal?: AbortSignal): Promise<string> {
   const now = Date.now();
   if (followed?.url === url && followed.networkHash && now - followed.checkedAt < FEED_CHECK_MS) return followed.networkHash;
@@ -690,7 +511,6 @@ async function followedPin(url: string, signal?: AbortSignal): Promise<string> {
   try {
     got = await feedZip(url, signal);
   } catch (e) {
-    // The URL did not answer: check again in an hour, not a day.
     if (followed?.url === url && followed.networkHash) {
       followed.checkedAt = now - FEED_CHECK_MS + FEED_RETRY_MS;
       return followed.networkHash;
@@ -704,9 +524,6 @@ async function followedPin(url: string, signal?: AbortSignal): Promise<string> {
   return followed.networkHash ?? `feed:${zipHash}`;
 }
 
-/// Import the deployment's GTFS: the zip the last check fetched, else
-/// fetched now. The import is the network module's; its network is
-/// registered where it was made (`produced`).
 async function importFollowed(url: string, signal?: AbortSignal): Promise<{ network: Doc<Network>; boundary: Doc<Boundary>; timezone?: string }> {
   let bytes = followed?.url === url ? followed.pending : null;
   if (!bytes) {
@@ -725,26 +542,19 @@ async function importFollowed(url: string, signal?: AbortSignal): Promise<{ netw
   };
 }
 
-/// A published document's bytes, gzipped, by its hash. A hash the
-/// manifest pins is there: any other answer is a failed read.
+// A hash that the manifest pins is there, so any other answer is a failed read.
 async function blobGz(hash: string, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
   const resp = (await getOk(`blobs/${hash}.gz`, signal))!;
   return new Uint8Array(await resp.arrayBuffer());
 }
 
-/// A published document's JSON, by its hash.
 async function blobJson<T>(hash: string, signal?: AbortSignal): Promise<T> {
   const resp = (await getOk(`blobs/${hash}`, signal))!;
   return (await resp.json()) as T;
 }
 
-/// The published pick in force on `date`: the manifest's `plans_hash`
-/// names the published plan set (`blobs/<hash>`), and the plans
-/// module answers which pick governs the date and its network's hash.
-/// Null when the deployment publishes no picks or none has taken
-/// effect yet; throws Unavailable when it publishes picks and the plans
-/// module does not assemble — a page never guesses which schedule runs.
-/// Throws ReadFailed when the plan set does not answer.
+// Throws Unavailable when the deployment publishes picks and the plans
+// module does not assemble, because a page never guesses which schedule runs.
 async function pickInForce(date: string, manifest: DeploymentManifest, signal?: AbortSignal): Promise<PublishedPlan | null> {
   const plansHash = manifest.plans_hash;
   if (!plansHash) return null;
@@ -753,12 +563,9 @@ async function pickInForce(date: string, manifest: DeploymentManifest, signal?: 
   return (await ask("plans", "in_force", { published, date })).plan;
 }
 
-/// The hash of the network the deployment serves on `date` — the pick
-/// in force, else its import: what `servedNetwork` would load now. An
-/// open page compares it with the network it holds on each poll and
-/// re-pins when it moved (a republish, a new pick, or the date crossing
-/// a pick's effective date — D-63). Null when the deployment publishes
-/// none.
+// An open page compares this with its network on each poll and re-pins
+// when it moved: a republish, a new pick, or the date crossing a pick's
+// effective date (D-63).
 export async function servedNetworkPin(date: string, opts: ReadOptions = {}): Promise<string | null> {
   const manifest = await manifestOf(opts);
   const pick = await pickInForce(date, manifest, opts.signal);
@@ -767,28 +574,11 @@ export async function servedNetworkPin(date: string, opts: ReadOptions = {}): Pr
   return manifest.feed_url ? followedPin(manifest.feed_url, opts.signal) : null;
 }
 
-/// The deployment's published network on `date`, for a page that READS
-/// it. When the deployment publishes picks (docs/ROADMAP.md 1), the
-/// pick in force on the date (`pickInForce`): its network by hash,
-/// with the default boundary — a published pick is an authored
-/// document, numbered 1..n the way its export is. Otherwise, and before
-/// the first pick takes effect, the manifest's `network_hash`: the
-/// import of the deployment's GTFS zip (cap-network, the same module),
-/// with its boundary (`boundary_hash`) — one manifest read names both,
-/// so the boundary always belongs to the network. A deployment with no
-/// network but the agency's GTFS URL (`feed_url`, D-132) has the page
-/// import the zip itself (`importFollowed`); its answer carries the
-/// feed's `timezone` for the host to adopt. Either way the
-/// network arrives gzipped and the page never unzips or parses it —
-/// every module registers it compressed (kernel op 256 decodes as it
-/// parses). Registered in a reader now, so a network that does not
-/// answer its pin is refused before anything is asked of it. A page
-/// names the modules that read it, in order, and the pin is checked in
-/// the first that assembles — registering it in a module the page never
-/// asks would hold a whole copy only to check it. The network's name is
-/// a question for the directory (`about`). Throws Unavailable when none
-/// assembles; null when the deployment publishes none; throws
-/// ReadFailed when a read fails.
+// The network arrives gzipped and the page never unzips or parses it.
+// The pin is checked in the first reader that assembles, because
+// registering the network in a module that the page never asks would hold
+// a whole copy only to check it. One manifest read names the network and
+// its boundary, so the boundary belongs to the network.
 export async function servedNetwork(
   date: string,
   readers: CapId[],
@@ -800,8 +590,7 @@ export async function servedNetwork(
   if (!cap) throw new Unavailable(candidates[0]);
   const manifest = await manifestOf(opts);
   const pick = await pickInForce(date, manifest, opts.signal);
-  // No network published, but the agency's GTFS URL named: the page
-  // imports it (D-132; its `timezone` is the hosts' to adopt).
+  // The answer carries the feed's `timezone` for the host to adopt.
   if (!pick && !manifest.network_hash && manifest.feed_url) return importFollowed(manifest.feed_url, opts.signal);
   const pin = pick?.network_hash ?? manifest.network_hash;
   if (!pin) return null;
@@ -816,19 +605,13 @@ export async function servedNetwork(
   return { network, boundary };
 }
 
-/// How a page signs in to write to this deployment (D-58: writes need a
-/// token, reads stay public), from the manifest — null when sign-in is
-/// off or the pages have no client of their own (src/signin.svelte.ts).
+// Writes need a token and reads stay public (D-58).
 export async function deploymentAuth(opts: ReadOptions = {}): Promise<{ issuer: string; client_id: string; scope: string } | null> {
   return (await manifestOf(opts)).auth ?? null;
 }
 
-/// The agency's own feed as the deployment imported it (the manifest's
-/// `network_hash`, the server's import of its `-feed`), registered in the
-/// first of `readers` that assembles, with the feed's id (its zip's hash,
-/// `feed_hash`) — what a stops page compares the stops record with and
-/// names an import's events by (D-150). Null when the deployment imports
-/// none, or no reader assembles.
+// The id is the zip's hash (`feed_hash`), which the stops page compares
+// the stops record with (D-150).
 export async function servedFeed(readers: CapId[], opts: ReadOptions = {}): Promise<{ network: Doc<Network>; id: string } | null> {
   let cap: CapId | null = null;
   for (const c of readers.length ? readers : (["network"] as CapId[])) if (!cap && (await available(c))) cap = c;
@@ -841,11 +624,6 @@ export async function servedFeed(readers: CapId[], opts: ReadOptions = {}): Prom
   return { network, id: manifest.feed_hash };
 }
 
-/// The deployment's published network as a VALUE, for a page that
-/// edits it (the planner forks it into a plan; JS owns the documents
-/// it authors): `GET /network`, the import's whole answer, registered
-/// in the network module under the pin it serves. Null when the server
-/// publishes none (404).
 export async function servedNetworkValue(signal?: AbortSignal): Promise<{
   network: Doc<Network>;
   boundary: Doc<Boundary>;
@@ -861,19 +639,12 @@ export async function servedNetworkValue(signal?: AbortSignal): Promise<{
   };
 }
 
-/// The published plan set (the manifest's `plans_hash`): every pick
-/// the deployment publishes, earlier, in force, and later alike — a
-/// planner's timeline (D-139). Null when it publishes none.
+// Every published pick, earlier, in force, and later alike (D-139).
 export async function publishedPlanSet(opts: ReadOptions = {}): Promise<PublishedPlans | null> {
   const plansHash = (await manifestOf(opts)).plans_hash;
   return plansHash ? blobJson<PublishedPlans>(plansHash, opts.signal) : null;
 }
 
-/// One published pick's network as a VALUE, for a page that forks it
-/// (JS owns the documents it authors): the document by its hash,
-/// fetched gzipped (a fraction of its size) and decompressed here — a
-/// value is parsed either way —, then registered in the network module
-/// under that pin, so one that does not answer it is refused.
 export async function publishedPickValue(pick: PublishedPlan, signal?: AbortSignal): Promise<Doc<Network>> {
   const resp = (await getOk(`blobs/${pick.network_hash}.gz`, signal))!;
   if (!resp.body) throw new ReadFailed("the pick's network is empty");
@@ -883,48 +654,31 @@ export async function publishedPickValue(pick: PublishedPlan, signal?: AbortSign
   return network;
 }
 
-/// One of the deployment's documents, by the hash its manifest pins
-/// (`<kind>_hash`): bytes the page never parses, refused unless they
-/// answer the pin. Null when the deployment keeps none yet.
 export async function served(kind: Kind, opts: ReadOptions = {}): Promise<Doc | null> {
   const pin = (await manifestOf(opts))[`${kind}_hash`];
   if (typeof pin !== "string") return null;
   return new Doc(kind, { bytes: await blobGz(pin, opts.signal) }, { pin });
 }
 
-/// What a plan reads of the deployment's stops document (D-157: a pick
-/// only reads it): the warnings of the stops its patterns visit that are
-/// not in service over its period. cap-stops `read_pick` derives the
-/// period from the published set. Empty with no stops document, and for
-/// a plan with no id or pick date. `stops` is the page's input.
+// A pick only reads the stops document (D-157).
 export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null, stops: Doc | null): Promise<NetworkWarning[]> {
   if (!stops || !(await available("stops"))) return [];
   return (await ask("stops", "read_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined })).warnings;
 }
 
-/// What an export carries of the deployment's stops document (D-151,
-/// D-157): the plan with the stops' history over its period (cap-stops
-/// `export_pick`), as the server's GET /feed exports a pick. The plan
-/// itself when there is no stops document. `stops` is the page's input.
+// Matches what the server's GET /feed exports for a pick (D-151, D-157).
 export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null, stops: Doc | null): Promise<Doc<Network>> {
   if (!stops || !(await available("stops"))) return network;
   const out = await ask("stops", "export_pick", { network_hash: network, stops_hash: stops, published: published ?? undefined });
   return out.network_hash === network.hash ? network : produced("network", out.network, "stops", out.network_hash);
 }
 
-/// The deployment's published streets: the manifest's `streets_hash`,
-/// the server's import of its street layer — bytes the page never
-/// parses, registered in cap-streets and refused unless they answer
-/// the pin. Null when the deployment publishes none.
 export async function servedStreets(opts: ReadOptions = {}): Promise<Doc | null> {
   const doc = await served("streets", opts);
   if (doc) await load("streets", doc);
   return doc;
 }
 
-/// The deployment's walk table: the manifest's `walks_hash`, derived
-/// from its streets and network, registered in the router and refused
-/// unless it answers the pin. Null when the deployment publishes none.
 export async function servedWalks(opts: ReadOptions = {}): Promise<Doc<WalkTable> | null> {
   const pin = (await manifestOf(opts)).walks_hash;
   if (!pin) return null;

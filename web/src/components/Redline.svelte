@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// The redline (analysis `service_type_compare`): every route the
-  /// proposal changes under the group, before → after for trips,
-  /// span, typical gap, and revenue hours and miles.
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import { change, clock, count, fixed, mins } from "./designFormat";
 

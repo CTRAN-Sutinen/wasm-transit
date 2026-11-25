@@ -1,10 +1,8 @@
 package main
 
-// Degraded mode (D-119), the Go round trip: while the bucket does not
-// answer, the server serves the cached heads — each read labelled with
-// X-Store-Stale and X-Store-As-Of — and refuses every write with 503 and
-// Retry-After, acknowledging nothing; the client holds its document and
-// resends, and the write lands once the bucket answers.
+// Degraded mode (D-119): while the bucket does not answer, reads carry
+// X-Store-Stale and X-Store-As-Of, and every write is a 503 with Retry-After.
+// The write lands once the bucket answers.
 
 import (
 	"context"

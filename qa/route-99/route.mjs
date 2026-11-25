@@ -1,8 +1,6 @@
-// Route 99 (C-TRAN 2045 plan concept): Washougal – Camas – Lacamas Lake
-// – East Fourth Plain. The data every step of the test reads.
+// Route 99, a C-TRAN 2045 plan concept. Every step of the test reads this.
 
-/// The stops, Washougal first: id, name, lat, lon, metres and seconds
-/// from Washougal TC.
+// Id, name, lat, lon, then metres and seconds from Washougal TC.
 export const STOPS = [
   ["9906", "Washougal Transit Center", 45.58, -122.348, 0, 0],
   ["9905", "NE 4th Ave & Everett St (Camas)", 45.5867, -122.404, 4400, 540],
@@ -16,17 +14,17 @@ export const RUN_SECS = 2400;
 
 export const ROUTE = { id: "099", long_name: "Washougal/Camas/East Fourth Plain" };
 
-/// Service key, first and last start hour, minutes between trips. Trips
-/// to Washougal start 15 minutes after the hour.
+// Service key, first and last start hour, minutes between trips. Trips to
+// Washougal start 15 minutes after the hour.
 export const SERVICE = [
   ["1-WKDY", 6, 20, 30],
   ["2-SAT", 7, 19, 60],
   ["3-SUN", 7, 19, 60],
 ];
 
-/// The run's dates, from today (the host's date: run on a machine in
-/// the agency's zone). The stop's life is backdated so it is in service
-/// today and the pick can take effect today.
+// Dates count back from the host's date, so run this on a machine in the
+// agency's zone. The stop's life is backdated so that it is in service
+// today and the pick can take effect today.
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

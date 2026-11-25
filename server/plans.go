@@ -1,40 +1,10 @@
 package main
 
-// Publishing a pick (store mode): POST /plans takes a plan's network
-// document — any serialization, gzipped or not — and makes it the
-// pick every client resolves (docs/ROADMAP.md 1). The host decides
-// nothing:
-//
-//   - cap-network (a fresh instance, closed after) registers the
-//     document, validates it (a network with issues never publishes),
-//     and answers its canonical bytes, hash and plan frame;
-//   - cap-plans answers the next published plan set — or the reasons
-//     the pick would break the chain — as canonical bytes and hash.
-//
-// The host stores exactly those bytes: the network under the
-// plan.<id> pointer (its log keeps every version referenced, so GC
-// never collects a frozen network), then the freeze and the adoption
-// as one entry of the plans log (planslog.go), whose fold is the set
-// the manifest pins as plans_hash. A client reads the set by hash, asks
-// cap-plans in_force for the date, and loads that network by hash from
-// /blobs.
-//
-//	POST /plans          body: the network document; ?purpose= what the
-//	                     frozen version is (default "published")
-//	                     200 {plan_id, network_hash, plans_hash, seq, warnings}
-//	                     422 {issues, refusals} (an invalid network, a pick that
-//	                         runs no service in its period, or a pick the chain
-//	                         refuses — one dated before today, D-76)
-//	                     400 (not a network; a plan id that is not a pointer name)
-//	GET  /feed?date=     the GTFS zip in force on the date (default today):
-//	                     cap-network's export of the pick in force, or the
-//	                     -feed zip before the first pick takes effect
-//	POST /plans/retire   body: {"id"} — retire a pick that has not taken
-//	                     effect (D-75), as one entry: 200 {plans_hash, seq},
-//	                     422 {issues}, 404 when nothing is published
-//
-// "Today" is the host's: the server's local date, or -today on a test
-// server. The modules decide what it means.
+// POST /plans stores exactly the bytes that cap-network and cap-plans
+// answer, and decides nothing itself. The network goes under the
+// plan.<id> pointer, whose log keeps every version referenced, so GC
+// never collects a frozen network. The freeze and the adoption are one
+// entry of the plans log (planslog.go). Routes: server/openapi.json.
 
 import (
 	"context"
@@ -51,8 +21,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// plansEnvelope is the envelope of every published plan set: produced
-// by the hosted cap-plans module.
 func (s *server) plansEnvelope() store.Envelope {
 	return store.Envelope{Kind: "plans", SchemaVersion: 1, ProducedBy: "cap-plans@" + s.plans.Hash()}
 }
@@ -87,7 +55,6 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// publishedPick is what one publish committed.
 type publishedPick struct {
 	planID, networkHash, plansHash string
 	seq                            int64
@@ -95,7 +62,6 @@ type publishedPick struct {
 	unknownFields                  []string
 }
 
-// publishRefusal is why a publish did not commit, as its HTTP answer.
 type publishRefusal struct {
 	code int
 	json json.RawMessage // a JSON body, else text
@@ -123,22 +89,15 @@ func refusedWith(code int, err error) *publishRefusal {
 	return &publishRefusal{code: code, text: err.Error()}
 }
 
-// publishPurpose is what a version frozen by POST /plans says it is,
-// unless the caller names it (?purpose=).
 const publishPurpose = "published"
 
-// publishNetwork is one publish, for POST /plans and for the startup
-// commit of a pick's network forward: the network frozen and adopted in
-// one entry of the plans log (planslog.go).
 func (s *server) publishNetwork(ctx context.Context, body []byte, writer string) (publishedPick, *publishRefusal) {
 	return s.adoptNetwork(ctx, body, publishPurpose, "", writer, "POST /plans")
 }
 
-// adoptNetwork puts a network in force: one write of cap-plans' `pick`
-// op (writePick), which checks the network, reads the stops document,
-// and answers the next published set over the frozen versions. With
-// purpose, the network is frozen in the same entry; without, it must be
-// frozen already. One entry of the plans log under writer.
+// adoptNetwork writes one entry of the plans log. With purpose, the
+// network is frozen in the same entry. Without, it must be frozen
+// already.
 func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, from, writer, op string) (publishedPick, *publishRefusal) {
 	var out publishedPick
 	pick, refused, err := s.writePick(ctx, body, purpose, from, true, writer, op)
@@ -155,15 +114,11 @@ func (s *server) adoptNetwork(ctx context.Context, body []byte, purpose, from, w
 	}, nil
 }
 
-// commitPicksForward brings the networks of the picks in use to the
-// version the hosted modules read, at startup (docs/FORMATS.md,
-// "Versions"). cap-plans answers which picks are in use: the pick in
-// force and those still to come. cap-migrate brings an older network
-// forward. The pick is then republished under its own date through
-// publishNetwork, so cap-plans moves the set's network_hash. The writer
-// names the migration module. A pick that stopped governing, or a
-// retired one, stays in its version, and comes forward when it is
-// republished. The older blobs stay readable under their hashes.
+// commitPicksForward runs at startup (docs/FORMATS.md, "Versions"). It
+// migrates the networks of the picks in use (cap-plans in_use) and
+// republishes each under its own date. A pick that stopped governing,
+// or a retired one, stays in its version until it is republished. The
+// older blobs stay readable under their hashes.
 func (s *server) commitPicksForward() {
 	if s.store == nil || s.plans == nil {
 		return
@@ -210,12 +165,9 @@ func (s *server) commitPicksForward() {
 	}
 }
 
-// today is the agency's date, "YYYY-MM-DD": the host's clock
-// read in the network's zone — the feed's, else the last published
-// pick's, as cap-network answered it — never the host's own zone, so a
-// server in a UTC container answers the agency's service day. With no
-// zone known yet (no feed, nothing published since boot) it is the
-// host's local date. -today pins it on a test server.
+// today reads the clock in the agency's zone, so a server in a UTC
+// container answers the agency's service day. With no zone known yet,
+// it uses the host's local date. -today pins it on a test server.
 func (s *server) today() string {
 	if s.fixedToday != "" {
 		return s.fixedToday
@@ -230,10 +182,9 @@ func (s *server) today() string {
 	return now.Format("2006-01-02")
 }
 
-// writeDate is the date a log write carries for its reference rules
-// (D-238): today() in the zone of the feed already loaded, else of the
-// last published pick. It never loads the feed, because the feed's own
-// import writes the stops log while Load holds its lock.
+// writeDate is today() for the reference rules of a log write (D-238).
+// It never loads the feed, because the feed's own import writes the
+// stops log while Load holds its lock.
 func (s *server) writeDate() string {
 	if s.fixedToday != "" {
 		return s.fixedToday
@@ -257,9 +208,9 @@ func (s *server) writeDate() string {
 	return now.Format("2006-01-02")
 }
 
-// agencyZone is the zone today() counts in: the published feed's, else
-// the last published pick's; nil when neither is known or the name is
-// not a zone the host's tz database has.
+// agencyZone is the published feed's zone, else the last published
+// pick's. It is nil when neither is known or the tz database lacks the
+// name.
 func (s *server) agencyZone() *time.Location {
 	zone := ""
 	if s.feeder != nil {
@@ -283,8 +234,6 @@ func (s *server) agencyZone() *time.Location {
 	return loc
 }
 
-// handleRetire retires a pick (D-75): cap-plans answers the next set —
-// the pick kept as the tombstone — or why not, and the host commits it.
 func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil || s.plans == nil {
 		http.Error(w, "publishing needs the store (start with -store <url>)", http.StatusNotFound)
@@ -324,12 +273,9 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"plans_hash": plansHash, "seq": seq})
 }
 
-// handleFeed serves the GTFS feed in force on a date (?date=, default
-// today): the zip cap-network `export` writes for the published pick
-// governing it — cap-plans `in_force` answers which — or, before the
-// first pick takes effect, the configured -feed zip itself (D-74).
-// 404 when neither runs. The export runs in a fresh cap-network and is
-// kept by the pick's network hash: a pick's zip is one set of bytes.
+// handleFeed serves the pick in force, or the -feed zip before the
+// first pick takes effect (D-74). The export is cached by the pick's
+// network hash, because a pick's zip is one set of bytes.
 func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	date := r.URL.Query().Get("date")
 	if date == "" {
@@ -397,12 +343,10 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	w.Write(zipBytes)
 }
 
-// exportedPick is cap-network's export of a published pick's network
-// with the stops' history over its period (D-151): with a stops
-// document, cap-stops export_pick first — a stop whose record
-// changes inside the pick's dates is one stop per version. Kept for the
-// process by the pick's network hash and the stops document's (the
-// bytes never change for those two).
+// exportedPick runs cap-stops export_pick first when a stops document
+// exists, so a stop whose record changes inside the pick's dates is one
+// stop per version (D-151). The cache key is the network hash and the
+// stops hash, because the bytes never change for those two.
 func (s *server) exportedPick(ctx context.Context, networkHash string, set []byte) ([]byte, error) {
 	stopsHash, stops, haveStops, err := "", []byte(nil), false, error(nil)
 	if stopsHash, stops, haveStops, err = s.keptHead("stops"); err != nil {
@@ -452,9 +396,6 @@ func (s *server) exportedPick(ctx context.Context, networkHash string, set []byt
 	return zipBytes, nil
 }
 
-// stopsVersions is the pick's network with the stops' history over its
-// period, from its first date until the next pick's: cap-stops
-// export_pick, which derives the period from the published set.
 func (s *server) stopsVersions(ctx context.Context, network, stops, set []byte) ([]byte, error) {
 	var versioned json.RawMessage
 	err := s.withModule(ctx, "stops", func(host *WasmHost) error {
@@ -488,8 +429,6 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// withWarnings is the pick's warnings (cap-network's, a JSON array)
-// followed by `more` (cap-stops' visit warnings).
 func withWarnings(warnings json.RawMessage, more []json.RawMessage) json.RawMessage {
 	if len(more) == 0 {
 		return warnings

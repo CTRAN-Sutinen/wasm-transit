@@ -1,13 +1,4 @@
 <script lang="ts">
-  /// Who the network reaches (analysis `type_coverage`, judged in the
-  /// hour window when one is set) with the op's parameters as inputs,
-  /// and the unserved places heaviest first (`unserved_points`). The
-  /// layer is any weighted geography (D-47): the planner
-  /// picks the field that is its weight and says what it means; the
-  /// answer's reading states its resolution. Coverage is the selected
-  /// service group's — the combination of service types that run
-  /// together, pooled, named by its members with the dates it holds
-  /// (D-55); the unserved places are what its stops leave out.
   import type { LayerField } from "../types/LayerField";
   import type { LayerReading } from "../types/LayerReading";
   import type { CombinationCoverage } from "../types/CombinationCoverage";

@@ -1,16 +1,6 @@
 <script lang="ts">
-  /// The route's changes, one form per gesture (cap-author owns every
-  /// rule): span, running time over a band, one trip moved on its
-  /// own, a stop inserted or dropped. A frequency target the trips
-  /// flex around is not offered: what it keeps of the trips already
-  /// there waits on a decision. On the base network (no plan frame)
-  /// every form is off until it is forked. The span form shows the
-  /// direction's own first and last trip; a stop to insert is picked
-  /// by name when the host passes the stops. Every gesture acts on
-  /// ONE service type (D-8), a member of the selected group the
-  /// planner picks; the
-  /// panel says what else runs with it and where else it runs (D-95),
-  /// since those trips stay as they are.
+  /// Every gesture acts on one service type, a member of the selected group (D-8).
+  /// The panel names what else runs with it, since those trips stay as they are (D-95).
   import Unavailable from "./Unavailable.svelte";
   import Combobox from "./Combobox.svelte";
   import type { TimetableStop } from "../types/TimetableStop";
@@ -37,17 +27,12 @@
     onremovestop,
   }: {
     framed: boolean;
-    /// Why the plan cannot change (shown when it cannot).
     locked?: string;
-    /// The selected group's service types, and the one edited.
     members: string[];
     editType: string;
-    /// The other groups `editType` runs in.
     alsoIn: string[];
     onedittype: (type: string) => void;
     stops: TimetableStop[];
-    /// Every stop of the network, to pick one to insert by name
-    /// (directory `stops`); empty, the form takes a stop id.
     allStops?: { value: string; label: string; sub?: string }[];
     selectedStop: string;
     trips: TimetableTrip[];
@@ -79,8 +64,6 @@
   });
   const selectedTrip = $derived(trips.find((t) => `${t.trip}@${t.start_secs}` === pickedKey) ?? null);
   const stopName = $derived(stops.find((s) => s.stop === selectedStop)?.name ?? "");
-  /// The direction's span as the timetable answers it (its rows run
-  /// by start): what the span form's empty fields stand for.
   const firstNow = $derived(trips.length ? clock(trips[0].start_secs) : "");
   const lastNow = $derived(trips.length ? clock(trips[trips.length - 1].start_secs) : "");
 </script>

@@ -1,12 +1,8 @@
-// Step 2, the service-change app: a fork for route 99, the new stops
-// found on it, the route built, its trips blocked on every day type,
-// compared, and published to take effect today.
+// Step 2, the service-change app: fork a plan, build route 99 from the
+// stops record (D-173), block its trips, and publish to take effect today.
 //
 //   node tools/ui-shot.mjs service-change --hash '#stage=calendar' \
 //     --steps qa/route-99/2-service-change.mjs --out .qa/route-99/sc.png
-//
-// The route is built on the Route stage's New route task,
-// its stops picked from the stops record (D-173).
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -27,7 +23,6 @@ export default async function (page, { shot, status, settle }) {
   const open = () => rows.filter({ has: page.locator(".tag.open") });
   await settle();
 
-  // 2.1 the fork, picking today
   if (!(await rows.filter({ hasText: FORK }).count())) {
     await T(page, "fork-name").fill(FORK);
     await T(page, "fork-date").fill(DATES.today);
@@ -39,8 +34,6 @@ export default async function (page, { shot, status, settle }) {
   }
   check("2.1 the fork is the open draft", clean(await open().textContent()).includes(FORK), await status());
 
-  // 2.2 + 2.3 a new route: the stops app's stops offered in
-  // its picker (D-173), laid each way, its trips per service key
   await stage("Route");
   if (await T(page, "close-route").count()) { await T(page, "close-route").click(); await settle(); }
   await T(page, "new-route-start").click();
@@ -85,13 +78,11 @@ export default async function (page, { shot, status, settle }) {
   const made = await status();
   check("2.3 the route is created", made.includes("created"), made + " " + clean(await T(page, "new-route-problems").textContent().catch(() => "")));
 
-  // 2.3 read back: route 099 on the Route stage
   await settle();
   const route = clean(await T(page, "stage-route").textContent());
   check("2.3 route 099 shows 57 weekday trips, 6:00–20:40", route.includes(ROUTE.long_name) && /TRIPS\s*57/i.test(route) && route.includes("6:00–20:40"), route.slice(0, 160));
   await shot("route-099", { full: true });
 
-  // 2.4 the suggested blocks, adopted on every day type and combination
   await stage("Vehicles");
   const dayTypes = T(page, "day-types").getByRole("button");
   for (let i = 0; i < (await dayTypes.count()); i++) {
@@ -109,7 +100,6 @@ export default async function (page, { shot, status, settle }) {
   }
   await shot("vehicles");
 
-  // 2.5 the proposal against the plan in force; 2.6 published
   await stage("Proposal");
   const base = T(page, "base-select");
   await base.selectOption({ label: "C-TRAN" });

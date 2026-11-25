@@ -1,16 +1,14 @@
-// generate-population.mjs — rebuild testdata/clark-population.geojson
-// from public-domain census sources:
+// Rebuilds testdata/clark-population.geojson from public-domain census
+// sources:
 //
 //   * ACS 5-year total population (B01003) per census tract, Clark
 //     County WA (FIPS 53011), via the Census Reporter API
 //   * 2020 Census Gazetteer tract centroids (INTPTLAT/INTPTLONG)
 //
-// The layer is the real-data dogfood asset for
-// `analysis.type_coverage` — the committed counterpart to the
-// synthetic web/e2e/fixtures/population.geojson: a point
-// FeatureCollection, one point per tract (the Gazetteer's own
-// centroid), properties { POP, GEOID }. Deterministic: features
-// sorted by GEOID. The committed file is the pin; regenerating
+// The output is a point FeatureCollection with one point per tract and
+// properties { POP, GEOID }, sorted by GEOID. It is the real-data
+// counterpart of web/e2e/fixtures/population.geojson for
+// `analysis.type_coverage`. The committed file is the pin. Regenerating
 // picks up the current ACS release.
 //
 // Run: node testdata/generate-population.mjs
@@ -37,8 +35,7 @@ async function getJSON(url) {
   return res.json();
 }
 
-// Minimal zip reader: walk the central directory, return the one
-// deflated entry's bytes. No dependencies.
+// A minimal zip reader that returns the one deflated entry's bytes.
 function unzipEntry(zipBuf, nameMatch) {
   const zip = new Uint8Array(zipBuf);
   const view = new DataView(zipBuf);

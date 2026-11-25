@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// A stop at a glance — a RENDER component: its name, how far it is
-  /// (the directory's `stops_near` answer, when it was asked from a
-  /// point: the walk along the streets when one reaches it, else the
-  /// distance), and its next few departures (a board's rows). Tapping it
-  /// opens the stop.
   import type { BoardRow } from "../types/BoardRow";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import DepartureRows from "./DepartureRows.svelte";
@@ -21,13 +16,10 @@
   }: {
     name: string;
     distance?: number | null;
-    /// Seconds on foot, along the streets.
     walk?: number | null;
-    /// Null while the board is being asked.
     rows: BoardRow[] | null;
     pooled?: boolean;
     routes: DirectoryRoute[];
-    /// A line under the rows (what this card cannot tell).
     note?: string;
     onopen: () => void;
   } = $props();

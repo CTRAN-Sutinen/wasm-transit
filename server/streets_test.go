@@ -1,11 +1,8 @@
 package main
 
-// The published streets: a server started with -streets imports the
-// street layer once through the STREETS CAPABILITY (cap-streets — the
-// module the browser runs) and serves the canonical document; with a
-// feed it serves the walk table over the published network too.
-// Browsers register both by their bytes; nobody downstream reads the
-// layer or computes the table.
+// A server started with -streets imports the street layer once through
+// cap-streets and serves the canonical document. With a feed it serves
+// the walk table over the published network too.
 
 import (
 	"compress/gzip"
@@ -23,8 +20,8 @@ import (
 
 const streetsWasm = "../web/pkg/cap_streets.wasm"
 
-// The walking fixture: a residential street through the sample
-// network's station bays, a motorway across it.
+// The walking fixture is a residential street through the sample
+// network's station bays, and a motorway across it.
 const walkStreetsLayer = "../web/e2e/fixtures/walk-streets.geojson"
 
 func writeLayer(t *testing.T) string {
@@ -40,8 +37,7 @@ func writeLayer(t *testing.T) string {
 	return path
 }
 
-// streetsServer serves /streets, /walks, /network and /manifest; feed
-// "" publishes no network.
+// An empty feed publishes no network.
 func streetsServer(t *testing.T, feed, layer string) string {
 	t.Helper()
 	s := &server{wasm: newTestHost(t), streets: fileStreets(layer, streetsWasm)}
@@ -58,7 +54,6 @@ func streetsServer(t *testing.T, feed, layer string) string {
 	return srv.URL
 }
 
-// get fetches a path, gzip asked and undone, with its ETag.
 func get(t *testing.T, url string) (int, []byte, string) {
 	t.Helper()
 	req, _ := http.NewRequest("GET", url, nil)
@@ -90,14 +85,13 @@ func newStreetsHost(t *testing.T) *WasmHost {
 	return host
 }
 
-// The served streets are the import's document: a fresh module
-// registers the bytes (the kernel's load_streets bulk op) under the ETag's
-// hash; the walk table registers in the router under its own; the
-// manifest pins both.
+// A fresh module registers the served bytes (the kernel's load_streets
+// bulk op) under the ETag's hash. The walk table registers in the
+// router under its own hash. The manifest pins both.
 func TestServedStreetsAndWalksRegisterUnderTheirPins(t *testing.T) {
 	ctx := context.Background()
-	// The e2e fixture feed: its station's bays sit on the walking
-	// fixture's street.
+	// The e2e fixture feed has station bays on the walking fixture's
+	// street.
 	zip, err := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
 	if err != nil {
 		t.Fatal(err)
@@ -174,8 +168,6 @@ func TestServedStreetsAndWalksRegisterUnderTheirPins(t *testing.T) {
 	}
 }
 
-// routerModuleFile is the router's hash-named file from the
-// capability manifest.
 func routerModuleFile(t *testing.T) string {
 	t.Helper()
 	body, err := os.ReadFile("../web/public/caps/manifest.json")
@@ -201,7 +193,7 @@ func routerModuleFile(t *testing.T) string {
 }
 
 // With no network published, the streets still serve and there is no
-// walk table; a republished layer serves the new document.
+// walk table. A republished layer serves the new document.
 func TestStreetsWithoutANetworkAndRepublished(t *testing.T) {
 	layer := writeLayer(t)
 	base := streetsServer(t, "", layer)

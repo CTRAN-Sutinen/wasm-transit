@@ -1,16 +1,6 @@
 package main
 
-// The derived documents in the record (D-199). The laws:
-//   - a boot over a store that holds the derivations of the inputs it
-//     reads runs no module, and publishes the same manifest and the same
-//     documents;
-//   - every document the manifest names is a blob in the store, and its
-//     envelope names the module that made it;
-//   - an input whose bytes change is derived once, and a derivation of
-//     inputs that did not change is read from the store;
-//   - a stored document in a version this build does not write is
-//     derived again;
-//   - only the server's derivations write the derived pointers.
+// The derived documents in the record (D-199).
 
 import (
 	"bytes"
@@ -27,8 +17,6 @@ import (
 
 const overnightFeed = "../web/e2e/fixtures/overnight-gtfs.zip"
 
-// derivedServer is a store-mode server over bucket with the sample feed
-// and layer as its sources, the way main wires -feed and -streets.
 func derivedServer(t *testing.T, bucket store.Backend, layer string) *server {
 	t.Helper()
 	return derivedServerOf(t, bucket, sampleFeed, layer)
@@ -51,7 +39,6 @@ func manifestOf(t *testing.T, s *server) Manifest {
 	return m
 }
 
-// copyFile copies a fixture into a temporary file a test may change.
 func copyFile(t *testing.T, from string) string {
 	t.Helper()
 	body, err := os.ReadFile(from)
@@ -161,7 +148,6 @@ func TestAChangedInputIsDerivedOnce(t *testing.T) {
 	if third.feeder.imports != 0 || third.streets.derivations != 0 {
 		t.Fatalf("the new derivations are stored: %d imports, %d derivations", third.feeder.imports, third.streets.derivations)
 	}
-	// The network pointer's log keeps both imports.
 	if log, _, _ := second.store.Log("network", ""); len(log) != 2 || log[0].To != before.NetworkHash || log[1].To != after.NetworkHash {
 		t.Fatalf("the network pointer logs each import: %+v", log)
 	}

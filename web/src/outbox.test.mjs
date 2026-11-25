@@ -1,5 +1,4 @@
-// The outbox (src/outbox.ts; D-189): the laws a person relies on while
-// the server is away.
+// Pins the outbox (src/outbox.ts; D-189) while the server is away.
 //
 // 1. Writes are sent in the order they were made. A write that cannot
 //    reach the server (a network failure, a 503) keeps waiting, and
@@ -14,13 +13,12 @@
 // 6. A write that waited carries the device's time it was made, as a
 //    claim; a write sent at once does not.
 //
-// Run: node --test web/src/outbox.test.mjs (`just test`, web gates).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Outbox } from "./outbox.ts";
 
-/// A server whose answers a test scripts, one per send, then `net.then`
-/// (a kept write, until the test changes it), and a store in memory.
+// Answers one per send, then `net.then`, which is a kept write until the
+// test changes it.
 function fixture(answers) {
   const sent = [];
   const saved = { value: undefined };

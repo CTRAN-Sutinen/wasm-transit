@@ -13,16 +13,14 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// GCS is the backend over Google Cloud Storage. The conditional create
-// is an upload with ifGenerationMatch=0.
+// The conditional create is an upload with ifGenerationMatch=0.
 type GCS struct {
 	b      *storage.BucketHandle
 	prefix string // "" or "<prefix>/"
 }
 
-// NewGCS answers the backend over bucket, every key under prefix.
-// Credentials are Application Default Credentials;
-// STORAGE_EMULATOR_HOST names a local emulator.
+// Credentials are Application Default Credentials. STORAGE_EMULATOR_HOST
+// names a local emulator.
 func NewGCS(ctx context.Context, bucket, prefix string) (*GCS, error) {
 	c, err := storage.NewClient(ctx)
 	if err != nil {

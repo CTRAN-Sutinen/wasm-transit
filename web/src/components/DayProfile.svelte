@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The day's shape (analysis `hourly_trips`): trips starting in each
-  /// hour, as bars, with the day's numbers (analysis `network_stats`,
-  /// the same date): its service window, stops served, transfer points. Dragging across the bars sets the hour window
-  /// every view reads; a click on a single bar selects that hour.
   import type { HourlyTrips } from "../types/HourlyTrips";
   import type { NetworkStats } from "../types/NetworkStats";
   import { clock } from "./designFormat";

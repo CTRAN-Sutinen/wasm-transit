@@ -1,9 +1,6 @@
 package store
 
-// The disk cache (-store-cache; diskcache.go). A copy that starts while
-// the bucket does not answer serves the heads it last confirmed,
-// labelled stale, with their blobs, entries, and checkpoints, and
-// refuses every write. When the bucket answers, the bucket wins.
+// The disk cache (D-224; docs/architecture/server.md, "The disk cache").
 
 import (
 	"context"
@@ -14,9 +11,7 @@ import (
 	"time"
 )
 
-// cachedStore is a store over b with a disk cache in dir: a server copy
-// on one machine. A second one over the same dir is that copy started
-// again.
+// A second cachedStore over the same dir is the same copy started again.
 func cachedStore(t *testing.T, b Backend, dir string) *Store {
 	t.Helper()
 	s := NewServing(b)
@@ -99,8 +94,7 @@ func TestACopyStartedWhileTheBucketIsDownServesItsCacheStaleAndRefusesWrites(t *
 	}
 }
 
-// A bucket restored to an older state answers again: the cache's
-// newer head is never served once the bucket answers.
+// A restored older bucket wins over the cache's newer head.
 func TestTheBucketWinsOverTheCacheWhenItAnswers(t *testing.T) {
 	dir := t.TempDir()
 	newer := &flaky{Backend: NewMemory()}
@@ -135,7 +129,6 @@ func TestTheBucketWinsOverTheCacheWhenItAnswers(t *testing.T) {
 	}
 }
 
-// Two store URLs never share a cache.
 func TestTheCacheIsScopedToItsStore(t *testing.T) {
 	dir := t.TempDir()
 	f := &flaky{Backend: NewMemory()}
@@ -154,9 +147,6 @@ func TestTheCacheIsScopedToItsStore(t *testing.T) {
 	}
 }
 
-// The cache keeps blobs to its bound, the least recently used out
-// first, and keeps the entries a boot reads: those after the older of
-// the newest two checkpoints.
 func TestTheCacheIsBounded(t *testing.T) {
 	dir := t.TempDir()
 	f := &flaky{Backend: NewMemory()}
@@ -193,8 +183,6 @@ func TestTheCacheIsBounded(t *testing.T) {
 	}
 }
 
-// A cache folder that cannot be written fails at boot, not in an
-// outage.
 func TestACacheFolderThatCannotBeWrittenFailsAtBoot(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a-file")
 	os.WriteFile(file, nil, 0o644)
@@ -203,9 +191,8 @@ func TestACacheFolderThatCannotBeWrittenFailsAtBoot(t *testing.T) {
 	}
 }
 
-// slow is a bucket that answers late: each call waits, unless its
-// context ends first. Then nothing happened, as a request the network
-// dropped before it reached the bucket.
+// A call whose context ends first has done nothing, like a request that
+// the network dropped.
 type slow struct {
 	Backend
 	delay time.Duration
@@ -244,10 +231,7 @@ func (s *slow) List(ctx context.Context, p, a string) ([]ObjectInfo, error) {
 	return s.Backend.List(ctx, p, a)
 }
 
-// The fault harness: a slow bucket. A call past its timeout is a bucket
-// that does not answer: the cached head serves, stale, and a write is
-// refused, never left hanging. A bucket slow within the timeout is a
-// bucket that answers. When it is fast again, the copy recovers.
+// A call past its timeout is a bucket that does not answer (D-119).
 func TestASlowBucketPastTheTimeoutIsABucketThatDoesNotAnswer(t *testing.T) {
 	call, create := callTimeout, createTimeout
 	callTimeout, createTimeout = 50*time.Millisecond, 50*time.Millisecond

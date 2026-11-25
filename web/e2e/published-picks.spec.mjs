@@ -1,14 +1,7 @@
-// Publish → serve → resolve (docs/ROADMAP.md 1): a pick published to
-// the store (POST /plans) is the network a rider page loads once its
-// date arrives. The page reads the manifest's plans_hash, asks the
-// plans module which pick is in force today, and registers that pick's
-// network by hash (GET /blobs/<hash>.gz) — before the first pick
-// takes effect it reads the server's import as before.
-//
-// Its own server (playwright.config.mjs, :8084) runs the durable store
-// in a fresh directory on a pinned date (2026-08-01) and publishes the
-// fixture feed's import (its calendar runs through 2026-12-31); this
-// spec publishes the picks.
+// A published pick (POST /plans) is the network a rider page loads once its
+// date arrives (docs/ROADMAP.md 1). The server on :8084 runs the durable store
+// in a fresh directory on 2026-08-01 and publishes the fixture feed's import,
+// whose calendar runs through 2026-12-31.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -38,7 +31,6 @@ function requests(page) {
   return paths;
 }
 
-/// A pick: the published import, renamed and framed (a planner's fork).
 async function publish(request, id, name, effectiveFrom) {
   const { network } = await (await request.get("/network")).json();
   const pick = { ...network, name, plan: { id, name, effective_from: effectiveFrom } };
@@ -53,7 +45,6 @@ test("ride now loads the pick in force today", async ({ page, request }) => {
   const winter = await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
   expect((await (await request.get("/manifest")).json()).plans_hash).toBe(winter.plans_hash);
 
-  // 2026-10-23: the fall pick governs.
   await live(page, "2026-10-23T07:55:00-04:00");
   const asked = requests(page);
   await page.goto("/ride-now.html");
@@ -62,7 +53,6 @@ test("ride now loads the pick in force today", async ({ page, request }) => {
   expect(asked, "never the import's network").not.toContain(`/blobs/${(await (await page.request.get("/manifest")).json()).network_hash}.gz`);
   await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toContainText("Main Station");
 
-  // Before the first pick takes effect: the import, as before.
   const early = await page.context().newPage();
   await live(early, "2026-09-01T07:55:00-04:00");
   await early.goto("/ride-now.html");
@@ -87,18 +77,12 @@ test("a retired pick never reaches a rider", async ({ page, request }) => {
   await live(page, "2026-12-02T07:55:00-05:00");
   await page.goto("/ride-now.html");
   await expect(page.locator("h1")).toHaveText("Fall 2026 pick", { timeout: 10_000 });
-  // Republishing restores it (the next spec run starts from a fresh store).
   await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
 });
 
-// The planner publishes from the service-design UI: the "Ready to
-// publish?" panel posts the active plan to POST /plans and shows the
-// server's answer as given — published, or each reason it was refused.
 test("a planner publishes a fork from service design", async ({ page, request }) => {
   await page.goto("/service-design.html");
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
-  // The server's import is the base (its combinations, D-55: WK and
-  // SUN); fork it as a pick.
   await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(2, { timeout: 10_000 });
   await page.getByTestId("fork-name").fill("Holiday 2026");
   await page.getByTestId("fork-date").fill("2026-11-23");
@@ -112,10 +96,9 @@ test("a planner publishes a fork from service design", async ({ page, request })
   const set = await (await request.get(`/blobs/${plans_hash}`)).json();
   expect(set.plans.map((p) => p.name)).toContain("Holiday 2026");
 
-  // A fork dated before the server's today is refused, with its reason.
-  // It forks the base, whose calendar runs all year: a fork of the open
-  // pick inherits a calendar from 2026-11-23, so it would also run no
-  // service in its period, and that refusal comes first.
+  // The fork is of the base, whose calendar runs all year. A fork of the open
+  // pick starts its calendar on 2026-11-23 and would be refused first for
+  // having no service in its period.
   await page.keyboard.press("1");
   await page.getByTestId("plan-list").locator("tr", { hasText: "the base every fork copies" }).getByRole("button", { name: "Open" }).click();
   await page.getByTestId("fork-name").fill("Too late");

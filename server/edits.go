@@ -1,21 +1,12 @@
 package main
 
-// Edit sync: GET/POST /edits. The host treats documents as opaque
-// JSON — the merge and the submit transition happen in the SYNC
-// CAPABILITY (cap-sync) via its one op, so client and server agree
-// by construction (same bytes, same input, same output).
+// GET and POST /edits. The host treats documents as opaque JSON, and
+// cap-sync does the merge, so client and server agree. A bare array from
+// an older client comes forward through cap-migrate.
 //
-// POST /edits  body: the client's edit document (an older version —
-//              a bare array — comes forward through cap-migrate).
-//              response: the converged document — the client
-//              adopts it wholesale.
-// GET  /edits  returns the server's document
-//              ({"kind":"edit_records","schema_version":2,"records":[…]}).
-//
-// With -store, /edits reads and writes the disruptions log
-// (disruptions.go; docs/FORMATS.md, "The logs"): POST writes one entry
-// through the merge, GET serves the fold (ETag = its hash). Without it,
-// the dev store keeps it in memory or the -edits file.
+// With -store, /edits reads and writes the disruptions log (disruptions.go;
+// docs/FORMATS.md, "The logs"). Without it, the dev store keeps the
+// document in memory or in the -edits file.
 
 import (
 	"context"
@@ -47,10 +38,8 @@ func (s *server) handleEdits(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleStoreEdits is /edits over the store: the disruptions log is the
-// authority (disruptions.go). GET serves its fold, and a POST writes one
-// entry through the receive path, retrying a lost race (a contending
-// writer is read again and merged again, never clobbered).
+// handleStoreEdits retries a lost race, so a contending writer is read
+// again and merged again, never clobbered.
 func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -99,11 +88,9 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeEdits writes a client's edit document as one entry of the
-// disruptions log, through its receive op (`sync sync`): merged with
-// the head, its clock clamped to the entry's. from, when not nil, is the
-// hash the writer last saw: a head that moved is refused, and nothing is
-// written. The route checked the write rule (`edits`).
+// writeEdits clamps the document's clock to the entry's. A non-nil from
+// is the hash that the writer last saw, and a head that moved is refused.
+// The route checked the write rule (`edits`).
 func (s *server) writeEdits(r *http.Request, client json.RawMessage, from *string) (int64, received, *logRefusal, error) {
 	l := s.keptLog(disruptionsLog)
 	if l == nil {
@@ -118,8 +105,6 @@ func (s *server) writeEdits(r *http.Request, client json.RawMessage, from *strin
 	return seq, got, refusal, err
 }
 
-// editsRefused answers an edit write the receive op refused: a head that
-// moved is 409 {current, seq}, and a document it cannot read is 400.
 func editsRefused(w http.ResponseWriter, got received, refusal *logRefusal) {
 	if got.Failed != nil {
 		http.Error(w, got.Failed.Error, http.StatusBadRequest)
@@ -128,10 +113,6 @@ func editsRefused(w http.ResponseWriter, got received, refusal *logRefusal) {
 	writeRefused(w, refusal)
 }
 
-// editsWriteFailed answers a write the disruptions log did not take: a
-// bucket that does not answer or a gap is 503 (nothing was written;
-// resend), a lost race on every attempt is 409, and a refused document
-// is 400.
 func editsWriteFailed(w http.ResponseWriter, err error) {
 	var ge *store.GapError
 	var ce *store.ConflictError
@@ -152,11 +133,9 @@ func editsWriteFailed(w http.ResponseWriter, err error) {
 	}
 }
 
-// maybeCompactEdits runs the D-57 tombstone-retention write at startup:
-// the disruptions log's receive op (`sync compact`) drops the retired
-// records older than the horizon from the fold, and the drop is one
-// entry (writer gc), audited like any other write. The entries before
-// it keep every record.
+// maybeCompactEdits runs the D-57 tombstone retention at startup. The
+// drop is one entry (writer gc), and the entries before it keep every
+// record.
 func (s *server) maybeCompactEdits() {
 	l := s.keptLog(disruptionsLog)
 	if s.store == nil || l == nil {
@@ -197,13 +176,9 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 		serverDoc = json.RawMessage(emptyEdits)
 	}
 
-	// One trip into the sync capability: merge + submit, after both
-	// documents are read at the receive boundary (an older version
-	// brought forward). The host passes the clock; the module owns
-	// every rule. Validation is NOT here — what a record amounts to on
-	// the network is cap-divert's reports, asked through the bus (a
-	// record the network cannot answer is stored all the same, and
-	// patches nothing).
+	// The host passes the clock and cap-sync owns every rule. It does not
+	// validate: cap-divert reports what a record amounts to, and a record
+	// that the network cannot answer is stored and patches nothing.
 	document, _, unknown, err := s.mergeEdits(json.RawMessage(body), serverDoc, time.Now().UnixMilli())
 	if err != nil {
 		http.Error(w, "sync op failed: "+err.Error(), http.StatusBadRequest)
@@ -221,8 +196,7 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(document))
 }
 
-// persistEdits writes the document atomically (temp + rename) when a
-// path is configured; in-memory mode is a no-op.
+// persistEdits is a no-op in memory mode.
 func (s *server) persistEdits(doc json.RawMessage) error {
 	if s.editsPath == "" {
 		return nil
@@ -234,7 +208,6 @@ func (s *server) persistEdits(doc json.RawMessage) error {
 	return os.Rename(tmp, s.editsPath)
 }
 
-// loadEdits restores a persisted document at startup.
 func loadEdits(path string) json.RawMessage {
 	if path == "" {
 		return nil

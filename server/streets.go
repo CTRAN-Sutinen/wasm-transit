@@ -1,15 +1,8 @@
 package main
 
-// The published streets. A server started with -streets reads its
-// street layer (GeoJSON lines: an agency export, TIGER, OSM) once
-// through the STREETS CAPABILITY (cap-streets — the module the
-// browser runs) and serves the canonical streets document at
-// GET /streets; with a published network it also serves the WALK
-// TABLE derived from the two at GET /walks. Browsers register the
-// document by its bytes (the kernel's load_streets bulk op) and the
-// table in the router — nobody downstream reads the layer, and no
-// browser computes the table. Both are opaque here: the host reads
-// only their hashes, to pin them.
+// Browsers register the streets document by its bytes (the kernel's
+// load_streets bulk op), and no browser reads the layer or computes the
+// walk table. Both are opaque here: the host reads only their hashes.
 
 import (
 	"bytes"
@@ -26,20 +19,14 @@ import (
 	"rustwasm/server/store"
 )
 
-// cap-streets' own bulk op: import a street layer (a streets
-// document registers on the kernel's opLoadStreets).
+// cap-streets' own bulk op, apart from the kernel's opLoadStreets.
 const opImportStreets = 0
 
-// servedDoc is one published document: its bytes (and gzipped), under
-// its hash.
 type servedDoc struct {
 	hash string
 	body []byte
 	gz   []byte
-	// tag is the document's kind, as it names itself inside (its
-	// schema at /schemas/). Set where the published documents are
-	// listed.
-	tag string
+	tag  string
 }
 
 func newServedDoc(hash string, body []byte) servedDoc {
@@ -50,9 +37,6 @@ func newServedDoc(hash string, body []byte) servedDoc {
 	return servedDoc{hash: hash, body: body, gz: gz.Bytes()}
 }
 
-// serve writes the document, gzipped when the client takes it, with
-// its hash as the ETag: a client holding the pinned document
-// revalidates for a 304.
 func (d servedDoc) serve(w http.ResponseWriter, r *http.Request) {
 	etag := `"` + d.hash + `"`
 	w.Header().Set("ETag", etag)
@@ -71,39 +55,30 @@ func (d servedDoc) serve(w http.ResponseWriter, r *http.Request) {
 	w.Write(d.body)
 }
 
-// loadedStreets is one published state: the streets document, and
-// the walk table over it and the published network (empty hash when
-// no network is published).
+// The walk table has an empty hash when no network is published.
 type loadedStreets struct {
 	streets servedDoc
 	walks   servedDoc
 }
 
-// streetsSource reads the street layer from its source (D-118) and
-// imports it when its bytes change; the walk table is derived again
-// when the published network changes. In store mode each is stored
-// (derived.go): a boot whose layer and network the store already
-// derived from reads the stored documents and runs no module.
+// D-118. In store mode a boot whose layer and network the store already
+// derived from reads the stored documents and runs no module (derived.go).
 type streetsSource struct {
 	src         *source
-	streetsWasm string // the cap-streets module that imports it
+	streetsWasm string
 
 	mu          sync.Mutex
 	layerHash   string
 	networkHash string
 	loaded      *loadedStreets
-	// derivations counts the imports and walk tables this process made.
 	derivations int
 }
 
-// fileStreets is a street layer read from a local file (dev, tests).
 func fileStreets(path, streetsWasm string) *streetsSource {
 	return &streetsSource{src: newSource(path, "", "", nil), streetsWasm: streetsWasm}
 }
 
-// Load returns the current published streets over `feed` (nil: no
-// network, no walk table), importing the layer when the file changed
-// and deriving the walk table when either changed.
+// A nil feed means no network and no walk table.
 func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -123,8 +98,6 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	ctx := context.Background()
 	started := time.Now()
 	st := f.src.st
-	// The module runs only when something is derived; its working memory
-	// goes with the instance.
 	var host *WasmHost
 	defer func() {
 		if host != nil {
@@ -234,7 +207,6 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	return loaded, nil
 }
 
-// storedOf is storedDerivation, and false with no store.
 func storedOf(st *store.Store, pointer string, inputs []string, tags ...string) (json.RawMessage, map[string][]byte, bool) {
 	if st == nil {
 		return nil, nil, false
@@ -242,8 +214,6 @@ func storedOf(st *store.Store, pointer string, inputs []string, tags ...string) 
 	return storedDerivation(st, pointer, inputs, tags...)
 }
 
-// publishedStreets loads the streets over the published network (if
-// any).
 func (s *server) publishedStreets() (*loadedStreets, error) {
 	var feed *loadedFeed
 	if s.feeder != nil {
@@ -255,8 +225,6 @@ func (s *server) publishedStreets() (*loadedStreets, error) {
 	return s.streets.Load(feed)
 }
 
-// handleStreets serves the canonical streets document (bare — the
-// bytes cap-streets' load_streets takes).
 func (s *server) handleStreets(w http.ResponseWriter, r *http.Request) {
 	if s.streets == nil {
 		http.Error(w, "no streets configured (start with -streets <layer.geojson>)", http.StatusNotFound)
@@ -270,8 +238,6 @@ func (s *server) handleStreets(w http.ResponseWriter, r *http.Request) {
 	loaded.streets.serve(w, r)
 }
 
-// handleWalks serves the walk table over the published streets and
-// network.
 func (s *server) handleWalks(w http.ResponseWriter, r *http.Request) {
 	if s.streets == nil || s.feeder == nil {
 		http.Error(w, "no walk table (start with -feed <gtfs.zip> and -streets <layer.geojson>)", http.StatusNotFound)

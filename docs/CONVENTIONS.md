@@ -135,9 +135,22 @@ reword a comment that should not exist.
 | "This shipped once: `streets_id` vs `streetsId`." | History. | "A camelCase cast compiles but reads `undefined` at runtime." | A behavior that a reader would not expect. |
 
 - Give each fact one home (AGENTS.md, "Keeping the documents
-  correct"). An op's contract lives in its `OPS.md`. A decision's
-  reasoning lives in its decision file. Point to the home. Do not
-  restate it.
+  correct"). Do not restate it in a comment, and do not add a pointer
+  where the reader already knows where to look. The homes that
+  comments most often copy:
+  - An op's contract lives in its `OPS.md`. That covers the
+    capability's `Request` and `Response` types and every library type
+    or function whose answer an op returns, so those carry no doc
+    comments that repeat it.
+  - An HTTP route's bodies and answers live in `server/openapi.json`.
+  - The design of a part lives in its `docs/architecture/` file, and
+    one generated UI's rules in `docs/architecture/generated-uis/`.
+  - A decision's reasoning lives in its decision file. A comment that
+    stays for another reason keeps the decision id.
+- A test file's header names what the tests pin and where the intent
+  lives, in one or two lines (`docs/TESTING.md`, "Laws first"). A test
+  states its property in one line. Do not narrate steps that the test
+  code shows.
 - Do not write history or process. Describe what the code does now. A
   finding id (QAF-n) is history once its finding is closed and gone
   from `docs/QA-FINDINGS.md`. Delete it.

@@ -1,6 +1,7 @@
-// Record the agency's live feeds as a replayable sequence for the perf
-// runner (docs/TESTING.md, "Performance baselines"): every INTERVAL seconds, fetch each feed
-// web/public/live-feeds.json names and write <dir>/<n>-<kind>.pb.
+// Records the agency's live feeds as a replayable sequence for the perf
+// runner (docs/TESTING.md, "Performance baselines"). Every INTERVAL
+// seconds it fetches each feed that web/public/live-feeds.json names and
+// writes <dir>/<n>-<kind>.pb.
 //
 //   node web/perf/record-rt.mjs [count=20] [dir=testdata/perf-rt] [interval=30]
 

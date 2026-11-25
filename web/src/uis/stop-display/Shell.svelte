@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The stop display's shell — PLACEMENT ONLY: it reads the host's
-  /// `display` state, lays one grouped board out in the picked layout
-  /// (a transit center's list with the alerts beside it, one route
-  /// large, or a street stop's few routes as bands sharing the screen —
-  /// the alerts slot below), and routes events to the host.
   import DisplayAlerts from "../../components/DisplayAlerts.svelte";
   import DisplayGroup from "../../components/DisplayGroup.svelte";
   import DisplayHeader from "../../components/DisplayHeader.svelte";
@@ -88,17 +83,11 @@
   .note { margin: 0 0 0.4rem; color: var(--muted); font-size: clamp(0.8rem, 2vh, 1.2rem); }
   .status { padding: 1rem; color: var(--muted); font-size: clamp(1rem, 3vh, 2rem); }
 
-  /* a transit center: the list, the alerts beside it on a wide screen */
   .center { grid-template-columns: minmax(0, 1fr) minmax(16rem, 28%); grid-template-rows: auto minmax(0, 1fr); }
   .center :global(.head) { grid-column: 1 / -1; }
   .center .alerts { border-top: 0; border-left: 1px solid var(--line); max-height: none; }
-  /* one route: the group fills the screen (a size container its type
-     scales to; a second group, should one stop carry it, shares the
-     height) */
+  /* The slot is the size container that the type scales to. */
   .route .groups { display: grid; grid-auto-rows: minmax(10rem, 1fr); gap: 1.5rem; padding: 1rem 2rem; }
-  /* several routes — a street stop's two or three: each a band across
-     the screen, sharing its height (a band is the size container its
-     type scales to; a rare long list scrolls) */
   .routes .groups { display: grid; grid-auto-rows: minmax(8rem, 1fr); gap: 0.8rem; padding: 0.8rem 1rem; }
   .route .slot, .routes .slot { container-type: size; min-height: 0; }
 

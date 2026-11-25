@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// The route on top of its workbench: its name, the group it runs
-  /// under, and its numbers there (its `route_frequency` row), before
-  /// → after when the plan changes it (`service_type_compare`).
   import type { RouteFrequency } from "../types/RouteFrequency";
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import { change, clock, count, fixed } from "./designFormat";
@@ -25,7 +22,6 @@
     comparison: ServiceTypeComparison | null;
     editing: boolean;
     onedit: () => void;
-    /// The key that toggles editing on this page; "" for none.
     shortcut?: string;
   } = $props();
 

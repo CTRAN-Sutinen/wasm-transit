@@ -1,8 +1,6 @@
-/// The service-design components' formatting: clock times, minutes,
-/// and counts — presentation only, never a domain rule.
 
-/// Seconds since service-day midnight as "H:MM" (after-midnight
-/// times read past 24:00, as the schedule runs them).
+/// Seconds since service-day midnight as "H:MM". Times after midnight read
+/// past 24:00.
 export function clock(secs: number | null | undefined): string {
   if (secs == null) return "—";
   const h = Math.floor(secs / 3600);
@@ -10,7 +8,6 @@ export function clock(secs: number | null | undefined): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-/// Seconds as whole minutes ("12"), or "—".
 export function mins(secs: number | null | undefined): string {
   return secs == null ? "—" : String(Math.round(secs / 60));
 }
@@ -23,29 +20,19 @@ export function fixed(n: number | null | undefined, digits = 1): string {
   return n == null ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-/// "a → b" when the two differ, else "b".
 export function change(a: string, b: string): string {
   return a === b ? b : `${a} → ${b}`;
 }
 
-/// Parse "H:MM" into seconds, or null.
 export function parseClock(text: string): number | null {
   const m = text.trim().match(/^(\d{1,2}):(\d{2})$/);
   return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null;
 }
 
-/// A combination's dates by its spans (analysis `service_groups`):
-/// "2026-09-14 – 2026-10-09 (20 days)", a one-date span as its date.
 export function spansText(spans: { start: string; end: string; days: number }[]): string {
   return spans.map((s) => (s.start === s.end ? s.start : `${s.start} – ${s.end} (${s.days} days)`)).join(", ");
 }
 
-/// An issue or warning as words (network `validate`, cap-author's
-/// `apply`, the server's publish refusals): its kind as a title, and
-/// its fields as a sentence a planner reads — times as clock times,
-/// waits as minutes. Tagged by a `kind` field or by its one key. The
-/// kinds a planner meets while changing service have their own
-/// sentence; every other kind lists its fields as given.
 export function issueWords(item: object): { kind: string; detail: string } {
   if ("kind" in item && typeof item.kind === "string") {
     const { kind, ...rest } = item as Record<string, unknown>;
@@ -62,7 +49,7 @@ export function issueWords(item: object): { kind: string; detail: string } {
       // `after_trip` is the trip's place in the block, counted from 0.
       return { kind, detail: `Block ${f.block}: the wait after trip number ${Number(f.after_trip) + 1} of the block is ${mins(secs("gap_secs"))} min; ${mins(secs("required_secs"))} min is required there.` };
     case "stop_not_in_service": {
-      // D-157: the stops document's status over the plan's dates
+      // The stops document's status over the plan's dates (D-157).
       const status = typeof f.status === "string" ? f.status.replace(/_/g, " ") : "not there yet";
       const when = typeof f.until === "string" ? `from ${f.from} until ${f.until}` : `from ${f.from} on`;
       return { kind, detail: `The plan stops at ${f.stop}, which is ${status} ${when}, as the stops record has it.` };
@@ -80,9 +67,6 @@ export function issueWords(item: object): { kind: string; detail: string } {
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/// The days of the week an answer names (Monday first) in words:
-/// "Mon–Fri", "Sat", "Sun", "Tue, Thu" — a run of three or more
-/// reads as a range.
 export function weekdaysText(days: boolean[]): string {
   const parts: string[] = [];
   let i = 0;

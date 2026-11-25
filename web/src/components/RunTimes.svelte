@@ -1,15 +1,11 @@
 <script lang="ts">
-  /// Each trip's running time by its start (directory `timetable`'s
-  /// `run_secs`): a dot per trip, added trips in blue — where the day
-  /// runs slower, and a trip out of step with its band.
   import type { Timetable } from "../types/Timetable";
   import { clock } from "./designFormat";
 
   let { timetable }: { timetable: Timetable } = $props();
 
-  /// Drawn at the width it is given (measured), so the plot spans the
-  /// card and the hour labels under it sit at its ends; a fixed
-  /// viewBox would letterbox it on a wide screen.
+  /// The plot is drawn at the measured width so it spans the card and the hour
+  /// labels sit at its ends. A fixed viewBox would letterbox it on a wide screen.
   let width = $state(400);
   const W = $derived(Math.max(200, width));
   const H = 130;
@@ -45,13 +41,13 @@
   header { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
   h2 { margin: 0; font-size: 0.9rem; }
   .muted { color: var(--muted); font-size: 0.78rem; }
-  /* margin, not padding: the measured width is the plot's own */
+  /* Use margin, not padding, because the measured width is the plot's own. */
   .plot { margin: 0.4rem 0.9rem 0; }
   svg { display: block; }
   line { stroke: var(--line); }
   text { font-size: 9px; fill: var(--muted); }
   circle { fill: var(--text); opacity: 0.75; }
   circle.added { fill: #2563eb; opacity: 1; }
-  /* the labels under the first and last hour: x() insets the plot 8 px */
+  /* The labels under the first and last hour sit inside, since x() insets the plot 8 px. */
   .ticks { display: flex; justify-content: space-between; padding: 0 calc(0.9rem + 8px) 0.5rem; font-size: 0.68rem; color: var(--muted); }
 </style>

@@ -1,5 +1,5 @@
-// Step 3, ride now: Washougal TC's board, a trip to East Fourth Plain
-// TC leaving now and on the last bus, and route 099 under Routes.
+// Step 3, ride now: Washougal TC's board, a trip to East Fourth Plain TC
+// leaving now and on the last bus, and route 099 under Routes.
 //
 //   node tools/ui-shot.mjs ride-now --steps qa/route-99/3-ride-now.mjs \
 //     --out .qa/route-99/ride.png
@@ -21,7 +21,6 @@ export default async function (page, { shot }) {
   await page.getByLabel("stop name").waitFor({ timeout: 60000 });
   await page.waitForTimeout(2000);
 
-  // 3.1 the stop by name, and its board
   const first = await pick(page, "stop name", "Washougal Transit");
   check("3.1 Washougal Transit Center #9906 is the first answer", first.includes("Washougal Transit Center") && first.includes("9906"), first);
   const board = T(page, "rider-board");
@@ -30,7 +29,6 @@ export default async function (page, { shot }) {
   check("3.1 its board lists 099 to East Fourth Plain TC", rows.includes(`${ROUTE.id} East Fourth Plain TC`), rows.slice(0, 200));
   await shot("board");
 
-  // 3.2 directions to East Fourth Plain TC, leaving now
   await board.getByRole("button", { name: "Directions from here" }).click();
   await pick(page, "To", "East Fourth Plain Transit Center");
   const trip = T(page, "trip-plan");
@@ -41,14 +39,12 @@ export default async function (page, { shot }) {
   check("3.2 nothing a rider cannot read (no hashes)", !/sha256:/.test(now));
   await shot("leave-now");
 
-  // 3.3 the last bus
   await trip.getByRole("radio", { name: "Last bus" }).click();
   await page.waitForTimeout(2500);
   const last = clean(await trip.textContent());
   check("3.3 the last bus is the 8:00 pm 099", (await trip.getByTestId("last-bus").count()) > 0 && last.includes("8:00"), last.slice(0, 240));
   await shot("last-bus");
 
-  // 3.4 the route under Routes
   await trip.getByRole("button", { name: "back" }).click().catch(() => {});
   await page.getByRole("button", { name: /^Routes$/ }).first().click().catch(() => {});
   await page.waitForTimeout(1500);

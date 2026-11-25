@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// One route's gaps by hour (its `route_frequency` row): a bar from
-  /// the shortest to the longest gap starting in each hour, a tick at
-  /// the median where there is one — the target and the range the
-  /// trips actually run, side by side.
   import type { RouteFrequency } from "../types/RouteFrequency";
 
   let {

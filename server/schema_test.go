@@ -1,11 +1,9 @@
 package main
 
-// The host-owned document kinds have hand-written schemas, because no
-// Rust type generates them (docs/FORMATS.md, "Builds"). Each schema is
-// locked in server/schemas/ beside a frozen example. These tests hold
-// the lock: the schema names exactly the Go type's fields, the example
-// matches the schema, and a build the server really commits matches it
-// too. `just caps` publishes both into the registry, marked host-owned.
+// Host-owned kinds have hand-written schemas, locked in server/schemas/
+// beside a frozen example (docs/FORMATS.md, "Builds"). The schema names
+// exactly the Go type's fields, and the example and the server's real
+// output match it.
 
 import (
 	"context"
@@ -30,7 +28,6 @@ func readBuildSchema(t *testing.T) (map[string]any, *jsonschema.Schema) {
 	return readHostSchema(t, buildSchemaPath)
 }
 
-// readHostSchema reads a host-owned kind's schema, as JSON and compiled.
 func readHostSchema(t *testing.T, path string) (map[string]any, *jsonschema.Schema) {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -59,8 +56,6 @@ func readHostSchema(t *testing.T, path string) (map[string]any, *jsonschema.Sche
 	return doc, sch
 }
 
-// jsonFields is a struct type's JSON field names, and which of them it
-// always writes.
 func jsonFields(t reflect.Type) (names []string, required []string) {
 	for i := 0; i < t.NumField(); i++ {
 		tag := t.Field(i).Tag.Get("json")
@@ -78,8 +73,6 @@ func jsonFields(t reflect.Type) (names []string, required []string) {
 	return names, required
 }
 
-// schemaFields is an object schema's property names and its required
-// list.
 func schemaFields(t *testing.T, obj map[string]any) (names []string, required []string) {
 	t.Helper()
 	props, _ := obj["properties"].(map[string]any)
@@ -130,8 +123,6 @@ func TestTheBuildExampleMatchesItsSchema(t *testing.T) {
 	}
 }
 
-// What the server emits: the build it commits from a dist, with its
-// hosted module retained, and a UI's bundle with none.
 func TestACommittedBuildMatchesItsSchema(t *testing.T) {
 	_, sch := readBuildSchema(t)
 	dist := t.TempDir()
@@ -178,8 +169,6 @@ func TestTheDerivationExampleMatchesItsSchema(t *testing.T) {
 	validateBytes(t, sch, "the frozen derivation example", raw)
 }
 
-// What the server emits: the derivations a store-mode boot commits for
-// its feed, its street layer, and the walk table over them.
 func TestCommittedDerivationsMatchTheirSchema(t *testing.T) {
 	_, sch := readHostSchema(t, derivationSchemaPath)
 	s := derivedServer(t, store.NewMemory(), writeLayer(t))
@@ -210,7 +199,6 @@ func TestTheLayoutSchemaNamesExactlyTheGoTypesFields(t *testing.T) {
 	}
 }
 
-// The frozen example, and the layout a store writes, match the schema.
 func TestTheLayoutMatchesItsSchema(t *testing.T) {
 	_, sch := readHostSchema(t, layoutSchemaPath)
 	raw, err := os.ReadFile("schemas/store_layout.v1.example.json")

@@ -1,10 +1,8 @@
-// UI OPS: a generated UI's `ui.json` lists every op its host asks
-// (docs/architecture/generated-uis.md). gen-assemblies links a UI's
-// assembly from that list. A host that asks an op of a capability the
-// list does not name gets no module: its frame turns off at runtime,
-// with no error. This gate finds that at test time.
-//
-// The check:
+// A generated UI's `ui.json` lists every op its host asks
+// (docs/architecture/generated-uis.md). gen-assemblies links the UI's
+// assembly from that list. A host that asks an op of a capability that the
+// list does not name gets no module, and its frame turns off at runtime
+// with no error. This gate finds that at test time. It checks that:
 //
 // - Every `ask("cap", "op", …)` in the host names an op that `ui.json`
 //   lists, unless the op is a kernel op (every module answers those).
@@ -16,9 +14,8 @@
 // - Every `ask(` in the host names its capability and op as string
 //   literals, so this check can read it.
 //
-// `checkUi(...)` is the check (its broken fixtures: ui-ops.test.mjs).
-// Run as a script, it checks each web/src/uis/<id>/ against the
-// registry's kernel ops (`just test`).
+// Run as a script, it checks each web/src/uis/<id>/ against the registry's
+// kernel ops.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,10 +25,6 @@ const ASK = /(?<![\w.$])ask\(/g;
 const LITERAL_ASK = /^ask\(\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"/;
 const CAP_CALL = /(?<![\w.$])(available|load|together)\(([^)]*)\)/g;
 
-/// The problems in one UI: `source` is its host code, `ops` the
-/// `ui.json` lists ("cap.op": `ops`, and `fetchedOps` from
-/// `fetched_ops`), `kernelOps` the op names every module answers. An
-/// empty list means the UI passes.
 export function checkUi({ id, source, ops, fetchedOps = [], kernelOps }) {
   const listed = new Set([...ops, ...fetchedOps]);
   const linked = new Set([...ops, ...fetchedOps].map((o) => o.split(".")[0]));
@@ -61,7 +54,6 @@ export function checkUi({ id, source, ops, fetchedOps = [], kernelOps }) {
   return problems;
 }
 
-/// The host code of one UI: every .ts file in its directory.
 function hostSource(dir) {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".ts"))

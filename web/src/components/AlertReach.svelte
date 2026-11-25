@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// What riders see: an alert's reach today (board `alert_reach`), one
-  /// card per informed entity, and the map of the stops it reaches.
-  /// Each card shows the entity as the GTFS-rt feed publishes it, what
-  /// that means (the fields of one entity are joined by AND), and the
-  /// departures it alone reaches. Hovering a card shows its stops on
-  /// the map; clicking a stop on the map adds it. A RENDER component.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -22,19 +16,15 @@
     onstop,
   }: {
     reach: { entities: EntityReach[]; reach: Reach } | null;
-    /// Every stop, faint, to pick.
     stops: DirectoryStop[];
-    /// Why there is no answer ("" when there is one).
     off: string;
     onstop: (stop: string) => void;
   } = $props();
 
   let hovered = $state<number | null>(null);
 
-  // ----- what an entity means, in words
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-  /// The entity as one phrase: every field it names, joined.
   function phrase(n: EntityNames): string {
     if (n.agency) return "Every rider: all routes, all stops";
     const parts: string[] = [];
@@ -42,14 +32,12 @@
       const start = n.trip.start_secs != null ? `${timeText(n.trip.start_secs)} trip` : `trip ${n.trip.id}`;
       parts.push(`${n.trip.route ? `Route ${n.trip.route}, ` : ""}the ${start}${n.trip.headsign ? ` to ${n.trip.headsign}` : ""}${n.trip.date ? `, ${dateText(n.trip.date)}` : ""}`);
     }
-    // A trip's own route is already named with it.
     if (n.route && !(n.trip && n.trip.route === n.route.name)) parts.push(`Route ${n.route.name}${n.direction ? `, ${n.direction} direction` : ""}`);
     if (n.route_type != null) parts.push(`every route of type ${n.route_type}`);
     if (n.stop) parts.push(`at ${n.stop.name}`);
     return parts.join(" ").replace(/^at /, "At ");
   }
 
-  /// What it does not cover, where a reader might think it does.
   function only(n: EntityNames): string {
     const named = [n.route || n.route_type != null, !!n.stop, !!n.trip].filter(Boolean).length;
     if (n.agency) return "";
@@ -66,7 +54,6 @@
     return not.join(" ");
   }
 
-  /// The selector as the feed carries it.
   function selector(v: InformedView): string {
     const f: string[] = [];
     if (v.agency_id != null) f.push(`agency_id: "${v.agency_id}"`);
@@ -88,7 +75,6 @@
     return `${plural(r.departures, "departure", "departures")} at ${plural(r.stops.length, "stop", "stops")} today`;
   }
 
-  /// What a person should know before publishing it.
   function warnings(e: EntityReach): string[] {
     const w: string[] = [];
     const n = e.names;
@@ -103,7 +89,6 @@
     return w;
   }
 
-  // ----- the map
   let container: HTMLDivElement;
   let map: maplibregl.Map | null = null;
   let loaded = $state(false);

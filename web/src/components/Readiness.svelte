@@ -1,13 +1,4 @@
 <script lang="ts">
-  /// Is the pick ready to publish: the document's issues and warnings
-  /// (network `validate`, or cap-author's answer for a document it
-  /// authored), the export — the network's GTFS
-  /// path, which refuses an invalid document itself — and publishing
-  /// the pick to the deployment, its answer as the server gave it.
-  /// An issue reads as a sentence (designFormat `issueWords`). A block
-  /// whose trip arrives after its next trip leaves offers the planner's
-  /// usual answer as an event: hold that next trip until the bus is
-  /// there — the issue's own trip and time, the host's `retime_trip`.
   import Unavailable from "./Unavailable.svelte";
   import type { NetworkError } from "../types/NetworkError";
   import type { NetworkWarning } from "../types/NetworkWarning";
@@ -39,27 +30,17 @@
     publishRefused: object[];
     publishError: string;
     onpublish: () => void;
-    /// Hold a trip until a time (a block's next trip, until its bus
-    /// arrives); absent, no fix is offered.
     onhold?: (trip: string, toSecs: number) => void;
-    /// Open a block an issue names; absent, the block is text.
     onblock?: (block: string) => void;
-    /// Who is signed in to publish, beside the button (the page's
-    /// SignInControl); absent where the deployment asks for no sign-in.
     signin?: import("svelte").Snippet;
-    /// Why the plan cannot be exported or published (shown when it
-    /// cannot): the host's words for its plan set.
     locked?: string;
   } = $props();
 
-  /// The block an issue is about (every block issue names it), else null.
   function blockOf(issue: object): string | null {
     const body = Object.values(issue)[0] as { block?: unknown } | undefined;
     return typeof body?.block === "string" ? body.block : null;
   }
 
-  /// The trip to hold and until when, as a block_infeasible issue
-  /// names them; null for every other issue.
   function hold(issue: object): { trip: string; until: number } | null {
     const f = (issue as { block_infeasible?: { next: string; arrival_secs: number } }).block_infeasible;
     return f ? { trip: f.next, until: f.arrival_secs } : null;
@@ -121,8 +102,8 @@
     <p class="muted pad" data-testid="published">Published — plan set {published.plans_hash.slice(0, 19)}…</p>
   {/if}
   {#if exportError && issues.length}
-    <!-- The export refused the plan for the issues listed above: say
-         so once, in words; the op's own message rides as the tooltip. -->
+    <!-- The export refused the plan for the issues listed above. Say so once, in
+         words. The op's own message rides as the tooltip. -->
     <p class="pad refused" data-testid="export-refused" title={exportError}>Not exported: the export refused this plan for the {issues.length === 1 ? "issue" : `${issues.length} issues`} above.</p>
   {:else if exportError}
     <div class="pad"><Unavailable title="Export" error={exportError} onretry={onexport} /></div>

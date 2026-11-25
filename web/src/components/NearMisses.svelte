@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// A hub's just-missed connections (analysis `missed_connections`):
-  /// each arrival that sees another route leave before the rider can
-  /// make it, by how much, and when that route next leaves — a
-  /// frequent route's miss reads as the short wait it is.
   import type { MissedConnection } from "../types/MissedConnection";
   import { clock } from "./designFormat";
 

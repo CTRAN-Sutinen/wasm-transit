@@ -1,10 +1,9 @@
 import { defineConfig } from "@playwright/test";
 
-// The perf runner (`just perf`, docs/TESTING.md "Performance
-// baselines"): the profiling build (web/dist-perf — unminified, the
-// capability modules carrying their name sections) served by the Go
-// server with the real feed, on its own port. It measures and reports;
-// it never fails on a number.
+// The perf runner (`just perf`, docs/TESTING.md "Performance baselines").
+// The Go server serves the profiling build (web/dist-perf: unminified, with
+// name sections in the capability modules) with the real feed. It reports
+// and never fails on a number.
 const feed = process.env.PERF_FEED ?? "../testdata/ctran-gtfs.zip";
 
 export default defineConfig({

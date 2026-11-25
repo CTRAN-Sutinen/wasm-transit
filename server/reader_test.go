@@ -1,13 +1,8 @@
 package main
 
-// A reader outside the wasm (docs/FORMATS.md): the bucket's objects,
-// the generated JSON Schemas the registry publishes
-// (registry/documents.json), and docs/FORMATS.md are enough
-// to read what the store holds. Nothing below the setup calls a module,
-// links Rust, or uses the store engine — only object get and list: the
-// pointer is its highest record object, the blob is the object its hash
-// names, the blob's envelope metadata names the kind and schema version,
-// and the schema says what the bytes are.
+// Pins docs/FORMATS.md: the bucket's objects and the published JSON
+// Schemas (registry/documents.json) are enough to read what the store
+// holds. Nothing below the setup calls a module or the store engine.
 
 import (
 	"bytes"
@@ -16,8 +11,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,7 +23,6 @@ import (
 
 const registryDir = "../registry"
 
-// documentIndex is registry/documents.json.
 type documentIndex struct {
 	Documents []struct {
 		Kind          string  `json:"kind"`
@@ -64,7 +58,7 @@ func compileSchema(t *testing.T, path string) *jsonschema.Schema {
 		t.Fatalf("%s: %v", path, err)
 	}
 	c := jsonschema.NewCompiler()
-	c.AssertFormat() // "date" is a promise: YYYY-MM-DD
+	c.AssertFormat() // "date" promises YYYY-MM-DD
 	url := "file:///" + path
 	if err := c.AddResource(url, doc); err != nil {
 		t.Fatal(err)
@@ -87,8 +81,7 @@ func validateBytes(t *testing.T, sch *jsonschema.Schema, what string, data []byt
 	}
 }
 
-// Every worked example the registry publishes is a document of its own
-// schema: the schemas describe the bytes the modules really make.
+// Every worked example validates against its own schema.
 func TestRegistryExamplesMatchTheirSchemas(t *testing.T) {
 	idx := loadDocumentIndex(t)
 	if len(idx.Documents) == 0 {
@@ -106,8 +99,7 @@ func TestRegistryExamplesMatchTheirSchemas(t *testing.T) {
 	}
 }
 
-// storeReader reads a bucket the way FORMATS.md says, with nothing but
-// object get, list, and JSON.
+// storeReader reads a bucket the way FORMATS.md says.
 type storeReader struct{ b store.Backend }
 
 type logLine struct {
@@ -124,7 +116,7 @@ func (r storeReader) head(t *testing.T, pointer string) logLine {
 	if err != nil || len(records) == 0 {
 		t.Fatalf("pointer %s: %d records, %v", pointer, len(records), err)
 	}
-	// Keys are zero-padded: the last listed is the head.
+	// Keys are zero-padded, so the last listed is the head.
 	raw, _, err := r.b.Get(ctx, records[len(records)-1].Key)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +154,6 @@ func (r storeReader) blob(t *testing.T, hash string) ([]byte, struct {
 	return data, env
 }
 
-// schemaFor finds the schema for a stored blob from its envelope alone.
 func schemaFor(t *testing.T, idx documentIndex, kind string, version uint32) *jsonschema.Schema {
 	t.Helper()
 	for _, d := range idx.Documents {
@@ -174,10 +165,8 @@ func schemaFor(t *testing.T, idx documentIndex, kind string, version uint32) *js
 	return nil
 }
 
-// The headline: a store written by the server (modules and all) is
-// read back by plain Go — the published plan chain, every pick's
-// network, and the edit document, each validated against the schema
-// its envelope names.
+// Plain Go reads back the plan chain, every pick's network, and the
+// edit document, each validated against the schema its envelope names.
 func TestStoreReadsWithoutTheModules(t *testing.T) {
 	bucket := store.NewMemory()
 	s, base := newPlansServer(t, bucket)
@@ -193,19 +182,17 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	}
 	s.store.Close()
 
-	// From here on: objects, JSON, and the published schemas.
 	idx := loadDocumentIndex(t)
 	r := storeReader{bucket}
 
-	// The published picks are the plans log's `pick` records: each
-	// entry, in seq order, holds each changed record's new state (D-191).
+	// The published picks are the plans log's `pick` records (D-191).
 	picks := map[string]json.RawMessage{}
 	frozen := map[string]bool{}
 	plansEntries, err := bucket.List(context.Background(), "logs/plans/entries/", "")
 	if err != nil || len(plansEntries) == 0 {
 		t.Fatalf("the plans log: %d entries, %v", len(plansEntries), err)
 	}
-	for _, o := range plansEntries { // listed in seq order
+	for _, o := range plansEntries { // in seq order
 		raw, _, err := bucket.Get(context.Background(), o.Key)
 		if err != nil {
 			t.Fatal(err)
@@ -244,7 +231,6 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 		}
 	}
 	sort.Slice(set.Plans, func(i, j int) bool { return set.Plans[i].EffectiveFrom < set.Plans[j].EffectiveFrom })
-	// The plan chain, read straight off the document.
 	var chain []string
 	for _, p := range set.Plans {
 		chain = append(chain, p.EffectiveFrom+" "+p.ID)
@@ -261,8 +247,7 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 		t.Fatalf("the chain in date order: %v", chain)
 	}
 
-	// The edit document is the disruptions log: each entry says its kind
-	// and version inside it, and validates against that schema.
+	// The edit document is the disruptions log.
 	entries, err := bucket.List(context.Background(), "logs/disruptions/entries/", "")
 	if err != nil || len(entries) == 0 {
 		t.Fatalf("the disruptions log: %d entries, %v", len(entries), err)
@@ -283,9 +268,7 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	}
 }
 
-// The derived documents (D-199) read back with no module: each
-// derivation names its inputs and its documents, and each blob
-// validates against the schema its envelope names.
+// The derived documents (D-199) read back with no module.
 func TestStoredDerivationsReadWithoutTheModules(t *testing.T) {
 	bucket := store.NewMemory()
 	s := derivedServer(t, bucket, writeLayer(t))
@@ -329,8 +312,6 @@ func TestStoredDerivationsReadWithoutTheModules(t *testing.T) {
 	}
 }
 
-// schemaForKind is the published schema of a document by the kind and
-// version it says inside it.
 func schemaForKind(t *testing.T, idx documentIndex, kind string, version uint32) *jsonschema.Schema {
 	t.Helper()
 	for _, d := range idx.Documents {
@@ -342,11 +323,9 @@ func schemaForKind(t *testing.T, idx documentIndex, kind string, version uint32)
 	return nil
 }
 
-// servedSchemasDir is the /schemas/ every page build carries, written
-// by `just caps` (gen-manifest) into web/public/schemas/.
+// servedSchemasDir is written by `just caps` (gen-manifest).
 const servedSchemasDir = "../web/public/schemas"
 
-// withSchemas puts the build's /schemas/ into a -dist.
 func withSchemas(t *testing.T, dist string) {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(servedSchemasDir, "documents.json")); err != nil {
@@ -357,13 +336,10 @@ func withSchemas(t *testing.T, dist string) {
 	}
 }
 
-// schemaOf finds a document's schema the way a reader with nothing but
-// a deployment does: the blob, the tag and version inside it, then
-// /schemas/documents.json, then the schema file it names, whose $id
-// names that tag and version. get answers a path under the deployment's
-// root. It returns the schema's path under /schemas/. That the bytes
-// match the schema is the Rust gates' to check (docs/FORMATS.md, "The
-// schema lock"); this checks that a reader can get there.
+// schemaOf finds a schema through /schemas/documents.json and checks
+// that its $id names the document's tag and version. That the bytes
+// match the schema is for the Rust gates (docs/FORMATS.md, "The schema
+// lock").
 func schemaOf(t *testing.T, get func(path string) []byte, hash, what string) string {
 	t.Helper()
 	var head struct {
@@ -406,8 +382,7 @@ func linkTo(schema string) string {
 	return `</schemas/` + schema + `>; rel="describedby"; type="application/schema+json"`
 }
 
-// A static export holds its schemas beside its blobs, and every
-// published document finds its schema there.
+// A static export holds its schemas beside its blobs.
 func TestAnExportReachesEachDocumentsSchema(t *testing.T) {
 	s := exportServer(t)
 	withSchemas(t, s.dist)
@@ -435,8 +410,8 @@ func TestAnExportReachesEachDocumentsSchema(t *testing.T) {
 	}
 }
 
-// The same from a running server: /schemas/ is served, open, from the
-// pages, and a blob's response links the schema a reader finds.
+// A running server serves /schemas/ openly, and a blob's response links
+// its schema.
 func TestAServerLinksEachDocumentsSchema(t *testing.T) {
 	s := exportServer(t)
 	withSchemas(t, s.dist)
@@ -460,14 +435,12 @@ func TestAServerLinksEachDocumentsSchema(t *testing.T) {
 	}
 }
 
-// A stored blob links its schema by its envelope, in store mode, where
-// the pages (and so /schemas/) come from the pinned build.
+// In store mode, the pages and so /schemas/ come from the pinned build.
 func TestAStoredBlobLinksItsSchema(t *testing.T) {
 	dist := t.TempDir()
 	writeDist(t, dist, releaseA)
 	withSchemas(t, dist)
 	s, base := newBuildServer(t, store.NewMemory(), dist)
-	// A stored blob: the edit document in its stored kind.
 	hash, err := s.store.PutBlob([]byte(editDoc("e1", "submitted", 2, 100)), s.syncEnvelope(), "")
 	if err != nil {
 		t.Fatal(err)

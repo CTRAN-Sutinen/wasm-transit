@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// The frequency grid (analysis `route_frequency`): each route a
-  /// row, each service hour a cell — the longest gap starting in the
-  /// hour, and the shortest beneath it when the trips vary. The gaps
-  /// are the trips' own; nothing is rounded to a grid. Shading
-  /// deepens continuously as the longest wait shortens — no tier
-  /// boundaries (D-52 is open). The route's numbers ride at the right;
-  /// a row opens the route.
   import type { RouteFrequency } from "../types/RouteFrequency";
   import type { RouteHourGaps } from "../types/RouteHourGaps";
   import { clock, count, fixed } from "./designFormat";
@@ -31,8 +24,8 @@
     return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
   });
   const inWindow = (h: number) => !!window && h >= window.from && h < window.to;
-  /// Strength 0..1 from the longest wait: 10 min or less is full,
-  /// 75 min or more is none — drawing, not a standard.
+  /// Strength runs from 0 to 1. It is full at a longest wait of 10 minutes or
+  /// less and none at 75 or more. This is drawing, not a standard.
   const strength = (secs: number) => Math.max(0, Math.min(1, (75 * 60 - secs) / (65 * 60)));
   function cell(h: RouteHourGaps | undefined) {
     if (!h) return { text: "", sub: "", bg: "transparent", fg: "var(--muted)", title: "" };
@@ -43,8 +36,8 @@
     const longest = Math.round(h.longest_gap_secs / 60);
     const shortest = Math.round((h.shortest_gap_secs ?? h.longest_gap_secs) / 60);
     return {
-      // A wait past two hours reads in hours ("9.8 h"): a service
-      // gap, not a headway — three digits of minutes look like a slip.
+      // A wait past two hours reads in hours ("9.8 h"), since three digits of
+      // minutes look like a slip.
       text: longest >= 120 ? `${(longest / 60).toFixed(1)} h` : String(longest),
       sub: shortest !== longest ? `from ${shortest}` : "",
       bg: `color-mix(in oklab, #1d4ed8 ${Math.round(s * 100)}%, var(--surface))`,
@@ -114,7 +107,6 @@
   .route button { font: inherit; font-weight: 600; border: 0; background: none; padding: 0; cursor: pointer; color: var(--text); font-family: ui-monospace, monospace; }
   td.hr { padding: 1px; min-width: 2.3rem; }
   td.hr.win { background: var(--accent-soft); }
-  /* Outside the hour window: still there, out of the way. */
   .hr.out { opacity: 0.22; }
   .cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 2.1rem; border-radius: 3px; line-height: 1.05; }
   .cell b { font-size: 0.8rem; }

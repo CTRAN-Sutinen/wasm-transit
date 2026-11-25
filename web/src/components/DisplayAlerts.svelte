@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// A stop display's alerts slot — a RENDER component over the
-  /// grouped board's alerts (the ones that speak about this stop or a
-  /// departure still to leave it: the op's choice). The slot is always
-  /// on screen; with none, it says so.
   import AlertList from "./AlertList.svelte";
   import type { LiveAlert } from "../types/LiveAlert";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";

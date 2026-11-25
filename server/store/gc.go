@@ -8,29 +8,25 @@ import (
 	"strings"
 )
 
-// GCReport is what one GC pass did.
 type GCReport struct {
 	Removed  int `json:"removed"`  // orphan blobs this pass deleted
 	Restored int `json:"restored"` // trashed blobs a record named by the time the pass settled
 	Kept     int `json:"kept"`     // candidates whose delete the bucket refused (retention)
 }
 
-// GC is the offline collector (D-117; `store gc`), run beside live
+// GC is the offline collector (D-117; `store gc`). It runs beside live
 // servers with its own delete-capable credentials. A pass (store.tla):
 //
-//  1. settles any trash a crashed pass left (step 4);
-//  2. lists every record, then the blobs: the candidates are the blobs
-//     nothing names (neither a record's `to` nor `from`, nor a file of a
-//     build a record names — build.go, nor a blob a marked field names —
-//     describe.go) older than graceMs;
-//  3. moves each candidate to gc/<hex> — a copy, then the delete;
-//  4. settles: lists the records again, restores every trashed blob a
-//     record now names (a commit that reused the orphan after step 2),
-//     and empties gc/.
+//  1. settles any trash that a crashed pass left (step 4);
+//  2. lists every record, then the blobs. The candidates are the blobs
+//     that nothing names, and that are older than graceMs;
+//  3. moves each candidate to gc/<hex>, as a copy and then a delete;
+//  4. lists the records again, restores every trashed blob that a record
+//     now names, and empties gc/.
 //
-// Step 4 closes the race a commit's own re-check cannot: a commit that
-// lands its record and re-reads its blob between steps 2 and 3. A GC
-// pass never deletes a record.
+// Step 4 closes a race that a commit's own re-check cannot. A commit may
+// land its record and re-read its blob between steps 2 and 3. A GC pass
+// never deletes a record.
 func (s *Store) GC(graceMs int64) (GCReport, error) {
 	var r GCReport
 	if s.serving {
@@ -79,9 +75,8 @@ func (s *Store) GC(graceMs int64) (GCReport, error) {
 
 func trashKey(h string) string { return "gc/" + h }
 
-// settle re-lists the records, restores every blob under gc/ a record
-// names, and deletes gc/. deleted is what this pass removed from blobs/
-// (nil when settling a crashed pass's trash).
+// settle takes deleted, the blobs that this pass removed from blobs/,
+// or nil when it settles a crashed pass's trash.
 func (s *Store) settle(r *GCReport, deleted map[string]bool) error {
 	ctx := context.Background()
 	trash, err := s.b.List(ctx, "gc/", "")
@@ -115,10 +110,8 @@ func (s *Store) settle(r *GCReport, deleted map[string]bool) error {
 	return nil
 }
 
-// named answers the hex of every blob a record names (`to` or `from`,
-// and every file of a build it names), over every pointer in the
-// bucket — another process's commits too — and every blob a marked
-// field names from them or from a log entry (followRefs).
+// named covers every pointer in the bucket, including other processes'
+// commits.
 func (s *Store) named() (map[string]bool, error) {
 	recs, err := s.b.List(context.Background(), "pointers/", "")
 	if err != nil {
@@ -156,8 +149,8 @@ func (s *Store) named() (map[string]bool, error) {
 			return nil, err
 		}
 	}
-	// A build's record names its files too (build.go). A build whose
-	// document cannot be read fails the pass: GC never guesses.
+	// A build whose document cannot be read fails the pass, because GC
+	// never guesses.
 	for to := range builds {
 		refs, err := buildRefs(context.Background(), s.b, to)
 		if err != nil {
@@ -167,26 +160,21 @@ func (s *Store) named() (map[string]bool, error) {
 			named[x] = true
 		}
 	}
-	// What the schemas mark (describe.go): every blob a named blob or a
-	// log record names, followed to the end.
+	// Follow the fields that the schemas mark (describe.go) to the end.
 	if err := s.followRefs(named, recorded); err != nil {
 		return nil, err
 	}
 	return named, nil
 }
 
-// kindVersion is a blob's kind and version, as its record names them.
 type kindVersion struct {
 	kind    string
 	version uint32
 }
 
-// followRefs adds to named every blob that a marked field names: in a
-// named blob (read only when its kind's schema marks a field) and in
-// each log entry's records, and in each blob they name in turn. A
-// referenced blob is read from blobs/, else from gc/ (a pass's trash);
-// one that is in neither fails the pass, because GC never guesses what
-// it would have named (`store verify` names it).
+// followRefs reads a referenced blob from blobs/, else from gc/. A blob
+// in neither fails the pass, because GC never guesses what it would
+// have named (`store verify` names it).
 func (s *Store) followRefs(named map[string]bool, recorded map[string]kindVersion) error {
 	ctx := context.Background()
 	d, err := readDescribed(ctx, s.b)
@@ -210,8 +198,8 @@ func (s *Store) followRefs(named map[string]bool, recorded map[string]kindVersio
 		named[h] = true
 		queue = append(queue, h)
 	}
-	// A blob whose record names a kind that marks nothing names nothing:
-	// it is never read (a network is megabytes).
+	// A blob whose kind marks nothing names nothing, so it is never read.
+	// A network is megabytes.
 	read := map[string]bool{}
 	for h, kv := range recorded {
 		if !d.marks(kv.kind, kv.version) {

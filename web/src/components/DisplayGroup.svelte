@@ -1,13 +1,4 @@
 <script lang="ts">
-  /// One group on a stop's display — a RENDER component over one
-  /// `grouped_board` group: the route (its authored colors), where it
-  /// is going, and its next departures, each as the row's `wait` says
-  /// it, live or scheduled, and (at a station) the bay it leaves from.
-  /// A group with none left says why: a detour took it from this
-  /// stop, its trips were cancelled (each skipped visit names the edit
-  /// that took it — `diversion` or `cancel`), or it has stopped for
-  /// the day — and when it next runs here (the op's `next`, D-42:
-  /// within a week, else nothing).
   import type { DepartureGroup } from "../types/DepartureGroup";
   import { nextText, routeColor, statusText, statusTone, waitText } from "./rideFormat";
 
@@ -17,12 +8,8 @@
     bays = false,
   }: {
     group: DepartureGroup;
-    /// "row" (a line of a station's list), "hero" (one route filling
-    /// the screen), "band" (one of a street stop's few, across the
-    /// screen) — hero and band size to the size container their
-    /// placement gives them.
+    /// "hero" and "band" size to the size container that their placement gives them.
     variant: "row" | "hero" | "band";
-    /// Show each departure's bay.
     bays?: boolean;
   } = $props();
 
@@ -95,12 +82,10 @@
   .none.detour, .note { color: var(--warn); }
   .note { margin: 0; font-size: 0.5em; }
 
-  /* a line of a station's list: route, destination, then the times */
   .row { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr); align-items: center; font-size: clamp(1rem, 2.6vh, 2.2rem); padding: 0.45em 0; border-bottom: 1px solid var(--line); }
   .row .note { grid-column: 2; }
-  /* one route, large: the route above its three times, spread over
-     the height its placement gives it; the type follows that box, and
-     a time never outgrows its third of the width */
+  /* This is one route, large. The type follows the box that the placement gives it, and
+     a time never outgrows its third of the width. */
   .hero {
     height: 100%; align-content: space-evenly; gap: 0.4em;
     font-size: clamp(1.4rem, min(11cqh, 4.6cqw), 9rem); padding: 0 0.3em;
@@ -112,16 +97,12 @@
   .hero .none { font-size: 0.8em; }
   .hero header { flex-wrap: wrap; row-gap: 0.2em; }
   .hero .dest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.1; }
-  /* narrow: the times stack down the height, each with its status
-     beside it */
   @container (max-width: 40rem) {
     .hero { font-size: clamp(1rem, min(6cqh, 8cqw), 4rem); }
     .hero .times { grid-template-columns: minmax(0, 1fr); gap: 0.5em; }
     .hero .times li { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 0.6em; }
     .hero .wait { font-size: min(1.7em, 14cqw, 11cqh); }
   }
-  /* one of a street stop's few: route and destination, then the
-     times, across the band; the type follows the band's height */
   .band {
     height: 100%; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; column-gap: 1.2em;
     font-size: clamp(1rem, min(15cqh, 3.4cqw), 7rem); padding: 0 0.8em;

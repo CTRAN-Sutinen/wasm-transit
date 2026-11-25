@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// A stop type-ahead — a RENDER component over the directory's
-  /// `stops` answer (every word typed in the name or the stop id) and,
-  /// below it, the geocoder's addresses and places when the host has
-  /// one. It emits what is typed, a beat after typing pauses, and
-  /// renders each answer as it lands: arrow keys move through both
-  /// lists, Enter picks, Escape closes. It matches nothing itself;
-  /// the typed words are only marked bold.
   type Place = { id: string; name: string; lat?: number; lon?: number; detail?: string };
 
   let {
@@ -23,14 +16,9 @@
   }: {
     label: string;
     placeholder: string;
-    /// The picked place's name (a trip end), shown until the rider types.
     value?: string;
-    /// The directory's answer for this field; null when it asked
-    /// nothing (or for another field).
     found: { text: string; places: Place[] } | null;
-    /// The geocoder's answer for this field; null when it has none.
     addresses?: { text: string; places: Place[] } | null;
-    /// The answer's cap: a full page means there may be more.
     limit: number;
     off: boolean;
     icon?: "search" | "from" | "to";
@@ -46,7 +34,6 @@
   const listId = `ps-${crypto.randomUUID()}`;
 
   const open = $derived(editing && text.trim().length > 0 && (found !== null || addresses !== null));
-  /// Both lists in order, for the arrow keys.
   const items = $derived([...(found?.places ?? []), ...(addresses?.places ?? [])]);
   const stopCount = $derived(found?.places.length ?? 0);
 
@@ -88,7 +75,6 @@
     }
   }
 
-  /// The name with each typed word marked (case-insensitive).
   function marked(name: string, typedText: string): { s: string; hit: boolean }[] {
     const words = typedText.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     if (words.length === 0) return [{ s: name, hit: false }];

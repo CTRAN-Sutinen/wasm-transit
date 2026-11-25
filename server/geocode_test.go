@@ -1,9 +1,8 @@
 package main
 
-// The geocoder proxy forwards the user's input and the deployment's
-// query policy — never a policy the page sends — refuses ops it does
-// not carry, answers 404 with no geocoder configured, and the
-// manifest lists the service exactly when it is configured.
+// Pins that the geocoder proxy forwards the user's input with the
+// deployment's query policy, never the page's, and that the manifest
+// lists the service exactly when it is configured.
 
 import (
 	"encoding/json"
@@ -55,8 +54,6 @@ func TestGeocodeProxy(t *testing.T) {
 		return ""
 	}
 
-	// The user's input crosses; the page's own policy does not — the
-	// deployment's does.
 	code, body := get("/geocode/reverse?point.lat=45.6&point.lon=-122.5&layers=venue&size=40&api_key=x")
 	if code != 200 || body != `{"type":"FeatureCollection","features":[]}` {
 		t.Fatalf("reverse: %d %s", code, body)
@@ -81,7 +78,6 @@ func TestGeocodeProxy(t *testing.T) {
 		t.Fatalf("unknown op: %d, forwarded %v", code, asked)
 	}
 
-	// The manifest lists the service and the policy its path applies.
 	var m Manifest
 	_, body = get("/manifest")
 	if err := json.Unmarshal([]byte(body), &m); err != nil {
@@ -91,7 +87,6 @@ func TestGeocodeProxy(t *testing.T) {
 		t.Fatalf("manifest services: %+v", m.Services)
 	}
 
-	// No geocoder: 404, and the manifest lists no service.
 	s.geocoder = nil
 	if code, _ := get("/geocode/reverse?point.lat=45.6&point.lon=-122.5"); code != 404 {
 		t.Fatalf("unconfigured: %d", code)
@@ -103,7 +98,6 @@ func TestGeocodeProxy(t *testing.T) {
 		t.Fatalf("unconfigured manifest lists %+v", m.Services)
 	}
 
-	// A policy for an op the proxy does not carry is refused at start.
 	os.WriteFile(policy, []byte(`{"place":{"size":1}}`), 0o644)
 	if _, err := loadGeocoder(pelias.URL, policy); err == nil {
 		t.Fatal("a policy for an unknown op loaded")

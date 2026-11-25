@@ -13,13 +13,8 @@ import (
 	"rustwasm/server/store"
 )
 
-// Builds (D-80; docs/architecture/release-artifacts.md): in store
-// mode the server commits the release in -dist to the `build` pointer —
-// every file a blob, the build document naming them and the modules
-// the server hosts — the manifest pins it (`build_hash`), and the pages
-// are served from the pinned build. A rollback is POST /builds naming
-// a build the log holds: the pointer moves back, the manifest moves
-// with it, and the pages follow (D-63).
+// Pins builds (D-80, D-63; docs/architecture/release-artifacts.md). The
+// manifest pins `build_hash`, and the pages follow the pinned build.
 
 const syncWasmPath = "../web/pkg/cap_sync.wasm"
 
@@ -101,8 +96,7 @@ func TestTheDistIsCommittedAsABuildAndThePagesAreServedFromIt(t *testing.T) {
 		t.Fatalf("the build retains the modules the server hosts: %+v", doc.Server)
 	}
 
-	// A replacement process given only the bucket (its -dist empty)
-	// serves the same pages, from the store.
+	// A replacement process with only the bucket serves the same pages.
 	_, base2 := newBuildServer(t, b, t.TempDir())
 	for path, want := range map[string]string{"/": "<p>A</p>", "/sw.js": `const BUILD = "a";`, "/assets/index-AAAAAAAA.js": "console.log('A')"} {
 		code, hdr, body := httpGet(t, base2+path)
@@ -131,7 +125,6 @@ func TestANewReleaseIsANewBuildAndARollbackServesTheOldBytes(t *testing.T) {
 	_, base := newBuildServer(t, b, dist)
 	a := manifestBuild(t, base)
 
-	// Release B lands in -dist: the next request commits it.
 	writeDist(t, dist, map[string]string{"index.html": "<p>B</p>", "sw.js": `const BUILD = "b";`})
 	bHash := manifestBuild(t, base)
 	if bHash == a || len(buildLog(t, base)) != 2 {
@@ -141,7 +134,6 @@ func TestANewReleaseIsANewBuildAndARollbackServesTheOldBytes(t *testing.T) {
 		t.Fatalf("the pages are B's: %q", body)
 	}
 
-	// Roll back: the pointer moves to A, and A's bytes are served.
 	code, _, body := httpPost(t, base+"/builds", `{"build":"`+a+`"}`)
 	if code != 200 {
 		t.Fatalf("rollback: %d %s", code, body)
@@ -159,13 +151,12 @@ func TestANewReleaseIsANewBuildAndARollbackServesTheOldBytes(t *testing.T) {
 		t.Fatalf("the rollback is a logged move: %+v", entries)
 	}
 
-	// A restart over the same bucket with B still in -dist keeps A: a
-	// build the log already holds is a pointer move, never an import.
+	// A build that the log already holds is a pointer move, never an
+	// import, so a restart with B still in -dist keeps A.
 	_, base2 := newBuildServer(t, b, dist)
 	if got := manifestBuild(t, base2); got != a {
 		t.Fatalf("a restart does not undo the rollback: %q", got)
 	}
-	// And forward again is the same move.
 	if code, _, body := httpPost(t, base2+"/builds", `{"build":"`+bHash+`"}`); code != 200 {
 		t.Fatalf("roll forward: %d %s", code, body)
 	}
@@ -196,9 +187,8 @@ func TestOnlyALoggedBuildIsMovedTo(t *testing.T) {
 	}
 }
 
-// Each UI at its own URL (D-171): a UI's bundle (-ui-dist) is a build
-// of its own on build.<id>, and POST /builds?ui=<id> moves that UI's
-// pointer and nothing else.
+// Pins that a UI's bundle (-ui-dist) is a build on build.<id>, and
+// POST /builds?ui=<id> moves only that pointer (D-171).
 func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 	stops, change := t.TempDir(), t.TempDir()
 	writeDist(t, stops, map[string]string{"index.html": "stops", "stops.html": "<p>stops A</p>", "sw.js": "stops A", "basemap.pmtiles": "map data"})
@@ -239,7 +229,6 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 		t.Fatalf("a UI's build holds its bundle's files, no server modules, and no basemap: %+v", doc)
 	}
 
-	// Both UIs ship B.
 	writeDist(t, stops, map[string]string{"sw.js": "stops B"})
 	writeDist(t, change, map[string]string{"sw.js": "change B"})
 	s.syncBuild()
@@ -248,21 +237,18 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 		t.Fatalf("each UI's new bundle is a new build: %q %q", stopsB, changeB)
 	}
 
-	// Roll the stops UI back. The other UI and the server's build stay.
 	if code, _, body := httpPost(t, base+"/builds?ui=stops", `{"build":"`+stopsA+`"}`); code != 200 {
 		t.Fatalf("the stops UI rolls back: %d %s", code, body)
 	}
 	if head("build.stops") != stopsA || head("build.service-change") != changeB || head("build") != server {
 		t.Fatalf("only build.stops moved: %q %q %q", head("build.stops"), head("build.service-change"), head("build"))
 	}
-	// A build of another UI's log is not this UI's to move to.
 	if code, _, _ := httpPost(t, base+"/builds?ui=stops", `{"build":"`+changeA+`"}`); code != 404 {
 		t.Fatalf("another UI's build: %d", code)
 	}
 	if code, _, _ := httpPost(t, base+"/builds?ui=Stops/x", `{"build":"`+stopsA+`"}`); code != 400 {
 		t.Fatalf("an id that names no UI pointer: %d", code)
 	}
-	// A restart on B, in the UI's directory, keeps the rollback.
 	s.uiDists[0].state = buildState{}
 	s.syncBuild()
 	if head("build.stops") != stopsA {

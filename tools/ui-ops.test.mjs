@@ -1,5 +1,5 @@
-// The UI OPS gate's fixtures (tools/ui-ops.mjs): a host that passes,
-// and one that breaks each rule.
+// Fixtures for tools/ui-ops.mjs: a host that passes, and one that breaks
+// each rule.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

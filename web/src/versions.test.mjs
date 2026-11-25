@@ -1,8 +1,5 @@
-// A refusal of a document another build wrote (src/versions.ts): the
-// two refusal texts transit-version writes, and nothing else, ask for
-// the deployment's build.
-//
-// Run: node --test web/src/versions.test.mjs (`just test`, web gates).
+// Only the two transit-version refusal texts ask for the deployment's
+// build (src/versions.ts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { newerRefusal, noteRefusal, onNewerBuild } from "./versions.ts";

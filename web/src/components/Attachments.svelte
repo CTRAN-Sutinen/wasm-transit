@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// A form's photos and drawings (D-162): "Take photo" opens the
-  /// phone's camera, "Add file" a photo or a PDF from the device; each is
-  /// added to the deployment at once (the page's `onadd`) and named here
-  /// by its hash, with a caption to type and a way to take it off the
-  /// record. Shown only where the deployment keeps attachments.
-  /// A RENDER component.
   import AttachmentThumbs from "./AttachmentThumbs.svelte";
 
   type Item = { hash: string; type: string; name?: string; caption?: string; taken_on?: string };

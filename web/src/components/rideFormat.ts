@@ -1,13 +1,10 @@
-/// Formatting for the rider's components — strings from op answers,
-/// nothing decided. Times are service-day seconds (past 86400 is an
-/// after-midnight trip of the same day: it reads as the clock time).
+/// Times are service-day seconds. Past 86400 is an after-midnight trip of the
+/// same day and reads as the clock time.
 
 import type { LiveStatus } from "../types/LiveStatus";
 import type { Wait } from "../types/Wait";
 import type { NextService } from "../types/NextService";
 
-/// "8:02" and "am" — a rider's clock, the suffix set apart so a
-/// board can size it down.
 export function clock(secs: number): { hm: string; ap: string } {
   const h24 = Math.floor(secs / 3600) % 24;
   const m = Math.floor((secs % 3600) / 60);
@@ -25,7 +22,6 @@ function amount(secs: number): string {
   return abs < 60 ? `${abs} s` : `${Math.round(abs / 60)} min`;
 }
 
-/// The words for a row's status under the live document's window.
 export function statusText(status: LiveStatus, delaySecs: number | null): string {
   switch (status) {
     case "on_time":
@@ -40,8 +36,7 @@ export function statusText(status: LiveStatus, delaySecs: number | null): string
   }
 }
 
-/// The tone a status renders in. Early is a missed bus — it reads as
-/// bad as very late, never as on time.
+/// Early is a missed bus, so it reads as bad as very late and never as on time.
 export function statusTone(status: LiveStatus): "ok" | "warn" | "bad" | "sched" {
   switch (status) {
     case "on_time":
@@ -56,7 +51,6 @@ export function statusTone(status: LiveStatus): "ok" | "warn" | "bad" | "sched" 
   }
 }
 
-/// A leg's predicted time against the day's own.
 export function delayText(delaySecs: number | null): string | null {
   if (delaySecs == null || delaySecs === 0) return null;
   return delaySecs < 0 ? `${amount(delaySecs)} early` : `${amount(delaySecs)} late`;
@@ -70,13 +64,10 @@ export function walkText(secs: number): string {
   return `${Math.max(1, Math.round(secs / 60))} min walk`;
 }
 
-/// A route's authored color as CSS (null without one).
 export function routeColor(color: string | null | undefined): string | null {
   return color ? `#${color.replace(/^#/, "")}` : null;
 }
 
-/// How long until a row leaves, as the board's `wait` says it: "Due",
-/// "4 min", or the clock time.
 export function waitText(wait: Wait): string {
   switch (wait.kind) {
     case "due":
@@ -88,8 +79,7 @@ export function waitText(wait: Wait): string {
   }
 }
 
-/// When to leave, from an itinerary's `leave` (the board's wait rule,
-/// D-40): "Leave now", "Leave in 7 min", or "Leave at 9:10 am".
+/// Follows the board's wait rule (D-40).
 export function leaveText(wait: Wait): string {
   switch (wait.kind) {
     case "due":
@@ -101,14 +91,12 @@ export function leaveText(wait: Wait): string {
   }
 }
 
-/// A trip's door-to-door length (`duration_secs`): "25 min", "1 h 5 min".
 export function durationText(secs: number): string {
   const m = Math.round(secs / 60);
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 }
 
-/// When a stopped route next runs, as the board's `next` says it
-/// (D-42): "Next: 5:12 am tomorrow", "Next: Monday 5:12 am".
+/// Follows the board's `next` (D-42).
 export function nextText(next: NextService): string {
   const at = clockText(next.departure_secs);
   return next.days_ahead === 1 ? `Next: ${at} tomorrow` : `Next: ${next.weekday} ${at}`;

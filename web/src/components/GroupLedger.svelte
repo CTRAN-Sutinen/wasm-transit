@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The selected group's numbers against the baseline (analysis
-  /// `service_type_compare`: both sides pooled over the combination's
-  /// members), the vehicles its day needs (runcut `suggest_blocks`,
-  /// D-46), and the answers the bus cannot give yet named as such.
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import type { ServiceGroup } from "../types/ServiceGroup";
   import type { Suggestion } from "../types/transit_runs/Suggestion";

@@ -1,21 +1,18 @@
 // The ride-now UI's perf baseline (docs/TESTING.md, "Performance
-// baselines"): the real feed, the agency's recorded live feeds replayed
-// one snapshot per poll, and a rider in downtown Vancouver.
+// baselines"). It uses the real feed, the agency's recorded live feeds
+// replayed one snapshot per poll, and a rider in downtown Vancouver.
 //
-//   1. Boot: the server's published network registers, near you
-//      answers with live predictions.
-//   2. A rider's session: type a stop, pick a departure, save the stop,
-//      plan a trip (now, the last bus, arrive by), explore a route,
-//      track a bus — each step timed and profiled.
-//   3. One poll tick on each live view (trip "now", bus, home),
-//      profiled: what the 30 s re-read costs where it costs most.
-//   4. The soak: home left open while every remaining snapshot
-//      arrives (the clock fast-forwards a poll at a time); memory is
-//      sampled after a collection every SAMPLE_EVERY ticks.
+//   1. Boot, then a rider's session: type a stop, pick a departure, save
+//      the stop, plan a trip, explore a route, track a bus. Each step is
+//      timed and profiled.
+//   2. One poll tick on each live view, profiled, to show what the 30 s
+//      re-read costs.
+//   3. The soak: home stays open while every remaining snapshot arrives.
+//      Memory is sampled after a collection every SAMPLE_EVERY ticks.
 //
-// It reports (web/perf-results/<stamp>/: summary.md, report.json, the
-// .cpuprofile files — open them in DevTools' Performance panel); it
-// never fails on a number.
+// It writes web/perf-results/<stamp>/ (summary.md, report.json, and
+// .cpuprofile files for DevTools' Performance panel). It never fails on a
+// number.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -40,8 +37,7 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const probe = new Probe(page, path.join(root, "web/perf-results", stamp));
 
-  // The live feeds: snapshot `tick` for every request until the soak
-  // moves it.
+  // Every request gets snapshot `tick` until the soak advances it.
   let tick = 0;
   await page.route(/\/rt\?url=/, (route) => {
     const url = decodeURIComponent(route.request().url());
@@ -53,8 +49,6 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   await page.clock.install({ time: headerSecs(snaps[0].trips) * 1000 });
   await probe.start();
 
-  /// One poll: the next snapshot, the clock forward to the timer, the
-  /// UI settled on the answers.
   async function pollTick() {
     tick++;
     const live = Promise.all([
@@ -66,7 +60,6 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     await settle();
   }
 
-  /// Quiet: two frames painted and the main thread idle.
   async function settle() {
     await page.waitForTimeout(300);
     await page.evaluate(
@@ -90,8 +83,8 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
 
   const board = page.getByTestId("rider-board");
 
-  // 1. Boot (a same-origin page first, so the profiler follows the
-  // renderer across the navigation).
+  // Load a same-origin page first, so the profiler follows the renderer
+  // across the navigation.
   await page.goto("/live-feeds.json");
   await probe.step("boot: network registered, near you live", async () => {
     await page.goto("/ride-now.html");
@@ -101,7 +94,6 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   });
   await probe.sample("after boot");
 
-  // 2. A rider's session.
   await probe.step("type-ahead → stop board", async () => {
     await pick("stop name", "fisher", "Fisher");
     await expect(board.locator("h2")).toBeVisible();
@@ -159,7 +151,7 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     await settle();
   });
 
-  // A departure whose bus is reporting, if one of the first few is.
+  // Pick a departure whose bus is reporting, if one of the first few is.
   const rows = board.getByTestId("board-rows").locator("li button");
   let tracking = false;
   for (let i = 0; i < Math.min(6, await rows.count()) && !tracking; i++) {
@@ -182,7 +174,6 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   await probe.step("poll tick on home (near you + saved)", pollTick);
   await probe.sample(`tick ${tick} (after the session)`);
 
-  // 4. The soak: home open, every remaining snapshot.
   const ticks = [];
   while (tick < snaps.length - 1) {
     await page.evaluate(() => (window.__perf.longtasks.length = 0));

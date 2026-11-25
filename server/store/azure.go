@@ -16,19 +16,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 )
 
-// Azure is the backend over Azure Blob Storage. The conditional create
-// is Put Blob with If-None-Match: *.
+// The conditional create is Put Blob with If-None-Match: *.
 type Azure struct {
 	c         *azblob.Client
 	container string
 	prefix    string // "" or "<prefix>/"
 }
 
-// NewAzure answers the backend over a container, every key under
-// prefix. Credentials, first found: AZURE_STORAGE_CONNECTION_STRING;
-// AZURE_STORAGE_ACCOUNT with AZURE_STORAGE_KEY; else the account with
-// the default Azure credential chain (managed identity, workload
-// identity, the CLI). endpoint, when set, is the blob service URL.
+// NewAzure takes the first credentials it finds:
+// AZURE_STORAGE_CONNECTION_STRING, then AZURE_STORAGE_ACCOUNT with
+// AZURE_STORAGE_KEY, then the account with the default Azure credential
+// chain. endpoint, when set, is the blob service URL.
 func NewAzure(containerName, prefix, endpoint string) (*Azure, error) {
 	var c *azblob.Client
 	var err error

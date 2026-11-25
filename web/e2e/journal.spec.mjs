@@ -1,16 +1,7 @@
-// The page's journal (src/bus.worker.ts; tools/journal.mjs): with
-// `?journal`, the engine journals every module call as hashes, and the
-// runner replays the page's journal to the same output hashes.
-//
-// The stop display on the fixture feed and its trip updates, at stop A
-// (docs/architecture/web.md, "The journal"):
-//
-//   1. On the page's own linked assembly, every call answers the same.
-//   2. With --single, each capability runs on its own module. The live
-//      document never left the page's assembly (QAF-49), so the
-//      board's calls that read it cannot repeat, and replay says so.
-//      What the page's assembly held (evict's answer) is not compared
-//      on the split instances. Nothing answers differently.
+// The page's journal replays to the same output hashes (src/bus.worker.ts;
+// tools/journal.mjs; docs/architecture/web.md, "The journal"). With --single,
+// the live document never left the page's assembly, so the board calls that
+// read it cannot repeat (QAF-49).
 
 import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -49,21 +40,17 @@ test("a page's journal replays through the runner", async ({ page }, testInfo) =
   const bundle = await page.evaluate(() => globalThis.transitJournal());
   const lines = bundle.journal.trim().split("\n").map((l) => JSON.parse(l));
   expect(lines.length).toBeGreaterThan(5);
-  // Hashes only: no line carries a document.
   expect(lines.every((l) => /^sha256:/.test(l.request) && /^sha256:/.test(l.output))).toBe(true);
   expect(lines.some((l) => l.cap === "board" && l.op === "grouped_board")).toBe(true);
   const file = testInfo.outputPath("journal.json");
   fs.writeFileSync(file, JSON.stringify(bundle));
 
-  // 1. On the page's assembly: every call answers the same.
   const linked = replay(file);
   expect(linked.differ).toEqual([]);
   expect(linked.cannot).toEqual([]);
   expect(linked.same).toBe(lines.length);
   expect(linked.modules.board.replayed).toEqual(linked.modules.board.recorded);
 
-  // 2. On single capabilities: the live document stayed in the page's
-  // assembly, and replay says which calls it cannot repeat.
   const single = replay(file, "--single");
   expect(single.differ).toEqual([]);
   expect(single.cannot.length).toBeGreaterThan(0);

@@ -1,9 +1,7 @@
 package main
 
-// Compaction and references (D-231): the tombstone compaction skips a
-// retired edit record that a held record of another log names, so
-// compaction alone never breaks a reference. A tombstone that nothing
-// names still leaves.
+// Pins that tombstone compaction skips a retired edit record that another
+// log's record names, and drops one that nothing names (D-231).
 
 import (
 	"encoding/json"
@@ -24,13 +22,12 @@ func TestCompactionSkipsATombstoneThatAnAlertNames(t *testing.T) {
 	t.Cleanup(srv.Close)
 	base := srv.URL
 
-	// Two detours retired long ago (clock 100 ms), past any horizon.
+	// Both detours are past any horizon (clock 100 ms).
 	for _, id := range []string{"named", "free"} {
 		if code, _, body := httpPost(t, base+"/edits", editDoc(id, "retired", 3, 100)); code != 200 {
 			t.Fatalf("the tombstone %s: %d %s", id, code, body)
 		}
 	}
-	// An alert explains the first one.
 	body, _ := json.Marshal(map[string]any{"alerts": map[string]any{"alerts": map[string]any{"a1": map[string]any{
 		"status": "published", "effect": "detour", "header": []any{map[string]any{"text": "Route 10 detour"}},
 		"informed": []any{map[string]any{"route": "10"}}, "explains": []any{map[string]any{"kind": "edit", "id": "named"}},

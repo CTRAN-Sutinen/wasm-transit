@@ -1,13 +1,10 @@
-// The assembly-independence gate, broken on a deliberate fixture: a
-// capability whose answer depends on what a neighbour computed first
-// (a shared entry used as a dependency, not a cache) fails the gate;
-// one that only caches passes. `node --test` (just test).
+// Pins D-77: a capability whose answer depends on what a neighbour computed
+// first fails the independence gate, and one that only caches passes.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { independence } from "./independence.mjs";
 
-/// A fake manifest: two capabilities, one linked assembly.
 const manifest = {
   kernel_ops: [{ name: "load_network", example: { request: { op: "load_network", network: {} } } }],
   capabilities: [
@@ -17,8 +14,6 @@ const manifest = {
   assemblies: [{ ui: "page", capabilities: ["a", "b"] }],
 };
 
-/// Fake instances over one shared state per instance, like one kernel
-/// registry: `a.warm` computes an entry; `b.read` answers from it.
 function instantiate(dependent) {
   return () => {
     const state = { entry: null };
@@ -29,8 +24,8 @@ function instantiate(dependent) {
         return '{"ok":"warm"}';
       }
       if (request.op === "read") {
-        // A cache: computes the same value when absent. A dependency:
-        // answers differently when a neighbour has not run first.
+        // A cache computes the same value when absent. A dependency answers
+        // differently when a neighbour has not run first.
         const value = state.entry ?? (dependent ? "cold" : "warmed");
         return JSON.stringify({ ok: value });
       }

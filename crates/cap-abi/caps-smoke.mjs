@@ -1,12 +1,9 @@
-// Capability-module ABI smoke: instantiates each capability module
-// directly in Node (zero imports, the flat ABI) and verifies the
-// module contract plus the composition — the same bytes into both
-// modules, hashes equal, ops answering through their typed seams.
-//
-// The manifest is verified too: every capability it advertises is
-// present, its bytes hash to the pinned hash, and the bulk op loads
-// the fixture. Run from anywhere: `node crates/cap-abi/caps-smoke.mjs`.
-// Also `just test`.
+// Smoke test of each capability module's ABI and the manifest. It
+// instantiates the modules in Node with no imports and checks the module
+// contract and that the same bytes give the same hashes across modules.
+// It also checks that every capability the manifest advertises is present,
+// that its bytes hash to the pinned hash, and that the bulk op loads the
+// fixture. Run `node crates/cap-abi/caps-smoke.mjs` (`just test`).
 
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
@@ -17,8 +14,6 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, "../../web/public/caps");
 const DATE = "2026-10-23";
-// The kernel's loads (cap_abi::kernel): every module answers the loads
-// of the kinds its capabilities read, on these bulk ops.
 const OP_LOAD_STREETS = 263;
 const OP_LOAD_LAYER = 265;
 const OP_LOAD_FEED = 266;
@@ -93,8 +88,6 @@ assert(byId.network, "manifest advertises the network capability");
 assert(byId.router.consumes.network === "network", "router declares its registry edge: it consumes network documents");
 assert(byId.analysis.consumes.network === "network", "analysis consumes networks from the network capability");
 
-// Agent context: every capability states its purpose and documents
-// every op — the discovery surface an agent assembles from.
 for (const cap of manifest.capabilities) {
   assert(
     typeof cap.purpose === "string" && cap.purpose.length > 40,
@@ -106,9 +99,6 @@ for (const cap of manifest.capabilities) {
   assert(Object.keys(cap.speaks).length > 0, `capability ${cap.id} declares the documents it speaks`);
 }
 
-// Compatibility documentation: the board reads the current watchlist
-// version only; the migration capability carries every authored kind's
-// chain (the board carries none); the validator accepted it.
 assert(
   byId.board.speaks.watchlist.length === 1 && byId.board.speaks.watchlist.includes(2),
   "board speaks watchlist v2 only",
@@ -122,20 +112,14 @@ for (const kind of ["network", "operator_edits", "watchlist"]) {
   );
 }
 
-// The feed document capability — parse + identity alone. The day
-// views and planning are NOT here (one question, one answer on the
-// bus; planning joins the network-document composition below); the
-// retired ops must answer as request errors, never silently serve.
+// The retired ops must answer as request errors, never silently serve.
 const gtfs = shell(loadModule(byId.gtfs));
 
 const loadedGtfs = gtfs.invokeBytes(OP_LOAD_FEED, feed);
 assert(loadedGtfs.op === "load_feed" && loadedGtfs.summary.stops === 6, "the kernel's load_feed answers the feed's summary on its bulk op");
 assert(gtfs.raw({ op: "load_feed", bytes: [...feed] }).ok?.feed_hash === loadedGtfs.feed_hash, "load_feed answers the same hash on the JSON lane");
 
-// The feed's identity and its names — the feed document capability's
-// whole surface. The day views are NOT here (one question, one
-// answer on the bus); the retired ops must answer as request
-// errors, never silently serve.
+// The retired ops must answer as request errors, never silently serve.
 const info = gtfs.invoke({ op: "feed_info", feed_hash: loadedGtfs.feed_hash });
 assert(
   info.info && info.info.feed_version === "2026.10.1",
@@ -163,13 +147,10 @@ const missing = gtfs.raw({
 });
 assert(missing.error && missing.error.includes("unknown feed"), "unknown hashes error, never panic");
 
-// The analysis flow — the first REAL capability extracted from the
-// monolith: a network document in by content hash, planner numbers
-// out by hash.
 const analysis = shell(loadModule(byId.analysis));
-// A pre-trip, untagged document — network v1. A consumer refuses it at
-// the load, naming both versions; the migration capability brings it
-// forward, and only then does it register.
+// A consumer refuses a pre-trip, untagged document (network v1) at the
+// load, naming both versions. Only after the migration capability brings
+// it forward does it register.
 const NETWORK_V1 = {
   name: "Cap Analysis Net",
   plan: { id: "", name: "" },
@@ -233,9 +214,6 @@ const stats = analysis.invoke({
 assert(stats.stats.trips === 1, `analysis computes the document's weekday trips: ${stats.stats.trips}`);
 const overview = analysis.invoke({ op: "service_types_overview", network_hash: loadedNet.network_hash });
 assert(overview.service_types.length === 1, "the design axis answers");
-// The stop's day as gaps (QAF-25): one departure is no gap — the
-// honest answer is null, and the terminal stop is an arrival, never
-// a departure.
 const gaps = analysis.invoke({
   op: "stop_gaps",
   network_hash: loadedNet.network_hash,
@@ -260,8 +238,6 @@ const unknownGaps = analysis.invoke({
   stop_id: "nope",
 });
 assert(unknownGaps.gaps.departures === 0, "an unknown stop answers empty, never errors");
-// The day's hourly profile (QAF-4): one weekday trip at 28800 s is
-// one hour row; a weekend-only day asked on a Monday answers empty.
 const hours = analysis.invoke({
   op: "hourly_trips",
   network_hash: loadedNet.network_hash,
@@ -277,9 +253,6 @@ const quietHours = analysis.invoke({
   date: "2026-01-10", // a Saturday: WK does not run
 });
 assert(quietHours.hours.length === 0, "a day nothing runs answers empty, never errors");
-// The schedule texture (QAF-16): the one schedule's uniformity (one
-// trip — no gaps to read) and clockface alignment (28800 s is on
-// the quarter-hour grid).
 const texture = analysis.invoke({
   op: "schedule_texture",
   network_hash: loadedNet.network_hash,
@@ -296,8 +269,6 @@ const unknownTexture = analysis.invoke({
   members: ["nope"],
 });
 assert(unknownTexture.texture == null, "members that never run together answer null, never errors");
-// The corridor read (QAF-22): a one-route document has no pairs —
-// the honest answer is empty, never an error.
 const overlaps = analysis.invoke({
   op: "route_overlap",
   network_hash: loadedNet.network_hash,
@@ -305,8 +276,6 @@ const overlaps = analysis.invoke({
 });
 assert(Array.isArray(overlaps.overlaps) && overlaps.overlaps.length === 0,
   "a one-route document has no pairs to join");
-// The timed-transfer view (QAF-27): one route alone has nobody to
-// meet — the honest answer is empty, never an error.
 const transfers = analysis.invoke({
   op: "timed_transfers",
   network_hash: loadedNet.network_hash,
@@ -323,9 +292,6 @@ const layer = analysis.invokeBytes(OP_LOAD_LAYER, Buffer.from(JSON.stringify({
   ],
 })));
 assert(layer.points === 2 && layer.polygons === 0, "analysis registers a weighted layer by content hash");
-// The registration answer IS the import handle (U4: the monolith's
-// parse-only op is retired): the weights the layer can be read by,
-// each with its total — a coverage op names the field (D-47).
 assert(
   layer.fields.length === 1 && layer.fields[0].name === "pop" && layer.fields[0].total === 1000,
   "the layer handle names its weights: " + JSON.stringify(layer.fields),
@@ -339,16 +305,12 @@ const coverage = analysis.invoke({
   frequent_secs: 3600,
   min_departures: 2,
 });
-// One combination's coverage (D-55): named by its members, with the
-// dates it holds beside it — no date stands in for it.
 assert(coverage.coverage.group === "WK" && coverage.coverage.spans.length > 0, "type coverage answers the WK combination");
 assert(coverage.layer.field === "pop" && coverage.layer.label === "pop", "the answer says how it read the layer");
 assert(
   coverage.coverage.served_pct === 50,
   `half the layer is served (one point at a stop, one far away): ${coverage.coverage.served_pct}`,
 );
-// The windowed form crosses the seam (QAF-42): frequency judged as
-// the worst wait inside a window; the whole day is the widest one.
 const windowed = analysis.invoke({
   op: "type_coverage",
   network_hash: loadedNet.network_hash,
@@ -363,8 +325,6 @@ assert(
   windowed.coverage.served_pct === 50,
   "the window changes frequency, never what is served",
 );
-// The comparison crosses the seam: the network's weekday type against
-// itself gains and loses nothing (the host names each side's types).
 const coverageDelta = analysis.invoke({
   op: "coverage_compare",
   base_hash: loadedNet.network_hash,
@@ -385,11 +345,6 @@ assert(
 const unknownNet = analysis.raw({ op: "network_stats", network_hash: "sha256:missing", date: "2026-01-05" });
 assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknown hashes error, never panic");
 
-// The network flow — the second REAL capability extracted from the
-// monolith: the planner's whole bootstrap → author → publish path.
-// The same feed bytes into a THIRD module, identity asserted; import
-// derives the document (hash returned, resolutions reported);
-// export produces a GTFS zip whose identity any module agrees on.
 const network = shell(loadModule(byId.network));
 const loadedNetCap = network.invokeBytes(OP_LOAD_FEED, feed);
 assert(loadedNetCap.op === "load_feed", "network answers the kernel's load_feed");
@@ -428,15 +383,11 @@ assert(
   zip[0] === 0x50 && zip[1] === 0x4b,
   "the export payload is zip bytes",
 );
-// The composition moment of the publish path: the exported artifact is
-// a first-class feed — cap-gtfs loads the SAME bytes and returns the
-// SAME identity the export advertised.
 const published = gtfs.invokeBytes(OP_LOAD_FEED, zip);
 assert(
   published.feed_hash === exported.feed_hash,
   "the exported zip loads into cap-gtfs under the advertised hash",
 );
-// Broken documents: validate reports every issue, export refuses.
 const broken = JSON.parse(JSON.stringify(imported.network));
 broken.patterns[Object.keys(broken.patterns)[0]].stops[1].stop = "ghost";
 const brokenHash = network.invoke({ op: "load_network", network: broken }).network_hash;
@@ -447,9 +398,6 @@ assert(refused.error && refused.error.includes("invalid network"), "export refus
 const unknownFeed = network.raw({ op: "import", feed_hash: "sha256:missing" });
 assert(unknownFeed.error && unknownFeed.error.includes("unknown feed"), "unknown hashes error, never panic");
 
-// The realtime flow — the third capability extracted from the
-// monolith: protobuf bytes in on the bulk seam, delays and vehicles
-// out. A pure decoder; garbage bytes error, never trap.
 const rt = shell(loadModule(byId.rt));
 const rtPayload = readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb"));
 const decoded = rt.invokeBytes(0, rtPayload);
@@ -464,11 +412,6 @@ assert(vehicle.label === "4201", "the vehicle label (the bus number) survives de
 const garbage = rt.raw({ op: "decode", bytes: [0xff, 0xff] });
 assert(garbage.error && /decode/.test(garbage.error), "garbage bytes are an error outcome, never a trap");
 
-// The join: the imported NETWORK into cap-rt must agree with the
-// network capability on the identity, with the import's boundary for
-// the published stop_sequence numbering — and the joined ops answer
-// over the fixture pair (t10 +120/+180, one vehicle): an rt trip id is
-// a model trip id.
 const loadedRt = rt.invoke({ op: "load_network", network: imported.network });
 assert(
   loadedRt.network_hash === imported.network_hash,
@@ -501,15 +444,7 @@ assert(late.trips[0].vehicle_label === "4201" && late.trips[0].has_position, "it
 const unknownJoin = rt.raw({ op: "trip_progress", network_hash: "sha256:missing", rt_hash: decoded.rt_hash, trip_id: "t10" });
 assert(unknownJoin.error && unknownJoin.error.includes("unknown network"), "unknown hashes error, never panic");
 
-// The names join (stops_by_ids) moved to the directory with the
-// stop list it belongs to — the flow below pins it; the retired gtfs
-// op is pinned in the retirement loop above.
 
-// The day-view capabilities — the need cut of the day views over
-// the SAME network document the import produced (model-native end
-// to end; the arch gate in `just test` enforces that). The
-// composition law: one document into every capability that needs
-// it, identities agree — one document, one truth, no expansion.
 assert(byId.board && byId.runcut && byId.calendar, "manifest advertises board, runcut, and calendar");
 assert(
   byId.board.consumes.network === "network",
@@ -536,9 +471,6 @@ assert(
   "board, runcut, and calendar agree with the network capability on the document identity",
 );
 
-// THE ROUTER — planning over the same document (the planner left the
-// feed behind: the graph is the materialized day, and the diversion
-// delta is the unpatched day one materialization apart).
 const router = shell(loadModule(byId.router));
 const loadedRouterNet = router.invoke({ op: "load_network", network: imported.network });
 assert(
@@ -653,7 +585,6 @@ assert(
 const badRouter = router.raw({ op: "nope" });
 assert(badRouter.error && badRouter.error.includes("invalid request"), "unknown ops error, never panic");
 
-// THE BOARD — when does service leave this stop?
 const stopBoard = (stop_id, from_secs, live_hash) =>
   board.invoke({
     op: "stop_board",
@@ -675,15 +606,11 @@ assert(
   atStation.pooled && atStation.rows.map((r) => r.stop).join() === "SA,SB",
   "the station pin answers its bays' pooled board (t40 leaves SA, t41 leaves SB), rows tagged with the bay",
 );
-// An arrival is not a departure: every fixture trip through B ends
-// there, so B's board is empty (QAF-29) — and B is a plain stop, so
-// it never pools.
+// Every fixture trip through B ends there, so B's board is empty. B is a
+// plain stop, so it never pools.
 const atB = stopBoard("B", 0);
 assert(atB.rows.length === 0 && !atB.pooled, "trips terminating at B never appear on B's board");
 
-// THE LIVE DOCUMENT — rt → board by hash: the snapshot resolves
-// against the network into trip instances in cap-rt; the board reads
-// it. No host joins rt (the parity rule).
 const live = rt.invoke({
   op: "live",
   network_hash: loadedRt.network_hash,
@@ -701,7 +628,8 @@ assert(
 );
 const loadedLive = board.invoke({ op: "load_live", live: live.live });
 assert(loadedLive.live_hash === live.live_hash, "board and rt agree on the live document's identity");
-// 08:01 at A: t10 left the schedule at 08:00 but is +120 s — still to come.
+// 08:01 at A: t10 left the schedule at 08:00 but is +120 s, so it is still
+// to come.
 const liveA = stopBoard("A", 28860, loadedLive.live_hash);
 const t10Row = liveA.rows.find((r) => r.expected_secs != null);
 assert(
@@ -711,9 +639,6 @@ assert(
 const noSnapshot = rt.raw({ op: "live", network_hash: loadedRt.network_hash });
 assert(noSnapshot.error && noSnapshot.error.includes("needs a snapshot"), "live without a snapshot is a request error");
 
-// The personal board — the watchlist document: v1 refused at the
-// board's load naming the migration, migrated with its loss reported,
-// and the migrated document querying over the network.
 const v1 = {
   version: "v1",
   stops: [
@@ -721,8 +646,6 @@ const v1 = {
     { id: "B", note: "work" },
   ],
 };
-// The chain is the migration capability's (cap-migrate): the board
-// reads documents, it never migrates them.
 const migrated = migrate.invoke({ op: "migrate", kind: "watchlist", document: v1 });
 assert(
   migrated.document.kind === "watchlist" && migrated.document.schema_version === 2,
@@ -755,9 +678,6 @@ const watch = board.invoke({
 assert(watch.stops.length === 2, "the personal board answers every saved stop");
 assert(watch.stops.every((s) => s.board.rows.every((r) => r.trip)), "the personal board's rows are model-native");
 
-// THE RUNCUT — what does this vehicle do today? The day's blocks
-// list (the index) into one block's chain (the detail), with the
-// edit ripple.
 const daysBlocks = runcut.invoke({
   op: "blocks",
   network_hash: loadedRuncutNet.network_hash,
@@ -769,10 +689,7 @@ assert(
 );
 const parkedDay = runcut.raw({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: "2026-10-24" });
 assert(parkedDay.ok && parkedDay.ok.blocks.length === 0, "a no-service day has no blocks out");
-// The work rules on the kernel's load (checked and normalized: two
-// orderings, one identity), B1's wait under them (the recovery view:
-// 600 s against the rules' 900 s is 300 s short), and the suggested
-// blocking of the trips B1 does not carry.
+// 600 s against the rules' 900 s is 300 s short.
 const rulesA = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, recovery: [{ min_secs: 900 }], interline: [{ a: "20", b: "10" }, { a: "10", b: "40" }] } });
 const rulesB = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, interline: [{ a: "10", b: "40" }, { a: "10", b: "20" }], recovery: [{ min_secs: 900 }] } });
 assert(rulesA.work_rules_hash === rulesB.work_rules_hash && rulesA.version === 1, "work rules: one document, one identity, however ordered");
@@ -844,8 +761,6 @@ assert(
   rippedChain.trips[0].layover_health === "ok" && tightChain.trips[0].layover_health === "tight",
   "the module classifies the connection under the caller's tight threshold",
 );
-// The live ripple (QAF-31): the snapshot predicts t10 +180 s at B, its
-// last stop — 420 s of the 600 s layover before t20 remain.
 const runcutLive = runcut.invoke({ op: "load_live", live: live.live });
 assert(runcutLive.live_hash === live.live_hash, "runcut and rt agree on the live document's identity");
 const liveChain = runcut.invoke({
@@ -859,12 +774,7 @@ assert(
   liveChain.trips[0].live_end_delay_secs === 180 && liveChain.trips[0].layover_remaining_secs === 420,
   "the live delay at t10's last stop eats the layover (600 - 180)",
 );
-// What the radio calls those trips: each row carries its trip's own
-// id (the agency's, for an imported trip).
 assert(rippedChain.trips[0].trip === "t10", "the chain names its trips by id (B1 starts with t10)");
-// The trip detail — the map's click-through question: one trip
-// instance's EFFECTIVE stops, patched by the same edits (its line is
-// trip_path, below).
 const chainTrip = runcutChain.trips[0];
 const tripAuthored = runcut.invoke({
   op: "trip_stops",
@@ -942,9 +852,8 @@ const brokenDay = runcut.invoke({ op: "blocks", network_hash: loadedRuncutNet.ne
 const plainDay = runcut.invoke({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: DATE });
 assert(JSON.stringify(brokenDay) === JSON.stringify(plainDay), "an edit the network cannot answer patches nothing");
 
-// THE CALENDAR — which service keys run today? From the effective
-// day: HOL's calendar exception runs, but its only trip never made
-// it into the model — the honest answer is WK alone.
+// HOL's calendar exception runs, but its only trip never made it into the
+// model, so the answer is WK alone.
 const keys = calendar.invoke({
   op: "active_services",
   network_hash: loadedCalendarNet.network_hash,
@@ -960,9 +869,6 @@ const keysEmpty = calendar.invoke({
   date: "2026-10-24",
 });
 assert(keysEmpty.services.length === 0, "a no-service day answers empty, never errors");
-// The reverse read: WK's fixture dates across a window that crosses
-// the calendar exception (removed 2026-10-29) — the two directions
-// must agree on the same relation.
 const wkDates = calendar.invoke({
   op: "service_dates",
   network_hash: loadedCalendarNet.network_hash,
@@ -992,11 +898,6 @@ const wkNone = calendar.invoke({
 });
 assert(wkNone.dates.length === 0, "an unknown service type answers empty, never errors");
 
-// THE DIRECTORY — what exists in the network. The pickers and the
-// names join are MODEL questions: the stop list (name-sorted, with
-// the walking-group structure), the route list, and a route's
-// PATTERNS with their ordered stops (what a diversion editor anchors
-// against), grouped by the route's directions.
 assert(byId.directory, "manifest advertises the directory capability");
 assert(
   byId.directory.consumes.network === "network",
@@ -1072,9 +973,9 @@ assert(
   "schedules grouped by service type, each with the trips it runs",
 );
 assert(dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "missing" }).detail === null, "an unknown route has no composition");
-// The import keeps GTFS direction_id: route 10's patterns all run in
-// direction "0", and its timetable on WK is every trip of them, by
-// start, one time per column (null where a pattern does not stop).
+// The import keeps GTFS direction_id. Route 10's patterns all run in
+// direction "0", and its timetable on WK has one time per column (null
+// where a pattern does not stop).
 assert(
   routeDetail.directions.length === 1 && routeDetail.directions[0].direction === "0" &&
     routeDetail.directions[0].patterns.length === routeDetail.patterns.length,
@@ -1099,16 +1000,9 @@ assert(
 );
 assert(dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "missing" }).detail === null, "an unknown stop has no composition");
 
-// Unknown hashes error, never panic — every day-view seam.
 const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
 assert(unknownBoard.error && unknownBoard.error.includes("unknown network"), "unknown hashes error, never panic");
 
-// The street flow — where along the streets: a street layer in on
-// the bulk seam (the e2e street fixture), read into the canonical
-// streets document and registered under its hash; the document
-// handed back on bulk op 1 is the same hash; then pure queries by
-// hash. The Elbow route follows street geometry, not the diagonal;
-// garbage bytes are an error outcome, never a trap.
 assert(byId.streets, "manifest advertises the streets capability");
 const streets = shell(loadModule(byId.streets));
 const streetsBytes = readFileSync(path.join(here, "../../web/e2e/fixtures/streets.geojson"));
@@ -1152,12 +1046,8 @@ assert(unknownStreets.error && unknownStreets.error.includes("unknown street net
 const garbageStreets = streets.raw({ op: "import", bytes: [0xff, 0xfe] });
 assert(garbageStreets.error && /street layer/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
 
-// The walk flow — a plan's transfers along the streets, composed by
-// documents only: streets mints the walk table from a streets
-// document and the network (the walking fixture: a residential
-// street through the station's bays, a motorway across it no rider
-// walks), the router registers it under the same hash and plans over
-// it. Two capabilities, one document between them.
+// The fixture has a residential street through the station's bays and a
+// motorway that no rider walks.
 const walkStreets = streets.invokeBytes(0, readFileSync(path.join(here, "../../web/e2e/fixtures/walk-streets.geojson")));
 const streetsNet = streets.invoke({ op: "load_network", network: imported.network });
 assert(streetsNet.network_hash === imported.network_hash, "streets agrees with the network capability on the document identity");
@@ -1184,9 +1074,6 @@ assert(
 );
 const foreignWalks = router.raw({ op: "plan", network_hash: loadedRouterNet.network_hash, from: "SA", to: "SB", date: DATE, depart_secs: 0, max_legs: 2, walks_hash: "sha256:missing" });
 assert(foreignWalks.error && foreignWalks.error.includes("load_walks first"), "an unknown walk table is an error, never a panic");
-// A trip from any point: streets answers a dropped pin's walks to
-// the stops near it, the router plans from the pin as a place —
-// the walks pass as they are.
 const pin = { lat: 45.5152, lon: -73.5165 };
 const access = streets.invoke({ op: "access", streets_hash: walkStreets.streets_hash, network_hash: streetsNet.network_hash, point: pin });
 const reached = access.walks.map((w) => w.stop_id).join(" ");
@@ -1208,12 +1095,9 @@ assert(
   "the plan walks from the pin, along the streets",
 );
 
-// The sync flow — the protocol's one step: the client's draft
-// diversion against an empty server converges to the submitted
-// document (LWW union, rev bumped, host clock stamped), and the
-// pair order never matters (client and server are roles, not
-// order). Validation is NOT here: divert's reports answers what each
-// record amounts to on the network.
+// The client's draft against an empty server converges to the submitted
+// document (LWW union, rev bumped, host clock stamped), whatever the pair
+// order. Validation is divert's.
 assert(byId.sync, "manifest advertises the sync capability");
 const sync = shell(loadModule(byId.sync));
 const draft = {
@@ -1250,18 +1134,15 @@ assert(
   "document_hash is sha256 of the canonical document bytes",
 );
 
-// D-56: the receive path clamps the client clock — a record stamped far
-// in the future is treated as written at now_ms (and clamping is
-// idempotent, so redelivery converges).
+// D-56: the write path clamps the client clock. A record stamped far in the
+// future is treated as written at now_ms, and clamping is idempotent, so
+// redelivery converges.
 const future = { ...draft, status: "accepted", rev: 9, updated_at: 1e15 };
 const clamped = sync.invoke({ op: "sync_edits", client: [future], server: [], now_ms: 2000 });
 assert(clamped.records[0].updated_at === 2000, "a future-dated record is clamped at receive");
 const reclamped = sync.invoke({ op: "sync_edits", client: [clamped.records[0]], server: [], now_ms: 3000 });
 assert(reclamped.records[0].updated_at === 2000, "an already-clamped stamp is untouched (idempotent)");
 
-// The authorization flow — the one question: may this identity do this
-// on this pointer? Fail-closed: a matching rule allows, anything else
-// denies (empty policy, missing role, wrong action/pointer).
 assert(byId.authz, "manifest advertises the authz capability");
 const authz = shell(loadModule(byId.authz));
 const policy = {
@@ -1296,8 +1177,6 @@ const badAction = authz.raw({
 });
 assert(badAction.error && badAction.error.includes("unknown action"), "an unknown action is an error, never an allow");
 
-// The projection: the policy as it applies to ONE identity — its roles
-// and merged capabilities only, never other roles or rules.
 const eff = authz.invoke({
   op: "effective",
   identity: { sub: "dispatcher-7", roles: ["dispatcher"] },
@@ -1311,9 +1190,6 @@ assert(
   "effective projects only the caller's own capabilities",
 );
 
-// The plan-chain flow — which pick governs: the spring pick in
-// force on the fixture Friday, the fall pick after it, the windows
-// derived (never stored), and the chain validating clean.
 assert(byId.plans, "manifest advertises the plans capability");
 const plans = shell(loadModule(byId.plans));
 const PLAN_SET = [
@@ -1346,11 +1222,6 @@ assert(
 const garbagePlans = plans.raw({ op: "resolve", plans: [], date: "not a date" });
 assert(garbagePlans.error && garbagePlans.error.includes("invalid date"), "garbage dates are an error outcome, never a trap");
 
-// The authoring flow — what does this network become after these
-// edits? The imported document stamped as a pick and renamed in one
-// atomic change; the answer is a NEW identity every module agrees on
-// (the codec module re-registers the answered document and returns
-// the same hash), and a refused removal names its edit.
 assert(byId.author, "manifest advertises the author capability");
 const author = shell(loadModule(byId.author));
 const authorNet = author.invoke({ op: "load_network", network: imported.network });
@@ -1373,8 +1244,8 @@ const firstStop = Object.keys(imported.network.stops).find((id) =>
 );
 const refusedEdit = author.raw({ op: "apply", network_hash: authorNet.network_hash, edits: [{ edit: "remove_stop", id: firstStop }] });
 assert(refusedEdit.error && refusedEdit.error.includes("edit 0"), "a referenced stop is never hard-deleted out from under a pattern");
-// The gestures carry the model's rules: a minted id comes back in
-// `created`, and a new timepoint keeps every timing profile aligned.
+// A created id comes back in `created`, and a new timepoint keeps every
+// timing profile aligned.
 const gestured = author.invoke({
   op: "apply",
   network_hash: authorNet.network_hash,
@@ -1384,8 +1255,6 @@ assert(
   gestured.created.map((c) => `${c.kind}:${c.id}`).join() === "stop:s1,route:r1",
   "creation mints the first free ids and reports them",
 );
-// Insert a visit (a non-timepoint, before the last stop), then make
-// it a timepoint: every profile gains its time.
 const [patternId, pattern] = Object.entries(gestured.network.patterns)[0];
 const inserted = pattern.stops.length - 1; // where the new visit lands
 const toggled = author.invoke({
@@ -1402,10 +1271,6 @@ assert(
     toggled.timing.every((t) => t.at_timepoints.length === timepoints),
   "a new timepoint keeps every timing profile aligned",
 );
-// The timetable's gestures address route + direction + service type:
-// route 10 toward Main & 2nd every 20 min 08:00–09:00 keeps the 08:00
-// and 08:40 trips and adds 08:20 on the pattern before it — and the
-// directory's timetable of the answer has all three.
 const frequent = author.invoke({
   op: "apply",
   network_hash: authorNet.network_hash,
@@ -1431,18 +1296,11 @@ assert(
   "the comparison names the one route the change touched",
 );
 
-// The diversion-authoring flow — what does this draft amount to:
-// the default pattern, the interior skipped unless served, the
-// record proposed then retired then restored (the envelope rules),
-// and a stored document read under the current schema.
 assert(byId.divert, "manifest advertises the divert capability");
 const divert = shell(loadModule(byId.divert));
 const divertNet = divert.invoke({ op: "load_network", network: imported.network });
 assert(divertNet.network_hash === imported.network_hash, "divert agrees on the imported document's identity");
 const divertDraft = { route_id: "10", served_stops: [], slices: [], added_mins: 5, start_date: DATE, end_date: DATE };
-// What each record amounts to on the network — one op, one answer
-// (the loads report nothing): the fixture's diversion is valid, an
-// edit against an unknown route is reported invalid, never rejected.
 const reported = divert.invoke({ op: "reports", network_hash: divertNet.network_hash, edits: editDoc(brokenRecords) }).reports;
 assert(reported.length === 1 && reported[0].valid === false, "divert reports an edit against an unknown route invalid");
 const fine = divert.invoke({
@@ -1477,8 +1335,6 @@ const divertOlder = divert.raw({ op: "retire", edits: restoredDoc.records, recor
 assert(divertOlder.error && divertOlder.error.includes("migrate.migrate"), "an older edit document is refused naming the migration op");
 const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, edits: editDoc([]), record_id: "x", now_ms: 1 });
 assert(unready.error && unready.error.includes("first stop"), "an unready draft is refused, naming why");
-// A trip cancel (D-45): the 08:00 t10 on the fixture's Friday — the
-// list names it, and the board lists its visit cancelled, never a row.
 const cancelled = divert.invoke({
   op: "cancel", network_hash: divertNet.network_hash, edits: proposed, record_id: "c9",
   trip_id: "t10", date: DATE, now_ms: 8000,
@@ -1497,11 +1353,6 @@ assert(cancelledBoard.rows.every((r) => r.trip !== "t10"), "a cancelled trip is 
 assert(cancelledBoard.skipped.some((v) => v.trip === "t10" && v.cancel === cancelled[1].cancel.id && v.diversion === null), "the board lists it cancelled");
 
 
-// THE KERNEL BULK OP — every network consumer registers the bare
-// document on transit_invoke_bytes op 256 (no request envelope), as
-// its JSON or that JSON gzipped (how a server publishes it), answering
-// the import's identity either way; garbage — a truncated gzip too —
-// is an error, never a trap.
 const OP_LOAD_NETWORK = 256;
 const networkBytes = Buffer.from(JSON.stringify(imported.network));
 const networkGzip = gzipSync(networkBytes, { level: 9 });
@@ -1527,10 +1378,6 @@ for (const id of ["network", "analysis", "board", "runcut", "calendar", "router"
   assert(refused?.includes("invalid document"), `${id} refuses a garbage document on the bulk op`);
 }
 
-// THE REGISTRY KERNEL OPS — EVERY module answers held (258) and evict
-// (257) over the registries it declares: a module reports what it
-// holds, a keep-set drops the rest, and asking for an evicted document
-// is the unknown-hash error (re-registering answers the same hash).
 const OP_EVICT = 257;
 const OP_HELD = 258;
 const kernelOps = Object.fromEntries((manifest.kernel_ops ?? []).map((k) => [k.name, k]));
@@ -1564,9 +1411,6 @@ for (const cap of manifest.capabilities) {
   assert(board.invokeBytes(OP_LOAD_NETWORK, networkBytes).network_hash === net, "re-registering answers the same hash");
 }
 
-// ABOUT — every module says what it links and the kinds each reads;
-// a capability's manifest entry says the same (the manifest's
-// `documents` is checked against the bytes, never trusted).
 for (const cap of manifest.capabilities) {
   const about = shell(loadModule(cap)).invokeBytes(OP_ABOUT, Buffer.alloc(0));
   assert(
@@ -1576,12 +1420,6 @@ for (const cap of manifest.capabilities) {
   );
 }
 
-// THE LINKED ASSEMBLIES (D-77) — per generated UI, one module over one
-// kernel registry: it links what the manifest says, a document
-// registers ONCE and every capability reads it, a JSON request names
-// its capability, a capability's bulk op carries its index in the high
-// 16 bits, and a capability answers inside the assembly exactly as it
-// does alone.
 assert(manifest.assemblies?.length >= 3, "the manifest records a linked assembly per generated UI");
 for (const asm of manifest.assemblies) {
   const bytes = readFileSync(path.join(DIST, "..", asm.url));
@@ -1616,11 +1454,11 @@ for (const asm of manifest.assemblies) {
   }
 }
 
-// A pick reads the stops document over its own period (D-228): one op,
-// the same answer from the module alone and linked in an assembly, and
-// the same warning the server's publish gives (server/stops_test.go,
-// TestAPublishedPickReadsTheStops). B retires inside the period, A is
-// renamed before it, and a retired pick bounds nothing.
+// A pick reads the stops document over its own period (D-228), with the
+// same answer alone and linked, and the same warning as the server's
+// publish (server/stops_test.go, TestAPublishedPickReadsTheStops). B retires
+// inside the period, A is renamed before it, and a retired pick bounds
+// nothing.
 {
   const pick = { ...NETWORK, plan: { id: "fall-2026", name: "Fall 2026", effective_from: "2026-09-07" } };
   const published = {

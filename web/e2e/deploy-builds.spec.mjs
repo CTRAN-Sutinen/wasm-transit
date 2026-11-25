@@ -1,21 +1,7 @@
-// The app's build and offline — one lifecycle
-// (docs/architecture/updates-offline.md, D-63, D-65;
-// web/service-worker.js, kit's "the app's build"):
-//
-//   1. Both rider pages boot OFFLINE from the service worker — the
-//      shell and modules precached, the last network kept — and answer
-//      a board from the schedule, marked as the schedule.
-//   2. A new build is published: it downloads in the background and
-//      waits. A display applies it itself at its next poll while the
-//      server answers — never while its setup is open (someone is at
-//      the screen). A rider's page offers "a new version is ready" and
-//      applies it at the next navigation, never reloading under the
-//      rider.
-//
-// Its server (playwright.config.mjs, :8085) serves a copy of the build
-// with the fixture's network; this spec publishes a new build by
-// rewriting that copy's sw.js (a byte-different worker is a new build
-// to the browser). Service workers are allowed here only.
+// App build and offline lifecycle (docs/architecture/updates-offline.md,
+// D-63, D-65). The server on :8085 serves a copy of the build, and the spec
+// publishes a new build by rewriting that copy's sw.js. A byte-different
+// worker is a new build to the browser. Only this spec allows service workers.
 
 import { test, expect } from "@playwright/test";
 import os from "node:os";
@@ -33,9 +19,8 @@ test.use({
   permissions: ["geolocation"],
 });
 
-/// Open a page, wait until the worker controls it, and load it once
-/// more under the worker (so it is the worker that kept what it read).
-/// (Polled from here: a page's own timers may be the test's clock.)
+/// The second load runs under the worker, so the worker kept what the page read.
+/// The poll runs here because a page's own timers may be the test's clock.
 async function controlled(page, url) {
   await page.goto(url);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
@@ -86,12 +71,9 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
     expect(await buildOf(rider)).toBe(before);
     for (const p of [display, configuring, rider]) await p.evaluate(() => (window.__notReloaded = true));
 
-    // Publish a new build.
     const next = `${before}-next`;
     fs.writeFileSync(swPath, original.replace(`const BUILD = "${before}";`, `const BUILD = "${next}";`));
 
-    // The display: a poll asks for the build, a later poll finds it
-    // waiting and applies it — the page reloads into it.
     await expect
       .poll(
         async () => {
@@ -102,12 +84,10 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
       )
       .toBe(next);
 
-    // The display being configured never reloads under its setup.
     for (let i = 0; i < 4; i++) await configuring.clock.fastForward(20_000);
     expect(await configuring.evaluate(() => window.__notReloaded)).toBe(true);
     expect(await buildOf(configuring)).toBe(before);
 
-    // The rider is offered it, and nothing reloads under them.
     await expect
       .poll(
         async () => {
@@ -120,7 +100,6 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
     await expect(rider.getByTestId("update-ready")).toContainText("A new version is ready");
     expect(await rider.evaluate(() => window.__notReloaded)).toBe(true);
     expect(await buildOf(rider)).toBe(before);
-    // The next navigation applies it.
     await rider.reload();
     await expect.poll(() => buildOf(rider), { timeout: 20_000 }).toBe(next);
     await expect(rider.getByTestId("update-ready")).toHaveCount(0);
@@ -130,11 +109,9 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
   }
 });
 
-// A staff page is an offline page too (D-189), but its assembly stays
-// out of the shell every install downloads (D-223: a rider's install
-// never fetches a planner's modules). The page reads its capability
-// manifest from the shell, and the worker keeps its assembly on first
-// use, hash-named, forever.
+// A staff page works offline (D-189). Its assembly stays out of the shell, so
+// a rider's install never fetches a planner's modules (D-223). The worker
+// keeps the assembly on first use, hash-named.
 test("a staff page's assembly is kept on first use, not precached", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await controlled(page, "/stop-display.html?stop=A&layout=routes");
@@ -157,11 +134,8 @@ test("a staff page's assembly is kept on first use, not precached", async ({ pag
   await expect.poll(() => cached("ui-service-change-"), { timeout: 20_000 }).toEqual(["content-addressed"]);
 });
 
-// A staff page is told of a new build and applies it only when the
-// person accepts (D-189): a document another build wrote (here an edit
-// document one version ahead) makes it look for the deployment's
-// build at once; it shows "A new version is ready" and never reloads
-// under the person.
+// A staff page applies a new build only when the person accepts (D-189). A
+// document that a newer build wrote makes the page look for the build at once.
 test("a staff page refused for its version gets the deployment's build, and applies it only when the person accepts", async ({ page }) => {
   const original = fs.readFileSync(swPath, "utf8");
   try {
@@ -173,7 +147,6 @@ test("a staff page refused for its version gets the deployment's build, and appl
     await page.route("**/edits", (route) =>
       route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 99, records: [] }) }),
     );
-    // The next read of the edit document meets the newer version.
     await page.clock.fastForward(30_000);
     await expect(page.getByTestId("update-ready")).toContainText("A new version is ready", { timeout: 30_000 });
     expect(await page.evaluate(() => window.__notReloaded)).toBe(true);

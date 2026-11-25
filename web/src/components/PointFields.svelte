@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// A stop's point as two typed numbers, beside the map click: a point
-  /// measured in the field is entered here at its own precision. The
-  /// map and these fields edit one point (the host's); a click fills
-  /// them, and a whole pair of numbers typed here moves the marker.
-  /// Whether a point is on the earth is the receive path's to say
-  /// (transit-stops refuses one that is not), not these fields'.
-  /// "Use my location" fills them from the device's fix (the host's),
-  /// a start at the stop and never the record. A RENDER component.
   let {
     point,
     onpoint,
@@ -15,8 +7,6 @@
   }: {
     point: { lat: number; lon: number } | null;
     onpoint: (lat: number, lon: number) => void;
-    /// The device's own fix (the host's): a start at the stop, shown
-    /// with how far off it may be; the typed point is the record.
     onlocate?: () => Promise<{ lat: number; lon: number; accuracy: number }>;
     testid: string;
   } = $props();
@@ -30,7 +20,7 @@
     fix = "Finding this device's location…";
     try {
       const p = await onlocate();
-      // seven decimals: about 1 cm, finer than any device's fix
+      // Seven decimals is about 1 cm, finer than any device's fix.
       lat = String(+p.lat.toFixed(7));
       lon = String(+p.lon.toFixed(7));
       onpoint(+lat, +lon);
@@ -45,8 +35,8 @@
   let lat = $state("");
   let lon = $state("");
 
-  // A point from the map shows in the fields; a point that came from
-  // the fields is left as typed (no reformatting under the cursor).
+  // A point from the map shows in the fields. A point typed in the fields stays
+  // as typed, so the cursor does not see a reformat.
   $effect(() => {
     if (!point) return;
     if (Number(lat) !== point.lat || lat.trim() === "") lat = String(point.lat);

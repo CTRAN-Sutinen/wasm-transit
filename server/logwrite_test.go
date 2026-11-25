@@ -1,15 +1,14 @@
 package main
 
-// The intent write over HTTP (D-189, D-222; logwrite.go): the laws an
-// outbox relies on.
+// The intent write over HTTP (D-189, D-222; logwrite.go), the properties
+// an outbox relies on:
 //
-//  1. A write whose answer is lost and that is resent with its key
-//     lands once, even after another writer changed the same record.
-//  2. A write to one record lands after another writer changed a
-//     different record of the same document; a write to the record
-//     another writer changed since the page read it is a 409 naming it.
-//  3. The device's time is kept in the entry as a claim beside the
-//     server's stamp, and the server stamps a note's writer and time.
+//  1. A resent write with its key lands once, even after another writer
+//     changed the same record.
+//  2. A write to a record that another writer changed since the page read
+//     it is a 409 naming it. A write to a different record lands.
+//  3. The entry keeps the device's time as a claim beside the server's
+//     stamp, and the server stamps a note's writer and time.
 //  4. The manifest names the seq of each log's fold it pins.
 
 import (
@@ -22,8 +21,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// newIntentServer is a store-mode server with the alerts and notes
-// modules and the logs' routes.
 func newIntentServer(t *testing.T) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, store.NewMemory())
@@ -33,8 +30,6 @@ func newIntentServer(t *testing.T) (*server, string) {
 	return s, srv.URL
 }
 
-// intentPost is POST /logs/<log> with a key, the ops, and the fields
-// of the body beside them.
 func intentPost(t *testing.T, base, log string, body map[string]any) (int, map[string]any) {
 	t.Helper()
 	raw, _ := json.Marshal(body)
@@ -59,7 +54,6 @@ func writeNote(id, text string) map[string]any {
 		"target": map[string]any{"kind": "stop", "stop": "A"}}}
 }
 
-// entryAt is entry `seq` of a log, as stored.
 func entryAt(t *testing.T, s *server, log string, seq int64) map[string]any {
 	t.Helper()
 	entries, err := s.store.Entries(log, seq-1, seq)
@@ -77,7 +71,6 @@ func TestAResentWriteLandsOnceAfterAnotherWriterChangedTheRecord(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("a note: %d %v", code, first)
 	}
-	// Another writer edits the note before the lost answer is resent.
 	if code, out := intentPost(t, base, "notes", map[string]any{"key": "desk/1", "ops": []any{writeNote("n1", "Covered by run 12.")}}); code != 200 {
 		t.Fatalf("the edit: %d %v", code, out)
 	}
@@ -119,11 +112,9 @@ func TestAWriteLandsOverAnotherRecordAndConflictsOnItsOwn(t *testing.T) {
 	if read != 1 || m.ServiceAlertsHash == "" {
 		t.Fatalf("the manifest names the alerts log's seq beside its documents: %s", body)
 	}
-	// Another writer changes a2 after this page read the log.
 	if code, out := intentPost(t, base, "alerts", map[string]any{"key": "desk/2", "read_seq": read, "ops": []any{putAlert("a2", "Route 4 detour, Main St")}}); code != 200 {
 		t.Fatalf("the other writer: %d %v", code, out)
 	}
-	// This page changes a1: a different record of the same document lands.
 	code, out := intentPost(t, base, "alerts", map[string]any{"key": "tablet-1/1", "read_seq": read, "claimed_at_ms": 1770000000123, "ops": []any{putAlert("a1", "Route 10 detour, 5th Ave")}})
 	if code != 200 {
 		t.Fatalf("a write to another record lands: %d %v", code, out)
@@ -133,17 +124,14 @@ func TestAWriteLandsOverAnotherRecordAndConflictsOnItsOwn(t *testing.T) {
 	if intent["claimed_at_ms"] != float64(1770000000123) || entry["at_ms"] == float64(1770000000123) || intent["key"] != "tablet-1/1" {
 		t.Fatalf("the device's time is a claim beside the server's stamp: %v", entry)
 	}
-	// This page changes a2 too, from the same read: a person settles it.
 	code, out = intentPost(t, base, "alerts", map[string]any{"key": "tablet-1/2", "read_seq": read, "ops": []any{putAlert("a2", "Route 4 back on its route")}})
 	overlap, _ := out["overlap"].(map[string]any)
 	if code != http.StatusConflict || overlap["kind"] != "service_alert" || overlap["id"] != "a2" || overlap["seq"] != float64(2) {
 		t.Fatalf("the same record is a 409 naming it: %d %v", code, out)
 	}
-	// Read again, the same write lands.
 	if code, out := intentPost(t, base, "alerts", map[string]any{"key": "tablet-1/2", "read_seq": 3, "ops": []any{putAlert("a2", "Route 4 back on its route")}}); code != 200 {
 		t.Fatalf("after a read of the head: %d %v", code, out)
 	}
-	// An op the log does not run, and a refused alert, write nothing.
 	if code, out := intentPost(t, base, "alerts", map[string]any{"key": "x", "ops": []any{map[string]any{"cap": "notes", "op": "write"}}}); code != 400 {
 		t.Fatalf("another log's op: %d %v", code, out)
 	}
@@ -172,8 +160,6 @@ func TestAnAlertEndedThroughItsIntent(t *testing.T) {
 	}
 }
 
-// closeModules closes the server's capability instances when the test
-// ends.
 func closeModules(t *testing.T, s *server) {
 	t.Cleanup(func() {
 		s.modulesMu.Lock()

@@ -1,16 +1,5 @@
 package main
 
-// The published schedule. The server is configured with the agency's
-// GTFS zip (-feed) and publishes the NETWORK DOCUMENT: it imports the
-// zip once through cap-network — the module the browser runs, so the
-// same bytes everywhere — and serves the import's answer at
-// GET /network. Browsers register the network; nobody downstream
-// parses GTFS. The answer is opaque here: the host reads only its
-// network_hash, to pin it, and splits off its two documents for the
-// pages that register them without reading them —
-// GET /network/document (the bare network, gzipped bytes) and
-// GET /network/boundary.
-
 import (
 	"archive/zip"
 	"bytes"
@@ -29,10 +18,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// handleNetwork serves the import's answer ({network, boundary,
-// notes, network_hash}), gzipped when the client takes it, with the
-// network hash as its ETag: a client holding the pinned document
-// revalidates for a 304.
 func (s *server) handleNetwork(w http.ResponseWriter, r *http.Request) {
 	if s.feeder == nil {
 		http.Error(w, "no feed configured (start with -feed <gtfs.zip>)", http.StatusNotFound)
@@ -60,18 +45,12 @@ func (s *server) handleNetwork(w http.ResponseWriter, r *http.Request) {
 	w.Write(feed.network)
 }
 
-// handleNetworkDocument serves the bare network document as gzipped
-// bytes — Content-Type application/gzip, never Content-Encoding, so
-// the browser hands them to the modules compressed (kernel op 256
-// decodes gzip as it parses) and never unzips or parses them — under
-// the network hash as its ETag.
+// The document is application/gzip, never Content-Encoding: the browser
+// hands the compressed bytes to the modules (kernel op 256 decodes gzip).
 func (s *server) handleNetworkDocument(w http.ResponseWriter, r *http.Request) {
 	s.servePublished(w, r, "application/gzip", func(f *loadedFeed) []byte { return f.documentGzip })
 }
 
-// handleNetworkBoundary serves the import's boundary (the feed's
-// numbering the live feeds name) under the same ETag: it belongs to
-// that network.
 func (s *server) handleNetworkBoundary(w http.ResponseWriter, r *http.Request) {
 	s.servePublished(w, r, "application/json", func(f *loadedFeed) []byte { return f.boundary })
 }
@@ -97,34 +76,24 @@ func (s *server) servePublished(w http.ResponseWriter, r *http.Request, contentT
 	w.Write(body(feed))
 }
 
-// loadedFeed is one published state: the zip (hashed, for provenance)
-// and the network imported from it.
 type loadedFeed struct {
 	hash        string          // "sha256:<hex>" of the zip
 	version     string          // feed_info.txt's feed_version, "" when absent
 	networkHash string          // the import's network_hash
 	network     json.RawMessage // the import's answer, served as-is
 	networkGzip []byte
-	// The answer's two documents, split off as they are, each also
-	// gzipped: the bare network (its bytes hash to networkHash — they
-	// are its canonical serialization) and the boundary (named by the
-	// sha256 of its bytes, boundaryHash). Both are served as blobs
-	// (publishedBlob), and in store mode they are stored (derived.go).
+	// The network's bytes hash to networkHash. The boundary is named by the
+	// sha256 of its bytes (boundaryHash).
 	document     json.RawMessage
 	documentGzip []byte
 	boundary     json.RawMessage
 	boundaryGzip []byte
 	boundaryHash string
-	// The zone the network's dates are counted in, as the import
-	// answered it ("" when its operators name none): today()'s zone.
-	timezone string
+	timezone     string
 }
 
-// importFeed runs load_feed + import in a fresh cap-network instance
-// and closes it: the import's working memory (several times the
-// network's size) goes with the instance. It answers the import's
-// answer, its network hash, and the module that made it
-// ("cap-network@sha256:<hex>").
+// importFeed closes its instance after the import, so the import's working
+// memory (several times the network's size) goes with it.
 func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.RawMessage, string, string, error) {
 	host, err := NewWasmHost(ctx, wasmPath)
 	if err != nil {
@@ -150,9 +119,6 @@ func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.Raw
 	return answer, pin.NetworkHash, "cap-network@" + host.Hash(), nil
 }
 
-// feedInfoVersion pulls feed_version out of feed_info.txt in the
-// zip — one metadata field for the manifest's provenance, the host's
-// own I/O; the module owns the format.
 func feedInfoVersion(zipBytes []byte) string {
 	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
@@ -181,42 +147,31 @@ func feedInfoVersion(zipBytes []byte) string {
 	return ""
 }
 
-// feedSource reads the GTFS zip from its source (D-118: a URL, the
-// bucket, or a dev file) and imports it, re-importing only when the
-// source's bytes change — a republished feed is picked up without a
-// restart (the "planner publishes, everyone re-pins" flow). In store
-// mode the import is stored (derived.go): a boot whose zip the store
-// already imported reads the stored network and imports nothing.
+// feedSource re-imports only when the source's bytes change, so a
+// republished feed needs no restart. In store mode a boot whose zip the
+// store already imported imports nothing.
 type feedSource struct {
 	src         *source
 	networkWasm string // the cap-network module that imports it
-	// onImport runs after each new published state (a feed whose bytes
-	// changed, imported or read from the store): the server records the
-	// feed's stop differences (stops.go), once for each zip.
-	onImport func(*loadedFeed)
-	// imports counts the imports this process ran.
-	imports int
+	onImport    func(*loadedFeed)
+	imports     int
 
 	mu   sync.Mutex
 	feed *loadedFeed
-	// zone is the time zone of the feed last loaded, read without the
-	// lock: a write that Load's onImport makes reads it (writeDate).
+	// zone is read without the lock: a write that Load's onImport makes reads
+	// it (writeDate).
 	zone atomic.Value
 }
 
-// fileFeed is a feed read from a local file (dev, tests).
 func fileFeed(path, networkWasm string) *feedSource {
 	return &feedSource{src: newSource(path, "", "", nil), networkWasm: networkWasm}
 }
 
-// Zip answers the feed's bytes as last read.
 func (f *feedSource) Zip() ([]byte, error) {
 	body, _, err := f.src.Read()
 	return body, err
 }
 
-// Load returns the current published state. When the source's bytes
-// changed, it imports them, or reads the store's import of them.
 func (f *feedSource) Load() (*loadedFeed, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -267,9 +222,6 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 	return f.feed, nil
 }
 
-// derive answers the import's answer for the zip: the store's, when it
-// holds this zip's import (stored), else a new import, which store mode
-// then stores.
 func (f *feedSource) derive(body []byte, hash string) (json.RawMessage, string, bool, error) {
 	st := f.src.st
 	if st != nil {

@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// flaky is a backend that stops answering on demand: every call fails
-// as a network error would, never as ErrNotFound or ErrExists.
+// flaky fails every call as a network error, never as ErrNotFound or
+// ErrExists.
 type flaky struct {
 	Backend
 	down atomic.Bool
@@ -42,10 +42,8 @@ func (f *flaky) List(ctx context.Context, p, a string) ([]ObjectInfo, error) {
 	return f.Backend.List(ctx, p, a)
 }
 
-// D-119: while the bucket does not answer, a store serves its cached
-// heads — each labelled stale, with when the bucket last confirmed it —
-// and its cached blobs (immutable, so always correct), and refuses every
-// write as unavailable: never a conflict, never acknowledged.
+// Pins that a store with a silent bucket serves cached heads labelled
+// stale and cached blobs, and refuses every write as unavailable (D-119).
 func TestABucketThatStopsAnsweringServesCachedHeadsLabelledStale(t *testing.T) {
 	f := &flaky{Backend: NewMemory()}
 	s := New(f)
@@ -83,7 +81,6 @@ func TestABucketThatStopsAnsweringServesCachedHeadsLabelledStale(t *testing.T) {
 	}
 }
 
-// A store with nothing cached has nothing to serve: unavailable.
 func TestABucketDownBeforeAnyReadIsUnavailable(t *testing.T) {
 	f := &flaky{Backend: NewMemory()}
 	New(f).CAS("edits", "", []byte(`[1]`), env("edit_records"), "", "w", 1)
@@ -97,8 +94,8 @@ func TestABucketDownBeforeAnyReadIsUnavailable(t *testing.T) {
 	}
 }
 
-// The blob cache is bounded by bytes: the oldest entries go first, and
-// an evicted blob is read from the bucket again.
+// Pins that the blob cache is bounded by bytes and evicts the oldest
+// entries first.
 func TestTheBlobCacheIsBounded(t *testing.T) {
 	f := &flaky{Backend: NewMemory()}
 	s := New(f)

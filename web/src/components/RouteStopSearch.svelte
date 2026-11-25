@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// One search box over routes and stops (directory `entities` and
-  /// `stops`): a pick narrows the page to one route or one stop. The
-  /// pick shows as a chip with a clear button. A RENDER component.
   import type { DirectoryStop } from "../types/cap_directory/DirectoryStop";
   import type { EntityRow } from "../types/EntityRow";
 

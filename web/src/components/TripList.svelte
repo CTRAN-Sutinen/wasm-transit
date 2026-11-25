@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// One direction's trips by start (directory `timetable`): the key
-  /// each runs under, its running time, its block, and whether the
-  /// plan added or moved it — which key a change to a trip reaches.
   import type { Timetable } from "../types/Timetable";
   import { clock } from "./designFormat";
 

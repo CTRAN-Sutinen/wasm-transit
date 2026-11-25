@@ -1,28 +1,18 @@
-/// The device's document store: versioned local data, immutable
-/// history, persisted to IndexedDB. Host I/O — no module is called
-/// here (the engine, src/engine.ts, is the one op caller). Each record
-/// is keyed by the hash of the bytes it stores, as the sync store keys
-/// its blobs. A document's identity on the bus is the module's answer
-/// (its load), not this key.
-///
-/// A migration never destroys: the migrated document is a NEW record
-/// whose `produced_by` names the record it came from. A record moved in
-/// from `localStorage` names the key it came from. `current` is the only
-/// mutable thing — a pointer to the record in force; earlier records
-/// stay addressable. A kind written on every use (a rider's recent
-/// places) replaces its history instead (`replace`), and keeps only the
-/// records a migration came from. The whole store persists to IndexedDB
-/// as plain data (the project's persistence rule: state survives
-/// reloads; proxies never cross).
+// A record is keyed by the hash of its bytes. A document's identity on the
+// bus is the module's answer (its load), not this key.
+//
+// A migration writes a new record whose `produced_by` names its source,
+// and `current` is the only mutable pointer. A kind that is written on
+// every use (a rider's recent places) passes `replace` and keeps only the
+// records that a migration came from.
 
 import { get as idbGet, set as idbSet } from "idb-keyval";
 
 export type DocRecord = {
   hash: string;
   version: number;
-  /// Canonical JSON of the document.
   bytes: string;
-  /// How this version came to exist. Absent = authored/seeded.
+  // Absent for an authored or seeded record.
   produced_by?: { op: "migrate"; from: string; by: string } | { op: "moved"; from: string };
 };
 
@@ -50,18 +40,13 @@ export async function restoreDocuments(): Promise<void> {
   documents.restored = true;
 }
 
-/// Hash a document's canonical bytes (the string IS the bytes here —
-/// documents cross the ABI as JSON).
 async function hashDocument(bytes: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bytes));
   const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   return "sha256:" + hex;
 }
 
-/// Store a document version and make it current; idempotent by the
-/// bytes' hash. Seeding with the same bytes twice lands on the same
-/// record. `replace` drops the kind's earlier records, except those a
-/// migration came from.
+// Idempotent by the bytes' hash.
 export async function putDocument(
   kind: string,
   bytes: string,
@@ -82,8 +67,7 @@ export async function putDocument(
   return record;
 }
 
-/// Keep a record without making it current: what a document was before
-/// a migration wrote over it elsewhere (a plan set brought forward).
+// Keeps what a document was before a migration wrote over it elsewhere.
 export async function keepRecord(kind: string, bytes: string, version: number): Promise<DocRecord> {
   await restoreDocuments();
   const hash = await hashDocument(bytes);

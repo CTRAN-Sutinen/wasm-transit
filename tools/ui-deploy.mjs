@@ -36,7 +36,6 @@ async function get(rel) {
   return Buffer.from(await resp.arrayBuffer());
 }
 
-/// A blob by hash, checked against it.
 async function blob(hash) {
   const bytes = await get(`blobs/${hash}`);
   const got = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;

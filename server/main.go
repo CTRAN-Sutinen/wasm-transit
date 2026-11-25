@@ -1,15 +1,3 @@
-// Package main is the sync server: the Go host for the capability
-// modules.
-//
-// The division of labor is deliberate (see the repo README): the
-// modules own all domain logic — the server loads the exact bytes
-// the browser runs (sha256 in the manifest proves it) and calls the
-// flat ABI. This host is scaffolding only: HTTP routing, static
-// serving with Range support, the CORS proxy, the geocoder proxy
-// (geocode.go), the published network
-// (network.go) and streets (streets.go), publishing picks to the store
-// (plans.go), and the manifest that pins their hashes and the sync
-// module's. No domain decision is ever made here.
 package main
 
 import (
@@ -76,8 +64,8 @@ func main() {
 		}
 		log.Printf("attachments: %s (D-162)", *f.attachmentsURL)
 	}
-	// the work order adapter before the store's first manifest, which
-	// offers it (services.work_orders)
+	// The work order adapter loads before the store's first manifest,
+	// which offers it (services.work_orders).
 	var woErr error
 	if s.workOrders, woErr = newWorkOrders(*f.workOrdersSpec); woErr != nil {
 		log.Fatal(woErr)
@@ -110,8 +98,8 @@ func main() {
 		if _, err := s.kindTable(); err != nil {
 			log.Fatalf("store mode: %v", err)
 		}
-		// The modules by capability, before the seeds: a log's first
-		// entry runs through its receive op (logkinds.go).
+		// The modules load before the seeds: a log's first entry runs
+		// through its receive op (logkinds.go).
 		for id, p := range f.moduleFlags() {
 			if *p != "" {
 				s.moduleFiles[id] = *p
@@ -204,9 +192,7 @@ func main() {
 	}
 }
 
-// dataPath is a default file's path: under $KO_DATA_PATH when the
-// server runs from its image (`just server-image`: ko copies
-// server/kodata/ there), else the path in a source tree.
+// In the image, ko copies server/kodata/ under $KO_DATA_PATH.
 func dataPath(inImage, inTree string) string {
 	if root := os.Getenv("KO_DATA_PATH"); root != "" {
 		return filepath.Join(root, inImage)
@@ -214,12 +200,9 @@ func dataPath(inImage, inTree string) string {
 	return inTree
 }
 
-// newHTTPServer bounds what one client can hold: a header must arrive
-// within 10s (a slow client cannot pin a connection), a request body
-// within 5 min (a build or a feed is large), an idle keep-alive closes
-// after 2 min, and no response runs past 10 min. The response bound is
-// loose on purpose: a phone on a poor signal downloads the street data
-// slowly, and a cut-off download only makes it start again.
+// The response bound is loose on purpose. A phone on a poor signal
+// downloads the street data slowly, and a cut-off download starts again.
+// The request body bound is long because a build or a feed is large.
 func newHTTPServer(h http.Handler) *http.Server {
 	return &http.Server{
 		Handler:           h,
@@ -230,9 +213,6 @@ func newHTTPServer(h http.Handler) *http.Server {
 	}
 }
 
-// serve runs srv until SIGTERM or SIGINT, then shuts down gracefully:
-// /readyz answers "draining" for drain (the balancer stops sending),
-// then the listener closes and requests in flight get up to 30s.
 func (s *server) serve(ln net.Listener, srv *http.Server, drain time.Duration) error {
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
@@ -256,8 +236,8 @@ func (s *server) serve(ln net.Listener, srv *http.Server, drain time.Duration) e
 	return nil
 }
 
-// routes answers the server's mux. /rt is a route only with -rt-proxy
-// (D-67): a deployment's pages fetch the agency's feeds directly.
+// /rt is a route only with -rt-proxy. A deployment's pages fetch the
+// agency's feeds directly (D-67).
 func (s *server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	if s.rtProxy {
@@ -278,8 +258,8 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
 	mux.HandleFunc("/plans/freeze", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleFreeze))
 	mux.HandleFunc("/plans/adopt", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleAdopt))
-	// Each kind's own write route (the kind table's `post`), answered by
-	// its log's receive op (logkinds.go). Its write rule is its store kind.
+	// Each kind's `post` route is answered by its log's receive op
+	// (logkinds.go). Its write rule is its store kind.
 	if t, err := s.kindTable(); err == nil {
 		for _, k := range t.Kinds {
 			if k.Post != nil && k.Receive != "" {
@@ -299,15 +279,12 @@ func (s *server) routes() *http.ServeMux {
 	return mux
 }
 
-// outbound carries every request the server itself sends (the feed and
-// streets sources, the JWKS, the geocoder, the /rt relay). It is
-// http.DefaultTransport as it stands when the package starts. The
-// tests replace http.DefaultTransport to check their own requests
-// against the HTTP contract, and the server's requests must not pass
-// through that check.
+// outbound is http.DefaultTransport as it stands when the package
+// starts. Tests replace http.DefaultTransport to check their own requests
+// against the HTTP contract, and the server's outgoing requests must not
+// pass through that check.
 var outbound = http.DefaultTransport
 
-// server holds the host's few pieces of state.
 type server struct {
 	dist      string
 	wasm      *WasmHost
@@ -315,120 +292,83 @@ type server struct {
 	streets   *streetsSource // nil when no street layer is configured
 	publisher string
 	geocoder  *geocoder // nil when no geocoder is configured
-	// The GTFS URL an export names for the pages to fetch (D-132);
-	// "" for a server, which imports its own feed.
+	// The GTFS URL an export names for the pages to fetch (D-132). A
+	// server imports its own feed, so it is "".
 	feedURL string
 
-	// The /rt feed proxy (-rt-proxy, a dev convenience — D-67) and its
-	// upstream timeout (0 = proxyTimeoutDefault).
+	// proxyTimeout 0 means proxyTimeoutDefault.
 	rtProxy      bool
 	proxyTimeout time.Duration
 
-	// The edit document. Opaque JSON: the artifact owns the schema
-	// and every domain decision about it (merge, submit, validation)
-	// — this host only stores and ferries it.
+	// The edit document is opaque JSON. The module owns its schema.
 	editsMu   sync.Mutex
 	edits     json.RawMessage // the edit document (current version)
 	editsPath string          // the dev store's file; empty = in memory only
 
-	// The durable sync store (store mode, -store): blobs + CAS'd
-	// pointers. nil = the dev store (no -store): edits in memory or the
-	// -edits file, no history, no publishing — development and -export.
+	// nil is the dev store (no -store).
 	store         *store.Store
 	retentionDays int
 
-	// draining is set once shutdown begins: /readyz answers 503 so a
-	// load balancer stops sending before the listener closes.
 	draining atomic.Bool
 
-	// Authorization state (nil = auth off, dev only): the IdP config,
-	// the hosted cap-authz module, and the policy source.
+	// nil means auth is off (dev only).
 	authz *authzState
 
-	// Publishing picks (store mode): the hosted cap-plans module, the
-	// cap-network module each publish instantiates, and the lock that
-	// makes one publish one step.
 	plans       *WasmHost
 	networkWasm string
-	// The log capability (cap-log) behind the logs the server folds
-	// (caplog.go), loaded on first use and held for the lifetime.
-	logWasm string
-	logOnce sync.Once
-	logHost *WasmHost
-	logErr  error
-	// The logs a receive op writes (logkinds.go), from the kind table;
-	// and the server's one instance of each capability they use.
-	keptOnce  sync.Once
-	kept      map[string]*keptLog
-	modulesMu sync.Mutex
-	modules   map[string]*heldModule
-	// The kind table (kinds.go, -kinds), read once; and the modules
-	// that check a pointer write, by capability id (default
-	// ../web/pkg/cap_<id>.wasm).
-	kindsPath string
-	kindsOnce sync.Once
-	kinds     *kindTable
-	kindsErr  error
-	checkWasm map[string]string
-	// The attachments' own bucket (attachments.go, -attachments); nil:
-	// none are taken.
+	logWasm     string
+	logOnce     sync.Once
+	logHost     *WasmHost
+	logErr      error
+	keptOnce    sync.Once
+	kept        map[string]*keptLog
+	modulesMu   sync.Mutex
+	modules     map[string]*heldModule
+	// checkWasm maps a capability id to the module that checks a pointer
+	// write (default ../web/pkg/cap_<id>.wasm).
+	kindsPath   string
+	kindsOnce   sync.Once
+	kinds       *kindTable
+	kindsErr    error
+	checkWasm   map[string]string
 	attachments store.Backend
-	// The work order system's adapter (workorders.go, -work-orders); nil:
-	// none configured, a request's work order entered by hand.
-	workOrders workOrderSystem
-	// The migration capability (cap-migrate), loaded on first use
-	// (migrator): an older document comes forward at receive.
+	workOrders  workOrderSystem
 	migrateWasm string
 	migrateOnce sync.Once
 	migrateHost *WasmHost
 	migrateErr  error
 	fixedToday  string           // -today: the date publishing reads, for test servers; "" = the host clock
 	now         func() time.Time // the host clock (nil = time.Now); tests pin it
-	// The agency's zone, as the last published pick answered it
-	// (cap-network's document answer): today() reads it when no feed
-	// is configured.
+	// The agency's zone, from the last published pick. today() reads it
+	// when no feed is configured.
 	zoneMu sync.Mutex
 	zone   string
 
-	// The picks' GTFS exports, by network hash (exportedPick).
 	feedMu    sync.Mutex
 	feedCache map[string][]byte
 
-	// Gzipped blobs for transport, by hash (gzippedBlob).
 	gzMu    sync.Mutex
 	gzCache map[string][]byte
 
-	// The manifest pointer's last committed key (store mode): the
-	// manifest is re-committed when the published set changes.
 	manifestMu  sync.Mutex
 	manifestKey string
 
-	// Builds (store mode; builds.go): -dist's release committed to the
-	// `build` pointer and the pages served from its head. serverModules
-	// names the modules this server hosts (role → path), retained in
-	// each build; buildEvery bounds how often -dist is re-listed (0 =
-	// buildEveryDefault).
+	// buildEvery bounds how often -dist is re-listed (0 means
+	// buildEveryDefault). serverModules maps role to path.
 	builds        buildState
 	buildEvery    time.Duration
 	serverModules map[string]string
-	// modulesDir is -modules, the folder of the capability modules; and
-	// moduleFiles are the capabilities whose own flag names a file.
-	modulesDir  string
-	moduleFiles map[string]string
-	// uiDists are the UIs' bundles (-ui-dist), each committed to its own
-	// build.<id> pointer (D-171).
+	modulesDir    string
+	moduleFiles   map[string]string
+	// Each UI's bundle commits to its own build.<id> pointer (D-171).
 	uiDists []*uiDist
 }
 
-// handleStatic serves the built frontend with the deployment's headers
-// (headers.go): the baseline on every file, the policies on each rider
-// page, and gzip for the text and wasm types.
 func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	for _, b := range baselineHeaders() {
 		h.Set(b.name, b.value)
 	}
-	// Only a rider page needs its origins read (a store mode read).
 	if page := strings.TrimPrefix(path.Clean(r.URL.Path), "/"); isRiderPage(page) {
 		for _, p := range pageHeaders(page, s.connectOrigins()) {
 			h.Set(p.name, p.value)
@@ -437,15 +377,10 @@ func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	gzipStatic(w, r, s.serveStatic)
 }
 
-// connectOrigins is the origins the rider pages fetch beyond the
-// server's own: the live feeds the deployment names, and the agency's
-// GTFS URL.
 func (s *server) connectOrigins() []string {
 	return feedOrigins(s.staticBytes("live-feeds.json"), s.feedURL)
 }
 
-// staticBytes is a served file's bytes: the pinned build's in store
-// mode, else -dist's. Nil when there is none.
 func (s *server) staticBytes(name string) []byte {
 	if s.store != nil {
 		if _, files := s.pinnedFiles(); files != nil {
@@ -461,9 +396,7 @@ func (s *server) staticBytes(name string) []byte {
 	return data
 }
 
-// serveStatic serves the built frontend. http.ServeContent gives
-// Range requests (PMTiles needs them), If-Modified-Since, and content
-// types by extension — no hand-rolled 206s.
+// http.ServeContent gives the Range requests that PMTiles needs.
 func (s *server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	upath := r.URL.Path
 	if strings.Contains(upath, "..") {
@@ -474,8 +407,8 @@ func (s *server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if name == "" || name == "." {
 		name = "index.html"
 	}
-	// Store mode: the pages are the pinned build's (builds.go); what the
-	// build does not hold (the basemap) is -dist's.
+	// In store mode the pages come from the pinned build (builds.go).
+	// -dist supplies what the build lacks, such as the basemap.
 	if s.store != nil {
 		s.syncBuild()
 		if s.serveBuildFile(w, r, name) {
@@ -494,7 +427,6 @@ func (s *server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", staticCacheControl(name))
-	// ServeContent sniffs the content type by extension.
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }
 
@@ -506,9 +438,7 @@ var (
 	moduleHashed = regexp.MustCompile(`^caps/[^/]+-[0-9a-f]{64}\.wasm$`)
 )
 
-// staticCacheControl: content-addressed files are cached forever;
-// everything else — the pages, caps/manifest.json, the deployment's
-// config — revalidates on every use (a 304 by modification time), so
+// Everything that is not content-addressed revalidates on every use, so
 // an open page meets the new build on its next load.
 func staticCacheControl(name string) string {
 	if viteHashed.MatchString(name) || moduleHashed.MatchString(name) {
@@ -517,17 +447,13 @@ func staticCacheControl(name string) string {
 	return "no-cache"
 }
 
-// The proxy's caps: an upstream that answers slower or larger is a
-// 502 — a feed is a few MB at most.
 const (
 	proxyTimeoutDefault = 15 * time.Second
 	proxyMaxBytes       = 32 << 20
 )
 
-// handleProxy relays an agency feed the browser cannot fetch directly
-// (no Access-Control-Allow-Origin upstream) — a dev convenience, on
-// only with -rt-proxy (D-67). It relays any http(s) URL for any
-// caller, so the server binds localhost when it is on.
+// handleProxy relays any http(s) URL for any caller, so the server binds
+// localhost when -rt-proxy is on (D-67).
 func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")
 	if raw == "" {
@@ -573,55 +499,37 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
-// Manifest pins the published network, the GTFS zip it was imported
-// from, the published plan set (the picks clients resolve), the
-// published streets and walk table, the build the pages are served
-// from (store mode), and the sync module this server runs, and lists the external services it proxies. `feed_version` is read
-// from the feed's own feed_info.txt by the host (the host owns files
-// and I/O; the module owns the format's domain).
 type Manifest struct {
-	NetworkHash string `json:"network_hash"` // the network GET /network serves
-	// The import's boundary (the feed's numbering the live feeds name),
-	// a blob of its own: sha256 of its bytes, as every blob is named.
+	NetworkHash  string `json:"network_hash"` // the network GET /network serves
 	BoundaryHash string `json:"boundary_hash,omitempty"`
 	// A serverless deployment that follows the agency's GTFS URL
-	// (D-132; -export with -feed-url): no network is published, and
-	// each page fetches this zip, imports it, and checks it daily.
-	FeedURL     string  `json:"feed_url,omitempty"`
-	FeedHash    string  `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip it was imported from
-	FeedVersion *string `json:"feed_version,omitempty"`
-	StreetsHash string  `json:"streets_hash,omitempty"` // the streets document GET /streets serves
-	WalksHash   string  `json:"walks_hash,omitempty"`   // the walk table GET /walks serves
-	WasmHash    string  `json:"wasm_hash"`              // sha256 of the sync module this server runs
-	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
-	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
-	// Each document of a log a receive op writes (logkinds.go), written
-	// as `<store kind>_hash` (stops_hash, stop_requests_hash, ...), store
-	// mode.
-	Logged map[string]string `json:"-"`
-	// The seq of each log's fold whose documents this manifest pins
-	// (each log a receive op writes), store mode: a page sends it with a
-	// write as read_seq (D-189; logkinds.go).
+	// (-export with -feed-url) publishes no network. Each page fetches the
+	// zip, imports it, and checks it daily (D-132).
+	FeedURL     string            `json:"feed_url,omitempty"`
+	FeedHash    string            `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip it was imported from
+	FeedVersion *string           `json:"feed_version,omitempty"`
+	StreetsHash string            `json:"streets_hash,omitempty"` // the streets document GET /streets serves
+	WalksHash   string            `json:"walks_hash,omitempty"`   // the walk table GET /walks serves
+	WasmHash    string            `json:"wasm_hash"`              // sha256 of the sync module this server runs
+	AuthzHash   string            `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
+	PolicyHash  string            `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
+	Logged      map[string]string `json:"-"`
+	// The seq of each log's fold that this manifest pins. A page sends it
+	// with a write as read_seq (D-189).
 	LogSeqs     map[string]int64 `json:"log_seqs,omitempty"`
 	BuildHash   string           `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt int64            `json:"generated_at"`
 	Publisher   *string          `json:"publisher,omitempty"`
-	// The agency's zone (the network's operator timezone, as today()
-	// counts in it): a page reads its clock there, never in the
-	// device's zone (web/src/clock.ts). Empty while none is known.
+	// A page reads its clock in this zone, never the device's
+	// (web/src/clock.ts). Empty while none is known.
 	Timezone string `json:"timezone,omitempty"`
-	// How a page signs in to write (with -oidc-client-id): the issuer,
-	// the pages' public client, and the scopes it asks for. Absent:
-	// sign-in is off, or the pages have no client of their own.
+	// Absent when sign-in is off or the pages have no client of their own.
 	Auth *ManifestAuth `json:"auth,omitempty"`
-	// The external services this deployment offers, by name — a
-	// service it does not list is off, and the frames that need it
-	// say so (docs/architecture/web.md, "External services").
+	// A service that is not listed is off (docs/architecture/web.md,
+	// "External services").
 	Services map[string]Service `json:"services,omitempty"`
 }
 
-// MarshalJSON writes the manifest with each logged document's pin as a
-// field of its own (`<store kind>_hash`).
 func (m Manifest) MarshalJSON() ([]byte, error) {
 	type plain Manifest
 	raw, err := json.Marshal(plain(m))
@@ -638,8 +546,6 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
-// UnmarshalJSON reads a manifest, each `<kind>_hash` field the struct does
-// not name into Logged.
 func (m *Manifest) UnmarshalJSON(raw []byte) error {
 	type plain Manifest
 	if err := json.Unmarshal(raw, (*plain)(m)); err != nil {
@@ -667,26 +573,20 @@ func (m *Manifest) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// ManifestAuth is how a page signs in (D-58: writes need a token; reads
-// stay public): the provider's issuer (its discovery document is
-// <issuer>/.well-known/openid-configuration), the pages' public client,
-// and the scopes a page asks for.
+// Writes need a token and reads stay public (D-58).
 type ManifestAuth struct {
 	Issuer   string `json:"issuer"`
 	ClientID string `json:"client_id"`
 	Scope    string `json:"scope"`
 }
 
-// Service is where a page asks an external service on this origin,
-// and the query policy the path applies.
 type Service struct {
 	Path  string                    `json:"path"`
 	Query map[string]map[string]any `json:"query,omitempty"`
 }
 
-// buildManifest assembles the manifest from the published set. The
-// generated_at stamp is the publish time, not the request time, so a
-// store-mode manifest blob is immutable between republishes.
+// generated_at is the publish time, not the request time, so a store-mode
+// manifest blob is immutable between republishes.
 func (s *server) buildManifest() (Manifest, error) {
 	manifest := Manifest{
 		WasmHash:    s.wasm.Hash(),
@@ -744,9 +644,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("policy"); err == nil && found {
 			manifest.PolicyHash = head.Hash
 		}
-		// Each log's documents and the seq of the fold they are, read
-		// under one lock: a page sends that seq with a write (read_seq),
-		// so the write is checked against the records it changes.
+		// One lock reads each log's documents and the seq of their fold.
+		// The write that carries the seq as read_seq is checked against
+		// the records it changes.
 		pins, seqs := s.keptPins()
 		manifest.Logged = pins
 		for name, seq := range seqs {
@@ -762,8 +662,7 @@ func (s *server) buildManifest() (Manifest, error) {
 	return manifest, nil
 }
 
-// manifestKeyOf identifies the published set a manifest pins (everything
-// but the generated_at stamp): a change re-commits the manifest pointer.
+// manifestKeyOf covers everything but the generated_at stamp.
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	seqs, _ := json.Marshal(m.LogSeqs)
@@ -789,9 +688,8 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.store == nil {
-		// The dev store: the manifest is ephemeral, served as built; its
-		// ETag names what it pins, so an open page's poll is a 304
-		// while nothing moved (D-63).
+		// The dev store serves the manifest as built. The ETag names what it
+		// pins, so an open page's poll is a 304 while nothing moved (D-63).
 		etag := `"` + manifestKeyOf(manifest) + `"`
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "no-cache")
@@ -803,9 +701,8 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(manifest)
 		return
 	}
-	// Store mode: the manifest is the ROOT pointer — publishing is one
-	// CAS on it, and clients resolve the published set through it
-	// (docs/FORMATS.md). GET serves the pointer's blob.
+	// In store mode the manifest is the root pointer. Publishing is one
+	// CAS on it (docs/FORMATS.md).
 	s.manifestMu.Lock()
 	key := manifestKeyOf(manifest)
 	if key != s.manifestKey {
@@ -867,22 +764,13 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// seedStore prepares a fresh or older store at startup: each log a
-// receive op writes takes its first entry from its kinds' old pointers'
-// heads (logkinds.go, seedKept): the disruptions log from the old edits
-// pointer, else the dev store's -edits file; the stops log from the old
-// stops and stop_requests pointers; the plans log from the old plans
-// pointer.
 func (s *server) seedStore(editsPath string) {
 	s.describeStore()
 	s.seedKept(map[string]seedFile{"edit_records": {flag: "edits", path: editsPath}})
 }
 
-// describeStore writes the store's description, create only
-// (store/describe.go): the layout, the README, this build's kind table,
-// and every schema it names, from beside the table (-kinds,
-// <dir>/schemas/<hex>.json). A failure is logged: the store stays
-// readable as before, and the next boot tries again.
+// A failure is logged and the next boot tries again. The schemas sit
+// beside the kind table, in <dir>/schemas/<hex>.json.
 func (s *server) describeStore() {
 	path := s.kindsPath
 	if path == "" {

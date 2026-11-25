@@ -1,15 +1,13 @@
 package main
 
-// The plans log (D-190, D-191). The laws, at the HTTP seam:
-//   - a freeze writes the network to the record by its hash, with what
-//     it is, and puts nothing in force;
+// The plans log (D-190, D-191). Properties, over HTTP:
+//   - a freeze writes the network by its hash and puts nothing in force;
 //   - only a frozen version is adopted, and an adoption puts it in force
 //     from its date;
 //   - POST /plans is a freeze and an adoption in one entry;
 //   - a retirement is one entry;
 //   - a restarted server folds the same documents from the log;
-//   - the plans log has no generic revert: the plans' own rules correct
-//     a pick.
+//   - the plans log has no generic revert.
 
 import (
 	"encoding/json"
@@ -21,7 +19,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// freezePick posts a network to /plans/freeze with purpose.
 func freezePick(t *testing.T, base string, network map[string]any, purpose string) (int, map[string]any) {
 	t.Helper()
 	body, _ := json.Marshal(network)
@@ -33,7 +30,6 @@ func freezePick(t *testing.T, base string, network map[string]any, purpose strin
 	return code, out
 }
 
-// plansEntry is one entry of the plans log, as the bucket holds it.
 type plansEntry struct {
 	Writer  string `json:"writer"`
 	Changes []struct {
@@ -147,12 +143,10 @@ func TestAPublishIsAFreezeAndAnAdoptionInOneEntry(t *testing.T) {
 	if seq != 1 || e.kinds()["pick"] != 1 || e.kinds()["frozen_version"] != 1 || e.Intent.Op != "POST /plans" {
 		t.Fatalf("one entry with the frozen version and the pick: seq %d %+v", seq, e)
 	}
-	// A restarted server folds the same set from the log.
 	again, _ := newPlansServer(t, bucket)
 	if plansHash(t, again) != plansHash(t, s) {
 		t.Fatal("the fold is the record: a restart serves the same set")
 	}
-	// A retirement is one entry.
 	if code, _, body := httpPost(t, base+"/plans/retire", `{"id":"fall-2026"}`); code != 200 {
 		t.Fatalf("retire: %d %s", code, body)
 	}

@@ -1,13 +1,4 @@
 <script lang="ts">
-  /// The string-line (directory `timetable`): time across, the
-  /// direction's stops down, one line per trip — so a line's slope is
-  /// its running time, a slower band reads at a glance, and so does a
-  /// trip out of step with its neighbours. Against a baseline, a
-  /// moved trip is drawn in the accent with its baseline time dashed
-  /// beside it, and an added trip in blue. Editable, a trip drags
-  /// along the time axis to nudge it on its own (whole minutes); the
-  /// drop is an event, the change is the host's. A stop's name is a
-  /// button when the host listens: picking the stop is an event too.
   import type { Timetable } from "../types/Timetable";
   import type { TimetableTrip } from "../types/TimetableTrip";
   import { clock } from "./designFormat";
@@ -58,7 +49,6 @@
   }
   const hours = $derived(Array.from({ length: (span.hi - span.lo) / 3600 + 1 }, (_, i) => span.lo + i * 3600));
 
-  // Dragging: the pixel offset becomes whole minutes.
   let svg: SVGSVGElement;
   let drag = $state<{ key: string; trip: string; start: number; startX: number; delta: number } | null>(null);
   function secsPerPixel() {
@@ -84,8 +74,8 @@
     drag = null;
   }
   const kind = (t: TimetableTrip) => (t.added ? "added" : t.retimed_from_secs != null ? "moved" : "kept");
-  // The key names only what is drawn: a moved or added trip exists
-  // only against a baseline, so without one the key is empty.
+  // The key names only what is drawn. A moved or added trip exists only against a
+  // baseline, so without one the key is empty.
   const drawn = $derived(new Set(timetable.trips.map(kind)));
 </script>
 

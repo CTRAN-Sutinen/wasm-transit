@@ -23,35 +23,18 @@ import (
 	"rustwasm/server/store"
 )
 
-// Builds (D-80; docs/architecture/release-artifacts.md;
-// docs/FORMATS.md, "Builds"). In store mode the release in -dist is a
-// BUILD: every file a blob, a build document naming them and the
-// modules this server hosts, committed to the `build` pointer. The
-// manifest pins the head (`build_hash`) and the pages are served from
-// it, so every build the log ever held stays whole, and moving the
-// pointer back (POST /builds) is a rollback the pages follow (D-63).
-//
-// -dist is read like a source (D-118): at most every buildEvery, a
-// changed tree is read whole, and committed when its build is new to
-// the log. A build the log already holds is never re-imported — moving
-// to it is POST /builds — so a restart on the release a rollback left
-// behind keeps the rollback.
+// In store mode the release in -dist is a build (D-80;
+// docs/architecture/release-artifacts.md). A build the log already
+// holds is never re-imported. Moving to it is POST /builds, so a
+// restart on the release that a rollback left behind keeps the
+// rollback.
 
-// buildPointer is the pointer the server's builds are logged under.
 const buildPointer = "build"
 
-// Each UI at its own URL (D-171): a UI's bundle (-ui-dist <id>=<dir>,
-// `just build-ui <id>`) is a build of its own, committed to the pointer
-// build.<id> the same way, with no server modules. The UI's host
-// serves it (`just ui-deploy` writes a logged build out for it) and
-// routes the data paths here. POST /builds?ui=<id> moves that UI's
-// pointer alone.
-
-// uiBuildPointer is the pointer a UI's builds are logged under.
+// Each -ui-dist bundle is a build of its own, committed to the pointer
+// build.<id> with no server modules (D-171).
 func uiBuildPointer(id string) string { return buildPointer + "." + id }
 
-// validUIID says whether id can name a UI's pointer: lower-case letters,
-// digits, and hyphens, as the generated UIs' ids are.
 func validUIID(id string) bool {
 	if id == "" || len(id) > 64 {
 		return false
@@ -64,13 +47,11 @@ func validUIID(id string) bool {
 	return true
 }
 
-// uiDist is one UI's bundle directory and what was last read of it.
 type uiDist struct {
 	id, dir string
 	state   buildState
 }
 
-// parseUIDists reads -ui-dist: "<id>=<dir>" pairs, comma-separated.
 func parseUIDists(spec string) ([]*uiDist, error) {
 	var out []*uiDist
 	seen := map[string]bool{}
@@ -97,17 +78,14 @@ var (
 	buildFileEnv = store.Envelope{Kind: store.BuildFileKind, SchemaVersion: 1, ProducedBy: "server"}
 )
 
-// buildEveryDefault bounds how often a request re-reads -dist's listing.
 const buildEveryDefault = 2 * time.Second
 
-// buildExcluded: the basemap is map data its own recipe fetches
-// (`just basemap`, `just basemap-assets` — gitignored), not a release's
-// code; it is served from -dist as it is.
+// buildExcluded skips the basemap. It is map data that its own recipe
+// fetches (`just basemap`, `just basemap-assets`), not release code.
 func buildExcluded(rel string) bool {
 	return rel == "basemap.pmtiles" || strings.HasPrefix(rel, "basemap-assets/")
 }
 
-// builds is the server's view of -dist and the pinned build.
 type buildState struct {
 	mu          sync.Mutex
 	checked     time.Time
@@ -118,9 +96,6 @@ type buildState struct {
 	byPath map[string]store.BuildFile
 }
 
-// distListing walks a bundle directory (the build's files only) and
-// answers its relative paths, sorted, and a fingerprint of their sizes
-// and times.
 func distListing(dist string) ([]string, string, error) {
 	var paths []string
 	h := sha256.New()
@@ -154,8 +129,6 @@ func distListing(dist string) ([]string, string, error) {
 	return paths, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// readBuild reads a bundle directory and the modules named as a build:
-// its document and the bytes of every blob it names.
 func readBuild(dist string, paths []string, modules map[string]string) ([]byte, map[string][]byte, error) {
 	doc := store.BuildDoc{Kind: store.BuildKind, SchemaVersion: 1, Files: []store.BuildFile{}}
 	blobs := map[string][]byte{}
@@ -188,10 +161,6 @@ func contentType(rel string) string {
 	return "application/octet-stream"
 }
 
-// syncBuild commits -dist's release, and each -ui-dist bundle, when it
-// changed and is new to its log (at most every buildEvery). Store mode
-// only; a directory that does not read, or holds no page, commits
-// nothing.
 func (s *server) syncBuild() {
 	if s.store == nil {
 		return
@@ -204,7 +173,6 @@ func (s *server) syncBuild() {
 	}
 }
 
-// syncBuildOf commits one directory's release to its pointer.
 func (s *server) syncBuildOf(pointer, dist string, b *buildState, modules map[string]string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -271,8 +239,6 @@ func containsString(xs []string, x string) bool {
 	return false
 }
 
-// pinnedFiles answers the head build's files by path (nil when no build
-// is pinned).
 func (s *server) pinnedFiles() (string, map[string]store.BuildFile) {
 	head, found, err := s.store.Head(buildPointer)
 	if err != nil || !found {
@@ -301,8 +267,6 @@ func (s *server) pinnedFiles() (string, map[string]store.BuildFile) {
 	return b.pinned, b.byPath
 }
 
-// serveBuildFile serves name from the pinned build; false when the
-// build does not hold it (or none is pinned).
 func (s *server) serveBuildFile(w http.ResponseWriter, r *http.Request, name string) bool {
 	_, files := s.pinnedFiles()
 	f, ok := files[name]
@@ -321,11 +285,9 @@ func (s *server) serveBuildFile(w http.ResponseWriter, r *http.Request, name str
 	return true
 }
 
-// handleBuilds moves the build pointer to a build its log holds — a
-// rollback, or forward again: POST {"build": "sha256:<hex>"}. Every
-// file of a logged build is retained, so the move is the whole act;
-// the manifest moves with it and the pages follow (D-63). With ?ui=<id>
-// it moves that UI's pointer (build.<id>) instead, and nothing else.
+// handleBuilds moves the pointer to a logged build. Every file of a
+// logged build is retained, so the move is the whole rollback, and the
+// pages follow the manifest (D-63).
 func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
@@ -386,8 +348,6 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"build": req.Build, "seq": seq})
 }
 
-// buildsPointerOf answers the pointer a POST /builds moves: build, or
-// build.<id> for ?ui=<id>. False for an id that names no UI pointer.
 func buildsPointerOf(r *http.Request) (string, bool) {
 	ui := r.URL.Query().Get("ui")
 	if ui == "" {

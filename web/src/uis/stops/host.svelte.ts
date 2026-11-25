@@ -1,33 +1,19 @@
-/// The stops UI's host layer — the ONLY file of this UI that calls the
-/// capability bus. It owns I/O (its inputs, declared in its ui.json and
-/// read by the kit: the manifest, the stops and stop requests
-/// documents it pins, and the networks a stop is read beside; their
-/// writes as intents through POST
-/// /logs/stops, the work order adapter, attachments, the device's
-/// location, the URL hash), the selection, and the outbox (D-189): a
-/// write, a work order, or a photo made while the server does not
-/// answer waits on the device, in order, and is sent when it answers. Every list,
-/// count, card, and choice it writes into `st` is an op's answer,
-/// adopted as-is.
-///
-/// A stop has a life of its own — planned, permitted, built, in
-/// service, suspended for a while, retired — managed here, apart from
-/// the service plans, which only read it (D-157). Each change is one
-/// event: cap-stops `add_event` (or `correct_event`, for an event that
-/// was wrong) places and checks it, and the change is sent as its intent
-/// (POST /logs/stops): the deployment's receive path runs it again over
-/// the stops it holds. With no stops document yet, the page reads the
-/// stops of the network that runs today (cap-stops `seed`), and the
-/// first change saves that document (POST /stops).
-///
-/// The page's screens: the stops (on a map beside a list, or a table),
-/// the work across them (cap-requests `list`), what the feed did, one
-/// stop's page, one request's page, and a survey's page. A piece of work
-/// on a stop (a change, a correction, a survey, a request, a field
-/// report, a new stop) is a TASK, shown until it is saved or left. The
-/// view, the stops' mode, the date, the stop, the request, the task,
-/// and the filters live in the URL hash, so the browser's Back leaves a
-/// task as a phone user expects.
+// Only this file of the UI calls the bus. Every list, count, card, and choice
+// that it writes into `st` is an op's answer, adopted as given.
+//
+// A write, a work order, or a photo made while the server does not answer waits
+// on the device, in order, and is sent when it answers (D-189).
+//
+// A stop's life (planned, permitted, built, in service, suspended, retired) is
+// managed here, apart from the service plans, which only read it (D-157). Each
+// change is one event, sent as its intent (POST /logs/stops). The deployment's
+// write path runs it again over the stops it holds. With no stops document
+// yet, the page reads the stops of the network that runs today, and the first
+// change saves that document (POST /stops).
+//
+// A piece of work on a stop (a change, a correction, a survey, a request, a
+// field report, a new stop) is a task, shown until it is saved or left. The
+// selection and the filters live in the URL hash, so Back leaves a task.
 
 import { ask, assemble, available, produced, readManifest, served, servedFeed, servedNetwork, servedNetworkPin, Doc, type DeploymentManifest } from "../../engine";
 import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabelAt, inputGraph, inputLabel, installApp, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type Reader } from "../kit";
@@ -35,7 +21,7 @@ import descriptor from "./ui.json";
 import { readFetch, resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
 
-// This page's capabilities answer inside its linked assembly (D-77).
+// Each document registers once in the page's one linked module (D-77).
 assemble("stops");
 import type { Event } from "../../types/Event";
 import type { Network } from "../../types/Network";
@@ -55,38 +41,25 @@ import type { WorkOrder } from "../../types/WorkOrder";
 
 export type Next = "planned" | "permitted" | "built" | "in_service" | "suspended" | "retired";
 export type View = "stops" | "work" | "feed";
-/// How the Stops view shows its stops: on a map beside a list, or as a table.
 export type Mode = "map" | "table";
 
 const VIEWS: View[] = ["stops", "work", "feed"];
 
 export const st = $state({
-  /// A message the last step left (the stops counted, a write's
-  /// outcome). A stops read that failed is `status()`.
+  /// A message that the last step left. A stops read that failed is `status()`.
   status: "Reading the stops…",
   alert: false,
   busy: false,
-  /// The date read ("": today, the agency's).
   date: "",
   view: "stops" as View,
   mode: "map" as Mode,
-  /// The statuses shown on the map and the list (retired hidden until
-  /// asked).
   show: ["planned", "permitted", "built", "in_service", "suspended"] as Status[],
-  /// The deployment keeps a stops document; until it does, the page
-  /// shows the stops of the network running today, and the first change
-  /// saves them.
+  /// False until the deployment keeps a stops document. Until then the page shows the stops of the network running today, and the first change saves them.
   held: false,
-  /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
-  /// Every stop on the date (the search box's options), and those the
-  /// filters show, with every stop counted by status.
   all: [] as StopOn[],
   shown: [] as StopOn[],
   counts: [] as StatusCount[],
-  /// The device's location, when asked ("Near me"), and the stops
-  /// nearest it on the date at the statuses shown (cap-stops
-  /// `stops_near`).
   near: null as { lat: number; lon: number; accuracy: number } | null,
   nearby: null as NearStop[] | null,
   locating: false,
@@ -96,68 +69,39 @@ export const st = $state({
   /// (of the open request), or "new" (a new stop).
   open: "",
   task: "",
-  /// The request open (its page).
   request: "",
-  /// The open stop as it stands on the date (null before it exists),
-  /// its events, and what it may become that day.
   card: null as { stop: StopOn | null; events: Event[]; next: Next[] } | null,
-  /// The routes visiting the open stop in the schedule running on the
-  /// date (cap-directory `stop_detail` over the published network).
   served: null as StopDetail | null,
-  /// A point chosen for a new stop or a move: clicked on the map, typed,
-  /// or the device's fix.
   point: null as { lat: number; lon: number } | null,
-  /// What a site survey asks (cap-stops `questions`, D-158).
   questions: { site: [] as SiteQuestion[], amenities: [] as string[] },
-  /// The open stop's requests (cap-requests `requests_for`, D-159), the
-  /// lists their answers come from (`vocabulary`), and why the last
-  /// request was refused.
   requests: [] as IdRequest[],
-  /// The open stop's requests that name it while it is retired today
-  /// (cap-stops `request_warnings`, D-238): why, by request id.
   requestWarnings: {} as Record<string, string>,
-  /// The stop statuses, in a stop's order (cap-stops `vocabulary`).
   statusList: [] as Status[],
   requestVocab: { jobs: [] as string[], statuses: [] as string[], openStatuses: [] as string[], sides: [] as string[], directions: [] as string[], markings: [] as string[] },
   requestRefusals: [] as RequestRefusal[],
-  /// The work across every stop (cap-requests `list`): the requests at
-  /// the statuses and jobs asked, every request counted by status, and
-  /// those requests' stops on the date (cap-stops `stops_on`).
   work: [] as IdRequest[],
   workCounts: [] as RequestCount[],
   workStops: [] as StopOn[],
   workStatuses: [] as string[],
   workJobs: [] as string[],
-  /// Where the work order system's adapter answers (D-165); null when
-  /// none is connected — a work order is then entered by hand.
+  /// Null when none is connected. A work order is then entered by hand (D-165).
   workOrders: null as string | null,
-  /// Where photos and drawings are added and read (D-162); null when
-  /// the deployment keeps none.
+  /// Null when the deployment keeps none (D-162).
   attachments: null as string | null,
-  /// What the agency's feed did to the stops record (D-150); null when
-  /// there is nothing to say.
   feed: null as null | { on: string; recorded: { stop: string; event: Event }[]; unlisted: string[]; unapplied: string[] },
   /// Bumped whenever this device's survey drafts change.
   drafts: 0,
-  /// Why the last change was refused, each naming its event.
   refusals: [] as Refusal[],
-  /// A refusal said in words beside the task (a new stop's taken id).
   taskError: "",
-  /// Each frame that shows no answer, and why (the answer graph's,
-  /// and an action's failure: export, publish).
   frames: {} as Record<string, FrameState>,
-  /// What the page holds of each input (the kit's).
   inputs: {} as Record<string, InputState>,
 });
 
-/// The date read.
 export function readDate(): string {
   return st.date || today();
 }
 
 let stopsDoc: Doc | null = null;
-/// The deployment's stop requests document; null until the first
-/// request begins it.
 let requestsDoc: Doc | null = null;
 
 function say(text: string, alert = false): void {
@@ -169,8 +113,7 @@ function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
-/// An action's failure (an export, a publish) belongs to its frame, as
-/// a node's does: the frame says why, and its next answer clears it.
+/// The next answer clears an action's failure.
 async function act(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
   try {
     await run();
@@ -182,11 +125,6 @@ async function act(frame: string, clear: () => void, run: () => Promise<void>): 
   }
 }
 
-// ---------------------------------------------------------------------
-// This UI's answer graph (src/uis/kit.ts). Inputs:
-// "stops-doc", "requests-doc", "date", "show", "open", "near", "work".
-// ---------------------------------------------------------------------
-
 const request = answerGraph(
   [
     {
@@ -197,9 +135,7 @@ const request = answerGraph(
         if (!(await available("stops"))) return void (stopsDoc = null);
         st.held = !!heldStops;
         if (heldStops) return void (stopsDoc = heldStops);
-        // No stops document yet (the deployment keeps none, not a read
-        // that failed): the stops of the network running today, not
-        // saved until the first change.
+        // No stops document yet (the deployment keeps none, not a read that failed): the stops of the network running today, not saved until the first change.
         if (st.inputs.stops?.kind !== "none" || !seedNetwork) return void (stopsDoc = null);
         const seeded = await ask("stops", "seed", { network_hash: seedNetwork });
         stopsDoc = produced("stops", seeded.stops, "stops", seeded.stops_hash);
@@ -225,8 +161,6 @@ const request = answerGraph(
       },
     },
     {
-      // The work across every stop, and its stops on the date (the
-      // queue names each request's stop; the map shows them).
       id: "requests.list",
       frame: "Work",
       needs: ["document.requests", "document.stops", "date", "work"],
@@ -247,7 +181,6 @@ const request = answerGraph(
       },
     },
     {
-      // What the agency's feed did to the stops record (D-150).
       id: "stops.feed_events",
       frame: "Feed",
       needs: ["document.stops", "feed"],
@@ -277,7 +210,6 @@ const request = answerGraph(
       },
     },
     {
-      // The field's "which stop am I at?": the stops nearest the device.
       id: "stops.stops_near",
       frame: "Near",
       needs: ["document.stops", "date", "show", "near"],
@@ -291,9 +223,7 @@ const request = answerGraph(
       },
     },
     {
-      // The rule of each request's reference to the open stop, on the
-      // agency's today (D-238): the day a write would be judged on, not
-      // the date read.
+      // The rule is judged on the agency's today (D-238), the day a write would be judged on, not the date read.
       id: "stops.request_warnings",
       frame: "Requests",
       needs: ["document.stops", "document.requests", "open"],
@@ -317,14 +247,11 @@ const request = answerGraph(
       },
     },
     {
-      // The routes visiting the open stop in the schedule running on the
-      // date: read only, the planners' (D-157).
       id: "directory.stop_detail",
       frame: "Served",
       needs: ["network", "open"],
       caps: ["directory"],
-      // A network that could not be read is said, never "no route
-      // stops here".
+      // A network that could not be read is said, never "no route stops here".
       inputs: ["network"],
       clear: () => (st.served = null),
       run: async () => {
@@ -337,10 +264,6 @@ const request = answerGraph(
   (e) => say(`Error: ${message(e)}`, true),
   st.inputs,
 );
-
-// ---------------------------------------------------------------------
-// the URL hash — the selection, followed both ways
-// ---------------------------------------------------------------------
 
 let writing = false;
 
@@ -409,27 +332,16 @@ function followHash(): void {
 addEventListener("hashchange", followHash);
 addEventListener("popstate", followHash);
 
-// ---------------------------------------------------------------------
-// The inputs (its ui.json's `inputs`, read by the kit): each reader
-// answers its document, null for none, or throws when the read fails.
-// ---------------------------------------------------------------------
-
 type Manifest = DeploymentManifest & { log_seqs?: Record<string, number>; services?: Record<string, { path: string }> };
 type Dated = { network: Doc<Network>; pin: string };
 
 let manifest: Manifest | null = null;
-/// The documents the inputs hold: the stops and stop requests the
-/// deployment keeps, the network running today (read only while it
-/// keeps no stops document, to seed them), the network in force on the
-/// page's date, and the agency's feed as the server imported it.
 let heldStops: Doc | null = null;
 let heldRequests: Doc | null = null;
 let seedNetwork: Doc<Network> | null = null;
 let datedNetwork: Dated | null = null;
 let feed: { network: Doc<Network>; id: string } | null = null;
 
-/// One of the deployment's logged documents, by the hash the manifest
-/// pins: read again only when the pin moved.
 function logged(kind: string, adopt: (doc: Doc | null) => void): Reader<Doc> {
   return {
     read: async ({ signal, held }) => {
@@ -444,8 +356,6 @@ function logged(kind: string, adopt: (doc: Doc | null) => void): Reader<Doc> {
   };
 }
 
-/// The network in force on `date`, by its pin: read again only when
-/// the pin moved.
 async function networkOn(date: string, signal: AbortSignal, held: Dated | null, readers: ("stops" | "directory")[]) {
   if (!manifest) throw new Error("the deployment's manifest is not read");
   const pin = await servedNetworkPin(date, { manifest, signal });
@@ -464,8 +374,6 @@ const readers: Record<string, Reader<any>> = {
     adopt: (m: Manifest | null) => {
       manifest = m;
       setAgencyZone(m?.timezone);
-      // The seq of the stops log's fold the page's documents came from:
-      // a write names it (D-189).
       stopsSeq = m?.log_seqs?.stops;
       st.workOrders = m?.services?.work_orders?.path ?? null;
       st.attachments = m?.services?.attachments?.path ?? null;
@@ -500,26 +408,20 @@ const readers: Record<string, Reader<any>> = {
 
 const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, st.inputs, request);
 
-/// The inputs a write moves: the manifest, and what it pins.
 const WRITTEN = ["manifest", "stops", "stop_requests", "seed-network", "feed"];
 
-/// The page's status line. A stops read that failed with nothing held
-/// is said first: an outage is never "no stops yet".
+/// A stops read that failed with nothing held is said first. An outage is never "no stops yet".
 export function status(): string {
   const s = st.inputs.stops;
   if (s?.kind === "failed" && !s.held) return inputLabel(s);
   return st.status;
 }
 
-/// Whether the server did not answer the last read of the manifest:
-/// the page works from its last documents.
 export function offline(): boolean {
   const m = st.inputs.manifest;
   return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
 }
 
-/// When the server last confirmed the documents the page works from
-/// ("4:05 PM"), while it is offline; else "".
 export function asOf(): string {
   const m = st.inputs.manifest;
   if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
@@ -558,25 +460,16 @@ export async function boot(): Promise<void> {
           ? `${st.all.length} stops on ${readDate()}.`
           : `${st.all.length} stops from the schedule running today. The first change you save keeps them as the stops record.`,
   );
-  // The writes that wait on the device, and a new build.
   clockEvery(POLL_MS, () => {
     void sendWaiting();
     st.updateReady = buildWaiting();
   });
 }
 
-/// How often the page sends what waits and looks for a new build. The
-/// inputs' intervals are in its ui.json.
 const POLL_MS = 30_000;
 
-/// The seq of the stops log's fold the page's documents came from (the
-/// manifest's log_seqs): a write names it, so the server checks it
-/// against the records it changes (D-189).
+/// A write names the seq (the manifest's log_seqs), so the server checks it against the records it changes (D-189).
 let stopsSeq: number | undefined;
-
-// ---------------------------------------------------------------------
-// the selection
-// ---------------------------------------------------------------------
 
 export function setView(view: View): Promise<void> {
   st.view = view;
@@ -586,7 +479,6 @@ export function setView(view: View): Promise<void> {
 
 export async function setDate(date: string): Promise<void> {
   st.date = /^\d{4}-\d{2}-\d{2}$/.test(date) && date !== today() ? date : "";
-  // The network in force on the new date.
   await inputs.read("network");
   return select("date");
 }
@@ -596,16 +488,13 @@ export function toggleStatus(status: Status): Promise<void> {
   return select("show");
 }
 
-/// The work queue's filters: the statuses shown, and the jobs ([] every
-/// job).
+/// An empty `jobs` shows every job.
 export function setWork(statuses: string[], jobs: string[]): Promise<void> {
   st.workStatuses = statuses;
   st.workJobs = jobs;
   return select("work");
 }
 
-/// A stop's page opened — from the map, a list, the search, the queue
-/// (with one of its requests) — with no task under way.
 export function openStop(stop: string, requestId = ""): Promise<void> {
   st.open = stop;
   st.request = requestId;
@@ -625,17 +514,15 @@ export function setMode(mode: Mode): void {
   writeHash();
 }
 
-/// One request's page opened, or closed ("").
 export function openRequest(id: string): void {
   st.request = id;
   st.requestRefusals = [];
   writeHash();
 }
 
-/// A task begun on the open stop (or a new stop): the panel shows only
-/// it until it is saved or left.
 let taskPushed = false;
 
+/// The panel shows only the task until it is saved or left.
 export function startTask(task: string): void {
   taskPushed = true;
   st.task = task;
@@ -646,7 +533,6 @@ export function startTask(task: string): void {
   writeHash();
 }
 
-/// The task left unsaved (a survey's draft stays on the device).
 export function endTask(): void {
   if (!st.task) return;
   // A task this page opened is left the way it came, so Back and the
@@ -657,24 +543,15 @@ export function endTask(): void {
   writeHash(true);
 }
 
-/// The point a map click (or the fields, or the device) chose, while a
-/// task places one.
 export function picked(lat: number, lon: number): void {
   if (placing()) st.point = { lat, lon };
 }
 
-/// Whether a click on the map places a point (a new stop, a move).
 export function placing(): boolean {
   return st.task === "new" || st.task === "change:move";
 }
 
-// ---------------------------------------------------------------------
-// the device: its location ("Near me", "Use my location")
-// ---------------------------------------------------------------------
-
-/// The device's own fix, with how far off it may be (metres). A start,
-/// not a measurement: the point typed from a survey-grade tool is the
-/// record.
+/// The fix is a start, not a measurement. The point typed from a survey-grade tool is the record.
 export function locate(): Promise<{ lat: number; lon: number; accuracy: number }> {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) return reject(new Error("this device gives no location"));
@@ -686,7 +563,6 @@ export function locate(): Promise<{ lat: number; lon: number; accuracy: number }
   });
 }
 
-/// "Near me": the stops nearest the device, listed nearest first.
 export async function nearMe(): Promise<void> {
   st.locating = true;
   say("Finding this device's location…");
@@ -706,25 +582,17 @@ export function clearNear(): Promise<void> {
   return request("near");
 }
 
-// ---------------------------------------------------------------------
-// the changes: each one event, written through POST /stops
-// ---------------------------------------------------------------------
-
-/// How the outbox names a change: its event, in words.
 function eventLabel(event: Event): string {
   const kind = (event as { event?: string }).event ?? "change";
   return kind.charAt(0).toUpperCase() + kind.slice(1).replaceAll("_", " ");
 }
 
-/// One event added to the open stop (or to a new one). True when saved.
 export function addEvent(stopId: string, event: Event, done: string, isNew = false): Promise<boolean> {
   const fresh = isNew ? { new: true } : {};
   return write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event, ...fresh }), stopId, { cap: "stops", op: "add_event", args: { stop_id: stopId, event, ...fresh } }, `${eventLabel(event)}: stop ${stopId}`);
 }
 
-/// An event that was wrong, corrected — or, with no event, taken out.
-/// The event is named by its id (D-166), so another writer's event
-/// saved above it does not change which event is corrected.
+/// The event is named by its id (D-166), so another writer's event saved above it does not change which event is corrected.
 export function correctEvent(stopId: string, eventId: string, event: Event | null, done: string): Promise<boolean> {
   return write(
     done,
@@ -735,10 +603,7 @@ export function correctEvent(stopId: string, eventId: string, event: Event | nul
   );
 }
 
-/// A new stop: its first event, at the point chosen. The write says the
-/// stop is new, so cap-stops refuses an id the document already holds
-/// (`stop_exists`), said beside the form.
-/// Saved, it may go straight on to request its installation.
+/// The write says the stop is new, so cap-stops refuses an id that the document already holds (`stop_exists`).
 export async function newStop(stopId: string, event: Event, thenRequest: boolean): Promise<boolean> {
   st.taskError = "";
   const saved = await addEvent(stopId, event, `Added stop ${stopId}.`, true);
@@ -746,7 +611,6 @@ export async function newStop(stopId: string, event: Event, thenRequest: boolean
   return saved;
 }
 
-/// A survey recorded: one event, its draft dropped once it is saved.
 export async function survey(stopId: string, event: Event, done: string): Promise<boolean> {
   const saved = await addEvent(stopId, event, done);
   if (saved) keepDraft(stopId, null);
@@ -780,7 +644,7 @@ async function write(
       ? await queueWrite({ log: "stops", ops: [op], readSeq: stopsSeq, label })
       : await queueWrite({ url: "stops", body: { from: "", stops: answer.stops }, label });
     if (!(await settled(outcome, "stops"))) return false;
-    // Kept: the task ends where its answer is read, replacing the
+    // The task ends where its answer is read, replacing the
     // task's place in the history (Back does not reopen a saved form).
     st.point = null;
     st.open = stopId;
@@ -801,15 +665,11 @@ async function write(
   }
 }
 
-/// What the page says of a write that waits on the device.
 function waitingText(): string {
   return outbox.needsSignIn ? "Saved on this device. Sign in to send it." : "Saved on this device. It is sent when the server answers.";
 }
 
-/// The outcome of a write the person just saved. A write the server
-/// refused at once stays in its task with the server's reasons, so the
-/// outbox does not keep a second copy. True when it was kept (sent, or
-/// waiting on the device).
+/// A write that the server refused at once stays in its task with the server's reasons, so the outbox does not keep a second copy. It returns true when the write was kept.
 async function settled(outcome: Outcome, what: "stops" | "requests"): Promise<boolean> {
   if (outcome.state !== "held") return true;
   const w = outbox.held.find((h) => h.key === outcome.key);
@@ -829,13 +689,7 @@ async function settled(outcome: Outcome, what: "stops" | "requests"): Promise<bo
   return false;
 }
 
-// ---------------------------------------------------------------------
-// the field: a survey's draft kept on this device
-// ---------------------------------------------------------------------
-
-/// A survey half filled is kept on this device until it is saved or
-/// thrown away, so a dropped connection or a closed tab loses nothing
-/// (D-158). Per stop; never shared, never sent.
+/// Per stop. A survey draft is never shared and never sent (D-158).
 const draftKey = (stopId: string) => `stops.survey-draft.${stopId}`;
 
 export function readDraft(stopId: string): SurveyDraft | null {
@@ -860,16 +714,8 @@ export function keepDraft(stopId: string, draft: SurveyDraft | null): void {
   if (had !== (draft !== null)) st.drafts++;
 }
 
-// ---------------------------------------------------------------------
-// requests for work at a stop (D-159): each put whole, through
-// POST /stop-requests
-// ---------------------------------------------------------------------
 
-/// One request placed by id — new, or replacing the one held — checked
-/// by cap-requests `put`, then stored by the deployment's receive path.
-/// Saved, the request's page shows it. True when saved.
-/// A new request (`fresh`) says so in the write: cap-requests refuses an
-/// id the document holds (`id_taken`) instead of replacing that request.
+/// A new request (`fresh`) says so in the write, so cap-requests refuses an id that the document holds (`id_taken`) instead of replacing it.
 export async function putRequest(id: string, req: StopRequest, done: string, fresh = false): Promise<boolean> {
   const isNew = fresh ? { new: true } : {};
   return writeRequests(req.stop, id, done, (doc) => ask("requests", "put", { ...(doc ? { requests_hash: doc } : {}), id, request: req, ...isNew }), {
@@ -879,10 +725,6 @@ export async function putRequest(id: string, req: StopRequest, done: string, fre
   });
 }
 
-/// A work order opened by hand (no work order system connected, D-165):
-/// recorded on the request as the adapter's answer would be (cap-requests
-/// `record_work_order` — a drafted or submitted request moves to
-/// ordered), then stored by the receive path.
 export function recordWorkOrder(id: string, stop: string, wo: WorkOrder): Promise<boolean> {
   if (!requestsDoc) return Promise.resolve(false);
   const doc = requestsDoc;
@@ -932,9 +774,6 @@ async function writeRequests(
   }
 }
 
-/// The work order system, through the server's adapter (D-165): open a
-/// work order for a request, or read its status — the answer written on
-/// the request by the server, the requests read again.
 export async function workOrder(id: string, action: "open" | "refresh"): Promise<void> {
   if (!st.workOrders) return;
   st.busy = true;
@@ -963,20 +802,11 @@ export async function workOrder(id: string, action: "open" | "refresh"): Promise
   }
 }
 
-// ---------------------------------------------------------------------
-// photos and drawings (D-162): added to the deployment's bucket, named
-// by their hash, read only by the signed-in
-// ---------------------------------------------------------------------
-
 export type Attachment = { hash: string; type: string; name?: string; caption?: string; taken_on?: string };
 
-/// The media types the deployment takes (server/attachments.go).
 const ATTACHMENT_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"];
 
-/// One file added: its hash and type, or null with the reason said. The
-/// file is named by the hash of its bytes, as the deployment names it,
-/// and queued in the outbox before the write that names it (D-162,
-/// D-189): offline, it waits on the device with the change.
+/// The file is named by the hash of its bytes, as the deployment names it, and queued in the outbox before the write that names it (D-162, D-189).
 export async function addAttachment(file: File): Promise<Attachment | null> {
   if (!st.attachments) return null;
   const type = (file.type || "").toLowerCase();
@@ -999,9 +829,7 @@ export async function addAttachment(file: File): Promise<Attachment | null> {
 
 const shown = new Map<string, Promise<string | null>>();
 
-/// An attachment as this page can show it (an object URL of its bytes,
-/// read with the signed-in person's token), or null — not signed in, or
-/// gone. Kept for the page's life: a hash's bytes never change.
+/// Kept for the page's life, because a hash's bytes never change.
 export function attachmentSrc(hash: string): Promise<string | null> {
   if (!st.attachments) return Promise.resolve(null);
   let got = shown.get(hash);
@@ -1016,43 +844,34 @@ export function attachmentSrc(hash: string): Promise<string | null> {
   return got;
 }
 
-// ---------------------------------------------------------------------
-// the outbox and the build, as the page shows them
-// ---------------------------------------------------------------------
-
-/// The writes the server refused, each with its reasons in words.
 export function heldWrites(): { key: string; label: string; reason: string }[] {
   return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
 }
 
-/// Send what waits now.
 export function sendNow(): Promise<void> {
   return sendWaiting();
 }
 
-/// A refused write sent again, over the stops the page reads now.
 export async function retryHeld(key: string): Promise<void> {
   await inputs.read(...WRITTEN);
   await retryWrite(key, { readSeq: stopsSeq });
 }
 
-/// The person drops a refused write.
 export function discardHeld(key: string): Promise<void> {
   return discardWrite(key);
 }
 
-/// The person accepts the new version: never over a task being written.
+/// Never over a task being written.
 export function applyUpdate(): void {
   if (st.task || st.busy) return;
   applyBuild();
 }
 
-/// Why a frame has no answer, as text ("" when it answered).
 export function why(frame: string): string {
   return reason(st.frames[frame]);
 }
 
-/// Each failed frame asks again: errors are never cached.
+/// Errors are never cached.
 export function retry(): Promise<void> {
   return request.retry();
 }

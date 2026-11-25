@@ -1,19 +1,8 @@
-// Static deployments, one per UI (D-131; docs/architecture/static-deployment.md): the server's export of ONE UI — its
-// page, the manifest, and every published document as
-// blobs/<hash>[.gz] — served by a plain file server
-// (e2e/static-server.mjs: no negotiation, no ETags, no routes) under a
-// path prefix. No Go server runs. Ride-now (/ride/) and the stop
-// display (/display/) are two deployments, each carrying only its own
-// page and what it runs. The pages boot, answer, re-pin a redeploy, and
-// boot offline exactly as they do over the sync server, through the
-// same layout; what a static host has not (the edit document, a
-// geocoder, the dev relay) is absent, not an error.
-//
-// Its host (playwright.config.mjs, :8087) serves the two exports of the
-// fixture feed and the walking fixture's streets, with a
-// live-feeds.json naming feeds.test directly (no proxy); a third export
-// (the stop display over the overnight feed) waits beside them for the
-// redeploy.
+// Static deployments, one per UI (D-131; docs/architecture/static-deployment.md).
+// A plain file server (e2e/static-server.mjs) on :8087 serves the exports of
+// ride now (/ride/) and the stop display (/display/), with no Go server. A
+// third export, the stop display over the overnight feed, waits beside them for
+// the redeploy test. A live-feeds.json names feeds.test directly.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -34,8 +23,7 @@ test.use({
   permissions: ["geolocation"],
 });
 
-/// The deployment's feeds, answered directly (CORS, as D-67 asks of
-/// the agency).
+/// D-67 asks the agency's feed host to allow CORS.
 async function feeds(page) {
   await page.route("http://feeds.test/**", (route) =>
     route.fulfill({
@@ -46,7 +34,6 @@ async function feeds(page) {
   );
 }
 
-/// What the page asked its own origin for, by path.
 function requests(page) {
   const paths = [];
   page.on("request", (r) => {
@@ -69,8 +56,6 @@ test("ride now boots from a static host under a prefix", async ({ page }) => {
   await expect(first).toContainText("Main Station", { timeout: 10_000 });
   await expect(first).toContainText("8:15");
 
-  // Every published document by its hash, under the prefix, gzipped
-  // where a module registers it; nothing outside the bundle.
   const m = manifest(ride);
   await expect
     .poll(() => asked)
@@ -85,12 +70,10 @@ test("ride now boots from a static host under a prefix", async ({ page }) => {
     );
   expect(asked.filter((p) => !p.startsWith("/ride/")), "every fetch stays inside the bundle").toEqual([]);
 
-  // No geocoder in the manifest: place search finds stops only.
   await expect(page.getByPlaceholder("Search for a stop", { exact: true })).toBeVisible();
 });
 
 test.describe("ride now plans a trip from a static host", () => {
-  // ~22 m north of Station Rd, west of the bays (the walking fixture).
   test.use({ geolocation: { latitude: 45.5152, longitude: -73.5165 } });
 
   test("directions to a stop walk the published streets", async ({ page }) => {
@@ -115,24 +98,19 @@ test("the stop display answers live from a static host with no edit document", a
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   const ten = page.locator('[data-testid="display-group"][data-route="10"]').first();
   await expect(ten.getByTestId("display-time").first()).toContainText("2 min late");
-  // The host has no edit document: asked, absent, and the board runs.
   await expect.poll(() => asked).toContain("/display/edits");
 });
 
 test("each deployment carries its own UI and nothing else", async ({ page, request }) => {
-  // The other UIs' pages are not there, nor service design anywhere.
   for (const absent of ["/ride/stop-display.html", "/ride/service-design.html", "/display/ride-now.html", "/display/service-design.html"]) {
     expect((await request.get(absent)).status(), absent).toBe(404);
   }
-  // The stop display draws no map: no basemap in its deployment.
   expect((await request.get("/display/basemap-assets/sprites/v4/light.json")).status()).toBe(404);
-  // Each carries its own assembly, not the other's.
   const caps = (bundle) => fs.readdirSync(path.join(bundle, "caps"));
   expect(caps(ride).some((f) => f.startsWith("ui-ride-now-"))).toBe(true);
   expect(caps(ride).some((f) => f.startsWith("ui-stop-display-") || f.startsWith("ui-service-design-"))).toBe(false);
   expect(caps(display).some((f) => f.startsWith("ui-stop-display-"))).toBe(true);
   expect(caps(display).some((f) => f.startsWith("ui-ride-now-") || f.startsWith("ui-service-design-"))).toBe(false);
-  // The deployment's root opens its UI, keeping the query.
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await feeds(page);
   await page.goto("/display/?stop=A&layout=routes");
@@ -140,12 +118,8 @@ test("each deployment carries its own UI and nothing else", async ({ page, reque
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
 });
 
-// The export writes the headers a host must send (server/headers.go):
-// the caching of the hash-named files, the baseline, and a policy for
-// the page it holds, naming the origins its live-feeds.json names. A
-// host that reads `_headers` (Cloudflare, Netlify) needs no rule of the
-// operator's own; any other host sends the same by hand
-// (DEPLOYMENTS.md, "Headers every host must send").
+// The export writes the `_headers` file that a host must send (server/headers.go;
+// DEPLOYMENTS.md, "Headers every host must send").
 test("each export writes the headers its host must send", () => {
   const rules = (bundle) => fs.readFileSync(path.join(bundle, "_headers"), "utf8");
   const rideRules = rules(ride);
@@ -160,17 +134,15 @@ test("each export writes the headers its host must send", () => {
     expect(rideRules).toContain(want);
     expect(displayRules).toContain(want);
   }
-  // Each bundle's policy names its own page, and the feeds it reads.
   expect(rideRules).toMatch(/\n\/ride-now\.html\n {2}Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'/);
   expect(rideRules).toContain("Permissions-Policy: geolocation=(self)");
   expect(rideRules).toContain("connect-src 'self' http://feeds.test https://tiles.openfreemap.org");
   expect(rideRules).not.toContain("/stop-display.html");
   expect(displayRules).toMatch(/\n\/stop-display\.html\n {2}Content-Security-Policy:/);
   expect(displayRules).toContain("Permissions-Policy: geolocation=()");
-  // The display draws no map: it reads no tile host.
   expect(displayRules).not.toContain("openfreemap");
   expect(displayRules).not.toContain("/ride-now.html");
-  // The forwarding index.html runs an inline script: no policy for it.
+  // The forwarding index.html runs an inline script, so it has no policy.
   expect(rideRules).not.toContain("/index.html");
 });
 
@@ -182,7 +154,6 @@ test.describe("offline", () => {
     await feeds(page);
     await page.goto("/display/stop-display.html?stop=A&layout=routes");
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
-    // Once more under the worker, so it is the worker that kept what it read.
     await page.reload();
     await expect(page.locator('[data-testid="display-group"][data-route="10"]').first()).toBeVisible({ timeout: 10_000 });
 
@@ -221,9 +192,8 @@ test("an open display re-pins a redeploy without a reload", async ({ page }) => 
     const [held] = await networks(page);
     expect(held).toBe(manifest(bundle).network_hash);
 
-    // The redeploy, as an upload does it: the new bundle's blobs beside
-    // the old ones (create-only — an open page pinned to the old
-    // manifest still finds its documents), then its manifest.
+    // The new blobs go in beside the old ones, so an open page pinned to the old
+    // manifest still finds its documents. The manifest goes last.
     for (const blob of fs.readdirSync(path.join(next, "blobs"))) {
       const to = path.join(bundle, "blobs", blob);
       if (!fs.existsSync(to)) fs.copyFileSync(path.join(next, "blobs", blob), to);
@@ -232,7 +202,6 @@ test("an open display re-pins a redeploy without a reload", async ({ page }) => 
     const moved = manifest(bundle).network_hash;
     expect(moved).not.toBe(held);
 
-    // One poll (the display's 20 s): the new network, the old evicted.
     await page.clock.fastForward(20_000);
     await expect.poll(() => networks(page), { timeout: 10_000 }).toEqual([moved]);
     expect(await page.evaluate(() => window.__notReloaded)).toBe(true);

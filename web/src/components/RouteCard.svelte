@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// One route's composition — cap-directory `route_detail`: its
-  /// patterns, the stops they visit, and its pattern trips grouped by
-  /// service type with each entry's trip count. RENDER only; the group
-  /// for the type under study opens first.
   import type { RouteDetail } from "../types/RouteDetail";
 
   let {

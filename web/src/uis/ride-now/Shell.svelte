@@ -1,17 +1,4 @@
 <script lang="ts">
-  /// The ride-now UI — a map with a panel over it. The map is the
-  /// network as a rider sees it: every stop (tap one), every live bus
-  /// colored by how it is running and pointing where it heads (tap
-  /// one), the route in play, the planned trip. The panel follows what
-  /// the rider is doing: home (search, what leaves near you, saved and
-  /// recent stops), one stop (its live board, alerts, detours), getting
-  /// there (a trip, now or at a time, or the last bus), the routes and
-  /// one route (its directions and stops), one bus (where it is going,
-  /// stop by stop), and the alerts in force. A wide
-  /// screen floats the panel at the left; a phone makes it a sheet
-  /// that slides up over the map.
-  /// Every panel is a render component fed from the host's `ride`;
-  /// this file only places them and routes their events to the host.
   import { tick } from "svelte";
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
@@ -35,8 +22,6 @@
   const routeColor = $derived(ride.focusRoute ? (ride.routes.find((r) => r.route_id === ride.focusRoute)?.color ?? null) : null);
   const bus = $derived(ride.vehicle ? (ride.live?.live.vehicles.find((v) => v.key === ride.vehicle?.key) ?? null) : null);
   const following = $derived(ride.view === "bus" && ride.follow);
-  /// The picked departure's bus: the live document's vehicle on that
-  /// trip instance, when one is reporting.
   const departureBus = $derived(
     ride.departure
       ? (ride.live?.live.vehicles.find((v) => v.trip === ride.departure?.trip && v.start_secs === ride.departure?.start_secs) ?? null)
@@ -45,7 +30,6 @@
   const searchFound = $derived(ride.found?.field === "search" ? ride.found : null);
   const searchAddresses = $derived(ride.addresses?.field === "search" ? ride.addresses : null);
 
-  // The sheet: up (the panel) or down (the map) on a phone.
   let sheetUp = $state(true);
   let narrow = $state(false);
   let height = $state(800);
@@ -69,9 +53,8 @@
       : { top: 72, right: 72, bottom: 48, left: 456 },
   );
 
-  /// A view change moves focus to the new view's heading, so a rider
-  /// with a screen reader hears where they are (WCAG 2.4.3). The first
-  /// view takes no focus: the page has just opened.
+  /// A view change moves focus to the new view's heading (WCAG 2.4.3).
+  /// The first view takes no focus, because the page has just opened.
   let panel: HTMLElement | undefined = $state();
   let shownView: string | null = null;
   $effect(() => {
@@ -87,9 +70,6 @@
     shownView = view;
   });
 
-  /// What the polite region says: the status line, else the size of
-  /// the answer on screen (the rows, the stops, the trip). It changes
-  /// only when the answer does.
   const announcement = $derived.by(() => {
     if (status()) return status();
     const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -106,7 +86,7 @@
   }
 
   async function spotFromMap(lat: number, lon: number) {
-    // A spot that cannot be an end leaves the map up to tap a stop.
+    // A spot that cannot be an end leaves the map up, so a rider can tap a stop.
     if (!ride.picking || ride.walking) sheetUp = true;
     await nearPoint(lat, lon);
   }
@@ -409,7 +389,6 @@
   .back:hover { background: var(--hover); }
   .status { margin: 0; font-size: 0.82rem; color: var(--muted); padding: 0.5rem 0.75rem; background: var(--hover); border-radius: 10px; }
 
-  /* A phone: the panel is a sheet over the bottom of the map. */
   @media (max-width: 760px) {
     .panel {
       top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 62dvh;

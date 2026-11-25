@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The dispatcher's day: the trips late now (rt `late_trips`, worst
-  /// first), the detours and the cancelled trips of the day
-  /// (disruptions `today`, by route), and today's notes, newest first
-  /// (notes `between`). A late trip shows where its bus is; a detour,
-  /// a cancel, or a note opens what it is about. A RENDER component.
   import { minutesText, originText, stampText, timeText, titleText, whoText } from "./disruptionsFormat";
   import type { AlertSource } from "../types/AlertSource";
   import type { Disruption } from "../types/Disruption";
@@ -31,7 +26,6 @@
     notes: NoteRow[];
     zone: string | undefined;
     date: string;
-    /// Why the late list or the notes have no answer ("" when they do).
     lateOff: string;
     notesOff: string;
     onbus: (at: { lat: number; lon: number }) => void;
@@ -44,7 +38,6 @@
   const detours = $derived(rows((d) => d.from !== "stops" && !d.trip));
   const cancels = $derived(rows((d) => !!d.trip));
 
-  /// What a note is about, as the note names it.
   function about(target: NoteTarget): string {
     switch (target.kind) {
       case "trip":

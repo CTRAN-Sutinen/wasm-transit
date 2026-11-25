@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// The hub as a matrix (analysis `hub_connections`): routes in as
-  /// rows, routes out as columns, each cell the day's timed
-  /// connections and their wait range. A cell selects the pair.
   import type { RouteConnections } from "../types/RouteConnections";
 
   let {

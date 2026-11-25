@@ -1,16 +1,9 @@
 package main
 
-// A log that the log capability keeps (cap-log; D-190, D-197;
-// docs/FORMATS.md, "The logs"): the host's half. The bucket holds the
-// entries and checkpoints (store/log.go); cap-log answers the fold, a
-// revert, a closed gap, and where a key landed, and never reads a
-// record. Each log's receive op answers its writes' entries
-// (logkinds.go), and each kind's capability turns the fold's records
-// back into its document (`assemble`). This host only orders and keeps
-// the entries, and treats every entry, checkpoint, record, and document
-// as opaque bytes.
-//
-// One logFold per log, each a log a receive op writes (logkinds.go).
+// The host half of the logs that cap-log keeps (D-190, D-197;
+// docs/FORMATS.md, "The logs"). The host orders and stores entries and
+// checkpoints, and treats every entry, checkpoint, record, and document
+// as opaque bytes. cap-log folds them and never reads a record.
 
 import (
 	"context"
@@ -28,19 +21,13 @@ import (
 	"rustwasm/server/store"
 )
 
-// defaultLogWasm is where `just caps` puts the log module.
 const defaultLogWasm = "../web/pkg/cap_log.wasm"
 
-// checkpointEvery is how many entries the server folds past a log's
-// newest checkpoint before it stores the next one. A boot reads the
-// newest checkpoint and folds at most this many entries after it.
+// A boot folds at most this many entries after the newest checkpoint.
 const checkpointEvery = 256
 
-// logEntriesLimit is the most entries one GET /logs/<log> answers.
 const logEntriesLimit = 1000
 
-// logModule is the hosted log capability (cap-log), loaded on first
-// use and held for the server's lifetime.
 func (s *server) logModule() (*WasmHost, error) {
 	s.logOnce.Do(func() {
 		path := s.logWasm
@@ -60,36 +47,31 @@ func (s *server) logOp(req map[string]any, out any) error {
 	return m.Invoke(context.Background(), req, out)
 }
 
-// logFold is this process's fold of one log.
 type logFold struct {
-	name string
-	// assemble turns the fold's records (by kind, then by id) into the
-	// log's documents, through each kind's capability.
+	name     string
 	assemble func(records map[string]json.RawMessage) error
-	// revise, when set, answers the records a revert writes back in
-	// place of the states before (cap-log `written`), through the kind's
-	// capability: a kind whose merge would undo the revert (D-193).
+	// revise is set for a kind whose merge would undo a revert (D-193).
+	// It answers the records that the revert writes back (cap-log
+	// `written`) in place of the states before.
 	revise func(states json.RawMessage, nowMs int64) (json.RawMessage, error)
-	// documents, when set, names the hashes of the documents the fold
-	// serves, for GET /logs/<log>. Called with mu held.
+	// documents names the hashes of the documents the fold serves.
+	// The caller holds mu.
 	documents func() map[string]string
 
 	mu     sync.Mutex
 	loaded bool
-	// base is the checkpoint at seq, as cap-log answered it.
-	base json.RawMessage
-	seq  int64
+	base   json.RawMessage
+	seq    int64
 	// stored is the seq of the newest checkpoint in the bucket.
 	stored int64
 	asOfMs int64
-	// stale: the head is the one this process, or its disk cache, last
-	// confirmed, because the bucket did not answer (D-119).
+	// stale means the bucket did not answer, so the head is the last one
+	// that this process or its disk cache confirmed (D-119).
 	stale       bool
 	quarantined map[int64]string
 	gaps        []int64
 }
 
-// foldAnswer is cap-log fold's answer.
 type logFoldAnswer struct {
 	Seq         int64                      `json:"seq"`
 	Checkpoint  string                     `json:"checkpoint"`
@@ -113,10 +95,9 @@ func (s *server) foldLog(name string, checkpoint json.RawMessage, entries []stor
 	return ans, err
 }
 
-// bootLocked picks the checkpoint a fresh process starts from: the
-// newest one that equals the fold from the checkpoint before it (or
-// from the empty log). One that differs raises an alarm. Caller holds
-// f.mu.
+// bootLogLocked starts from the newest checkpoint that equals the fold
+// from the checkpoint before it, or from the empty log. A checkpoint
+// that differs raises an alarm. The caller holds f.mu.
 func (s *server) bootLogLocked(f *logFold, upto int64) error {
 	cps, err := s.store.Checkpoints(f.name)
 	if err != nil {
@@ -154,10 +135,8 @@ func (s *server) bootLogLocked(f *logFold, upto int64) error {
 	return nil
 }
 
-// refreshLocked brings the fold to the log's head: the entries up to
-// the first gap, folded from the last fold, and the documents assembled
-// again when anything moved. It stores a checkpoint every
-// checkpointEvery entries. Caller holds f.mu.
+// refreshLogLocked folds only the entries up to the first gap. The
+// caller holds f.mu.
 func (s *server) refreshLogLocked(f *logFold) error {
 	head, err := s.store.LogHeadOf(f.name)
 	if err != nil {
@@ -209,14 +188,12 @@ func (s *server) refreshLogLocked(f *logFold) error {
 	return nil
 }
 
-// errStaleHead is a write over a stale head: refused, as unavailable.
 func errStaleHead(f *logFold) error {
 	return fmt.Errorf("%w: the %s log's head is as of %d", store.ErrUnavailable, f.name, f.asOfMs)
 }
 
-// refreshLog brings the fold to the head. While the bucket does not
-// answer, a fold this process holds stays, stale (D-119): stale reports
-// that.
+// refreshLog keeps a loaded fold, and reports it stale, while the bucket
+// does not answer (D-119).
 func (s *server) refreshLog(f *logFold) (stale bool, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -227,39 +204,32 @@ func (s *server) refreshLog(f *logFold) (stale bool, err error) {
 	return err == nil && f.stale, err
 }
 
-// logRefusal is a write the caller refuses before an entry: the status
-// and the body to answer.
 type logRefusal struct {
 	status int
 	body   any
 }
 
-// logWrite is one write to a log: who, what asked for it, and the
-// writer's idempotency key. readSeq, when set, is the log's seq the
-// writer read: a record the write changes that a later entry changed
-// is refused (409), and a change to another record is not. claimedAtMs
-// is the device's clock when the person made the write: a claim beside
-// the server's stamp (D-222), 0 when the writer gives none.
+// readSeq, when set, is the log's seq that the writer read. A write is
+// refused (409) when it changes a record that a later entry changed.
+// claimedAtMs is the device's clock when the person made the write, 0 if
+// the writer gives none. It is a claim beside the server's stamp (D-222).
 type logWrite struct {
 	writer, op, argsHash, key, note string
 	readSeq                         *int64
-	// readSeqs are the seqs of the other logs the writer read, by log
+	// readSeqs holds the seqs of the other logs that the writer read
 	// (the manifest's log_seqs, D-233). A log not named was read now.
 	readSeqs    map[string]int64
 	claimedAtMs int64
 }
 
-// logOverlap is the 409 of a write that changes a record an entry
-// after its read changed too: a person settles it.
 type logOverlap struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
 	Seq  int64  `json:"seq"`
 }
 
-// keyLanded asks cap-log whether the fold holds an idempotency key:
-// compose with nothing to write answers the entry that holds it. Caller
-// holds f.mu.
+// keyLanded composes with nothing to write, and cap-log answers the
+// entry that holds the idempotency key. The caller holds f.mu.
 func (s *server) keyLanded(f *logFold, key string) (int64, bool, error) {
 	header := map[string]any{"log": f.name, "seq": f.seq + 1, "writer": "-", "at_ms": 0, "module": "-", "intent": map[string]any{"op": "-", "key": key}}
 	req := map[string]any{"op": "compose", "header": header, "next": []json.RawMessage{}}
@@ -275,9 +245,8 @@ func (s *server) keyLanded(f *logFold, key string) (int64, bool, error) {
 	return *composed.Landed, true, nil
 }
 
-// logWriteFailed answers a write the log did not take: a bucket that does
-// not answer or a gap is 503 (nothing was written; resend), a lost race
-// on every attempt is 409, and anything else is the caller's code.
+// logWriteFailed answers 503 for an unavailable bucket or a gap, because
+// nothing was written and the client can resend. Other errors use code.
 func logWriteFailed(w http.ResponseWriter, err error, code int) {
 	var ge *store.GapError
 	switch {
@@ -291,9 +260,6 @@ func logWriteFailed(w http.ResponseWriter, err error, code int) {
 	}
 }
 
-// handleLogEntriesOf answers a cap-log log's entries after `since`, at
-// most `limit`, with the head, the gaps, the newest checkpoint, and the
-// entries the fold quarantined.
 func (s *server) handleLogEntriesOf(w http.ResponseWriter, r *http.Request, f *logFold) {
 	since, err := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	if r.URL.Query().Get("since") == "" {
@@ -367,12 +333,10 @@ func (s *server) handleLogEntriesOf(w http.ResponseWriter, r *http.Request, f *l
 	json.NewEncoder(w).Encode(answer)
 }
 
-// handleLogRevertOf writes the entry that reverts entry `seq` of a
-// cap-log log. cap-log refuses it, naming the record, when a later entry
-// changed one of the records: that answers 409, because a person
-// decides. A log whose kind writes back its own records (f.revise)
-// asks it over cap-log's states, then asks cap-log for the entry again
-// with them.
+// handleLogRevertOf answers 409 when cap-log refuses the revert because
+// a later entry changed one of the records: a person decides. When
+// f.revise is set, it answers the records over cap-log's states, and
+// cap-log builds the entry again with them.
 func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *logFold) {
 	var req struct {
 		Seq int64 `json:"seq"`
@@ -470,9 +434,8 @@ func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *lo
 			log.Printf("%s log: after the revert: %v", f.name, err)
 		}
 		answer := map[string]any{"log": f.name, "seq": seq, "reverts": req.Seq, "changes": ans.Changes}
-		// The references the revert broke (D-233), read over every log's
-		// fold: this log's lock is let go for it, and taken again for
-		// the deferred unlock.
+		// Release f.mu while reading every log's fold (D-233). The
+		// deferred unlock needs it held again.
 		f.mu.Unlock()
 		refs := s.revertReferences(f.name, seq, ans.Entry)
 		f.mu.Lock()
@@ -485,8 +448,7 @@ func (s *server) handleLogRevertOf(w http.ResponseWriter, r *http.Request, f *lo
 	http.Error(w, fmt.Sprintf("the %s log moved on every attempt", f.name), http.StatusConflict)
 }
 
-// handleLogCloseGapOf writes the entry that closes a gap in a cap-log
-// log: no changes, and the cause a person gives (D-190, rule 4).
+// handleLogCloseGapOf writes an entry that names the cause (D-190, rule 4).
 func (s *server) handleLogCloseGapOf(w http.ResponseWriter, r *http.Request, f *logFold) {
 	var req struct {
 		Seq   int64  `json:"seq"`
@@ -518,11 +480,9 @@ func (s *server) handleLogCloseGapOf(w http.ResponseWriter, r *http.Request, f *
 	writeJSON(w, http.StatusOK, map[string]any{"log": f.name, "seq": req.Seq})
 }
 
-// revertReferences are the broken references a revert's entry touches,
-// as of now (D-233): those whose target it took out, judged over every
-// log's fold by cap-log's existence check. They are the revert's
-// warnings, for a person. (A write's come from its receive op.) A check
-// that fails is logged and answers none.
+// revertReferences answers the references that the revert's entry broke
+// by taking out their target, judged over every log's fold (D-233). A
+// check that fails is logged and answers none.
 func (s *server) revertReferences(logName string, seq int64, entry string) []json.RawMessage {
 	t, err := s.kindTable()
 	if err != nil || t.raw == nil || entry == "" {
@@ -560,10 +520,8 @@ func (s *server) revertReferences(logName string, seq int64, entry string) []jso
 	return got.Broken
 }
 
-// foldAt is a log's records as of seq: its newest checkpoint at or
-// before seq, and the entries after it up to seq, folded by cap-log.
-// It reads the store, never another log's fold, so a write that holds
-// its own log's lock can ask it.
+// foldAt reads the store, never another log's fold, so a write that
+// holds its own log's lock can call it.
 func (s *server) foldAt(name string, seq int64) (json.RawMessage, error) {
 	if seq <= 0 {
 		return json.RawMessage("{}"), nil
@@ -600,15 +558,13 @@ func (s *server) foldAt(name string, seq int64) (json.RawMessage, error) {
 	return got.Records, nil
 }
 
-// referenceFolds are what a write's receive op judges its references
-// over (D-233): the kind table's kinds, each log's records as of the seq
-// the writer read (only when judged: a person's write), and each log's
-// records now. A log with no entries is left out: the agency keeps no
-// records of it, so it is not judged. The write's own log is f, whose
-// lock the caller holds; the others are read from the store, never
-// from their folds, so no other lock is taken. kinds is nil when there
-// is no table to judge with, or a log cannot be read: a check that
-// cannot judge refuses nothing.
+// referenceFolds answers what a write's receive op judges its references
+// over (D-233). read holds each log's records as of the seq that the
+// writer read, and only when judged (a person's write). A log with no
+// entries is left out. The caller holds the lock of f, the write's own
+// log, so the other logs come from the store and no other lock is taken.
+// kinds is nil when no table exists or a log cannot be read, and then
+// nothing is refused.
 func (s *server) referenceFolds(f *logFold, w logWrite, judged bool) (kinds json.RawMessage, read, now map[string]json.RawMessage) {
 	t, err := s.kindTable()
 	if err != nil || t.raw == nil {

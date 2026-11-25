@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The proposal's scorecard under one group (analysis
-  /// `service_type_compare`): trips, revenue hours and miles, routes
-  /// changed, the vehicles the group's day needs (runcut
-  /// `suggest_blocks`, D-46) — and the measures the bus cannot answer
-  /// yet, each named with what it waits on.
   import Unavailable from "./Unavailable.svelte";
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import type { Suggestion } from "../types/transit_runs/Suggestion";

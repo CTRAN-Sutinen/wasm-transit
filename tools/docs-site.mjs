@@ -1,29 +1,21 @@
-// The docs site: static HTML generated from the registry.
+// The docs site is static HTML generated from the registry.
 //
 //   node tools/docs-site.mjs [OUT] [--serve [PORT]]
 //
 // OUT defaults to docs-site/. With --serve, the script then serves OUT
 // on 127.0.0.1 (PORT defaults to 8085) until you stop it.
-// `just docs` and `just docs serve` run it. The pages read registry/,
-// so they match the modules that `just caps` built. The registry holds
-// each capability's purpose, its op descriptions, the computed worked
-// examples, and the schema and example of each document kind. The
-// architecture page also reads the workspace's crates and their
-// dependencies from `cargo metadata` (no build), and the kind table
-// (crates/cap-abi/kinds.json) to name each kind a capability loads.
-// The
-// inputs section draws each UI's declared inputs (its ui.json's
-// `inputs`) beside the rows of its failure table they fail as
-// (each UI's file in docs/architecture/generated-uis/), read as data through
-// tools/failure-tables.mjs. The only
-// hand-written content is the two traces (`TRACES`) and the bucket
-// stories (`BUCKET_STORIES`), and the test checks the code each of
-// their steps names. To change a description, edit the
-// capability's OPS.md, or the crate's `description` in its Cargo.toml,
-// and run `just caps`.
-//
-// Pages: index.html, architecture.html, kernel.html, cap-<id>.html,
-// doc-<kind>.html.
+// `just docs` and `just docs serve` run it. The pages read registry/, so
+// they match the modules that `just caps` built. The architecture page
+// also reads the workspace's crates from `cargo metadata` (no build) and
+// the kind table (crates/cap-abi/kinds.json).
+// The inputs section draws each UI's declared inputs (its ui.json's
+// `inputs`) beside the rows of its failure table that they fail as (each
+// UI's file in docs/architecture/generated-uis/), read as data through
+// tools/failure-tables.mjs. The only hand-written content is the two
+// traces (`TRACES`) and the bucket stories (`BUCKET_STORIES`), and the
+// test checks the code that each of their steps names. To change a
+// description, edit the capability's OPS.md, or the crate's `description`
+// in its Cargo.toml, and run `just caps`.
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -42,8 +34,6 @@ const out = positional[0] ?? join(ROOT, "docs-site");
 
 const read = (path) => JSON.parse(readFileSync(join(REGISTRY, path), "utf8"));
 const pointer = read("registry.json");
-// Each kind's page shows the version this build writes. The index also
-// lists the older versions it reads only through a migration.
 const documents = read("documents.json").documents.filter((d) => d.written);
 const capabilities = readdirSync(join(REGISTRY, "capabilities"))
   .filter((f) => f.endsWith(".json"))
@@ -54,7 +44,7 @@ const docKinds = new Set(documents.map((d) => d.kind));
 const esc = (text) =>
   String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-// Text from the registry: paragraphs split at blank lines, `code`
+// Text from the registry holds paragraphs split at blank lines, `code`
 // spans, and lists. A block whose lines start with "- " is a list. A
 // line indented by two spaces and starting with "- " is an item of the
 // list under the item above it. Another indented line continues the
@@ -90,9 +80,6 @@ const prose = (text) =>
 
 const raw = (value) => `<pre>${esc(JSON.stringify(value, null, 2))}</pre>`;
 
-// A JSON value as a collapsible tree, like a browser's JSON viewer.
-// The root and its children start open. A closed object or array shows
-// a preview of its first entries.
 function tree(value, key, depth = 0) {
   const label = key === undefined ? "" : `<span class="k">${esc(JSON.stringify(key))}</span>: `;
   if (value === null || typeof value !== "object") {
@@ -114,14 +101,12 @@ function tree(value, key, depth = 0) {
     `<div class="kids">${kids}</div><div class="row">${close}</div></details>`;
 }
 
-// A JSON value as a tree, with the raw text in a closed block.
 const json = (value) =>
   `<div class="jt">${tree(value)}</div><details class="rawblock" id="raw"><summary>Raw JSON</summary>${raw(value)}</details>`;
 
-// A JSON Schema as a property tree, like json-schema-for-humans and
-// Stoplight Elements. A `$ref` links to its definition below. The
-// schemas that schemars writes use objects, arrays, maps, enums,
-// constants, and `oneOf` of constants or objects, and nothing else.
+// The schemas that schemars writes use objects, arrays, maps, enums,
+// constants, and `oneOf` of constants or objects, and nothing else, so the
+// property tree handles only those.
 function typeLabel(s) {
   if (s === true || s === undefined) return "any";
   if (s.$ref) {
@@ -142,9 +127,6 @@ function typeLabel(s) {
   return (parts.join(" | ") || "object") + (extra ? ` <span class="muted">(${esc(extra)})</span>` : "");
 }
 
-// The inline parts of a schema that need their own rows: its
-// properties, the properties of its array items or map values, and the
-// variants of a `oneOf`.
 function schemaChildren(s, depth) {
   if (!s || s === true || s.$ref) return "";
   let html = "";
@@ -188,10 +170,8 @@ function schemaView(schema) {
 
 const kindLink = (kind) => (docKinds.has(kind) ? `<a href="doc-${esc(kind)}.html">${esc(kind)}</a>` : esc(kind));
 
-// The colors are tokens. The dark values apply under the system's dark
-// setting, unless the root says data-theme="light", and under
-// data-theme="dark". The graph colors name the crate classes, like
-// route colors on a line map.
+// The dark values apply under the system's dark setting, unless the root
+// says data-theme="light", and under data-theme="dark".
 const DARK = `--key: #7ab7ff; --str: #7ee787; --num: #ffa657; --lit: #d2a8ff; --warn: #ff8a80; --bg: #16181d; --fg: #e8e8ea; --muted: #a0a4ab; --line: #343841; --code: #20232a; --link: #7ab7ff;
   --lib: #6fcf75; --kernel: #f0a347; --cap: #79b0ff; --asm: #c59af0; --kind: #5fd0cf; --edge: #6b717b; --out: #ff8a65; --in: #a9b6d6; --panel: #1b1e24; color-scheme: dark;`;
 const STYLE = `
@@ -455,13 +435,9 @@ ${prose(schema.description ?? "")}
   );
 }
 
-// The architecture page: two graphs and a table, drawn from data.
-//
-// The crate map is cargo's view of the workspace: each crate, and its
-// normal dependencies on other crates in it (not its dev-dependencies).
-// A crate's class comes from its name, as the arch gates read it. The
-// single-capability modules (module-<cap>) are left out: each links one
-// capability and the kernel, and the map says so in words.
+// A crate's class comes from its name, as the arch gates read it. The map
+// leaves out the single-capability modules (module-<cap>), because each
+// links one capability and the kernel, and the map says so in words.
 const metadata = JSON.parse(
   execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps", "--offline"], {
     cwd: ROOT,
@@ -490,8 +466,6 @@ const capPage = (crate) => {
   return capabilities.some((c) => c.id === id) ? `cap-${id}.html` : null;
 };
 
-// A crate's layer is the longest path from it to a crate with no
-// dependency. So every edge points to a layer on its left.
 function layers(ids, edges) {
   const out = new Map(ids.map((id) => [id, []]));
   for (const e of edges) out.get(e.from).push(e.to);
@@ -506,8 +480,6 @@ function layers(ids, edges) {
   return columns;
 }
 
-// Order each column by the mean position of its neighbors in the other
-// columns, a few sweeps each way, so that fewer lines cross.
 function order(columns, edges) {
   const near = new Map();
   for (const e of edges) {
@@ -537,9 +509,8 @@ const PILL_H = 22;
 const CHAR = 6.95;
 const pillWidth = (label) => Math.round(label.length * CHAR + 30);
 
-// One node: a pill with a marker and its label. A filled circle is the
-// usual marker. A kind the agency does not keep has a hollow one, and an
-// outside format a square.
+// A kind that the agency does not keep has a hollow marker, and an outside
+// format has a square one.
 function nodeSvg(n) {
   const w = pillWidth(n.label);
   const cy = n.y + PILL_H / 2;
@@ -551,8 +522,6 @@ function nodeSvg(n) {
     `<text x="${n.x + 21}" y="${cy + 4}">${esc(n.label)}</text></g>`;
 }
 
-// An edge leaves the dependent's left side and reaches the dependency's
-// right side.
 function edgeSvg(e, nodes) {
   const a = nodes.get(e.from);
   const b = nodes.get(e.to);
@@ -564,8 +533,6 @@ function edgeSvg(e, nodes) {
   return `<path class="edge${e.optional ? " opt" : ""}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="M${sx} ${sy} C${sx - dx} ${sy} ${ex + dx} ${ey} ${ex} ${ey}"/>`;
 }
 
-// A detail panel for each node, shown when the node is selected. Its
-// neighbors are buttons that select them.
 const picks = (ids, label) =>
   `<div class="picks">${ids.map((id) => `<button type="button" data-pick="${esc(id)}">${esc(label(id))}</button>`).join("") || '<span class="muted">none</span>'}</div>`;
 
@@ -588,7 +555,6 @@ function crateMap() {
   });
   const width = x - 30;
   const height = top + tallest * ROW + 8;
-  // The column heads: one for each class, over the columns it holds.
   const groups = [];
   columns.forEach((col, c) => {
     const cls = byId.get(col[0]).cls;
@@ -626,16 +592,11 @@ ${page ? `<p><a href="${page}">${c.cls === "kernel" ? "The kernel ops" : "Its op
   return { svg, panels: panels.join("\n"), rows };
 }
 
-// The bus: each capability, each kind of document it reads (the
-// registry's `documents`), and a line for each pair. A kind with a
-// schema here is the agency's (filled: kept in the bucket; hollow: not
-// kept). A kind with none is an outside format the kernel loads.
-//
-// A capability names a kind by its kernel load (`edits`, from
-// `load_edits`). The kind table (crates/cap-abi/kinds.json, generated
-// from the kind list) joins a load to its document kind by tag, so the
-// graph names the kind as its schema page does (`operator_edits`). A
-// load with no entry there keeps its own name.
+// A kind with a schema here is the agency's (filled: kept in the bucket;
+// hollow: not kept). A kind with none is an outside format that the kernel
+// loads. The kind table joins a kernel load such as `load_edits` to its
+// document kind by tag, so the graph names the kind as its schema page does
+// (`operator_edits`). A load with no entry there keeps its own name.
 function busGraph() {
   const written = read("documents.json").documents.filter((d) => d.written);
   const table = JSON.parse(readFileSync(join(ROOT, "crates/cap-abi/kinds.json"), "utf8")).kinds;
@@ -668,7 +629,6 @@ function busGraph() {
   });
   const width = 16 + capW + gap + kindW + 16;
   const height = top + tallest * ROW + 8;
-  // A bus edge leaves the capability's right side for the kind's left.
   const path = (e) => {
     const a = nodes.get(e.from);
     const b = nodes.get(e.to);
@@ -711,7 +671,6 @@ ${info ? `<p><a href="doc-${esc(k)}.html">Its schema and example</a></p>` : ""}
   return { svg, panels: [...capPanels, ...kindPanels].join("\n"), rows, kinds: kinds.length, reads: edges.length };
 }
 
-// What each UI links: a capability for each row, a UI for each column.
 function uiTable() {
   const uis = crates.filter((c) => c.cls === "assembly");
   const links = new Set(crateEdges.filter((e) => e.from.startsWith("module-ui-")).map((e) => `${e.from} ${e.to}`));
@@ -728,11 +687,6 @@ function uiTable() {
   return `<div class="scroll"><table><tr><th>Capability</th>${head}</tr>\n${rows}\n<tr><th>Linked</th>${totals}</tr></table></div>`;
 }
 
-// What each UI reads, and what it does through an outage: each UI's
-// declared inputs (its ui.json's `inputs`), and, for each, the rows of
-// its failure table (docs/architecture/generated-uis/<id>.md) that say what
-// the page still shows and how it catches up. Drawn from the
-// declarations, so the picture changes when a declaration does.
 function inputsSection() {
   const tables = failureTables(uiDocs(ROOT));
   const every = (s) => (s == null ? "once, at boot" : `every ${s} s`);
@@ -761,11 +715,9 @@ ${body}
     .join("\n");
 }
 
-// Two traces, written by hand: one request and one write, as sequence
-// diagrams. They are the only hand-written content on the site, so
-// each step names the code it describes (`at`: a file and a text in
-// it), and docs-site.test.mjs fails when a file or its text is gone.
-// A rename then breaks the build until the trace follows it.
+// Each step names the code it describes (`at`: a file and a text in it).
+// docs-site.test.mjs fails when a file or its text is gone, so a rename
+// breaks the build until the trace follows it.
 //
 // A step goes from one lane to another (`from`, `to`), stays in its
 // lane (`self`), or carries an answer back (`back`).
@@ -902,15 +854,9 @@ for (const sec of document.querySelectorAll("section.trace:not(.bucket)")) {
 }
 `;
 
-// Where things are kept. Two parts:
-//
-// - The bucket map, drawn from the kind table: each kind the store
-//   keeps, under the log or the pointer history that holds it.
-// - The bucket stories, written by hand like the traces: the files one
-//   saved note makes (a log), one new feed makes (pointer histories),
-//   and one published service change makes (both), step by step. Each row says the step it appears at
-//   (`at`), or the one step it shows at (`only`). Each step names its
-//   code (`code`), and the test checks it.
+// The bucket stories are written by hand like the traces. Each row says the
+// step it appears at (`at`) or the one step it shows at (`only`), and each
+// step names its code (`code`), which the test checks.
 function bucketMap() {
   const table = JSON.parse(readFileSync(join(ROOT, "crates/cap-abi/kinds.json"), "utf8")).kinds;
   const kindChip = (k) => `<code data-kind="${esc(k.store_kind)}">${esc(k.store_kind)}</code>`;
@@ -991,7 +937,7 @@ const FEED_STEPS = [
   { title: "The server imports the feed's network", word: "derived", text: "The network capability imports the zip and answers the network and the boundary. The server stores each one as a blob, and moves each one's pointer. These documents are derived: made from an input, by a module.", hot: ["net", "n12"], code: [["server/derived.go", "func commitDerivation("], ["server/derived.go", 'commitHead(st, doc.tag, doc.body, env, doc.hash, "server")']] },
   { title: "It writes down how", word: "derivation", text: "Last, the server stores a derivation record: which zip went in, which module ran, and which documents came out. It is written last on purpose. If the server stops before this, the next start makes the same documents again, with the same bytes.", hot: ["d12"], code: [["server/derived.go", 'commitHead(st, pointer, body, env, "", "server")']] },
   { title: "The next start does no work", word: null, text: "When a server starts with the same zip, it reads the derivation record, sees the same inputs, and serves the stored network. It runs no import. An import costs C-TRAN about 5 GB of memory at its peak, so this matters.", hot: ["d12"], code: [["server/derived.go", "func storedDerivation("]] },
-  { title: "Two servers make the same network", word: null, text: "Two copies of the server start together, and both make the network from the same zip. The bytes are the same, so the fingerprint is the same. The second finds that network already current, and writes no record.", code: [["server/store/store.go", "// Idempotent redelivery: the same document is already the head"]] },
+  { title: "Two servers make the same network", word: null, text: "Two copies of the server start together, and both make the network from the same zip. The bytes are the same, so the fingerprint is the same. The second finds that network already current, and writes no record.", code: [["server/store/store.go", "if p.seq > 0 && p.to == hash {"]] },
   { title: "Every version can still be read", word: "pointer history", text: "Nothing in a pointer history is deleted. Its records list each version, who made it current, and when. An auditor can read the exact network a pick was built from. To go back, an operator adds a new record that names an older version, and the move is kept too.", hot: ["n11", "n12"], code: [["server/pointers.go", "func (s *server) handlePointerLog("], ["server/cmd/store/main.go", "store revert [-writer W] [-log cap_log.wasm] [-kinds kinds.json] <url> <pointer> <hash>"]] },
 ];
 
@@ -1044,10 +990,9 @@ function bucketStory(story) {
 </section>`;
 }
 
-// The bucket stories' script: the same controls as a trace. A row
-// shows from its step on (`data-at`), or at its one step
-// (`data-only`). A row is lit at the step it appears, and at a step
-// that names it (`data-hot`).
+// A row shows from its step on (`data-at`) or at its one step
+// (`data-only`), and is lit at its step and at a step that names it
+// (`data-hot`).
 const BUCKET_SCRIPT = `
 for (const sec of document.querySelectorAll("section.bucket")) {
   const total = Number(sec.dataset.steps);
@@ -1090,10 +1035,6 @@ for (const sec of document.querySelectorAll("section.bucket")) {
 }
 `;
 
-// The page's one script: hover or focus a node to light its lines;
-// select it (click, Enter, or Space) to keep them lit and show its
-// panel. Lines to what it depends on (or reads) and lines from what
-// uses it get their own colors.
 const GRAPH_SCRIPT = `
 for (const fig of document.querySelectorAll("figure.graph")) {
   const svg = fig.querySelector("svg");

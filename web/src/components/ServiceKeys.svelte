@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// The plan's service keys (directory `service_keys`) and the
-  /// combinations they form (analysis `day_types`): pick a key to read
-  /// and change its calendar — weekdays, date ranges, exceptions — and
-  /// what it carries, a route's trips moved onto another key; add a
-  /// key, or remove one that carries nothing. Events out; every change
-  /// is the host's `apply`.
   import type { ServiceKey } from "../types/ServiceKey";
   import type { DayType } from "../types/DayType";
   import { weekdaysText } from "./designFormat";
@@ -41,14 +35,12 @@
     onadd: () => void;
     onremove: (id: string) => void;
     onroute: (route: string) => void;
-    /// Why the calendar cannot change (shown when it cannot).
     locked?: string;
   } = $props();
 
   const DAYS: Day[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   let picked = $state("");
   const key = $derived(keys.find((k) => k.id === picked) ?? keys.find((k) => k.trips > 0) ?? keys[0] ?? null);
-  // The combinations this key is a member of, as day_types names them.
   const inGroups = $derived(key ? dayTypes.flatMap((t) => t.groups).filter((g) => g.members.includes(key.id)) : []);
   let exDate = $state("");
   let exState = $state<"added" | "removed">("added");
@@ -56,7 +48,6 @@
   let newStart = $state("");
   let newEnd = $state("");
   $effect(() => { name = key?.name ?? ""; });
-  // A key just added opens: the id that was not there before the add.
   let before: string[] | null = null;
   $effect(() => {
     const ids = keys.map((k) => k.id);

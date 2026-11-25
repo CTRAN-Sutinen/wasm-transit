@@ -13,7 +13,6 @@ import (
 	"strings"
 )
 
-// CopyReport is what a directory copy carried.
 type CopyReport struct {
 	Records  int          `json:"records"`
 	Blobs    int          `json:"blobs"`   // named blobs carried
@@ -21,14 +20,12 @@ type CopyReport struct {
 	Verified VerifyReport `json:"verified"`
 }
 
-// CopyDir carries a store an older build kept in a directory (`store
-// copy <dir> <url>`) into a bucket, then verifies the bucket. The old
-// layout: blobs/<hex> with its envelope in blobs/<hex>.meta.json, and
-// pointers/<name>.log, one JSON record per line. Each line becomes its
-// record object, byte for byte; each blob a record names becomes its
-// blob object with the sidecar as metadata. Orphans, .tmp leftovers and
-// the lock file stay behind. A torn line is refused, never guessed at;
-// a re-run is a no-op; a bucket holding another history is refused.
+// CopyDir carries an older directory store (`store copy <dir> <url>`)
+// into a bucket, then verifies the bucket. The old layout is
+// blobs/<hex> with its envelope in blobs/<hex>.meta.json, and
+// pointers/<name>.log with one JSON record per line. Each record keeps
+// its bytes. A torn line is refused. A re-run is a no-op, and a bucket
+// that holds another history is refused.
 func CopyDir(ctx context.Context, dir string, dst Backend) (CopyReport, error) {
 	var r CopyReport
 	logs, err := filepath.Glob(filepath.Join(dir, "pointers", "*.log"))
@@ -117,8 +114,8 @@ func CopyDir(ctx context.Context, dir string, dst Backend) (CopyReport, error) {
 	return r, err
 }
 
-// createSame creates key, or accepts it already holding these bytes (a
-// re-run); different bytes are another history, never overwritten.
+// createSame accepts a key that already holds these bytes, so a re-run is a
+// no-op. Different bytes are another history and are never overwritten.
 func createSame(ctx context.Context, b Backend, key string, data []byte, meta map[string]string) error {
 	err := b.Create(ctx, key, data, meta)
 	if !errors.Is(err, ErrExists) {

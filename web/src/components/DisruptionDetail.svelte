@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// One disruption opened: what it is and where it came from, whether
-  /// an alert explains it, the stops it takes away (a cancelled trip's
-  /// every stop, with its time: runcut `trip_stops`), and its notes,
-  /// oldest first (notes `on`), with a box to add one and Edit on each.
-  /// Notes are internal: they never reach riders. A RENDER component.
   import { datesText, kindText, originText, stampText, timeText, titleText, whoText } from "./disruptionsFormat";
   import type { Disruption } from "../types/Disruption";
   import type { NoteRow } from "../types/NoteRow";
@@ -23,9 +18,7 @@
     onnote,
     onstartalert,
   }: {
-    /// The disruption, or null when the day no longer holds it.
     disruption: Disruption | null;
-    /// The route's public name, where it has one.
     route: string;
     tripStops: TripStopView[];
     notes: NoteRow[];
@@ -33,10 +26,8 @@
     date: string;
     notesOff: string;
     busy: boolean;
-    /// Why the last note was not saved ("" when it was).
     error: string;
     onclose: () => void;
-    /// A note written (`id` null) or edited. Resolves true when saved.
     onnote: (text: string, id: string | null) => Promise<boolean>;
     onstartalert: () => void;
   } = $props();

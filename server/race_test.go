@@ -1,10 +1,9 @@
 package main
 
-// The module is one instance with single-instance state (its heap,
-// its linear memory). net/http serves each request on its own
-// goroutine, so the host must serialize invokes — this test is what
-// makes `go test -race` actually watch that: concurrent goroutines
-// hammer the JSON seam against one host.
+// A module is one instance with its own heap and linear memory, and
+// net/http serves each request on its own goroutine, so the host must
+// serialize invokes. Concurrent goroutines call the JSON entry point
+// (`transit_invoke`) of one host, so `go test -race` watches that.
 
 import (
 	"context"
@@ -28,9 +27,6 @@ func TestConcurrentInvokes(t *testing.T) {
 			defer wg.Done()
 			ctx := context.Background()
 			for i := 0; i < rounds; i++ {
-				// The JSON seam: pure and deterministic (the
-				// capability's dispatch test pins its exact
-				// answers).
 				var out struct {
 					Records []any `json:"records"`
 				}

@@ -1,7 +1,5 @@
-// Step 1, the stops app: each route 99 stop through the planning
-// process — planned with its installation request, the request
-// submitted, its work order opened, permitted, built, the request
-// completed, and the stop record updated from it: in service today.
+// Step 1, the stops app: each route 99 stop goes from planned, with an
+// installation request, to in service today.
 //
 //   node tools/ui-shot.mjs stops --fresh --hash "#on=$(date +%F)" \
 //     --steps qa/route-99/1-stops.mjs --out .qa/route-99/stops.png
@@ -18,7 +16,6 @@ async function oneStop(page, [id, name, lat, lon], shot) {
   await page.goto(page.url().replace(/#.*/, `#on=${DATES.today}`));
   await until(page, async () => !(await status()).startsWith("…"), 60000);
 
-  // 1. a new stop, planned, at the typed point, its request next
   await T(page, "new-stop-start").click();
   await T(page, "new-point-lat").fill(String(lat));
   await T(page, "new-point-lon").fill(String(lon));
@@ -33,20 +30,17 @@ async function oneStop(page, [id, name, lat, lon], shot) {
   if (!check(`${id} created, its request page open`, await until(page, visible("request-view")), await status())) return;
   check(`${id} request job is New stop`, (await T(page, "request-job-new").getAttribute("aria-pressed")) === "true");
 
-  // 2. the installation request, submitted
   await T(page, "request-routes").fill("99");
   await T(page, "request-on").fill(DATES.planned);
   const rid = await T(page, "request-id").inputValue();
   await T(page, "request-submit").click();
   check(`${id} request ${rid} submitted`, await until(page, track("submitted")), await status());
 
-  // 3. its work order, opened through the adapter
   await T(page, "request-wo-open").click();
   check(`${id} work order opened`, await until(page, visible("request-complete")), await status());
   await T(page, "request-back").click();
   await until(page, visible("stop-card"));
 
-  // 4. permitted, then built, each carrying the request
   for (const kind of ["permitted", "built"]) {
     await T(page, "action-change").click();
     await T(page, `action-${kind}`).click();
@@ -56,7 +50,6 @@ async function oneStop(page, [id, name, lat, lon], shot) {
     check(`${id} ${kind} ${DATES[kind]}`, await until(page, async () => (await T(page, "stop-status").textContent()).toLowerCase().includes(kind)), await status());
   }
 
-  // 5. the request completed; 6. the stop record updated from it
   await T(page, "request-row").first().click();
   await until(page, visible("request-complete"));
   await T(page, "request-complete").click();
@@ -76,7 +69,6 @@ async function oneStop(page, [id, name, lat, lon], shot) {
 
 export default async function (page, { shot }) {
   for (const stop of STOPS) await oneStop(page, stop, shot);
-  // the work across every stop: six completed New stop requests
   await page.goto(page.url().replace(/#.*/, `#view=work&on=${DATES.today}&work=completed`));
   await page.waitForTimeout(3000);
   const rows = clean(await page.locator("main, body").first().textContent());

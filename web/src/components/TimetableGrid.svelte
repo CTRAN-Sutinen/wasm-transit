@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// The planner's timetable — cap-directory `timetable`: one route,
-  /// one direction, one service type, every trip across the
-  /// direction's patterns. One row per trip in the op's order, one
-  /// column per stop in the op's order; against a baseline the op
-  /// marks `added` rows, `retimed_from_secs` on a kept trip that
-  /// moved, and lists `removed` trips. RENDER only — the
-  /// pattern letters index the op's legend, and "timepoints only"
-  /// hides the columns the op does not flag.
   import type { Timetable } from "../types/Timetable";
 
   let {

@@ -1,19 +1,6 @@
 <script lang="ts">
   import SignInControl from "../../components/SignInControl.svelte";
   import { signin as signinState, signIn, signOut } from "../../signin.svelte";
-  /// The service-design UI — six views over one selection, chained:
-  /// a rail of views (keys 1–6) and a context bar (plan, baseline,
-  /// group, route, stop, hours) frame whichever view is open. Plans
-  /// (the pick timeline and the plan set), Network (the group's
-  /// numbers, the day's shape as the hour brush, the frequency grid),
-  /// Coverage (who is reached, the unserved on the map), Hubs (the
-  /// connection matrix, corridors, waits), Route (the string-line
-  /// workbench; in edit mode its gestures sit above the picture they
-  /// change, so a change and its result are on screen together), and
-  /// Proposal (the scorecard, the redline, readiness and export). A frame with no answer says why
-  /// in place; the rest of the view keeps answering.
-  /// Every panel is a render component fed from the host's `sd`;
-  /// this file only places them and routes their events to the host.
   import {
     sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, setLayerReading, selectGroup, openRoute, clearRoute,
     selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
@@ -58,12 +45,10 @@
   const planName = (key: string) => sd.plans.find((p) => p.key === key)?.name ?? "";
   const framed = $derived(!!sd.plans.find((p) => p.key === sd.activeKey)?.id);
   const group = $derived(sd.groups.find((g) => g.id === sd.group) ?? null);
-  /// The other groups the gestures' service type runs in (D-95: a
-  /// sibling is a type sharing a combination with it).
+  /// A sibling group is a type that shares a combination with it (D-95).
   const alsoIn = $derived(sd.groups.filter((g) => g.id !== sd.group && g.members.includes(sd.editType)).map((g) => g.id));
   const routeRow = $derived(sd.routes.find((r) => r.route_id === sd.route) ?? null);
   const changed = $derived(sd.comparison?.routes.map((r) => r.route_id) ?? []);
-  /// Every stop by name, for the pickers (the hub, a stop to insert).
   const stopOptions = $derived(sd.stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
   let tableMode = $state(false);
 

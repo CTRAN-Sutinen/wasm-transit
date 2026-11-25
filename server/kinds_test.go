@@ -1,13 +1,12 @@
 package main
 
-// The kind table governs the generic pointer write (D-202). The laws:
+// The kind table governs the generic pointer write (D-202). Properties:
 //   - a kind with no entry is refused, and nothing is written;
-//   - a kind with its own route is refused, and the answer names the
-//     route;
+//   - a kind with its own route is refused, and the answer names it;
 //   - a pointer kind heads only its pointers;
-//   - a pointer kind is checked by its module: what makes it wrong is a
-//     422 that names why, and a consequence is accepted and named;
-//   - the store holds the module's canonical bytes, produced by it;
+//   - a module's check answers 422 with its reason for what makes a write
+//     wrong, and accepts and names a consequence;
+//   - the store holds the module's canonical bytes;
 //   - a restricted kind is never served by hash;
 //   - every blob the server writes is of a kind the table names.
 
@@ -73,8 +72,6 @@ func TestTheKindTableGovernsThePointerWrite(t *testing.T) {
 	}
 }
 
-// Every blob a server writes, booted with a feed, a street layer, a
-// published pick, and the edits, is of a kind the table names.
 func TestEveryBlobTheServerWritesIsAKindTheTableNames(t *testing.T) {
 	bucket := store.NewMemory()
 	s := derivedServer(t, bucket, writeLayer(t))
@@ -119,8 +116,8 @@ func TestEveryBlobTheServerWritesIsAKindTheTableNames(t *testing.T) {
 			t.Errorf("the boot wrote no %s blob: %v", want, seen)
 		}
 	}
-	// The store describes itself (D-203), and verifies with every
-	// marked reference followed.
+	// The store describes itself and verifies with every marked reference
+	// followed (D-203).
 	r, err := store.Verify(context.Background(), bucket)
 	if err != nil || r.Schemas == 0 || r.Tables != 1 {
 		t.Fatalf("a booted store describes itself and verifies: %+v %v", r, err)

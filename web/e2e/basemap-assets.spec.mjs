@@ -1,12 +1,6 @@
-// The basemap's glyphs and sprites (D-49): the style reads
-// them from `basemap-assets/` beside the tiles when `just
-// basemap-assets` put them there, and from protomaps.github.io when it
-// did not. Presence is probed, never configured — a stop display with
-// the assets installed loses no label when its uplink drops.
-//
-// The assets are installs (the user's job) and so is basemap.pmtiles:
-// the spec stubs the assets, and skips where there is no local
-// archive (without one the map is OpenFreeMap's and has neither).
+// The basemap style reads glyphs and sprites from `basemap-assets/` when
+// `just basemap-assets` installed them, else from protomaps.github.io (D-49).
+// The spec stubs the assets and skips without a local basemap.pmtiles.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -21,14 +15,11 @@ test.use({
   permissions: ["geolocation"],
 });
 
-/// The live feeds and the edit document the page polls, answered so
-/// the spec is the only thing on the wire it looks at.
 async function quiet(page) {
   await page.route(/\/rt\?url=/, (route) => route.fulfill({ status: 404 }));
   await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
 }
 
-/// The style's glyph and sprite URLs once the ride map has one.
 async function styleUrls(page) {
   await page.goto("/ride-now.html");
   await page.waitForFunction(() => window.__map?.getStyle()?.glyphs);
@@ -44,7 +35,6 @@ test("with the assets installed the style reads them from the app's own origin",
   page.on("request", (r) => {
     if (/protomaps\.github\.io/.test(r.url())) outside.push(r.url());
   });
-  // The installed assets: a sprite index and whatever else is asked.
   await page.route("**/basemap-assets/**", (route) =>
     route.request().url().endsWith(".json")
       ? route.fulfill({ contentType: "application/json", body: "{}" })
@@ -54,7 +44,7 @@ test("with the assets installed the style reads them from the app's own origin",
   const { glyphs, sprite } = await styleUrls(page);
   expect(glyphs).toBe(`${baseURL}/basemap-assets/fonts/{fontstack}/{range}.pbf`);
   expect(sprite).toBe(`${baseURL}/basemap-assets/sprites/v4/light`);
-  await page.waitForTimeout(500); // the style's own fetches have gone out
+  await page.waitForTimeout(500);
   expect(outside, "no label asset comes from the network").toEqual([]);
 });
 

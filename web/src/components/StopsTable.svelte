@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The stops the filters show on a date (cap-stops `stops_on`) as a
-  /// table: each stop's name, id and code, status, since and until, the
-  /// note, and when it was last surveyed; a column heading sorts by it, a
-  /// row opens the stop. A RENDER component.
   import type { StopOn } from "../types/StopOn";
   import { STATUS_COLORS, STATUS_WORDS } from "./stopWords";
 

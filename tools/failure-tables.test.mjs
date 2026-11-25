@@ -1,6 +1,5 @@
-// The failure-table gate's laws (tools/failure-tables.mjs): a row's
-// name, a UI that shares another's table, and a declared input whose
-// row is missing.
+// Pins tools/failure-tables.mjs: a row's name, a UI that shares another's
+// table, and a declared input whose row is missing.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -35,7 +34,6 @@ test("each UI's table, and a UI that has another's", () => {
   assert.deepEqual(t.beta.rows.map((r) => r.name), ["The server", "The bucket"]);
 });
 
-/// A tree with the doc and one UI's inputs.
 function tree(inputs, ui = "alpha") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "failure-tables-"));
   fs.mkdirSync(path.join(root, "docs/architecture"), { recursive: true });

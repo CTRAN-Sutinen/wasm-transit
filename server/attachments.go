@@ -1,19 +1,10 @@
 package main
 
-// Attachments (D-162): the photos and drawings stop surveys and stop
-// requests carry, in a bucket of their own (-attachments: any store URL
-// — s3://, gs://, azblob://, mem://), each object named by its content
-// hash and created only if absent, so the same photo twice is one
-// object. A record names a file by that hash, never a URL; the server
-// hands out the bytes. Reading needs a signed-in person whenever sign-in
-// is on (the user, 2026-11-13: "you should be signed in to view those
-// attachments"); adding one needs write on the `attachments` pointer of
-// the policy. The store's `gc` never touches this bucket.
-//
-//	POST /attachments          body: the file, its Content-Type its media type
-//	                           200 {hash, type, bytes} · 413 too large · 415 a type not taken
-//	GET  /attachments/<hash>   the bytes, its Content-Type · 404 · 401 not signed in
-//	                           501 {configured: false} with no -attachments
+// Attachments (D-162) live in a bucket of their own (-attachments), each
+// object named by its content hash and created only if absent. A record
+// names a file by hash, never a URL. The store's `gc` never touches this
+// bucket. Reading needs a signed-in person whenever sign-in is on. Adding
+// needs write on the `attachments` pointer of the policy.
 
 import (
 	"context"
@@ -27,11 +18,8 @@ import (
 	"rustwasm/server/store"
 )
 
-// maxAttachment is the largest file taken: a phone's photo, a scanned
-// drawing.
 const maxAttachment = 25 << 20
 
-// attachmentTypes are the media types taken: photos and documents.
 var attachmentTypes = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/webp": true, "image/heic": true, "image/heif": true,
 	"application/pdf": true,
@@ -54,10 +42,8 @@ func (s *server) handleAttachments(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleAttachmentFile answers /attachments/<hash>: reads only. Adding
-// a file is POST /attachments, behind the write check on the
-// `attachments` pointer. This path is behind sign-in alone, so it must
-// never add one.
+// This path is behind sign-in alone, so it must never add a file. POST
+// /attachments has the write check.
 func (s *server) handleAttachmentFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "GET /attachments/<hash>; add a file with POST /attachments", http.StatusMethodNotAllowed)
@@ -112,7 +98,7 @@ func (s *server) readAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	etag := `"sha256:` + name + `"`
 	w.Header().Set("ETag", etag)
-	// the bytes never change; only the signed-in may hold them
+	// The bytes never change, and only the signed-in may hold them.
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
@@ -123,9 +109,7 @@ func (s *server) readAttachment(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// protectSignedIn lets a request through only from a signed-in person
-// whenever sign-in is on — any valid token, no policy rule (the
-// attachments are staff's to see); with sign-in off, every request.
+// protectSignedIn requires any valid token and no policy rule.
 func (s *server) protectSignedIn(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.authz == nil {

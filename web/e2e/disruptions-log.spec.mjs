@@ -1,12 +1,7 @@
-// The disruptions log in a browser (D-190; docs/FORMATS.md, "The logs").
-// A store-mode server (playwright.config.mjs, :8084, `-store mem://`)
-// keeps the edit document as the disruptions log: a detour POSTed to
-// /edits is one entry, GET /edits serves the fold, and the stop display
-// reads that fold as it read the whole document before. The page's
-// protocol does not change.
-//
-// Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
-// Montreal; the browser in UTC). The detour takes the 10 from C.
+// The disruptions log in a browser (D-190; docs/FORMATS.md, "The logs"). The
+// page's protocol is unchanged: GET /edits serves the fold of the log.
+// The time is Friday 2026-10-23 at 07:55 in America/Montreal. The detour takes
+// the 10 from C.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -44,7 +39,6 @@ const detour = {
 };
 
 test("a detour written to the disruptions log reaches the stop display", async ({ page, request }) => {
-  // The write: one entry in the log, and the fold holds the detour.
   const posted = await request.post(`${server}/edits`, { data: detour });
   expect(posted.status()).toBe(200);
   const fold = await (await request.get(`${server}/edits`)).json();
@@ -55,12 +49,10 @@ test("a detour written to the disruptions log reaches the stop display", async (
   expect(entry.intent.op).toBe("POST /edits");
   expect(log.document).toBe(posted.headers()["etag"].replaceAll('"', ""));
 
-  // A resend changes nothing: no new entry.
   await request.post(`${server}/edits`, { data: detour });
   const again = await (await request.get(`${server}/logs/disruptions?since=0`)).json();
   expect(again.head).toBe(log.head);
 
-  // The read: the stop display over the same server.
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),

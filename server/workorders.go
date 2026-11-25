@@ -1,28 +1,12 @@
 package main
 
-// The work order system (D-165): the agency's own system that crews work
-// from, reached through an adapter so nothing here couples to it. A stop
-// request (D-159) tracks the work order it opens; the adapter opens one
-// for a request and reads its status back, and what it answers is
-// written onto the request as one entry of the stops log, through its
-// receive op (`requests record_work_order`, checked as any write;
-// logkinds.go), the writer `work-orders:<system>`.
-//
-// The call splits in three (D-228): cap-requests `work_order_call` answers
-// what to send, this host makes the call, and the stops log's receive op
-// records the answer. The host reads nothing out of the document.
-//
-// -work-orders names the adapter: unset, none is configured — the
-// manifest offers nothing and a request's work order is entered by
-// hand; `stub:` (or `stub:<name>`) a stand-in that opens STUB-<request>
-// and reports it open, for tests and demos. The real system's adapter
-// is written from its OpenAPI spec and slots in behind the same
-// interface.
-//
-//	POST /stop-requests/work-order  body: {"request": "<id>", "action": "open"|"refresh", "key": "<idempotency key>"}
-//	                                200 {requests_hash, work_order, landed?}
-//	                                501 {configured: false}   no adapter
-//	                                404 no such request · 409 the requests moved · 422 {refusals}
+// The work order system (D-165) is the agency's own system, reached
+// through an adapter so nothing here couples to it. The call splits in
+// three (D-228): cap-requests `work_order_call` answers what to send,
+// this host makes the call, and the stops log's receive op
+// (`requests record_work_order`, logkinds.go) records the answer under
+// the writer `work-orders:<system>`. The host reads nothing out of the
+// document.
 
 import (
 	"context"
@@ -36,7 +20,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// workOrder is the work order system's answer, in the request's terms.
 type workOrder struct {
 	System string `json:"system,omitempty"`
 	ID     string `json:"id"`
@@ -45,18 +28,12 @@ type workOrder struct {
 	ReadOn string `json:"read_on,omitempty"`
 }
 
-// workOrderSystem is an adapter to the agency's work order system.
 type workOrderSystem interface {
-	// Name is the system's name, as a request records it.
 	Name() string
-	// Open asks the system for a work order for the request (its id and
-	// its document as the stop requests document holds it).
 	Open(ctx context.Context, requestID string, request json.RawMessage) (workOrder, error)
-	// Status reads a work order's status from the system.
 	Status(ctx context.Context, held workOrder) (workOrder, error)
 }
 
-// newWorkOrders reads -work-orders: nil when none is configured.
 func newWorkOrders(spec string) (workOrderSystem, error) {
 	switch {
 	case spec == "":
@@ -72,7 +49,6 @@ func newWorkOrders(spec string) (workOrderSystem, error) {
 	}
 }
 
-// stubWorkOrders is the stand-in adapter: STUB-<request>, open.
 type stubWorkOrders struct{ name string }
 
 func (w stubWorkOrders) Name() string { return w.name }
@@ -129,8 +105,8 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no stop requests yet", http.StatusNotFound)
 		return
 	}
-	// cap-requests answers what to send the system for the request: the
-	// request for an open, the work order it holds for a refresh.
+	// cap-requests answers what to send: the request for an open, the
+	// held work order for a refresh.
 	var call struct {
 		Call struct {
 			Request   json.RawMessage `json:"request"`
@@ -149,9 +125,9 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	held := call.Call
-	// An outbox's resend (D-189): a key that landed answers the work
-	// order the request holds, and the system is not asked again, so a
-	// lost answer never opens a second work order.
+	// An outbox's resend (D-189) with a key that landed gets the held
+	// work order without asking the system, so a lost answer never opens
+	// a second work order.
 	if req.Key != "" {
 		f := l.fold
 		f.mu.Lock()
@@ -185,8 +161,8 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		answer.System = s.workOrders.Name()
 	}
 	answer.ReadOn = s.today()
-	// The answer is recorded over the requests at the head when the write
-	// runs, so a request written meanwhile is kept.
+	// The write runs over the requests at the head, so a request written
+	// meanwhile is kept.
 	op, _ := json.Marshal(map[string]any{"cap": "requests", "op": "record_work_order", "args": map[string]any{"id": req.Request, "work_order": answer}})
 	write := logWrite{writer: "work-orders:" + s.workOrders.Name(), op: "POST /stop-requests/work-order", argsHash: store.HashOf(body), key: req.Key}
 	_, _, got, refusal, err := s.receiveLog(ctx, r, l, write, receiveCall{ops: []json.RawMessage{op}})

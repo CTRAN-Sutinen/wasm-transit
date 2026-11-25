@@ -1,10 +1,7 @@
 package main
 
-// The /rt feed proxy is a dev convenience (D-67): a deployment's pages
-// fetch the agency's feeds directly (HTTPS with CORS), so the proxy is
-// off unless -rt-proxy asks for it — a server beyond localhost never
-// becomes an open relay by default. When on, it relays an http(s) URL
-// with a timeout and a size cap.
+// The /rt feed proxy is a dev convenience (D-67). It is off unless -rt-proxy
+// asks for it, so a server beyond localhost is never an open relay by default.
 
 import (
 	"io"
@@ -50,7 +47,6 @@ func TestTheFeedProxyRelaysWhenAsked(t *testing.T) {
 	if resp.StatusCode != 200 || string(body) != "feed bytes" || resp.Header.Get("Content-Type") != "application/x-protobuf" {
 		t.Fatalf("relayed: %d %q %q", resp.StatusCode, body, resp.Header.Get("Content-Type"))
 	}
-	// Not http(s): refused.
 	resp, _ = http.Get(srv.URL + "/rt?url=" + url.QueryEscape("file:///etc/passwd"))
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {

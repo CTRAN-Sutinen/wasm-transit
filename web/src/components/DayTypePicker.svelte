@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The plan's day types (analysis `day_types`): one tab per type,
-  /// named by its days of the week, its regular service first; the
-  /// combinations that run on fewer of its days are a second choice
-  /// under it, each named by its members and dates (D-55).
   import type { DayType } from "../types/DayType";
   import { weekdaysText } from "./designFormat";
 

@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The selection every view reads, on one bar: the plan, its
-  /// baseline, the service group, and — when set — the route, the
-  /// stop, and the hour window, each clearable. The plan's health
-  /// links to the proposal view, and the jump box finds a route.
   import Combobox from "./Combobox.svelte";
 
   type Opt = { value: string; label: string; sub?: string };
@@ -42,7 +38,6 @@
     issues: number;
     warnings: number;
     status: string;
-    /// The status is a refusal, an error, or a change that left issues.
     alert?: boolean;
     busy: boolean;
     onplan: (key: string) => void;
@@ -119,7 +114,7 @@
     height: 1.9rem; padding: 0 0.6rem; border-radius: 6px; border: 0; cursor: pointer;
     background: color-mix(in srgb, var(--bad) 14%, var(--surface)); color: var(--bad); font: inherit; font-size: 0.85rem; font-weight: 600;
   }
-  /* Warnings alone never block a pick: they read as a caution, not an alarm. */
+  /* Warnings alone never block a pick, so they read as a caution. */
   .health.warn { background: color-mix(in srgb, var(--warn) 16%, var(--surface)); color: var(--warn); }
   .jump { margin-left: auto; min-width: 14rem; }
   .jump :global(label) { position: absolute; left: -9999px; }

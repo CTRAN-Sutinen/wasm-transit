@@ -1,48 +1,22 @@
-/// The outbox (D-189): the writes a page made that the server has not
-/// kept yet, in the order the person made them. The server stays the
-/// authority on writes. A write that cannot reach it waits on the
-/// device, and is sent through the same receive path when the server
-/// answers again.
-///
-/// - Every write has an idempotency key, made when the person saves.
-///   Every attempt sends the same key, so a write whose answer was lost
-///   lands once (the log engine answers a key that landed).
-/// - A log's write is its intent: `{key, ops, read_seq, read_seqs}` to
-///   `logs/<log>`. The server runs the ops over the head it holds.
-///   `read_seqs` are the other logs' seqs the page read (the manifest's
-///   log_seqs): a reference to a record missing from what the page read
-///   is refused (D-233). A
-///   write that waited also carries the time the person made it, as a
-///   claim beside the server's stamp (`claimed_at_ms`, D-222).
-/// - A network failure or a 5xx (the store not answering, D-119) keeps
-///   the write waiting, and the writes after it wait behind it. A 401
-///   holds the outbox until the person signs in. A refusal (400, 403,
-///   409, 422) keeps the write, held with the server's reasons, and the
-///   writes after it go on. Only the person drops a held write, or
-///   sends it again.
-///
-/// This is the pure core: the page gives it how to send and where to
-/// keep the list (src/outbox.svelte.ts). It never reads a write's ops.
+// The rules are in docs/architecture/updates-offline.md, "The outbox"
+// (D-189). This is the pure core. It never reads a write's ops.
+// A log's write sends `read_seqs`, the other logs' seqs that the page read.
+// A write that waited also carries `claimed_at_ms` (D-222).
 
-/// A write as the page makes it: a log's intent, or a body for a route.
-/// A route's body is JSON, with the key added when `keyed` (a route
-/// that takes one), or a file sent as it is (`contentType`).
+// A route's body is JSON, with the key added when `keyed`, or a file sent
+// as it is (`contentType`).
 export type Write =
   | { log: string; ops: { cap: string; op: string; args: unknown }[]; readSeq?: number; readSeqs?: Record<string, number>; label: string; url?: undefined; body?: undefined }
   | { url: string; body: unknown; label: string; keyed?: boolean; contentType?: string; log?: undefined; ops?: undefined; readSeq?: undefined; readSeqs?: undefined };
 
-/// One write that waits, or that the server refused.
 export type Waiting = {
   key: string;
   label: string;
-  /// The device's clock when the person made it (Unix ms).
+  // Unix ms on the device's clock.
   madeAtMs: number;
-  /// How many times it was sent.
   attempts: number;
-  /// waiting: not sent yet, or the server did not answer. held: the
-  /// server refused it; the person decides.
+  // `held` means the server refused it and the person decides.
   state: "waiting" | "held";
-  /// The refusal's status and the server's reasons, when held.
   status?: number;
   reasons?: unknown;
   log?: string;
@@ -55,15 +29,12 @@ export type Waiting = {
   contentType?: string;
 };
 
-/// What the server answered: its status and body (JSON when it is).
 export type Answer = { status: number; body: unknown; retryAfter?: number };
 
-/// How a queued write ended for now, by its key.
 export type Outcome = { key: string } & ({ state: "sent"; body: unknown } | { state: "waiting" } | { state: "held"; status: number; reasons: unknown });
 
 export type OutboxDeps = {
-  /// One attempt: JSON, or a file sent as it is when `contentType` is
-  /// given. Throws when the server cannot be reached.
+  // Throws when the server cannot be reached.
   send: (url: string, body: unknown, contentType?: string) => Promise<Answer>;
   store: { load: () => Promise<unknown>; save: (items: Waiting[]) => Promise<void> };
   now: () => number;
@@ -72,16 +43,11 @@ export type OutboxDeps = {
 
 export class Outbox {
   items: Waiting[] = [];
-  /// The last attempt could not reach the server.
   offline = false;
-  /// The server asks for sign-in: the outbox holds until the person
-  /// signs in.
   needsSignIn = false;
-  /// When the server asked to be tried again (Unix ms), else 0.
+  // Unix ms, or 0 when the server did not ask to wait.
   retryAtMs = 0;
-  /// Called after every change of the list or the flags.
   onchange: () => void = () => {};
-  /// Called with each write the server kept, and its answer.
   onsent: (w: Waiting, body: unknown) => void = () => {};
 
   #deps: OutboxDeps;
@@ -92,15 +58,12 @@ export class Outbox {
     this.#deps = deps;
   }
 
-  /// The list kept on the device, read back in order.
   async restore(): Promise<void> {
     const kept = await this.#deps.store.load();
     if (Array.isArray(kept)) this.items = kept as Waiting[];
     this.onchange();
   }
 
-  /// A write the person made: kept on the device first, then sent with
-  /// everything before it.
   async queue(write: Write): Promise<Outcome> {
     const item: Waiting = { key: this.#deps.newKey(), label: write.label, madeAtMs: this.#deps.now(), attempts: 0, state: "waiting" };
     if (write.log !== undefined) Object.assign(item, { log: write.log, ops: write.ops, readSeq: write.readSeq, readSeqs: write.readSeqs });
@@ -111,15 +74,12 @@ export class Outbox {
     return this.#outcomes.get(item.key) ?? { key: item.key, state: "waiting" };
   }
 
-  /// Send what waits, in order. One run at a time.
   flush(): Promise<void> {
     this.#running = this.#running.then(() => this.#run());
     return this.#running;
   }
 
-  /// A held write sent again (after the person read the head again:
-  /// `readSeq`, and the other logs' in `readSeqs`), with its key, at its
-  /// place in the order.
+  // Keeps the key and the write's place in the order.
   async retry(key: string, change: { readSeq?: number; readSeqs?: Record<string, number> } = {}): Promise<Outcome> {
     this.items = this.items.map((i) => (i.key === key ? { ...i, ...change, state: "waiting", status: undefined, reasons: undefined } : i));
     await this.#save();
@@ -127,13 +87,11 @@ export class Outbox {
     return this.#outcomes.get(key) ?? { key, state: "waiting" };
   }
 
-  /// The person drops a held write.
   async discard(key: string): Promise<void> {
     this.items = this.items.filter((i) => i.key !== key);
     await this.#save();
   }
 
-  /// How many writes wait to be sent (not the held ones).
   get waiting(): number {
     return this.items.filter((i) => i.state === "waiting").length;
   }
@@ -176,8 +134,6 @@ export class Outbox {
     }
   }
 
-  /// The request of one attempt: a log's intent with its key (and the
-  /// time it was made, once it waited), or a route's body as given.
   #request(item: Waiting): [string, unknown] {
     if (item.log === undefined) return [item.url!, item.keyed ? { ...(item.body as object), key: item.key } : item.body];
     const body: Record<string, unknown> = { key: item.key, ops: item.ops };
@@ -191,8 +147,7 @@ export class Outbox {
     try {
       await this.#deps.store.save(this.items);
     } catch (e) {
-      // The device's store refused the list: the writes stay on the
-      // page, and the console says why. A reload would lose them.
+      // The writes stay on the page, and a reload would lose them.
       console.error("the outbox could not be kept on this device:", e);
     }
     this.onchange();

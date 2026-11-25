@@ -1,18 +1,4 @@
 <script lang="ts">
-  /// One request for work at a stop (D-159; C-TRAN's Bus Stop Sign &
-  /// Shelter Installation Worksheet) as a page: its header (the job, its
-  /// id, its stop, a status track — drafted, submitted, work order open,
-  /// completed, or cancelled) with the one next step for that status
-  /// beside it (submit; open the work order through the agency's system,
-  /// D-165, or enter it by hand; check its status; complete it; record
-  /// the change it carried out on the stop), and the worksheet below as
-  /// sections under their own headings — Location, Service, Utility
-  /// locate, Work order, Completion, Notes & photos — each edited in
-  /// place. A new request is the same page with every section open and
-  /// the job chosen first. The lists its answers come from are
-  /// cap-requests `vocabulary`'s; what a request must carry is the
-  /// library's to say (its refusals come back as props, shown beside
-  /// Save). A RENDER component.
   import "./forms.css";
   import type { RequestRefusal } from "../types/RequestRefusal";
   import type { StopRequest } from "../types/StopRequest";
@@ -45,26 +31,18 @@
     backLabel,
     attachments = null,
   }: {
-    /// The request shown; none for a new one.
     id?: string;
     request?: StopRequest | null;
     stopId: string;
     stopName: string;
-    /// The ids the stop's requests already have: a new request's
-    /// suggested id is none of them.
     taken?: string[];
-    /// A new request's job, chosen already (a field report: a repair; a
-    /// new stop's installation).
     job?: string;
     vocab: { jobs: string[]; statuses: string[]; sides: string[]; directions: string[]; markings: string[] };
     date: string;
     busy: boolean;
-    /// Whether the deployment connects a work order system (D-165).
     workOrders: boolean;
     refusals: RequestRefusal[];
     error: string;
-    /// Why the request's stop no longer takes it (cap-stops
-    /// `request_warnings`, D-238), in words; empty when it does.
     warning?: string;
     onsave: (id: string, request: StopRequest, done: string) => void;
     onworkorder: (id: string, action: "open" | "refresh") => void;
@@ -105,9 +83,7 @@
   const fresh = $derived(!request);
   // svelte-ignore state_referenced_locally
   let f = $state<Form>(toForm(request));
-  /// The section being edited (a held request edits one at a time).
   let editing = $state("");
-  // A held request read again (saved, its work order answered) shows as it is.
   let seen = $state("");
   $effect(() => {
     const key = JSON.stringify(request);
@@ -144,7 +120,6 @@
   const saveSection = () => save(request!.status, `Request ${id} saved.`);
   const cancelSection = () => ((f = toForm(request)), (editing = ""));
 
-  // the next step's own fields: the work order by hand, the completion
   let step = $state("");
   let woId = $state("");
   let woSystem = $state("");

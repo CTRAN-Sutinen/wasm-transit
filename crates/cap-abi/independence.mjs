@@ -1,14 +1,9 @@
-// ASSEMBLY INDEPENDENCE (D-77, docs/architecture/bus.md, "Bus rules"): every
-// manifest worked example answers identically from the capability
-// built alone and from inside each generated UI's linked assembly — in
-// either order of the assembly's capabilities. A derived entry one
-// capability computed and another found is only a cache, never a
-// dependency: if a capability's answer changed with what its
-// neighbours computed first, this gate fails.
-//
-// `independence(...)` is the check (its broken fixture:
-// independence.test.mjs); run as a script, it checks the built modules
-// in web/public/caps (`just test`).
+// Assembly independence (D-77, docs/architecture/bus.md, "Bus rules").
+// Every manifest worked example must answer the same from a capability
+// built alone and from inside each generated UI's linked assembly, in
+// either order of the assembly's capabilities. A derived entry that one
+// capability computes and another finds is a cache, never a dependency.
+// Run as a script, this checks the built modules in web/public/caps.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,10 +12,6 @@ import path from "node:path";
 const OP_LOAD_FEED = 266;
 const OP_LOAD_RT = 267;
 
-/// The documents every instance registers before the examples run: the
-/// kernel's worked load examples (JSON) and the bulk fixtures, each
-/// sent only where a linked capability reads its kind. A kernel load
-/// is named `load_<kind>`, so every load with an example registers.
 function setup(manifest, fixtures) {
   const steps = [];
   for (const op of manifest.kernel_ops ?? []) {
@@ -39,9 +30,8 @@ function register(instance, steps, reads) {
   }
 }
 
-/// The check. `instantiate(entry)` makes a fresh instance of a
-/// capability's module or of a linked assembly: `{invoke(request) ->
-/// outcome text, invokeBytes(op, bytes) -> outcome text}`.
+// `instantiate(entry)` returns a fresh instance of a capability's module or
+// of a linked assembly.
 export function independence({ manifest, fixtures = {}, instantiate }) {
   const byId = Object.fromEntries(manifest.capabilities.map((c) => [c.id, c]));
   const steps = setup(manifest, fixtures);
@@ -50,7 +40,7 @@ export function independence({ manifest, fixtures = {}, instantiate }) {
   let answered = 0;
   for (const asm of manifest.assemblies ?? []) {
     const answeredBefore = answered;
-    // The answers alone: one instance per capability, as a runner holds it.
+    // One instance per capability, as a runner holds it.
     const alone = new Map();
     for (const id of asm.capabilities) {
       const cap = byId[id];
@@ -62,9 +52,8 @@ export function independence({ manifest, fixtures = {}, instantiate }) {
       }
       alone.set(id, answers);
     }
-    // The answers linked: the capabilities in index order, then again
-    // in reverse in a second instance — what one computed first must
-    // never change what another answers.
+    // Index order, then reverse in a second instance: what one capability
+    // computed first must not change what another answers.
     const reads = new Set(asm.capabilities.flatMap((id) => byId[id].documents ?? []));
     for (const order of [asm.capabilities, [...asm.capabilities].reverse()]) {
       const linked = instantiate(asm);
@@ -85,10 +74,6 @@ export function independence({ manifest, fixtures = {}, instantiate }) {
   }
   return { compared, answered, failures };
 }
-
-// ---------------------------------------------------------------------
-// the gate over the built modules
-// ---------------------------------------------------------------------
 
 function shell(bytes) {
   const ex = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;

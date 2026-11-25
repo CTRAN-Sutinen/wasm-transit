@@ -1,8 +1,7 @@
 package main
 
-// store verify folds each log's checkpoints through cap-log (D-197): a
-// log the module wrote verifies, and a checkpoint whose bytes are not
-// the fold is a break.
+// Pins that store verify folds each log's checkpoints through cap-log, and
+// a checkpoint that is not the fold is a break (D-197).
 
 import (
 	"context"
@@ -21,8 +20,7 @@ type rawJSON string
 
 func (r rawJSON) MarshalJSON() ([]byte, error) { return []byte(r), nil }
 
-// writeLog writes three entries to a log through cap-log, each changing
-// record A of `kind`, and stores the checkpoint at entry 2.
+// writeLog stores the checkpoint at entry 2.
 func writeLog(t *testing.T, host *wasmhost.Host, s *store.Store, log, kind string, values []string) {
 	t.Helper()
 	ctx := context.Background()
@@ -75,7 +73,7 @@ func TestVerifyFoldsEachLogThroughCapLog(t *testing.T) {
 		t.Fatalf("the logs cap-log wrote verify: %+v %v", r, err)
 	}
 
-	// A checkpoint at 3 that says seq 3 and holds the fold at 2.
+	// A checkpoint that says seq 3 but holds the fold at 2.
 	cp, err := s.Checkpoint("disruptions", 2)
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +88,6 @@ func TestVerifyFoldsEachLogThroughCapLog(t *testing.T) {
 	}
 }
 
-// appendEntry composes one entry of the stops log through cap-log over
-// the fold of the entries before it, and stores it.
 func appendEntry(t *testing.T, host *wasmhost.Host, s *store.Store, seq int, next []any) {
 	t.Helper()
 	ctx := context.Background()
@@ -118,10 +114,8 @@ func appendEntry(t *testing.T, host *wasmhost.Host, s *store.Store, seq int, nex
 	}
 }
 
-// The existence check (D-233): verify reports a stop request whose stop
-// left the stops log, with the entry that took it out, the kind table
-// and the module it judged with, and the log's seq; the store still
-// verifies.
+// Pins that verify reports a stop request whose stop left the stops log,
+// and the store still verifies (D-233).
 func TestVerifyReportsABrokenReferenceWithTheEntryThatBrokeIt(t *testing.T) {
 	ctx := context.Background()
 	host, err := wasmhost.New(ctx, logWasm)
@@ -160,9 +154,8 @@ func TestVerifyReportsABrokenReferenceWithTheEntryThatBrokeIt(t *testing.T) {
 	}
 }
 
-// store revert lists the records that name what it drops (D-233): a
-// frozen version naming the network commit the revert drops is listed,
-// with its field and the hash.
+// Pins that store revert lists a frozen version that names a dropped
+// network commit (D-233).
 func TestRevertListsTheReferencesIntoTheCommitsItDrops(t *testing.T) {
 	ctx := context.Background()
 	host, err := wasmhost.New(ctx, logWasm)

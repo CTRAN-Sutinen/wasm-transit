@@ -1,18 +1,7 @@
-// The headers a deployment sends (server/headers.go;
-// docs/units/web-conformance.md, scope 2), seen from a browser:
-//
-//   1. The sync server sends the baseline on every file and a policy on
-//      each rider page, and gzips text and wasm for a client that takes
-//      it (the Go tests pin the rules; this pins what arrives).
-//   2. Each rider page RUNS under its policy: ride now (a map, a
-//      location, live feeds, a bus worker, the modules) and the stop
-//      display, from the server and from the static export, with no
-//      violation reported. The static host sends the `_headers` file the
-//      export wrote (e2e/static-server.mjs).
-//
-// A policy that blocks nothing the page needs is the point: a violation
-// here means the policy is too tight, or the page reads an origin the
-// export did not know.
+// The headers a deployment sends, seen from a browser (server/headers.go;
+// docs/units/web-conformance.md, scope 2). The Go tests pin the rules, and this
+// spec pins what arrives and that each rider page runs under its policy. A
+// violation means the policy is too tight or the page reads an unknown origin.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -62,8 +51,6 @@ test("the server sends the baseline, a policy on each rider page, and gzip", asy
   expect(blob.headers()["content-type"]).toBe("application/gzip");
 });
 
-/// Collect every policy violation the document reports, and every
-/// console message that names one.
 async function watchPolicy(page) {
   const messages = [];
   page.on("console", (m) => {
@@ -85,7 +72,6 @@ async function feeds(page) {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
 }
 
-/// Type into a stop field and pick the first answer with Enter.
 async function pick(page, field, text) {
   const input = page.getByLabel(field, { exact: true });
   await input.fill(text);
@@ -93,8 +79,6 @@ async function pick(page, field, text) {
   await input.press("Enter");
 }
 
-/// Ride now through its views, then the stop display, under whatever
-/// policy the host sends.
 async function runUnderPolicy(page, prefix) {
   await feeds(page);
   const violations = await watchPolicy(page);
@@ -103,7 +87,6 @@ async function runUnderPolicy(page, prefix) {
   expect(ride.headers()["content-security-policy"], "ride-now.html carries its policy").toContain("script-src 'self' 'wasm-unsafe-eval'");
   await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toContainText("Main Station", { timeout: 10_000 });
   await expect(page.getByTestId("live-feeds")).toContainText("Live");
-  // The map is up (its worker is a blob).
   await expect(page.getByTestId("ride-map")).toBeVisible();
   await pick(page, "stop name", "main 1s");
   await expect(page.getByTestId("board-rows").locator("li").first()).toBeVisible();
@@ -124,8 +107,6 @@ test("the pages run under the server's policy", async ({ page }) => {
   await runUnderPolicy(page, "");
 });
 
-// The watcher sees a violation when there is one: an inline script is
-// refused by the policy and reported.
 test("a policy violation is reported, so an empty list means none", async ({ page }) => {
   const violations = await watchPolicy(page);
   await page.goto("/stop-display.html?stop=A&layout=routes");
@@ -141,8 +122,6 @@ test("a policy violation is reported, so an empty list means none", async ({ pag
 test.describe("static export", () => {
   test.use({ baseURL: "http://127.0.0.1:8087" });
 
-  // The static host's root holds the two bundles: /ride/ and /display/,
-  // each with its own page only (e2e/static-deploy.spec.mjs).
   test("each page runs under its bundle's _headers", async ({ page }) => {
     await feeds(page);
     const violations = await watchPolicy(page);

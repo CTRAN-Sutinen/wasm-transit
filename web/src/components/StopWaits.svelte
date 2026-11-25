@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// One stop's waits (analysis `stop_gaps`): the longest gap starting
-  /// in each hour as a bar, the hour window marked, and the day's
-  /// longest wait named.
   import type { StopGaps } from "../types/StopGaps";
   import { clock } from "./designFormat";
 

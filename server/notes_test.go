@@ -1,10 +1,8 @@
 package main
 
-// The notes document in store mode (D-214): each write is one note, run
-// through cap-notes over the head with the verified writer and the
-// server's clock; a refused note answers its refusals; the same text
-// again lands no entry; the manifest pins the head, /blobs serves it,
-// and the writes are the notes log's entries.
+// Pins D-214 in store mode: cap-notes writes each note with the verified
+// writer and the server's clock, the same text again lands no entry, and
+// the manifest pins the head.
 
 import (
 	"encoding/json"

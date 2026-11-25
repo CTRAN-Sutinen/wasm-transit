@@ -1,14 +1,12 @@
-// The inputs' laws (src/uis/inputs.ts): one poll reads every declared
-// input, each read has a time limit, and a read has one of three
-// outcomes. The input's state names it, and its graph inputs change
-// only when what the page holds changes.
+// Pins the inputs runner (src/uis/inputs.ts; docs/architecture/web.md, "A
+// UI's inputs are declared as data"): one poll reads every declared input,
+// each read has a time limit, and a read answers a document, none kept, or
+// a failure.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { inputs, labelOf, ReadFailed } from "./inputs.ts";
 
-/// A host with a clock the test moves. `after` keeps the timers;
-/// `advance` runs the ones that are due, in order.
 function host({ random = () => 0, visible = true } = {}) {
   let now = 1_000_000;
   let timers = [];
@@ -53,12 +51,10 @@ function host({ random = () => 0, visible = true } = {}) {
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-/// One declaration, as a UI's ui.json writes it.
 const declared = (id, more = {}) => ({ id, name: `the ${id}`, from: `GET ${id}`, every_s: 30, limit_s: 10, keeps: "last", feeds: [id], ...more });
 
-/// A reader whose answers the test sets: a value (keyed by itself), null
-/// for "none kept", an Error to fail, or "hang" for a read that never
-/// answers.
+// `next` is a value (keyed by itself), null for "none kept", an Error to
+// fail, or "hang" for a read that never answers.
 function reader() {
   const r = {
     next: "v1",

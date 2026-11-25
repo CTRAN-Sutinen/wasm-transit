@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// A record's photos and drawings as small pictures (D-162), each
-  /// opening full size; a PDF as its name. The bytes come from the page
-  /// (`src`: read with the signed-in person's token) — without sign-in, a
-  /// picture says so. A RENDER component.
   let {
     items,
     src,

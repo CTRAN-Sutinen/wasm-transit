@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// One bus — a RENDER component over the live document's vehicle
-  /// (its route, its status under the document's window, the stop it
-  /// is at or heading to) and rt's `trip_progress` for its trip (every
-  /// stop with its scheduled and predicted time — when the bus leaves
-  /// it, and when it arrives at its last), its stops named by
-  /// the directory's `stops_by_ids`. The stop it heads to is marked;
-  /// the stops before it read as passed.
   import type { LiveVehicle } from "../types/LiveVehicle";
   import type { TripProgress } from "../types/TripProgress";
   import type { DirectoryStop } from "../types/cap_directory/DirectoryStop";
@@ -23,8 +16,6 @@
     onroute,
     onback,
   }: {
-    /// The bus in the current live document; null when it stopped
-    /// reporting.
     vehicle: LiveVehicle | null;
     progress: { progress: TripProgress | null; names: DirectoryStop[] } | null;
     routes: DirectoryRoute[];

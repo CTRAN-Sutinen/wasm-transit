@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// healthy answers a bucket with two pointers, a reused hash, an orphan
-// and a leftover trash object — everything verify must accept.
 func healthy(t *testing.T, b Backend) (edits, manifest string) {
 	t.Helper()
 	s := New(b)
@@ -41,8 +39,6 @@ func TestVerifyPassesAHealthyStore(t *testing.T) {
 	})
 }
 
-// Each break is its own fixture: a healthy store, one object changed,
-// and verify names that object.
 func TestVerifyFailsOnEachBreak(t *testing.T) {
 	ctx := context.Background()
 	rec := func(seq int64, from, to string) []byte {
@@ -116,7 +112,6 @@ func TestVerifyFailsOnEachBreak(t *testing.T) {
 	}
 }
 
-// Verify only reads.
 func TestVerifyWritesNothing(t *testing.T) {
 	b := NewMemory()
 	healthy(t, b)
@@ -137,8 +132,6 @@ func (readOnly) Create(context.Context, string, []byte, map[string]string) error
 }
 func (readOnly) Delete(context.Context, string) error { return errors.New("read only") }
 
-// A healthy log: three entries and a checkpoint at 2. Each break names
-// its object.
 func TestVerifyChecksEachLog(t *testing.T) {
 	eachBackend(t, func(t *testing.T, b Backend) {
 		ctx := context.Background()
@@ -176,8 +169,6 @@ func TestVerifyChecksEachLog(t *testing.T) {
 	})
 }
 
-// With a folder, verify folds each checkpoint from the one before it and
-// compares the bytes: a checkpoint that differs is a break.
 func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 	eachBackend(t, func(t *testing.T, b Backend) {
 		ctx := context.Background()
@@ -187,8 +178,6 @@ func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		// The test's fold: the checkpoint names the last entry it read,
-		// and the checkpoint it started from.
 		var calls []string
 		fold := func(log string, from []byte, entries []StoredEntry) ([]byte, error) {
 			last := entries[len(entries)-1].Seq
@@ -220,9 +209,8 @@ func TestVerifyFoldsEachCheckpoint(t *testing.T) {
 	})
 }
 
-// The head manifest names only documents a record names (D-199): a
-// network the server served and never stored is a break. An older
-// manifest is history, and verify does not read it.
+// A network that the server served and never stored is a break (D-199). An
+// older manifest is history.
 func TestVerifyChecksTheHeadManifestsDocuments(t *testing.T) {
 	eachBackend(t, func(t *testing.T, b Backend) {
 		s := New(b)

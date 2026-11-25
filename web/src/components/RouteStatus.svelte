@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The day by route (disruptions `today`), one card per affected
-  /// route: each disruption on a line with whether an alert explains it,
-  /// its latest note, and how many of the route's trips are late. A
-  /// line opens its disruption; a card's route focuses the map. A RENDER
-  /// component.
   import { datesText, kindText, minutesText, stampText, timeText, titleText, whoText } from "./disruptionsFormat";
   import type { AlertSource } from "../types/AlertSource";
   import type { Today } from "../types/Today";
@@ -21,7 +16,6 @@
     date: string;
     focus: string;
     onopen: (source: AlertSource) => void;
-    /// A route picked by its id and name, or null to clear the pick.
     onfocus: (route: { id: string; label: string } | null) => void;
   } = $props();
 </script>

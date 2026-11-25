@@ -1,47 +1,26 @@
-/// The page's outbox (D-189): the writes the server has not kept yet,
-/// kept in the device's store (IndexedDB) so a reload keeps them, and
-/// sent in order through `writeFetch` when the server answers. The core
-/// and its rules are src/outbox.ts. Host I/O only: no module is called
-/// here.
-///
-/// A host opens it at boot (`openOutbox`), queues each write the person
-/// saves (`queueWrite`), and shows `outbox`: how many writes wait, the
-/// ones the server refused with its reasons, the ones it kept with a
-/// warning (a broken reference, D-233), and whether the server answers. It sends what waits again on its own: when the device comes
-/// back online, on a timer while anything waits, and when the host asks
-/// (`sendWaiting`, at each poll).
-
 import { get as idbGet, set as idbSet } from "idb-keyval";
 import { Outbox, type Outcome, type Waiting, type Write } from "./outbox";
 import { writeFetch } from "./signin.svelte";
 
 export type { Outcome, Waiting, Write } from "./outbox";
 
-/// What the page shows: the writes that wait, the writes the server
-/// refused, and the connection as the last attempt found it.
 export const outbox = $state({
   waiting: 0,
   held: [] as Waiting[],
-  /// The last write could not reach the server.
   offline: false,
-  /// The server asks for sign-in before it takes what waits.
   needsSignIn: false,
-  /// The writes the server kept that leave a broken reference (its
-  /// answer's `references`, D-233), until the person dismisses them.
+  // Writes that the server kept and that leave a broken reference (D-233).
   warned: [] as Warned[],
 });
 
-/// A reference a write left broken, as the server answers it.
 export type BrokenReference = { log: string; kind: string; id: string; field: string; target: string; names: string; rule?: string };
 
-/// A write the server kept, with the references it left broken.
 export type Warned = { key: string; label: string; references: BrokenReference[] };
 
 let box: Outbox | null = null;
 
-/// A copy the device's store can keep: plain data, with a photo kept as
-/// its bytes (a Blob). A write's arguments may come from the page's
-/// state, which IndexedDB cannot clone as it is.
+// A write's arguments may come from the page's state, which IndexedDB
+// cannot clone. A photo stays a Blob.
 function plain(value: unknown): unknown {
   if (value instanceof Blob || value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(plain);
@@ -49,10 +28,8 @@ function plain(value: unknown): unknown {
 }
 let timer: ReturnType<typeof setInterval> | null = null;
 
-/// How often the page tries again while writes wait.
 const RETRY_MS = 15_000;
 
-/// The answer's body: JSON when it is, else its text.
 async function bodyOf(resp: Response): Promise<unknown> {
   const text = await resp.text();
   try {
@@ -62,9 +39,8 @@ async function bodyOf(resp: Response): Promise<unknown> {
   }
 }
 
-/// Open the page's outbox (one per generated UI, `ui`), read back what
-/// waited before a reload, and send it. `onsent` hears each write the
-/// server kept, with its answer (the host reads its documents again).
+// One outbox for each generated UI. `onsent` lets the host read its
+// documents again.
 export async function openOutbox(ui: string, onsent: (w: Waiting, body: unknown) => void = () => {}): Promise<void> {
   const key = `outbox/${ui}`;
   box = new Outbox({
@@ -104,32 +80,24 @@ function show(): void {
   outbox.needsSignIn = box.needsSignIn;
 }
 
-/// A write the person saved: kept on the device, then sent after what
-/// waits before it. The outcome says whether the server kept it, it
-/// waits, or the server refused it (kept, with its reasons).
 export async function queueWrite(write: Write): Promise<Outcome> {
   if (!box) throw new Error("the outbox is not open (openOutbox at boot)");
   return box.queue(write);
 }
 
-/// Send what waits now (a host's poll, the person's "Send now").
 export async function sendWaiting(): Promise<void> {
   await box?.flush();
 }
 
-/// A held write sent again, at its place, with the log's seq the page
-/// read since (`readSeq`).
 export async function retryWrite(key: string, change: { readSeq?: number; readSeqs?: Record<string, number> } = {}): Promise<Outcome> {
   if (!box) return { key, state: "waiting" };
   return box.retry(key, change);
 }
 
-/// The person drops a held write.
 export async function discardWrite(key: string): Promise<void> {
   await box?.discard(key);
 }
 
-/// Why the server refused a held write, in words.
 export function heldReason(w: Waiting): string {
   const body = (w.reasons ?? {}) as { refusals?: { problem?: { kind?: string } }[]; references?: BrokenReference[]; conflict?: string; error?: string };
   if (w.status === 409) return "Someone else changed this since you read it. Check it, then send it again or discard it.";
@@ -144,19 +112,16 @@ export function heldReason(w: Waiting): string {
   return `The server refused it (${w.status}).`;
 }
 
-/// The writes kept with a warning, each in words.
 export function warnedWrites(): { key: string; label: string; warning: string }[] {
   return outbox.warned.map((w) => ({ key: w.key, label: w.label, warning: w.references.map(referenceWarning).join(" ") }));
 }
 
-/// The person dismisses a write's warning.
 export function dismissWarning(key: string): void {
   outbox.warned = outbox.warned.filter((w) => w.key !== key);
 }
 
-/// A broken reference in words: "Stop request R-1 names stop 6124, which
-/// isn't on record." A rule's reference ends with the module's words for
-/// the target's state (`rule`, D-238): "…, which was retired on 2026-10-01."
+// A rule's reference ends with the module's words for the target's state
+// (`rule`, D-238).
 export function referenceWarning(r: BrokenReference): string {
   const words = (kind: string) => kind.replaceAll("_", " ");
   const what = words(r.kind);

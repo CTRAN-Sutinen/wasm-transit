@@ -1,10 +1,8 @@
 package main
 
-// The service alerts and alert templates documents in store mode
-// (D-206, D-210): each write goes through the receive path (cap-alerts
-// validates it and answers its canonical bytes), a stale write is
-// refused, the manifest pins each head, /blobs serves each by hash, and
-// both land in one log, the alerts log.
+// Service alerts and alert templates in store mode (D-206, D-210). A stale
+// write is refused, the manifest pins each head, /blobs serves each by
+// hash, and both land in the alerts log.
 
 import (
 	"encoding/json"

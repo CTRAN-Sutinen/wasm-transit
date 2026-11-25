@@ -1,13 +1,11 @@
-// The answer graph's laws (src/uis/answers.ts): each node's state, and
-// the frame that shows it. A failure belongs to its frame, and every
-// other node answers.
+// Pins the answer graph (src/uis/answers.ts): a failure belongs to its
+// frame, and every other node answers (docs/architecture/web.md).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { answers } from "./answers.ts";
 
-/// A graph over plain nodes. `missing` lists the capabilities that did
-/// not assemble.
+// `missing` lists the capabilities that did not assemble.
 function graph(nodes, { missing = [] } = {}) {
   const frames = {};
   const errors = [];
@@ -68,7 +66,7 @@ test("a node that throws fails its frame alone, and every other node answers", a
   await request("x");
   assert.deepEqual(frames, { A: { kind: "failed", message: "refused" } });
   assert.equal(cleared, 1);
-  // A dependent still answers: it reads what A left, which is cleared.
+  // A dependent still answers. It reads what A left, which is cleared.
   assert.deepEqual(log, ["B", "C"]);
   assert.deepEqual(errors, []);
 });
@@ -150,7 +148,6 @@ test("nodes answer in declared order, and a node reads only nodes before it", as
   assert.throws(() => graph([node("B", { needs: ["A"] }), node("A")]), /before it is declared/);
 });
 
-/// A graph whose host keeps input states (src/uis/inputs.ts).
 function withInputs(nodes, inputs) {
   const frames = {};
   const request = answers(nodes, { frames, onerror: () => {}, available: async () => true, inputs });

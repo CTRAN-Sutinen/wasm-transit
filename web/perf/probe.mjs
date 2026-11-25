@@ -1,17 +1,14 @@
-// The perf probe: what a perf spec measures around each step, through
-// the Chrome DevTools Protocol — the browser's own counters, a sampled
-// CPU profile, the long animation frames, and each capability module's
-// linear memory (which the JS heap counters do not see). Test-side
-// only: the page under test is the shipped page, observed.
+// What a perf spec measures around each step, through the Chrome DevTools
+// The probe records the browser's counters, a sampled CPU profile, the long
+// animation frames, and each capability module's linear memory, which the
+// JS heap counters do not see. The page under test is the shipped page.
 
 import fs from "node:fs";
 import path from "node:path";
 
-/// Installed before any page script: observes long animation frames
-/// (with their script attribution) and long tasks. The capability
-/// modules run in the page's bus worker, so their memory is read
-/// through the engine's inspection (`window.__bus`) and their CPU from
-/// the worker's own profiler.
+// The capability modules run in the page's bus worker, so the probe reads
+// their memory through the engine's inspection (`window.__bus`) and their
+// CPU from the worker's own profiler.
 function pageProbe() {
   const perf = (window.__perf = { loaf: [], longtasks: [] });
   try {
@@ -52,10 +49,8 @@ export class Probe {
     await this.cdp.send("Profiler.setSamplingInterval", { interval: 200 });
   }
 
-  /// The bus worker's own DevTools session (once the page spawned it):
-  /// the capability modules run there, so their CPU is profiled there.
-  /// Attached through the browser session, unflattened — Playwright's
-  /// CDP sessions reach pages, not workers.
+  // Playwright's CDP sessions reach pages, not workers, so this attaches
+  // through the browser session, unflattened.
   async worker() {
     if (this.bus) return this.bus;
     const browser = await this.page.context().browser().newBrowserCDPSession();
@@ -97,17 +92,14 @@ export class Probe {
     };
   }
 
-  /// Memory after a full collection: the V8 heap, the array buffers
-  /// outside it, each module instance's linear memory, the DOM.
   async memory() {
     await this.cdp.send("HeapProfiler.collectGarbage");
     const heap = await this.cdp.send("Runtime.getHeapUsage");
     const { metrics } = await this.cdp.send("Performance.getMetrics");
     const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
-    // Per MODULE INSTANCE (a linked assembly answers several
-    // capabilities from one linear memory — counted once): keyed by
-    // the instance ("ui:<id>" or "cap:<id>"), read through any
-    // capability that answers there.
+    // A linked assembly answers several capabilities from one linear
+    // memory, so memory is counted once per instance, keyed "ui:<id>" or
+    // "cap:<id>".
     const wasm = await this.page.evaluate(async () => {
       if (!window.__bus) return {};
       const caps = await window.__bus.caps();
@@ -134,7 +126,6 @@ export class Probe {
       arrayBuffersMB: round((heap.backingStorageSize ?? 0) / MB),
       wasmMB: round(wasmTotal / MB),
       wasmByCapMB: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, round(v.memory / MB)])),
-      /// Per module: documents held (every registry) and instance resets.
       heldByCap: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, v.held])),
       resetsByCap: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, v.resets])),
       domNodes: m.Nodes,
@@ -148,8 +139,6 @@ export class Probe {
     return s;
   }
 
-  /// One measured step: wall time, main-thread time, long frames, a
-  /// CPU profile (saved, and summarized by self time), memory after.
   async step(name, fn, { profile = true } = {}) {
     await this.page.evaluate(() => {
       window.__perf.loaf.length = 0;
@@ -212,11 +201,9 @@ export class Probe {
   }
 }
 
-/// Self time per function and per bucket (a capability module's crate,
-/// a JS bundle file, the engine's own work) from a sampled profile.
-/// `(program)` — native main-thread work V8 cannot attribute (in
-/// headless Chromium mostly the software-WebGL map) — is reported
-/// apart from the attributed busy time.
+// `(program)` is native main-thread work that V8 cannot attribute, mostly
+// the software-WebGL map in headless Chromium. It is reported apart from
+// the attributed busy time.
 export function summarize(profile) {
   const byId = new Map(profile.nodes.map((n) => [n.id, n]));
   const self = new Map();
@@ -245,10 +232,9 @@ export function summarize(profile) {
   return { busyMs: ms(total), programMs: ms(program), buckets: sorted(buckets, 12), functions: sorted(fns, 20) };
 }
 
-/// A Rust v0 symbol (`_RNvNtCs…_4sha26sha25611compress256`) as its
-/// path's identifiers (`sha2::sha256::compress256`) — enough to read
-/// and bucket, not a full demangler (generic arguments flatten into
-/// the path). Anything else passes through.
+// Turns a Rust v0 symbol such as `_RNvNtCs…_4sha26sha25611compress256` into
+// its path (`sha2::sha256::compress256`). It is not a full demangler:
+// generic arguments flatten into the path.
 export function demangle(sym) {
   if (!sym.startsWith("_R")) return sym;
   const s = sym.slice(2);
@@ -279,7 +265,7 @@ export function demangle(sym) {
 function bucketOf(fn, url) {
   if (!url) return fn.startsWith("(") ? fn : "native";
   if (url.startsWith("wasm://")) {
-    // The name section names Rust paths: the crate is the bucket.
+    // The name section holds Rust paths, so the crate is the bucket.
     const crate = /^([A-Za-z_][A-Za-z0-9_]*)::/.exec(fn)?.[1];
     return crate ? `wasm:${crate}` : `wasm:${fn}`;
   }

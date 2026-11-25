@@ -1,17 +1,11 @@
-// Where a map's camera starts and when it frames the whole network —
-// presentation rules, pure. They answer one question: what view will
-// the rider end up on? Every camera move before that view fetches
-// tiles that are thrown away, so a map opens on it when it is known
-// (the rider's last fix) and does not visit another on the way.
-// Nothing here is data the bus holds; no op reads it.
+// Every camera move before the final view fetches tiles that are thrown
+// away. A map therefore opens on the view when it is known (the rider's
+// last fix) and does not visit another on the way.
 
 export type Point = { lat: number; lon: number };
 export type Bounds = { minLon: number; minLat: number; maxLon: number; maxLat: number };
-/// MapLibre's camera: [lon, lat] and a zoom.
 export type View = { center: [number, number]; zoom: number };
 
-/// The zoom the map takes on the rider, a stop, or a spot — the
-/// street level the nearby list answers for.
 export const RIDER_ZOOM = 15.5;
 
 export function within(b: Bounds, p: Point): boolean {
@@ -30,8 +24,7 @@ export function boundsOf(points: Point[]): Bounds | null {
   return b;
 }
 
-/// The view over a whole archive: its center, zoomed to its width.
-/// Tiles exist only inside it, so a regional extract starts there.
+/// Tiles exist only inside the archive, so a regional extract starts there.
 export function archiveView(b: Bounds): View {
   return {
     center: [(b.minLon + b.maxLon) / 2, (b.minLat + b.maxLat) / 2],
@@ -39,13 +32,10 @@ export function archiveView(b: Bounds): View {
   };
 }
 
-/// Where a map opens. `archive` is the local tile archive's bounds,
-/// or null when the tiles are the world's (OpenFreeMap); `near` is
-/// the rider's last known fix, if any; `framed` is the view the
-/// network was last framed on, if the device remembers one. In that
-/// order, the first that tiles cover is the start (a view outside
-/// the archive would open on blank); else the archive's own view;
-/// else the world.
+/// `archive` is null when the tiles are the world's (OpenFreeMap). The
+/// first of `near` and `framed` that the tiles cover is the start,
+/// because a view outside the archive opens on blank. Otherwise the map
+/// opens on the archive's view, or on the world.
 export function startView(archive: Bounds | null, near: Point | null, framed: View | null = null): View {
   const covered = (p: Point) => !archive || within(archive, p);
   if (near && covered(near)) return { center: [near.lon, near.lat], zoom: RIDER_ZOOM };
@@ -53,10 +43,9 @@ export function startView(archive: Bounds | null, near: Point | null, framed: Vi
   return archive ? archiveView(archive) : { center: [0, 0], zoom: 1 };
 }
 
-/// Two views are the same when no pixel would move: the centers
-/// within half a pixel at that zoom (512-px tiles) and the zooms
-/// equal to a hundredth. A camera already on a view needs no move to
-/// it — and a move that changes nothing still repaints and refetches.
+/// Two views are the same when no pixel would move: centers within half
+/// a pixel at that zoom (512-px tiles), zooms within a hundredth. A move
+/// that changes nothing still repaints and refetches.
 export function sameView(a: View, b: View): boolean {
   const degPerPx = 360 / (512 * 2 ** a.zoom);
   const lat = Math.cos((a.center[1] * Math.PI) / 180);
@@ -67,12 +56,8 @@ export function sameView(a: View, b: View): boolean {
   );
 }
 
-/// Whether the map frames the whole network now. It is the answer
-/// only when nothing better is known: there are stops to frame; no
-/// fix is pending (the camera will go to the rider); the rider is not
-/// somewhere already (a fix, a picked stop); and the camera did not
-/// start inside the network (a last fix that is still where the rider
-/// is — one outside it is stale, and the network is the useful view).
+/// A last fix outside the network is stale, so the network is then the
+/// useful view. A pending fix or a known rider position wins over it.
 export function shouldFrameNetwork(a: {
   stops: Bounds | null;
   start: Point | null;

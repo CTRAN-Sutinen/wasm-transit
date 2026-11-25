@@ -1,21 +1,16 @@
 package main
 
 // The stops log over HTTP (D-190, D-197, D-198; logkinds.go, cap-stops
-// receive): the
-// laws a writer relies on.
+// receive). The properties a writer relies on:
 //
-//  1. Two writers who change different stops both land (no 409); one
-//     who corrects an event another writer changed since gets a 409
-//     naming the event.
-//  2. Completing a request and adding its stop's event is one entry
-//     with both kinds.
+//  1. Two writers who change different stops both land. A writer who
+//     corrects an event another writer changed since gets a 409 naming
+//     the event.
+//  2. Completing a request and adding its stop's event is one entry.
 //  3. A write sent again with its key lands once.
-//  4. A refused op names itself; nothing is written.
-//  5. A store with the old stops and stop_requests pointers gets the
-//     log's first entry from their heads; the pointers stay.
-//  6. A restarted server serves the same documents; GET /logs/stops
-//     answers the entries; a revert puts the stops back, and takes out
-//     what the entry created.
+//  4. A refused op names itself, and nothing is written.
+//  5. An empty log's first entry comes from the old pointers' heads.
+//  6. A revert puts the stops back and takes out what the entry created.
 
 import (
 	"context"
@@ -28,8 +23,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// newStopsLogServer is a store-mode server with both of the stops log's
-// modules, over a bucket, and its routes.
 func newStopsLogServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, b)
@@ -43,7 +36,6 @@ func newStopsLogServer(t *testing.T, b store.Backend) (*server, string) {
 	return s, srv.URL
 }
 
-// opsPost is POST /logs/stops.
 func opsPost(t *testing.T, base, key string, ops ...map[string]any) (int, map[string]any) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{"key": key, "ops": ops})
@@ -60,7 +52,6 @@ func addEvent(stop string, event map[string]any) map[string]any {
 	return map[string]any{"cap": "stops", "op": "add_event", "args": map[string]any{"stop_id": stop, "event": event}}
 }
 
-// stopsDocNow is the stops document the server holds.
 func stopsDocNow(t *testing.T, s *server) (string, map[string][]map[string]any) {
 	t.Helper()
 	hash, doc, found, err := s.keptHead("stops")
@@ -79,7 +70,6 @@ func TestTwoWritersOfDifferentStopsBothLandAndOneEventConflicts(t *testing.T) {
 	if code, out := postStops(t, base, "", seededStops(t)); code != 200 {
 		t.Fatalf("the stops: %d %v", code, out)
 	}
-	// Both writers read the same head, then write different stops: no 409.
 	if code, out := opsPost(t, base, "tablet-1/1", addEvent("A", map[string]any{"on": "2026-09-01", "event": "changed", "note": "bench fixed"})); code != 200 {
 		t.Fatalf("writer 1: %d %v", code, out)
 	}
@@ -91,7 +81,6 @@ func TestTwoWritersOfDifferentStopsBothLandAndOneEventConflicts(t *testing.T) {
 		t.Fatalf("both landed: %v %v", stops["A"], stops["B"])
 	}
 
-	// Two writers correct one event: the second read it before the first.
 	event := stops["A"][len(stops["A"])-1]
 	saw, err := canonicalHashOf(event)
 	if err != nil {
@@ -172,8 +161,8 @@ func TestAKeyLandsOnceAndARefusalNamesItsOp(t *testing.T) {
 	if code != http.StatusBadRequest || out["op"] != float64(1) || !strings.Contains(out["error"].(string), "e-none") {
 		t.Fatalf("the second op is named: %d %v", code, out)
 	}
-	// A resend whose op would no longer pass over the head it changed
-	// (a suspension of a stop it suspended) still lands once.
+	// A resend whose op would no longer pass over the head it changed still
+	// lands once.
 	suspend := addEvent("B", map[string]any{"on": "2026-09-04", "event": "suspended", "until": "2026-09-30", "note": "paving"})
 	_, sent := opsPost(t, base, "phone-9/43", suspend)
 	if code, resent := opsPost(t, base, "phone-9/43", suspend); code != 200 || resent["landed"] != true || resent["seq"] != sent["seq"] {
@@ -272,9 +261,8 @@ func TestARestartServesTheSameStopsAndARevertPutsThemBack(t *testing.T) {
 	}
 }
 
-// canonicalHashOf is a value's canonical hash, for a value of strings
-// only: Go encodes a map with its keys sorted and no space, which is the
-// value's canonical form (RFC 8785).
+// canonicalHashOf is the canonical hash of a value of strings only: Go
+// encodes a map with sorted keys and no space, which is RFC 8785.
 func canonicalHashOf(v any) (string, error) {
 	raw, err := json.Marshal(v)
 	return sha(raw), err
@@ -285,8 +273,6 @@ func itoa(n int64) string {
 	return string(b)
 }
 
-// A gap in the stops log stops its writes (503), and an entry that names
-// the cause lets them go on.
 func TestAGapInTheStopsLogStopsWritesUntilItsCauseIsNamed(t *testing.T) {
 	bucket := store.NewMemory()
 	_, base := newStopsLogServer(t, bucket)
@@ -308,9 +294,7 @@ func TestAGapInTheStopsLogStopsWritesUntilItsCauseIsNamed(t *testing.T) {
 	}
 }
 
-// A store whose old stop_requests pointer holds a v1 document seeds the
-// stops log with it brought forward: the head the log serves is v2,
-// and the request reads as it was written (D-234).
+// An old v1 stop_requests pointer seeds the log at the current version (D-234).
 func TestAnOldV1RequestsPointerSeedsTheLogAtTheCurrentVersion(t *testing.T) {
 	bucket := store.NewMemory()
 	v1 := []byte(`{"kind":"stop_requests","schema_version":1,"requests":{"R-1":{"stop":"6124","job":"repair_improve","status":"submitted","routes":["37"]}}}`)

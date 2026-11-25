@@ -1,42 +1,9 @@
-// The ride-now UI (src/uis/ride-now) — a generated UI for someone
-// taking a trip today: a map with a panel over it
-// (docs/architecture/generated-uis/ride-now.md).
-//
-// Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
-// Montreal; the browser in UTC, which never decides), the fixture feed,
-// the rider at Main Station, and its trip updates (sample-rt.pb: t10
-// +120 s at A, +180 s at B — served for every live feed URL):
-//
-//   1. Near you answers on open (directory `stops_near` + a board per
-//      place): the station first, its pooled bays' departures.
-//   2. The type-ahead answers as you type (directory `stops`), a typo
-//      included (D-48); a name no stop carries says how stops are
-//      named; Enter picks.
-//   3. The stop's board is realtime-first: t10 leaves 8:02, two
-//      minutes late (board `stop_board` over rt `live`).
-//   4. A saved stop answers on home (`watchlist_board`: the stop
-//      board, realtime-first — t10 at 8:02), and the stop is among the
-//      recent ones; it is still saved after a reload (the store's
-//      watchlist document).
-//   5. Directions: leaving now rides t10 at its prediction
-//      (`plan_compare`) — leave in 7 min, 11 min door to door (D-40) —
-//      the map draws the leg (`itinerary_paths`);
-//      the last bus leaves 8:40 and arriving by 8:35 rides route 20
-//      (`plan_arrive_by`).
-//   6. A detour in the edit document: the skipped stop's board says
-//      what no longer stops there; the trip to it carries the notice.
-//      A cancel of t10 (D-45): the board lists its 8:00 as cancelled,
-//      not as a departure (the router's law pins that plans never ride
-//      it: cap-router `a_cancelled_trip_is_never_ridden`).
-//   7. A capability that fails to load turns its frames off, and they
-//      say so; the rest answers.
-//   8. The network: the routes filter by long name (directory
-//      `entities`); a route lists its directions' variants
-//      (`route_detail`); a picked departure's bus is tracked stop by
-//      stop (rt `trip_progress`, its stops named by `stops_by_ids`).
-//
-// The live feeds and the edit document are served by the test (the
-// shared e2e server holds other specs' edits).
+// The ride-now UI (src/uis/ride-now; docs/architecture/generated-uis/ride-now.md).
+// The time is Friday 2026-10-23 at 07:55 in America/Montreal. The trip updates
+// (sample-rt.pb) put t10 at +120 s at A and +180 s at B, for every live feed
+// URL. The test serves the live feeds and the edit document, because the shared
+// e2e server holds other specs' edits. cap-router's
+// `a_cancelled_trip_is_never_ridden` pins that plans never ride a cancel (D-45).
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -96,7 +63,6 @@ async function open(page, { edits = [], staleAsOf = null, editsVersion = 2 } = {
   await expect(page.getByLabel("stop name")).toBeVisible({ timeout: 10_000 });
 }
 
-/// Type into a stop field and pick the first answer with Enter.
 async function pick(page, field, text, name) {
   const input = page.getByLabel(field, { exact: true });
   await input.fill(text);
@@ -107,24 +73,20 @@ async function pick(page, field, text, name) {
 test("ride now answers near me, a stop, a save, and a trip", async ({ page }) => {
   await open(page);
 
-  // The live feeds the deployment names are read on open.
   await expect(page.getByTestId("live-feeds")).toContainText("Live");
 
-  // 1. Near you: the station first, its bays pooled.
   const nearby = page.getByTestId("nearby");
   const first = nearby.getByTestId("stop-card").first();
   await expect(first).toContainText("Main Station");
   await expect(first).toContainText("8:15");
 
-  // 2. The type-ahead, a typo it still answers (D-48), and a name no
-  // stop carries.
+  // The type-ahead answers a typo (D-48).
   await page.getByLabel("stop name").fill("mian 2nd");
   await expect(page.getByRole("option").first()).toContainText("Main & 2nd");
   await page.getByLabel("stop name").fill("zebra crossing");
   await expect(page.getByRole("listbox")).toContainText("No stop is named “zebra crossing”");
   await pick(page, "stop name", "main 1s", "Main & 1st");
 
-  // 3. The board, realtime-first.
   const board = page.getByTestId("rider-board");
   await expect(board.locator("h2")).toHaveText("Main & 1st");
   const row = board.getByTestId("board-rows").locator("li").first();
@@ -133,7 +95,6 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await expect(row.locator("[data-status]")).toHaveAttribute("data-status", "late");
   await expect(board).toContainText("Live predictions");
 
-  // 4. Save it; home shows it with its departures, and as recent.
   await board.getByRole("button", { name: "Save this stop" }).click();
   await expect(board.getByRole("button", { name: "Remove from saved" })).toBeVisible();
   await board.getByRole("button", { name: "back" }).click();
@@ -144,7 +105,6 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   const recent = page.getByTestId("recent").getByRole("button", { name: "Main & 1st" });
   await expect(recent).toBeVisible();
 
-  // 5. Directions from the stop: leaving now rides t10 at 8:02.
   await recent.click();
   await board.getByRole("button", { name: "Directions from here" }).click();
   const trip = page.getByTestId("trip-plan");
@@ -154,8 +114,7 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await expect(it).toContainText("8:02");
   await expect(it).toContainText("2 min late");
   await expect(it).toContainText("Arrive Main & 2nd at 8:13 am");
-  // Door to door (D-40): leave at the boarding, 11 minutes to 8:13,
-  // and "leave in" by the board's wait rule from 07:55.
+  // Door to door (D-40).
   await expect(trip.getByTestId("duration")).toHaveText("11 min");
   await expect(trip.getByTestId("leave")).toHaveText("Leave in 7 min");
   await expect(page.getByTestId("ride-map")).toHaveAttribute("data-legs", "1");
@@ -168,9 +127,7 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await trip.locator("input[type=time]").fill("08:35");
   await expect(it).toContainText("Arrive Main & 2nd at 8:30 am");
 
-  // One linked module (D-77): every capability the session asked —
-  // the board, the directory, rt, the router — answers in ride-now's
-  // assembly, and the network they all read is held once.
+  // One linked module answers every capability, and holds the network once (D-77).
   const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
   const caps = await bus("caps");
   expect(caps).toEqual(expect.arrayContaining(["board", "directory", "rt", "router"]));
@@ -186,7 +143,6 @@ test("ride now keeps saved stops across a reload", async ({ page }) => {
   await board.getByRole("button", { name: "Save this stop" }).click();
   await expect(board.getByRole("button", { name: "Remove from saved" })).toBeVisible();
 
-  // The watchlist document is the store's: it survives the visit.
   await page.reload();
   await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
   const saved = page.getByTestId("saved");
@@ -194,9 +150,7 @@ test("ride now keeps saved stops across a reload", async ({ page }) => {
   await expect(saved).toContainText("8:02");
 });
 
-/// Seed the device as an older build left it: a document store record
-/// in IndexedDB (idb-keyval's default store) and keys in localStorage,
-/// written before the page's own scripts run.
+/// Writes idb-keyval's default store and localStorage before the page's own scripts run.
 async function seedDevice(page, { documents, local }) {
   await page.goto("/manifest");
   await page.evaluate(
@@ -218,7 +172,6 @@ async function seedDevice(page, { documents, local }) {
   );
 }
 
-/// The device's document store and localStorage, as the page left them.
 async function readDevice(page) {
   return page.evaluate(
     () =>
@@ -239,8 +192,7 @@ function storedWatchlist(bytes) {
   return { kinds: { watchlist: { records: { "sha256:old": { hash: "sha256:old", version: 2, bytes } }, current: "sha256:old" } } };
 }
 
-// A device an older build wrote boots into the tagged documents, and
-// keeps what it had (docs/FORMATS.md, "Versions").
+// docs/FORMATS.md, "Versions".
 test("ride now boots an older device into its tagged documents, keeping the old records", async ({ page }) => {
   await seedDevice(page, {
     documents: storedWatchlist(JSON.stringify({ version: "v2", stops: [{ id: "A", label: "home" }] })),
@@ -251,11 +203,10 @@ test("ride now boots an older device into its tagged documents, keeping the old 
   });
   await open(page);
 
-  // A watchlist from before its tags reads as v2: the saved stop answers.
+  // A watchlist from before its tags reads as v2.
   const saved = page.getByTestId("saved");
   await expect(saved).toContainText("home");
   await expect(saved).toContainText("8:02");
-  // The recent places moved in from localStorage.
   await expect(page.getByTestId("recent").getByRole("button", { name: "Main & 2nd" })).toBeVisible();
 
   const { documents, local } = await readDevice(page);
@@ -275,8 +226,7 @@ test("ride now brings an older saved-stops record forward, keeping the old one",
   const v1 = JSON.stringify({ version: "v1", stops: [{ id: "A", note: "home", color: "red" }] });
   await seedDevice(page, { documents: storedWatchlist(v1), local: {} });
   await open(page);
-  // The board refuses v1; the migration brings it forward (the note is
-  // the label), and the saved stop answers.
+  // The board refuses v1, and the migration brings it forward.
   const saved = page.getByTestId("saved");
   await expect(saved).toContainText("home");
   await expect(saved).toContainText("8:02");
@@ -312,11 +262,8 @@ test("ride now lists a cancelled trip as cancelled, never as a departure", async
 });
 
 test("ride now refuses an edit document a newer build wrote, never reading it as its own", async ({ page }) => {
-  // After a rollback, a page can meet data a newer build wrote (D-79,
-  // D-186). Its module refuses it, naming both versions: the board says
-  // so, shows none of that document's detours as its own, and nothing
-  // is written. (The refusal's request for the deployment's build is
-  // src/versions.test.mjs.)
+  // After a rollback a page can meet data that a newer build wrote (D-79, D-186).
+  // src/versions.test.mjs covers the refusal's request for the deployment's build.
   const posts = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/edits")) posts.push(request.url());
@@ -330,13 +277,11 @@ test("ride now refuses an edit document a newer build wrote, never reading it as
 });
 
 test("ride now degrades frame by frame when a capability fails to load", async ({ page }) => {
-  // The page's linked assembly does not load (one module: its failure
-  // is every capability's — D-77), so each capability falls back to
-  // its own module, and two of those fail too.
+  // The linked assembly's failure is every capability's, so each falls back to
+  // its own module (D-77). Two of those fail too.
   await page.route(/\/caps\/(ui-ride-now|board|router)-[0-9a-f]+\.wasm$/, (route) => route.abort());
   await open(page);
 
-  // Search still answers; the board says it is unavailable.
   await pick(page, "stop name", "main 1", "Main & 1st");
   await expect(page.getByTestId("rider-board")).toContainText("Departures are unavailable right now");
 
@@ -348,7 +293,6 @@ test("ride now degrades frame by frame when a capability fails to load", async (
 test("ride now explores the routes and tracks a bus", async ({ page }) => {
   await open(page);
 
-  // The routes, filtered by the long name a list shows.
   await page.getByRole("button", { name: "Routes" }).click();
   const list = page.getByTestId("route-list");
   await expect(list.locator("li")).toHaveCount(3);
@@ -356,14 +300,12 @@ test("ride now explores the routes and tracks a bus", async ({ page }) => {
   await expect(list.locator("li")).toHaveCount(1);
   await expect(list).toContainText("Downtown via Main");
 
-  // Route 10 runs two different shapes (A→B, and A→C→B): two variants.
   await list.locator("li button").first().click();
   const route = page.getByTestId("route-view");
   await expect(route.getByTestId("route-variant")).toHaveCount(2);
   await expect(route.getByTestId("route-variant").first()).toContainText("Main & 1st → Main & 2nd");
   await expect(route.getByTestId("route-variant").nth(1)).toContainText("via Main & 3rd");
 
-  // A place on the route opens its board; t10's bus is reporting.
   await route.getByRole("button", { name: "Main & 1st" }).first().click();
   const board = page.getByTestId("rider-board");
   await board.getByTestId("board-rows").locator("li button").first().click();
@@ -381,8 +323,7 @@ test("ride now explores the routes and tracks a bus", async ({ page }) => {
   await expect(stops.nth(1)).toContainText("8:13");
 });
 
-// D-119: the edit document the server serves from its cache while its
-// store does not answer is labelled with its age; ride now says so.
+// D-119.
 test("ride now says how old detours are while the server's store is not answering", async ({ page }) => {
   await open(page, { staleAsOf: new Date("2026-10-23T07:40:00-04:00").getTime() });
   await expect(page.getByTestId("ride-stale")).toContainText("Detours as of 7:40");

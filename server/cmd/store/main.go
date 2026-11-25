@@ -1,6 +1,5 @@
-// Command store runs the sync store's offline tools (docs/FORMATS.md;
-// server/store), with no server. Only verify runs a module: cap-log, to
-// fold the logs' checkpoints.
+// Command store runs the sync store's offline tools (docs/FORMATS.md),
+// with no server. Only verify and revert run cap-log.
 //
 //	store verify [-log M] <url>   read the whole store; exit 1 on the first break.
 //	                              Each log's checkpoints are compared with the
@@ -113,8 +112,8 @@ func main() {
 	}
 }
 
-// logModule is cap-log (D-197), loaded on first use, so a store with no
-// checkpoint and no existence check needs no module.
+// logModule loads cap-log on first use, so a store with no checkpoint and
+// no existence check needs no module (D-197).
 type logModule struct {
 	ctx  context.Context
 	path string
@@ -132,7 +131,6 @@ func (m *logModule) load(why string) (*wasmhost.Host, error) {
 	return m.host, nil
 }
 
-// fold answers a log's fold through cap-log.
 func (m *logModule) fold(log string, checkpoint []byte, entries []store.StoredEntry) ([]byte, error) {
 	host, err := m.load("folds the " + log + " log")
 	if err != nil {
@@ -151,14 +149,13 @@ func (m *logModule) fold(log string, checkpoint []byte, entries []store.StoredEn
 	return []byte(ans.Checkpoint), nil
 }
 
-// folder answers each log's fold through cap-log.
 func folder(ctx context.Context, logPath string) store.LogFolder {
 	m := &logModule{ctx: ctx, path: logPath}
 	return m.fold
 }
 
-// references is the existence check through cap-log's references op,
-// over the kind table's bytes (D-233).
+// references runs cap-log's references op over the kind table's bytes
+// (D-233).
 func (m *logModule) references(table []byte) store.ReferenceChecker {
 	return func(heads map[string][]byte, entries map[string][]store.StoredEntry) (*store.ReferenceFindings, error) {
 		kinds, err := tableKinds(table)
@@ -187,7 +184,6 @@ func (m *logModule) references(table []byte) store.ReferenceChecker {
 	}
 }
 
-// tableKinds are a kind table's kinds, as cap-log reads them.
 func tableKinds(table []byte) (json.RawMessage, error) {
 	var t struct {
 		Kinds json.RawMessage `json:"kinds"`
@@ -198,7 +194,6 @@ func tableKinds(table []byte) (json.RawMessage, error) {
 	return t.Kinds, nil
 }
 
-// recordsOf are a fold's records (a checkpoint's), by log.
 func recordsOf(heads map[string][]byte) (map[string]json.RawMessage, error) {
 	folds := map[string]json.RawMessage{}
 	for log, head := range heads {
@@ -213,8 +208,8 @@ func recordsOf(heads map[string][]byte) (map[string]json.RawMessage, error) {
 	return folds, nil
 }
 
-// naming are the records of every log's head that name one of the
-// dropped commits' documents by hash (cap-log naming, D-233).
+// naming answers the head records that name a dropped commit's document
+// by hash (cap-log naming, D-233).
 func (m *logModule) naming(b store.Backend, table []byte, dropped []store.LogEntry) ([]json.RawMessage, error) {
 	kinds, err := tableKinds(table)
 	if err != nil {

@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// settings are the server's flags. Each is set, in order of precedence, on
-// the command line, in a -config file (config.go), or by its default here.
+// Precedence: the command line, then a -config file (config.go), then
+// the default here.
 type settings struct {
 	configs        configList
 	addr           *string
@@ -55,7 +55,6 @@ type settings struct {
 	feedURL        *string
 }
 
-// serverFlags registers the server's flags on fs.
 func serverFlags(fs *flag.FlagSet) *settings {
 	defaultAddr := "127.0.0.1:8080"
 	if os.Getenv("KO_DATA_PATH") != "" {
@@ -109,8 +108,8 @@ func serverFlags(fs *flag.FlagSet) *settings {
 	return f
 }
 
-// moduleFlags are the flags that each name one capability's module, by
-// capability id. A capability that has none reads -modules only.
+// moduleFlags maps a capability id to the flag that names its module. A
+// capability with no flag reads -modules only.
 func (f *settings) moduleFlags() map[string]*string {
 	return map[string]*string{
 		"sync": f.wasmPath, "network": f.networkWasm, "streets": f.streetsWasm,
@@ -120,8 +119,6 @@ func (f *settings) moduleFlags() map[string]*string {
 	}
 }
 
-// module is where a capability's module is: the file its own flag
-// names, else cap_<id>.wasm in -modules.
 func (f *settings) module(id string) string {
 	if p := f.moduleFlags()[id]; p != nil && *p != "" {
 		return *p
@@ -129,7 +126,6 @@ func (f *settings) module(id string) string {
 	return moduleIn(*f.modulesDir, id)
 }
 
-// moduleIn is a capability's module in a folder of modules.
 func moduleIn(dir, id string) string {
 	return filepath.Join(dir, "cap_"+id+".wasm")
 }

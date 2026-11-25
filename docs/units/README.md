@@ -110,7 +110,7 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [plain-comments.md](plain-comments.md) | the code comments rewritten to the writing rules and made shorter, with a guard on each file and a lint in `just test` |
+| [plain-comments.md](plain-comments.md) | the developer documents brought to the writing rules that the code comments now follow |
 
 ## Queued, not yet scoped
 

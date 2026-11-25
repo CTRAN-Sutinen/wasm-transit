@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The whole network on a map (cap-directory `route_lines`): every
-  /// route the day type runs, the routes this plan changed drawn in
-  /// the accent, the open route on top. A click on a line opens its
-  /// route. A RENDER component: the lines come in as props; the map
-  /// computes no geometry (`mapview.ts` only reorders coordinates).
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -88,7 +83,6 @@
   $effect(() => {
     if (!loaded || !map) return;
     (map.getSource("routes") as maplibregl.GeoJSONSource).setData(features(routes, changed, selected) as any);
-    // Frame the network once; after that the planner's view stays.
     if (framed) return;
     const coords = routes.flatMap((r) => r.lines.flat());
     if (coords.length === 0) return;

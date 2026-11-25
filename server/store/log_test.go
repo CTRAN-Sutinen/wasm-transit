@@ -1,16 +1,14 @@
 package store
 
-// The laws of the append-only logs (D-190; log.go), over every backend
-// (contract_test.go):
+// The properties of the append-only logs (D-190; log.go), over every
+// backend (contract_test.go):
 //
-//  1. entries chain from 1 with no gap under racing writers, and a lost
-//     race retries and lands;
+//  1. entries chain from 1 with no gap under racing writers;
 //  2. a second process over the same bucket sees the entries;
-//  3. a checkpoint is create only: the same bytes again succeed, other
-//     bytes are refused, and a fresh process starts its listing there;
+//  3. a checkpoint is create only, and a fresh process starts its
+//     listing there;
 //  4. a gap stops writes, and an entry at the missing seq closes it;
-//  5. the read-back after a create catches a store that overwrote the
-//     entry.
+//  5. the read-back after a create catches a store that overwrote it.
 
 import (
 	"context"
@@ -24,8 +22,8 @@ func entry(seq int64, who string) []byte {
 	return []byte(fmt.Sprintf(`{"kind":"log_entry","log":"disruptions","seq":%d,"writer":%q}`, seq, who))
 }
 
-// appendRetrying is a writer's loop: read the head, create the next
-// entry, and on a lost race read again and retry (rule 2).
+// appendRetrying reads the head, creates the next entry, and retries a lost race
+// (rule 2).
 func appendRetrying(t *testing.T, s *Store, who string) int64 {
 	for attempt := 0; attempt < 200; attempt++ {
 		head, err := s.LogHeadOf("disruptions")
@@ -118,7 +116,6 @@ func TestALostRaceIsAConflictAndLeavesTheWinner(t *testing.T) {
 		if seq := appendRetrying(t, s, "alice"); seq != 2 {
 			t.Fatalf("the retry lands at 2, got %d", seq)
 		}
-		// A seq past the head is refused: entries never skip.
 		if err := s.AppendEntry("disruptions", 9, entry(9, "x")); !errors.As(err, &ce) {
 			t.Fatalf("a seq past the head: %v", err)
 		}
@@ -159,7 +156,6 @@ func TestAGapStopsWritesUntilAnEntryClosesIt(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			appendRetrying(t, s, "w")
 		}
-		// Someone deletes entry 2 by hand.
 		if err := b.Delete(context.Background(), entryKey("disruptions", 2)); err != nil {
 			t.Fatal(err)
 		}
@@ -184,8 +180,8 @@ func TestAGapStopsWritesUntilAnEntryClosesIt(t *testing.T) {
 	})
 }
 
-// overwriting is a store that ignores the create condition: every
-// read of an entry answers other bytes.
+// overwriting ignores the create condition, so every read of an entry answers
+// other bytes.
 type overwriting struct{ Backend }
 
 func (o overwriting) Get(ctx context.Context, key string) ([]byte, map[string]string, error) {

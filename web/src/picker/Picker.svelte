@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The front door: every generated UI (each `src/uis/<id>/ui.json`,
-  /// discovered at build time) with the questions it answers. RENDER
-  /// only — the list is data
-  /// the build carries; nothing here calls the bus.
   type Ui = {
     id: string;
     title: string;

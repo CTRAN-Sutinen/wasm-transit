@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// What a rider would see with the alert published: one stop's board
-  /// (board `stop_board` over a live document whose alerts are the
-  /// agency's feed encoded with this one: rt `encode_alerts`), with its
-  /// alerts on top. The encoded feed downloads as a .pb file. A RENDER
-  /// component.
   import AlertList from "./AlertList.svelte";
   import DepartureRows from "./DepartureRows.svelte";
   import RouteStopSearch from "./RouteStopSearch.svelte";
@@ -28,7 +23,6 @@
     board: StopBoard | null;
     routes: DirectoryRoute[];
     canDownload: boolean;
-    /// Why the preview has no answer ("" when it has one).
     off: string;
     query: string;
     found: { routes: EntityRow[]; stops: DirectoryStop[] } | null;

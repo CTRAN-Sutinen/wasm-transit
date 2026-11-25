@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// One stop, live — a RENDER component over cap-board's `stop_board`:
-  /// the service alerts about it on top, its departures realtime-first
-  /// (each with the expected time and its status under the live
-  /// document's window), and what the day's edits took away from it —
-  /// a detour skipping it, a trip cancelled (each skipped visit names
-  /// its `diversion` or `cancel`). Picking
-  /// a departure is an event (the map draws its route and its bus).
   import type { StopBoard } from "../types/StopBoard";
   import type { BoardRow } from "../types/BoardRow";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
@@ -34,16 +27,12 @@
     name: string;
     stopId: string;
     board: StopBoard | null;
-    /// Asking the board failed (the capability loaded).
     error: string;
     routes: DirectoryRoute[];
-    /// The board capability did not assemble.
     off: boolean;
-    /// The realtime capability did not assemble.
     liveOff: boolean;
     saved: boolean;
     picked: { trip: string; start_secs: number } | null;
-    /// The picked departure's bus, when it is reporting.
     tracked: { label: string } | null;
     onpick: (row: BoardRow) => void;
     ontrack: () => void;

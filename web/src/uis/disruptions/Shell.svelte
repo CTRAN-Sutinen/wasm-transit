@@ -1,14 +1,4 @@
 <script lang="ts">
-  /// The disruptions UI's layout: PLACEMENT ONLY. A bar across the top
-  /// (the name, the agency's date and clock, the views, whether the
-  /// times are live, sign-in) over a panel beside a large map. The
-  /// panel shows the open disruption, else the view: Status (the search
-  /// and the affected routes) or Dispatch (late now, detours, cancelled
-  /// trips, today's notes), or Alerts (the disruptions with no alert,
-  /// and the agency's alerts). An alert being written takes half the
-  /// page, beside what riders see of it (its reach, entity by entity,
-  /// and its map); the rider's board opens in a dialog. Every value is the host's
-  /// (host.svelte.ts).
   import {
     dz,
     setView,

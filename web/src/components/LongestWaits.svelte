@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// Where riders wait longest (analysis `longest_waits`): every stop
-  /// ranked by its longest wait for the next departure on the group's
-  /// day — inside the hour window when one is set, counting the wait
-  /// from the window's start and to its end. A stop opens its hub.
   import type { StopWait } from "../types/StopWait";
   import { clock } from "./designFormat";
 

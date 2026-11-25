@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// One stop as the network holds it (cap-directory `stop_detail`):
-  /// its record — name, code, point, station, transfer, access, fare
-  /// zone — and every pattern that visits it, by route, with the trips
-  /// each runs under the day type. A visit opens its route. A RENDER
-  /// component: the detail comes in as a prop; formatting only.
   import type { StopDetail } from "../types/StopDetail";
   import type { StopVisit } from "../types/StopVisit";
 
@@ -16,9 +11,7 @@
   }: {
     stopId: string;
     detail: StopDetail;
-    /// The parent station's name, when the stop is a bay of one.
     stationName: string | null;
-    /// The day type the trips are counted under.
     groupName: string;
     onvisit: (route: string, direction: string | null) => void;
   } = $props();
@@ -26,7 +19,6 @@
   const s = $derived(detail.stop);
   const access = $derived(s.info?.wheelchair == null ? "not recorded" : s.info.wheelchair ? "yes" : "no");
 
-  /// The visits by route, in the answer's order.
   const byRoute = $derived.by(() => {
     const out: { route: string; name: string; visits: StopVisit[] }[] = [];
     for (const v of detail.visits) {

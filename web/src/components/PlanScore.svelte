@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The proposal across every day type (analysis `plan_compare`):
-  /// each type's regular service before → after, the routes it
-  /// changes, and the other combinations of the type with theirs.
-  /// A day type opens it.
   import type { DayTypeComparison } from "../types/DayTypeComparison";
   import { change, count, fixed, weekdaysText } from "./designFormat";
 

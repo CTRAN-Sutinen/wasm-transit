@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The change gesture on one pattern's trips: its departures as the
-  /// document holds them, one trip added or removed per click. RENDER
-  /// only — each click is an event the host turns into a NetworkEdit
-  /// (cap-author `add_start` / `remove_start`, which own the +10 min
-  /// placement and the one-start-stays rule).
   let {
     scheduleId,
     starts,

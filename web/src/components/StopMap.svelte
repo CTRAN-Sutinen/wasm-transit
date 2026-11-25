@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// Every stop of the plan on a map (cap-directory `stops`), over the
-  /// network's lines (cap-directory `route_lines`) drawn quietly for
-  /// orientation; the open stop marked. A click on a stop opens it. A
-  /// RENDER component: the stops and lines come in as props; the map
-  /// computes no geometry (`mapview.ts` only reorders coordinates).
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -94,7 +89,6 @@
     if (!loaded || !map) return;
     (map.getSource("stops") as maplibregl.GeoJSONSource).setData(stopsFeatures(stops) as any);
     (map.getSource("lines") as maplibregl.GeoJSONSource).setData(lineCollection(lines) as any);
-    // Frame the stops once; after that the planner's view stays.
     if (framed || stops.length === 0) return;
     const first: [number, number] = [stops[0].lon, stops[0].lat];
     const bounds = stops.reduce((b, s) => b.extend([s.lon, s.lat]), new maplibregl.LngLatBounds(first, first));
@@ -102,8 +96,6 @@
     framed = true;
   });
 
-  // The open stop marked, and brought into view when it is off screen
-  // (opened from the search box).
   $effect(() => {
     if (!loaded || !map) return;
     map.setFilter("stop-open", ["==", ["get", "stop_id"], selected]);

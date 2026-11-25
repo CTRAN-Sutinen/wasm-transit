@@ -1,25 +1,14 @@
 package main
 
-// The plans log (D-190, D-191): the record of freezing and adopting.
-// Its receive op writes it (logkinds.go; cap-plans `receive`): the
-// published plan set (`plans`, from `pick` records), which the manifest
-// pins as plans_hash, and the frozen versions (`frozen_versions`, from
-// `frozen_version` records). The host decides nothing.
+// The plans log (D-190, D-191). Its receive op writes the published plan
+// set (`plans`), which the manifest pins as plans_hash, and the frozen
+// versions (`frozen_versions`). The routes are in server/openapi.json.
 //
-// Every write is one entry:
-//
-//	POST /plans/freeze?purpose=<what it is>   body: a network document
-//	                  200 {plan_id, network_hash, frozen_versions_hash, seq, warnings}
-//	POST /plans/adopt  body: {"network_hash": "<a frozen version>"}
-//	                  200 {plan_id, network_hash, plans_hash, seq, warnings}
-//	POST /plans        the freeze and the adoption in one entry (plans.go)
-//	POST /plans/retire a pick that has not taken effect (plans.go)
-//
-// A frozen network is the head of its plan's plan.<id> pointer when it
-// is frozen, so the store keeps every version. The documents are served
-// by hash from /blobs. The old `plans` pointer stays in the bucket, read
-// only, and seeds the log once (seedKept). A page never writes the plans
-// log by intent: a freeze stores its network first.
+// A frozen network is the head of its plan's plan.<id> pointer, so the
+// store keeps every version. The old `plans` pointer stays in the
+// bucket, read only, and seeds the log once (seedKept). A page never
+// writes the plans log by intent, because a freeze stores its network
+// first.
 
 import (
 	"context"
@@ -32,7 +21,6 @@ import (
 	"rustwasm/server/store"
 )
 
-// orNull is a document's bytes, or JSON null when there is none.
 func orNull(doc []byte) json.RawMessage {
 	if len(doc) == 0 {
 		return json.RawMessage("null")
@@ -40,10 +28,9 @@ func orNull(doc []byte) json.RawMessage {
 	return json.RawMessage(doc)
 }
 
-// pickWritten is what a pick's write answers: the pick's plan id and
-// network, the entry's seq, the warnings (the network's, then the stops
-// it visits that are not in service), and the fields the network
-// carries that this build does not know (D-167).
+// warnings holds the network's warnings, then the stops it visits that
+// are not in service. unknownFields names the fields that this build
+// does not know (D-167).
 type pickWritten struct {
 	planID        string
 	networkHash   string
@@ -52,14 +39,10 @@ type pickWritten struct {
 	unknownFields []string
 }
 
-// writePick writes a received network to the plans log as a pick, in one
-// op of cap-plans' receive (`pick`, D-237): the network's publish check,
-// the stops it reads when adopted (D-157), the freeze under purpose (""
-// = none), and the adoption. The module registers the network and the
-// stops document on its kernel loads. The network is stored as the head
-// of plan.<id> before the entry, so a frozen version is always stored.
-// The routes checked the write rule, so none is asked here. An error is
-// the server's; a refusal is the writer's.
+// writePick writes one `pick` op of cap-plans' receive (D-237). It
+// stores the network as the head of plan.<id> before the entry, so a
+// frozen version is always stored. The routes checked the write rule.
+// An error is the server's fault, and a refusal is the writer's.
 func (s *server) writePick(ctx context.Context, body []byte, purpose, from string, adopt bool, writer, op string) (pickWritten, *publishRefusal, error) {
 	var out pickWritten
 	l := s.keptLogOf("plans")
@@ -70,14 +53,14 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose, from strin
 	if purpose != "" {
 		args["purpose"] = purpose
 	}
-	// A migration that brings a pick forward names the version it came
-	// from, and the frozen version pins it (D-232).
+	// A migration names the version it came from, and the frozen version
+	// pins it (D-232).
 	if from != "" {
 		args["from_network_hash"] = from
 	}
 	loads := []hostLoad{{opLoadNetwork, body}}
 	if adopt {
-		// The adoption names the stops log entry it read (D-191).
+		// The adoption names the stops log entry that it read (D-191).
 		if seq := s.stopsSeqRead(); seq > 0 {
 			args["stops_seq"] = seq
 		}
@@ -95,7 +78,7 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose, from strin
 			if _, network := answer["network_hash"]; !network {
 				return
 			}
-			// The pick names the agency's zone: today below is its date.
+			// today below is a date in the agency's zone.
 			if zone, _ := answer["timezone"].(string); zone != "" {
 				s.zoneMu.Lock()
 				s.zone = zone
@@ -121,8 +104,8 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose, from strin
 	case got.Failed != nil:
 		return out, nil, errors.New(got.Failed.Error)
 	case got.Refused != nil:
-		// The pick op's refusal is the 422 body: {issues, refusals} when
-		// the network does not publish, {issues} for a plan issue.
+		// The 422 body is {issues, refusals} when the network does not
+		// publish, and {issues} for a plan issue.
 		return out, &publishRefusal{code: http.StatusUnprocessableEntity, json: got.Refused.Refusals}, nil
 	case refusal != nil:
 		if m, ok := refusal.body.(map[string]any); ok && refusal.status == http.StatusBadRequest {
@@ -145,10 +128,8 @@ func (s *server) writePick(ctx context.Context, body []byte, purpose, from strin
 	return out, nil, nil
 }
 
-// receivePlans writes the plans log through its receive op. The routes
-// checked the write rule (the policy's `plans`), so none is asked here.
-// A refusal is the 422 of the plans' issues, and an op that did not run
-// is an error.
+// receivePlans needs no write check, because the routes made it (the
+// policy's `plans`). A refusal is the 422 of the plans' issues.
 func (s *server) receivePlans(ctx context.Context, l *keptLog, w logWrite, ops []json.RawMessage) (int64, *logRefusal, error) {
 	seq, _, got, refusal, err := s.receiveLog(ctx, nil, l, w, receiveCall{ops: ops})
 	switch {
@@ -162,8 +143,6 @@ func (s *server) receivePlans(ctx context.Context, l *keptLog, w logWrite, ops [
 	return seq, refusal, nil
 }
 
-// stopsSeqRead is the stops log entry a pick reads: the head of the
-// stops log (0 with no stops log).
 func (s *server) stopsSeqRead() int64 {
 	if s.store == nil {
 		return 0
@@ -171,8 +150,6 @@ func (s *server) stopsSeqRead() int64 {
 	return s.keptSeq("stops")
 }
 
-// handleFreeze is POST /plans/freeze: the network written to the record
-// with what it is, and nothing put in force.
 func (s *server) handleFreeze(w http.ResponseWriter, r *http.Request) {
 	if !s.plansWriteReady(w, r) {
 		return
@@ -204,8 +181,6 @@ func (s *server) handleFreeze(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAdopt is POST /plans/adopt: a frozen version put in force from
-// its date.
 func (s *server) handleAdopt(w http.ResponseWriter, r *http.Request) {
 	if !s.plansWriteReady(w, r) {
 		return
@@ -240,8 +215,6 @@ func (s *server) handleAdopt(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// plansWriteReady answers a write the plans log cannot take here: no
-// store, no plans module, or not a POST.
 func (s *server) plansWriteReady(w http.ResponseWriter, r *http.Request) bool {
 	if s.store == nil || s.plans == nil {
 		http.Error(w, "publishing needs the store (start with -store <url>)", http.StatusNotFound)

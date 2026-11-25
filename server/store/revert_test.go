@@ -1,10 +1,8 @@
 package store
 
-// The emergency procedure (docs/FORMATS.md, "Rolling a version back"):
-// a pointer moved back to a head from before an upgrade. The move is a
-// new logged commit of that head's document, so the log keeps every
-// commit; the tool names the commits the move dropped, each with its
-// writer and its document, which stays readable under its hash.
+// docs/FORMATS.md, "Rolling a version back". The log keeps every commit,
+// and the report names the dropped commits with their writers and
+// documents.
 
 import (
 	"strings"
@@ -46,7 +44,6 @@ func TestRevertMovesAPointerBackAndNamesWhatItDropped(t *testing.T) {
 		t.Fatalf("the move is a new logged commit: %+v", entries)
 	}
 
-	// Already there: nothing moves.
 	again, err := Revert(s, "edits", before, "revert:operator", 5)
 	if err != nil || again.From != before || len(again.Dropped) != 0 {
 		t.Fatalf("a pointer at the head asked for stays: %+v %v", again, err)

@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// A map that draws ONE answer: an entity's focus (cap-directory
-  /// `focus` — the lines it runs and the stops it serves) and frames
-  /// it. A RENDER component: the focus comes in as a prop; the map
-  /// computes no geometry and reads no host state. `mapview.ts` only
-  /// reorders [{lat, lon}] into GeoJSON's [lon, lat].
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -71,8 +66,8 @@
     (map.getSource("focus-points") as maplibregl.GeoJSONSource).setData(pointsOf(focus) as any);
     const coords = focus ? [...focus.lines.flat(), ...focus.points] : [];
     if (coords.length === 0) return;
-    // Extend one point at a time: a bare array-of-arrays reads as
-    // the [[w, s], [e, n]] form and frames a degenerate box.
+    // Extend one point at a time. A bare array of arrays reads as the
+    // [[w, s], [e, n]] form and frames a degenerate box.
     const first: [number, number] = [coords[0].lon, coords[0].lat];
     const bounds = coords.reduce((b, c) => b.extend([c.lon, c.lat]), new maplibregl.LngLatBounds(first, first));
     map.fitBounds(bounds, { padding: 32, maxZoom: 15, duration: 300 });

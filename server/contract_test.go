@@ -1,21 +1,11 @@
 package main
 
-// The HTTP contract (server/openapi.json; D-81) describes the real
-// server. Three checks hold it:
-//
-//   - TestEveryRouteIsInTheContract: the mux's routes and the
-//     contract's paths name the same patterns (`x-mux`).
-//   - The contract transport: TestMain replaces http.DefaultTransport,
-//     so every request a test sends to a server and every response it
-//     reads are checked against the contract. A request or response the
-//     contract does not admit fails the run, and the report names it.
-//     A whole run (no -run or -skip) must also reach every operation.
-//   - TestTheContractIsCompatibleWithTheLock: the contract against the
-//     lock (server/openapi.lock.json), the contract as last released.
-//     `just http-lock` refreshes the lock once this test passes.
-//
-// The server's own outbound requests use `outbound`, so they are not
-// checked.
+// Holds the server to server/openapi.json (D-81). TestMain replaces
+// http.DefaultTransport, so every request and response a test sends is
+// checked against the contract. A whole run (no -run or -skip) must also
+// reach every operation. `just http-lock` refreshes
+// server/openapi.lock.json once the compatibility test passes. The
+// server's own outbound requests use `outbound` and are not checked.
 
 import (
 	"bytes"
@@ -72,7 +62,6 @@ func TestEveryRouteIsInTheContract(t *testing.T) {
 	}
 }
 
-// muxPatterns reads the patterns routes() registers from its source.
 func muxPatterns(t *testing.T) map[string]bool {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "main.go", nil, 0)
@@ -80,8 +69,6 @@ func muxPatterns(t *testing.T) map[string]bool {
 		t.Fatal(err)
 	}
 	out := map[string]bool{}
-	// Each kind's own write route, which routes() registers from the
-	// kind table (logkinds.go).
 	table, err := loadKindTable(defaultKindsPath)
 	if err != nil {
 		t.Fatal(err)
@@ -132,9 +119,8 @@ func TestTheContractIsCompatibleWithTheLock(t *testing.T) {
 	}
 }
 
-// TestTheProbesAndHEADOverHTTP reaches the operations the other tests
-// call through a recorder, not over HTTP, so the contract check sees
-// them too.
+// These operations are otherwise called through a recorder, so the
+// contract check would not see them.
 func TestTheProbesAndHEADOverHTTP(t *testing.T) {
 	dist := t.TempDir()
 	if err := os.MkdirAll(dist+"/assets", 0o755); err != nil {
@@ -162,8 +148,6 @@ func TestTheProbesAndHEADOverHTTP(t *testing.T) {
 	}
 }
 
-// The contract transport.
-
 type checkedOp struct {
 	path, method string
 	op           map[string]any
@@ -183,7 +167,6 @@ type contractCheck struct {
 
 var theContract *contractCheck
 
-// installContractCheck replaces http.DefaultTransport with the check.
 func installContractCheck() error {
 	raw, err := os.ReadFile(contractFile)
 	if err != nil {
@@ -209,7 +192,6 @@ func installContractCheck() error {
 	return nil
 }
 
-// unexercised lists the contract's operations no request reached.
 func (c *contractCheck) unexercised() []string {
 	var out []string
 	for p, item := range c.doc["paths"].(map[string]any) {
@@ -226,7 +208,6 @@ func (c *contractCheck) unexercised() []string {
 	return out
 }
 
-// reportContract prints every violation, and answers false when any.
 func reportContract() bool {
 	c := theContract
 	if c == nil {
@@ -234,9 +215,6 @@ func reportContract() bool {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// A whole run must reach every operation, so each one is checked
-	// against the real server at least once. A run narrowed by -run or
-	// -skip reaches only some.
 	if flagValue("test.run") == "" && flagValue("test.skip") == "" {
 		for _, op := range c.unexercised() {
 			c.violations = append(c.violations, op+": no test reaches the operation")
@@ -288,8 +266,6 @@ func (c *contractCheck) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// find matches a request to the contract's operation. A literal
-// segment beats a template.
 func (c *contractCheck) find(method, path string) (*checkedOp, bool) {
 	segs := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	best, bestLiterals, pathFound := (*checkedOp)(nil), -1, false
@@ -333,8 +309,6 @@ func (c *contractCheck) find(method, path string) (*checkedOp, bool) {
 	return best, pathFound
 }
 
-// fitRest joins the segments a final "{name...}" template takes, so
-// the template matches the rest of the path (Go's mux syntax).
 func fitRest(tsegs, segs []string) []string {
 	n := len(tsegs)
 	if n == 0 || !strings.HasSuffix(tsegs[n-1], "...}") || len(segs) < n {
@@ -343,8 +317,6 @@ func fitRest(tsegs, segs []string) []string {
 	return append(append([]string{}, segs[:n-1]...), strings.Join(segs[n-1:], "/"))
 }
 
-// segmentValues matches one path segment against a template segment
-// such as "{hash}.gz", and answers each template's value.
 func segmentValues(tmpl, seg string) (map[string]string, bool) {
 	var names []string
 	expr := "^"
@@ -405,8 +377,6 @@ func mediaType(h string) string {
 	return mt
 }
 
-// content finds the media type's entry in a content map: exact, then
-// type/*, then */*.
 func content(m map[string]any, mt string) (string, bool) {
 	if _, ok := m[mt]; ok {
 		return mt, true
@@ -442,7 +412,6 @@ func (c *contractCheck) check(req *http.Request, reqBody []byte, resp *http.Resp
 	c.exercised[where] = true
 	c.mu.Unlock()
 
-	// Parameters.
 	tsegs := strings.Split(strings.TrimPrefix(op.path, "/"), "/")
 	segs := fitRest(tsegs, strings.Split(strings.TrimPrefix(path, "/"), "/"))
 	pathValues := map[string]string{}
@@ -507,8 +476,8 @@ func (c *contractCheck) check(req *http.Request, reqBody []byte, resp *http.Resp
 		}
 	}
 
-	// The request body. A request the server refuses (4xx) may be one
-	// the contract does not admit; that is the refusal's point.
+	// A request the server refuses (4xx) may be one the contract does not
+	// admit.
 	if len(reqBody) > 0 && resp.StatusCode < 400 {
 		rb, _ := op.op["requestBody"].(map[string]any)
 		cm, _ := rb["content"].(map[string]any)
@@ -522,7 +491,6 @@ func (c *contractCheck) check(req *http.Request, reqBody []byte, resp *http.Resp
 		}
 	}
 
-	// The response.
 	st := strconv.Itoa(resp.StatusCode)
 	responses, _ := op.op["responses"].(map[string]any)
 	r, ok := responses[st]
@@ -553,8 +521,6 @@ func (c *contractCheck) check(req *http.Request, reqBody []byte, resp *http.Resp
 	c.validateBody(fmt.Sprintf("%s %d", where, resp.StatusCode), []string{"paths", op.path, op.method, "responses", st, "content", key, "schema"}, key, mt, resp.Header.Get("Content-Encoding"), respBody)
 }
 
-// validateBody checks a JSON body against its schema. Other media
-// types and encoded bodies are matched by media type alone.
 func (c *contractCheck) validateBody(where string, ptr []string, key, mt, encoding string, body []byte) {
 	if encoding != "" || !(mt == "application/json" || strings.HasSuffix(mt, "+json")) {
 		return
@@ -583,8 +549,8 @@ func (c *contractCheck) validateBody(where string, ptr []string, key, mt, encodi
 	}
 }
 
-// paramValue reads a parameter's text as JSON when it is a number or a
-// boolean, so a schema of type integer or boolean admits it.
+// paramValue reads a number or boolean as JSON, so a schema of type
+// integer or boolean admits it.
 func paramValue(s string) any {
 	if s == "true" || s == "false" {
 		return s == "true"

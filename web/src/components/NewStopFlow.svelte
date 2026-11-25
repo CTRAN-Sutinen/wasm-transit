@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// A new stop, as a task in two steps: where it goes (a click on the
-  /// map, a measured point typed, or this device's location), then what
-  /// it is — its id, name, and code, and where its life starts: planned,
-  /// or in service for a stop that is there but was never recorded. It
-  /// may go on to request its installation. The host writes it as the
-  /// stop's first event; a taken id is refused beside the form.
-  /// A RENDER component.
   import "./forms.css";
   import type { Event } from "../types/Event";
   import type { Refusal } from "../types/Refusal";
@@ -31,7 +24,6 @@
     error: string;
     onpoint: (lat: number, lon: number) => void;
     onlocate?: () => Promise<{ lat: number; lon: number; accuracy: number }>;
-    /// The stop's first event, and whether to request its installation next.
     onsave: (stopId: string, event: Event, request: boolean) => void;
     onclose: () => void;
   } = $props();

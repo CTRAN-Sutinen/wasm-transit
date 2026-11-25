@@ -1,9 +1,7 @@
 package main
 
-// The published network: a server started with -feed imports the zip
-// once through the NETWORK CAPABILITY (cap-network — the module the
-// browser runs) and serves the import's answer. Browsers register the
-// network document; nobody downstream parses GTFS.
+// The published network: -feed imports the zip once through cap-network and
+// serves the import's answer.
 
 import (
 	"bytes"
@@ -24,7 +22,6 @@ import (
 
 const networkWasm = "../web/pkg/cap_network.wasm"
 
-// served is GET /network's body: the import op's answer.
 type served struct {
 	Network     json.RawMessage `json:"network"`
 	Boundary    json.RawMessage `json:"boundary"`
@@ -42,7 +39,6 @@ func newNetworkHost(t *testing.T) *WasmHost {
 	return host
 }
 
-// networkServer serves /network and /manifest over the feed at path.
 func networkServer(t *testing.T, path string) string {
 	t.Helper()
 	s := &server{wasm: newTestHost(t), feeder: fileFeed(path, networkWasm)}
@@ -83,9 +79,8 @@ func getNetwork(t *testing.T, base string) served {
 	return got
 }
 
-// The served answer is the import's answer: the same network hash a
-// module computes importing the same zip itself, and the served
-// document registers under exactly that hash — the browser's check.
+// The served document registers under the hash that a module computes from the
+// same zip.
 func TestServedNetworkIsTheImport(t *testing.T) {
 	ctx := context.Background()
 	zip := fixtureZip(t)
@@ -95,8 +90,6 @@ func TestServedNetworkIsTheImport(t *testing.T) {
 		t.Fatalf("served answer incomplete: hash %q, network %d bytes, boundary %d bytes", got.NetworkHash, len(got.Network), len(got.Boundary))
 	}
 
-	// A module importing the zip itself (what a browser does with a
-	// zip it is handed).
 	own := newNetworkHost(t)
 	var loaded struct {
 		FeedHash string `json:"feed_hash"`
@@ -112,7 +105,6 @@ func TestServedNetworkIsTheImport(t *testing.T) {
 		t.Fatalf("served hash %s != own import %s", got.NetworkHash, imported.NetworkHash)
 	}
 
-	// A fresh module registers the served document under the pin.
 	fresh := newNetworkHost(t)
 	var registered struct {
 		NetworkHash string `json:"network_hash"`
@@ -125,8 +117,6 @@ func TestServedNetworkIsTheImport(t *testing.T) {
 	}
 }
 
-// The manifest pins what is served (network_hash) and what it was
-// imported from (feed_hash, feed_version).
 func TestManifestPinsTheServedNetwork(t *testing.T) {
 	path := writeFeed(t, fixtureZip(t))
 	base := networkServer(t, path)
@@ -152,10 +142,8 @@ func TestManifestPinsTheServedNetwork(t *testing.T) {
 	}
 }
 
-// The manifest names the zone a page reads its clock in — the
-// agency's, as the server counts its own today — so a page knows it at
-// boot, before it picks the network in force on its date. The e2e
-// fixture's agency is in America/Montreal.
+// The manifest names the agency's zone (America/Montreal in the e2e fixture), so
+// a page knows it before it picks the network in force.
 func TestManifestNamesTheAgencysZone(t *testing.T) {
 	base := networkServer(t, "../web/e2e/fixtures/sample-gtfs.zip")
 	resp, err := http.Get(base + "/manifest")
@@ -172,8 +160,8 @@ func TestManifestNamesTheAgencysZone(t *testing.T) {
 	}
 }
 
-// The wire: gzip when the client takes it, the network hash as the
-// ETag, and a revalidation that matches answers 304 with no body.
+// Gzip when the client takes it, the network hash as the ETag, and a matching
+// revalidation answers 304 with no body.
 func TestNetworkWire(t *testing.T) {
 	base := networkServer(t, writeFeed(t, fixtureZip(t)))
 	plain := getNetwork(t, base)
@@ -215,8 +203,6 @@ func TestNetworkWire(t *testing.T) {
 	}
 }
 
-// Republishing the zip (planner publishes, everyone re-pins) serves
-// the new network without a restart.
 func TestRepublishedFeedServesTheNewNetwork(t *testing.T) {
 	path := writeFeed(t, fixtureZip(t))
 	base := networkServer(t, path)
@@ -251,12 +237,9 @@ func TestRepublishedFeedServesTheNewNetwork(t *testing.T) {
 	}
 }
 
-// The rider's wire: the bare network document gzipped, as bytes (no
-// Content-Encoding — the browser hands them to the modules compressed
-// and never unzips or parses them), under the network hash; its
-// boundary beside it. The document is the import's own serialization
-// (unzipped, it hashes to the pin), and a fresh module registers the
-// compressed bytes under the pin.
+// The bare network document is gzipped bytes with no Content-Encoding. Unzipped,
+// it hashes to the pin, and a fresh module registers the compressed bytes under
+// the pin.
 func TestServedDocumentIsTheGzippedNetwork(t *testing.T) {
 	ctx := context.Background()
 	base := networkServer(t, writeFeed(t, fixtureZip(t)))
@@ -329,9 +312,8 @@ func mustRequest(t *testing.T, url, header, value string) *http.Request {
 	return req
 }
 
-// An open page revalidates the manifest on every poll (D-63): without
-// the store too, the manifest answers an ETag naming what it pins — the
-// same while nothing moved (generated_at aside), so a poll costs a 304.
+// Without the store, the manifest ETag names what it pins and stays the same
+// while nothing moved, so a poll costs a 304 (D-63).
 func TestTheManifestRevalidatesWithoutTheStore(t *testing.T) {
 	base := networkServer(t, "../web/e2e/fixtures/sample-gtfs.zip")
 	get := func(etag string) *http.Response {

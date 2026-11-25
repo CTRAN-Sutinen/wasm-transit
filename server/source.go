@@ -14,14 +14,11 @@ import (
 	"rustwasm/server/store"
 )
 
-// source is where a server reads one input (D-118): an http(s) URL — a
-// GTFS feed's published address — or bucket:<key>, the object
-// inputs/<key> in the store's bucket; a local path stays a dev
-// convenience. Every read that lands is committed to the store as the
-// head of its pointer (source.feed, source.streets), the record's writer
-// naming the source; a source that does not answer serves the last read
-// this process holds, else the store's head — so a replacement process
-// given the bucket and the same configuration serves the same inputs.
+// source is where a server reads one input (D-118): an http(s) URL,
+// bucket:<key> (the object inputs/<key>), or a local path for dev. Every
+// read that lands is committed as the head of its pointer (source.feed,
+// source.streets). A source that does not answer serves the last read,
+// else the store's head, so a replacement process serves the same inputs.
 type source struct {
 	raw     string
 	pointer string // "" = not committed (the policy: it seeds its own pointer)
@@ -42,7 +39,6 @@ func newSource(raw, pointer, kind string, st *store.Store) *source {
 		every: time.Minute, client: &http.Client{Transport: outbound, Timeout: 2 * time.Minute}}
 }
 
-// Read answers the source's current bytes and their hash.
 func (s *source) Read() ([]byte, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -79,7 +75,7 @@ func (s *source) isRemote() bool {
 	return strings.HasPrefix(s.raw, "http://") || strings.HasPrefix(s.raw, "https://") || strings.HasPrefix(s.raw, "bucket:")
 }
 
-// fetch reads the source; nil bytes and no error = unchanged since tag.
+// fetch answers nil bytes and no error when the source is unchanged since tag.
 func (s *source) fetch() ([]byte, string, error) {
 	switch {
 	case strings.HasPrefix(s.raw, "http://"), strings.HasPrefix(s.raw, "https://"):
@@ -129,9 +125,8 @@ func (s *source) fetch() ([]byte, string, error) {
 	}
 }
 
-// commit makes the bytes just read the head of the source's pointer, the
-// record naming the source. A failed commit is logged, never fatal: the
-// read stands, and the next one tries again.
+// A failed commit is logged, never fatal: the read stands, and the next one
+// tries again.
 func (s *source) commit() {
 	if s.st == nil || s.pointer == "" {
 		return

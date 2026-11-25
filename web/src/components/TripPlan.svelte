@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// Getting there — a RENDER component: the trip's two ends (stop
-  /// type-aheads, the rider's location, or chosen on the map), when (leave now, leave at, arrive by, or the last
-  /// bus), and cap-router's answer: the itinerary, and the rider's
-  /// notice when a detour changes the trip (`plan_compare`).
   import type { Itinerary as Plan } from "../types/Itinerary";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import PlaceSearch from "./PlaceSearch.svelte";
@@ -42,25 +38,18 @@
     to: Place | null;
     when: When;
     found: { field: Field; text: string; places: Place[] } | null;
-    /// The geocoder's addresses for the field being typed, if any.
     addresses?: { field: Field; text: string; places: Place[] } | null;
     limit: number;
     plan: { itinerary: Plan | null; notice: string | null } | null;
-    /// Planning failed: the panel says it could not plan, never "no trips".
+    /// Planning failed. The panel says it could not plan and never reads "no trips".
     error?: string;
     routes: DirectoryRoute[];
-    /// The rider's location can be an end (walking the streets).
     here?: boolean;
     onhere?: (field: "from" | "to") => void;
-    /// The end the next tap on the map sets, if the rider is choosing.
     picking?: "from" | "to" | null;
-    /// Any spot can be an end (the streets walk it); else only a stop.
     spots?: boolean;
-    /// The fields take addresses (a geocoder, and streets to walk).
     addressable?: boolean;
-    /// Choose an end on the map (asked again: cancel).
     onmap?: (field: "from" | "to") => void;
-    /// The router capability did not assemble.
     off: boolean;
     searchOff: boolean;
     ontype: (field: Field, text: string) => void;
@@ -78,7 +67,6 @@
     { mode: "last", label: "Last bus" },
   ] as const;
 
-  /// The time field speaks "HH:MM"; the op speaks seconds.
   function hhmm(secs: number | null): string {
     if (secs == null) return "";
     return `${String(Math.floor(secs / 3600) % 24).padStart(2, "0")}:${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}`;

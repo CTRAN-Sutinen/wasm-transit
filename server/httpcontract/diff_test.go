@@ -6,12 +6,10 @@ import (
 	"testing"
 )
 
-// The laws of the compatibility gate (D-81): an older client's request
-// is still accepted, an older client still reads every response, and a
-// removal passes only after the lock marks it deprecated.
+// The compatibility gate (D-81): an older client's request is still
+// accepted, an older client still reads every response, and a removal
+// passes only after the lock marks it deprecated.
 
-// lock is a small contract: POST /edits takes {records} and answers
-// {hash, rev}; GET /status answers {state} from an enum.
 const lock = `{
   "openapi": "3.1.0",
   "paths": {
@@ -42,7 +40,6 @@ const lock = `{
   }}}
 }`
 
-// edit applies a change to a copy of the lock.
 func edit(t *testing.T, change func(d Doc)) (Doc, Doc) {
 	t.Helper()
 	var old, next Doc
@@ -190,9 +187,6 @@ func TestAKeywordOutsideTheSubsetIsRefused(t *testing.T) {
 
 func TestAnAdditiveChangePasses(t *testing.T) {
 	mustPass(t, func(d Doc) {
-		// An optional request field, an optional parameter, a new
-		// response field, a new status, a new path, a request enum
-		// widened, and a response enum narrowed.
 		obj(editsBody(d)["properties"])["author"] = map[string]any{"type": "string"}
 		op := at(d, "paths", "/edits", "post")
 		op["parameters"] = append(arr(op["parameters"]), map[string]any{"name": "since", "in": "query", "schema": map[string]any{"type": "integer"}})
@@ -211,7 +205,6 @@ func TestARemovalTheLockMarksDeprecatedPasses(t *testing.T) {
 }
 
 func TestTheExpandStepPasses(t *testing.T) {
-	// Marking a field deprecated is itself additive.
 	mustPass(t, func(d Doc) {
 		obj(obj(editsBody(d)["properties"])["note"])["deprecated"] = true
 		at(d, "paths", "/status", "get")["deprecated"] = true

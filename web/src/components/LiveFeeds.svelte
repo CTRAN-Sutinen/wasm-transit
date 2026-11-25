@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// Is this live? — a RENDER component: a pill that says whether the
-  /// times on screen are live (when the agency's feeds were last read,
-  /// how many buses cap-rt's live document saw) or the schedule, and
-  /// behind it the feed URLs the host reads.
   import { tick } from "svelte";
   import type { LiveSummary } from "../types/LiveSummary";
 
@@ -16,12 +12,9 @@
     onurls,
   }: {
     urls: Urls;
-    /// cap-rt's live summary; null with no live document.
     summary: LiveSummary | null;
-    /// When the feeds were last read (the host's clock).
     at: string;
     error: string;
-    /// The realtime capability did not assemble.
     off: boolean;
     onurls: (urls: Urls) => void;
   } = $props();
@@ -34,9 +27,8 @@
     draft = { ...urls };
   });
 
-  /// The panel is a plain element (D-135: no Popover API), so it keeps
-  /// its own dialog habits: opening moves focus into it, Escape closes it
-  /// and returns focus to the pill, and a press outside it closes it.
+  /// The panel is a plain element, not the Popover API (D-135). Opening moves
+  /// focus into it, Escape returns focus to the pill, and a press outside closes it.
   async function toggle() {
     open = !open;
     if (open) {

@@ -1,14 +1,4 @@
 <script lang="ts">
-  /// The stops UI's layout (D-157): PLACEMENT ONLY. A bar across the top
-  /// (the views — Stops, Work, Feed review — the date, a search, New
-  /// stop, sign-in, the status line), what waits to be sent and whether
-  /// the server answers, over one screen the width of the
-  /// page, chosen by what is open: a survey's page; a request's page; a
-  /// stop's page (a short change on it as a card under its header); the
-  /// map with a narrow panel, only while a point is placed (a new stop, a
-  /// move); else the view — the stops on a map beside their list or as a
-  /// table, the work as a table, the feed's review. Every value is the
-  /// host's (host.svelte.ts).
   import {
     st,
     readDate,
@@ -75,7 +65,6 @@
   const stopName = $derived(st.card?.stop?.name || st.open);
   const held = $derived(st.requests.find((r) => r.id === st.request) ?? null);
   const files = $derived(st.attachments ? { onadd: addAttachment, src: attachmentSrc } : null);
-  /// What fills the page.
   const screen = $derived(
     task === "new" || task === "change:move"
       ? "place"
@@ -160,8 +149,7 @@
   </header>
 
   <main class="screen">
-    <!-- The stops' view stays mounted under the other screens, so its map
-         is not rebuilt (and keeps where it was) on the way back. -->
+    <!-- Stays mounted so the map keeps its instance and its view. -->
     <div class="keep" class:hidden={screen !== "stops"}>
       <div class="stops-view">
           <header class="tools">
@@ -264,7 +252,6 @@
   .status.alert { color: var(--bad); }
   .screen { min-height: 0; overflow: hidden; }
   .keep { min-height: 0; height: 100%; }
-  /* hidden, not destroyed: the map keeps its instance and its view */
   .hidden { display: none; }
   .pad { padding: 1.2rem 1.6rem; }
   .split { display: grid; grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr); height: 100%; min-height: 0; }
@@ -300,7 +287,6 @@
     .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
     .near-me { flex: 1; min-height: 2.9rem !important; }
     .mode { margin-left: 0; }
-    /* a survey at the stop is the whole screen */
     .focused { grid-template-rows: minmax(0, 1fr); }
     .focused .bar { display: none; }
   }

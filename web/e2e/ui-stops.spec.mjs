@@ -1,84 +1,25 @@
-// The stops UI (src/uis/stops, D-157): every stop's own life, apart from
-// the service plans. Its own server (playwright.config.mjs, :8084) runs
-// the durable store, which a stops write needs (POST /stops); no stops
-// document is kept until the first change, which saves the stops of the
-// network running today (cap-stops `seed`).
-//
-// The page is full-width screens: the stops (a map beside their list,
-// or a table), the work (a table), the feed's review, a stop's page, a
-// request's page, and a survey's page; the map takes over only to place
-// a point (a new stop, a move). A short change is a card on the stop's
-// page, its refusals beside its actions.
-//
-//   - a stop in service is read on a date, with the routes that stop
-//     there in the schedule running that day;
-//   - suspended for dates (a refused end before its start first, said
-//     beside Save), it reads suspended on a day inside them, counted and
-//     listed so;
-//   - it returns early, the return's date corrected — the suspension
-//     then ends on the return, not its planned end — and it moves —
-//     the map's click fills the point's fields, and a measured point
-//     typed over it is the one saved, to the digit;
-//   - details saved with nothing changed say so; the map's key names the
-//     open stop only while one is open; Back leaves a task;
-//   - a new stop is planned at a point typed (an id taken refused beside
-//     the form), goes straight on to its installation request, then is
-//     permitted and retired — hidden from the map until retired stops
-//     are shown;
-//   - a stop is surveyed (D-158) on one page of headed sections: the
-//     half-filled survey survives a reload on this device, a count that
-//     is not a number is refused beside Save, the summary lists what
-//     changed, the surveyor is the person writing (the
-//     server's, never typed), a photo is added and named by its hash,
-//     and the saved survey shows on the Site tab grouped as the
-//     worksheet groups it; on a phone the survey is the whole screen;
-//   - a request for work at a stop (D-159) is made on its page,
-//     submitted, its utility locate added, its work order opened,
-//     completed, and the stop change that carries it out names it,
-//     recorded from the completed request; a field report saves a draft
-//     request under an id of its own, and a request is cancelled after
-//     a confirmation;
-//   - the work order system through its adapter (D-165; the stub on this
-//     server): a submitted request's work order opened, then its status
-//     read — the answers written on the request;
-//   - the work across every stop (cap-requests `list`): filtered by
-//     status and job, a row opening its request on its stop;
-//   - the stops near the device (cap-stops `stops_near`), nearest first;
-//   - the stops' map is kept, not rebuilt, on the way to a stop and back;
-//   - signed in (D-58, D-163; its own server on :8090 with sign-in on,
-//     and a stand-in provider on :8089): a write before signing in
-//     waits on the device, and the page says it needs a sign-in
-//     (D-189); signing in goes out to the provider and back to the same
-//     stop, and the survey that waited is sent, its surveyor the
-//     signed-in person's name; a photo added and shown only to the
-//     signed-in;
-//   - what the agency's feed did to the stops record (D-150: the feed
-//     applies, and the planner sees what it did): the Feed review page,
-//     each stop linked to its record.
-//   - a write kept with a broken reference (D-233) says so beside the
-//     sync status until the person dismisses it.
-//   - a request saved on a stop that another planner retired after the
-//     page read it lands, and its warning names the retirement (D-238).
-//   - an open request whose stop was retired says so on its page when it
-//     opens, before any write (D-238).
+// The stops UI (src/uis/stops, D-157; D-158 surveys, D-159 and D-165 requests,
+// D-150 feed review, D-189 and D-233 and D-238 offline and warnings). The server
+// on :8084 runs the durable store, which a stops write needs (POST /stops). No
+// stops document exists until the first change seeds it from the network
+// running today (cap-stops `seed`). The sign-in tests use a server on :8090
+// with sign-in on and a stand-in provider on :8089 (D-58, D-163).
 
 import { test, expect } from "@playwright/test";
 
-/// A 1x1 PNG: a photo as small as a test needs.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
 test.use({ baseURL: "http://127.0.0.1:8084" });
 
-/// A change chosen from the stop's "Record change" list.
 async function change(page, kind) {
   await page.getByTestId("action-change").click();
   await page.getByTestId(`action-${kind}`).click();
   await expect(page.getByTestId("change")).toBeVisible();
 }
 
-/// The map in view (the stops' map is kept, hidden, under other screens).
+/// The stops' map is kept, hidden, under other screens.
 const shownMap = (page) => page.locator('[data-testid="stop-life-map"]:visible');
-/// The map in view, loaded (a click before then places nothing).
+/// A click before the map loads places nothing.
 const readyMap = (page) => page.locator('[data-testid="stop-life-map"][data-ready="true"]:visible');
 
 test("a stop's life: suspended and back, moved, and a new stop planned, requested, permitted, retired", async ({ page }) => {
@@ -88,7 +29,6 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await expect(page.getByTestId("stop-status")).toContainText("In service");
   await expect(page.getByTestId("stop-routes")).not.toContainText("No routes");
 
-  // A suspension whose end comes before its start is refused, beside Save.
   await change(page, "suspended");
   await page.getByTestId("form-on").fill("2026-11-09");
   await page.getByTestId("form-temporary").click();
@@ -96,7 +36,6 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await page.getByTestId("form-save").click();
   await expect(page.getByTestId("change-problems")).toContainText("the end must come after the first day", { timeout: 15_000 });
 
-  // Suspended Monday 11-09 until Thursday 11-12, for paving.
   await page.getByTestId("form-until").fill("2026-11-12");
   await page.getByTestId("form-note").fill("Paving");
   await expect(page.getByTestId("change-summary")).toContainText("Suspend · 2026-11-09 – 2026-11-12");
@@ -109,13 +48,11 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await expect(page.getByTestId("stop-status")).toContainText("Paving");
   await expect(page.locator('[data-testid="map-key-suspended"]:visible')).toBeVisible();
 
-  // Back early on Wednesday — entered as Thursday, then corrected.
   await change(page, "in_service");
   await page.getByTestId("form-on").fill("2026-11-10");
   await page.getByTestId("form-save").click();
   await expect(page.getByTestId("stop-status")).toContainText("since 2026-11-10", { timeout: 15_000 });
   const events = page.getByTestId("stop-event");
-  // newest first: the return is the first row
   await expect(events.first()).toContainText("In service");
   await events.first().getByRole("button", { name: "Correct" }).click();
   await page.getByTestId("form-on").fill("2026-11-11");
@@ -123,11 +60,8 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await expect(page.getByTestId("status")).toContainText("Corrected the in service event on Main & 2nd", { timeout: 15_000 });
   await expect(events.first()).toContainText("2026-11-11");
   await expect(page.getByTestId("stop-status")).toContainText("Suspended", { timeout: 10_000 });
-  // back early: the suspension ends on the return, not on its planned end
   await expect(page.getByTestId("stop-status")).toContainText("until 2026-11-11");
 
-  // Moved: a click on the map fills the point's fields; the measured
-  // point typed over it is the one saved, to the digit.
   await page.getByTestId("stops-on").fill("2026-11-20");
   await expect(page.getByTestId("stop-status")).toContainText("In service");
   await change(page, "move");
@@ -142,18 +76,14 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await expect(page.getByTestId("status")).toContainText("Moved Main & 2nd from 2026-11-20", { timeout: 15_000 });
   await expect(events.first()).toContainText("to 45.5123456, -73.5123456");
   await expect(page.getByTestId("stop-location")).toHaveText("45.5123456, -73.5123456");
-  // details saved with nothing changed say so, and the task stays open
   await change(page, "details");
   await page.getByTestId("form-save").click();
   await expect(page.getByTestId("form-unchanged")).toBeVisible();
   await expect(page.getByTestId("change")).toBeVisible();
-  // the browser's Back leaves a task
   await page.goBack();
   await expect(page.getByTestId("change")).toHaveCount(0);
   await expect(page.getByTestId("stop-card")).toBeVisible();
 
-  // A new stop, planned at a point typed (no map click); an id taken is
-  // refused beside the form; then straight on to its installation request.
   await page.getByTestId("new-stop-start").click();
   await expect(page.getByTestId("new-next")).toBeDisabled();
   await page.getByTestId("new-point-lat").fill("45.5051234");
@@ -185,13 +115,10 @@ test("a stop's life: suspended and back, moved, and a new stop planned, requeste
   await page.getByTestId("form-save").click();
   await expect(page.getByTestId("stop-status")).toContainText("Permitted", { timeout: 15_000 });
 
-  // Retired: the stop leaves the map and the list until retired stops
-  // are shown.
   await change(page, "retired");
   await page.getByTestId("form-save").click();
   await expect(page.getByTestId("stop-status")).toContainText("Retired", { timeout: 15_000 });
   await page.getByTestId("stop-close").click();
-  // the map's key names the open stop only while one is open
   await expect(page.locator('[data-testid="map-key-open"]:visible')).toHaveCount(0);
   await expect(page.getByTestId("filter-retired")).toContainText("1");
   const rows = page.getByTestId("stop-row");
@@ -204,11 +131,9 @@ test("a stop's site survey: one page of sections, kept as a draft, checked, summ
   await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
   await page.goto("/stops.html#on=2026-11-02&open=A");
   await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
-  // what the schedule says beside the survey: the stop beside it, and how far
   await expect(page.getByTestId("stop-visits")).toContainText(/(before|after) Main & 2nd \(~?\d+ m\)/);
   await expect(page.getByTestId("stop-surveyed")).toContainText("Never surveyed.");
 
-  // Half filled, then the tab is reloaded: the survey is back.
   await page.getByTestId("action-survey").click();
   await expect(page.getByTestId("survey-nav-s-location")).toBeVisible();
   await page.getByTestId("survey-on_street").fill("Main St");
@@ -217,15 +142,11 @@ test("a stop's site survey: one page of sections, kept as a draft, checked, summ
   await expect(page.getByTestId("survey-restored")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("survey-on_street")).toHaveValue("Main St");
   await expect(page.getByTestId("survey-position-far_side")).toHaveAttribute("aria-pressed", "true");
-  // the index counts each section's answers and marks a change
   await expect(page.getByTestId("survey-nav-s-location")).toContainText("2/");
-  // left, the stop says a draft is kept
   await page.getByTestId("survey-close").click();
   await expect(page.getByTestId("action-survey")).toHaveText("Continue survey");
   await page.getByTestId("action-survey").click();
 
-  // A count that is not a whole number is refused beside Save, and
-  // nothing is lost.
   await page.getByTestId("survey-nav-s-street").click();
   await page.getByTestId("survey-lanes").fill("four");
   await page.getByTestId("survey-save").click();
@@ -234,18 +155,17 @@ test("a stop's site survey: one page of sections, kept as a draft, checked, summ
   await page.getByTestId("survey-surface-concrete").click();
   await page.getByTestId("survey-amenity-rear_boarding_pad-yes").click();
   await page.getByTestId("survey-ref-sign").fill("S-1180");
-  // a photo, added at once and named by its hash (D-162)
+  // D-162.
   await page.getByTestId("survey-attachments-file").setInputFiles({ name: "approach.png", mimeType: "image/png", buffer: PNG });
   await expect(page.getByTestId("survey-attachments").getByTestId("attachment-img")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("textbox", { name: "Caption for approach.png" }).fill("approaching");
-  // the summary lists what differs from the record
   const review = page.getByTestId("survey-changes");
   await expect(review).toContainText("Traffic lanes");
   await expect(review).toContainText("Rear door pad");
   await expect(page.getByTestId("survey-review")).toContainText("1 photo");
   await page.getByTestId("survey-save").click();
   await expect(page.getByTestId("status")).toContainText("Survey of Main & 1st on 2026-11-02 saved.", { timeout: 15_000 });
-  // the surveyor is the person writing — with sign-in off, "anonymous"
+  // With sign-in off, the surveyor is "anonymous".
   await expect(page.getByTestId("stop-surveyed")).toContainText("Last surveyed on 2026-11-02 by anonymous.");
   const site = page.getByTestId("stop-site");
   await expect(site.first()).toContainText("On street");
@@ -257,7 +177,6 @@ test("a stop's site survey: one page of sections, kept as a draft, checked, summ
   await expect(newest).toContainText("Surveyed");
   await expect(newest).toContainText("by anonymous");
   await expect(newest.getByTestId("attachment-img")).toBeVisible();
-  // saved: no draft is kept
   await expect(page.getByTestId("action-survey")).toHaveText("Survey");
 });
 
@@ -277,9 +196,6 @@ test("on a phone a survey is the whole screen and never scrolls sideways", async
 });
 
 test("a stop whose routes cannot be read says so, never that no route stops there", async ({ page }) => {
-  // The page's assembly and the directory do not load; the stop's page
-  // answers from the stops capability, and the routes card says why it
-  // has none (the answer graph's frame state).
   await page.route(/\/caps\/(ui-stops|directory)-[0-9a-f]+\.wasm$/, (route) => route.abort());
   await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
   await page.goto("/stops.html#on=2026-11-02&open=A");
@@ -287,9 +203,8 @@ test("a stop whose routes cannot be read says so, never that no route stops ther
   await expect(page.getByTestId("stop-routes")).toContainText("The routes are not available: This part of the app did not load.");
 });
 
-// QAF-131: a read of the stops document that fails is said as a failed
-// read. The page never shows it as a deployment with no stops record,
-// and never seeds the stops of the schedule over it.
+// A failed read of the stops document is never shown as a deployment with no
+// stops record, and the page never seeds the schedule's stops over it (QAF-131).
 test("a stops document whose read fails says so, never that the deployment publishes no stops yet", async ({ page }) => {
   const pin = "f".repeat(64);
   await page.route("**/manifest", async (route) => {
@@ -327,24 +242,20 @@ test("a stop request: made on its page, submitted, its work order opened, comple
   await expect(page.getByTestId("request-part-where")).toContainText("60");
   await expect(view.getByRole("link", { name: "site drawing.pdf" })).toBeVisible();
 
-  // the utility locate, edited in place
   await page.getByTestId("request-edit-locate").click();
   await page.getByTestId("request-ticket").fill("26123456");
   await page.getByTestId("request-save-locate").click();
   await expect(page.getByTestId("request-part-locate")).toContainText("26123456", { timeout: 15_000 });
 
-  // the stop's change names the request it carries out
   await page.getByTestId("request-back").click();
   await change(page, "details");
   await page.getByTestId("form-name").fill("Main & 2nd (relocated)");
   await page.getByTestId("form-request").selectOption("B-20261102");
   await page.getByTestId("form-save").click();
-  // (history is by date: another test's later move on B lists above it)
+  // History is by date, so another test's later move on B lists above it.
   const carried = page.getByTestId("stop-event").filter({ hasText: "(request B-20261102)" });
   await expect(carried.filter({ hasText: "relocated" })).toHaveCount(1, { timeout: 15_000 });
 
-  // its work order opened (the stub adapter), completed, then the change
-  // it carried out recorded from it
   await page.getByTestId("request-row").click();
   await page.getByTestId("request-wo-open").click();
   await expect(page.getByTestId("request-complete")).toBeVisible({ timeout: 15_000 });
@@ -365,7 +276,6 @@ test("a field report, a request cancelled, and the work across every stop", asyn
   await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
   await page.goto("/stops.html#on=2026-11-02&open=A");
   await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
-  // a field report: a draft repair request, its photo
   await page.getByTestId("action-report").click();
   await expect(page.getByTestId("request-job-repair_improve")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("request-note").fill("Sign post leaning");
@@ -374,21 +284,18 @@ test("a field report, a request cancelled, and the work across every stop", asyn
   await page.getByTestId("request-save-draft").click();
   await expect(page.getByTestId("status")).toContainText("Request A-20261102 saved as a draft.", { timeout: 15_000 });
   await expect(page.getByTestId("request-track-drafted")).toHaveClass(/now/);
-  // a second report the same day gets an id of its own
   await page.getByTestId("request-back").click();
   await page.getByTestId("action-report").click();
   await page.getByTestId("request-note").fill("Bench missing");
   await page.getByTestId("request-save-draft").click();
   await expect(page.getByTestId("status")).toContainText("Request A-20261102-2 saved as a draft.", { timeout: 15_000 });
 
-  // submitted, then cancelled after a confirmation
   await page.getByTestId("request-submit-now").click();
   await expect(page.getByTestId("request-track-submitted")).toHaveClass(/now/, { timeout: 15_000 });
   await page.getByTestId("request-cancel").click();
   await page.getByTestId("request-cancel-yes").click();
   await expect(page.getByTestId("request-status")).toHaveText("Cancelled", { timeout: 15_000 });
 
-  // the work across every stop: open work by default, filtered by job
   await page.getByTestId("view-work").click();
   const queue = page.getByTestId("work-queue");
   await expect(queue).toContainText("Sign post leaning", { timeout: 15_000 });
@@ -402,7 +309,6 @@ test("a field report, a request cancelled, and the work across every stop", asyn
   await page.getByTestId("work-row").filter({ hasText: "Sign post leaning" }).click();
   await expect(page.getByTestId("request-view")).toContainText("Sign post leaning", { timeout: 15_000 });
   await expect(page).toHaveURL(/open=A/);
-  // back to the queue it came from
   await page.getByTestId("request-back").click();
   await expect(queue).toBeVisible();
 });
@@ -457,8 +363,7 @@ test("the stops' map is kept on the way to a stop and back, and the stops read a
 });
 
 test("what the agency's feed did to the stops record: reviewed, each stop linked", async ({ page, request }) => {
-  // the record as the server's import leaves it (D-150): a change naming
-  // the feed it came from, and a stop in service the feed does not list
+  // D-150: a change that names its feed, and a stop that the feed does not list.
   const manifest = await (await request.get("/manifest")).json();
   const doc = await (await request.get(`/blobs/${manifest.stops_hash}`)).json();
   doc.stops.A.push({ on: "2026-11-21", event: "changed", name: "Main & First", from_feed: manifest.feed_hash });
@@ -476,10 +381,8 @@ test("what the agency's feed did to the stops record: reviewed, each stop linked
   await expect(page.getByTestId("stop-card")).toContainText("Old Mill");
 });
 
-// A pick only reads the stops (D-157): published over stop C, retired
-// before the pick's first date, the publish answers the warning, and the
-// service-change page shows it with the plan's others. The stops record
-// is the one this server keeps (begun from its network when none is).
+// A pick only reads the stops (D-157). The stops record is the one this server
+// keeps, begun from its network when none exists.
 test("a pick published over a retired stop carries the warning", async ({ page, request }) => {
   const manifest = await (await request.get("/manifest")).json();
   let doc;
@@ -518,16 +421,12 @@ test.describe("signed in", () => {
     await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("signin-button")).toBeVisible();
 
-    // not signed in: the survey waits on this device (D-189), and the
-    // page says it needs a sign-in to be sent
     await page.getByTestId("action-survey").click();
     await page.getByTestId("survey-on_street").fill("Main St");
     await page.getByTestId("survey-save").click();
     await expect(page.getByTestId("status")).toContainText("Saved on this device. Sign in to send it.", { timeout: 15_000 });
     await expect(page.getByTestId("sync-waiting")).toContainText("Sign in to send 1 change");
 
-    // out to the provider and back to the same stop; the survey that
-    // waited is sent, its surveyor the signed-in person
     await page.getByTestId("signin-button").click();
     await expect(page.getByTestId("signin-name")).toHaveText("Rosa Ortiz", { timeout: 15_000 });
     await expect(page).toHaveURL(/stops\.html#.*open=A/);
@@ -535,7 +434,6 @@ test.describe("signed in", () => {
     await expect(page.getByTestId("sync-status")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByTestId("stop-surveyed")).toContainText("Last surveyed on 2026-11-02 by Rosa Ortiz.", { timeout: 15_000 });
 
-    // signed in, a survey with a photo saves at once
     await page.getByTestId("action-survey").click();
     await page.getByTestId("survey-on_street").fill("Main Street");
     await page.getByTestId("survey-attachments-camera").setInputFiles({ name: "sign.png", mimeType: "image/png", buffer: PNG });
@@ -549,10 +447,7 @@ test.describe("signed in", () => {
   });
 });
 
-// A write the server keeps with a warning (D-233): its answer names a
-// reference the write left broken. The page says so beside the sync
-// status, in words, until the person dismisses it. The server's answer
-// is pinned by its Go round trip (server/requests_test.go); here the
+// D-233. server/requests_test.go pins the server's answer. This test pins the
 // page's side, over the real answer with a broken reference added.
 test("a write kept with a broken reference says so until dismissed", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
@@ -579,12 +474,11 @@ test("a request on a stop retired after the page read it is saved with the retir
     const resp = await request.post("/logs/stops", { data: { key, ops: [op] } });
     expect(resp.status(), await resp.text()).toBe(200);
   };
-  // A stop of this test's own, in service since January.
   await post("e2e/rule-1", { cap: "stops", op: "add_event", args: { stop_id: "RULE", new: true,
     event: { on: "2026-01-01", event: "in_service", lat: 45.64, lon: -122.6, name: "Rule test stop" } } });
   await page.goto("/stops.html#on=2026-11-02&open=RULE");
   await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
-  // Another planner retires it after the page read it (the server's date is 2026-08-01).
+  // The server's date is 2026-08-01.
   await post("e2e/rule-2", { cap: "stops", op: "add_event", args: { stop_id: "RULE", event: { on: "2026-07-01", event: "retired" } } });
   await page.getByTestId("action-request").click();
   await page.getByTestId("request-job-repair_improve").click();
@@ -604,8 +498,7 @@ test("an open request on a retired stop says so when its page opens", async ({ p
     event: { on: "2026-01-01", event: "in_service", lat: 45.641, lon: -122.601, name: "Rule test stop 2" } } });
   await post("e2e/open-2", { cap: "requests", op: "put", args: { id: "R-RULE2", new: true,
     request: { stop: "RULE2", job: "repair_improve", status: "submitted", requested_on: "2026-06-01" } } });
-  // The stop is retired later (the server's date is 2026-08-01): the
-  // planner's write is warned of R-RULE2, and the requester sees it here.
+  // The server's date is 2026-08-01.
   await post("e2e/open-3", { cap: "stops", op: "add_event", args: { stop_id: "RULE2", event: { on: "2026-07-01", event: "retired" } } });
   await page.goto("/stops.html#on=2026-11-02&open=RULE2&request=R-RULE2");
   await expect(page.getByTestId("request-warning")).toHaveText("This request names stop RULE2, which was retired on 2026-07-01.", { timeout: 15_000 });

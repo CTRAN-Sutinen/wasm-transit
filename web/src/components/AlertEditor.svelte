@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// One service alert being written: the template, what it does and
-  /// why, where it applies, when riders are told, the text in each
-  /// language, and what it explains. Every edit is an event with the
-  /// whole alert; what a write must pass (alerts `put`) and what a
-  /// person is told (alerts `flags`) come back as props. A RENDER
-  /// component.
   import RouteStopSearch from "./RouteStopSearch.svelte";
   import { timeText, zonedParts, zonedUnix } from "./disruptionsFormat";
   import type { AlertEntity } from "../types/AlertEntity";
@@ -43,12 +37,10 @@
     form: { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[]; startsNow: boolean };
     templates: TemplateRow[];
     routes: DirectoryRoute[];
-    /// The form's stops by name.
     stops: { stop_id: string; name: string }[];
     refusals: AlertRefusal[];
     flags: AlertFlag[];
     zone: string | undefined;
-    /// The host's clock, Unix seconds.
     now: number;
     busy: boolean;
     error: string;
@@ -59,7 +51,6 @@
     ontemplate: (id: string) => void;
     onsave: (publish: boolean) => void;
     oncancel: () => void;
-    /// "Starts now" set (told from the moment it is saved) or cleared.
     onstartsnow: (on: boolean) => void;
     onpreview: () => void;
   } = $props();
@@ -105,7 +96,6 @@
 
   const set = (patch: Partial<ServiceAlert>) => onchange({ ...a, ...patch });
 
-  // ----- where it applies
   function entityText(e: AlertEntity): string {
     const route = e.route ? `Route ${routeName(e.route)}` : "";
     if (e.trip) return `${route ? `${route} · ` : ""}${e.start_secs != null ? `${timeText(e.start_secs)} trip` : `Trip ${e.trip}`}${e.date ? `, ${e.date}` : ""}`;
@@ -118,7 +108,6 @@
   const addEntity = (e: AlertEntity) => set({ informed: [...a.informed, e] });
   const dropEntity = (i: number) => set({ informed: a.informed.filter((_, j) => j !== i) });
 
-  // ----- when
   const period = $derived(a.communication?.[0] ?? { start: null, end: null });
   const startParts = $derived(period.start != null ? zonedParts(period.start, zone) : null);
   const endParts = $derived(period.end != null ? zonedParts(period.end, zone) : null);
@@ -126,7 +115,6 @@
     set({ communication: [{ start, end }, ...(a.communication ?? []).slice(1)] });
   }
 
-  // ----- text, by language ("" is the agency's own)
   const langs = $derived([...new Set([...a.header, ...(a.description ?? [])].map((t) => t.lang ?? ""))]);
   let lang = $state("");
   let newLang = $state("");
@@ -144,14 +132,12 @@
     newLang = "";
   }
 
-  // ----- what it explains
   function sourceText(s: AlertSource): string {
     if (s.kind === "trip") return `Trip ${s.trip} at ${timeText(s.start_secs)}, cancelled (CAD feed)`;
     if (s.kind === "edit") return `Record ${s.id} (Dispatch)`;
     return `Stop ${stopName(s.stop)} closed`;
   }
 
-  // ----- what is wrong, in words
   function refusalText(r: AlertRefusal): string {
     switch (r.problem.kind) {
       case "no_id":

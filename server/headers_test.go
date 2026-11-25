@@ -1,17 +1,8 @@
 package main
 
-// The headers a deployment's pages must send (headers.go;
-// docs/units/web-conformance.md, scope 2). These laws pin both shapes:
-//
-//   - the server gzips the text and wasm types for a client that takes
-//     gzip, and never the types that are compressed already, a range
-//     of the basemap, or the gzip documents the modules decode
-//     themselves;
-//   - every file carries the baseline (nosniff, a referrer policy);
-//     each rider page carries a policy that names its own origins, and
-//     a page that draws no map names no tile host;
-//   - the export writes the same rules as a `_headers` file, with the
-//     origins its live-feeds.json and its feed URL name.
+// Pins the headers a deployment's pages must send (headers.go;
+// docs/units/web-conformance.md, scope 2), in both shapes. The export
+// writes the same rules as a `_headers` file.
 
 import (
 	"bytes"
@@ -81,20 +72,17 @@ func TestStaticCompression(t *testing.T) {
 		if w.Header().Get("Content-Length") != "" {
 			t.Errorf("%s: Content-Length %q names the stored size", name, w.Header().Get("Content-Length"))
 		}
-		// Caching survives compression.
 		if w.Header().Get("Cache-Control") == "" {
 			t.Errorf("%s: no Cache-Control", name)
 		}
 	}
 
-	// A client that does not take gzip gets the stored bytes.
 	w := staticGet(s, "/assets/main-AbCd1234.js", nil)
 	if w.Header().Get("Content-Encoding") != "" || !strings.HasPrefix(w.Body.String(), "console.log") {
 		t.Errorf("no Accept-Encoding: got Content-Encoding %q", w.Header().Get("Content-Encoding"))
 	}
 
-	// The basemap is compressed already, and a range is a range of the
-	// stored bytes.
+	// A range is a range of the stored bytes.
 	if w := staticGet(s, "/basemap.pmtiles", gz); w.Header().Get("Content-Encoding") != "" {
 		t.Errorf("basemap.pmtiles: Content-Encoding %q", w.Header().Get("Content-Encoding"))
 	}
@@ -104,7 +92,8 @@ func TestStaticCompression(t *testing.T) {
 	}
 }
 
-// A strong ETag names one set of bytes; the compressed bytes are others.
+// A strong ETag names one set of bytes, so the compressed bytes need
+// another.
 func TestGzipMakesTheETagWeak(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript")
@@ -118,7 +107,6 @@ func TestGzipMakesTheETagWeak(t *testing.T) {
 	if got := w.Header().Get("ETag"); got != `W/"sha256:abc"` {
 		t.Errorf("ETag %q, want a weak one", got)
 	}
-	// An answer with no body (304) is never wrapped in a gzip stream.
 	w = httptest.NewRecorder()
 	gzipStatic(w, r, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript")
@@ -137,7 +125,7 @@ func TestCompressibleTypes(t *testing.T) {
 		"application/json":               true,
 		"application/wasm":               true,
 		"image/svg+xml":                  true,
-		"application/gzip":               false, // the documents: the modules decode them
+		"application/gzip":               false, // the modules decode these documents
 		"application/octet-stream":       false,
 		"image/png":                      false,
 		"font/woff2":                     false,
@@ -161,8 +149,8 @@ func TestStaticSecurityHeaders(t *testing.T) {
 		}
 	}
 
-	// A page that is not a rider page has no policy: the picker and the
-	// forwarding index.html carry an inline script.
+	// The picker and the forwarding index.html carry an inline script,
+	// so they have no policy.
 	for _, name := range []string{"/", "/index.html", "/assets/main-AbCd1234.js"} {
 		if csp := staticGet(s, name, nil).Header().Get("Content-Security-Policy"); csp != "" {
 			t.Errorf("%s: unexpected Content-Security-Policy %q", name, csp)
@@ -177,10 +165,8 @@ func TestStaticSecurityHeaders(t *testing.T) {
 		"worker-src 'self' blob:",
 		"frame-ancestors 'none'",
 		"object-src 'none'",
-		// The deployment's own origins, from live-feeds.json; a
-		// relative proxy is the page's own origin.
+		// A relative proxy is the page's own origin.
 		"http://feeds.example.test", "https://alerts.example.test:8443",
-		// A page that draws a map reads the tile hosts.
 		"https://tiles.openfreemap.org", "https://protomaps.github.io",
 	} {
 		if !strings.Contains(csp, want) {
@@ -209,8 +195,6 @@ func TestFeedOrigins(t *testing.T) {
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("feedOrigins = %v, want %v", got, want)
 	}
-	// Nothing named, or a file that is not JSON: the page's own origin
-	// only, and no panic.
 	if got := feedOrigins(nil, ""); len(got) != 0 {
 		t.Errorf("no feeds: %v", got)
 	}
@@ -219,9 +203,8 @@ func TestFeedOrigins(t *testing.T) {
 	}
 }
 
-// The export writes the rules a static host sends: the caching of the
-// hash-named files, the baseline, and a policy for each rider page the
-// bundle holds, naming the origins its live-feeds.json names.
+// The export writes the caching of the hash-named files, the baseline,
+// and a policy for each rider page the bundle holds.
 func TestExportWritesTheHeadersFile(t *testing.T) {
 	s := exportServer(t)
 	dir := filepath.Join(t.TempDir(), "bundle")
@@ -240,25 +223,22 @@ func TestExportWritesTheHeadersFile(t *testing.T) {
 		"/blobs/*\n  Cache-Control: " + immutableCache + "\n",
 		"/manifest\n  Content-Type: application/json\n",
 		"/ride-now.html\n  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'",
-		"http://example.test", // from exportServer's live-feeds.json
+		"http://example.test",
 		"Permissions-Policy: geolocation=(self)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("_headers lacks %q:\n%s", want, text)
 		}
 	}
-	// The bundle holds no stop display page, so no rule for one.
 	if strings.Contains(text, "/stop-display.html") {
 		t.Errorf("_headers has a rule for a page the bundle does not hold:\n%s", text)
 	}
-	// index.html forwards with an inline script: no policy for it.
 	if strings.Contains(text, "/index.html") {
 		t.Errorf("_headers has a policy for the forwarding index.html:\n%s", text)
 	}
 }
 
-// A serverless deployment that follows the agency's GTFS URL reads that
-// host: the policy names it.
+// A serverless deployment's policy names the agency's GTFS URL host.
 func TestExportHeadersNameTheFeedURL(t *testing.T) {
 	rules := deploymentRules([]string{"stop-display.html"}, feedOrigins(nil, "https://gtfs.agency.test/feed.zip"))
 	text := renderHeadersFile(rules)

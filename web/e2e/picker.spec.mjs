@@ -1,7 +1,5 @@
-// The front door: / lists every generated UI (one card per
-// src/uis/<id>/ui.json, discovered at build time). The expected set
-// is read from the source tree, so a new UI is covered without
-// editing this spec.
+// The front door lists one card per src/uis/<id>/ui.json. The expected set
+// comes from the source tree, so a new UI needs no edit here.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";

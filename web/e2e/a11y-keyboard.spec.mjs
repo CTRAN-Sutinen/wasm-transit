@@ -1,20 +1,5 @@
-// Keyboard, focus, and preference gates for ride now
-// (docs/units/web-conformance.md, scope 1). axe cannot see these:
-//
-//   1. A view change moves focus to the new view's heading and the
-//      polite region speaks (WCAG 2.4.3, 4.1.3).
-//   2. The page has one <main> landmark: the panel.
-//   3. The "when" radio group is one Tab stop and takes the arrow keys
-//      (the ARIA radio group pattern).
-//   4. Text on the accent fill is the --on-accent token in both modes
-//      (white on the dark accent is 2.26:1).
-//   5. Motion is opt-in: the live dot pulses only for a rider who has
-//      not asked for reduced motion.
-//   6. A feed URL that fails is not "no network": the page says its
-//      schedule could not be read, in a status region, and tries again.
-//   7. The live-feeds panel acts as a dialog (D-135, no Popover API):
-//      opening moves focus into it, Escape closes it and returns focus
-//      to the pill, and a press outside it closes it.
+// Keyboard, focus, and preference gates for ride now that axe cannot see
+// (docs/units/web-conformance.md, scope 1; D-135 for the live-feeds dialog).
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -42,7 +27,6 @@ async function open(page) {
 test("a view change moves focus to the new heading and is announced", async ({ page }) => {
   await open(page);
   await expect(page.getByRole("main")).toHaveCount(1);
-  // Home has settled: the announcement counts the stops near the rider.
   await expect(page.getByTestId("ride-announce")).toContainText(/\d+ stops? near you/);
 
   await page.getByRole("button", { name: "Get directions" }).click();
@@ -65,7 +49,6 @@ test("the when radio group is one tab stop and takes the arrow keys", async ({ p
   const group = page.getByRole("radiogroup", { name: "when" });
   const radios = group.getByRole("radio");
   await expect(radios).toHaveCount(4);
-  // Only the checked radio is in the tab order.
   await expect(group.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
   await expect(radios.nth(0)).toHaveAttribute("aria-checked", "true");
 
@@ -118,21 +101,18 @@ test("the live-feeds panel closes on Escape and on an outside press, and keeps f
   await expect(panel).toBeHidden();
   await expect(pill).toBeFocused();
 
-  // Escape inside the panel works from any control in it.
   await pill.click();
   await page.getByRole("button", { name: "Close" }).focus();
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
   await expect(pill).toBeFocused();
 
-  // A press outside it closes it, and the press keeps its own target.
   await pill.click();
   await expect(panel).toBeVisible();
   await page.getByLabel("stop name", { exact: true }).click();
   await expect(panel).toBeHidden();
   await expect(page.getByLabel("stop name", { exact: true })).toBeFocused();
 
-  // A press inside it does not.
   await pill.click();
   await page.getByLabel("service alerts url").click();
   await expect(panel).toBeVisible();
@@ -146,7 +126,6 @@ test.describe("a feed URL that fails", () => {
     ["stop display", "/display/stop-display.html?stop=A&layout=routes"],
   ]) {
     test(`${ui} says the schedule could not be read, and tries again`, async ({ page }) => {
-      // The agency's URL answers with an error first, then with the feed.
       let down = true;
       await page.route("http://localhost:8088/feeds/feed.zip", (route) =>
         down
@@ -163,7 +142,6 @@ test.describe("a feed URL that fails", () => {
       await expect(message.first()).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText("publishes no network")).toHaveCount(0);
 
-      // The next poll reads the URL again.
       down = false;
       await page.clock.fastForward(60_000);
       await expect(message).toHaveCount(0, { timeout: 15_000 });

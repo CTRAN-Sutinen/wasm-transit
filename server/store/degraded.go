@@ -8,32 +8,30 @@ import (
 	"time"
 )
 
-// ErrUnavailable is a bucket that did not answer (D-119): the network,
-// a timeout, the provider's 5xx, credentials it refused. A read the
-// store holds a cached answer for serves it, labelled stale; a write is
-// refused — never acknowledged — and the caller says so (503).
+// ErrUnavailable covers the network, a timeout, the provider's 5xx, and
+// refused credentials (D-119). A read with a cached answer serves it,
+// labelled stale. A write is refused, never acknowledged, and the caller
+// says so (503).
 var ErrUnavailable = errors.New("store: the bucket is not answering")
 
-// callTimeout bounds one backend call, so a bucket that hangs is a
-// bucket that does not answer; a create carries a whole blob, so it gets
-// longer. They are variables only so a test can shorten them.
+// A create carries a whole blob, so it gets a longer timeout. They are
+// variables so that a test can shorten them.
 var (
 	callTimeout   = 20 * time.Second
 	createTimeout = 2 * time.Minute
 )
 
-// SetCallTimeouts shortens the time limits of the backend calls, for a
-// test in another package (the host contract suite,
-// server/hostcontract_test.go). It answers the function that puts them
-// back.
+// SetCallTimeouts is for the host contract suite
+// (server/hostcontract_test.go). It answers the function that restores
+// them.
 func SetCallTimeouts(call, create time.Duration) (restore func()) {
 	oldCall, oldCreate := callTimeout, createTimeout
 	callTimeout, createTimeout = call, create
 	return func() { callTimeout, createTimeout = oldCall, oldCreate }
 }
 
-// guarded classifies a backend's failures: ErrNotFound, ErrExists and a
-// serving store's refusal pass through; anything else is unavailable.
+// ErrNotFound, ErrExists, and a serving store's refusal pass through.
+// Any other failure is unavailable.
 type guarded struct{ b Backend }
 
 func classify(err error) error {
@@ -76,12 +74,10 @@ func (g guarded) Delete(ctx context.Context, k string) error {
 	return classify(g.b.Delete(ctx, k))
 }
 
-// BlobCacheBytes bounds the blobs a store keeps in memory: the ones a
-// degraded server can still serve. A C-TRAN pick (network 9.6 MB,
-// streets 22 MB) and a long edit history fit many times over.
+// A C-TRAN pick (network 9.6 MB, streets 22 MB) and a long edit history
+// fit many times over.
 const BlobCacheBytes = 256 << 20
 
-// blobCache holds blobs by hash, oldest out first past the bound.
 // Blobs are immutable, so a cached one is always correct.
 type blobCache struct {
 	mu    sync.Mutex
@@ -127,7 +123,6 @@ func (c *blobCache) put(hash string, data []byte, env Envelope) {
 	c.total += len(data)
 }
 
-// drop forgets a blob (GC deleted it).
 func (c *blobCache) drop(hash string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

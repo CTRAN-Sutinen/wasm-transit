@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// A searchable picker over possibly thousands of options: typing
-  /// filters (debounced a beat, so a fast typist doesn't pay for a
-  /// search per keystroke), only `cap` rows render, and long labels
-  /// ellipsize instead of spilling. Replaces every native <select>
-  /// whose option list is data, not a short enum.
   type Opt = { value: string; label: string; sub?: string };
 
   let {
@@ -33,10 +28,9 @@
   let rootEl: HTMLElement;
   let inputEl: HTMLInputElement;
 
-  // Debounce: the filtered list follows the query a beat after
-  // typing stops (cleanup cancels a pending recompute on each
-  // keystroke). The highlight follows the selected row while the
-  // query hasn't actually changed (e.g. on open, pre-filled).
+  // The filtered list follows the query a beat after typing stops, and cleanup
+  // cancels a pending recompute on each keystroke. The highlight follows the
+  // selected row while the query has not changed, as on open with a pre-filled value.
   $effect(() => {
     const q = query;
     const t = setTimeout(() => {
@@ -58,10 +52,9 @@
 
   function openList(): void {
     open = true;
-    // The search starts FROM the selection: the box never blanks out
-    // to an empty query (the current value stays readable), and the
-    // list opens positioned around it. Typing replaces the
-    // pre-filled text — select it first.
+    // The search starts from the selection, so the box never blanks and the list
+    // opens around the current value. Typing replaces the pre-filled text, so
+    // select it first.
     query = selected?.label ?? "";
     settled = query;
     const at = shown.findIndex((o) => o.value === value);
@@ -79,15 +72,13 @@
     value = v;
     onchange?.(v);
     close();
-    // The pick is made: focus leaves the box, so the page's own keys
-    // (a view's shortcuts) work again and typing no longer lands here.
+    // Focus leaves the box so the page's own keys work again.
     inputEl?.blur();
   }
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === "Escape" && open) {
-      // Consumed here: ESC closes the list and must not leak to
-      // page-wide handlers.
+      // ESC closes the list and must not reach page-wide handlers.
       e.stopPropagation();
       close();
       return;
@@ -156,8 +147,8 @@
 </div>
 
 <style>
-  /* The component owns its look (the list floats over the page, it
-     never pushes it), so every page that places it gets the same. */
+  /* The list floats over the page and never pushes it, so every page that
+     places the component gets the same look. */
   .combo { position: relative; width: 100%; }
   input {
     width: 100%; box-sizing: border-box; height: 1.9rem; font: inherit; font-size: 0.85rem; padding: 0 0.55rem;

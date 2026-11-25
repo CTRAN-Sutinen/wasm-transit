@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// A frame with no answer, said plainly: what it would show, why it
-  /// cannot (an op the bus does not have yet, a decision it waits on,
-  /// a capability that did not load, a document that is not there, an
-  /// input whose reads fail, or an op that refused), and — for a
-  /// failure — a retry. The rest of
-  /// the view keeps answering around it. `state` is the frame's state
-  /// as the answer graph keeps it (src/uis/answers.ts).
   type FrameState =
     | { kind: "unassembled"; cap: string }
     | { kind: "starved"; missing: string }

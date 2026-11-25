@@ -10,9 +10,8 @@ import (
 	"github.com/tetratelabs/wazero"
 )
 
-// Callers asking for the same bytes at the same time share one
-// compile; a failed compile is not kept, so the next caller tries
-// again.
+// Callers that ask for the same bytes at the same time share one compile. A
+// failed compile is not kept.
 func TestCompiledModuleIsSharedAndFailuresAreNotKept(t *testing.T) {
 	ctx := context.Background()
 	body, err := os.ReadFile("../../web/pkg/cap_authz.wasm")
@@ -58,7 +57,6 @@ func TestCompiledModuleIsSharedAndFailuresAreNotKept(t *testing.T) {
 		t.Fatal("a failed compile was kept")
 	}
 
-	// A caller waiting on another's compile gives up with its context.
 	const waiting = "test:waiting"
 	compileMu.Lock()
 	compiled[waiting] = &compileEntry{done: make(chan struct{})}

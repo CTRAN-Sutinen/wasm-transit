@@ -1,13 +1,9 @@
 package main
 
-// Boot sources (D-118): a server reads its inputs — the GTFS feed, the
-// street layer, the policy — from the bucket (bucket:<key>, the object
-// inputs/<key>) or a configured external URL; a local path stays a dev
-// convenience. Every read that lands is committed to the store as its
-// pointer's head (source.feed, source.streets) with the source as the
-// record's writer, so a replacement process given only the bucket and
-// the same source configuration serves the same manifest — even when the
-// source does not answer at its boot.
+// Pins boot sources (D-118). Every read that lands is committed as the
+// head of source.feed or source.streets, so a replacement process with
+// only the bucket serves the same manifest even when the source does not
+// answer.
 
 import (
 	"context"
@@ -30,8 +26,6 @@ func shaOf(b []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// origin serves body at /feed.zip with an ETag, honoring If-None-Match;
-// down() makes it stop answering. It counts full and 304 answers.
 type origin struct {
 	srv          *httptest.Server
 	body         atomic.Value // []byte
@@ -62,8 +56,6 @@ func newOrigin(t *testing.T, body []byte) *origin {
 	return o
 }
 
-// bootServer is a store-mode server over bucket with its feed read
-// from src, the way main wires -feed.
 func bootServer(t *testing.T, bucket store.Backend, src string) *server {
 	t.Helper()
 	s := newStoreServer(t, bucket)
@@ -91,7 +83,6 @@ func TestAFeedFromAURLIsImportedAndCommittedWithItsSource(t *testing.T) {
 	if len(log) != 1 || log[0].Writer != "import:"+o.srv.URL+"/feed.zip" {
 		t.Fatalf("the record names its source: %+v", log)
 	}
-	// Reading the same bytes again commits nothing new.
 	s2 := bootServer(t, bucket, o.srv.URL+"/feed.zip")
 	if _, err := s2.feeder.Load(); err != nil {
 		t.Fatal(err)
@@ -101,9 +92,6 @@ func TestAFeedFromAURLIsImportedAndCommittedWithItsSource(t *testing.T) {
 	}
 }
 
-// The Done-when pin: a replacement booted with only the bucket and the
-// same source configuration serves the same manifest — here with the
-// source not answering at its boot.
 func TestABootWhoseSourceDoesNotAnswerServesTheLastCommittedImport(t *testing.T) {
 	zip, _ := os.ReadFile(sampleFeed)
 	o := newOrigin(t, zip)
@@ -125,7 +113,6 @@ func TestABootWhoseSourceDoesNotAnswerServesTheLastCommittedImport(t *testing.T)
 	}
 }
 
-// With nothing committed and nothing answering, boot fails loudly.
 func TestABootWithNoSourceAndNothingCommittedFails(t *testing.T) {
 	o := newOrigin(t, []byte("x"))
 	o.down.Store(true)
@@ -151,9 +138,8 @@ func TestAFeedFromTheBucketIsReadFromInputs(t *testing.T) {
 	}
 }
 
-// A URL source is re-checked with a conditional GET, at most once per
-// interval: an unchanged origin answers 304 and nothing re-imports; a
-// changed one is read, imported, and committed.
+// Pins that a URL source is re-checked with a conditional GET at most
+// once per interval.
 func TestAURLSourceIsRecheckedConditionally(t *testing.T) {
 	zip, _ := os.ReadFile(sampleFeed)
 	o := newOrigin(t, zip)
@@ -167,14 +153,12 @@ func TestAURLSourceIsRecheckedConditionally(t *testing.T) {
 	if err != nil || again != first || o.full.Load() != 1 || o.cached.Load() != 1 {
 		t.Fatalf("an unchanged origin answers 304: full=%d cached=%d same=%v %v", o.full.Load(), o.cached.Load(), again == first, err)
 	}
-	// The origin goes down: the last import keeps serving.
 	o.down.Store(true)
 	if held, err := s.feeder.Load(); err != nil || held != first {
 		t.Fatalf("a source that stops answering keeps the last import: %v", err)
 	}
 }
 
-// The policy seeds from a URL like any other source.
 func TestThePolicySeedsFromAURL(t *testing.T) {
 	policy := testPolicy()
 	o := newOrigin(t, policy)

@@ -1,11 +1,4 @@
 <script lang="ts">
-  /// One change recorded on a stop (D-157), as a task: a step in its
-  /// life (the stop's `next` — only those are offered), a move, a change
-  /// of details, or the correction of an event entered wrong. It asks
-  /// only what that change needs, says in one sentence what will be
-  /// saved, and shows why it was refused beside the Save button. A move's
-  /// point is clicked on the map, typed, or the device's fix. Each is
-  /// one event the host writes. A RENDER component.
   import "./forms.css";
   import type { Details } from "../types/Details";
   import type { Event } from "../types/Event";
@@ -40,20 +33,13 @@
     stopId: string;
     stop: StopOn | null;
     events: Event[];
-    /// A lifecycle event, "move", "details", "fix:<index>", or "" — the
-    /// change chosen first, among `choices`.
     kind: string;
-    /// The changes the stop may take that day (its `next`, a move, new
-    /// details), offered when no kind is given.
     choices?: string[];
     date: string;
     busy: boolean;
-    /// The routes that stop here in the schedule running on the date.
     routes: string[];
-    /// The stop's requests: a change may name the one it carries out.
     requests: { id: string; job: string }[];
     fromRequest?: string;
-    /// The amenity names a stop's details offer (cap-stops `questions`).
     amenityNames: string[];
     point: { lat: number; lon: number } | null;
     onpoint: (lat: number, lon: number) => void;
@@ -61,11 +47,9 @@
     refusals: Refusal[];
     error: string;
     onsave: (event: Event, done: string) => void;
-    /// A correction names the event by its id (D-166), never its place.
+    /// A correction names the event by its id, not its place (D-166).
     oncorrect: (eventId: string, event: Event | null, done: string) => void;
     onclose: () => void;
-    /// In a page, as a card (the stop page); else a panel (beside the map,
-    /// for a move).
     card?: boolean;
   } = $props();
 
@@ -90,7 +74,6 @@
   let unchanged = $state(false);
 
   const yn = (v: boolean | undefined) => (v == null ? "" : v ? "yes" : "no");
-  // the details form, starting from what the stop records
   // svelte-ignore state_referenced_locally
   let dName = $state(stop?.name ?? "");
   // svelte-ignore state_referenced_locally
@@ -103,7 +86,7 @@
   const canUntil = $derived(chosen === "suspended" || chosen === "move" || fixing?.event === "suspended" || fixing?.event === "moved");
 
   function details(): Details {
-    // Only what changed is set (D-153: every detail changes by an event).
+    // Set only what changed, since every detail changes by an event (D-153).
     const out: Details = {};
     if (dName.trim() && dName.trim() !== (stop?.name ?? "")) out.name = dName.trim();
     if (dCode.trim() && dCode.trim() !== (stop?.code ?? "")) out.code = dCode.trim();
@@ -114,7 +97,6 @@
     return out;
   }
 
-  /// What will be saved, in a line.
   const summary = $derived.by(() => {
     const span = `${on || "undated"}${canUntil && temporary && until ? ` – ${until}` : canUntil ? (chosen === "suspended" || fixing?.event === "suspended" ? " (open-ended)" : " (permanent)") : ""}`;
     if (fixing) return `${EVENT_WORDS[fixing.event] ?? fixing.event} · ${span}`;
@@ -130,7 +112,6 @@
         return `${changeWords(chosen, stop?.status)[0]} · ${span}`;
     }
   });
-  /// What the change does not do: the schedule still visits the stop.
   const scheduleNote = $derived(
     (chosen === "suspended" || chosen === "retired" || chosen === "move") && routes.length
       ? `Scheduled routes: ${routes.join(", ")}. The schedule is not changed; use a service change for that.`

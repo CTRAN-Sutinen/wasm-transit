@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// The open route's direction, chosen: one button per direction the
-  /// route names (cap-directory `route_detail` `directions` — named
-  /// directions in id order, then the patterns in none), the open one
-  /// pressed. Shown while the route is read, so the control never
-  /// disappears. RENDER only: picking one is an event.
   import type { DirectionGroup } from "../types/DirectionGroup";
 
   let {

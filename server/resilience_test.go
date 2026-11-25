@@ -1,23 +1,8 @@
 package main
 
-// Server resilience: no single server copy is a point of failure. Each
-// copy is a working copy over the bucket, and the bucket is the record.
-// Pinned here:
-//
-//  1. Two copies on one store write to the same log at the same time.
-//     Every write lands once, in one order, and both copies serve the
-//     same heads.
-//  2. A copy started while the bucket does not answer boots on its disk
-//     cache (-store-cache): it serves the heads it last confirmed,
-//     labelled stale, and refuses writes with 503.
-//  3. The fault harness (faultBucket): an answer lost after the bucket
-//     kept the write, a copy stopped in the middle of a write, and a
-//     slow bucket. For each, no kept write is lost or written twice, and
-//     the copy recovers when the fault ends.
-//
-// A copy here is a server value with its own store handle over one
-// shared backend: it shares nothing with another copy but the bucket,
-// as two processes do.
+// Pins that no server copy is a point of failure (docs/architecture/
+// server.md). A copy has its own store handle over one shared backend,
+// so it shares only the bucket with another copy, as two processes do.
 
 import (
 	"context"
@@ -35,23 +20,18 @@ import (
 	"rustwasm/server/store"
 )
 
-// faultBucket is one copy's view of the shared bucket, with the faults
-// the harness can inject.
 type faultBucket struct {
 	store.Backend
-	// down: the bucket does not answer.
 	down atomic.Bool
-	// delay: each call waits this long first, unless its context ends.
+	// delay is nanoseconds that each call waits, unless its context ends.
 	delay atomic.Int64
-	// stopped: the copy is stopped. Nothing more from it reaches the
-	// bucket.
+	// stopped means nothing more from the copy reaches the bucket.
 	stopped atomic.Bool
 
 	mu     sync.Mutex
 	faults []createFault
 }
 
-// createFault fires once, on the first create of a key under prefix.
 type createFault struct {
 	prefix string
 	kind   faultKind
@@ -60,12 +40,8 @@ type createFault struct {
 type faultKind int
 
 const (
-	// loseAnswer: the bucket keeps the create, and its answer is lost.
 	loseAnswer faultKind = iota + 1
-	// stopBefore: the copy stops before the create reaches the bucket.
 	stopBefore
-	// stopAfter: the copy stops after the bucket keeps the create,
-	// before the copy answers.
 	stopAfter
 )
 
@@ -143,8 +119,7 @@ func (f *faultBucket) Create(ctx context.Context, k string, d []byte, m map[stri
 	return f.Backend.Create(ctx, k, d, m)
 }
 
-// copyOver is a server copy over the shared bucket, with the notes
-// module, served over HTTP. dir, when set, is the copy's disk cache.
+// copyOver sets dir as the copy's disk cache when it is not empty.
 func copyOver(t *testing.T, shared store.Backend, dir string) (*server, *faultBucket, string) {
 	t.Helper()
 	view := &faultBucket{Backend: shared}
@@ -163,8 +138,6 @@ func copyOver(t *testing.T, shared store.Backend, dir string) (*server, *faultBu
 	return s, view, srv.URL
 }
 
-// changedIDs answers the record ids each entry of a log changed, by
-// seq, read from the bucket.
 func changedIDs(t *testing.T, shared store.Backend, log string) map[int64][]string {
 	t.Helper()
 	entries, err := store.New(shared).Entries(log, 0, 0)
@@ -191,9 +164,7 @@ func changedIDs(t *testing.T, shared store.Backend, log string) map[int64][]stri
 	return out
 }
 
-// onceEach fails unless each id is changed by exactly one entry. The
-// document's own record (id "document", written with the first record)
-// is not counted.
+// onceEach does not count the document's own record (id "document").
 func onceEach(t *testing.T, log string, byEntry map[int64][]string, ids []string) {
 	t.Helper()
 	count := map[string]int{}
@@ -221,7 +192,7 @@ func TestTwoCopiesOnOneStoreWriteTheSameLogAtTheSameTime(t *testing.T) {
 	shared := store.NewMemory()
 	_, viewA, baseA := copyOver(t, shared, "")
 	_, viewB, baseB := copyOver(t, shared, "")
-	// A bucket a little slow widens each race between the copies.
+	// A slow bucket widens each race.
 	viewA.delay.Store(int64(time.Millisecond))
 	viewB.delay.Store(int64(time.Millisecond))
 
@@ -283,8 +254,6 @@ func TestACopyStartedWhileTheBucketIsDownServesItsCache(t *testing.T) {
 		before[path] = body
 	}
 
-	// The copy is started again on its machine while the bucket does
-	// not answer.
 	view := &faultBucket{Backend: shared}
 	view.down.Store(true)
 	again, _, base2 := copyOver(t, view, dir)
@@ -326,8 +295,6 @@ func TestACopyStartedWhileTheBucketIsDownServesItsCache(t *testing.T) {
 	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1", "n2"})
 }
 
-// A copy with no cache, started while the bucket does not answer, has
-// nothing to serve: unavailable, as before the cache.
 func TestACopyWithNoCacheStartedWhileTheBucketIsDownIsUnavailable(t *testing.T) {
 	shared := store.NewMemory()
 	_, _, base := copyOver(t, shared, "")
@@ -343,9 +310,8 @@ func TestACopyWithNoCacheStartedWhileTheBucketIsDownIsUnavailable(t *testing.T) 
 	}
 }
 
-// The fault harness: the bucket keeps a write and its answer is lost.
-// The page resends. The write is in the log once, and nothing else
-// changed.
+// Pins that a write whose answer is lost lands once when the page
+// resends.
 func TestAWriteWhoseAnswerIsLostLandsOnceWhenResent(t *testing.T) {
 	shared := store.NewMemory()
 	s, view, base := copyOver(t, shared, "")
@@ -368,8 +334,7 @@ func TestAWriteWhoseAnswerIsLostLandsOnceWhenResent(t *testing.T) {
 		t.Fatalf("the resend answers the entry it landed in: %d %v", code, out)
 	}
 
-	// A pointer commit (the manifest, a build): the record kept, its
-	// answer lost. The resend converges on the same head.
+	// A pointer commit whose answer is lost converges on the same head.
 	view.inject("pointers/policy/", loseAnswer)
 	env := store.Envelope{Kind: "policy", SchemaVersion: 1, ProducedBy: "server"}
 	if _, _, err := s.store.CAS("policy", "", []byte(`{"p":1}`), env, "", "w", 1); !errors.Is(err, store.ErrUnavailable) {
@@ -386,9 +351,8 @@ func TestAWriteWhoseAnswerIsLostLandsOnceWhenResent(t *testing.T) {
 	}
 }
 
-// The fault harness: a copy stops in the middle of a write, before or
-// after the bucket keeps it. The page sends again to another copy. The
-// write is in the log once, and the other copy serves it.
+// Pins that a write interrupted by a stopped copy lands once when the
+// page sends it to another copy.
 func TestACopyStoppedInTheMiddleOfAWriteLosesNothingAndWritesNothingTwice(t *testing.T) {
 	shared := store.NewMemory()
 	_, a, baseA := copyOver(t, shared, "")
@@ -423,8 +387,8 @@ func TestACopyStoppedInTheMiddleOfAWriteLosesNothingAndWritesNothingTwice(t *tes
 		t.Fatalf("the other copy answers the entry it landed in: %d %v", code, out)
 	}
 
-	// A pointer commit stopped between its blob and its record: the
-	// orphan blob is GC's, and the resend commits once.
+	// A commit stopped between its blob and its record leaves an orphan
+	// blob for GC, and the resend commits once.
 	_, a4, _ := copyOver(t, shared, "")
 	a4.inject("pointers/policy/", stopBefore)
 	env := store.Envelope{Kind: "policy", SchemaVersion: 1, ProducedBy: "server"}
@@ -448,10 +412,8 @@ func TestACopyStoppedInTheMiddleOfAWriteLosesNothingAndWritesNothingTwice(t *tes
 	}
 }
 
-// The fault harness: a slow bucket that answers within the timeout is a
-// bucket that answers. Writes land once, in one order, and the copy
-// stays ready. (A bucket slower than the timeout is one that does not
-// answer: store/diskcache_test.go.)
+// Pins that a slow bucket that answers within the timeout is a bucket
+// that answers. A slower one is store/diskcache_test.go.
 func TestASlowBucketWithinTheTimeoutKeepsEveryWriteOnce(t *testing.T) {
 	shared := store.NewMemory()
 	s, view, base := copyOver(t, shared, "")

@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// The pick timeline: each dated plan's governing period (plans
-  /// `periods` — derived, never stored) as a bar on a date axis, with
-  /// today marked and the plan in force (plans `resolve`) named. Bar
-  /// placement is the only arithmetic here, and it is drawing.
   import type { PlanPeriod } from "../types/cap_plans/PlanPeriod";
   import type { PlanIssue } from "../types/cap_plans/PlanIssue";
 
@@ -86,9 +82,8 @@
   .tick i, .today i { position: absolute; left: 4px; font-style: normal; font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
   .today { border-left: 2px solid var(--accent); }
   .today i { color: var(--accent); font-weight: 600; }
-  /* Clipped (the ticks run past the rows), so it must not shrink: a
-     clipped flex child has no minimum height and a column squeezes it
-     to nothing. */
+  /* The section is clipped (the ticks run past the rows), so it must not shrink.
+     A clipped flex child has no minimum height, and a column squeezes it to nothing. */
   section { overflow: hidden; flex: none; }
   .row { display: flex; align-items: center; padding: 0.35rem 1rem; position: relative; }
   .name { width: 11rem; flex: 0 0 11rem; font-size: 0.85rem; font-weight: 500; }

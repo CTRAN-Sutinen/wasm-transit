@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// What a staff page holds that the server has not confirmed (D-189):
-  /// the writes that wait to be sent, the writes the server refused
-  /// with its reasons, the writes it kept with a warning (a broken
-  /// reference, D-233), whether the server answers and the time of the
-  /// data the page works from, and a new version that waits. A RENDER
-  /// component: the state and the actions are the page's (its host,
-  /// over src/outbox.svelte.ts and kit's build lifecycle). It shows
-  /// nothing while all is sent and the server answers.
   type Held = { key: string; label: string; reason: string };
   type Warned = { key: string; label: string; warning: string };
   let {
@@ -27,13 +19,10 @@
     waiting: number;
     held: Held[];
     offline: boolean;
-    /// The time the server last confirmed the page's data ("4:05 PM").
     asOf?: string;
     needsSignIn?: boolean;
     updateReady?: boolean;
-    /// False while the page holds unsaved work: the update waits.
     canUpdate?: boolean;
-    /// The writes the server kept with a warning (a broken reference).
     warned?: Warned[];
     onsend: () => void;
     onretry: (key: string) => void;

@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// Departure rows — a RENDER component over a board's rows (cap-board
-  /// `stop_board`, or a watched stop's board from `watchlist_board`:
-  /// realtime-first, each row with its expected time and status). The
-  /// order, the times, and the statuses are the op's; this formats
-  /// them and emits the row picked.
   import type { BoardRow } from "../types/BoardRow";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { clock, routeColor, statusText, statusTone } from "./rideFormat";
@@ -18,9 +13,7 @@
     onpick,
   }: {
     rows: Row[];
-    /// The directory's routes — each badge takes its route's color.
     routes: DirectoryRoute[];
-    /// A station's pooled board: each row names its bay.
     pooled?: boolean;
     compact?: boolean;
     picked?: { trip: string; start_secs: number } | null;

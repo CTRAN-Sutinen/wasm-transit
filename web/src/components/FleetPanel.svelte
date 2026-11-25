@@ -1,17 +1,8 @@
 <script lang="ts">
-  /// What the change needs (runcut `fleet_summary` and `suggest_blocks`
-  /// on the service combination: the trips its service keys run): the peak vehicles and the platform,
-  /// revenue and layover hours as blocked, the trips no block carries,
-  /// and the suggested blocks that would carry them — adopted with one
-  /// event, their edits applied by the host. The blocks themselves: each
-  /// running block's span drawn on the day (the fleet summary's
-  /// outlines), and one opened to its chain (runcut `block_trips`) —
-  /// the trips in order and the layover after each.
   import type { FleetSummary } from "../types/FleetSummary";
   import type { Suggestion } from "../types/transit_runs/Suggestion";
   import type { BlockChainTrip } from "../types/BlockChainTrip";
   import { clock, fixed, mins } from "./designFormat";
-  /// "1 trip", "2 trips".
   const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
   let {
@@ -35,18 +26,15 @@
     blockTrips?: BlockChainTrip[] | null;
     blockError?: string;
     onblock?: (block: string) => void;
-    /// A stop's name as the directory lists it (its id when unknown).
     stopName?: (id: string) => string;
   } = $props();
 
-  // The day's axis: the first block out to the last one in, on the hour.
   const spans = $derived(fleet?.spans ?? []);
   const axisFrom = $derived(spans.length ? Math.floor(Math.min(...spans.map((b) => b.first_start_secs)) / 3600) * 3600 : 0);
   const axisTo = $derived(spans.length ? Math.ceil(Math.max(...spans.map((b) => b.last_end_secs)) / 3600) * 3600 : 3600);
   const pct = (secs: number) => ((secs - axisFrom) / Math.max(1, axisTo - axisFrom)) * 100;
   const hours = $derived(Array.from({ length: (axisTo - axisFrom) / 3600 + 1 }, (_, i) => axisFrom + i * 3600));
   let filter = $state("");
-  // The open block, wherever it was opened from, scrolled into view.
   function reveal(node: HTMLElement, on: boolean) {
     if (on) node.scrollIntoView({ block: "start" });
     return { update: (now: boolean) => { if (now) node.scrollIntoView({ block: "start" }); } };

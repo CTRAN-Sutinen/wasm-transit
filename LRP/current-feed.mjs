@@ -1,18 +1,19 @@
-// The current C-TRAN feed in the shape of the plan's Appendix A tables
-// (scenarios.csv), one row per route and day type, so a scenario diff
-// is a join on (route, day).
+// The current C-TRAN feed as the plan's Appendix A table (scenarios.csv),
+// one row per route and day type, so a scenario diff is a join on
+// (route, day).
 //
 //   node LRP/current-feed.mjs [feed.zip] [weekday sat sun] > LRP/current-feed.csv
 //
-// Defaults: testdata/ctran-gtfs.zip; Wed 2026-11-18, Sat 2026-11-21,
-// Sun 2026-11-22 (an ordinary week of the 2026-09-13 – 2027-01-09
-// feed). The columns are measured, not the plan's own method:
+// Defaults are testdata/ctran-gtfs.zip and an ordinary week of the
+// 2026-09-13 to 2027-01-09 feed: Wed 2026-11-18, Sat 2026-11-21,
+// Sun 2026-11-22. The columns are measured from the feed, not taken from
+// the plan's method:
 //   first_trip / last_trip  the first and last trip start (either direction)
 //   peak_headway_min        60 / the most trips one direction starts in
 //                           any clock hour (rounded)
-//   peak_vehicles           the most blocks on the route at once; a
-//                           block's trips on the route are one interval
-//                           while the gap between them is under 60 min
+//   peak_vehicles           the most blocks on the route at once. A
+//                           block's trips on the route form one interval
+//                           while the gap between them is under 60 min.
 //   trips                   every trip that day, both directions
 import { execFileSync } from "node:child_process";
 
@@ -36,7 +37,7 @@ const clock = (s) => {
 
 const routes = new Map(table("routes.txt").map((r) => [r.route_id, r]));
 const trips = table("trips.txt");
-const span = new Map(); // trip_id -> [start, end]
+const span = new Map();
 for (const st of table("stop_times.txt")) {
   const t = st.departure_time || st.arrival_time;
   if (!t) continue;
@@ -44,8 +45,8 @@ for (const st of table("stop_times.txt")) {
   if (!cur) span.set(st.trip_id, [s, s]);
   else { if (s < cur[0]) cur[0] = s; if (s > cur[1]) cur[1] = s; }
 }
-// Active services per date: calendar.txt weekdays (all zero in this
-// feed) plus calendar_dates.txt exceptions.
+// A service runs on the weekdays of calendar.txt (all zero in this feed),
+// changed by the exceptions in calendar_dates.txt.
 const cal = table("calendar.txt"), cd = table("calendar_dates.txt");
 const WD = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 function services(date) {

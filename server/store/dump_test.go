@@ -1,8 +1,7 @@
 package store
 
-// A dump writes every object of a store to a folder: each at its key,
-// its exact bytes, a blob's envelope beside it; and it refuses a folder
-// that is not empty.
+// A dump writes each object at its key, in its exact bytes, with a blob's
+// envelope beside it. It refuses a folder that is not empty.
 
 import (
 	"context"

@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// The plan set: each plan with its pick date, which is open and
-  /// which is the baseline; open, set as baseline, fork the open plan
-  /// into a dated pick (with the day its period runs through, the fork
-  /// carries every weekly calendar to it — D-41), or import a feed as a
-  /// new base. A host that passes `onrename` / `ondelete` lets a plan
-  /// be renamed or removed from the device.
   let {
     plans,
     activeKey,

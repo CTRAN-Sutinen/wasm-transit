@@ -9,10 +9,8 @@ import (
 	"testing"
 )
 
-// oldDir writes a store in the layout an older build kept on disk:
-// blobs/<hex> with a <hex>.meta.json sidecar, pointers/<name>.log as
-// JSONL, a lock file, a .tmp left by an interrupted write, and an
-// orphan no record names. It answers each pointer's log.
+// oldDir writes a store in the layout that an older build kept on disk,
+// and answers each pointer's log.
 func oldDir(t *testing.T) (string, map[string][]LogEntry) {
 	t.Helper()
 	dir := t.TempDir()
@@ -54,10 +52,9 @@ func oldDir(t *testing.T) (string, map[string][]LogEntry) {
 	return dir, logs
 }
 
-// A store an older build wrote, copied into a bucket, verifies and
+// A store that an older build wrote, copied into a bucket, verifies and
 // answers every pointer's head, log, and blobs as the directory held
-// them — so a server over it serves the same manifest, plan set, and
-// edit document.
+// them.
 func TestCopyCarriesADirectoryStoreIntoABucket(t *testing.T) {
 	eachBackend(t, func(t *testing.T, b Backend) {
 		dir, logs := oldDir(t)
@@ -85,15 +82,15 @@ func TestCopyCarriesADirectoryStoreIntoABucket(t *testing.T) {
 				t.Fatalf("%s head blob: %q %+v %v", name, data, e, err)
 			}
 		}
-		// A second copy over the same bucket is a no-op, not a conflict.
+		// A second copy over the same bucket is a no-op.
 		if _, err := CopyDir(context.Background(), dir, b); err != nil {
 			t.Fatalf("a re-run copy: %v", err)
 		}
 	})
 }
 
-// A log a crash tore (the NUL-padded tail a host crash left) is
-// refused, naming the line: the copy never guesses at history.
+// A log with a NUL-padded tail from a host crash is refused, naming the
+// line. The copy never guesses at history.
 func TestCopyRefusesATornLog(t *testing.T) {
 	dir, _ := oldDir(t)
 	f, _ := os.OpenFile(filepath.Join(dir, "pointers", "edits.log"), os.O_APPEND|os.O_WRONLY, 0o644)
@@ -105,7 +102,6 @@ func TestCopyRefusesATornLog(t *testing.T) {
 	}
 }
 
-// A bucket that already holds a different history is never overwritten.
 func TestCopyRefusesABucketWithAnotherHistory(t *testing.T) {
 	dir, _ := oldDir(t)
 	b := NewMemory()

@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// A stop display's setup — a RENDER component: the three layouts to
-  /// pick from and the stop type-ahead (PlaceSearch over the
-  /// directory's `stops`). Picking a stop is an event.
   import PlaceSearch from "./PlaceSearch.svelte";
 
   type Layout = "center" | "route" | "routes";
@@ -22,7 +19,6 @@
     found: { text: string; places: Place[] } | null;
     limit: number;
     off: boolean;
-    /// The stop on screen, when one is.
     current: Place | null;
     ontype: (text: string) => void;
     onlayout: (layout: Layout) => void;

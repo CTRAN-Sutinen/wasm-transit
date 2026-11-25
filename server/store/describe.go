@@ -1,20 +1,9 @@
 package store
 
 // The store describes itself (D-203; docs/FORMATS.md, "The store
-// describes itself"). Each serving process creates, create only, what
-// an outside reader needs to read the bucket with no app:
-//
-//	layout                              the layout's version and hash scheme
-//	README                              the layout in plain language
-//	kinds/<hex>.json                    each build's kind table, by content hash
-//	schemas/<tag>.v<N>/<hex>.json       each locked schema, by content hash
-//
-// A field whose schema says `"format": "content-hash"` names a blob in
-// this store. `store verify` and `store gc` follow those references:
-// from every blob a record names, and from every record in every log
-// entry (a log record's schema is its document's, through the kind
-// table's records). A store with none of these objects is read as
-// before: the records and the builds name what gc keeps.
+// describes itself"). A field whose schema says `"format": "content-hash"`
+// names a blob in the store. `store verify` and `store gc` follow those
+// references, including from every record in every log entry.
 
 import (
 	"bytes"
@@ -27,32 +16,23 @@ import (
 	"strings"
 )
 
-// LayoutKind is the layout object's kind; LayoutVersion the layout it
-// describes.
 const (
 	LayoutKind    = "store_layout"
 	LayoutVersion = 1
 )
 
-// Layout is the `layout` object.
 type Layout struct {
 	Kind          string `json:"kind"`
 	SchemaVersion int    `json:"schema_version"`
-	// Hash is the scheme every content hash in the store uses: "sha256",
-	// written "sha256:<hex>".
-	Hash string `json:"hash"`
-	// Readme is the key of the plain-language description.
-	Readme string `json:"readme"`
+	Hash          string `json:"hash"`
+	Readme        string `json:"readme"`
 }
 
-// LayoutKey and ReadmeKey are the layout objects' keys.
 const (
 	LayoutKey = "layout"
 	ReadmeKey = "README"
 )
 
-// Readme is the README a store carries: the layout in plain words, for a
-// person with only the bucket.
 const Readme = `This bucket is a transit agency's record, written by wasm-transit.
 Every object is written once and never changed.
 
@@ -85,10 +65,8 @@ gc/<hex>
 The formats are described in full in docs/FORMATS.md of wasm-transit.
 `
 
-// Describe creates the store's description, create only: the layout and
-// the README once, the kind table, and every schema it names (schemas:
-// "sha256:<hex>" → bytes). Each object that exists already is left as it
-// is. A schema whose bytes do not hash to its name is refused.
+// Describe leaves an object that exists as it is. It refuses a schema
+// whose bytes do not hash to its name.
 func (s *Store) Describe(table []byte, schemas map[string][]byte) error {
 	ctx := context.Background()
 	layout, err := json.Marshal(Layout{Kind: LayoutKind, SchemaVersion: LayoutVersion, Hash: "sha256", Readme: ReadmeKey})
@@ -137,7 +115,6 @@ func schemaKey(tag string, version uint32, hash string) string {
 	return fmt.Sprintf("schemas/%s.v%d/%s.json", tag, version, strings.TrimPrefix(hash, "sha256:"))
 }
 
-// describedTable is the part of a kind table the store reads.
 type describedTable struct {
 	Kinds []struct {
 		StoreKind string `json:"store_kind"`
@@ -153,23 +130,17 @@ type describedTable struct {
 	} `json:"kinds"`
 }
 
-// recordPlace is where a log record lives: its document's tag, and the
-// document field that holds the collection.
 type recordPlace struct {
 	tag        string
 	collection string
 }
 
-// described is what the store says of itself: each kind's schemas, and
-// where each log record kind lives.
 type described struct {
 	tagOf   map[string]string           // store kind → tag
 	schemas map[string][]map[string]any // "<tag> v<N>" → its schemas (an additive change keeps one version)
 	records map[string]recordPlace      // record kind → its place
 }
 
-// readDescribed reads the store's kind tables and schemas. A store with
-// none answers an empty description.
 func readDescribed(ctx context.Context, b Backend) (*described, error) {
 	d := &described{tagOf: map[string]string{}, schemas: map[string][]map[string]any{}, records: map[string]recordPlace{}}
 	tables, err := b.List(ctx, "kinds/", "")
@@ -223,8 +194,6 @@ func readDescribed(ctx context.Context, b Backend) (*described, error) {
 	return d, nil
 }
 
-// marks says whether a blob of the store kind and version may name a
-// blob: one of its schemas marks a field.
 func (d *described) marks(kind string, version uint32) bool {
 	for _, s := range d.schemas[fmt.Sprintf("%s v%d", d.tagOf[kind], version)] {
 		if hasMark(s) {
@@ -255,9 +224,6 @@ func hasMark(node any) bool {
 	return false
 }
 
-// refs answers the hex of every blob a document of the store kind and
-// version names, by its schemas' marks. A document that is not JSON
-// names nothing.
 func (d *described) refs(kind string, version uint32, doc []byte) []string {
 	schemas := d.schemas[fmt.Sprintf("%s v%d", d.tagOf[kind], version)]
 	if len(schemas) == 0 {
@@ -275,8 +241,6 @@ func (d *described) refs(kind string, version uint32, doc []byte) []string {
 	return sortedKeys(found)
 }
 
-// recordRefs answers the hex of every blob a log record names: the
-// record walked by the schema of its document's collection item.
 func (d *described) recordRefs(kind string, version uint32, record json.RawMessage) []string {
 	place, ok := d.records[kind]
 	if !ok || len(record) == 0 {
@@ -309,7 +273,6 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
-// resolve follows a local $ref (#/$defs/<name> or #/definitions/<name>).
 func resolve(root, node map[string]any) map[string]any {
 	for i := 0; i < 16 && node != nil; i++ {
 		ref, ok := node["$ref"].(string)
@@ -331,9 +294,6 @@ func resolve(root, node map[string]any) map[string]any {
 	return node
 }
 
-// walk collects the hex of each string at a node whose format is
-// content-hash, through properties, additionalProperties, items, and
-// every branch of allOf, anyOf, and oneOf.
 func walk(root, node map[string]any, v any, found map[string]bool, depth int) {
 	if node == nil || depth > 64 {
 		return
@@ -375,8 +335,6 @@ func walk(root, node map[string]any, v any, found map[string]bool, depth int) {
 	}
 }
 
-// logRefs answers each blob the records of every log entry name, with
-// the entry that names it first.
 func (d *described) logRefs(ctx context.Context, b Backend) (map[string]string, error) {
 	out := map[string]string{}
 	if len(d.records) == 0 {

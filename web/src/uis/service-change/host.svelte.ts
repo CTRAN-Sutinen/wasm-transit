@@ -1,23 +1,11 @@
-/// The service-change UI's host layer — the ONLY file of this UI that
-/// calls the capability bus. It owns I/O (feed bytes, the export
-/// download, the URL hash), the plan set (plans.svelte.ts: JS owns the
-/// documents; the undo stack is earlier versions of them), and the
-/// selection. Every number, list, and line it writes into `sc` is an
-/// op's answer, adopted as-is.
-///
-/// The UI follows the stages a service change takes, as dogfood
-/// sessions on C-TRAN worked them (docs/architecture/generated-uis/service-change.md):
-/// the plan and its calendar (the service keys, edited), a scan of the
-/// network hour by hour, the stops (each one shared by every route that
-/// visits it, read on its own card), one route's day changed in place
-/// with a hub it serves beside it, the vehicles and hours the change needs (adopting
-/// the suggested blocks), and the proposal across every day type. The
-/// selection — plan, baseline, the day type's combination, stage,
-/// the open stop, route, direction, hub, hour window — lives in the URL hash, which
-/// the page follows (back and forward move through it).
-///
-/// The authoring path (fork, apply, undo, export, publish) is the
-/// service-design host's, copied: one UI never imports another's files.
+// Only this file of the UI calls the bus. Every number, list, and line that it
+// writes into `sc` is an op's answer, adopted as given.
+//
+// The selection (plan, baseline, combination, stage, stop, route, direction,
+// hub, hour window) lives in the URL hash, and the page follows it both ways.
+//
+// The authoring path (fork, apply, undo, export, publish) is copied from the
+// service-design host, because one UI never imports another's files.
 
 import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, readManifest, served, servedNetworkValue, stopWarnings, withStopVersions, Doc, type DeploymentManifest } from "../../engine";
@@ -26,7 +14,7 @@ import descriptor from "./ui.json";
 
 import { resumeSignIn } from "../../signin.svelte";
 import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting } from "../../outbox.svelte";
-// This page's capabilities answer inside its linked assembly (D-77).
+// Each document registers once in the page's one linked module (D-77).
 assemble("service-change");
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
@@ -66,23 +54,18 @@ export const STAGES: { id: Stage; label: string }[] = [
   { id: "proposal", label: "Proposal" },
 ];
 export type ScanView = "grid" | "map";
-/// A plan on the timeline (D-139): a pick the deployment publishes
-/// (read-only: a change goes into a fork) or a draft on this device.
-/// `loaded`: its document is on this device (a published pick is
-/// fetched the first time it opens).
+/// `loaded` is false for a published pick until it first opens. A published pick is read-only (D-139).
 export type PlanRow = { key: string; id: string; name: string; effectiveFrom: string | null; published: boolean; loaded: boolean };
-/// The hour window, service-day hours [from, to).
+/// Service-day hours, [from, to).
 export type HourWindow = { from: number; to: number };
 
 export const sc = $state({
-  /// A new build waits (kit's buildWaiting): the person applies it.
   updateReady: false,
   status: "Load a GTFS feed to begin.",
   alert: false,
   busy: false,
   feed: null as { label: string; info: FeedInfo | null } | null,
   plans: [] as PlanRow[],
-  /// The deployment's published plan set (null: it publishes none).
   pickSet: null as PublishedPlans | null,
   activeKey: "",
   compareKey: "",
@@ -90,11 +73,9 @@ export const sc = $state({
   issues: [] as NetworkError[],
   warnings: [] as NetworkWarning[],
   dayTypes: [] as DayType[],
-  /// The plan's period was read and runs no service (no day type).
   noService: false,
-  /// The selected combination's id (its members joined " + ").
   group: "",
-  /// The member of the group the changes act on (D-8).
+  /// The member of the group that the changes act on (D-8).
   editType: "",
   stage: "scan" as Stage,
   scanView: "grid" as ScanView,
@@ -105,15 +86,12 @@ export const sc = $state({
   keys: [] as ServiceKey[],
   fleet: null as FleetSummary | null,
   suggestion: null as Suggestion | null,
-  /// The block open on Vehicles & hours, and its chain.
   block: "",
   blockTrips: null as BlockChainTrip[] | null,
   planCompare: null as DayTypeComparison[] | null,
   frequency: null as RouteFrequency | null,
-  /// The stop open on the Stops stage, and its card.
   stopOpen: "",
   stopCard: null as StopDetail | null,
-  // The drawer: a route, or a hub.
   route: "",
   direction: null as string | null,
   routeDetail: null as RouteDetail | null,
@@ -131,15 +109,9 @@ export const sc = $state({
   exported: "",
   published: null as { plans_hash: string } | null,
   publishRefused: [] as object[],
-  /// Each frame that shows no answer, and why (the answer graph's,
-  /// and an action's failure: export, publish).
   frames: {} as Record<string, FrameState>,
-  /// What the page holds of each input (the kit's).
   inputs: {} as Record<string, InputState>,
-  /// The new-route task is open on the Route stage, and what
-  /// it offers: every stop the plan can visit — its own, and the stops
-  /// document's in service or planned by the pick date (D-173) — and
-  /// the plan's service keys.
+  /// The new-route task offers the stops that the stops document lists in service or planned by the pick date (D-173).
   creating: false,
   newRoute: null as NewRouteOptions | null,
   newRouteProblems: [] as string[],
@@ -147,9 +119,6 @@ export const sc = $state({
 
 export type NewRouteStop = { value: string; label: string; sub?: string; fromStops: boolean };
 export type NewRouteOptions = { stops: NewRouteStop[]; keys: { id: string; name: string }[]; routeIds: string[] };
-/// What the planner asked for: the route, each direction's stops in
-/// order and its run time, and the trips — per direction and service
-/// key, a first and last departure and the minutes between.
 export type NewRouteSpec = {
   id: string;
   name: string;
@@ -157,10 +126,6 @@ export type NewRouteSpec = {
   directions: { id: string; name: string; stops: string[]; runSecs: number }[];
   trips: { direction: string; serviceType: string; firstSecs: number; lastSecs: number; everySecs: number }[];
 };
-
-// ---------------------------------------------------------------------
-// documents
-// ---------------------------------------------------------------------
 
 function active(): Network | null {
   return getAllPlans()[sc.activeKey] ?? null;
@@ -170,22 +135,18 @@ function baseline(): Network | null {
   return getAllPlans()[sc.compareKey] ?? null;
 }
 
-/// The selected combination's members, as day_types answered them.
 export function groupMembers(): string[] {
   for (const t of sc.dayTypes) for (const g of t.groups) if (g.id === sc.group) return g.members;
   return [];
 }
 
-/// The date the date-scoped hub reads are asked on: the combination's
-/// first date in the period. Every date a combination holds runs
-/// exactly its members (D-55), so this is an address, never a label.
+/// Every date that a combination holds runs exactly its members (D-55), so its first date works as an address.
 function groupDay(): string {
   for (const t of sc.dayTypes) for (const g of t.groups) if (g.id === sc.group) return g.dates[0] ?? "";
   return "";
 }
 
-/// The period the plan answers for: from its pick on (the plan frame,
-/// the one field a host reads of a document), else from today.
+/// The plan frame's pick date is the one field that a host reads of a document.
 function periodFrom(): string {
   return active()?.plan?.effective_from || today();
 }
@@ -199,14 +160,8 @@ export function planName(key: string): string {
   return sc.plans.find((p) => p.key === key)?.name ?? "";
 }
 
-/// A published pick's key until (and after) its document is fetched.
 const pickKey = (id: string) => `published:${id}`;
 
-/// The timeline over the plans on this device and the published set:
-/// the plans module answers every row (which are published, the picks
-/// not on this device yet), the pick in force, and the chain. The host
-/// gives each plan's frame and its own key, and a name for a plan that
-/// has none.
 async function readTimeline() {
   const plans = Object.entries(getAllPlans()).map(([key, d]) => ({
     key,
@@ -232,23 +187,17 @@ async function syncPlanRows(): Promise<void> {
   }));
 }
 
-/// What runs in production today: the published pick in force, else
-/// — before the first takes effect — the deployment's feed (the rule
-/// the deployment serves by, engine `servedNetwork`).
+/// Before the first pick takes effect, the deployment's feed runs (the rule of engine `servedNetwork`).
 export function runsToday(): string | null {
   return sc.chain?.inForce ?? sc.plans.find((p) => p.key.startsWith("served:"))?.id ?? null;
 }
 
-/// Can the open plan change? A draft with a pick date can; a published
-/// pick is read-only (D-139), and a plan with no pick date sets one
-/// first.
+/// A published pick is read-only (D-139). A plan with no pick date sets one first.
 export function editable(key = sc.activeKey): boolean {
   const row = sc.plans.find((p) => p.key === key);
   return !!row && !row.published && !!row.id;
 }
 
-/// A published pick's document, fetched once and kept on this device
-/// (the status says so only while it is fetched).
 async function ensureLoaded(key: string): Promise<boolean> {
   if (getAllPlans()[key]) return true;
   return (await step("Fetching the pick…", () => fetchPick(key))) ?? false;
@@ -265,10 +214,7 @@ async function fetchPick(key: string): Promise<boolean> {
   return true;
 }
 
-/// A feed's document stamped as a pick on its first service date
-/// (D-140): the date it is listed under, changeable on its row. The
-/// authoring capability decides whether it is stamped (`stamp_pick`);
-/// the host gives the new id.
+/// The authoring capability decides whether the feed is stamped (`stamp_pick`; D-140). The host gives the new id.
 async function stampAsPick(doc: Network, name: string): Promise<Network> {
   if (!(await available("author"))) return doc;
   const stamped = await ask("author", "stamp_pick", { network_hash: docOf(doc), name, id: crypto.randomUUID() });
@@ -287,8 +233,6 @@ function docOf(network: Network): Doc<Network> {
   return doc;
 }
 
-/// The stored plan set, read through the network capability: its plans
-/// by store id, or a refusal naming both versions.
 async function readStoredSet(stored: unknown): Promise<Record<string, unknown>> {
   return (await ask("network", "stored_plans", { document: stored })).plans;
 }
@@ -320,10 +264,6 @@ function syncHistory(): void {
   sc.canRedo = (redo[sc.activeKey]?.length ?? 0) > 0;
 }
 
-// ---------------------------------------------------------------------
-// status and failure, per frame
-// ---------------------------------------------------------------------
-
 function say(text: string, alert = false): void {
   sc.status = text;
   sc.alert = alert;
@@ -333,8 +273,7 @@ function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
-/// An action's failure (an export, a publish) belongs to its frame, as
-/// a node's does: the frame says why, and its next answer clears it.
+/// An action's failure belongs to its frame. The next answer clears it.
 async function act(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
   try {
     await run();
@@ -345,13 +284,6 @@ async function act(frame: string, clear: () => void, run: () => Promise<void>): 
     console.error(frame, e);
   }
 }
-
-// ---------------------------------------------------------------------
-// This UI's answer graph (src/uis/kit.ts). Inputs:
-// "active" / "compare" / "plans" (the documents), "group" / "route" /
-// "direction" / "stop" / "stop-open" / "window" (the selection), "stage" /
-// "scan-view" (what is on screen).
-// ---------------------------------------------------------------------
 
 const request = answerGraph(
   [
@@ -382,9 +314,6 @@ const request = answerGraph(
         if (!doc) return;
         sc.dayTypes = (await ask("analysis", "day_types", { network_hash: docOf(doc), from: periodFrom() })).day_types;
         sc.noService = sc.dayTypes.length === 0;
-        // The selection keys on a combination's id; it stays while
-        // the plan's period still holds it, else the first type's
-        // regular service.
         if (!sc.dayTypes.some((t) => t.groups.some((g) => g.id === sc.group))) {
           sc.group = sc.dayTypes[0]?.groups[0]?.id ?? "";
           touch("group");
@@ -409,8 +338,6 @@ const request = answerGraph(
       frame: "Map",
       needs: ["document.active", "group", "stage", "scan-view"],
       caps: ["directory"],
-      // The network's lines: the scan's map, and the Stops stage's
-      // ground under the stops.
       visible: () => (sc.stage === "scan" && sc.scanView === "map") || sc.stage === "stops",
       clear: () => (sc.lines = []),
       run: async () => {
@@ -422,9 +349,7 @@ const request = answerGraph(
     {
       id: "analysis.service_type_compare",
       frame: "Comparison",
-      // Read only where it marks the change: the scan's changed routes
-      // and the route's ledger and before → after. The comparison is
-      // the proposal's; elsewhere it stays quiet.
+      // Read only where it marks the change. The comparison is the proposal's, so elsewhere it stays quiet.
       needs: ["document.active", "document.compare", "group", "stage"],
       caps: ["analysis"],
       visible: () => !!sc.compareKey && (sc.stage === "scan" || sc.stage === "route"),
@@ -451,9 +376,6 @@ const request = answerGraph(
       },
     },
     {
-      // What the change needs, on a date the day type runs: the
-      // fleet as blocked, and the blocks suggested for the trips no
-      // block carries (D-46).
       id: "runcut.fleet",
       frame: "Fleet",
       needs: ["document.active", "group", "stage"],
@@ -470,8 +392,6 @@ const request = answerGraph(
       },
     },
     {
-      // One block's chain on the same date: its trips in order and
-      // the layover after each.
       id: "runcut.block_trips",
       frame: "Block",
       needs: ["document.active", "group", "stage", "block"],
@@ -566,8 +486,6 @@ const request = answerGraph(
       },
     },
     {
-      // The open stop's card: its record and every pattern that
-      // visits it, the trips counted under the day type.
       id: "directory.stop_detail",
       frame: "StopCard",
       needs: ["document.active", "group", "stop-open", "stage"],
@@ -622,8 +540,7 @@ const request = answerGraph(
         if (!doc) return;
         const { issues, warnings } = authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
         sc.issues = issues;
-        // and the stops it visits that are not in service over its
-        // period, as the stops document records them (D-157)
+        // Stops that the plan visits and that are not in service over its period also warn, as the stops document records them (D-157).
         sc.warnings = [...warnings, ...(await stopWarnings(docOf(doc), sc.pickSet, heldStops))];
       },
     },
@@ -661,10 +578,6 @@ function changeStatus(done: string): void {
   say(`${done} ${health}`, sc.issues.length > 0);
 }
 
-// ---------------------------------------------------------------------
-// the URL hash — the selection, followed both ways
-// ---------------------------------------------------------------------
-
 let writing = false;
 
 function writeHash(): void {
@@ -688,7 +601,6 @@ function writeHash(): void {
   writing = false;
 }
 
-/// The hash's selection; returns the inputs that changed.
 function readHash(): string[] {
   const q = new URLSearchParams(location.hash.slice(1));
   const changed: string[] = [];
@@ -726,7 +638,6 @@ async function select(...inputs: string[]): Promise<void> {
   await request(...inputs);
 }
 
-// Back, forward, and an edited address all move the page.
 addEventListener("hashchange", () => {
   if (writing) return;
   const changed = readHash();
@@ -737,17 +648,10 @@ addEventListener("popstate", () => {
   if (changed.length) void request(...changed);
 });
 
-// ---------------------------------------------------------------------
-// The inputs (its ui.json's `inputs`, read by the kit): each reader
-// answers its document, null for none, or throws when the read fails.
-// ---------------------------------------------------------------------
-
 type Manifest = DeploymentManifest;
 
 let manifest: Manifest | null = null;
-/// The documents the inputs hold: the published plan set, the stops
-/// document a plan reads (D-157), and the published network a first
-/// plan forks (read only while no plan is open).
+/// The published network is read only while no plan is open.
 let heldPlans: PublishedPlans | null = null;
 let heldStops: Doc | null = null;
 let servedBase: { network: Doc<Network>; boundary: Doc<Boundary> } | null = null;
@@ -775,7 +679,6 @@ const readers: Record<string, Reader<any>> = {
     },
     adopt: async (set: PublishedPlans | null) => {
       heldPlans = set;
-      // Published now: on the timeline as picks, read-only (D-139).
       sc.pickSet = set;
       await syncPlanRows();
     },
@@ -792,8 +695,7 @@ const readers: Record<string, Reader<any>> = {
     adopt: (doc: Doc | null) => void (heldStops = doc),
   },
   network: {
-    // The published network (GET /network), the base a first plan
-    // forks: read only while the device holds no plan.
+    // The base that a first plan forks. Read only while the device holds no plan.
     read: async ({ signal }) => {
       if (Object.keys(getAllPlans()).length) return null;
       const got = await servedNetworkValue(signal);
@@ -802,46 +704,29 @@ const readers: Record<string, Reader<any>> = {
     adopt: (got) => void (servedBase = got),
   },
 };
-/// The pin of the plan set the page holds.
 let heldPlansPin: string | null = null;
 
 const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, sc.inputs, request);
 
-/// The inputs a publish moves: the manifest, and what it pins.
 const WRITTEN = ["manifest", "plans", "stops"];
 
-/// Whether the server did not answer the last read of the manifest:
-/// the page works from its last documents.
 export function offline(): boolean {
   const m = sc.inputs.manifest;
   return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
 }
 
-/// When the server last confirmed the documents the page works from
-/// ("4:05 PM"), while it is offline; else "".
 export function asOf(): string {
   const m = sc.inputs.manifest;
   if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
   return clockLabelAt(m.asOfMs);
 }
 
-// ---------------------------------------------------------------------
-// boot and loaders
-// ---------------------------------------------------------------------
-
-/// The page opens on the plan it had open, else what runs today: the
-/// pick in force (the deployment's timeline, D-139), else — before the
-/// first pick takes effect — the deployment's feed, as a read-only
-/// pick on its first service date (D-140), beside the published picks.
 export async function boot(): Promise<void> {
   void installApp();
   onBuildReady(() => (sc.updateReady = true));
   await Promise.all([restorePlans(readStoredSet), resumeSignIn()]);
   await openOutbox("service-change", () => void published());
-  // The inputs: the manifest, the published picks, the stops, and the
-  // deployment's feed for a device that holds no plan.
   await inputs.start();
-  // The writes that wait on the device, and a new build.
   clockEvery(POLL_MS, () => {
     void sendWaiting();
     sc.updateReady = buildWaiting();
@@ -852,8 +737,6 @@ export async function boot(): Promise<void> {
     await openPlan(sc.activeKey);
     return;
   }
-  // Production today: the pick in force, else (before the first takes
-  // effect) the deployment's feed.
   if (sc.pickSet?.plans.length && (await available("plans"))) {
     const inForce = (await ask("plans", "in_force", { published: sc.pickSet, date: today() })).plan;
     if (inForce) {
@@ -894,11 +777,7 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
   if (key) await openPlan(key);
 }
 
-// ---------------------------------------------------------------------
-// the plan set
-// ---------------------------------------------------------------------
-
-/// A plan opened; nothing is compared until the planner chooses (D-141).
+/// Nothing is compared until the planner chooses (D-141).
 export async function openPlan(key: string): Promise<void> {
   if (!(await ensureLoaded(key))) return;
   sc.activeKey = key;
@@ -909,9 +788,7 @@ export async function openPlan(key: string): Promise<void> {
   say(`${planName(sc.activeKey)}${sc.compareKey ? ` against ${planName(sc.compareKey)}` : ""}.`);
 }
 
-/// A plan renamed (the plan frame's name, through cap-author). The
-/// rename is not a change to the plan's service, so it is not on the
-/// undo stack.
+/// A rename is not a change to the plan's service, so it is not on the undo stack.
 export async function renamePlan(key: string, name: string): Promise<void> {
   const doc = getAllPlans()[key];
   if (!doc || !name.trim() || !editable(key)) return;
@@ -925,12 +802,7 @@ export async function renamePlan(key: string, name: string): Promise<void> {
   say(`Renamed to "${name.trim()}".`);
 }
 
-/// A draft's period set: the day it picks on and, optionally, the day
-/// it runs through — the fork's own edit (author `set_plan`): the
-/// weekly service carried to the end (D-41) and the calendar cut to
-/// the period (D-138). A plan with no pick date is stamped as a pick.
-/// The dates it drops are a change to its service, so it is undone like
-/// one.
+/// A plan with no pick date is stamped as a pick. The dates it drops change its service (D-41, D-138), so it is undone like one.
 export async function setPickDates(key: string, from: string, through = ""): Promise<void> {
   const doc = getAllPlans()[key];
   const row = sc.plans.find((p) => p.key === key);
@@ -949,8 +821,7 @@ export async function setPickDates(key: string, from: string, through = ""): Pro
   say(`${planName(key)} now picks on ${from}${through ? ` and runs through ${through}` : ""}.`);
 }
 
-/// A plan removed from this device. A published pick stays published
-/// (and on the timeline); this drops the copy here and its undo history.
+/// A published pick stays published. This drops the copy here and its undo history.
 export async function deletePlan(key: string): Promise<void> {
   if (!getAllPlans()[key]) return;
   const name = planName(key);
@@ -1002,11 +873,6 @@ export async function fork(name: string, effectiveFrom: string, through = ""): P
   say(`Started "${name.trim()}" from ${planName(from)}. Changes go into it; ${planName(from)} stays as it is.`);
 }
 
-// ---------------------------------------------------------------------
-// the selection
-// ---------------------------------------------------------------------
-
-/// The day the plan's period starts, as the views say it.
 export function periodStart(): string {
   return periodFrom();
 }
@@ -1036,7 +902,6 @@ export function setWindow(window: HourWindow | null): Promise<void> {
   return select("window");
 }
 
-/// A route opens the Route stage, wherever it was chosen.
 export function openRoute(route: string): Promise<void> {
   if (sc.route !== route) {
     sc.selectedStop = "";
@@ -1048,15 +913,12 @@ export function openRoute(route: string): Promise<void> {
   return select("route", "stop", "stage");
 }
 
-/// A stop opened on the Stops stage, wherever it was chosen (the map,
-/// the search box). It stays open until another stop is chosen.
 export function openStop(stop: string): Promise<void> {
   sc.stopOpen = stop;
   sc.stage = "stops";
   return select("stop-open", "stage");
 }
 
-/// A visit on a stop's card opens its route in the visit's direction.
 export function openVisit(route: string, direction: string | null): Promise<void> {
   if (sc.route !== route) {
     sc.selectedStop = "";
@@ -1069,8 +931,6 @@ export function openVisit(route: string, direction: string | null): Promise<void
   return select("route", "direction", "stop", "stage");
 }
 
-/// The route closed: the Route stage is empty again, and the grid and
-/// map mark no route.
 export function closeRoute(): Promise<void> {
   sc.route = "";
   sc.direction = null;
@@ -1083,8 +943,6 @@ export function closeRoute(): Promise<void> {
   return select("route", "direction", "stop");
 }
 
-/// The new-route task opened on the Route stage: the route
-/// open there closes, and the stops and keys it offers are read.
 export async function startNewRoute(): Promise<void> {
   await closeRoute();
   sc.creating = true;
@@ -1100,9 +958,7 @@ export function endNewRoute(): Promise<void> {
   return select("stage");
 }
 
-/// The stops a new route may visit: the plan's own, then the stops
-/// document's that are there by the pick date (in service, or on their
-/// way: planned, permitted, built) and the plan does not hold yet.
+/// The stops document's stops count when they are in service or on their way (planned, permitted, built) by the pick date.
 async function readNewRouteOptions(): Promise<void> {
   const doc = active();
   if (!doc) return;
@@ -1129,11 +985,7 @@ async function readNewRouteOptions(): Promise<void> {
   sc.newRoute = { stops, keys: keys.keys.map((k) => ({ id: k.id, name: k.name })), routeIds: routes.routes.map((r) => r.route_id) };
 }
 
-/// The new route as one change: the route and its directions, each
-/// stop the stops document holds and the plan does not taken in with
-/// its record on the pick date (D-173), a pattern each way laid through
-/// its stops, and the trips at their headways. Refused whole, said
-/// beside the task.
+/// Each stop that the stops document holds and the plan does not is taken in with its record on the pick date (D-173). Refused whole, said beside the task.
 export async function createRoute(spec: NewRouteSpec): Promise<void> {
   const doc = active();
   if (!doc || !sc.newRoute) return;
@@ -1197,8 +1049,6 @@ export async function createRoute(spec: NewRouteSpec): Promise<void> {
   await openRoute(spec.id);
 }
 
-/// A block opened on Vehicles & hours, from wherever it was named (a
-/// trip's row, a readiness issue).
 export function showBlock(block: string): Promise<void> {
   sc.block = block;
   sc.blockTrips = null;
@@ -1206,7 +1056,6 @@ export function showBlock(block: string): Promise<void> {
   return select("block", "stage");
 }
 
-/// A day type opened on the Scan, from the proposal's scorecard.
 export function scanGroup(group: string): Promise<void> {
   sc.group = group;
   syncEditType();
@@ -1214,14 +1063,12 @@ export function scanGroup(group: string): Promise<void> {
   return select("group", "stage");
 }
 
-/// A block's chain opened (or closed, when it is the open one).
 export function openBlock(block: string): Promise<void> {
   sc.block = sc.block === block ? "" : block;
   if (!sc.block) sc.blockTrips = null;
   return select("block");
 }
 
-/// A hub the route serves, read beside the route's day.
 export function openHub(stop: string): Promise<void> {
   sc.stop = stop;
   return select("stop");
@@ -1245,19 +1092,14 @@ export function toggleEdit(): void {
   sc.editing = !sc.editing;
 }
 
-/// Why a frame has no answer, as text ("" when it answered).
 export function why(frame: string): string {
   return reason(sc.frames[frame]);
 }
 
-/// Each failed frame asks again: errors are never cached.
+/// Errors are never cached.
 export function retry(): Promise<void> {
   return request.retry();
 }
-
-// ---------------------------------------------------------------------
-// changes — NetworkEdits through cap-author, the answer adopted
-// ---------------------------------------------------------------------
 
 async function apply(doc: Network, edits: NetworkEdit[]) {
   if (!(await available("author"))) {
@@ -1341,10 +1183,8 @@ export const gestures = {
     }),
 };
 
-/// The calendar's edits on one service key (cap-author owns the rules).
 export const calendar = {
   toggleDay: (id: string, day: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun") => change([{ edit: "toggle_service_day", id, day }]),
-  /// A date left empty continues the last range (cap-author).
   addRange: (id: string, start: string, end: string) =>
     change([{ edit: "add_service_range", id, ...(start ? { start } : {}), ...(end ? { end } : {}) }]),
   setRange: (id: string, index: number, start: string, end: string) => change([{ edit: "set_service_range", id, index, start, end }]),
@@ -1352,33 +1192,22 @@ export const calendar = {
   setException: (id: string, date: string, state: "added" | "removed") => change([{ edit: "set_service_exception", id, date, state }]),
   removeException: (id: string, date: string) => change([{ edit: "remove_service_exception", id, date }]),
   rename: (id: string, name: string) => change([{ edit: "update_service_type", id, name }]),
-  /// A new key: weekdays, a year from the plan's period start.
   add: () => change([{ edit: "add_service_type", from: periodFrom() }]),
-  /// Refused while trips run under the key (cap-author).
   remove: (id: string) => change([{ edit: "remove_service_type", id }]),
-  /// A route's trips onto another key: each pattern trips it runs
-  /// under this key now runs under `to`.
   move: (patternTrips: string[], to: string) => change(patternTrips.map((id) => ({ edit: "set_pattern_trips_refs" as const, id, service_type: to }))),
 };
 
-/// The suggested blocks, adopted: their edits applied as one change.
 export function adoptBlocks(): Promise<void> {
   const edits = sc.suggestion?.edits ?? [];
   return edits.length ? change(edits) : Promise.resolve();
 }
-
-// ---------------------------------------------------------------------
-// the publish path
-// ---------------------------------------------------------------------
 
 export async function publishPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   sc.published = null;
   sc.publishRefused = [];
-  // The publish runs when it is sent, against the published plans as
-  // they are then (D-189): while the server does not answer, it waits
-  // on this device.
+  // The publish runs when it is sent, against the published plans as they are then (D-189). While the server does not answer, it waits on this device.
   await act("Publish", () => {}, async () => {
     const outcome = await queueWrite({ url: "plans", body: doc, label: `Publish "${doc.plan?.name ?? "plan"}"` });
     if (outcome.state === "waiting") {
@@ -1387,7 +1216,6 @@ export async function publishPlan(): Promise<void> {
     }
     if (outcome.state === "sent") {
       sc.published = outcome.body as { plans_hash: string };
-      // Published now: on the timeline as a pick, read-only (D-139).
       await inputs.read(...WRITTEN);
       await select("plans");
       say(`Published "${doc.plan?.name}": it takes effect ${doc.plan?.effective_from}. It no longer changes; fork it to change it.`);
@@ -1420,50 +1248,35 @@ export async function exportPlan(): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------
-// the outbox and the build, as the page shows them (D-189)
-// ---------------------------------------------------------------------
-
-/// How often the page sends what waits and looks for a new build. The
-/// inputs' intervals are in its ui.json.
 const POLL_MS = 30_000;
 
-/// A publish that waited was kept: the published plans read again.
 async function published(): Promise<void> {
   await inputs.read(...WRITTEN);
   say("A publish that waited on this device was sent.");
 }
 
-/// What the page says of an input ("" when it is current): the
-/// published picks that could not be read are said, never shown as
-/// none.
+/// A published pick that could not be read is said, never shown as none.
 export function label(input: string): string {
   return inputLabel(sc.inputs[input]);
 }
 
-/// The writes the server refused, each with its reasons in words.
 export function heldWrites(): { key: string; label: string; reason: string }[] {
   return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
 }
 
-/// Send what waits now.
 export function sendNow(): Promise<void> {
   return sendWaiting();
 }
 
-/// A refused publish sent again, against the published plans as they
-/// are now.
 export async function retryHeld(key: string): Promise<void> {
   await retryWrite(key);
 }
 
-/// The person drops a refused write.
 export function discardHeld(key: string): Promise<void> {
   return discardWrite(key);
 }
 
-/// The person accepts the new version. The plans live on the device, so
-/// a reload keeps them; it waits while a change is under way.
+/// The plans live on the device, so a reload keeps them. It waits while a change is under way.
 export function applyUpdate(): void {
   if (sc.busy) return;
   applyBuild();

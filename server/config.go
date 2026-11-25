@@ -1,18 +1,11 @@
 package main
 
-// The settings file (-config): the server's flags written down, so a
-// deployment or a developer keeps them in one file instead of a long
-// command line. TOML, because people edit it and it takes comments.
-//
-// Each key is a flag's name; a [table] prefixes its keys with its name
-// and a dash ([oidc] issuer is -oidc-issuer). A value is a string, true
-// or false, or a whole number (a duration is a string: "5s"). A relative
-// path is read from the file's directory, so a file means the same thing
-// from wherever the server starts; a URL, a bucket:<key> source, or an
-// absolute path passes as given. -config repeats: a later file is laid
-// over an earlier, and a flag given on the command line beats every file.
-// A key that names no flag, or a value its flag refuses, stops the boot
-// with the file's name — a misspelt setting is never silently ignored.
+// Each key is a flag's name. A [table] prefixes its keys with its name and
+// a dash, so [oidc] issuer is -oidc-issuer. A duration is a string, "5s".
+// A relative path is read from the file's directory. -config repeats, a
+// later file over an earlier, and a flag on the command line beats every
+// file. A key that names no flag, or a value its flag refuses, stops the
+// boot, so a misspelt setting is never silently ignored.
 
 import (
 	"flag"
@@ -24,14 +17,11 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// configList is -config: the settings files, in the order given.
 type configList []string
 
 func (c *configList) String() string     { return strings.Join(*c, ",") }
 func (c *configList) Set(v string) error { *c = append(*c, v); return nil }
 
-// pathSettings are the flags whose value may be a local path; a relative
-// one is read from the settings file's directory.
 var pathSettings = map[string]bool{
 	"dist": true, "wasm": true, "feed": true, "network-wasm": true,
 	"streets": true, "streets-wasm": true, "edits": true, "migrate-wasm": true, "store-cache": true,
@@ -41,8 +31,6 @@ var pathSettings = map[string]bool{
 	"geocoder-policy": true, "export": true, "live-feeds": true,
 }
 
-// applyConfig sets each flag the command line left alone from the files,
-// later files over earlier ones.
 func applyConfig(fs *flag.FlagSet, files []string) error {
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })

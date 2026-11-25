@@ -1,7 +1,5 @@
-// Session 1 — Growth: weekday evening span on 9 Felida and 92
-// Camas/Washougal (LRP/SESSIONS.md). Fork the plan in force, move the
-// span ends on each direction, put the new trips on blocks, compare,
-// publish. Starts from a fresh server and an empty profile.
+// Session 1, weekday evening span on routes 9 and 92 (LRP/SESSIONS.md).
+// Starts from a fresh server and an empty profile.
 import { check, done, clean, helpers, sundayAfter, addDays, servedFeed } from "./lib.mjs";
 
 const PLAN = "2045 Growth — evening span 9, 92";
@@ -12,11 +10,9 @@ export default async function (page, { shot, status, settle }) {
   const { T } = h;
   await settle();
 
-  // 1.1 the fork
   await h.fork(PLAN, PICK);
   check(`1.1 forked "${PLAN}", picking ${PICK}`, (await status()).includes(`Started "${PLAN}"`), await status());
 
-  // 1.2 route 92: to Camas & Washougal until 12:30 am, back until midnight
   await h.stage("Route");
   await h.route("092");
   await h.direction("to Camas & Washougal");
@@ -29,7 +25,6 @@ export default async function (page, { shot, status, settle }) {
   check("1.2 092 to Fisher's Landing runs to 24:00", (await h.spanNow()).includes("to 24:00"), await h.spanNow());
   await shot("092", { full: true });
 
-  // 1.3 route 9: 6:00 to about 10:15 pm each way
   await h.stage("Route");
   await h.route("009");
   await h.direction("to 139th Street & 10th Avenue");
@@ -40,13 +35,12 @@ export default async function (page, { shot, status, settle }) {
   const now = await h.spanNow();
   const said = await status();
   check("1.3 009 to 99th St TC runs to 21:45", now.includes("to 21:45"), now);
-  // QAF-119: a bound within half a headway of the edge is dropped, and
-  // the status says only "Changed".
+  // A bound within half a headway of the edge is dropped, and the status
+  // then says only "Changed".
   check("1.3 the 6:00 first trip toward 99th St TC applies, or the page says why not (QAF-119)",
     now.includes("Now 6:00") || /first|half/i.test(said), `${now} / ${said}`);
   await shot("009", { full: true });
 
-  // 1.4 Vehicles & hours: the new trips on blocks, every day type
   await h.stage("Vehicles");
   const dayTypes = T("day-types").getByRole("button");
   let adopted = 0;
@@ -68,7 +62,6 @@ export default async function (page, { shot, status, settle }) {
   }
   check("1.4 the suggested blocks adopted", adopted > 0 && (await status()).includes("no issues"), await status());
 
-  // 1.5 the proposal against the plan in force
   await h.stage("Proposal");
   await T("base-select").selectOption({ label: "C-TRAN" });
   await settle();
@@ -78,7 +71,6 @@ export default async function (page, { shot, status, settle }) {
   check("1.5 readiness: no issues", clean(await T("readiness").textContent()).includes("No issues"));
   await shot("proposal", { full: true });
 
-  // 1.6 published; the feed after the pick carries the trips
   await T("publish").click();
   await page.waitForTimeout(4000);
   await settle();

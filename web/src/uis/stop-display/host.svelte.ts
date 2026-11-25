@@ -1,22 +1,7 @@
-/// The stop display's host layer — the ONLY file of this UI that calls
-/// the capability bus. It owns I/O, the clock, and the selection (the
-/// stop and the layout); every group, time, status, and alert it writes
-/// into `display` is an op's answer, adopted as-is.
-///
-/// The questions it answers (its ui.json): which
-/// stop this is, what leaves next on each route to each destination
-/// and how long until it does, live or scheduled, from which bay, which
-/// routes have stopped for the day, and the alerts and detours here.
-///
-/// It asks every question through the engine (src/engine.ts) and holds
-/// documents, never modules or hashes. Its inputs are declared in its
-/// ui.json and read by the kit (src/uis/inputs.ts): the deployment's
-/// manifest, the network it pins, the edit document, and the live
-/// feeds. Each input's state (`display.inputs`) says what the page
-/// holds of it. The answer graph keeps why a frame has no answer
-/// (`display.frames`; src/uis/answers.ts): a capability the bus cannot
-/// assemble turns its frames off, and they say so. Nothing here
-/// answers in its place.
+// Only this file of the UI calls the bus. Every group, time, status, and alert
+// that it writes into `display` is an op's answer, adopted as given. A
+// capability that the bus cannot assemble turns its frames off, and nothing
+// here answers in its place.
 
 import { ask, assemble, available, keep, load, produced, readManifest, servedNetwork, servedNetworkPin, together, Doc, type DeploymentManifest } from "../../engine";
 import {
@@ -42,8 +27,7 @@ import {
 } from "../kit";
 import descriptor from "./ui.json";
 
-// This page's capabilities answer inside its linked assembly — one
-// module, one registry: each document registers once (D-77).
+// Each document registers once in the page's one linked module (D-77).
 assemble("stop-display");
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
@@ -52,96 +36,64 @@ import type { GroupedBoard } from "../../types/GroupedBoard";
 import type { LiveDay } from "../../types/LiveDay";
 import type { Network } from "../../types/Network";
 
-/// The three layouts — placements of one answer, any of them at any
-/// stop: a transit center's bays, one route large, several routes.
 export type Layout = "center" | "route" | "routes";
 export type Place = { id: string; name: string };
 
 const LAYOUTS: Layout[] = ["center", "route", "routes"];
-/// How often the board answers again on the clock, and the header's
-/// clock moves.
 const BOARD_MS = 20_000;
 const FACE_MS = 5_000;
 const FOUND = 25;
-/// How long a board whose op threw stays on screen (marked) before the
-/// error replaces it: its waits were counted from the moment it was
-/// answered, so it is right only briefly.
+/// A board whose op threw stays on screen, marked, for this long. Its waits were counted from when it was answered, so it is right only briefly.
 const STALE_BOARD_MS = 2 * BOARD_MS;
-/// The modules that read the network, in order: its pin is checked in
-/// the first that assembles.
+/// The first module that assembles checks the network's pin.
 const NETWORK_READERS = ["directory", "board", "rt"] as const;
 
 export const display = $state({
-  /// A message that replaces the page's answers (a failed boot step).
   status: "",
   busy: true,
   feed: "",
-  /// Each frame that shows no answer, and why (the answer graph's).
   frames: {} as Record<string, FrameState>,
-  /// What the page holds of each input (the kit's).
   inputs: {} as Record<string, InputState>,
   layout: "routes" as Layout,
-  /// The stop on screen, as the directory names it; null shows the
-  /// setup.
   stop: null as Place | null,
   setup: true,
   found: null as { text: string; places: Place[] } | null,
   routes: [] as DirectoryRoute[],
   board: null as GroupedBoard | null,
-  /// An answer that failed after the board was up: shown beside the
-  /// board, never instead of it.
+  /// An answer that failed after the board was up shows beside the board, never instead of it.
   problem: "",
-  /// The agency's clock, seconds into the service day, for the header.
   nowSecs: nowSecs(),
 });
-
-// ---------------------------------------------------------------------
-// documents — the manifest, the network it pins (or a zip loaded by
-// hand), the edit document, the live snapshots
-// ---------------------------------------------------------------------
 
 type Served = { network: Doc<Network>; boundary: Doc<Boundary>; pin: string };
 
 let manifest: DeploymentManifest | null = null;
 let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
-/// A network loaded from a zip by hand: the page stops following the
-/// deployment.
 let byHand: Served | null = null;
-/// The edit document over the network — null when empty (schedule
-/// only, the day views' contract).
+/// Null when empty. The day views then read the schedule only.
 let edits: Doc<EditDocument> | null = null;
-/// THE live document (rt's answer over the snapshots), by which every
-/// board reads the live feeds.
 let live: Doc<LiveDay> | null = null;
 let urls: Partial<LiveUrls> = {};
-/// The decoded live feeds, one document per read's bytes.
 const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
-/// The stop asked for, by id (the URL's), until the directory names it.
 let stopId: string | null = null;
 let query = "";
 
-/// When the board last answered (ms), for STALE_BOARD_MS.
 let boardAt = 0;
 
-/// Whether a frame's capability did not assemble: its component says so.
 export function off(frame: string): boolean {
   return display.frames[frame]?.kind === "unassembled";
 }
 
-/// A frame's failure, as text ("" when it answered).
 export function failure(frame: string): string {
   const state = display.frames[frame];
   return state?.kind === "failed" ? state.message : "";
 }
 
-/// What the page says of an input ("" when it is current).
 export function label(input: string): string {
   return inputLabel(display.inputs[input]);
 }
 
-/// The page's status line: a failed step, else what it holds of the
-/// schedule. "" when the schedule is current.
 export function status(): string {
   if (display.status) return display.status;
   const state = display.inputs.network;
@@ -151,9 +103,7 @@ export function status(): string {
   return "";
 }
 
-/// A failed answer. Before the network is up it is the page's status;
-/// after, it sits beside the board — a display never blanks over one
-/// failed answer.
+/// After the network is up, a failed answer sits beside the board. A display never blanks over one.
 function fail(e: unknown): void {
   const message = `Something went wrong: ${(e as Error)?.message ?? e}`;
   if (network) display.problem = message;
@@ -161,18 +111,10 @@ function fail(e: unknown): void {
   console.error(e);
 }
 
-// ---------------------------------------------------------------------
-// This UI's answer graph (src/uis/kit.ts, "the answer graph").
-// Inputs: "network",
-// "edits" (the edit document), "snapshot" (the decoded live feeds),
-// "clock" (the board's tick), "query" / "stop" (the selection),
-// "setup" (whether the setup is on screen).
-// ---------------------------------------------------------------------
 
 const request = answerGraph(
   [
     {
-      // The route names the alerts slot reads.
       id: "directory.routes",
       frame: "DisplayAlerts",
       needs: ["network"],
@@ -183,7 +125,6 @@ const request = answerGraph(
       },
     },
     {
-      // The setup's stop picker: every word typed in the name or id.
       id: "directory.stops?query",
       frame: "DisplaySetup",
       needs: ["network", "query", "setup"],
@@ -201,7 +142,6 @@ const request = answerGraph(
       },
     },
     {
-      // Which stop this is, as the directory names it.
       id: "directory.stops_by_ids",
       frame: "DisplayHeader",
       needs: ["network", "stop"],
@@ -218,8 +158,6 @@ const request = answerGraph(
       },
     },
     {
-      // THE live document over whichever feeds were fetched; the
-      // board reads it by hash.
       id: "rt.live",
       frame: "Live",
       needs: ["network", "snapshot"],
@@ -231,9 +169,7 @@ const request = answerGraph(
           live = null;
           return;
         }
-        // The display never reads the live document: linked beside rt,
-        // the board reads it by hash where rt minted it, and it never
-        // crosses to the page (QAF-49).
+        // The display never reads the live document. The board reads it by hash because rt created it in the linked module, so it never crosses to the page (QAF-49).
         const args = {
           network_hash: network,
           boundary_hash: boundary,
@@ -247,15 +183,12 @@ const request = answerGraph(
       },
     },
     {
-      // The groups: each route and destination here, its next three,
-      // how long until each leaves; the alerts and detours here.
       id: "board.grouped_board",
       frame: "DisplayGroup",
       needs: ["network", "edits", "rt.live", "stop", "clock"],
       caps: ["board"],
       clear: () => (display.board = null),
-      // The last board stays, marked, while its waits are still near
-      // right; then the error replaces it.
+      // The last board stays, marked, while its waits are still near right.
       keepOnFailure: true,
       run: async () => {
         if (!network || !stopId) {
@@ -290,22 +223,11 @@ const request = answerGraph(
   display.inputs,
 );
 
-// ---------------------------------------------------------------------
-// The inputs (its ui.json's `inputs`, read by the kit): each reader
-// answers its document, null for none, or throws when the read fails.
-// ---------------------------------------------------------------------
-
-/// Name what the modules keep: the documents this page holds now —
-/// everything else (a replaced network, a superseded edit document)
-/// is dropped from every module (the engine's `keep`). The live
-/// documents and rt snapshots bound themselves between calls.
+/// Documents not listed are dropped from every module (the engine's `keep`). The live documents and rt snapshots bound themselves between calls.
 function release(): Promise<void> {
   return keep([network, boundary, edits, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
 }
 
-/// One live feed: its bytes decoded into a snapshot (cap-rt registers
-/// it), keyed by its hash. None when the deployment names no such feed
-/// or rt did not assemble.
 function liveFeed(kind: keyof typeof snapshots): Reader<Doc> {
   return {
     read: async ({ signal }) => {
@@ -327,8 +249,7 @@ const readers: Record<string, Reader<any>> = {
     },
     adopt: (m: DeploymentManifest | null) => {
       manifest = m;
-      // The agency's zone, before the network in force on its date is
-      // picked.
+      // The agency's zone is set before the network in force on its date is picked.
       setAgencyZone(m?.timezone);
     },
   },
@@ -337,10 +258,7 @@ const readers: Record<string, Reader<any>> = {
     adopt: (u: Partial<LiveUrls> | null) => void (urls = u ?? {}),
   },
   network: {
-    // The deployment's network: the pick in force today, else its
-    // import. It follows the deployment as it moves (a republish, a new
-    // pick, today crossing a pick's date; D-63): the pin is checked on
-    // each read, and only a moved pin reads the network again.
+    // Follows the deployment (a republish, a new pick, today crossing a pick's date; D-63). Only a moved pin reads the network again.
     read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
       if (byHand) return { value: byHand, key: byHand.pin };
       if (!manifest) throw new Error("the deployment's manifest is not read");
@@ -360,8 +278,7 @@ const readers: Record<string, Reader<any>> = {
       boundary = got?.boundary ?? null;
       // The zone may have just become known (a loaded zip's).
       display.nowSecs = nowSecs();
-      // The heading: the network's name, which the directory answers
-      // (a published network is bytes this page never parsed).
+      // The directory answers the name, because a published network is bytes that this page never parsed.
       const about = network && (await available("directory")) ? await ask("directory", "about", { network_hash: network }).catch(() => null) : null;
       display.feed = network ? about?.name || network.value?.name || "the agency's network" : "";
       display.status = "";
@@ -369,9 +286,7 @@ const readers: Record<string, Reader<any>> = {
     },
   },
   edits: {
-    // The edit document (detours), read-only, over the network the page
-    // holds: a new network reads it again. The modules refuse any
-    // version they do not read. No sync server keeps none (404).
+    // Read-only: this page never writes edits. The modules refuse any version they do not read. A server with no sync answers 404.
     read: async ({ signal }) => {
       if (!network) return null;
       const got = await readHead("edits", signal, [404]);
@@ -396,12 +311,7 @@ const readers: Record<string, Reader<any>> = {
 
 const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, display.inputs, request);
 
-// ---------------------------------------------------------------------
-// boot, and the clock
-// ---------------------------------------------------------------------
-
 export async function boot(): Promise<void> {
-  // The app's build: a build that waited for this load applies now.
   void installApp();
   readUrl();
   try {
@@ -412,8 +322,6 @@ export async function boot(): Promise<void> {
   } finally {
     display.busy = false;
   }
-  // The board answers again on the clock; the header's clock moves
-  // between.
   clockEvery(BOARD_MS, () => {
     display.nowSecs = nowSecs();
     if (applyWaitingBuild()) return;
@@ -422,15 +330,12 @@ export async function boot(): Promise<void> {
   clockEvery(FACE_MS, () => (display.nowSecs = nowSecs()));
 }
 
-/// A GTFS zip loaded here becomes the network document (and its
-/// boundary, the stop_sequence numbering the live feeds name). The
-/// page stops following the deployment.
+/// The boundary document holds the stop_sequence numbering that the live feeds name.
 export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
   display.busy = true;
   display.status = `Loading ${label}…`;
   try {
-    // The import is the network module's: the only time this page
-    // assembles it.
+    // This is the only time that the page assembles the network module.
     if (!(await available("network"))) {
       display.status = "The network capability is unavailable — a GTFS zip cannot be imported without it.";
       return;
@@ -452,14 +357,7 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
   }
 }
 
-/// A new build waits (D-63): nobody is at a display to tap, so it
-/// applies itself — only while the server answers (an outage never
-/// reloads a working display into an empty one: the manifest's last
-/// read answered, and not from a working copy), and never while the
-/// setup is open (someone is configuring the screen). True when it
-/// applies. The page then reads nothing more: the old build's worker
-/// hands over only when no request is in flight, and the page reloads
-/// into the new build.
+/// Nobody is at a display to tap, so a waiting build applies itself (D-63). It applies only while the server answers (an outage never reloads a working display into an empty one) and never while the setup is open. It returns true when it applies. The page then reads nothing more, because the old build's worker hands over only when no request is in flight.
 function applyWaitingBuild(): boolean {
   const m = display.inputs.manifest;
   const answers = m?.kind === "answered" && m.asOfMs == null;
@@ -468,11 +366,6 @@ function applyWaitingBuild(): boolean {
   applyBuild();
   return true;
 }
-
-// ---------------------------------------------------------------------
-// the selection — the stop and the layout, kept in the page's URL so a
-// screen reopens on its stop
-// ---------------------------------------------------------------------
 
 function readUrl(): void {
   const params = new URLSearchParams(location.search);

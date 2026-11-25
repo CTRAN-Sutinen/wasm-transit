@@ -1,9 +1,7 @@
 package main
 
-// A write that carries fields this build does not know (D-167): the
-// receive path keeps them and flags them for a person, never refuses
-// them. The response names them in X-Unknown-Fields; a write that
-// carries none sends no header.
+// The write path keeps unknown fields, flags them in X-Unknown-Fields, and
+// never refuses them (D-167). A write with none sends no header.
 
 import (
 	"encoding/json"

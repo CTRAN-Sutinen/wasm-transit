@@ -1,25 +1,8 @@
-// The stop display (src/uis/stop-display) — a generated UI for the
-// screen at a stop (docs/architecture/generated-uis/stop-display.md), in three full-screen layouts over one answer.
-//
-// Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
-// Montreal; the browser in UTC, which never decides), the fixture feed,
-// and its trip updates (sample-rt.pb: t10 +120 s at A — served for
-// every live feed URL):
-//
-//   1. The setup picks a layout and a stop (directory `stops`); the
-//      URL keeps both. Several routes at A (board `grouped_board`):
-//      10 → Downtown leaves in 7 min, 2 min late, live, then 45 min;
-//      20 → Downtown in 25 min, scheduled. The alerts slot says none.
-//   2. A transit center opened from its URL: the station pin pools its
-//      bays, each time naming the bay it leaves from.
-//   3. A single route: a detour in the edit document takes the 10 from
-//      C, and its group says so; a cancel of the 08:00 10 (t10) takes
-//      it out of the group's times and the group says a trip was
-//      cancelled (D-45, D-100); after the day's last departure at A,
-//      its groups stay and say when each next runs (board `next`, D-42).
-//
-// The live feeds and the edit document are served by the test (the
-// shared e2e server holds other specs' edits).
+// The stop display (src/uis/stop-display;
+// docs/architecture/generated-uis/stop-display.md). The time is Friday
+// 2026-10-23 at 07:55 in America/Montreal. The trip updates (sample-rt.pb) put
+// t10 at +120 s at A, for every live feed URL. The test serves the live feeds
+// and the edit document, because the shared e2e server holds other specs' edits.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -71,7 +54,6 @@ async function open(page, { query = "", at = "2026-10-23T07:55:00-04:00", edits 
   await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
 }
 
-/// One group on the display, by its route and its destination exactly.
 const group = (page, route, destination) =>
   page
     .locator(`[data-testid="display-group"][data-route="${route}"]`)
@@ -80,7 +62,6 @@ const group = (page, route, destination) =>
 test("the stop display is set up and shows several routes", async ({ page }) => {
   await open(page);
 
-  // 1. The setup: a layout, then the stop by name.
   await expect(page.getByTestId("display-setup")).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("layout-routes").click();
   const input = page.getByLabel("Stop", { exact: true });
@@ -117,9 +98,7 @@ test("a transit center names the bay each bus leaves from", async ({ page }) => 
   await expect(toBayB.getByTestId("display-time").first()).toContainText("Main Station: Bay A");
 });
 
-// A screen's URL is persisted data (docs/FORMATS.md, "Versions"): one
-// configured by a newer build, with a parameter this build does not
-// know, loads its stop and keeps the parameter.
+// A screen's URL is persisted data (docs/FORMATS.md, "Versions").
 test("a display URL with a parameter this build does not know loads", async ({ page }) => {
   await open(page, { query: "?stop=A&layout=routes&brightness=night" });
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
@@ -143,25 +122,20 @@ test("a cancelled trip leaves the group's times, and the group says so", async (
 });
 
 test("a route that has stopped for the day stays on the display", async ({ page }) => {
-  // Friday night: the 10 next runs Sunday (t11), the 20 Monday (t20) —
-  // the board's `next` (D-42), the display only formats it.
+  // The board's `next` gives the times (D-42). The display only formats them.
   await open(page, { query: "?stop=A&layout=route", at: "2026-10-23T23:00:00-04:00" });
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("Next: Sunday 9:00 am");
   await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("Next: Monday 8:20 am");
 });
 
-// 4. A display left running (docs/architecture/web.md, "The bus worker"): the agency
-//    re-mints its live feeds every poll, so each poll here serves a new
-//    snapshot (the fixture plus an unknown field carrying the poll's
-//    number — the decode ignores it, its hash does not). The rt module
-//    keeps its last few snapshots and its linear memory plateaus; a
-//    module forced past its memory ceiling is replaced by a fresh
-//    instance that answers the same bytes for the same request.
+// Each poll serves a new snapshot: the fixture plus an unknown field that
+// carries the poll's number. The decode ignores the field, and the hash does
+// not (docs/architecture/web.md, "The bus worker").
 test("a display left polling stays bounded, and a module past its ceiling answers the same", async ({ page }) => {
   const rt = fs.readFileSync(path.join(fixtures, "sample-rt.pb"));
   let polls = 0;
-  /// Field 1000, varint: the tag (1000 << 3 = 8000) and the value.
+  // Field 1000, varint: the tag is 1000 << 3 = 8000, then the value.
   const varint = (n) => {
     const out = [];
     do {
@@ -183,7 +157,6 @@ test("a display left polling stays bounded, and a module past its ceiling answer
 
   const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
   const snapshots = async () => (await bus("held", "rt")).held.filter((e) => e.kind === "rt snapshot").length;
-  /// One poll: the display's interval fires and both feeds are fetched.
   const poll = async () => {
     const before = polls;
     await page.clock.fastForward(20_000);
@@ -199,12 +172,9 @@ test("a display left polling stays bounded, and a module past its ceiling answer
   expect(polls).toBeGreaterThanOrEqual(60);
   expect(await snapshots()).toBeLessThanOrEqual(8);
   expect(full.memory, "the rt module's linear memory plateaus").toBe(half.memory);
-  // Ten minutes on, the late 10 has left: the display moved with the clock.
   await expect(ten.getByTestId("display-time").first()).toContainText("Scheduled");
 
-  // The ceiling: forced below the board's working set, the next op
-  // finds its instance past it — replaced, the documents registered
-  // again, the same answer — once per op, never in a loop.
+  // A module past its ceiling is replaced once per op, never in a loop.
   const answer = await bus("replay", "board");
   await bus("ceiling", 1, 0);
   expect(await bus("replay", "board")).toBe(answer);
@@ -221,22 +191,15 @@ test("the display runs one linked module, holding the network once", async ({ pa
   const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
   // Every capability the display asks answers in its linked assembly (D-77).
   for (const cap of await bus("caps")) expect(await bus("module", cap)).toBe("ui:stop-display");
-  // One registry: the network the board, the directory and rt all read
-  // is held once.
   const networks = (await bus("held", "board")).held.filter((e) => e.kind === "network");
   expect(networks).toHaveLength(1);
 });
 
-// The deployment (docs/architecture/updates-offline.md): a display reads
-// the AGENCY's clock (the zip's zone, as the manifest names it for a
-// served network), stops polling while hidden, and when a live feed
-// stops answering it keeps its board, read from the schedule and
-// saying so.
+// docs/architecture/updates-offline.md.
 test.describe("a display set to another zone", () => {
   test.use({ timezoneId: "Asia/Tokyo" });
   test("reads the agency's clock, never the device's", async ({ page }) => {
-    // 07:55 in Montreal is 20:55 in Tokyo: the board and the header
-    // answer Montreal's 07:55.
+    // 07:55 in Montreal is 20:55 in Tokyo.
     await open(page, { query: "?stop=A&layout=routes" });
     const ten = group(page, "10", "Downtown");
     await expect(ten.getByTestId("display-time").first()).toContainText("7 min", { timeout: 10_000 });
@@ -289,8 +252,6 @@ test("a live feed that stops answering turns the board to the schedule, and the 
 
   down = true;
   await page.clock.fastForward(20_000);
-  // Never a stale prediction as live: the schedule, said so; the
-  // groups stay on screen.
   await expect(page.getByTestId("display-live")).toContainText("Scheduled times");
   await expect(ten.getByTestId("display-time").first()).toContainText("Scheduled");
   await expect(group(page, "20", "Downtown").getByTestId("display-time").first()).toBeVisible();
@@ -300,11 +261,7 @@ test("a live feed that stops answering turns the board to the schedule, and the 
   await expect(page.getByTestId("display-live")).toContainText("Live");
 });
 
-// D-119: while the sync server's store does not answer, it serves the
-// edit document it holds, labelled with when the store last confirmed
-// it (X-Store-Stale, X-Store-As-Of); the display keeps the detour on the
-// board and says how old it is, and the label goes once the store
-// answers again.
+// D-119. The server labels the edit document with X-Store-Stale and X-Store-As-Of.
 test("a detour served while the server's store is not answering says its age", async ({ page }) => {
   let stale = true;
   const asOf = new Date("2026-10-23T07:40:00-04:00").getTime();
@@ -330,10 +287,8 @@ test("a detour served while the server's store is not answering says its age", a
   await expect(page.getByTestId("display-stale")).toHaveCount(0);
 });
 
-// The inputs (src/uis/inputs.ts): a read that never answers is stopped
-// at its time limit and counted as failed. The display keeps the detour
-// it holds on the board and says how old it is, from the time the
-// server last answered; the label goes when the server answers again.
+// src/uis/inputs.ts stops a read that never answers at its time limit and counts
+// it as failed.
 test("a server that never answers the edit document turns the label to stale within the read's time limit", async ({ page }) => {
   let silent = false;
   const held = [];
@@ -351,7 +306,7 @@ test("a server that never answers the edit document turns the label to stale wit
   await expect(page.getByTestId("display-stale")).toHaveCount(0);
 
   silent = true;
-  // The next poll's read hangs; its time limit (ui.json: 10 s) ends it.
+  // The read hangs until its time limit (ui.json: 10 s).
   await page.clock.fastForward(20_000);
   await expect.poll(() => held.length).toBeGreaterThan(0);
   await expect(page.getByTestId("display-stale")).toHaveCount(0);
@@ -366,12 +321,10 @@ test("a server that never answers the edit document turns the label to stale wit
   await expect(page.getByTestId("display-stale")).toHaveCount(0, { timeout: 10_000 });
 });
 
-// D-67: a deployment's config names no relay, and the page fetches the
-// agency's feeds directly (HTTPS with CORS) — /rt is a dev convenience.
-// The test swaps live-feeds.json on the client, but the server writes
-// the page's Content-Security-Policy from the file on disk, so the policy
-// would refuse the invented host. This test runs without the policy;
-// e2e/headers.spec.mjs runs the pages under it.
+// D-67: a deployment names no relay, and /rt is a dev convenience. The test
+// swaps live-feeds.json on the client, but the server writes the policy from
+// the file on disk, which would refuse the invented host. These tests run
+// without the policy, and e2e/headers.spec.mjs runs the pages under it.
 test.describe("a deployment's live feeds", () => {
   test.use({ bypassCSP: true });
 
@@ -400,12 +353,8 @@ async function fetchedDirectly(page) {
   expect(relayed).toBe(0);
 }
 
-// The previous service day's after-midnight trips (overnight-gtfs.zip:
-// owl route 90 at A — Friday's n1 at 24:40, Saturday's s1 at 00:50 and
-// s2 at 24:45, Sunday's u1 at 00:10). GTFS times past 24:00 are the
-// date the trip started on: at 00:30 on Saturday, Friday's 24:40
-// leaves in 10 minutes, and the feed's prediction for it (start_date
-// 2026-10-23, +120 s) is live.
+// After-midnight trips of the previous service day (overnight-gtfs.zip, owl
+// route 90 at A). GTFS times past 24:00 belong to the date the trip started on.
 async function openOvernight(page, at, rt) {
   await page.clock.setFixedTime(new Date(at));
   await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: [] }) }));
@@ -425,8 +374,8 @@ test("after midnight, the previous day's late trips are on the board, live", asy
 });
 
 test("in the hour before a fall-back day's anchor, waits count from the true instant", async ({ page }) => {
-  // 2026-11-01 00:30 EDT: Sunday's anchor is 01:00 EDT, so Saturday's
-  // 24:45 leaves in 15 minutes and Sunday's 00:10 in 40 — not 10.
+  // Sunday's anchor is 01:00 EDT, so Saturday's 24:45 leaves in 15 minutes and
+  // Sunday's 00:10 in 40.
   await openOvernight(page, "2026-11-01T00:30:00-04:00", null);
   const owl = group(page, "90", "Downtown");
   await expect(owl.getByTestId("display-time").first()).toContainText("15 min", { timeout: 10_000 });

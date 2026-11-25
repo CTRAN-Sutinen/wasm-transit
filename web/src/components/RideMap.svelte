@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// The rider's map — a RENDER component. It draws answers: every
-  /// stop (directory `stops`), the picked stop, the live buses (the
-  /// live document's vehicles, colored by their status, pointing their
-  /// bearing), the route in play (directory `focus`: its line and its
-  /// stops; its buses stay bright, the rest dim), the planned trip's
-  /// legs (router `itinerary_paths`), the trip's ends, and the rider's
-  /// location. It computes no geometry; it frames what it draws, and
-  /// follows a picked bus. A tapped bus, stop, or spot is an event.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -47,42 +39,30 @@
     onvehicle,
   }: {
     stops: DirectoryStop[];
-    /// Stops the panel lists (the places near the rider), ringed.
     marked: string[];
-    /// The stop on the panel (drawn large; the map moves to it).
     selected: Place | null;
     vehicles: LiveVehicle[];
-    /// The picked departure's trip: its bus is drawn large.
     trip: string | null;
-    /// The picked bus (the live document's key): drawn large.
     picked: string | null;
-    /// Keep the picked bus in view as it moves.
     follow: boolean;
     route: EntityFocus | null;
-    /// The route in play: its buses stay bright, the rest dim.
     routeId: string | null;
-    /// The route's authored color (the directory's, bare hex).
     routeColor: string | null;
-    /// Frame the route when it arrives (not while following a bus).
     frameRoute: boolean;
     legs: LegPath[] | null;
     from: Place | null;
     to: Place | null;
     here: Point | null;
-    /// The rider's last known fix, if the device remembers one: the
-    /// map opens on it, so the camera is already where the rider will
-    /// be when the first fix lands.
+    /// The map opens on the last known fix, so the camera is already where the rider
+    /// will be when the first fix lands.
     start: Point | null;
-    /// The view the network was last framed on, if the device
-    /// remembers one: where the map opens when there is no fix, so a
-    /// rider who shares no location sees no move at all.
+    /// The map opens on this view when there is no fix, so a rider who shares no
+    /// location sees no move at all.
     framed: View | null;
-    /// The network was framed (on this view): the host remembers it.
     onframed: (view: View) => void;
-    /// A fix is pending: the map waits for it before framing the
-    /// network, so it makes one move, not two.
+    /// The map waits for a pending fix before it frames the network, so it makes
+    /// one move, not two.
     locating: boolean;
-    /// The screen the panel covers, so framing avoids it.
     padding: { top: number; right: number; bottom: number; left: number };
     onstop: (place: Place) => void;
     onpoint: (lat: number, lon: number) => void;
@@ -93,15 +73,12 @@
   let map: maplibregl.Map | null = null;
   let loaded = $state(false);
   let framedStops = false;
-  /// Where the camera opened, when that was the rider's last fix
-  /// (null: it opened on the archive's or the world's view).
   let openedOn: Point | null = null;
-  /// The camera has been taken to the whole network.
   let framedNetwork = false;
   const EMPTY = { type: "FeatureCollection", features: [] } as const;
 
-  /// The theme's tokens, read once the map exists (MapLibre paints
-  /// with colors, not CSS variables).
+  /// Read the theme's tokens once the map exists. MapLibre paints with colors,
+  /// not CSS variables.
   function token(name: string, fallback: string): string {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   }
@@ -119,8 +96,6 @@
     return coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
   }
 
-  /// The heading arrow: a chevron the map tints with the bus's status
-  /// and turns to its bearing.
   function arrow(): ImageData {
     const size = 40;
     const ctx = document.createElement("canvas").getContext("2d")!;
@@ -147,9 +122,9 @@
       if (gone) return;
       if (start && initialView.center[0] === start.lon && initialView.center[1] === start.lat) openedOn = start;
       map = new maplibregl.Map({ container, style, center: initialView.center, zoom: initialView.zoom, attributionControl: { compact: true } });
-      // The panel's padding from the first frame: the view the map
-      // opens on is the view it keeps (a later move to the same place
-      // would shift it by the panel and fetch the edge's tiles).
+      // Apply the panel's padding from the first frame. The view that the map opens
+      // on is then the view it keeps. A later move to the same place would shift it
+      // by the panel and fetch the edge's tiles.
       map.setPadding(padding);
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
       map.on("load", () => {
@@ -262,12 +237,9 @@
           paint: { "circle-radius": 6, "circle-color": "#2563eb", "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
         });
 
-        // Test/inspection hook: e2e tests project points
-        // to tap through it.
+        // E2e tests project points to tap through this hook.
         window.__map = m;
 
-        // A tapped bus opens it; a tapped stop opens it; a tapped spot
-        // asks what is near it.
         m.on("click", (e) => {
           const pad = 6;
           const box: [[number, number], [number, number]] = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
@@ -302,16 +274,13 @@
     };
   });
 
-  // Every stop.
   $effect(() => {
     if (!loaded || !map) return;
     set("stops", stopsFeatures(stops));
   });
 
-  // The first answer frames the network — only when nothing better is
-  // known (viewport.ts): not while a fix is pending, not when the
-  // camera opened on the rider already, not once the rider is
-  // somewhere. The camera is then decided, once.
+  // The first answer frames the network only when nothing better is known
+  // (viewport.ts). The camera is then decided once.
   $effect(() => {
     if (!loaded || !map || framedStops || !stops.length || locating) return;
     framedStops = true;
@@ -325,9 +294,6 @@
     const b = frame ? bounds(stops.map((s) => [s.lon, s.lat])) : null;
     if (b) {
       framedNetwork = true;
-      // The frame the network gets; the camera moves only if it is not
-      // already there (it opened on the last frame, when it is the same
-      // network).
       const cam = map.cameraForBounds(b, { padding, maxZoom: 15 });
       const at = cam?.center ? maplibregl.LngLat.convert(cam.center) : null;
       const view: View | null = at ? { center: [at.lng, at.lat], zoom: cam?.zoom ?? map.getZoom() } : null;
@@ -345,7 +311,6 @@
     }
   });
 
-  // The buses; a followed bus keeps the map on it.
   $effect(() => {
     if (!loaded || !map) return;
     set(
@@ -374,7 +339,6 @@
     map.setFilter("stops-marked", ["in", ["get", "stop_id"], ["literal", marked]]);
   });
 
-  // The route in play, framed whole when it arrives.
   $effect(() => {
     if (!loaded || !map) return;
     const color = css(routeColor);
@@ -384,8 +348,8 @@
     if (b && frameRoute) map.fitBounds(b, { padding, maxZoom: 15, duration: 500 });
   });
 
-  // The trip's legs, framed whole when a different trip arrives (a
-  // trip re-asked each poll keeps the rider's view).
+  // Frame the trip's legs when a different trip arrives. A trip re-asked on each
+  // poll keeps the rider's view.
   let framedLegs = "";
   $effect(() => {
     if (!loaded || !map) return;
@@ -406,17 +370,12 @@
     set("ends", collection(ends));
   });
 
-  // The rider's location; the first fix brings the map to them — in
-  // one jump when the camera has not been anywhere else (it opened on
-  // the last fix, or was waiting for this one), eased from the network
-  // when it has.
   let wentHome = false;
   $effect(() => {
     if (!loaded || !map) return;
     set("here", collection(here ? [point(here)] : []));
     if (here && !wentHome && !selected) {
       wentHome = true;
-      // Nowhere to go when the camera opened on this very fix.
       const target: View = { center: [here.lon, here.lat], zoom: RIDER_ZOOM };
       const now: View = { center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom() };
       if (!sameView(now, target)) map.easeTo({ center: target.center, zoom: target.zoom, padding, duration: framedNetwork ? 600 : 0 });

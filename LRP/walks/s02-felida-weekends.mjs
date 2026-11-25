@@ -1,12 +1,11 @@
-// Session 2 — Growth: Saturday and Sunday service on 9 Felida, a route
-// that runs weekdays only (LRP/SESSIONS.md). Builds on session 1: fork
-// its published pick, open route 9 on Saturday, and give it a day.
-// Blocked today by QAF-118 (no way to start service on a day type where
-// a route runs no trip); the walk pins it.
+// Session 2, Saturday and Sunday service on route 9, which runs weekdays
+// only (LRP/SESSIONS.md). It forks session 1's published pick. QAF-118
+// blocks it: a route with no trip on a day type has no way to start
+// service there.
 import { check, done, helpers, sundayAfter } from "./lib.mjs";
 
 const PLAN = "2045 Growth — Felida weekends";
-const PICK = sundayAfter(4); // inside the test feed (it ends 2027-01-09)
+const PICK = sundayAfter(4); // inside the test feed, which ends 2027-01-09
 
 export default async function (page, { shot, status, settle }) {
   const h = helpers(page, settle);

@@ -1,9 +1,4 @@
 <script lang="ts">
-  /// One route — a RENDER component over the directory's
-  /// `route_detail`: its directions, and in each the VARIANTS a rider
-  /// rides (patterns over the same places in order, a station's bays
-  /// one place — the op groups and names them, most trips first),
-  /// drawn as a line diagram in the route's color. A place is an event.
   import type { RouteDetail } from "../types/RouteDetail";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { routeColor } from "./rideFormat";
@@ -18,7 +13,6 @@
     onstop,
     onback,
   }: {
-    /// The route as the directory lists it (name, long name, color).
     route: DirectoryRoute | null;
     info: { detail: RouteDetail | null } | null;
     off: boolean;

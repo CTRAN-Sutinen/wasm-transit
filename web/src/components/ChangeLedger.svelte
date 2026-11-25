@@ -1,7 +1,4 @@
 <script lang="ts">
-  /// What the open plan changes against its baseline under the group
-  /// (analysis `service_type_compare`): each changed route, before →
-  /// after; and undo / redo, which put back a document version.
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import { change, count, fixed, mins } from "./designFormat";
 

@@ -1,8 +1,4 @@
 <script lang="ts">
-  /// Shared corridors (analysis `route_overlap`): route pairs that
-  /// share stops on the group's day, with the shared segments and the
-  /// stop where their departures stack. Whether the departures are
-  /// spread along a corridor has no op yet.
   import type { RouteOverlap } from "../types/RouteOverlap";
 
   let { overlaps, onroute, onstop }: { overlaps: RouteOverlap[]; onroute: (r: string) => void; onstop: (s: string) => void } = $props();

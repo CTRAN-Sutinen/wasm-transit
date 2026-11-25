@@ -1,13 +1,12 @@
-// caps-run — the agent (and human) runner for the capability
-// registry: pull a module by its pinned hash, VERIFY the bytes,
-// execute ops in the sandbox (zero imports), with a wall-clock
-// guard via worker termination.
+// caps-run is the agent and human runner for the capability registry. It
+// pulls a module by its pinned hash, verifies the bytes, and runs ops in
+// the sandbox (no imports), with a wall-clock guard that terminates the
+// worker.
 //
-// This is the dogfood interface: a human answers the same questions
-// an agent can, through the same calls — the registry record's
-// op_docs are the tool descriptions, the worked examples are the
-// few-shot, and the output hashes chain ops exactly the way an
-// agent's context does.
+// A human answers the same questions that an agent can, through the same
+// calls. The registry record's op_docs are the tool descriptions, the
+// worked examples are the few-shot examples, and the output hashes chain
+// ops the way an agent's context does.
 //
 //   caps-run list                       capabilities + evidence
 //   caps-run session [NAME]             the sessions in the store, or
@@ -36,7 +35,7 @@
 // The session also keeps a journal of every module call: hashes only,
 // with each request's bytes stored once by hash (tools/journal.mjs).
 // `replay NAME` runs it again on fresh instances and reports each
-// output that differs; `--module CAP=FILE` replays CAP against a
+// output that differs. `--module CAP=FILE` replays CAP against a
 // candidate module.
 // Each command makes new module instances. A stored document registers
 // itself the first time an op names its hash (below).
@@ -46,70 +45,71 @@
 // The session keeps the whole document, so references still reach it.
 //
 // Every run compares the registry's recorded source digest with the
-// tree's and says on stderr when they differ — the registry runs the
-// code it was built from, not the code in the tree (`just caps`).
+// tree's and says on stderr when they differ. The registry runs the code
+// that it was built from, not the code in the tree (`just caps`).
 //
-// --load [N:|KIND:]FILE sends the file's bytes on a bulk op: KIND
-// names the kernel's load of a document kind (`--load feed:feed.zip`,
+// --load [N:|KIND:]FILE sends the file's bytes on a bulk op. KIND names
+// the kernel's load of a document kind (`--load feed:feed.zip`,
 // `layer:jobs.geojson`, `rt:snapshot.pb`, `network:network.json.gz`,
-// `streets:streets.json` — the registry's kernel_ops, in every module
-// whose capabilities read the kind); N is the op code (the
-// capability's own bulk ops from 0 — the default: streets' import, rt's
-// decode; every module answers the registry kernel ops —
+// `streets:streets.json`). These are the registry's kernel_ops, in every
+// module whose capabilities read the kind. N is the op code. The default
+// codes count from 0 over the capability's own bulk ops (streets' import,
+// rt's decode). Every module also answers the registry kernel ops:
 // `--load 258:/dev/null` lists what it holds, `--load 257:keep.json`
-// drops everything `{"keep": [hash, …]}` does not name, `--load
-// 268:/dev/null` says what it links).
-// --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
-// a file. Steps run in COMMAND-LINE ORDER, loads and ops alike;
+// drops everything that `{"keep": [hash, …]}` does not name, and
+// `--load 268:/dev/null` says what it links.
+// --op invokes one JSON op and is repeatable. '@FILE' reads the JSON from
+// a file. Steps run in command-line order, loads and ops alike, and
 // results print as JSON, one per line, in that order.
 //
-// --ask URL asks an ORACLE — an external service whose answer is an
-// input the user could have given by hand (docs/architecture/web.md, "External services") — through the deployment's path, the
-// way a page asks it: `--ask 'http://127.0.0.1:8080/geocode/
-// autocomplete?text=peacehealth'`. Its JSON answer joins the session
-// as a result (`$ask.features.0.geometry.coordinates.1`), so "the
-// rider typed X and picked the first" chains into the ops.
+// --ask URL asks an oracle through the deployment's path, as a page does.
+// An oracle is an external service whose answer is an input that the user
+// could have given by hand (docs/architecture/web.md, "External
+// services"): `--ask 'http://127.0.0.1:8080/geocode/
+// autocomplete?text=peacehealth'`. Its JSON answer joins the session as a
+// result (`$ask.features.0.geometry.coordinates.1`), so "the rider typed
+// X and picked the first" chains into the ops.
 //
-// --post URL REF sends a session document TO the deployment — the
-// way a page writes one — and joins its answer as a result ($post):
-// REF is a result reference (below), or a JSON value whose references
-// resolve inside it (`'{"id":"fall-2026"}'`), POSTed as JSON.
+// --post URL REF sends a session document to the deployment, as a page
+// writes one, and joins its answer as a result ($post). REF is a result
+// reference (below), or a JSON value whose references resolve inside it
+// (`'{"id":"fall-2026"}'`), POSTed as JSON.
 // `--post http://127.0.0.1:8080/plans '$apply.network'` publishes the
-// pick an `apply` answered (server/openapi.json, POST /plans); a refusal
-// (4xx) is the step's error, carrying the server's answer.
+// pick that an `apply` answered (server/openapi.json, POST /plans). A
+// refusal (4xx) is the step's error, carrying the server's answer.
 //
-// A session spans capabilities: --cap ID switches the capability
-// the following steps run against (each module is verified and
-// instantiated once per session). Documents cross by reference —
-// `"network":"$import.network"` hands the imported document to the
-// next capability, the same bytes, no file in between; assert the
-// identities agree like any host does.
+// A session spans capabilities. --cap ID switches the capability that the
+// following steps run against (each module is verified and instantiated
+// once per session). Documents cross by reference:
+// `"network":"$import.network"` hands the imported document to the next
+// capability, the same bytes, with no file in between. Assert that the
+// identities agree, as any host does.
 //
 // Result references: a string value that starts with "$" resolves
-// against the session's PRIOR results before invoking — no
-// hand-copying hashes between ops:
+// against the session's prior results before the op runs, so nobody
+// copies hashes between ops by hand:
 //   $net.network_hash  the result named by `--as net` (names are the
-//                      stable address — they survive reordering)
+//                      stable address and survive reordering)
 //   $load.feed_hash    the last --load result ("load" op)
 //   $ask.features      the last --ask result (the oracle's answer)
 //   $post.plans_hash   the last --post result (the deployment's answer)
 //   $import.network_hash  the last prior result tagged op:"import"
 //   $1.feed_hash       the 1st result overall, in command-line order
-// The rest of the reference is a dotted path into the result
-// (numeric segments index arrays). A reference must be the whole
-// string value; unresolvable references fail the session loudly.
+// The rest of the reference is a dotted path into the result (numeric
+// segments index arrays). A reference must be the whole string value.
+// An unresolvable reference fails the session.
 //
-// The clock. The host owns it, and reads it in the agency's zone, never
-// the machine's (D-175). The zone is --tz ZONE, or else the zone of the
-// last network the session saw (its operators' zone, or an import's
+// The host owns the clock and reads it in the agency's zone, never the
+// machine's (D-175). The zone is --tz ZONE, or else the zone of the last
+// network the session saw (its operators' zone, or an import's
 // `timezone`). With no zone, $TODAY and $NOW_SECS fail.
 //   $TODAY             the agency's service date, "YYYY-MM-DD"
 //   $NOW_SECS          seconds from noon minus 12 h on that date (a
 //                      number; the seconds fields are u32). This is
 //                      web/src/clock.ts, the browser's own clock.
 //
-// A document the module does not hold, named by a hash the session
-// holds, registers itself: the runner loads it through the kind's
+// A document that the module does not hold, named by a hash that the
+// session holds, registers itself: the runner loads it through the kind's
 // kernel load and runs the op again. The line lists it in `registered`.
 
 import { createHash, randomUUID } from "node:crypto";
@@ -129,14 +129,10 @@ function registryPointer() {
   return JSON.parse(readFileSync(join(REGISTRY, "registry.json"), "utf8"));
 }
 
-/// Each document kind's kernel load, by the kind (the manifest's
-/// `documents` names the kinds a capability reads): the registry's
-/// kernel ops, each load with its kind (crates/cap-abi/src/kinds.rs).
 function kindLoads() {
   return Object.fromEntries((registryPointer().kernel_ops ?? []).filter((k) => k.kind).map((k) => [k.kind, k]));
 }
 
-/// A --load prefix as a bulk op code: a number, or a kind's load.
 function opCode(prefix) {
   if (/^\d+$/.test(prefix)) return Number(prefix);
   const loads = kindLoads();
@@ -145,10 +141,9 @@ function opCode(prefix) {
   return load.code;
 }
 
-// The digest of the source the registry's modules are built from,
-// computed exactly as gen-manifest records it (`source_digest`): every
-// file git sees under crates/ plus Cargo.toml and Cargo.lock, sha256
-// over "{path}\n{sha256 hex}\n" in path order. Null without git.
+// The digest must match what gen-manifest records (`source_digest`): every
+// file that git sees under crates/ plus Cargo.toml and Cargo.lock, sha256
+// over "{path}\n{sha256 hex}\n" in path order. It is null without git.
 function sourceDigest() {
   const root = join(HERE, "..");
   let listing;
@@ -170,10 +165,9 @@ function sourceDigest() {
   return "sha256:" + digest.digest("hex");
 }
 
-// A registry published from another tree runs other code than the
-// tree says: say so, never silently (QAF-77). In a session, say it
-// once for each registry: the session's directory remembers the digest
-// it was told about.
+// A registry published from another tree runs other code than the tree
+// holds, so the runner says so. In a session it says so once for each
+// registry, because the session's directory remembers the digest.
 function warnIfStale(session = null) {
   const published = registryPointer().evidence?.source_digest ?? null;
   const tree = sourceDigest();
@@ -208,9 +202,6 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  // Steps keep command-line order: each names the capability it runs
-  // against (the positional one until a --cap switches it) and the
-  // name a following --as gave it.
   const out = { capability: null, steps: [], timeout: 10_000, session: null, brief: false, tz: null };
   let current = null;
   let pendingName = null;
@@ -253,18 +244,13 @@ function parseArgs(argv) {
   return out;
 }
 
-// -----------------------------------------------------------------
-// The sandbox session (worker thread: the parent can TERMINATE a
-// runaway computation — the wall-clock half of metering; the
-// zero-import wasm sandbox is the other half).
-// -----------------------------------------------------------------
+// The session runs in a worker thread, so the parent can terminate a
+// runaway computation. That is the wall-clock half of metering. The
+// no-import wasm sandbox is the other half.
 
-// One verified, instantiated capability module: the bytes are checked
-// against the registry record's pin before anything runs.
-//
-// `file` replaces the registry's blob with a candidate module (replay
-// --module). `journal`, when given, hears each call: its request bytes
-// and its outcome text.
+// The bytes are checked against the registry record's pin before anything
+// runs. `file` replaces the registry's blob with a candidate module
+// (replay --module).
 function instantiate(capability, { file = null, journal = null } = {}) {
   const record = capabilityRecord(capability);
   const bytes = readFileSync(file ?? join(REGISTRY, record.blob));
@@ -277,11 +263,10 @@ function instantiate(capability, { file = null, journal = null } = {}) {
   if (imports.length !== 0) throw new Error(`capability ${capability} has imports — refusing`);
   const ex = new WebAssembly.Instance(mod, {}).exports;
 
-  // The outcome stays the module's JSON TEXT: a session holds every
-  // result for later references, and one string per result is all the
-  // collector marks — a parsed real-size answer is millions of
-  // objects, re-marked by every major collection while the next large
-  // answer runs (QAF-86).
+  // The outcome stays the module's JSON text. A session holds every
+  // result for later references, and a parsed real-size answer is millions
+  // of objects that every major collection marks again while the next
+  // large answer runs.
   const read = (outPtr) => {
     const len = new DataView(ex.memory.buffer).getUint32(outPtr, true);
     const outcome = Buffer.from(ex.memory.buffer, outPtr + 4, len).toString("utf8");
@@ -313,9 +298,7 @@ function instantiate(capability, { file = null, journal = null } = {}) {
   };
 }
 
-/// The pages' linked assemblies the runner has (web/public/caps, from
-/// `just caps`), by module hash: a page's journal replays on the bytes
-/// the page ran.
+// A page's journal replays on the bytes that the page ran.
 function linkedAssemblies() {
   const caps = join(HERE, "..", "web", "public", "caps");
   const file = join(caps, "manifest.json");
@@ -328,14 +311,11 @@ function linkedAssemblies() {
   );
 }
 
-/// A bulk op's name for the journal's reader: a kernel load's name, or
-/// the capability's own op code.
 function bulkOpName(code) {
   return (registryPointer().kernel_ops ?? []).find((k) => k.code === code)?.name ?? `bulk ${code}`;
 }
 
-// A session's store: one directory for each session name. index.json
-// lists the named results, and each result is its outcome text,
+// index.json lists the named results. Each result is its outcome text,
 // gzipped, in <name>.json.gz.
 function sessionDir(name) {
   return join(process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions"), name);
@@ -351,9 +331,8 @@ function readSessionIndex(name) {
 const isDocument = (value) =>
   value !== null && typeof value === "object" && typeof value.kind === "string" && typeof value.schema_version === "number";
 
-// The documents an answer carries at its top level: each with its
-// field, its kind, and the hash beside it (`network` and
-// `network_hash`, `boundary` and `boundary_hash`).
+// A document is a top-level field with its hash beside it (`network` and
+// `network_hash`).
 function documentsOf(ok) {
   if (!ok || typeof ok !== "object") return [];
   return Object.entries(ok)
@@ -361,8 +340,7 @@ function documentsOf(ok) {
     .map(([field, value]) => ({ kind: value.kind, field, hash: ok[`${field}_hash`] ?? null }));
 }
 
-// The agency's time zone, as a network says it: its operators' one
-// zone. An import or a document answer also states it as `timezone`.
+// An import or a document answer also states the zone as `timezone`.
 function zoneOf(value) {
   if (!value || typeof value !== "object") return null;
   if (typeof value.timezone === "string") return value.timezone;
@@ -376,11 +354,9 @@ function zoneOf(value) {
   return null;
 }
 
-// Save the named results of this command. A name from an earlier
-// command is replaced. Each entry lists the documents its result
-// carries, and the agency's zone when the result states one. The index
-// is written last, through a rename, so a reader never sees an index
-// that names a missing file.
+// The index is written last, through a rename, so a reader never sees an
+// index that names a missing file. A name from an earlier command is
+// replaced.
 function saveSession(name, named) {
   if (named.length === 0) return;
   const dir = sessionDir(name);
@@ -398,8 +374,6 @@ function saveSession(name, named) {
   renameSync(join(dir, "index.json.tmp"), join(dir, "index.json"));
 }
 
-// --brief: a whole document prints as its kind, version, and size.
-// The session keeps the whole document, so references still reach it.
 function briefValue(value) {
   if (Array.isArray(value)) return value.map(briefValue);
   if (value === null || typeof value !== "object") return value;
@@ -419,12 +393,9 @@ function briefText(text) {
 
 async function runSession() {
   const { steps, session, brief, tz } = workerData;
-  // The browser's own service clock: the agency's date, and seconds
-  // from noon minus 12 h (web/src/clock.ts has no imports).
+  // This is web/src/clock.ts, which has no imports.
   const { serviceClock } = await import("../web/src/clock.ts");
   const modules = new Map();
-  // With --session, each module call is journaled (tools/journal.mjs):
-  // one run for this command, one instance for each capability.
   const run = `${new Date().toISOString()}-${randomUUID().slice(0, 8)}`;
   const journal = session ? journalWriter(sessionDir(session), run) : null;
   const moduleFor = (capability) => {
@@ -435,14 +406,11 @@ async function runSession() {
     return modules.get(capability);
   };
 
-  // Each result: its metadata (`as`, `cap`, `load`, `ask`, the op its
-  // answer is tagged with) and its outcome as JSON text, parsed only
-  // when a reference reaches into it.
-  //
-  // With --session, the named results of earlier commands come first.
-  // Each one's text is read from the store only when a reference
-  // reaches it. Only `--as` names reach across commands: $load, $ask,
-  // $post, $op, and $N address this command's results.
+  // A result's outcome stays JSON text until a reference reaches into it.
+  // With --session, the named results of earlier commands come first, and
+  // each one's text is read from the store only when a reference reaches
+  // it. $load, $ask, $post, $op, and $N address this command's results
+  // only.
   const results = session
     ? readSessionIndex(session).map((e) => ({
         as: e.as,
@@ -458,20 +426,15 @@ async function runSession() {
       }))
     : [];
   const outcomeOf = (r) => JSON.parse(r.text);
-  // The op an answer is tagged with, read the first time a `$op`
-  // reference asks — only the tag is kept.
   const opOf = (r) => {
     if (r.op === undefined) r.op = outcomeOf(r).ok?.op ?? null;
     return r.op;
   };
-  // The clock. The host owns it, so $TODAY and $NOW_SECS resolve before
-  // the ops see them. They read the agency's zone, never the machine's
-  // (D-175). The zone comes from --tz. Without --tz, it comes from the
-  // last network the session has seen: one an op loads, one an import
-  // or a document answer names, or one an earlier command of the
-  // session saved. Result references ($load.x, $import.x, $1.x) also
-  // resolve before the bytes cross the ABI, so the agent never copies a
-  // hash or computes a date by hand.
+  // The host owns the clock, so $TODAY and $NOW_SECS resolve before the
+  // ops see them, in the agency's zone and never the machine's (D-175).
+  // Without --tz, the zone comes from the last network that the session
+  // has seen: one that an op loads, one that an import or a document
+  // answer names, or one that an earlier command saved.
   const nowMs = Date.now();
   let zone = tz ?? [...results].reverse().find((r) => r.zone)?.zone ?? null;
   const learnZone = (value, result) => {
@@ -490,10 +453,7 @@ async function runSession() {
     return name === "$TODAY" ? clock.date : clock.secs;
   };
   const clockRefs = { $TODAY: true, $NOW_SECS: true };
-  // The kernel load of each document kind, by its bulk op code.
   const loadCodes = Object.fromEntries((registryPointer().kernel_ops ?? []).map((k) => [k.name, k.code]));
-  // A document the session holds, found by its kind and hash: in this
-  // command's results, or in the store of an earlier command.
   const listedDocuments = new Map();
   const heldDocument = (kind, hash) => {
     for (const r of [...results].reverse()) {
@@ -509,7 +469,6 @@ async function runSession() {
     if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<name|load|ask|post|op|N>.<path>`);
     const [, base, path] = m;
     let current;
-    // A name in this command wins over the same name from an earlier one.
     const named = [...results].reverse().find((r) => r.as === base);
     const here = results.filter((r) => !r.prior);
     if (named) {
@@ -530,9 +489,8 @@ async function runSession() {
       current = [...here].reverse().find((r) => opOf(r) === base);
       if (!current) throw new Error(`reference ${ref}: no prior result tagged op:"${base}"`);
     }
-    // References resolve into the result's ok payload — the document
-    // the session prints and the agent reads (the outcome wrapper is
-    // transport, not content).
+    // References resolve into the result's ok payload. The outcome wrapper
+    // is transport.
     const outcome = outcomeOf(current);
     current = outcome.ok ?? outcome;
     for (const segment of (path ?? "").split(".").filter((s) => s.length)) {
@@ -560,25 +518,21 @@ async function runSession() {
     return value;
   };
   for (const step of steps) {
-    // The printed line's leading fields, in this order: the name, the
-    // capability, then the step's own (load, ask), then the outcome.
     const result = {};
     if (step.name) {
       if (results.some((r) => r.as === step.name && !r.prior)) throw new Error(`--as ${step.name}: the name is already taken`);
       result.as = step.name;
     }
-    // The capability rides on every line once a session spans more
-    // than one — the reader sees which module answered.
+    // Once a session spans more than one capability, every line names the
+    // module that answered.
     if (new Set(steps.map((s) => s.capability)).size > 1) result.cap = step.capability;
     if (step.kind === "ask") {
-      // The oracle answers over HTTP, outside the sandbox — its
-      // answer is input, like a file the session loads.
+      // The oracle answers over HTTP, outside the sandbox. Its answer is
+      // input, like a file that the session loads.
       const resp = await fetch(step.value);
       result.ask = step.value;
       result.text = resp.ok ? `{"ok":${JSON.stringify(await resp.json())}}` : JSON.stringify({ error: `HTTP ${resp.status}` });
     } else if (step.kind === "post") {
-      // A write to the deployment, outside the sandbox: the document
-      // crosses by reference, the answer joins the session.
       const raw = step.value.ref;
       const value = raw.startsWith("{") || raw.startsWith("[") ? JSON.parse(raw) : raw;
       const body = JSON.stringify(resolveRefs(value));
@@ -607,20 +561,16 @@ async function runSession() {
       const resolved = resolveRefs(request);
       for (const value of Object.values(resolved)) learnZone(value, result);
       result.text = module.invoke(resolved);
-      // The module does not hold a document the op names, and the session
-      // does: register it through the kind's kernel load, then run the op
-      // again. The line says what was registered.
       for (let tries = 0; tries < 8; tries++) {
-        // The kernel's label for the kind is free text ("live
-        // document"); the load op's name is exact.
+        // The kernel's label for the kind is free text ("live document").
+        // The load op's name is exact.
         const missing = UNKNOWN_DOCUMENT.exec(result.text);
         const kind = missing && Object.values(kindLoads()).find((k) => k.name === missing[3])?.kind;
         const document = kind && heldDocument(kind, missing[2]);
         if (!document || loadCodes[missing[3]] === undefined) break;
         const loaded = JSON.parse(module.invokeBytes(loadCodes[missing[3]], Buffer.from(JSON.stringify(document))));
         // A load names its hash field for the kind's short name
-        // (`alerts_hash` for service_alerts, `requests_hash` for
-        // stop_requests), so match any hash field of the answer.
+        // (`alerts_hash` for service_alerts), so match any hash field.
         const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing[2]);
         if (!named) {
           throw new Error(`registering ${kind} ${missing[2]}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
@@ -629,8 +579,6 @@ async function runSession() {
         result.text = module.invoke(resolved);
       }
     }
-    // An answer that states the agency's zone (an import, a network
-    // document) sets the zone for the steps after it.
     if (!tz && result.text?.includes('"timezone"') && result.text.length < 64 * 1024 * 1024) {
       const ok = JSON.parse(result.text).ok;
       learnZone(ok, result);
@@ -643,9 +591,8 @@ async function runSession() {
     journal.flush();
     saveSession(session, here.filter((r) => r.as));
   }
-  // One printed line per result of this command: the leading fields,
-  // then the outcome's own fields. Without --brief they are spliced as
-  // text and never parsed again.
+  // Without --brief the outcome's fields are spliced as text and never
+  // parsed again.
   const lines = here.map(({ text, op, ...lead }) => {
     const head = JSON.stringify(lead);
     const body = brief ? briefText(text) : text;
@@ -660,16 +607,11 @@ if (!isMainThread) {
   });
 }
 
-// -----------------------------------------------------------------
-// The parent: argument parsing, listing, catalogs, and the guard.
-// -----------------------------------------------------------------
 
 export async function main(argv) {
   if (argv[0] === "list") {
     warnIfStale();
     const pointer = registryPointer();
-    // The kernel ops by name and code (their worked examples are in
-    // `tools <capability>`, under loads).
     const kernel_ops = (pointer.kernel_ops ?? []).map(({ code, name, description }) => ({ code, name, description }));
     console.log(JSON.stringify({ ...pointer, kernel_ops }, null, 2));
     return 0;
@@ -681,7 +623,6 @@ export async function main(argv) {
     const [id, only] = args.filter((a) => a !== "--brief");
     const record = capabilityRecord(id ?? usage());
     const docOf = (op) => record.op_docs[op] ?? { description: null, example: null };
-    // One op: everything about it, documents included.
     if (only !== undefined) {
       if (!record.ops.includes(only)) {
         console.error(`${record.id} has no op ${only}; its ops: ${record.ops.join(", ")}`);
@@ -690,9 +631,6 @@ export async function main(argv) {
       console.log(JSON.stringify({ id: record.id, op: only, documents: record.documents ?? [], ...docOf(only) }, null, 2));
       return 0;
     }
-    // --brief: each op's first sentence and its example request, with
-    // each document in the request omitted. `tools <capability> <op>`
-    // gives the full description and the example's answer.
     const firstSentence = (text) => {
       const match = /^(.+?[.!?])(?=\s+[A-Z(`"]|$)/s.exec(text ?? "");
       const sentence = (match ? match[1] : text ?? "").replace(/\s+/g, " ").trim();
@@ -705,8 +643,6 @@ export async function main(argv) {
         return [op, { summary: firstSentence(doc.description), example: { request: briefValue(doc.example?.request ?? null) } }];
       }),
     );
-    // The kernel's loads of the documents it reads: every module
-    // linking it answers them.
     const reads = new Set(record.documents ?? []);
     const kernel = (registryPointer().kernel_ops ?? []).filter((k) => reads.has(k.kind));
     const loads = brief
@@ -716,14 +652,12 @@ export async function main(argv) {
     return 0;
   }
   if (argv[0] === "replay") {
-    // Replay a journal (tools/journal.mjs) on fresh instances and
-    // compare every output hash. NAME is a session in the store, or a
-    // page's journal file (FILE.json, from the engine's journal).
-    // Each entry runs on the module it recorded when the runner has
-    // those bytes (a capability's registry blob, or a page's linked
-    // assembly in web/public/caps), else on the capability's own module.
-    // --single runs every entry on the capability's own module (assembly
-    // independence); --module CAP=FILE runs CAP on a candidate.
+    // NAME is a session in the store, or a page's journal file (FILE.json,
+    // from the engine's journal). Each entry runs on the module it
+    // recorded when the runner has those bytes (a capability's registry
+    // blob, or a page's linked assembly in web/public/caps), else on the
+    // capability's own module. --single runs every entry on the
+    // capability's own module, which checks assembly independence.
     const name = argv[1] ?? usage();
     const candidates = {};
     let single = false;
@@ -762,9 +696,6 @@ export async function main(argv) {
     return report.differ.length === 0 && report.cannot.length === 0 ? 0 : 1;
   }
   if (argv[0] === "session") {
-    // What a session holds: each name, its op and capability, the
-    // documents in it, and the zone it states. Without a name, the
-    // sessions in the store.
     const root = process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions");
     if (argv[1] === undefined) {
       const names = existsSync(root)
@@ -785,7 +716,6 @@ export async function main(argv) {
 
   const { steps, timeout, session, brief, tz } = parseArgs(argv);
   warnIfStale(session);
-  // Unknown capabilities fail before the sandbox spins up.
   for (const capability of new Set(steps.map((s) => s.capability))) capabilityRecord(capability);
   const { Worker } = await import("node:worker_threads");
   const worker = new Worker(new URL(import.meta.url), {
@@ -813,12 +743,10 @@ export async function main(argv) {
   return 0;
 }
 
-// Entry: run as a CLI only when invoked as main module (worker
-// threads import this same file — the isMainThread branch above
-// keeps them out of here). exitCode (NOT process.exit): exiting
-// without the event loop flushing stdout TRUNCATES results larger
-// than the 64 KiB pipe buffer — found by dogfooding the C-TRAN
-// feed through this exact CLI.
+// Worker threads import this file, and the isMainThread check keeps them
+// out of the CLI. Set exitCode and do not call process.exit, because
+// exiting before the event loop flushes stdout truncates results larger
+// than the 64 KiB pipe buffer.
 if (isMainThread && process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   main(process.argv.slice(2))
     .then((code) => {

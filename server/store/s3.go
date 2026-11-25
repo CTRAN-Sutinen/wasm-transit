@@ -57,17 +57,15 @@ func OpenBackend(ctx context.Context, raw string) (Backend, error) {
 	}
 }
 
-// S3 is the backend over S3 and S3-compatible endpoints. The
-// conditional create is PutObject with If-None-Match: *.
+// The conditional create is PutObject with If-None-Match: *.
 type S3 struct {
 	c      *s3.Client
 	bucket string
 	prefix string // "" or "<prefix>/"
 }
 
-// NewS3 answers the backend over bucket, every key under prefix.
-// endpoint, when set, names an S3-compatible server (path-style
-// addressing); region defaults to the SDK's, else us-east-1.
+// A non-empty endpoint names an S3-compatible server and uses path-style
+// addressing. region defaults to the SDK's, else us-east-1.
 func NewS3(ctx context.Context, bucket, prefix, endpoint, region string) (*S3, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -83,9 +81,8 @@ func NewS3(ctx context.Context, bucket, prefix, endpoint, region string) (*S3, e
 			o.BaseEndpoint = aws.String(endpoint)
 			o.UsePathStyle = true
 		}
-		// Checksums only where the API requires them: the contract is the
-		// whole-object put, and S3-compatible servers differ on the
-		// streaming trailer checksums the SDK otherwise adds.
+		// S3-compatible servers differ on the streaming trailer checksums
+		// that the SDK otherwise adds.
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
@@ -95,7 +92,7 @@ func NewS3(ctx context.Context, bucket, prefix, endpoint, region string) (*S3, e
 	return &S3{c: c, bucket: bucket, prefix: prefix}, nil
 }
 
-// status answers an API error's HTTP status (0 when it has none).
+// status answers 0 when the error has no HTTP status.
 func status(err error) int {
 	var re interface{ HTTPStatusCode() int }
 	if errors.As(err, &re) {

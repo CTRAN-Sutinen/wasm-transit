@@ -1,12 +1,9 @@
 package main
 
-// The host contract suite, the server's side
-// (web/src/uis/host-contract.json; docs/architecture/hosts.md, "The
-// rules every host keeps"). Each scenario runs GET /edits with the
-// bucket as the server's upstream. The browser runs the same scenarios
-// with the server as its upstream (web/src/uis/host-contract.test.mjs).
-// Both hosts must give the same state for each step: current, stale
-// with the upstream's age (X-Store-Stale, X-Store-As-Of), or failed.
+// The server's side of the host contract (web/src/uis/host-contract.json;
+// docs/architecture/hosts.md, "The rules every host keeps"). The bucket is
+// the upstream here. The browser runs the same scenarios with the server
+// as its upstream (web/src/uis/host-contract.test.mjs).
 
 import (
 	"context"
@@ -37,8 +34,7 @@ type contractScenario struct {
 	Steps []contractStep `json:"steps"`
 }
 
-// slowBucket answers after the store's time limit while `slow` is set,
-// and not at all while `down` is set.
+// slowBucket answers after the store's time limit while `slow` is set.
 type slowBucket struct {
 	flakyBucket
 	slow atomic.Bool
@@ -77,10 +73,9 @@ func (b *slowBucket) List(ctx context.Context, p, a string) ([]store.ObjectInfo,
 	return b.flakyBucket.List(ctx, p, a)
 }
 
-// The heads the scenarios name, as edit documents: B is a later
-// revision of A's record. The records are submitted already, so the
-// server keeps their revs (it submits each draft it receives:
-// transit_sync::submit).
+// B is a later revision of A's record. The records are submitted already,
+// because the server submits each draft it receives (transit_sync::submit)
+// and would change their revs.
 var contractHeads = map[string]struct {
 	doc string
 	rev string
@@ -109,8 +104,7 @@ func TestTheServerKeepsTheHostContract(t *testing.T) {
 
 func runContract(t *testing.T, sc contractScenario) {
 	bucket := &slowBucket{flakyBucket: flakyBucket{Backend: store.NewMemory()}}
-	// A scenario that starts with the upstream silent starts a server
-	// that never read the bucket: it holds no copy.
+	// A server that starts with a silent upstream holds no copy.
 	if len(sc.Steps) > 0 && sc.Steps[0].Upstream != "answers" {
 		bucket.down.Store(true)
 	}

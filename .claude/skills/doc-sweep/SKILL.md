@@ -93,15 +93,15 @@ Do not commit. Git is the user's.
    - The justfile: the comment above each recipe that the change
      touches, and the gate comments.
    - The TS bindings (`just types`).
-4. **The comments.** A crate's `//!` comment is its only description
-   outside the code. It says what the crate answers, the rules that
-   other code depends on, and why, in one line each with the decision
-   id. It does not restate a signature, a field list, or a walkthrough
-   of a function. It names a law test and does not repeat it. Also
-   check the module doc comments, the law-test headers, and the web
-   glue's comments. A comment that describes a retired type, op,
-   field, or address misleads the next reader as much as a stale doc
-   does. Comments follow `docs/CONVENTIONS.md`, "Writing".
+4. **The comments.** Read every comment that the change added or
+   touched against `docs/CONVENTIONS.md`, "What to write". The default
+   is no comment. Delete one that the name, signature, or body already
+   shows, or that repeats a home (`OPS.md`, `server/openapi.json`, an
+   architecture doc, a decision file). A crate's `//!` comment keeps
+   only what neither the code nor `OPS.md` says: the rules that other
+   code depends on and why, with the decision id. A comment that
+   describes a retired type, op, field, or address misleads the next
+   reader as much as a stale doc does.
 5. **The retired names.** Search the whole tree for each name that the
    change removed or renamed (step 3 has the command). Also search for
    phrases that describe the old design.

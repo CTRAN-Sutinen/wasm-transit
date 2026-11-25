@@ -1,13 +1,4 @@
 <script lang="ts">
-  /// The plans as picks on a timeline (D-139): every pick the deployment
-  /// publishes and every draft on this device, by pick date, the one in
-  /// force today marked (plans `resolve`, from the host). A published
-  /// pick is read-only — it opens and forks; a draft is also renamed,
-  /// given its period (picks on, runs through: the fork's rule), and
-  /// removed. Fork the open plan into a dated draft (its
-  /// calendar becomes its period, D-138), or import a feed as a draft
-  /// picking on its first service date (D-140). Events out; every change
-  /// is the host's.
   type Row = { key: string; id: string; name: string; effectiveFrom: string | null; published: boolean; loaded: boolean };
   let {
     plans,
@@ -31,7 +22,6 @@
     onfeed: (file: File) => void;
   } = $props();
 
-  // By pick date; a plan with none last.
   const rows = $derived([...plans].sort((a, b) => (a.effectiveFrom ?? "9999").localeCompare(b.effectiveFrom ?? "9999") || a.name.localeCompare(b.name)));
   let renaming = $state("");
   let newName = $state("");

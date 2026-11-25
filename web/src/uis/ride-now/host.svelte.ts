@@ -1,41 +1,16 @@
-/// The ride-now UI's host layer — the ONLY file of this UI that calls the
-/// capability bus. It owns I/O (its inputs, declared in its ui.json and
-/// read by the kit: the deployment's manifest, the network and streets
-/// it pins, the edit document, the live feeds; and the watchlist
-/// document, the device's location, the rider's recent stops), the
-/// clock, and the selection; every row,
-/// time, status, line, and notice it writes into `ride` is an op's
-/// answer, adopted as-is.
-///
-/// The questions it answers (its ui.json): which stop is
-/// mine (typed — or an address typed, through the server's geocoder —, near me — by walk along the streets when the server
-/// publishes them — or tapped on the map), what leaves next from it
-/// live, is my bus on time, how do I get there (now, at a time, by a
-/// time; from my location or a dropped pin, walking the streets),
-/// when is the last bus, is a detour or alert in my way, and
-/// what leaves the stops I saved — and, around them, the network:
-/// where every bus is now and where one is going, and what each route
-/// is (its directions and their stops).
-///
-/// A capability the bus cannot assemble turns its frames OFF (`off`),
-/// and they say so — nothing here answers in its place.
-///
-/// Addresses are not the bus's: the geocoder is an ORACLE
-/// (docs/architecture/web.md, "External services") — the
-/// server's manifest lists it, and it turns text into a point and
-/// names a point. This host sends only what the rider did (the text,
-/// the tap, where the map looks; the deployment's query policy is
-/// the server's) and shows the answer as given; a point it answers
-/// is a trip end like a dropped pin, carrying the name it was shown
-/// with; nothing durable keeps the query.
+// Only this file of the UI calls the bus. Every row, time, status, line, and
+// notice that it writes into `ride` is an op's answer, adopted as given.
+//
+// The geocoder is an oracle (docs/architecture/web.md, "External services").
+// The host sends only what the rider did and shows the answer as given.
+// Nothing durable keeps the query.
 
 import { ask, assemble, available, keep, load, produced, readManifest, servedNetwork, servedNetworkPin, servedStreets, servedWalks, Doc, type DeploymentManifest } from "../../engine";
 import { currentDocument, putDocument, restoreDocuments, type DocRecord } from "../../documents.svelte";
 import { answerGraph, applyBuild, askOracle, buildWaiting, clockEvery, clockLabelAt, inputGraph, inputLabel, installApp, nowSecs, previousDay, readFeed, readHead, readLiveFeeds, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type LiveUrls, type Reader } from "../kit";
 import descriptor from "./ui.json";
 
-// This page's capabilities answer inside its linked assembly — one
-// module, one registry: each document registers once (D-77).
+// Each document registers once in the page's one linked module (D-77).
 assemble("ride-now");
 import type { DirectWalk } from "../../types/DirectWalk";
 import type { End } from "../../types/End";
@@ -59,11 +34,6 @@ import type { Watchlist } from "../../types/cap_board/Watchlist";
 import type { RecentPlaces } from "../../types/cap_board/RecentPlaces";
 import type { LiveFeeds } from "../../types/cap_board/LiveFeeds";
 
-/// A stop as the directory answers it, wherever it was picked from
-/// (typed, near a point, tapped on the map): enough to name it, put it
-/// on the map, and ask its board — or, as a trip's end, a POINT (my
-/// location, a dropped pin), which the router plans from as a place
-/// by its walks along the streets.
 export type Place = {
   id: string;
   name: string;
@@ -72,35 +42,26 @@ export type Place = {
   distance_m?: number;
   walk_secs?: number | null;
   point?: boolean;
-  /// An address's town, shown beside its name.
   detail?: string;
 };
 export type Field = "search" | "from" | "to";
 export type View = "home" | "stop" | "trip" | "alerts" | "routes" | "route" | "bus";
-/// A bus picked on the map, by the live document's key.
 export type Picked = { key: string; trip: string | null; route: string | null };
 export type When = { mode: "now" | "depart" | "arrive" | "last"; secs: number | null };
 
-/// How often the answers on the clock are asked again (a board's
-/// waits, a trip asked for "now"). The inputs' intervals are in its
-/// ui.json.
 const POLL_MS = 30_000;
 const BOARD_ROWS = 10;
 const CARD_ROWS = 3;
 const NEARBY = 5;
 const FOUND = 25;
 const MAX_LEGS = 4;
-// Where an older build kept the rider's feed URLs and recent places:
-// read once, moved into the document store, and removed.
+// localStorage keys that an older build used. The values move into the document store once, then the keys are removed.
 const URLS_KEY = "ride-now:live-urls";
 const RECENT_KEY = "ride-now:recent";
-// Presentation preferences, kept in localStorage.
 const FIX_KEY = "ride-now:last-fix";
 const FRAME_KEY = "ride-now:network-view";
 
-/// The view the network was last framed on: where the map opens for
-/// a rider who shares no location, so it makes no move on load. Not
-/// the rider's — the network's; a network that moved is framed again.
+/// The map opens here for a rider who shares no location, so it makes no move on load.
 function readFramed(): { center: [number, number]; zoom: number } | null {
   try {
     const v = JSON.parse(localStorage.getItem(FRAME_KEY) ?? "null");
@@ -123,10 +84,7 @@ export function rememberFramed(view: { center: [number, number]; zoom: number })
   }
 }
 
-/// The last location this device shared, kept on the device only: the
-/// map opens on it (RideMap `start`), so its camera is already where
-/// the rider will be when the first fix lands. Anything else in
-/// storage — or none — is no start.
+/// Kept on the device only. The map opens on it, so the camera is already where the rider will be when the first fix lands.
 function readLastFix(): { lat: number; lon: number } | null {
   try {
     const v = JSON.parse(localStorage.getItem(FIX_KEY) ?? "null");
@@ -140,56 +98,33 @@ function readLastFix(): { lat: number; lon: number } | null {
 }
 
 export const ride = $state({
-  /// A message the rider's last action left (a location refused, a
-  /// failed step). What the page holds of the schedule is `status()`.
+  /// A message that the rider's last action left. `status()` adds what the page holds of the schedule.
   status: "",
   busy: true,
   feed: "",
-  /// Frames whose capability the bus could not assemble.
-  /// Each frame that shows no answer, and why (the answer graph's;
-  /// src/uis/answers.ts).
   frames: {} as Record<string, FrameState>,
-  /// What the page holds of each input (the kit's).
   inputs: {} as Record<string, InputState>,
   view: "home" as View,
   routes: [] as DirectoryRoute[],
-  /// Every stop, for the map (directory `stops`, no query).
   stops: [] as DirectoryStop[],
-  /// The type-ahead: which field is asking, and the directory's answer.
   query: null as { field: Field; text: string } | null,
   found: null as { field: Field; text: string; places: Place[] } | null,
-  /// The geocoder's answer for the same field and text: addresses and
-  /// places, each a point. Null until it answers, or where the server
-  /// runs no geocoder.
   addresses: null as { field: Field; text: string; places: Place[] } | null,
-  /// The manifest lists a geocoder: the search boxes take addresses.
   geocoding: false,
-  /// The device's location, once the rider shares it.
   here: null as { lat: number; lon: number } | null,
-  /// The location the device shared last time: where the map opens.
   start: readLastFix(),
-  /// The view the network was last framed on: where the map opens
-  /// when there is no fix.
   framed: readFramed(),
-  /// The published streets are registered: walks follow the streets,
-  /// and a trip can start or end at a point.
   walking: false,
-  /// The trip end the next tap on the map sets ("choose on map").
   picking: null as "from" | "to" | null,
   locating: false,
-  /// The point the nearby list answers: the rider, or a spot tapped
-  /// on the map.
   near: null as { lat: number; lon: number; mine: boolean; label?: string } | null,
   nearby: null as Place[] | null,
-  /// Each nearby place's board; null where asking it failed.
+  /// Null where asking the board failed.
   nearbyBoards: {} as Record<string, StopBoard | null>,
   stop: null as Place | null,
   board: null as StopBoard | null,
-  /// A departure picked on the board: its route on the map, its bus
-  /// marked.
   departure: null as { trip: string; start_secs: number; route: string } | null,
   routeFocus: null as EntityFocus | null,
-  /// Which route `routeFocus` draws.
   focusRoute: null as string | null,
   urls: { trips: "", vehicles: "", alerts: "" } as LiveUrls,
   live: null as Live | null,
@@ -198,75 +133,45 @@ export const ride = $state({
   when: { mode: "now", secs: null } as When,
   plan: null as { itinerary: Itinerary | null; notice: string | null } | null,
   paths: null as LegPath[] | null,
-  /// The network: the routes list (filtered as typed), one route (its
-  /// directions and the variants a rider rides), one bus (its trip's
-  /// progress, its stops named).
   routeQuery: "",
   routeRows: null as EntityRow[] | null,
   route: null as string | null,
-  /// Asked for the open route; `detail` null when the route is unknown.
   routeInfo: null as { detail: RouteDetail | null } | null,
   vehicle: null as Picked | null,
   progress: null as { progress: TripProgress | null; names: DirectoryStop[] } | null,
-  /// The map keeps the picked bus in view as it moves.
   follow: true,
-  /// A new build has downloaded and waits (kit's buildWaiting): the
-  /// rider may apply it now; it applies itself at the next navigation.
   updateReady: false,
   saved: [] as { id: string; label: string }[],
   savedBoards: null as WatchBoardStop[] | null,
   recent: [] as Place[],
 });
 
-// ---------------------------------------------------------------------
-// documents — the network (imported once), the edit document (the
-// sync server's), the live snapshots (decoded per poll), the watchlist
-// ---------------------------------------------------------------------
-
 let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
-/// The edit document over the network — null when empty (schedule
-/// only, the day views' contract).
+/// Null when empty. The day views then read the schedule only.
 let edits: Doc<EditDocument> | null = null;
-/// The rider's saved stops, as the document the board reads.
 let watchlist: Doc<Watchlist> | null = null;
-/// THE live document (rt's answer over the snapshots), by which the
-/// boards and the router read the live feeds.
 let live: Doc<LiveDay> | null = null;
-/// The decoded live feeds, one document per read's bytes.
 const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
-/// The published streets (registered in the streets module) and walk
-/// table (registered in the router) — null when the server publishes
-/// none.
 let streets: Doc | null = null;
 let walks: Doc | null = null;
-/// The near point's walks to the stops (streets `access`).
 let nearWalks: PointWalk[] | null = null;
-/// The trip asked: its ends and its time, fixed when asked (a "now"
-/// plan re-asks on every poll).
+/// The ends and the time are fixed when asked. A "now" plan asks again on every poll.
 let trip: { from: Place; to: Place; date: string; when: When } | null = null;
-/// The planned trip's ends as the router took them — what
-/// itinerary_paths draws a place's walks from.
 let planEnds: { from: End; to: End; direct: DirectWalk | null } | null = null;
 
-/// What the live frames draw: the live document and its summary.
 type Live = { live: LiveDay; summary: LiveSummary };
 
 const HERE_ID = "@here";
 
-/// A spot as a trip's end (tapped on the map, or an address) — one
-/// pin per end, so the two never share an id.
 function pinPlace(end: "from" | "to", lat: number, lon: number, name = "Dropped pin"): Place {
   return { id: `@pin-${end}`, name, lat, lon, point: true };
 }
 
-/// The rider's location as a trip's end.
 function herePlace(): Place | null {
   return ride.here ? { id: HERE_ID, name: "My location", lat: ride.here.lat, lon: ride.here.lon, point: true } : null;
 }
 
-/// The walks from a point to the stops (and straight to `to`), along
-/// the published streets.
 async function accessFrom(p: Place, to: Place | null): Promise<{ walks: PointWalk[]; direct: DirectWalk | null } | null> {
   if (!network || !streets || p.lat == null || p.lon == null || !(await available("streets"))) return null;
   const point = { lat: p.lat, lon: p.lon };
@@ -282,8 +187,6 @@ async function accessFrom(p: Place, to: Place | null): Promise<{ walks: PointWal
   return { walks, direct };
 }
 
-/// A trip's ends as the router takes them: a stop by id, a point as a
-/// place with its walks — and the walk straight between two points.
 async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End; direct: DirectWalk | null }> {
   const end = async (p: Place, other: Place | null) => {
     if (!p.point) return { end: p.id as End, direct: null };
@@ -296,13 +199,10 @@ async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End;
 }
 
 
-/// Whether a frame's capability did not assemble: its component says
-/// so (the answer graph's state, src/uis/answers.ts).
 export function off(frame: string): boolean {
   return ride.frames[frame]?.kind === "unassembled";
 }
 
-/// A frame's failure, as text ("" when it answered).
 export function failure(frame: string): string {
   const state = ride.frames[frame];
   return state?.kind === "failed" ? state.message : "";
@@ -313,7 +213,6 @@ function fail(e: unknown): void {
   console.error(e);
 }
 
-/// One stop's board, now.
 async function stopBoard(stopId: string, rows: number): Promise<StopBoard> {
   const answer = await ask("board", "stop_board", {
     network_hash: network!,
@@ -329,20 +228,9 @@ async function stopBoard(stopId: string, rows: number): Promise<StopBoard> {
   return answer.board;
 }
 
-// ---------------------------------------------------------------------
-// This UI's answer graph (src/uis/kit.ts, "the answer graph").
-// Inputs: "network",
-// "edits" (the sync server's edit document), "snapshot" (the decoded
-// live feeds), "clock" (the poll's tick), "query" / "near" / "stop" /
-// "departure" / "trip" (the selection), "saved" (the watchlist
-// document), "view" (which panel is on screen).
-// ---------------------------------------------------------------------
-
 const request = answerGraph(
   [
     {
-      // What exists: every stop (the map draws them) and every route
-      // (the badges take their authored colors).
       id: "directory.stops+routes",
       frame: "RideMap",
       needs: ["network"],
@@ -354,7 +242,6 @@ const request = answerGraph(
       },
     },
     {
-      // The type-ahead: every word typed in the name or the id.
       id: "directory.stops?query",
       frame: "PlaceSearch",
       needs: ["network", "query"],
@@ -372,10 +259,8 @@ const request = answerGraph(
       },
     },
     {
-      // The near point's walks to the stops, along the streets.
       id: "streets.access[near]",
-      // An input to the list, not a frame: without the streets the
-      // list orders by distance.
+      // An input to the list, not a frame. Without the streets the list orders by distance.
       frame: "",
       needs: ["network", "streets", "near"],
       run: async () => {
@@ -384,8 +269,6 @@ const request = answerGraph(
       },
     },
     {
-      // The places near the point: by walk when the streets answered
-      // its walks, else by distance.
       id: "directory.stops_near",
       frame: "NearbyList",
       needs: ["network", "near", "streets.access[near]"],
@@ -415,8 +298,6 @@ const request = answerGraph(
       },
     },
     {
-      // THE live document over whichever feeds were fetched; the
-      // boards and the router read it by hash, the map draws its buses.
       id: "rt.live",
       frame: "LiveFeeds",
       needs: ["network", "snapshot"],
@@ -439,9 +320,7 @@ const request = answerGraph(
           vp_hash: vehicles ?? undefined,
           alerts_hash: alerts ?? undefined,
         });
-        // The page reads the document (its vehicles and alerts); linked
-        // beside rt, the board and the router read it by hash where rt
-        // minted it — it never crosses back.
+        // The page reads the document's vehicles and alerts. The board and the router read the same document by hash, because rt created it in the linked module.
         const day = answer.live;
         if (!day) throw new Error("the live answer carries no document");
         live = produced("live", day, "rt", answer.live_hash);
@@ -469,7 +348,6 @@ const request = answerGraph(
           return;
         }
         ride.board = await stopBoard(stop.id, BOARD_ROWS);
-        // A picked departure that has left the board is unpicked.
         const d = ride.departure;
         if (d && !ride.board.rows.some((r) => r.trip === d.trip && r.start_secs === d.start_secs)) {
           ride.departure = null;
@@ -478,8 +356,6 @@ const request = answerGraph(
       },
     },
     {
-      // Each nearby place's next departures — the same board, one
-      // call per card.
       id: "board.stop_board[nearby]",
       frame: "NearbyBoards",
       needs: ["network", "edits", "rt.live", "directory.stops_near", "clock", "view"],
@@ -529,8 +405,6 @@ const request = answerGraph(
       },
     },
     {
-      // The route in play, drawn: the open route's, the picked bus's,
-      // or the picked departure's.
       id: "directory.focus",
       frame: "RideMap",
       needs: ["network", "departure", "route", "vehicle", "view"],
@@ -547,7 +421,6 @@ const request = answerGraph(
       },
     },
     {
-      // The routes, narrowed by the filter's words.
       id: "directory.entities[route]",
       frame: "RouteList",
       needs: ["network", "routeQuery", "view"],
@@ -564,8 +437,6 @@ const request = answerGraph(
       },
     },
     {
-      // One route: its directions, each with the variants a rider
-      // rides (a station's bays one place).
       id: "directory.route_detail",
       frame: "RouteView",
       needs: ["network", "route", "view"],
@@ -582,9 +453,6 @@ const request = answerGraph(
       },
     },
     {
-      // One bus: its trip's progress in the trip-updates snapshot,
-      // and the names of the stops it lists (`stops_by_ids` — the
-      // names join for views that carry ids).
       id: "rt.trip_progress+directory.stops_by_ids",
       frame: "BusView",
       needs: ["network", "snapshot", "vehicle", "view"],
@@ -611,14 +479,11 @@ const request = answerGraph(
       },
     },
     {
-      // The trip: leaving now or at a time (with the rider's notice
-      // when a detour changes it), arriving by a time, or the last bus
-      // (arrive-by with no deadline) — at the live predictions.
       id: "router.plan",
       frame: "TripPlan",
       needs: ["network", "edits", "rt.live", "trip", "streets", "walks"],
       caps: ["router"],
-      // The trip panel says it could not plan, never "no trips".
+      // The panel says it could not plan. It never says there are no trips.
       clear: () => (ride.plan = null),
       run: async () => {
         if (!network || !trip) {
@@ -650,7 +515,6 @@ const request = answerGraph(
       },
     },
     {
-      // Where the planned trip runs, one path per leg.
       id: "router.itinerary_paths",
       frame: "RideMap",
       needs: ["router.plan"],
@@ -680,23 +544,14 @@ const request = answerGraph(
   ride.inputs,
 );
 
-// ---------------------------------------------------------------------
-// The inputs (its ui.json's `inputs`, read by the kit): each reader
-// answers its document, null for none, or throws when the read fails.
-// ---------------------------------------------------------------------
-
 type Served = { network: Doc<Network>; boundary: Doc<Boundary>; pin: string };
 
-/// The modules that read the network, in order: its pin is checked in
-/// the first that assembles.
+/// The first module that assembles checks the network's pin.
 const NETWORK_READERS = ["directory", "board", "rt"] as const;
 
 let manifest: (DeploymentManifest & { services?: Record<string, { path: string }> }) | null = null;
-/// A network the rider loaded from a zip: the page stops following the
-/// deployment.
 let byHand: Served | null = null;
-/// The deployment's feed URLs (live-feeds.json), and the rider's own
-/// (the `live_feeds` document): the rider's win.
+/// The rider's feed URLs win over the deployment's.
 let deployedUrls: Partial<LiveUrls> = {};
 let riderUrls: LiveUrls | null = null;
 
@@ -704,19 +559,12 @@ function adoptUrls(): void {
   ride.urls = riderUrls ? { ...riderUrls } : { trips: deployedUrls.trips ?? "", vehicles: deployedUrls.vehicles ?? "", alerts: deployedUrls.alerts ?? "" };
 }
 
-/// Name what the modules keep: the documents this page holds now —
-/// everything else (a replaced network, a superseded edit document)
-/// is dropped from every module (the engine's `keep`). The live
-/// documents and rt snapshots bound themselves between calls.
+/// Documents not listed are dropped from every module (the engine's `keep`). The live documents and rt snapshots bound themselves between calls.
 function release(): Promise<void> {
   return keep([network, boundary, edits, live, snapshots.trips, snapshots.vehicles, snapshots.alerts, streets, walks, watchlist]);
 }
 
-/// One live feed: its bytes decoded into a snapshot (cap-rt registers
-/// it), keyed by its hash. None when no URL names it or rt did not
-/// assemble. A feed that does not answer drops its snapshot (it keeps
-/// none): answers read the schedule and say so — never a stale
-/// prediction as live.
+/// A feed that does not answer drops its snapshot, so answers read the schedule and say so. A stale prediction never shows as live.
 function liveFeed(kind: keyof typeof snapshots): Reader<Doc> {
   return {
     read: async ({ signal }) => {
@@ -739,7 +587,6 @@ const readers: Record<string, Reader<any>> = {
     adopt: (m) => {
       manifest = m;
       setAgencyZone(m?.timezone);
-      // The services the deployment offers: the geocoder (an oracle).
       geocoderPath = m?.services?.geocoder?.path ?? null;
       ride.geocoding = geocoderPath !== null;
     },
@@ -752,10 +599,7 @@ const readers: Record<string, Reader<any>> = {
     },
   },
   network: {
-    // The deployment's network: the pick in force today, else its
-    // import. It follows the deployment as it moves (a republish, a new
-    // pick, today crossing a pick's date; D-63): the pin is checked on
-    // each read, and only a moved pin reads the network again.
+    // Follows the deployment (a republish, a new pick, today crossing a pick's date; D-63). Only a moved pin reads the network again.
     read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
       if (byHand) return { value: byHand, key: byHand.pin };
       if (!manifest) throw new Error("the deployment's manifest is not read");
@@ -772,18 +616,13 @@ const readers: Record<string, Reader<any>> = {
     adopt: async (got: Served | null) => {
       network = got?.network ?? null;
       boundary = got?.boundary ?? null;
-      // The heading: the network's name, which the directory answers
-      // (a published network is bytes this page never parsed).
+      // The directory answers the name, because a published network is bytes that this page never parsed.
       const about = network && (await available("directory")) ? await ask("directory", "about", { network_hash: network }).catch(() => null) : null;
       ride.feed = network ? about?.name || network.value?.name || "the agency's network" : "";
       await release();
     },
   },
-  // The published streets and walk table: the streets document's bytes
-  // go straight to the streets module, the walk table (which walks the
-  // network) to the router. Until they land — or where the server
-  // publishes none — walks are straight lines and trips run stop to
-  // stop.
+  // The streets document goes to the streets module, and the walk table to the router. Until they land, walks are straight lines and trips run stop to stop.
   streets: {
     read: async ({ signal }) => {
       if (!manifest || !(await available("streets"))) return null;
@@ -808,10 +647,7 @@ const readers: Record<string, Reader<any>> = {
     },
   },
   edits: {
-    // The edit document (detours), read-only — a rider never writes
-    // edits — over the network the page holds: a new network reads it
-    // again. The modules refuse any version they do not read. No sync
-    // server keeps none (404).
+    // Read-only: a rider never writes edits. The modules refuse any version they do not read. A server with no sync answers 404.
     read: async ({ signal }) => {
       if (!network) return null;
       const got = await readHead("edits", signal, [404]);
@@ -836,13 +672,10 @@ const readers: Record<string, Reader<any>> = {
 
 const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, ride.inputs, request);
 
-/// What the page says of an input ("" when it is current).
 export function label(input: string): string {
   return inputLabel(ride.inputs[input]);
 }
 
-/// The page's status line: a message the rider's last action left,
-/// else what it holds of the schedule. "" when the schedule is current.
 export function status(): string {
   if (ride.status) return ride.status;
   const state = ride.inputs.network;
@@ -854,14 +687,11 @@ export function status(): string {
 
 const FEEDS = ["trips", "vehicles", "alerts"] as const;
 
-/// When the live feeds last answered, on the agency's clock ("" when
-/// none has).
 export function liveAt(): string {
   const at = Math.max(0, ...FEEDS.map((k) => ride.inputs[k]).map((s) => (s?.kind === "answered" ? s.atMs : 0)));
   return at ? clockLabelAt(at) : "";
 }
 
-/// The feeds whose last read failed, and why ("" when none).
 export function liveError(): string {
   return FEEDS.map((k) => ride.inputs[k])
     .filter((s): s is Extract<InputState, { kind: "failed" }> => s?.kind === "failed")
@@ -869,13 +699,8 @@ export function liveError(): string {
     .join("; ");
 }
 
-// ---------------------------------------------------------------------
-// boot, and the clock
-// ---------------------------------------------------------------------
-
 export async function boot(): Promise<void> {
-  // The app's build: a build that waited for this navigation applies
-  // now (nothing on the page is unsaved yet).
+  // A build that waited for this navigation applies now, because nothing on the page is unsaved yet.
   void installApp();
   await restoreDocuments().catch((e) => console.warn("the device's documents did not restore:", e));
   await restoreRiderUrls();
@@ -890,8 +715,6 @@ export async function boot(): Promise<void> {
   } finally {
     ride.busy = false;
   }
-  // The answers on the clock: a trip asked for "now" is asked again
-  // from the new now.
   clockEvery(POLL_MS, () => {
     ride.updateReady = buildWaiting();
     const changed = ["clock"];
@@ -903,15 +726,12 @@ export async function boot(): Promise<void> {
   });
 }
 
-/// A GTFS zip the rider loads becomes the network document (and its
-/// boundary, the stop_sequence numbering the live feeds name). The
-/// page stops following the deployment.
+/// The boundary document holds the stop_sequence numbering that the live feeds name.
 export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
   ride.busy = true;
   ride.status = `Loading ${label}…`;
   try {
-    // The import is the network module's: the only time this page
-    // assembles it.
+    // This is the only time that the page assembles the network module.
     if (!(await available("network"))) {
       ride.status = "The network capability is unavailable — a GTFS zip cannot be imported without it.";
       return;
@@ -932,15 +752,11 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
   }
 }
 
-/// The rider accepts "a new version is ready": the page reloads into
-/// it. Their choice — whatever they had typed is theirs to lose.
+/// The reload can lose what the rider typed. The rider chose to apply it.
 export function applyUpdate(): void {
   applyBuild();
 }
 
-/// The rider's own feed URLs: the `live_feeds` document, else the URLs
-/// an older build kept in `localStorage`, moved into the store. None:
-/// the deployment's (the `live-feeds` input).
 async function restoreRiderUrls(): Promise<void> {
   try {
     const record = currentDocument("live_feeds") ?? (await moveFromLocalStorage(URLS_KEY, "live_feeds", (urls: Partial<LiveUrls>) => urls));
@@ -966,12 +782,6 @@ export async function setLiveUrls(urls: LiveUrls): Promise<void> {
   await inputs.read(...FEEDS);
 }
 
-// ---------------------------------------------------------------------
-// where the rider is
-// ---------------------------------------------------------------------
-
-/// Ask for the location without a prompt only when the rider already
-/// allowed it; otherwise the "near me" button asks.
 async function locateIfAllowed(): Promise<void> {
   try {
     const state = await navigator.permissions?.query({ name: "geolocation" as PermissionName });
@@ -1007,9 +817,7 @@ export function locate(): void {
   );
 }
 
-/// A spot tapped on the map: what is near it — or, while choosing a
-/// trip's end on the map, that end (a point walks only where the
-/// streets are published).
+/// While a trip end is being chosen on the map, the spot is that end. A point walks only where the streets are published.
 export function nearPoint(lat: number, lon: number): Promise<void> {
   const end = ride.picking;
   if (end) {
@@ -1024,8 +832,6 @@ export function nearPoint(lat: number, lon: number): Promise<void> {
   return nearSpot(lat, lon, null);
 }
 
-/// What is near a spot — tapped, or an address picked — named by the
-/// geocoder when the spot came without a name.
 async function nearSpot(lat: number, lon: number, label: string | null): Promise<void> {
   ride.near = { lat, lon, mine: false, label: label ?? undefined };
   ride.view = "home";
@@ -1035,13 +841,6 @@ async function nearSpot(lat: number, lon: number, label: string | null): Promise
   if (name && ride.near?.lat === lat && ride.near.lon === lon) ride.near = { ...ride.near, label: name };
 }
 
-// ---------------------------------------------------------------------
-// the geocoder — an oracle the server's manifest lists: asked with
-// the rider's input only, its answers adopted as it gives them
-// ---------------------------------------------------------------------
-
-/// Where the deployment's geocoder answers (the manifest's
-/// `services.geocoder.path`); null when it lists none.
 let geocoderPath: string | null = null;
 let geocodeAsked = 0;
 
@@ -1057,9 +856,7 @@ async function geocoderAsk(op: "autocomplete" | "reverse", params: Record<string
   return answer ? (answer.features ?? []) : null;
 }
 
-/// The geocoder's places for what was typed, focused where the rider
-/// is looking. A trip end from an address walks the streets, so the
-/// from/to fields ask only where the streets are published.
+/// A trip end from an address walks the streets, so the from and to fields ask only where the streets are published.
 async function geocode(field: Field, text: string): Promise<void> {
   const asked = ++geocodeAsked;
   const t = text.trim();
@@ -1087,16 +884,11 @@ async function geocode(field: Field, text: string): Promise<void> {
   };
 }
 
-/// The geocoder's name for a spot (what the deployment's policy finds
-/// nearest — D-37), or null when it has none or is not running.
+/// The name is what the deployment's policy finds nearest (D-37).
 async function spotName(lat: number, lon: number): Promise<string | null> {
   const features = await geocoderAsk("reverse", { "point.lat": lat, "point.lon": lon });
   return features?.[0]?.properties.name ?? null;
 }
-
-// ---------------------------------------------------------------------
-// the selection — each handler sets its input and requests it
-// ---------------------------------------------------------------------
 
 export function typed(field: Field, text: string): Promise<void> {
   ride.query = { field, text };
@@ -1116,8 +908,7 @@ export function show(view: View): Promise<void> {
   return request("view");
 }
 
-/// A place known only by id (a saved stop) takes its point from the
-/// directory's stop list, so the map can go to it.
+/// Takes the point from the directory's stop list, so the map can go to it.
 function located(place: Place): Place {
   if (place.lat != null) return place;
   const stop = ride.stops.find((s) => s.stop_id === place.id);
@@ -1132,7 +923,6 @@ export function openStop(place: Place): Promise<void> {
     return setEnd(end, located(place));
   }
   clearFound();
-  // An address picked from the search: what is near it.
   if (place.point && place.lat != null && place.lon != null) return nearSpot(place.lat, place.lon, place.name);
   place = located(place);
   ride.stop = place;
@@ -1149,7 +939,6 @@ export function pickDeparture(d: { trip: string; start_secs: number; route: stri
   return request("departure");
 }
 
-/// The route the map draws for the panel on screen.
 function focusRoute(): string | null {
   if (ride.view === "route") return ride.route;
   if (ride.view === "bus") return ride.vehicle?.route ?? null;
@@ -1173,7 +962,6 @@ export function openRoute(routeId: string): Promise<void> {
   return request("route", "view");
 }
 
-/// A bus tapped on the map.
 export function openVehicle(v: Picked): Promise<void> {
   ride.vehicle = v;
   ride.progress = null;
@@ -1186,9 +974,7 @@ export function setFollow(on: boolean): void {
   ride.follow = on;
 }
 
-/// Directions from or to a place; the other end defaults to the
-/// rider's location when the streets can walk it, else the place
-/// nearest the rider when the directory answered one.
+/// The other end defaults to the rider's location when the streets can walk it, else to the place nearest the rider when the directory answered one.
 export function directions(end: "from" | "to", place: Place): Promise<void> {
   clearFound();
   ride[end] = place;
@@ -1200,21 +986,19 @@ export function directions(end: "from" | "to", place: Place): Promise<void> {
   return replan();
 }
 
-/// Directions to the spot tapped on the map (a dropped pin).
 export function directionsToSpot(): Promise<void> {
   const near = ride.near;
   if (!near || near.mine) return Promise.resolve();
   return directions("to", pinPlace("to", near.lat, near.lon, near.label));
 }
 
-/// Choose a trip's end on the map: the next tap — a stop, or (with
-/// the streets published) any spot — sets it. Asked again, cancelled.
+// The next tap sets the end at a stop, or at any spot when the streets are
+// published. Asking again cancels.
 export function chooseOnMap(end: "from" | "to" | null): void {
   ride.picking = ride.picking === end ? null : end;
   ride.status = "";
 }
 
-/// The rider's location as one end of the trip.
 export function fromHere(end: "from" | "to"): Promise<void> {
   const here = herePlace();
   if (!here) return Promise.resolve();
@@ -1224,7 +1008,6 @@ export function fromHere(end: "from" | "to"): Promise<void> {
 
 export function setEnd(end: "from" | "to", place: Place): Promise<void> {
   clearFound();
-  // A point (an address) becomes this end's pin.
   if (place.point && place.id !== HERE_ID && place.lat != null && place.lon != null)
     place = pinPlace(end, place.lat, place.lon, place.name);
   ride[end] = place;
@@ -1254,11 +1037,6 @@ function replan(): Promise<void> {
   return request("trip", "view");
 }
 
-// ---------------------------------------------------------------------
-// the rider's own: saved stops (the watchlist document — JS owns it,
-// replaced wholesale; the store keeps every version) and recent
-// stops (a per-device convenience)
-// ---------------------------------------------------------------------
 
 async function restoreSaved(): Promise<void> {
   let doc: Doc<Watchlist> | null = null;
@@ -1274,11 +1052,7 @@ async function restoreSaved(): Promise<void> {
   ride.saved = doc?.value ? doc.value.stops.map((s) => ({ id: s.id, label: s.label })) : [];
 }
 
-/// A stored watchlist in the version the board reads. The board's load
-/// decides: one it refuses comes forward through the migration
-/// capability when the deployment serves it (fetched only then), and the
-/// migrated document is a new record whose `produced_by` names the old
-/// one. A version nothing here brings forward stays as stored.
+/// One that the board refuses comes forward through the migration capability when the deployment serves it (fetched only then). The migrated document is a new record whose `produced_by` names the old one. A version nothing here brings forward stays as stored.
 async function readStoredWatchlist(record: DocRecord): Promise<Doc<Watchlist>> {
   const stored: unknown = JSON.parse(record.bytes);
   const doc = new Doc<Watchlist>("watchlist", { value: stored as Watchlist });
@@ -1316,8 +1090,6 @@ export function toggleSaved(place: Place): Promise<void> {
     : writeSaved([...ride.saved, { id: place.id, label: place.name }]);
 }
 
-/// The rider's recent places: the `recent_places` document, else the
-/// list an older build kept in `localStorage`, moved into the store.
 async function restoreRecent(): Promise<void> {
   ride.recent = [];
   try {
@@ -1337,9 +1109,7 @@ function remember(place: Place): void {
   });
 }
 
-/// A device record an older build kept under a `localStorage` key, moved
-/// into the store as the tagged document `kind` (the record names the key
-/// it came from), and the key removed. Null when the key holds nothing.
+/// The record names the localStorage key it came from. The key is removed after the move.
 async function moveFromLocalStorage(key: string, kind: "recent_places" | "live_feeds", tag: (stored: never) => object): Promise<DocRecord | null> {
   const stored = localStorage.getItem(key);
   if (stored === null) return null;

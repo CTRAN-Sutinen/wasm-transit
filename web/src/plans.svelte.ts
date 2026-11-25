@@ -1,14 +1,6 @@
-/// The service plans: the authored network documents (transit-network
-/// `Network`) the service-design UI keeps on this device. JS owns
-/// them — plain data, wholesale replacement, never mutated in place.
-/// A **service plan** is one of these documents framed by its `plan`
-/// metadata (identity, name, effective date); the plan set is keyed
-/// by a store id (the sync identity inside the document is `plan.id`
-/// — empty on unversioned imports). wasm only ever sees a document as
-/// an op argument. Persisted to IndexedDB as one plan set document
-/// (transit-network `PlanSet`: its kind, its version, and the plans by
-/// store id; D-115), so plans survive reloads — service changes span
-/// weeks.
+// The plan set is keyed by a store id. The sync identity inside a document
+// is `plan.id`, which is empty on unversioned imports. IndexedDB holds the
+// set as one `PlanSet` document (D-115), so plans survive reloads.
 
 import { get as idbGet, set as idbSet } from "idb-keyval";
 import { keepRecord } from "./documents.svelte";
@@ -17,8 +9,6 @@ import type { PlanSet } from "./types/PlanSet";
 
 let plans = $state.raw<Record<string, Network>>({});
 let activePlanId = $state.raw<string>("");
-
-
 
 export function getAllPlans(): Record<string, Network> {
   return plans;
@@ -34,8 +24,7 @@ export function putPlan(id: string, doc: Network): void {
   void persistPlans();
 }
 
-/** Drop a plan from the set (and from IndexedDB with the next
- * persist). The active plan id is the host's to move. */
+/** The active plan id is the host's to move. */
 export function removePlan(id: string): void {
   if (!(id in plans)) return;
   const { [id]: _, ...rest } = plans;
@@ -53,20 +42,13 @@ export function setActivePlan(id: string): void {
 const PLANS_KEY = "transit:plans";
 const ACTIVE_PLAN_KEY = "transit:active-plan";
 let plansWrite: Promise<unknown> = Promise.resolve();
-/** The plans whose in-memory copy is in the current shape: put by a
- * host (a module answered it) or read back through `readPlan`. */
 const readPlans = new Set<string>();
 
-/** The plan set version this build writes (transit-network
- * `PLAN_SET_VERSION`). */
+/** Matches transit-network `PLAN_SET_VERSION`. */
 const PLAN_SET_VERSION = 1;
 
-/** A stored plan read through a module: its document in the current
- * shape, and whether a migration brought it forward. */
 export type ReadPlan = { network: Network; migrated: boolean };
 
-/** The set as IndexedDB held it at restore, kept once in the device's
- * document store (`plan_set`) before a migrated plan is written over it. */
 let storedSet: unknown = undefined;
 let storedSetKept = false;
 
@@ -80,12 +62,10 @@ async function keepStoredSet(): Promise<void> {
   }
 }
 
-/** Set when the stored set is one this build does not read (another
- * kind, or a newer version, as the module's `stored_plans` answers):
- * the page then never writes over it. */
+/** Set when the stored set is of another kind or a newer version. The page
+ * then never writes over it. */
 let storeRefused = false;
 
-/** Persist the plan set — serialized writes, one pending at a time. */
 function persistPlans(): void {
   if (storeRefused) return;
   const set: PlanSet = { kind: "plan_set", schema_version: PLAN_SET_VERSION, plans };
@@ -94,17 +74,11 @@ function persistPlans(): void {
     .catch((e) => console.warn("plan persistence failed:", e));
 }
 
-/** Restore the plan set on startup (documents cross IN from
- * IndexedDB; JS owns them). `readSet` reads the stored set through a
- * module (the host passes network `stored_plans`): it answers the plans
- * by store id, or refuses a set of another kind or a newer version, and
- * then nothing is written over it. `read` canonicalizes each stored
- * document through a module (the host layer passes its
- * `readStoredNetwork`): a plan saved under older field names comes
- * back in the current shape and is persisted that way. When a migration
- * brought a plan forward, the set as stored is kept first, in the
- * device's document store (`plan_set`). A plan the module refuses is
- * kept as stored and reported, never dropped. */
+/** `readSet` reads the stored set through network `stored_plans`. `read`
+ * canonicalizes each stored plan, so a plan saved under older field names
+ * is persisted in the current shape. When a migration brought a plan
+ * forward, the set as stored is kept first in the `plan_set` document
+ * record. A plan that the module refuses is kept as stored. */
 export async function restorePlans(
   readSet: (stored: unknown) => Promise<Record<string, unknown>>,
   read?: (stored: unknown) => Promise<ReadPlan | null>,
@@ -146,14 +120,10 @@ export async function restorePlans(
   }
 }
 
-/** One stored plan read into the current shape on first use — the
- * on-demand half of `restorePlans` without `read`: a host that opens few of
- * many plans reads only those (each read is a whole-document round
- * trip through a module). The canonical copy replaces the stored one
- * in memory and is written with the plan set's next persist. A plan
- * the module refuses stays as stored and is reported. Plan metadata
- * (`plan`) reads the same in every stored shape, so a host may list
- * plans before reading them. */
+/** The on-demand half of `restorePlans` without `read`. Each read is a
+ * whole-document round trip through a module, so a host that opens few of
+ * many plans reads only those. Plan metadata (`plan`) reads the same in
+ * every stored shape, so a host may list plans before reading them. */
 export async function readPlan(id: string, read: (stored: unknown) => Promise<ReadPlan | null>): Promise<Network | null> {
   const doc = plans[id];
   if (!doc || readPlans.has(id)) return doc ?? null;

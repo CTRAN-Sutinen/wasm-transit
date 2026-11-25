@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// The day's disruptions on a map: the live buses by their status,
-  /// each cancelled trip at its first stop, each closed stop, and the
-  /// stops a detour skips. An open trip draws its path, and a picked bus
-  /// is brought into view. A route picked dims the rest. A RENDER
-  /// component: every point comes in as an op's answer; the map draws
-  /// them as given.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -27,13 +21,9 @@
   }: {
     live: LiveDay | null;
     day: Today | null;
-    /// The route picked, or "" for every route.
     focus: string;
-    /// The open trip's path.
     path: Coord[];
-    /// The open disruption.
     open: Disruption | null;
-    /// Where a late bus picked is.
     bus: { lat: number; lon: number } | null;
     ondisruption: (source: AlertSource) => void;
   } = $props();
@@ -48,8 +38,8 @@
   let map: maplibregl.Map | null = null;
   let loaded = $state(false);
   let framed = false;
-  /// What the map framed first, until the reader moves it: a change of
-  /// the map's size frames it again.
+  /// The map frames this view first and keeps it until the reader moves it. A
+  /// change of the map's size frames it again.
   let fitted: maplibregl.LngLatBounds | null = null;
   let hover = $state("");
 
@@ -75,8 +65,8 @@
     );
   }
 
-  /// Each disruption once, with the routes it is listed on: a closed
-  /// stop is listed on every route that serves it.
+  /// Each disruption appears once, though a closed stop lists on every route
+  /// that serves it.
   function marks(t: Today | null): { cancels: Point[]; closed: Point[]; skipped: Point[] } {
     const out = { cancels: [] as Point[], closed: [] as Point[], skipped: [] as Point[] };
     const seen = new Set<string>();
@@ -206,7 +196,6 @@
     (map.getSource("cancels") as maplibregl.GeoJSONSource).setData(collection(k.cancels));
     (map.getSource("closed") as maplibregl.GeoJSONSource).setData(collection(k.closed));
     (map.getSource("skipped") as maplibregl.GeoJSONSource).setData(collection(k.skipped));
-    // Frame what there is once; after that the view is the reader's.
     const all = [...v, ...k.cancels, ...k.closed, ...k.skipped];
     if (framed || all.length === 0) return;
     const first = all[0].geometry.coordinates;
@@ -223,7 +212,6 @@
     map.setPaintProperty("vehicles-label", "text-opacity", routeOpacity(1, 0));
   });
 
-  // The open trip's path, framed.
   $effect(() => {
     if (!loaded || !map) return;
     const coords = lonLat(path);
@@ -237,7 +225,6 @@
     }
   });
 
-  // The open disruption's stops, brought into view.
   $effect(() => {
     if (!loaded || !map || !open || open.trip) return;
     const at = (open.stops ?? []).filter((s) => s.lat != null && s.lon != null).map((s) => [s.lon!, s.lat!] as [number, number]);
@@ -247,7 +234,6 @@
     map.fitBounds(bounds, { padding: 80, maxZoom: 16 });
   });
 
-  // A picked bus, brought into view.
   $effect(() => {
     if (!loaded || !map || !bus) return;
     fitted = null;

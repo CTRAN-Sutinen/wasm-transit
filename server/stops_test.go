@@ -1,9 +1,6 @@
 package main
 
-// The stops document in store mode (D-152, D-153, D-157): a write goes
-// through the receive path — cap-stops validates it and answers its
-// canonical bytes, a stale write is refused — and a pick only reads the
-// document, so a stops write changes no pick.
+// Pins the stops document in store mode (D-152, D-153, D-157).
 
 import (
 	"archive/zip"
@@ -39,9 +36,8 @@ func newStopsServer(t *testing.T, b store.Backend) (*server, string) {
 	return s, srv.URL
 }
 
-// seededStops is the fixture network's stops as a stops document, made
-// the way a page makes it: cap-stops seed over the network — once per
-// test binary (each instance costs seconds under -race).
+// seededStops runs once per test binary, because each instance costs
+// seconds under -race.
 var (
 	seededOnce sync.Once
 	seededRaw  []byte
@@ -78,8 +74,6 @@ func seededStops(t *testing.T) map[string]any {
 	return doc
 }
 
-// withSuspension is the document with stop A suspended from `on` until
-// `until`.
 func withSuspension(doc map[string]any, on, until string) map[string]any {
 	raw, _ := json.Marshal(doc)
 	var out map[string]any
@@ -154,8 +148,7 @@ func TestStopsWritesAreValidated(t *testing.T) {
 	}
 }
 
-// A pick only reads the stops document (D-157): a suspension written while
-// a pick is published leaves every pick's network as it was.
+// Pins D-157.
 func TestAStopsWriteChangesNoPick(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07")); code != 200 {
@@ -179,9 +172,8 @@ func TestAStopsWriteChangesNoPick(t *testing.T) {
 	}
 }
 
-// A pick being published reads the stops document (D-157): each stop's
-// record on its first date, and a warning for a stop it visits that is
-// not in service over its period.
+// Pins that a published pick reads each stop's record on its first date
+// and warns of a visited stop that is not in service (D-157).
 func TestAPublishedPickReadsTheStops(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	raw, _ := json.Marshal(seededStops(t))
@@ -211,7 +203,7 @@ func TestAPublishedPickReadsTheStops(t *testing.T) {
 	if net.Stops["A"].Name != "A Street Station" {
 		t.Fatalf("the pick takes A's name from the stops document: %+v", net.Stops["A"])
 	}
-	// The adoption names the stops log entry it read (D-191).
+	// The adoption names the stops log entry that it read (D-191).
 	stopsHead, _ := s.store.LogHeadOf("stops")
 	var set struct {
 		Plans []struct {
@@ -224,9 +216,8 @@ func TestAPublishedPickReadsTheStops(t *testing.T) {
 	}
 }
 
-// The surveyor is the writer (D-158): a survey the server does not hold
-// names the person writing (here the dev label, X-Writer, auth being
-// off), whatever name the page sent; a held survey keeps its own.
+// Pins that a new survey names the writer, not the name the page sent,
+// and a held survey keeps its own (D-158).
 func TestASurveyNamesTheWriter(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	seed := seededStops(t)
@@ -267,7 +258,6 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 	if by := stored(hash)[1].(map[string]any)["surveyed_by"]; by != "Rosa Ortiz" {
 		t.Fatalf("the surveyor is the writer: %v", by)
 	}
-	// another writer adds a survey: theirs is theirs, the held one stays
 	var held map[string]any
 	json.Unmarshal(logBlob(t, s, hash), &held)
 	code, out = post(hash, survey(held, "2026-09-15", ""), "Sam Lee")
@@ -280,10 +270,9 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 	}
 }
 
-// GTFS out carries the stops' history (D-151): a stop moved inside the
-// pick's period is one stops.txt row per version — the version in force
-// on the period's last dates under the stop's own id, the earlier one
-// under `<id>@<its first date>` — and GET /feed serves it.
+// Pins that GET /feed writes a stop moved inside the pick's period as one
+// stops.txt row per version (D-151). The version in force on the last
+// dates keeps the stop's id, and the earlier one is `<id>@<first date>`.
 func TestTheFeedCarriesTheStopsHistory(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	_ = s
@@ -335,11 +324,9 @@ func TestTheFeedCarriesTheStopsHistory(t *testing.T) {
 	}
 }
 
-// The agency's feed applies, and the planner sees what it did (D-150): a
-// feed whose stop A is named otherwise than the stops document records
-// the difference as an event on the feed's first service date naming the
-// feed, written as `import:feed`; a feed that differs in nothing writes
-// nothing.
+// Pins that a feed that differs from the stops document records an event
+// on its first service date, written as `import:feed`, and one that does
+// not differ writes nothing (D-150).
 func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	raw, _ := json.Marshal(seededStops(t))
@@ -373,7 +360,6 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if w := lastLogWriter(t, s, "stops"); w != "import:feed" {
 		t.Fatalf("the writer is the import: %q", w)
 	}
-	// again: nothing differs, nothing is written
 	if err := s.recordFeed(context.Background(), feed); err != nil {
 		t.Fatal(err)
 	}
@@ -382,8 +368,6 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	}
 }
 
-// logBlob is a document the stops log's fold holds under this hash: the
-// current stops or stop requests document.
 func logBlob(t *testing.T, s *server, hash string) []byte {
 	t.Helper()
 	_, doc, ok := s.keptDoc(hash)
@@ -393,7 +377,6 @@ func logBlob(t *testing.T, s *server, hash string) []byte {
 	return doc
 }
 
-// lastLogWriter is the writer of a log's newest entry.
 func lastLogWriter(t *testing.T, s *server, name string) string {
 	t.Helper()
 	head, err := s.store.LogHeadOf(name)

@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// One task's frame — a change, a survey, a request, a new stop: its
-  /// title and where it stands (a step of several, shown as a strip the
-  /// person can go back along), the body that scrolls, and the actions
-  /// held at the bottom, in reach of a thumb on a phone. While a task is
-  /// open the page shows nothing else beside the map; on a phone it
-  /// takes the whole screen. A RENDER component.
   import type { Snippet } from "svelte";
 
   let {
@@ -24,21 +18,15 @@
   }: {
     title: string;
     subtitle?: string;
-    /// The steps' names, when the task has several.
     steps?: string[];
     step?: number;
-    /// A step chosen on the strip (only those before the current one, and
-    /// any the task allows).
     onstep?: (i: number) => void;
     onclose: () => void;
     closeLabel?: string;
-    /// Why the last save was refused, said beside the actions so it is
-    /// in view wherever the body is scrolled.
+    /// The last save's refusal shows beside the actions, so it is in view
+    /// wherever the body is scrolled.
     problems?: string[];
-    /// Laid out as a card in a page (its height its content's), not a
-    /// panel the height of the screen.
     card?: boolean;
-    /// Buttons beside the title (a survey's camera).
     tools?: Snippet;
     children: Snippet;
     actions: Snippet;
@@ -46,7 +34,6 @@
   } = $props();
 
   let body: HTMLDivElement;
-  // A new step starts at its top.
   $effect(() => {
     void step;
     body?.scrollTo({ top: 0 });
@@ -112,8 +99,6 @@
   footer :global(button) { min-height: 2.4rem; padding: 0 1rem; }
   footer :global(button.primary) { background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 600; }
   footer :global(button.primary:disabled) { opacity: 0.5; }
-  /* Many steps, or a phone: the numbers carry the steps, the current
-     one keeps its name (each number's name is its tooltip). */
   .steps.many li:not(.now) .label { display: none; }
   .steps.many li { flex: 0 0 auto; }
   .steps.many li.now { flex: 1 0 auto; }

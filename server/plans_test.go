@@ -1,13 +1,7 @@
 package main
 
-// Publish → serve → resolve (docs/ROADMAP.md 1): a pick is published
-// to the store — its network under the plan.<id> pointer, the
-// published plan set as the plans log's fold — the manifest pins the
-// set as plans_hash, and a client resolves the pick in force through
-// cap-plans and loads that network by hash. The modules own every
-// byte and every answer: cap-network canonicalizes the network and
-// validates it, cap-plans answers the next published set; the host
-// stores exactly what they answer.
+// Publish, serve, resolve (docs/ROADMAP.md 1): the host stores exactly what
+// cap-network and cap-plans answer.
 
 import (
 	"bytes"
@@ -41,7 +35,6 @@ func newPlansHost(t *testing.T) *WasmHost {
 	return host
 }
 
-// newPlansServer is a store-mode server that publishes picks.
 func newPlansServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, b)
@@ -59,18 +52,14 @@ func newPlansServer(t *testing.T, b store.Backend) (*server, string) {
 	return s, srv.URL
 }
 
-// fixtureImport is the e2e fixture feed imported through cap-network
-// ONCE per test binary: each import instantiates the 3 MB network
-// module, and a fresh instance per pick multiplied memory past what a
-// developer VM survives.
+// The fixture imports once per test binary: each import instantiates the
+// 3 MB network module, and an instance per pick used too much memory.
 var (
 	fixtureOnce sync.Once
 	fixtureDoc  []byte
 	fixtureErr  error
 )
 
-// fixtureNetwork frames a copy of the imported fixture as a pick — the
-// document a planner publishes.
 func fixtureNetwork(t *testing.T, id, name, effectiveFrom string) map[string]any {
 	t.Helper()
 	fixtureOnce.Do(func() {
@@ -105,8 +94,7 @@ func fixtureNetwork(t *testing.T, id, name, effectiveFrom string) map[string]any
 	return network
 }
 
-// publishPick posts a network the way any client may: an arbitrary
-// serialization (pretty-printed here), never the canonical bytes.
+// publishPick posts a pretty-printed network, not the canonical bytes.
 func publishPick(t *testing.T, base string, network map[string]any) (int, map[string]any) {
 	t.Helper()
 	body, _ := json.MarshalIndent(network, "", "  ")
@@ -144,10 +132,7 @@ func sha(b []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// The headline pin: publish two picks, restart, and a client resolves
-// the pick in force from the manifest alone — the published set by
-// hash, the pick through cap-plans, its network by hash, every byte
-// the hash names.
+// A client resolves the pick in force from the manifest alone, after a restart.
 func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	bucket := store.NewMemory()
 	s, base := newPlansServer(t, bucket)
@@ -172,7 +157,6 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	}
 	s.store.Close()
 
-	// A restarted server over the same store serves the same set.
 	_, base = newPlansServer(t, bucket)
 	if got := manifestPlansHash(t, base); got != plansHash {
 		t.Fatalf("manifest plans_hash after restart = %q, want %q", got, plansHash)
@@ -189,7 +173,6 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 		t.Fatalf("picks in date order: %+v", set.Plans)
 	}
 
-	// The client's question, through the same module the browser runs.
 	host := newPlansHost(t)
 	inForce := func(date string) (id, hash string) {
 		var ans struct {
@@ -217,8 +200,6 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 		t.Fatalf("in force on the winter pick date: %q %q", id, h)
 	}
 
-	// The pick's network, by hash: canonical bytes the hash names, and
-	// gzipped for a page that registers it compressed.
 	code, hdr, doc := httpGet(t, base+"/blobs/"+networkHash)
 	if code != 200 || hdr.Get("X-Document-Kind") != "network_document" || sha([]byte(doc)) != networkHash {
 		t.Fatalf("network blob: %d kind=%q", code, hdr.Get("X-Document-Kind"))
@@ -244,8 +225,7 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	}
 }
 
-// What a pick must be: a valid, dated, versioned network that keeps the
-// chain valid. A refusal says why and moves no pointer.
+// A refusal says why and moves no pointer.
 func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 	bucket := store.NewMemory()
 	s, base := newPlansServer(t, bucket)
@@ -262,9 +242,7 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 			n["name"] = "other"
 			return n
 		}(),
-		"an id that is not a pointer name": fixtureNetwork(t, "../escape", "Bad", "2026-10-15"),
-		// D-76: a pick that runs no service in its period (the
-		// fixture's calendar ends 2026-12-31), and one before today.
+		"an id that is not a pointer name":     fixtureNetwork(t, "../escape", "Bad", "2026-10-15"),
 		"a pick with no service in its period": fixtureNetwork(t, "spring-2027", "Spring", "2027-03-01"),
 		"a pick dated before today":            fixtureNetwork(t, "summer", "Summer", "2026-07-01"),
 	}
@@ -277,7 +255,6 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 			t.Fatalf("%s moved the published set", what)
 		}
 	}
-	// An invalid network (validation issues) never publishes.
 	broken := fixtureNetwork(t, "broken", "Broken", "2026-10-20")
 	for _, p := range broken["patterns"].(map[string]any) {
 		p.(map[string]any)["route"] = "ghost" // UnknownRoute on every pattern
@@ -291,9 +268,8 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 		t.Fatal("a refused pick commits nothing")
 	}
 
-	// Republishing a pick moves it; the published networks stay
-	// referenced (the plan.<id> log names every one), so `store gc`
-	// keeps them.
+	// Republishing a pick keeps every published network referenced, so `store
+	// gc` keeps them.
 	again := fixtureNetwork(t, "fall", "Fall", "2026-09-14")
 	again["name"] = "fall, revised"
 	if code, out := publishPick(t, base, again); code != 200 {
@@ -318,10 +294,7 @@ func toJSON(v any) string {
 	return string(b)
 }
 
-// The published set and the picks' networks are bus documents whose
-// identity a module answers: the generic pointer surface never writes
-// them, so nothing reaches a client that cap-network did not validate
-// and cap-plans did not accept.
+// The generic pointer surface never writes the plan set or a pick's network.
 func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 	s, base := newPlansServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
@@ -348,9 +321,7 @@ func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 	}
 }
 
-// D-76 through the server: what refuses a pick is answered by the
-// modules and returned as given — the network's refusals from
-// cap-network, the date from cap-plans.
+// The server returns the modules' refusals as given (D-76).
 func TestPublishRefusalsNameTheirReasons(t *testing.T) {
 	_, base := newPlansServer(t, store.NewMemory())
 	code, out := publishPick(t, base, fixtureNetwork(t, "spring-2027", "Spring", "2027-03-01"))
@@ -363,9 +334,7 @@ func TestPublishRefusalsNameTheirReasons(t *testing.T) {
 	}
 }
 
-// D-75 through the server: a pick that has not taken effect is
-// retired (kept in the set, never in force); one that has is refused;
-// republishing restores it.
+// A pick that has not taken effect is retired (D-75). One that has is refused.
 func TestRetiringAPick(t *testing.T) {
 	s, base := newPlansServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
@@ -383,12 +352,10 @@ func TestRetiringAPick(t *testing.T) {
 	if !strings.Contains(body, `"id":"winter"`) || !strings.Contains(body, `"status":"retired"`) {
 		t.Fatalf("the retired pick stays in the set as the tombstone: %s", body)
 	}
-	// Once fall has taken effect it is not retired.
 	s.fixedToday = "2026-10-01"
 	if code, _, body := httpPost(t, base+"/plans/retire", `{"id":"fall"}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, "pick_took_effect") {
 		t.Fatalf("retiring a pick in force: %d %s", code, body)
 	}
-	// Republishing restores the retired one.
 	if code, out := publishPick(t, base, winter); code != 200 {
 		t.Fatalf("restore: %d %v", code, out)
 	}
@@ -398,11 +365,8 @@ func TestRetiringAPick(t *testing.T) {
 	}
 }
 
-// The pick in force as GTFS (docs/ROADMAP.md 1): GET /feed?date= is the
-// zip cap-network `export` writes for the pick governing the date —
-// the same bytes a module answers — under its content hash. Before the
-// first pick takes effect it is the configured -feed zip itself (D-74:
-// the import runs until a pick does); with no feed configured, nothing.
+// GET /feed?date= serves the zip that cap-network `export` writes for the pick
+// in force. Before the first pick it is the -feed zip (D-74).
 func TestThePickInForceAsGTFS(t *testing.T) {
 	s, base := newPlansServer(t, store.NewMemory())
 	fall := fixtureNetwork(t, "fall", "Fall", "2026-09-07")
@@ -420,7 +384,6 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 	if hdr.Get("ETag") != `"`+sha([]byte(zipBody))+`"` {
 		t.Fatalf("the ETag is the zip's hash: %s", hdr.Get("ETag"))
 	}
-	// The module's own export of the same pick, through a fresh instance.
 	host := newNetworkHost(t)
 	blob, _, err := s.store.GetBlob(networkHash)
 	if err != nil {
@@ -442,11 +405,9 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 		t.Fatalf("served %s, cap-network exports %s", sha([]byte(zipBody)), exported.FeedHash)
 	}
 
-	// Before the first pick, with no -feed: nothing runs.
 	if code, _, _ := httpGet(t, base+"/feed?date=2026-08-15"); code != http.StatusNotFound {
 		t.Fatalf("before the first pick, no feed configured: %d", code)
 	}
-	// With -feed, the configured zip itself.
 	zipBytes, _ := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
 	s.feeder = fileFeed("../web/e2e/fixtures/sample-gtfs.zip", networkWasm)
 	code, _, body := httpGet(t, base+"/feed?date=2026-08-15")
@@ -458,12 +419,8 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 	}
 }
 
-// The server's today is the agency's date — the clock read in
-// the network's zone (cap-network answers it beside the hash), never
-// the host's. At 2026-11-06 04:30Z the fixture's agency (America/
-// Montreal) is still at 23:30 on the 5th while a UTC host is on the
-// 6th: a pick dated the 5th publishes, and the feed's zone and the
-// pick's agree on the date.
+// The server's today is the agency's date, not the host's. At 2026-11-06 04:30Z
+// a UTC host is on the 6th and the Montreal fixture is on the 5th.
 func TestTodayIsTheAgencysDate(t *testing.T) {
 	instant := time.Date(2026, 11, 6, 4, 30, 0, 0, time.UTC)
 
@@ -485,7 +442,6 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 	}
 }
 
-// plansHash is the published plan set's hash: the plans log's fold.
 func plansHash(t *testing.T, s *server) string {
 	t.Helper()
 	hash, _, found, err := s.keptHead("plans")
@@ -495,7 +451,6 @@ func plansHash(t *testing.T, s *server) string {
 	return hash
 }
 
-// plansSet is the published plan set's bytes.
 func plansSet(t *testing.T, s *server) []byte {
 	t.Helper()
 	_, doc, found, err := s.keptHead("plans")

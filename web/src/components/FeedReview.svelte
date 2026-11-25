@@ -1,12 +1,4 @@
 <script lang="ts">
-  /// What the agency's feed did to the stops record (D-150: the feed
-  /// applies, and the planner sees what it did), as a review page: the
-  /// feed's first service date, then three tables — the changes the feed
-  /// recorded (cap-stops `feed_events`), the stops in service it does not
-  /// list, and the stops whose difference did not fit their history
-  /// (`import_events` run without writing) — each stop opening its
-  /// record, where a change is corrected. No GTFS control lives here.
-  /// A RENDER component.
   import type { Event } from "../types/Event";
   import { EVENT_WORDS } from "./stopWords";
 
@@ -16,7 +8,6 @@
     onstop,
   }: {
     feed: { on: string; recorded: { stop: string; event: Event }[]; unlisted: string[]; unapplied: string[] } | null;
-    /// A stops record is kept (else there is nothing to compare).
     held: boolean;
     onstop: (stop: string) => void;
   } = $props();

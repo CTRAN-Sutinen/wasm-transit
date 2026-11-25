@@ -1,38 +1,27 @@
 package main
 
-// Health and readiness for a load balancer or an orchestrator.
+// /healthz reads nothing, so a probe never restarts a process for a
+// bucket outage. Restarting cannot fix the bucket.
 //
-//   - /healthz (liveness): 200 while the process answers HTTP. It reads
-//     nothing, so a probe never restarts a process for a bucket's
-//     outage — restarting cannot fix the bucket.
-//   - /readyz (readiness): whether this process should be sent traffic.
-//     200 "ready"; 200 "degraded" while the bucket does not answer but
-//     the cached heads serve labelled reads (D-119) — every instance
-//     shares the bucket, so taking them all out of rotation would turn
-//     a write outage into a read outage, and a copy that booted on its
-//     disk cache (-store-cache, D-224) answers the same; 503
-//     "unavailable" when the store has no cached head to serve, in
-//     memory or on disk; 503 "draining" once shutdown
-//     has begun, so the balancer stops sending before the listener
-//     closes.
+// /readyz answers 200 "degraded" while the bucket does not answer but
+// the cached heads serve labelled reads (D-119, D-224). Every instance
+// shares the bucket, so taking them all out of rotation would turn a
+// write outage into a read outage. It answers 503 "unavailable" when
+// the store has no cached head, and 503 "draining" once shutdown has
+// begun, so the balancer stops sending before the listener closes.
 //
-// The probe reads the edits pointer's head, which the store caches and
-// rechecks at most once per FreshnessWindow, so a probe every second
-// costs the bucket at most one Stat every two seconds.
+// The probe reads the edits pointer's head, which the store rechecks at
+// most once per FreshnessWindow.
 
 import (
 	"encoding/json"
 	"net/http"
 )
 
-// readiness is the /readyz body.
 type readiness struct {
 	Status string `json:"status"` // ready | degraded | unavailable | draining
-	// Store is "ok", "stale", "unavailable", or "none" (no -store: the
-	// dev store, nothing durable).
-	Store string `json:"store"`
-	// StoreAsOfMs is when the bucket last confirmed the head (Unix ms),
-	// while Store is "stale".
+	// Store is "none" with no -store: the dev store holds nothing durable.
+	Store       string `json:"store"`
 	StoreAsOfMs int64  `json:"store_as_of_ms,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
@@ -72,7 +61,6 @@ func (s *server) readiness() readiness {
 	return readiness{Status: "ready", Store: "ok"}
 }
 
-// storeStatus names the store without reading it (for draining).
 func (s *server) storeStatus() string {
 	if s.store == nil {
 		return "none"

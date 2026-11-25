@@ -1,10 +1,4 @@
 <script lang="ts">
-  /// The stops the filters show on a date (cap-stops `stops_on`), each
-  /// with its status, since when, until when, and its note — "every stop
-  /// out of service today", or every one planned — or, asked from the
-  /// device's location, the stops nearest it (cap-stops `stops_near`),
-  /// each with how far it is. A click opens it. A RENDER component: the
-  /// stops come in as props.
   import type { StopOn } from "../types/StopOn";
   import { STATUS_COLORS, STATUS_WORDS } from "./stopWords";
 
@@ -14,12 +8,10 @@
     onstop,
   }: {
     stops: (StopOn & { distance_m?: number })[];
-    /// The rows are the stops nearest the device, nearest first.
     near?: boolean;
     onstop: (stop: string) => void;
   } = $props();
 
-  /// A long list is shown in pages, the first few hundred at once.
   let limit = $state(200);
   const far = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 </script>
