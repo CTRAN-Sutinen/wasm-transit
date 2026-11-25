@@ -106,6 +106,17 @@
           },
           "type": "array"
         },
+        "work_order": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkOrderEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The route that sends its records to the work order system, and the\nchecking capability's ops that answer what to send and record the\nanswer."
+        },
         "write": {
           "$ref": "#/$defs/Write"
         }
@@ -264,6 +275,29 @@
       "required": [
         "version",
         "schema"
+      ],
+      "type": "object"
+    },
+    "WorkOrderEntry": {
+      "properties": {
+        "call": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "record": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "path",
+        "call",
+        "record"
       ],
       "type": "object"
     },

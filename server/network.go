@@ -95,11 +95,12 @@ type loadedFeed struct {
 // importFeed closes its instance after the import, so the import's working
 // memory (several times the network's size) goes with it.
 func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.RawMessage, string, string, error) {
-	host, err := NewWasmHost(ctx, wasmPath)
+	inst, err := NewWasmHost(ctx, wasmPath)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("network module: %w", err)
+		return nil, "", "", fmt.Errorf("the server's module: %w", err)
 	}
-	defer host.Close(ctx)
+	defer inst.Close(ctx)
+	host := inst.As("network")
 	var loaded struct {
 		FeedHash string `json:"feed_hash"`
 	}
@@ -151,10 +152,10 @@ func feedInfoVersion(zipBytes []byte) string {
 // republished feed needs no restart. In store mode a boot whose zip the
 // store already imported imports nothing.
 type feedSource struct {
-	src         *source
-	networkWasm string // the cap-network module that imports it
-	onImport    func(*loadedFeed)
-	imports     int
+	src      *source
+	wasm     string // the server's module, a fresh instance of which imports it
+	onImport func(*loadedFeed)
+	imports  int
 
 	mu   sync.Mutex
 	feed *loadedFeed
@@ -163,8 +164,8 @@ type feedSource struct {
 	zone atomic.Value
 }
 
-func fileFeed(path, networkWasm string) *feedSource {
-	return &feedSource{src: newSource(path, "", "", nil), networkWasm: networkWasm}
+func fileFeed(path, wasm string) *feedSource {
+	return &feedSource{src: newSource(path, "", "", nil), wasm: wasm}
 }
 
 func (f *feedSource) Zip() ([]byte, error) {
@@ -233,7 +234,7 @@ func (f *feedSource) derive(body []byte, hash string) (json.RawMessage, string, 
 			log.Printf("%s: %v: importing again", derivedNetworkPointer, err)
 		}
 	}
-	network, networkHash, module, err := importFeed(context.Background(), f.networkWasm, body)
+	network, networkHash, module, err := importFeed(context.Background(), f.wasm, body)
 	if err != nil {
 		return nil, "", false, err
 	}

@@ -17,13 +17,10 @@ import (
 	"rustwasm/server/store"
 )
 
-const stopsWasm = "../web/pkg/cap_stops.wasm"
-
 func newStopsServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, b)
 	s.plans = newPlansHost(t)
-	s.networkWasm = networkWasm
 	s.fixedToday = "2026-08-01"
 	closeModules(t, s)
 	mux := storeMux(s)
@@ -48,12 +45,13 @@ func seededStops(t *testing.T) map[string]any {
 	t.Helper()
 	fixtureNetwork(t, "x", "x", "")
 	seededOnce.Do(func() {
-		host, err := NewWasmHost(context.Background(), stopsWasm)
+		inst, err := NewWasmHost(context.Background(), testWasm)
 		if err != nil {
 			seededErr = err
 			return
 		}
-		defer host.Close(context.Background())
+		defer inst.Close(context.Background())
+		host := inst.As("stops")
 		var loaded struct {
 			NetworkHash string `json:"network_hash"`
 		}
@@ -337,7 +335,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if code, out := postStops(t, base, "", doc); code != 200 {
 		t.Fatalf("the stops: %d %v", code, out)
 	}
-	feeder := fileFeed(sampleFeed, networkWasm)
+	feeder := fileFeed(sampleFeed, testWasm)
 	feed, err := feeder.Load()
 	if err != nil {
 		t.Fatal(err)

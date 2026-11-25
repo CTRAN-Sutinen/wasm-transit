@@ -20,7 +20,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"rustwasm/server/store"
@@ -41,99 +40,10 @@ type keptLog struct {
 	intent  bool
 }
 
-type heldModule struct {
-	mu        sync.Mutex
-	host      *WasmHost
-	documents map[string]bool
-}
-
-const opAbout = 268
-
-func (s *server) modulePath(capability string) string {
-	if p := s.checkWasm[capability]; p != "" {
-		return p
-	}
-	if p := s.moduleFiles[capability]; p != "" {
-		return p
-	}
-	if p := s.serverModules[capability]; p != "" {
-		return p
-	}
-	dir := s.modulesDir
-	if dir == "" {
-		dir = "../web/pkg"
-	}
-	return moduleIn(dir, capability)
-}
-
-var serverCapabilities = []string{"sync", "network", "streets", "plans", "migrate", "log"}
-
-func (s *server) hostedModules(authz bool) map[string]string {
-	ids := append([]string{}, serverCapabilities...)
-	if t, err := s.kindTable(); err == nil {
-		for _, e := range t.Kinds {
-			ids = append(ids, e.Module, e.Receive)
-		}
-	}
-	if authz {
-		ids = append(ids, "authz")
-	}
-	out := map[string]string{}
-	for _, id := range ids {
-		if id != "" {
-			out[id] = s.modulePath(id)
-		}
-	}
-	return out
-}
-
-// withModule runs `use` on the capability's one instance, then evicts it,
-// so no document outlives the request.
+// withModule runs `use` as the capability on the long-lived instance.
+// Only the logs' heads outlive the call (wasm.go, `sequence`).
 func (s *server) withModule(ctx context.Context, capability string, use func(*WasmHost) error) error {
-	return s.withModuleOf(ctx, capability, func(host *WasmHost, _ map[string]bool) error { return use(host) })
-}
-
-func (s *server) withModuleOf(ctx context.Context, capability string, use func(*WasmHost, map[string]bool) error) error {
-	s.modulesMu.Lock()
-	if s.modules == nil {
-		s.modules = map[string]*heldModule{}
-	}
-	m := s.modules[capability]
-	if m == nil {
-		m = &heldModule{}
-		s.modules[capability] = m
-	}
-	s.modulesMu.Unlock()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.host == nil {
-		host, err := NewWasmHost(ctx, s.modulePath(capability))
-		if err != nil {
-			return fmt.Errorf("the %s module: %w", capability, err)
-		}
-		var about struct {
-			Capabilities []struct {
-				Documents []string `json:"documents"`
-			} `json:"capabilities"`
-		}
-		if err := host.InvokeBytes(ctx, opAbout, nil, &about); err != nil {
-			host.Close(ctx)
-			return fmt.Errorf("the %s module's about: %w", capability, err)
-		}
-		m.documents = map[string]bool{}
-		for _, c := range about.Capabilities {
-			for _, d := range c.Documents {
-				m.documents[d] = true
-			}
-		}
-		m.host = host
-	}
-	err := use(m.host, m.documents)
-	var evicted json.RawMessage
-	if evictErr := m.host.InvokeBytes(ctx, opEvict, []byte(`{"keep":[]}`), &evicted); evictErr != nil && err == nil {
-		err = fmt.Errorf("emptying the %s module: %w", capability, evictErr)
-	}
-	return err
+	return s.longLived().sequence(ctx, func(inst *Instance) error { return use(inst.As(capability)) })
 }
 
 func (s *server) keptLogs() map[string]*keptLog {
@@ -241,7 +151,20 @@ func (s *server) assembleKept(l *keptLog, records map[string]json.RawMessage) er
 			DocumentHash string `json:"document_hash"`
 			Document     string `json:"document"`
 		}
-		if err := s.withModule(ctx, k.Module, func(host *WasmHost) error { return host.Invoke(ctx, req, &out) }); err != nil {
+		// The long-lived instance holds each head from the moment it is
+		// assembled, so a write registers none, and a refresh carries them.
+		long := s.longLived()
+		err := long.sequence(ctx, func(inst *Instance) error {
+			if err := inst.As(k.Module).Invoke(ctx, req, &out); err != nil {
+				return err
+			}
+			if k.Load == nil || !inst.Documents(l.receive)[strings.TrimPrefix(k.Load.Op, "load_")] {
+				return nil
+			}
+			_, err := long.head(ctx, inst, l.name+"/"+k.StoreKind, out.DocumentHash, k.Load.Code, []byte(out.Document))
+			return err
+		})
+		if err != nil {
 			return fmt.Errorf("the %s document: %w", k.StoreKind, err)
 		}
 		l.docs[k.StoreKind] = logDoc{out.DocumentHash, []byte(out.Document)}
@@ -482,7 +405,9 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 			}
 		}
 		got = received{}
-		err := s.withModuleOf(ctx, l.receive, func(host *WasmHost, declares map[string]bool) error {
+		long := s.longLived()
+		err := long.sequence(ctx, func(inst *Instance) error {
+			host, declares := inst.As(l.receive), inst.Documents(l.receive)
 			write["header"].(map[string]any)["module"] = "cap-" + l.receive + "@" + host.Hash()
 			loadedHashes := map[string]string{}
 			for _, load := range call.loads {
@@ -513,11 +438,19 @@ func (s *server) receiveLog(ctx context.Context, r *http.Request, l *keptLog, w 
 					documents[k.StoreKind] = json.RawMessage(doc)
 					continue
 				}
-				var loaded map[string]any
-				if err := host.InvokeBytes(ctx, k.Load.Code, doc, &loaded); err != nil {
+				if call.heads != nil {
+					var loaded map[string]any
+					if err := host.InvokeBytes(ctx, k.Load.Code, doc, &loaded); err != nil {
+						return fmt.Errorf("the %s document at the head: %w", k.StoreKind, err)
+					}
+					heads[k.StoreKind] = loadedHash(loaded)
+					continue
+				}
+				hash, err := long.head(ctx, inst, l.name+"/"+k.StoreKind, l.docs[k.StoreKind].hash, k.Load.Code, doc)
+				if err != nil {
 					return fmt.Errorf("the %s document at the head: %w", k.StoreKind, err)
 				}
-				heads[k.StoreKind] = loadedHash(loaded)
+				heads[k.StoreKind] = hash
 			}
 			ops := call.ops
 			if call.opsAfterLoads != nil {

@@ -12,7 +12,6 @@ package main
 //  4. The manifest names the seq of each log's fold it pins.
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -162,12 +161,8 @@ func TestAnAlertEndedThroughItsIntent(t *testing.T) {
 
 func closeModules(t *testing.T, s *server) {
 	t.Cleanup(func() {
-		s.modulesMu.Lock()
-		defer s.modulesMu.Unlock()
-		for _, m := range s.modules {
-			if m.host != nil {
-				m.host.Close(context.Background())
-			}
+		if s.long != nil {
+			s.long.refreshes.Wait()
 		}
 	})
 }

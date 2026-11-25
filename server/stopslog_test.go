@@ -180,10 +180,11 @@ func TestAKeyLandsOnceAndARefusalNamesItsOp(t *testing.T) {
 func TestTheOldPointersSeedTheStopsLog(t *testing.T) {
 	bucket := store.NewMemory()
 	seed, _ := json.Marshal(seededStops(t))
-	host, err := NewWasmHost(context.Background(), stopsWasm)
+	inst, err := NewWasmHost(context.Background(), testWasm)
 	if err != nil {
 		t.Fatal(err)
 	}
+	host := inst.As("stops")
 	var checked struct {
 		Document     string `json:"document"`
 		DocumentHash string `json:"document_hash"`
@@ -191,7 +192,7 @@ func TestTheOldPointersSeedTheStopsLog(t *testing.T) {
 	if err := host.Invoke(context.Background(), map[string]any{"op": "validate", "stops": json.RawMessage(seed)}, &checked); err != nil {
 		t.Fatal(err)
 	}
-	host.Close(context.Background())
+	inst.Close(context.Background())
 	old := store.New(bucket)
 	stopsHash, _, err := old.CAS("stops", "", []byte(checked.Document), store.Envelope{Kind: "stops", SchemaVersion: 1, ProducedBy: "cap-stops@old"}, "", "planner", 1)
 	if err != nil {

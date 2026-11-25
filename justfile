@@ -6,10 +6,9 @@
 #   Node  — crates/cap-abi/caps-smoke.mjs (runs the modules directly)
 #   Web   — web/ (Svelte + Vite) and Playwright e2e
 #
-# There is no monolith artifact: every
-# host instantiates the capability modules it needs — the browser
-# fetches them from web/public/caps/, the sync server hosts
-# cap-sync, cap-network and cap-streets from web/pkg/.
+# There is no monolith artifact: each host links the capabilities it
+# needs into one module — the browser fetches its UI's from
+# web/public/caps/, and the sync server runs web/pkg/server.wasm.
 
 default:
     @just --list
@@ -21,15 +20,12 @@ default:
 # Build the modules and regenerate the capability manifest. Every
 # module is an ASSEMBLY (gen-assemblies writes assemblies/, D-77): each
 # capability alone (module-<cap>: caps-run, agents, the registry's
-# blobs, the Go server), and each generated UI's capabilities linked
-# into one module over one kernel registry (module-ui-<id>: the page
-# loads it). Hash-pinned modules land in web/public/caps/, served under
-# their content hash so the HTTP cache holds them forever. The sync
-# server's modules also land at stable paths in web/pkg/ (cap_sync,
-# cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops,
-# cap_requests, cap_alerts, cap_notes, cap_log — the server's default
-# -modules folder, where it reads each capability's module as
-# cap_<id>.wasm; rebuilt with the modules, never by hand), with the kind table
+# blobs), each generated UI's capabilities linked into one module over
+# one kernel registry (module-ui-<id>: the page loads it), and the
+# server's (module-server). Hash-pinned modules land in
+# web/public/caps/, served under their content hash so the HTTP cache
+# holds them forever. The server's module lands at web/pkg/server.wasm
+# (the server's default -wasm), with the kind table
 # web/pkg/kinds.json (-kinds) and the
 # schemas it names in web/pkg/schemas/ (D-202). The
 # registry also publishes every document kind's JSON Schema and a
@@ -48,13 +44,10 @@ caps:
     # beside the modules (every capability, with its worked examples).
     CAPS_PROFILE="$profile" cargo run --quiet -p gen-manifest
     mkdir -p web/pkg
-    # The server's modules: its own (server/logkinds.go,
-    # serverCapabilities, and cap-authz), and every capability the kind
-    # table names, so a new kind's capability needs no line here.
-    caps=$(node -e 'const t = require("./web/pkg/kinds.json"); const s = new Set(["sync", "network", "streets", "authz", "plans", "migrate", "log"]); for (const k of t.kinds) { if (k.module) s.add(k.module); if (k.receive) s.add(k.receive); } console.log([...s].join(" "))')
-    for cap in $caps; do
-        cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
-    done
+    # The server's one module (D-227): gen-assemblies links it from
+    # server/capabilities.json and the capabilities the kind list names.
+    rm -f web/pkg/cap_*.wasm
+    cp "target/wasm32-unknown-unknown/$profile/module_server.wasm" web/pkg/server.wasm
 
 # The modules the tests run: `just caps` under the wasm-fast profile
 # (Cargo.toml — no whole-program LTO, incremental), so a change to one
@@ -1065,7 +1058,7 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
     exec go run . "${args[@]}"
 
 # The sync store's offline tools (server/cmd/store; only verify runs a module):
-#   just store verify [-log M] [-kinds K] <url>
+#   just store verify [-wasm M] [-kinds K] <url>
 #                                    read the whole store, exit 1 on the first
 #                                    break; cap-log (M) folds each log checkpoint,
 #                                    and reports each broken reference of each
@@ -1088,7 +1081,7 @@ store +args:
     cd server && go run ./cmd/store "$@"
 
 # The server as one container image, built with ko (no Dockerfile):
-# the Go binary on a distroless base, with the server's modules
+# the Go binary on a distroless base, with the server's module
 # (web/pkg/, with the kind table), the pages (web/dist), each UI's own bundle
 # (web/dist-ui/<id>, for -ui-dist), and the geocoder policy in
 # server/kodata/, which ko copies into the image at $KO_DATA_PATH.
@@ -1103,8 +1096,8 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     set -e
     rm -rf server/kodata
     mkdir -p server/kodata/pkg server/kodata/dist-ui
-    # The server's modules: web/pkg/ holds only those (`just caps`).
-    cp web/pkg/cap_*.wasm server/kodata/pkg/
+    # The server's module (`just caps`).
+    cp web/pkg/server.wasm server/kodata/pkg/
     # The kind table and the schemas it names (-kinds; D-202): the
     # receive path reads the table, and the store keeps the schemas.
     cp web/pkg/kinds.json server/kodata/pkg/

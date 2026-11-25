@@ -2,11 +2,11 @@ package main
 
 // The work order system (D-165) is the agency's own system, reached
 // through an adapter so nothing here couples to it. The call splits in
-// three (D-228): cap-requests `work_order_call` answers what to send,
-// this host makes the call, and the stops log's receive op
-// (`requests record_work_order`, logkinds.go) records the answer under
-// the writer `work-orders:<system>`. The host reads nothing out of the
-// document.
+// three (D-228): the kind's `call` op answers what to send, this host
+// makes the call, and its `record` op, through the kind's log
+// (logkinds.go), records the answer under the writer
+// `work-orders:<system>`. The kind table's `work_order` names the kind,
+// the route, and both ops. The host reads nothing out of the document.
 
 import (
 	"context"
@@ -69,12 +69,17 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotImplemented, map[string]any{"configured": false})
 		return
 	}
-	if s.store == nil {
-		http.Error(w, "the stop requests document needs the store (start with -store <url>)", http.StatusNotFound)
+	e := s.workOrderKind()
+	if e == nil {
+		http.NotFound(w, r)
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+	if s.store == nil {
+		http.Error(w, "the "+e.StoreKind+" document needs the store (start with -store <url>)", http.StatusNotFound)
+		return
+	}
+	if r.Method != e.WorkOrder.Method {
+		http.Error(w, "use "+e.WorkOrder.Method, http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -91,34 +96,38 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	l := s.keptLogOf("stop_requests")
+	l := s.keptLogOf(e.StoreKind)
 	if l == nil {
-		http.Error(w, "the kind table names no log for the stop requests", http.StatusNotFound)
+		http.Error(w, "the kind table names no log for "+e.StoreKind, http.StatusNotFound)
 		return
 	}
-	_, doc, found, err := s.keptHead("stop_requests")
+	hashField := e.StoreKind + "_hash"
+	if e.Post != nil {
+		hashField = e.Post.Answer
+	}
+	_, doc, found, err := s.keptHead(e.StoreKind)
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
-		http.Error(w, "no stop requests yet", http.StatusNotFound)
+		http.Error(w, "no "+e.StoreKind+" yet", http.StatusNotFound)
 		return
 	}
-	// cap-requests answers what to send: the request for an open, the
-	// held work order for a refresh.
+	// The checking capability answers what to send: the record for an
+	// open, the held work order for a refresh.
 	var call struct {
 		Call struct {
 			Request   json.RawMessage `json:"request"`
 			WorkOrder *workOrder      `json:"work_order"`
 		} `json:"call"`
 	}
-	err = s.withModule(ctx, "requests", func(host *WasmHost) error {
+	err = s.withModule(ctx, e.Module, func(host *WasmHost) error {
 		var loaded map[string]any
-		if err := host.InvokeBytes(ctx, l.loadCode("stop_requests"), doc, &loaded); err != nil {
+		if err := host.InvokeBytes(ctx, l.loadCode(e.StoreKind), doc, &loaded); err != nil {
 			return err
 		}
-		return host.Invoke(ctx, map[string]any{"op": "work_order_call", "requests_hash": loadedHash(loaded), "id": req.Request, "action": req.Action}, &call)
+		return host.Invoke(ctx, map[string]any{"op": e.WorkOrder.Call, hashField: loadedHash(loaded), "id": req.Request, "action": req.Action}, &call)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -132,14 +141,14 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		f := l.fold
 		f.mu.Lock()
 		_, landed, err := s.keyLanded(f, req.Key)
-		hash := l.docs["stop_requests"].hash
+		hash := l.docs[e.StoreKind].hash
 		f.mu.Unlock()
 		if err != nil {
 			fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		if landed {
-			writeJSON(w, http.StatusOK, map[string]any{"requests_hash": hash, "work_order": held.WorkOrder, "landed": true})
+			writeJSON(w, http.StatusOK, map[string]any{hashField: hash, "work_order": held.WorkOrder, "landed": true})
 			return
 		}
 	}
@@ -161,10 +170,10 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		answer.System = s.workOrders.Name()
 	}
 	answer.ReadOn = s.today()
-	// The write runs over the requests at the head, so a request written
+	// The write runs over the records at the head, so a record written
 	// meanwhile is kept.
-	op, _ := json.Marshal(map[string]any{"cap": "requests", "op": "record_work_order", "args": map[string]any{"id": req.Request, "work_order": answer}})
-	write := logWrite{writer: "work-orders:" + s.workOrders.Name(), op: "POST /stop-requests/work-order", argsHash: store.HashOf(body), key: req.Key}
+	op, _ := json.Marshal(map[string]any{"cap": e.Module, "op": e.WorkOrder.Record, "args": map[string]any{"id": req.Request, "work_order": answer}})
+	write := logWrite{writer: "work-orders:" + s.workOrders.Name(), op: e.WorkOrder.Method + " " + e.WorkOrder.Path, argsHash: store.HashOf(body), key: req.Key}
 	_, _, got, refusal, err := s.receiveLog(ctx, r, l, write, receiveCall{ops: []json.RawMessage{op}})
 	if err != nil {
 		logWriteFailed(w, err, http.StatusBadRequest)
@@ -182,7 +191,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l.fold.mu.Lock()
-	hash := l.docs["stop_requests"].hash
+	hash := l.docs[e.StoreKind].hash
 	l.fold.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"requests_hash": hash, "work_order": answer})
+	writeJSON(w, http.StatusOK, map[string]any{hashField: hash, "work_order": answer})
 }

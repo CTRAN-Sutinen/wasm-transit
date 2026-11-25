@@ -16,7 +16,7 @@ import (
 // Pins builds (D-80, D-63; docs/architecture/release-artifacts.md). The
 // manifest pins `build_hash`, and the pages follow the pinned build.
 
-const syncWasmPath = "../web/pkg/cap_sync.wasm"
+const syncWasmPath = testWasm
 
 func writeDist(t *testing.T, dir string, files map[string]string) {
 	t.Helper()
@@ -34,7 +34,7 @@ func newBuildServer(t *testing.T, b store.Backend, dist string) (*server, string
 	s := newStoreServer(t, b)
 	s.dist = dist
 	s.buildEvery = time.Nanosecond
-	s.serverModules = map[string]string{"sync": syncWasmPath}
+	s.serverModules = map[string]string{"server": syncWasmPath}
 	s.syncBuild()
 	return s, httptest.NewServer(s.routes()).URL
 }
@@ -92,7 +92,7 @@ func TestTheDistIsCommittedAsABuildAndThePagesAreServedFromIt(t *testing.T) {
 	if strings.Join(paths, ",") != "assets/index-AAAAAAAA.js,index.html,sw.js" {
 		t.Fatalf("the build is the release's files — the basemap is map data, not the release: %v", paths)
 	}
-	if len(doc.Server) != 1 || doc.Server[0].Role != "sync" || doc.Server[0].Hash != s.wasm.Hash() {
+	if len(doc.Server) != 1 || doc.Server[0].Role != "server" || doc.Server[0].Hash != s.wasm.Hash() {
 		t.Fatalf("the build retains the modules the server hosts: %+v", doc.Server)
 	}
 
@@ -198,7 +198,7 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	s.dist = dist
 	s.buildEvery = time.Nanosecond
-	s.serverModules = map[string]string{"sync": syncWasmPath}
+	s.serverModules = map[string]string{"server": syncWasmPath}
 	uis, err := parseUIDists("stops=" + stops + ", service-change=" + change)
 	if err != nil {
 		t.Fatal(err)

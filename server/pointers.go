@@ -42,19 +42,8 @@ func (s *server) syncEnvelope() store.Envelope {
 	}
 }
 
-const defaultMigrateWasm = "../web/pkg/cap_migrate.wasm"
-
-// migrator loads cap-migrate on first use: most receives are already
-// current.
 func (s *server) migrator() (*WasmHost, error) {
-	s.migrateOnce.Do(func() {
-		path := s.migrateWasm
-		if path == "" {
-			path = defaultMigrateWasm
-		}
-		s.migrateHost, s.migrateErr = NewWasmHost(context.Background(), path)
-	})
-	return s.migrateHost, s.migrateErr
+	return s.as("migrate"), nil
 }
 
 // forward returns a current or newer document unchanged. The module that
@@ -83,7 +72,6 @@ func (s *server) forward(kind string, raw json.RawMessage) (doc json.RawMessage,
 	return json.RawMessage(out.Canonical), true, nil
 }
 
-// The module is not reentrant. WasmHost.call serializes invokes.
 func (s *server) syncOp(req map[string]any, out any) error {
 	return s.wasm.Invoke(context.Background(), req, out)
 }

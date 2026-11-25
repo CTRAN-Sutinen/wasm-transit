@@ -41,23 +41,25 @@ func main() {
 	mime.AddExtensionType(".pmtiles", "application/vnd.pmtiles")
 
 	ctx := context.Background()
-	host, err := NewWasmHost(ctx, f.module("sync"))
+	inst, err := NewWasmHost(ctx, *f.wasmPath)
 	if err != nil {
-		log.Fatalf("wasm host: %v", err)
+		log.Fatalf("the server's module: %v", err)
 	}
-	log.Printf("sync module loaded: %s (%s)", f.module("sync"), host.Hash())
+	if missing := unlinked(inst); len(missing) > 0 {
+		log.Fatalf("the server's module %s links no %s (server/capabilities.json; run `just caps`)", *f.wasmPath, strings.Join(missing, ", "))
+	}
+	log.Printf("the server's module: %s (%s; %s)", *f.wasmPath, inst.Hash(), strings.Join(inst.Capabilities(), ", "))
 
 	s := &server{
 		dist:          *f.dist,
-		wasm:          host,
+		long:          newHeld("long-lived", inst),
 		publisher:     *f.publisher,
 		editsPath:     *f.editsPath,
 		retentionDays: *f.retentionDays,
 		fixedToday:    *f.today,
-		migrateWasm:   f.module("migrate"),
-		modulesDir:    *f.modulesDir,
-		moduleFiles:   map[string]string{},
+		serverModules: map[string]string{"server": *f.wasmPath},
 	}
+	s.wasm = s.as("sync")
 	if *f.attachmentsURL != "" {
 		if s.attachments, err = store.OpenBackend(context.Background(), *f.attachmentsURL); err != nil {
 			log.Fatalf("attachments: %v", err)
@@ -88,24 +90,14 @@ func main() {
 			}
 			log.Printf("store cache: %s (a copy that starts while the bucket does not answer serves from it, read only)", *f.storeCache)
 		}
-		if s.plans, err = NewWasmHost(ctx, f.module("plans")); err != nil {
-			log.Fatalf("plans module: %v", err)
-		}
-		s.networkWasm = f.module("network")
-		s.logWasm = f.module("log")
+		s.plans = s.as("plans")
 		s.kindsPath = *f.kindsPath
-		s.checkWasm = map[string]string{"authz": f.module("authz")}
 		if _, err := s.kindTable(); err != nil {
 			log.Fatalf("store mode: %v", err)
 		}
-		// The modules load before the seeds: a log's first entry runs
-		// through its receive op (logkinds.go).
-		for id, p := range f.moduleFlags() {
-			if *p != "" {
-				s.moduleFiles[id] = *p
-			}
+		if missing := s.unhosted(); len(missing) > 0 {
+			log.Fatalf("store mode: the kind table names %s, which the server's module does not link (run `just caps`)", strings.Join(missing, ", "))
 		}
-		s.serverModules = s.hostedModules(*f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "")
 		s.seedStore(*f.editsPath)
 		s.commitPicksForward()
 		s.seedPolicy(*f.policyFile)
@@ -126,7 +118,7 @@ func main() {
 			issuer: *f.oidcIssuer, jwksURL: *f.oidcJWKS, audience: *f.oidcAud,
 			keyFile: *f.oidcKey, rolesClaim: *f.oidcRoles, nameClaim: *f.oidcName,
 			clientID: *f.oidcClientID, scope: *f.oidcScope,
-		}, f.module("authz"), *f.policyFile)
+		}, inst, *f.policyFile)
 		if err != nil {
 			log.Fatalf("authz: %v", err)
 		}
@@ -142,7 +134,7 @@ func main() {
 		}
 	}
 	if *f.feedPath != "" {
-		s.feeder = &feedSource{src: newSource(*f.feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: f.module("network")}
+		s.feeder = &feedSource{src: newSource(*f.feedPath, "source.feed", "gtfs_feed", s.store), wasm: *f.wasmPath}
 		s.feeder.onImport = func(feed *loadedFeed) {
 			if err := s.recordFeed(context.Background(), feed); err != nil {
 				log.Printf("stops: the feed's differences were not recorded: %v", err)
@@ -153,7 +145,7 @@ func main() {
 		}
 	}
 	if *f.streetsPath != "" {
-		s.streets = &streetsSource{src: newSource(*f.streetsPath, "source.streets", "street_layer", s.store), streetsWasm: f.module("streets")}
+		s.streets = &streetsSource{src: newSource(*f.streetsPath, "source.streets", "street_layer", s.store), wasm: *f.wasmPath}
 		if _, err := s.publishedStreets(); err != nil {
 			log.Fatalf("streets: %v", err)
 		}
@@ -269,7 +261,9 @@ func (s *server) routes() *http.ServeMux {
 	}
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
 	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
-	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return "stop_requests" }, s.handleWorkOrder))
+	if e := s.workOrderKind(); e != nil {
+		mux.HandleFunc(e.WorkOrder.Path, s.protectWrite(func(*http.Request) string { return e.rule() }, s.handleWorkOrder))
+	}
 	mux.HandleFunc("/builds", s.protectWrite(func(r *http.Request) string { p, _ := buildsPointerOf(r); return p }, s.handleBuilds))
 	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
@@ -314,29 +308,19 @@ type server struct {
 	// nil means auth is off (dev only).
 	authz *authzState
 
+	// long is the long-lived instance (wasm.go). wasm and plans speak to
+	// it as cap-sync and cap-plans.
+	long        *held
+	longOnce    sync.Once
 	plans       *WasmHost
-	networkWasm string
-	logWasm     string
-	logOnce     sync.Once
-	logHost     *WasmHost
-	logErr      error
 	keptOnce    sync.Once
 	kept        map[string]*keptLog
-	modulesMu   sync.Mutex
-	modules     map[string]*heldModule
-	// checkWasm maps a capability id to the module that checks a pointer
-	// write (default ../web/pkg/cap_<id>.wasm).
 	kindsPath   string
 	kindsOnce   sync.Once
 	kinds       *kindTable
 	kindsErr    error
-	checkWasm   map[string]string
 	attachments store.Backend
 	workOrders  workOrderSystem
-	migrateWasm string
-	migrateOnce sync.Once
-	migrateHost *WasmHost
-	migrateErr  error
 	fixedToday  string           // -today: the date publishing reads, for test servers; "" = the host clock
 	now         func() time.Time // the host clock (nil = time.Now); tests pin it
 	// The agency's zone, from the last published pick. today() reads it
@@ -358,8 +342,6 @@ type server struct {
 	builds        buildState
 	buildEvery    time.Duration
 	serverModules map[string]string
-	modulesDir    string
-	moduleFiles   map[string]string
 	// Each UI's bundle commits to its own build.<id> pointer (D-171).
 	uiDists []*uiDist
 }
@@ -510,8 +492,8 @@ type Manifest struct {
 	FeedVersion *string           `json:"feed_version,omitempty"`
 	StreetsHash string            `json:"streets_hash,omitempty"` // the streets document GET /streets serves
 	WalksHash   string            `json:"walks_hash,omitempty"`   // the walk table GET /walks serves
-	WasmHash    string            `json:"wasm_hash"`              // sha256 of the sync module this server runs
-	AuthzHash   string            `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
+	WasmHash    string            `json:"wasm_hash"`              // sha256 of the module this server runs
+	AuthzHash   string            `json:"authz_hash,omitempty"`   // sha256 of the module authz runs in, when auth is on
 	PolicyHash  string            `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
 	Logged      map[string]string `json:"-"`
 	// The seq of each log's fold that this manifest pins. A page sends it
@@ -631,11 +613,11 @@ func (s *server) buildManifest() (Manifest, error) {
 		}
 		manifest.Services["attachments"] = Service{Path: "/attachments"}
 	}
-	if s.workOrders != nil && s.store != nil {
+	if e := s.workOrderKind(); e != nil && s.workOrders != nil && s.store != nil {
 		if manifest.Services == nil {
 			manifest.Services = map[string]Service{}
 		}
-		manifest.Services["work_orders"] = Service{Path: "/stop-requests/work-order"}
+		manifest.Services["work_orders"] = Service{Path: e.WorkOrder.Path}
 	}
 	if s.authz != nil {
 		manifest.AuthzHash = s.authz.wasm.Hash()

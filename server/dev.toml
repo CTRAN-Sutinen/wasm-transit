@@ -71,27 +71,15 @@ work-orders = "stub:Maintenance"
 # in a deployment: it relays any URL for any caller.
 rt-proxy = true
 
-# --- The capability modules (`just caps` builds them) -------------------
+# --- The module and the pages (`just caps` builds the module) ----------
 
 # dist = "../web/dist"
 # With a store: each UI's own bundle (`just build-ui <id>`), committed to
 # the store's build.<id> pointer for the UI's own URL (D-171).
 # ui-dist = "stops=../web/dist-ui/stops,service-change=../web/dist-ui/service-change"
-# The folder of the modules: each capability's module is cap_<id>.wasm
-# in it. Each line after it names one capability's module instead.
-# modules = "../web/pkg"
-# wasm = "../web/pkg/cap_sync.wasm"
-# network-wasm = "../web/pkg/cap_network.wasm"
-# streets-wasm = "../web/pkg/cap_streets.wasm"
-# plans-wasm = "../web/pkg/cap_plans.wasm"
-# stops-wasm = "../web/pkg/cap_stops.wasm"
-# requests-wasm = "../web/pkg/cap_requests.wasm"
-# alerts-wasm = "../web/pkg/cap_alerts.wasm"
-# notes-wasm = "../web/pkg/cap_notes.wasm"
-# log-wasm = "../web/pkg/cap_log.wasm"
+# The server's one module: its capabilities linked (D-227).
+# wasm = "../web/pkg/server.wasm"
 # kinds = "../web/pkg/kinds.json"
-# migrate-wasm = "../web/pkg/cap_migrate.wasm"
-# authz-wasm = "../web/pkg/cap_authz.wasm"
 
 # --- Export instead of serving (`just export` sets these) ---------------
 

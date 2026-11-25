@@ -16,7 +16,8 @@ documentation sweep is the `doc-sweep` skill
   the domain logic in a library crate. The module's `Request` and
   `Response` types are the seam. They are serde-tagged, and their JSON
   form is `{"op": ...}`. A host loads the module: the browser loads it
-  in its bus worker, and the Go server loads it with `NewWasmHost`. A
+  in its bus worker, and the Go server links it into its one module
+(`module-server`) when it calls the capability. A
   response payload must be a typed serde struct.
 - **Use the planner's words in the model, not the words of GTFS.** The
   model uses these terms:
@@ -57,7 +58,7 @@ documentation sweep is the `doc-sweep` skill
 - **A wasm module is not reentrant.** One instance runs one invoke at a
   time, because its heap and linear memory belong to that instance. The
   Go host holds one lock over the whole alloc-to-free sequence in
-  `WasmHost.call`, because net/http serves each request on its own
+  `wasmhost.Instance.call`, because net/http serves each request on its own
   goroutine. `just test` runs `go test -race`, and
   `server/race_test.go` gives the race detector concurrent calls to
   check. If you change that lock, make sure that the test still fails

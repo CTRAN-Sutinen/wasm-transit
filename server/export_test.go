@@ -49,8 +49,8 @@ func exportServer(t *testing.T) *server {
 	return &server{
 		dist:      dist,
 		wasm:      newTestHost(t),
-		feeder:    fileFeed(writeFeed(t, zip), networkWasm),
-		streets:   fileStreets(writeLayer(t), streetsWasm),
+		feeder:    fileFeed(writeFeed(t, zip), testWasm),
+		streets:   fileStreets(writeLayer(t), testWasm),
 		publisher: "Test Transit",
 	}
 }

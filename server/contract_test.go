@@ -77,6 +77,9 @@ func muxPatterns(t *testing.T) map[string]bool {
 		if k.Post != nil && k.Receive != "" {
 			out[k.Post.Path] = true
 		}
+		if k.WorkOrder != nil {
+			out[k.WorkOrder.Path] = true
+		}
 	}
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)

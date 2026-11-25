@@ -60,12 +60,35 @@ fn ui_assemblies(root: &Path, known: &[String]) -> Vec<Assembly> {
         .collect()
 }
 
+/// The server's own capabilities (`server/capabilities.json`), and each one
+/// that checks or receives a kind the store keeps, so a new kind's capability
+/// is hosted with no line in the list.
+fn server_assembly(root: &Path, known: &[String]) -> Assembly {
+    let path = root.join("server/capabilities.json");
+    let own: Vec<String> =
+        serde_json::from_slice(&fs::read(&path).expect("server/capabilities.json reads")).expect("a list of capability ids");
+    let kinds = cap_abi::kinds::KINDS.iter().filter_map(|k| k.store).flat_map(|s| {
+        s.check.map(|(cap, _)| cap.to_string()).into_iter().chain(s.log.and_then(|l| l.receive).map(str::to_string))
+    });
+    let caps: BTreeSet<String> = own.into_iter().chain(kinds).collect();
+    for cap in &caps {
+        assert!(known.contains(cap), "{}: no capability {cap:?}", path.display());
+    }
+    Assembly {
+        name: "module-server".to_string(),
+        ui: None,
+        about: "the server's capabilities (server/capabilities.json, and each one the kind list names), linked into one module".to_string(),
+        caps: caps.into_iter().collect(),
+    }
+}
+
 pub fn assemblies(root: &Path) -> Vec<Assembly> {
     let ids = capability_ids(root);
     let mut out: Vec<Assembly> = ids
         .iter()
         .map(|id| Assembly { name: format!("module-{id}"), ui: None, about: format!("the {id} capability alone"), caps: vec![id.clone()] })
         .collect();
+    out.push(server_assembly(root, &ids));
     out.extend(ui_assemblies(root, &ids));
     out
 }

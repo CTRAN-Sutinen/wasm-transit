@@ -50,11 +50,7 @@ func fixtureZip(t *testing.T) []byte {
 
 func newTestHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), "../web/pkg/cap_sync.wasm")
-	if err != nil {
-		t.Fatalf("load sync module: %v", err)
-	}
-	return host
+	return testView(t, "sync")
 }
 
 // Pins one step of the protocol: a draft against an empty server
@@ -62,7 +58,6 @@ func newTestHost(t *testing.T) *WasmHost {
 func TestSyncRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	host := newTestHost(t)
-	defer host.Close(ctx)
 
 	if !strings.HasPrefix(host.Hash(), "sha256:") {
 		t.Fatalf("host hash not computed: %q", host.Hash())
@@ -132,7 +127,7 @@ func TestSyncRoundTrip(t *testing.T) {
 
 func TestModuleIsTheDeployedBytes(t *testing.T) {
 	host := newTestHost(t)
-	sum := sha256File(t, "../web/pkg/cap_sync.wasm")
+	sum := sha256File(t, testWasm)
 	if host.Hash() != sum {
 		t.Fatalf("host hash %s != file hash %s", host.Hash(), sum)
 	}

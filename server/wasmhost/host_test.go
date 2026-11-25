@@ -14,7 +14,7 @@ import (
 // failed compile is not kept.
 func TestCompiledModuleIsSharedAndFailuresAreNotKept(t *testing.T) {
 	ctx := context.Background()
-	body, err := os.ReadFile("../../web/pkg/cap_authz.wasm")
+	body, err := os.ReadFile("../../web/pkg/server.wasm")
 	if err != nil {
 		t.Fatal(err)
 	}

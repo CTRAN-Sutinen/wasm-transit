@@ -59,7 +59,7 @@ func newOrigin(t *testing.T, body []byte) *origin {
 func bootServer(t *testing.T, bucket store.Backend, src string) *server {
 	t.Helper()
 	s := newStoreServer(t, bucket)
-	s.feeder = &feedSource{src: newSource(src, "source.feed", "gtfs_feed", s.store), networkWasm: networkWasm}
+	s.feeder = &feedSource{src: newSource(src, "source.feed", "gtfs_feed", s.store), wasm: testWasm}
 	return s
 }
 

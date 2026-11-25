@@ -3,7 +3,8 @@
 // built alone and from inside each generated UI's linked assembly, in
 // either order of the assembly's capabilities. A derived entry that one
 // capability computes and another finds is a cache, never a dependency.
-// Run as a script, this checks the built modules in web/public/caps.
+// Run as a script, this checks the built modules in web/public/caps, and
+// the server's in web/pkg/server.wasm.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,7 @@ import path from "node:path";
 
 const OP_LOAD_FEED = 266;
 const OP_LOAD_RT = 267;
+const OP_ABOUT = 268;
 
 function setup(manifest, fixtures) {
   const steps = [];
@@ -99,9 +101,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const manifest = JSON.parse(readFileSync(path.join(dist, "manifest.json"), "utf8"));
   const modules = new Map();
   const instantiate = (entry) => {
-    if (!modules.has(entry.url)) modules.set(entry.url, readFileSync(path.join(dist, "..", entry.url)));
+    if (!modules.has(entry.url)) modules.set(entry.url, readFileSync(entry.file ?? path.join(dist, "..", entry.url)));
     return shell(modules.get(entry.url));
   };
+  // The server's assembly (D-227) is checked as a UI's is. Its own about
+  // op names its capabilities, in index order.
+  const server = path.join(here, "../../web/pkg/server.wasm");
+  const about = JSON.parse(shell(readFileSync(server)).invokeBytes(OP_ABOUT, Buffer.alloc(0)));
+  manifest.assemblies = [
+    ...(manifest.assemblies ?? []),
+    { ui: "server", url: "server.wasm", file: server, capabilities: about.ok.capabilities.map((c) => c.id) },
+  ];
   const fixtures = {
     feed: readFileSync(path.join(dist, "sample-gtfs.zip")),
     rt: readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb")),

@@ -269,6 +269,12 @@
         "op": "validate",
         "answer": "requests_hash"
       },
+      "work_order": {
+        "method": "POST",
+        "path": "/stop-requests/work-order",
+        "call": "work_order_call",
+        "record": "record_work_order"
+      },
       "receive": "stops",
       "module": "requests",
       "validate": "validate",
@@ -632,7 +638,7 @@
       "versions": [
         {
           "version": 1,
-          "schema": "sha256:769294bd230a0f5ecd98e293885a678ff35b6f77da2c50be12bba10c1fc83fb4"
+          "schema": "sha256:b11c729a662455ff551fc0fc456683e2474216539fff1357a7872c231783c803"
         }
       ],
       "write": "server",

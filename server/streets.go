@@ -64,8 +64,8 @@ type loadedStreets struct {
 // D-118. In store mode a boot whose layer and network the store already
 // derived from reads the stored documents and runs no module (derived.go).
 type streetsSource struct {
-	src         *source
-	streetsWasm string
+	src  *source
+	wasm string
 
 	mu          sync.Mutex
 	layerHash   string
@@ -74,8 +74,8 @@ type streetsSource struct {
 	derivations int
 }
 
-func fileStreets(path, streetsWasm string) *streetsSource {
-	return &streetsSource{src: newSource(path, "", "", nil), streetsWasm: streetsWasm}
+func fileStreets(path, wasm string) *streetsSource {
+	return &streetsSource{src: newSource(path, "", "", nil), wasm: wasm}
 }
 
 // A nil feed means no network and no walk table.
@@ -98,21 +98,21 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	ctx := context.Background()
 	started := time.Now()
 	st := f.src.st
-	var host *WasmHost
+	var inst *Instance
 	defer func() {
-		if host != nil {
-			host.Close(ctx)
+		if inst != nil {
+			inst.Close(ctx)
 		}
 	}()
 	open := func() (*WasmHost, error) {
-		if host == nil {
-			h, err := NewWasmHost(ctx, f.streetsWasm)
+		if inst == nil {
+			i, err := NewWasmHost(ctx, f.wasm)
 			if err != nil {
-				return nil, fmt.Errorf("streets module: %w", err)
+				return nil, fmt.Errorf("the server's module: %w", err)
 			}
-			host = h
+			inst = i
 		}
-		return host, nil
+		return inst.As("streets"), nil
 	}
 	streetsInHost := false
 
@@ -198,7 +198,7 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	f.layerHash = layerHash
 	f.networkHash = networkHash
 	how := "derived"
-	if host == nil {
+	if inst == nil {
 		how = "read from the store"
 	}
 	log.Printf("streets %s for %s in %s: %s (%d KB, %d KB gzipped); walk table %s (%d KB gzipped)",

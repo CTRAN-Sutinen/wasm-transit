@@ -1,9 +1,9 @@
 // Command store runs the sync store's offline tools (docs/FORMATS.md),
 // with no server. Only verify and revert run cap-log.
 //
-//	store verify [-log M] <url>   read the whole store; exit 1 on the first break.
+//	store verify [-wasm M] <url>   read the whole store; exit 1 on the first break.
 //	                              Each log's checkpoints are compared with the
-//	                              fold of their entries, by cap-log (-log)
+//	                              fold of their entries, by cap-log (-wasm)
 //	store gc [-grace D] <url>     collect orphan blobs (D-117), with the
 //	                              collector's own delete-capable credentials
 //	store dump <url> <dir>        write every object to a folder, to read the
@@ -12,7 +12,7 @@
 //	                              (<key>.meta.json); read only
 //	store copy <dir> <url>        carry a directory store an older build
 //	                              wrote into a bucket, then verify it
-//	store revert [-writer W] [-log cap_log.wasm] [-kinds kinds.json] <url> <pointer> <hash>
+//	store revert [-writer W] [-wasm server.wasm] [-kinds kinds.json] <url> <pointer> <hash>
 //	                              the emergency procedure: move a pointer
 //	                              back to a head its log holds, as a new
 //	                              logged commit, and list the commits the
@@ -48,7 +48,7 @@ func main() {
 	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
-		logm := fs.String("log", "../web/pkg/cap_log.wasm", "the log module (cap-log), which folds each log's checkpoints")
+		logm := fs.String("wasm", "../web/pkg/server.wasm", "the server's module, whose cap-log folds each log's checkpoints")
 		kinds := fs.String("kinds", "../web/pkg/kinds.json", "the kind table the existence check judges with (D-233): each broken reference of each log's fold at its head is reported, with the entry that broke it; empty: no check")
 		fs.Parse(args)
 		need(fs.Args(), 1)
@@ -80,7 +80,7 @@ func main() {
 	case "revert":
 		fs := flag.NewFlagSet("revert", flag.ExitOnError)
 		writer := fs.String("writer", "revert", "the writer the commit names (the operator)")
-		logm := fs.String("log", "../web/pkg/cap_log.wasm", "the log module (cap-log), which finds the records that name a dropped commit")
+		logm := fs.String("wasm", "../web/pkg/server.wasm", "the server's module, whose cap-log finds the records that name a dropped commit")
 		kinds := fs.String("kinds", "../web/pkg/kinds.json", "the kind table whose references name the dropped commits (D-233); empty: none are listed")
 		fs.Parse(args)
 		need(fs.Args(), 3)
@@ -122,11 +122,11 @@ type logModule struct {
 
 func (m *logModule) load(why string) (*wasmhost.Host, error) {
 	if m.host == nil {
-		h, err := wasmhost.New(m.ctx, m.path)
+		inst, err := wasmhost.New(m.ctx, m.path)
 		if err != nil {
-			return nil, fmt.Errorf("the module that %s (-log %s): %w", why, m.path, err)
+			return nil, fmt.Errorf("the module that %s (-wasm %s): %w", why, m.path, err)
 		}
-		m.host = h
+		m.host = inst.As("log")
 	}
 	return m.host, nil
 }
@@ -258,6 +258,6 @@ func need(args []string, n int) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: store verify [-log cap_log.wasm] [-kinds kinds.json] <url> | store gc [-grace 168h] <url> | store dump <url> <dir> | store copy <dir> <url> | store revert [-writer W] [-log cap_log.wasm] [-kinds kinds.json] <url> <pointer> <hash>")
+	fmt.Fprintln(os.Stderr, "usage: store verify [-wasm server.wasm] [-kinds kinds.json] <url> | store gc [-grace 168h] <url> | store dump <url> <dir> | store copy <dir> <url> | store revert [-writer W] [-wasm server.wasm] [-kinds kinds.json] <url> <pointer> <hash>")
 	os.Exit(2)
 }

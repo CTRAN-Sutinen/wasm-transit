@@ -362,16 +362,19 @@ func (s *server) exportedPick(ctx context.Context, networkHash string, set []byt
 	if err != nil {
 		return nil, err
 	}
+	// A publish runs in an instance of its own, so the networks it reads
+	// go with it.
+	inst, err := s.fresh(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("an instance for the export: %w", err)
+	}
+	defer inst.Close(ctx)
 	if haveStops {
-		if blob, err = s.stopsVersions(ctx, blob, stops, set); err != nil {
+		if blob, err = stopsVersions(ctx, inst.As("stops"), blob, stops, set); err != nil {
 			return nil, fmt.Errorf("the stops' history: %w", err)
 		}
 	}
-	host, err := NewWasmHost(ctx, s.networkWasm)
-	if err != nil {
-		return nil, fmt.Errorf("network module: %w", err)
-	}
-	defer host.Close(ctx)
+	host := inst.As("network")
 	var loaded struct {
 		NetworkHash string `json:"network_hash"`
 	}
@@ -396,31 +399,26 @@ func (s *server) exportedPick(ctx context.Context, networkHash string, set []byt
 	return zipBytes, nil
 }
 
-func (s *server) stopsVersions(ctx context.Context, network, stops, set []byte) ([]byte, error) {
-	var versioned json.RawMessage
-	err := s.withModule(ctx, "stops", func(host *WasmHost) error {
-		var loadedNet struct {
-			NetworkHash string `json:"network_hash"`
-		}
-		if err := host.InvokeBytes(ctx, opLoadNetwork, network, &loadedNet); err != nil {
-			return fmt.Errorf("the pick's network: %w", err)
-		}
-		var loadedStops struct {
-			StopsHash string `json:"stops_hash"`
-		}
-		if err := host.InvokeBytes(ctx, opLoadStops, stops, &loadedStops); err != nil {
-			return fmt.Errorf("the stops document: %w", err)
-		}
-		var out struct {
-			Network json.RawMessage `json:"network"`
-		}
-		if err := host.Invoke(ctx, map[string]any{"op": "export_pick", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "published": orNull(set)}, &out); err != nil {
-			return err
-		}
-		versioned = out.Network
-		return nil
-	})
-	return versioned, err
+func stopsVersions(ctx context.Context, host *WasmHost, network, stops, set []byte) ([]byte, error) {
+	var loadedNet struct {
+		NetworkHash string `json:"network_hash"`
+	}
+	if err := host.InvokeBytes(ctx, opLoadNetwork, network, &loadedNet); err != nil {
+		return nil, fmt.Errorf("the pick's network: %w", err)
+	}
+	var loadedStops struct {
+		StopsHash string `json:"stops_hash"`
+	}
+	if err := host.InvokeBytes(ctx, opLoadStops, stops, &loadedStops); err != nil {
+		return nil, fmt.Errorf("the stops document: %w", err)
+	}
+	var out struct {
+		Network json.RawMessage `json:"network"`
+	}
+	if err := host.Invoke(ctx, map[string]any{"op": "export_pick", "network_hash": loadedNet.NetworkHash, "stops_hash": loadedStops.StopsHash, "published": orNull(set)}, &out); err != nil {
+		return nil, err
+	}
+	return out.Network, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

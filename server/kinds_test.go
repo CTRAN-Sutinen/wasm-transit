@@ -76,7 +76,6 @@ func TestEveryBlobTheServerWritesIsAKindTheTableNames(t *testing.T) {
 	bucket := store.NewMemory()
 	s := derivedServer(t, bucket, writeLayer(t))
 	s.plans = newPlansHost(t)
-	s.networkWasm = networkWasm
 	s.fixedToday = "2026-08-01"
 	if _, err := s.buildManifest(); err != nil {
 		t.Fatal(err)

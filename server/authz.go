@@ -44,8 +44,10 @@ type oidcConfig struct {
 // A nil authzState means auth is off: the dev default, which writes
 // unauthenticated.
 type authzState struct {
-	cfg    oidcConfig
-	wasm   *WasmHost // cap-authz
+	cfg oidcConfig
+	// cap-authz, in an instance of its own: a trap in another capability
+	// never takes the fail-closed check with it.
+	wasm   *WasmHost
 	pinned crypto.PublicKey
 
 	jwksMu          sync.Mutex
@@ -59,12 +61,12 @@ type authzState struct {
 	policyBytes []byte
 }
 
-func loadAuthz(ctx context.Context, cfg oidcConfig, authzWasmPath string, policyFile string) (*authzState, error) {
-	host, err := NewWasmHost(ctx, authzWasmPath)
+func loadAuthz(ctx context.Context, cfg oidcConfig, module *Instance, policyFile string) (*authzState, error) {
+	inst, err := module.Fresh(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("authz module: %w", err)
+		return nil, fmt.Errorf("authz instance: %w", err)
 	}
-	a := &authzState{cfg: cfg, wasm: host, jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: 30 * time.Second}
+	a := &authzState{cfg: cfg, wasm: newHeld("authz", inst).as("authz"), jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: 30 * time.Second}
 	if a.cfg.nameClaim == "" {
 		a.cfg.nameClaim = "name"
 	}

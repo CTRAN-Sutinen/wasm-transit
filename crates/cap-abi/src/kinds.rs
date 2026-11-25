@@ -50,6 +50,7 @@ pub struct Store {
     pub pointers: &'static [&'static str],
     pub log: Option<Log>,
     pub post: Option<Post>,
+    pub work_order: Option<WorkOrder>,
     /// The capability that checks a write, and its op.
     pub check: Option<(&'static str, &'static str)>,
     pub merge: Merge,
@@ -81,6 +82,18 @@ pub struct Post {
     /// The field of the answer that names the document after the write.
     pub answer: &'static str,
     pub echo: &'static [&'static str],
+}
+
+/// The kind's records are sent to the work order system (D-165) through
+/// this route. The checking capability's `call` op answers what to send,
+/// the server makes the call, and its `record` op, through the kind's
+/// log, writes the answer (D-228).
+#[derive(Debug, Clone, Copy)]
+pub struct WorkOrder {
+    pub method: &'static str,
+    pub path: &'static str,
+    pub call: &'static str,
+    pub record: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -147,7 +160,7 @@ impl Declaration {
         merge: Merge,
         read: Read,
     ) -> Self {
-        self.store = Some(Store { kind, write, route, pointers, log: None, post: None, check: None, merge, read });
+        self.store = Some(Store { kind, write, route, pointers, log: None, post: None, work_order: None, check: None, merge, read });
         self
     }
 
@@ -175,6 +188,13 @@ impl Declaration {
     const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
         if let Some(store) = &mut self.store {
             store.post = Some(Post { path, op, answer, echo });
+        }
+        self
+    }
+
+    const fn work_orders(mut self, method: &'static str, path: &'static str, call: &'static str, record: &'static str) -> Self {
+        if let Some(store) = &mut self.store {
+            store.work_order = Some(WorkOrder { method, path, call, record });
         }
         self
     }
@@ -239,7 +259,8 @@ pub static KINDS: &[Declaration] = &[
         .checked("requests", "validate")
         .logged("stops", &[("stop_request", "requests")])
         .received("stops")
-        .posted("/stop-requests", "validate", "requests_hash", &[]),
+        .posted("/stop-requests", "validate", "requests_hash", &[])
+        .work_orders("POST", "/stop-requests/work-order", "work_order_call", "record_work_order"),
     Declaration::new("service_alerts", "service_alerts", "transit_alerts::ServiceAlerts", "transit-alerts")
         .loaded("service_alerts", "load_service_alerts", 272)
         .stored("service_alerts", Route, "POST /service-alerts", &[], Merge::Log, Open)

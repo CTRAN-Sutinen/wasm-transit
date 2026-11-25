@@ -28,7 +28,7 @@ Each host has four parts:
 |---|---|---|---|
 | Upstream | the bucket | the server, or the export's files | the files and URLs its user names |
 | Working copy | heads and blobs in memory; with `-store-cache`, the same on disk | IndexedDB (documents, plans, the outbox, and the disruptions page's last copy of the edit document) and the service worker's caches (the pages, the modules, the last copy of a rider page's reads) | the session folder (`.caps-sessions/NAME/`) |
-| Modules | single-capability modules in wazero | the page's linked assembly in its bus worker | any module, or a page's assembly for a replay |
+| Modules | its linked assembly in wazero: a long-lived instance, authz's own, and a fresh one for each import or publish | the page's linked assembly in its bus worker | any module, or a page's assembly for a replay |
 | Clock | the server's clock | the device's clock, in the agency's zone (`web/src/clock.ts`) | the machine's clock, in the zone of `--tz` or the session's network |
 
 ## The chain
@@ -130,8 +130,6 @@ The hosts differ in three ways. Each difference is a design decision.
   a work order's call (cap-requests `work_order_call`). A pick's checks
   run in the plans log's receive op (cap-plans `pick`), which links the
   same library functions.
-- The server runs single-capability modules, and composes a flow that
-  needs two capabilities in Go.
 
 The open work is [ui-host-inputs.md](../units/ui-host-inputs.md) and
 [names-declared-once.md](../units/names-declared-once.md).

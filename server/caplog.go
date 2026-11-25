@@ -21,22 +21,13 @@ import (
 	"rustwasm/server/store"
 )
 
-const defaultLogWasm = "../web/pkg/cap_log.wasm"
-
 // A boot folds at most this many entries after the newest checkpoint.
 const checkpointEvery = 256
 
 const logEntriesLimit = 1000
 
 func (s *server) logModule() (*WasmHost, error) {
-	s.logOnce.Do(func() {
-		path := s.logWasm
-		if path == "" {
-			path = defaultLogWasm
-		}
-		s.logHost, s.logErr = NewWasmHost(context.Background(), path)
-	})
-	return s.logHost, s.logErr
+	return s.as("log"), nil
 }
 
 func (s *server) logOp(req map[string]any, out any) error {

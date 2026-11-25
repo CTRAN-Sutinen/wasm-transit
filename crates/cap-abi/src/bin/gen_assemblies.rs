@@ -1,9 +1,10 @@
 //! gen-assemblies writes the assembly crates (`assemblies/`) and gen-manifest,
 //! the generator's binary. Nobody edits them by hand, and git ignores them.
 //!
-//! `module-<cap>` links one capability alone, for caps-run, agents, the
-//! registry's blobs, and the Go server. `module-ui-<id>` links the
-//! capabilities that the `ops` of a UI's `ui.json` name (D-77), in id order.
+//! `module-<cap>` links one capability alone, for caps-run, agents, and the
+//! registry's blobs. `module-ui-<id>` links the capabilities that the `ops`
+//! of a UI's `ui.json` name (D-77), in id order. `module-server` links the
+//! Go server's (D-227).
 //! `assemblies/.gitkeep` keeps the directory, so the workspace glob resolves
 //! in a fresh checkout.
 

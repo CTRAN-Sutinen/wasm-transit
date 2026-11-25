@@ -14,7 +14,6 @@ import (
 
 func TestConcurrentInvokes(t *testing.T) {
 	host := newTestHost(t)
-	defer host.Close(context.Background())
 
 	const workers = 8
 	const rounds = 20

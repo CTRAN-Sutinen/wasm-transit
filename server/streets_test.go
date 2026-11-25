@@ -18,8 +18,6 @@ import (
 	"time"
 )
 
-const streetsWasm = "../web/pkg/cap_streets.wasm"
-
 // The walking fixture is a residential street through the sample
 // network's station bays, and a motorway across it.
 const walkStreetsLayer = "../web/e2e/fixtures/walk-streets.geojson"
@@ -40,9 +38,9 @@ func writeLayer(t *testing.T) string {
 // An empty feed publishes no network.
 func streetsServer(t *testing.T, feed, layer string) string {
 	t.Helper()
-	s := &server{wasm: newTestHost(t), streets: fileStreets(layer, streetsWasm)}
+	s := &server{wasm: newTestHost(t), streets: fileStreets(layer, testWasm)}
 	if feed != "" {
-		s.feeder = fileFeed(feed, networkWasm)
+		s.feeder = fileFeed(feed, testWasm)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/network", s.handleNetwork)
@@ -77,12 +75,7 @@ func get(t *testing.T, url string) (int, []byte, string) {
 
 func newStreetsHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), streetsWasm)
-	if err != nil {
-		t.Fatalf("load streets module: %v", err)
-	}
-	t.Cleanup(func() { host.Close(context.Background()) })
-	return host
+	return testView(t, "streets")
 }
 
 // A fresh module registers the served bytes (the kernel's load_streets
@@ -132,11 +125,12 @@ func TestServedStreetsAndWalksRegisterUnderTheirPins(t *testing.T) {
 		t.Fatalf("the walk table walks %s × %s (%d walks), want %s × %s (the bays and the station, 6)",
 			walks.StreetsHash, walks.NetworkHash, len(walks.Walks), streetsHash, networkHash)
 	}
-	router, err := NewWasmHost(ctx, "../web/public/caps/"+routerModuleFile(t))
+	inst, err := NewWasmHost(ctx, "../web/public/caps/"+routerModuleFile(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer router.Close(ctx)
+	defer inst.Close(ctx)
+	router := inst.As("")
 	var loaded struct {
 		WalksHash string `json:"walks_hash"`
 	}

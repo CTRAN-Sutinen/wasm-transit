@@ -23,23 +23,15 @@ import (
 	"rustwasm/server/store"
 )
 
-const plansWasm = "../web/pkg/cap_plans.wasm"
-
 func newPlansHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), plansWasm)
-	if err != nil {
-		t.Fatalf("load plans module: %v", err)
-	}
-	t.Cleanup(func() { host.Close(context.Background()) })
-	return host
+	return testView(t, "plans")
 }
 
 func newPlansServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, b)
 	s.plans = newPlansHost(t)
-	s.networkWasm = networkWasm
 	s.fixedToday = "2026-08-01" // before every pick below; the fixture runs through 2026-12-31
 	mux := storeMux(s)
 	mux.HandleFunc("/plans", s.handlePlans)
@@ -68,7 +60,7 @@ func fixtureNetwork(t *testing.T, id, name, effectiveFrom string) map[string]any
 			fixtureErr = err
 			return
 		}
-		answer, _, _, err := importFeed(context.Background(), networkWasm, zipBytes)
+		answer, _, _, err := importFeed(context.Background(), testWasm, zipBytes)
 		if err != nil {
 			fixtureErr = err
 			return
@@ -409,7 +401,7 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 		t.Fatalf("before the first pick, no feed configured: %d", code)
 	}
 	zipBytes, _ := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
-	s.feeder = fileFeed("../web/e2e/fixtures/sample-gtfs.zip", networkWasm)
+	s.feeder = fileFeed("../web/e2e/fixtures/sample-gtfs.zip", testWasm)
 	code, _, body := httpGet(t, base+"/feed?date=2026-08-15")
 	if code != 200 || body != string(zipBytes) {
 		t.Fatalf("before the first pick: the configured zip (%d, %d bytes)", code, len(body))
@@ -435,7 +427,7 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 		t.Fatalf("today after a publish: %s, want the agency's 2026-11-05", got)
 	}
 
-	fed := &server{feeder: fileFeed("../web/e2e/fixtures/sample-gtfs.zip", networkWasm)}
+	fed := &server{feeder: fileFeed("../web/e2e/fixtures/sample-gtfs.zip", testWasm)}
 	fed.now = func() time.Time { return instant }
 	if got := fed.today(); got != "2026-11-05" {
 		t.Fatalf("today from the feed's zone: %s, want 2026-11-05", got)

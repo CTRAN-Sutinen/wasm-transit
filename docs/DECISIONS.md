@@ -55,7 +55,7 @@ first, and open only the entries you need.
 - **The summary has one row for each entry.** A new entry adds its
   row in the same change. A change of state or of what it blocks
   updates the row and the entry together.
-- IDs are never reused. The next new decision is **D-254**.
+- IDs are never reused. The next new decision is **D-255**.
 
 ## Summary
 
@@ -281,7 +281,7 @@ first, and open only the entries you need.
 | [D-224](decisions/D-224.md) | What does a server copy started while the bucket does not answer serve? | encoded | nothing |
 | [D-225](decisions/D-225.md) | Which object stores does the server talk to, and through what code? | decided | nothing |
 | [D-226](decisions/D-226.md) | What is a capability? | decided | nothing |
-| [D-227](decisions/D-227.md) | Does the server link an assembly, as a UI does? | decided | nothing |
+| [D-227](decisions/D-227.md) | Does the server link an assembly, as a UI does? | decided; built | nothing |
 | [D-228](decisions/D-228.md) | What may a host do with an op's answer? | decided | nothing |
 | [D-229](decisions/D-229.md) | Does the record's integrity encode the domain? | decided | nothing |
 | [D-230](decisions/D-230.md) | When an adoption breaks a live reference, does it refuse or warn? | decided | nothing |
@@ -307,3 +307,4 @@ first, and open only the entries you need.
 | [D-250](decisions/D-250.md) | Which distance do the libraries share? | decided | nothing |
 | [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |
 | [D-253](decisions/D-253.md) | What shape does a coded refusal take in a module's answer? | decided | `shapes-from-rust.md` (the refusal codes) |
+| [D-254](decisions/D-254.md) | Which kinds may the server and the engine name? | unanswered | `names-declared-once.md` item 1 (the gate) |

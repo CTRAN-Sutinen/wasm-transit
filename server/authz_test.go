@@ -113,11 +113,7 @@ func testPolicy() []byte {
 
 func newAuthzTestHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), "../web/pkg/cap_authz.wasm")
-	if err != nil {
-		t.Fatalf("load authz module: %v", err)
-	}
-	return host
+	return testView(t, "authz")
 }
 
 func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
@@ -143,7 +139,7 @@ func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
 		jwksMinInterval: 0, // tests rotate keys immediately
 	}
 	s.authz = a
-	t.Cleanup(func() { st.Close(); a.wasm.Close(context.Background()) })
+	t.Cleanup(func() { st.Close() })
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))

@@ -6,58 +6,75 @@ is scaffolding: HTTP, the manifest, and proxies. It makes no domain
 decision. It reads the feed's `feed_info.txt` version field, which is
 one boundary CSV field and so I/O.
 
-The server links no assemblies (D-78). Nothing it holds for a long time
-is a network, and authz keeps its own instance. It instantiates the
-single-capability modules it needs. `just caps` rebuilds all of them
-into `web/pkg/`. The server reads each capability's module as
-`cap_<id>.wasm` in one folder, the `-modules` setting (by default
-`web/pkg/`, and `kodata/pkg/` in the image). A capability's own flag
-below names a different file for that capability only. A new kind's
-capability needs no flag: the server hosts every capability that the
-kind table names, from that folder.
+The server links one assembly, as each UI does (D-227):
+`module-server`, which `just caps` writes to `web/pkg/server.wasm`
+(`-wasm`; `kodata/pkg/server.wasm` in the image). gen-assemblies links
+the capabilities that `server/capabilities.json` lists (the ones the
+server calls by name) and each capability the kind list names to check
+or receive a kind, so a new kind's capability needs no line in the
+list. At boot the server refuses a module that does not link them.
+The manifest's `wasm_hash` names the module.
 
-- cap-sync (`-wasm`) is the op behind `POST /edits`. In store mode its
-  `receive` op writes the disruptions log ("One path for a log",
-  below). It also turns the edit document into the log's records and
-  back, and answers what a revert writes back. The server holds it for
-  its whole lifetime.
-- cap-authz (`-authz-wasm`) runs when authentication is on. In store
-  mode a fresh instance also checks each policy write (`validate`).
-- cap-plans (`-plans-wasm`) runs in store mode. Its `receive` op writes
-  the plans log. It turns the published plan set and the frozen
-  versions into the log's records and back, and answers the picks in use
-  and in force. A pick's checks run in the same op (`pick`, D-237): the
-  network's publish check, and the stops it reads on its first date.
-- cap-stops (`-stops-wasm`) runs in store mode. The server makes one
-  instance on first use and empties it after each use (the kernel's
-  `evict`). Its `receive` op writes the stops log: the stops document, the stop
-  requests document, the work order system's answer, and the feed's
-  differences. It also reads the stops
-  document for a published pick.
-- cap-requests (`-requests-wasm`) runs in store mode and is held the
-  same way. It assembles the stop requests document from the stops
+Each call names its capability: a JSON request carries `"cap"`, and a
+capability's bulk op carries its index (`wasmhost.Speak`). The server
+runs these instances of the one compiled module:
+
+- **The long-lived instance** answers the sync, plans, stops, requests,
+  alerts, notes, log, and migrate ops. It holds the head of each kept
+  log's documents, each registered once, when its log assembles it. A
+  request registers nothing the instance holds. After each request's
+  calls, the instance evicts every document that is not a held head (the
+  kernel's evict, op 257).
+- **authz's own instance** runs when sign-in is on, so a trap in another
+  capability never takes the fail-closed check with it.
+- **A fresh instance** for each import (the feed, the street layer), each
+  publish (a pick's export, with its stops' history), and each pointer
+  write's check, closed after, so the memory it used goes with it.
+
+**A refresh.** Wasm memory never shrinks. When the long-lived instance
+passes its memory ceiling (256 MB, `memoryCeiling` in `wasm.go`), the
+server starts a fresh instance of the same compiled module beside it and
+registers the held heads in it. Requests go on to the held instance, with
+no wait. Before the swap, the server registers each head that moved
+during the refresh. The old instance finishes the call it holds, then
+closes. A trap replaces an instance the same way, and authz's too. A
+refresh starts on memory growth, never on the number of requests.
+`server/instances_test.go` pins all of this.
+
+What each capability does for the server:
+
+- cap-sync is the op behind `POST /edits`. In store mode its `receive`
+  op writes the disruptions log ("One path for a log", below). It also
+  turns the edit document into the log's records and back, and answers
+  what a revert writes back.
+- cap-authz checks each write when authentication is on. In store mode a
+  fresh instance also checks each policy write (`validate`).
+- cap-plans' `receive` op writes the plans log. It turns the published
+  plan set and the frozen versions into the log's records and back, and
+  answers the picks in use and in force. A pick's checks run in the same
+  op (`pick`, D-237): the network's publish check, and the stops it
+  reads on its first date.
+- cap-stops' `receive` op writes the stops log: the stops document, the
+  stop requests document, the work order system's answer, and the feed's
+  differences. It also exports a published pick with its stops' history.
+- cap-requests assembles the stop requests document from the stops
   log's records, and answers what to send the work order system
   (`work_order_call`).
-- cap-alerts (`-alerts-wasm`) runs in store mode and is held the same
-  way. Its `receive` op writes the alerts log. The server serves no feed of the alerts (D-124).
-- cap-notes (`-notes-wasm`) runs in store mode and is held the same
-  way. Its `receive` op writes the notes log. It stamps each note with
+- cap-alerts' `receive` op writes the alerts log. The server serves no
+  feed of the alerts (D-124).
+- cap-notes' `receive` op writes the notes log. It stamps each note with
   the verified writer and the server's clock from the entry's header, so
   a page never names who wrote a note (D-214).
-- cap-log (`-log-wasm`) runs in store mode. It keeps all five logs
-  (disruptions, stops, plans, alerts, notes): the fold, a revert, a
-  closed gap, and where a key landed. The server holds it for its whole
-  lifetime. cap-sync, cap-stops, cap-requests, cap-plans, cap-alerts,
-  and cap-notes turn their documents into the log's records and back
-  (`log_records`, `log_document`).
-- cap-network (`-network-wasm`) imports the configured GTFS zip (the
-  kernel's `load_feed` and `import`). It also canonicalizes and
-  validates each published pick. It runs in a fresh instance that the
-  server closes afterwards, so its working memory goes with it.
-- cap-streets (`-streets-wasm`) imports the configured street layer
-  (`import`). It derives the walk table over the street layer and the
-  published network (the kernel's `load_network` and `walks`). It runs
-  in a fresh instance that the server closes the same way.
+- cap-log keeps all five logs (disruptions, stops, plans, alerts, notes):
+  the fold, a revert, a closed gap, and where a key landed. cap-sync,
+  cap-stops, cap-requests, cap-plans, cap-alerts, and cap-notes turn
+  their documents into the log's records and back (`log_records`,
+  `log_document`).
+- cap-network imports the configured GTFS zip (the kernel's `load_feed`
+  and `import`), and canonicalizes and validates each published pick.
+- cap-streets imports the configured street layer (`import`), and
+  derives the walk table over the street layer and the published network
+  (the kernel's `load_network` and `walks`).
 
 Beside the modules, `just caps` writes the kind table
 (`web/pkg/kinds.json`, `-kinds`; D-202) and the schemas it names
@@ -66,12 +83,10 @@ without it. At each boot in store mode the server writes the store's
 description, create only: the layout, the README, the table, and the
 schemas (D-203; `docs/FORMATS.md`, "The store describes itself").
 
-The server compiles each module's bytes once per process (decoding,
-validating, machine code: 1 to 3 s for cap-network). It compiles
-different modules at the same time, so a request for one module never
-waits behind the compile of another. It makes every instance from the
-compiled module in well under a millisecond, so a fresh instance per
-import or publish costs only its memory. `docs/CONVENTIONS.md` holds
+The server compiles the module's bytes once per process (decoding,
+validating, machine code). It makes every instance from the compiled
+module in well under a millisecond, so a fresh instance per import or
+publish costs only its memory. `docs/CONVENTIONS.md` holds
 reentrancy and the Go-host serialization.
 
 **The deployment publishes the network, not the feed.** Browsers never
@@ -223,7 +238,7 @@ is the operator's guide.
 
 The manifest pins the network the server publishes, the zip it came
 from, the published plan set (store mode), the streets and walk table,
-and the sync module's hash.
+and the server's module's hash.
 
 ## The routes
 
@@ -352,7 +367,7 @@ body or an answer only where the behavior needs it.
   - `iss` and `aud` must match exactly. `exp` and `nbf` have leeway.
 
   Reads stay public (D-58). Before any write, the server asks the
-  hosted cap-authz module (`-authz-wasm`) over the policy document. A
+  cap-authz, in its own instance, over the policy document. A
   write needs a role that the policy grants write on that pointer. The
   The verified `sub` is the store log's `writer`.
 
@@ -531,8 +546,9 @@ body or an answer only where the behavior needs it.
   - The manifest's `services.attachments` offers the route only with a
     bucket.
   - `store gc` never touches this bucket.
-- `POST /stop-requests/work-order` (store mode, `-work-orders`) takes
-  `{"request": "<id>", "action": "open"|"refresh"}`. The work order
+- `POST /stop-requests/work-order` (store mode, `-work-orders`; the
+  stop requests' `work_order` in the kind table names the route and its
+  ops) takes `{"request": "<id>", "action": "open"|"refresh"}`. The work order
   system's adapter (D-165, [adjacent-systems.md](adjacent-systems.md))
   opens a work order for the request, or reads its status. cap-requests
   `work_order_call` answers what to send it (the request, or the work
@@ -695,11 +711,11 @@ reading **Because**.
 - **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module. Registering the result costs ~0.45 s and ~9–12 MB.
 - **Exception:** a serverless deployment may have each page import the agency's GTFS URL (D-132; [static-deployment.md](static-deployment.md)).
 
-### Single-capability modules, fresh per import (`NewWasmHost`, `importFeed`, `streetsSource.Load`)
-- **Holds:** the server links no assemblies. cap-network and cap-streets get a fresh instance per import, closed after. A boot whose documents the store holds starts neither. authz keeps its own instance.
-- **Because:** wasm memory never shrinks, so closing the instance is the memory hygiene. The long-lived modules hold no network, so linking saves nothing. A trap in another module must not take the fail-closed authz check with it.
-- **Rejected:** one assembly for the long-lived modules. One assembly for everything (it loses the fresh instance). Revisit if the server hosts a long-lived network reader.
-- **Decided:** D-78.
+### One module, fresh per import (`wasm.go`, `importFeed`, `streetsSource.Load`, `exportedPick`)
+- **Holds:** the server links one assembly, as each UI does. The long-lived instance holds the logs' heads and refreshes past a memory ceiling. An import, a publish, and a pointer write's check get a fresh instance, closed after. authz keeps its own instance. A boot whose documents the store holds imports nothing.
+- **Because:** one host shape for every host ([hosts.md](hosts.md)), and each document registered once in the server too. Wasm memory never shrinks, so closing an instance is the memory hygiene, and the refresh does the same for the instance that lives on. A trap in another capability must not take the fail-closed authz check with it.
+- **Rejected:** a module for each capability, with one flag each (D-78, replaced): eleven flags, a flow that needs two capabilities composed in Go across modules, and each long-lived module holding its own copy of a document.
+- **Decided:** D-227.
 
 ### Two ways to fetch a published document (`/network/document`, `/network/boundary`, `/streets`, `/walks`, `/blobs/<hash>`)
 - **Holds:** both stay. The routes serve the current document at a stable address, pinned by ETag (a 304 while unchanged). `/blobs/<hash>` serves a document by the hash that the manifest names. The pages read this one.

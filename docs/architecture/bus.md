@@ -319,8 +319,8 @@ the rules whose reasons are not clear from the rules alone.
 ### One linked module per page, one registry (`assembly!`, `cap_abi::registry::Registry`, `independence.mjs`)
 - **Holds:** a page's capabilities link into one module over one
   registry that the kernel owns. So each document is parsed and held
-  once for each page. The server stays on single-capability modules
-  (D-78).
+  once for each page. The server links one assembly the same way
+  (D-227).
 - **Because:** separate instances each parsed their own copy of the
   network. On C-TRAN each copy took about 9 to 12 MB and 300 ms, and
   the stop display held three. Linking took the stop display from

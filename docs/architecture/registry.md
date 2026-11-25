@@ -230,7 +230,7 @@ schema lock"). It then copies the locks out:
 - `registry/schemas/<tag>.v<N>.schema.json`
 - `registry/examples/<tag>.v<N>.json`
 - the index `registry/documents.json`
-- the kind table beside the server's modules, `web/pkg/kinds.json`,
+- the kind table beside the server's module, `web/pkg/kinds.json`,
   with each schema it names as `web/pkg/schemas/<hex>.json` (D-202;
   `docs/FORMATS.md`, "The kind table"). It is generated from the kind
   list (`crates/cap-abi/src/kinds.rs`), and the run stops while the

@@ -14,7 +14,7 @@ import (
 	"rustwasm/server/wasmhost"
 )
 
-const logWasm = "../../../web/pkg/cap_log.wasm"
+const logWasm = "../../../web/pkg/server.wasm"
 
 type rawJSON string
 
@@ -59,10 +59,11 @@ func writeLog(t *testing.T, host *wasmhost.Host, s *store.Store, log, kind strin
 
 func TestVerifyFoldsEachLogThroughCapLog(t *testing.T) {
 	ctx := context.Background()
-	host, err := wasmhost.New(ctx, logWasm)
+	inst, err := wasmhost.New(ctx, logWasm)
 	if err != nil {
 		t.Fatalf("cap-log (run `just caps`): %v", err)
 	}
+	host := inst.As("log")
 	b := store.NewMemory()
 	s := store.New(b)
 	writeLog(t, host, s, "stops", "stop", []string{`[1]`, `[1,2]`, `[1,2,3]`})
@@ -118,10 +119,11 @@ func appendEntry(t *testing.T, host *wasmhost.Host, s *store.Store, seq int, nex
 // and the store still verifies (D-233).
 func TestVerifyReportsABrokenReferenceWithTheEntryThatBrokeIt(t *testing.T) {
 	ctx := context.Background()
-	host, err := wasmhost.New(ctx, logWasm)
+	inst, err := wasmhost.New(ctx, logWasm)
 	if err != nil {
 		t.Fatalf("cap-log (run `just caps`): %v", err)
 	}
+	host := inst.As("log")
 	b := store.NewMemory()
 	s := store.New(b)
 	stop := func(ids ...string) map[string]any {
@@ -158,10 +160,11 @@ func TestVerifyReportsABrokenReferenceWithTheEntryThatBrokeIt(t *testing.T) {
 // network commit (D-233).
 func TestRevertListsTheReferencesIntoTheCommitsItDrops(t *testing.T) {
 	ctx := context.Background()
-	host, err := wasmhost.New(ctx, logWasm)
+	inst, err := wasmhost.New(ctx, logWasm)
 	if err != nil {
 		t.Fatalf("cap-log (run `just caps`): %v", err)
 	}
+	host := inst.As("log")
 	b := store.NewMemory()
 	s := store.New(b)
 	env := store.Envelope{Kind: "network_document", SchemaVersion: 2, ProducedBy: "test"}

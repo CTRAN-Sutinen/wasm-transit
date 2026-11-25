@@ -246,7 +246,7 @@ non-zero on the first break. A break is one of these:
   modules' hashes name modules.
 
 The fold is the module's, so `store verify` runs cap-log, which keeps
-every log (`-log`, default `../web/pkg/cap_log.wasm`). Every entry is a
+every log (`-wasm`, default `../web/pkg/server.wasm`, the server's module). Every entry is a
 `log_entry` document, and every checkpoint a `log_checkpoint` document.
 A store with no checkpoints needs no module. The rest of verify is plain
 Go. A server also checks its newest checkpoint when it boots ("The
@@ -457,6 +457,12 @@ entry is one kind the store keeps, by its store kind (the envelope's
   it), the
   `answer` field that names the document after the write, and the body
   fields it repeats (`echo`).
+- `work_order` is the route that sends the kind's records to the work
+  order system (D-165): its `method` and `path`, the checking
+  capability's `call` op that answers what to send, and its `record` op,
+  which the receive op runs to write the answer. The server serves the
+  route, and offers it in the manifest's services, only for the kind
+  that names it.
 - `references` are the fields that name other records or things, each
   with its target, from the current version's schema (D-232; "References",
   below).

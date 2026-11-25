@@ -36,9 +36,10 @@ type kindEntry struct {
 	Receive string `json:"receive,omitempty"`
 	// A false Intent means only the kind's routes write the log, never
 	// POST /logs/<log>.
-	Intent *bool     `json:"intent,omitempty"`
-	Post   *kindPost `json:"post,omitempty"`
-	Load   *struct {
+	Intent    *bool          `json:"intent,omitempty"`
+	Post      *kindPost      `json:"post,omitempty"`
+	WorkOrder *kindWorkOrder `json:"work_order,omitempty"`
+	Load      *struct {
 		Op   string `json:"op"`
 		Code uint32 `json:"code"`
 	} `json:"load,omitempty"`
@@ -46,6 +47,28 @@ type kindEntry struct {
 	Validate string `json:"validate,omitempty"`
 	Merge    string `json:"merge"`
 	Read     string `json:"read"` // open, restricted, audit
+}
+
+type kindWorkOrder struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Call   string `json:"call"`
+	Record string `json:"record"`
+}
+
+// workOrderKind is the kind whose records go to the work order system,
+// or nil.
+func (s *server) workOrderKind() *kindEntry {
+	t, err := s.kindTable()
+	if err != nil {
+		return nil
+	}
+	for i := range t.Kinds {
+		if t.Kinds[i].WorkOrder != nil {
+			return &t.Kinds[i]
+		}
+	}
+	return nil
 }
 
 type kindPost struct {
@@ -180,11 +203,12 @@ type kindCheck struct {
 // A pointer write is rare, so the module instance is fresh and closed
 // after.
 func (s *server) checkKind(ctx context.Context, e *kindEntry, doc json.RawMessage) (kindCheck, error) {
-	host, err := NewWasmHost(ctx, s.modulePath(e.Module))
+	inst, err := s.fresh(ctx)
 	if err != nil {
-		return kindCheck{}, fmt.Errorf("the %s module: %w", e.Module, err)
+		return kindCheck{}, fmt.Errorf("an instance for %s: %w", e.Module, err)
 	}
-	defer host.Close(ctx)
+	defer inst.Close(ctx)
+	host := inst.As(e.Module)
 	answer, err := host.InvokeRaw(ctx, map[string]any{"op": e.Validate, e.Tag: doc})
 	if err != nil {
 		return kindCheck{}, err

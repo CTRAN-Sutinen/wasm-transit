@@ -20,8 +20,6 @@ import (
 	"time"
 )
 
-const networkWasm = "../web/pkg/cap_network.wasm"
-
 type served struct {
 	Network     json.RawMessage `json:"network"`
 	Boundary    json.RawMessage `json:"boundary"`
@@ -31,17 +29,12 @@ type served struct {
 
 func newNetworkHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), networkWasm)
-	if err != nil {
-		t.Fatalf("load network module: %v", err)
-	}
-	t.Cleanup(func() { host.Close(context.Background()) })
-	return host
+	return testView(t, "network")
 }
 
 func networkServer(t *testing.T, path string) string {
 	t.Helper()
-	s := &server{wasm: newTestHost(t), feeder: fileFeed(path, networkWasm)}
+	s := &server{wasm: newTestHost(t), feeder: fileFeed(path, testWasm)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/network", s.handleNetwork)
 	mux.HandleFunc("/network/document", s.handleNetworkDocument)

@@ -25,8 +25,8 @@ func derivedServer(t *testing.T, bucket store.Backend, layer string) *server {
 func derivedServerOf(t *testing.T, bucket store.Backend, feed, layer string) *server {
 	t.Helper()
 	s := newStoreServer(t, bucket)
-	s.feeder = &feedSource{src: newSource(feed, "source.feed", "gtfs_feed", s.store), networkWasm: networkWasm}
-	s.streets = &streetsSource{src: newSource(layer, "source.streets", "street_layer", s.store), streetsWasm: streetsWasm}
+	s.feeder = &feedSource{src: newSource(feed, "source.feed", "gtfs_feed", s.store), wasm: testWasm}
+	s.streets = &streetsSource{src: newSource(layer, "source.streets", "street_layer", s.store), wasm: testWasm}
 	return s
 }
 
