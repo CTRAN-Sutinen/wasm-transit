@@ -244,6 +244,18 @@ export const SESSIONS = [
     must(!r.named("a").issues.some((i) => i.layover_infeasible), "the adopted blocking is layover_infeasible");
     must(r.named("fleet").summary.peak_vehicles === r.named("s").suggestion.peak_vehicles, "the fleet peak is not the suggestion's");
   }],
+  ["runs: the day's blocks cut into runs under work rules, each blocked trip once, a guarantee paid, the mix reported", () => {
+    const rules = '{"schema_version":3,"measures":{"paid":["report","revenue","layover","clear","gap"]},"allowances":[{"event":"pull_out","secs":600,"activity":"report"}],"guarantees":[{"per":"run","min_secs":28800,"counts":"paid"}],"classes":[{"id":"full"}],"mix":[{"classes":["full"],"min_pct":50}]}';
+    const r = caps(["runs", "--op", LOAD,
+      "--as", "wr", "--op", `{"op":"load_work_rules","work_rules":${rules}}`,
+      "--as", "cut", "--op", '{"op":"cut","network_hash":"$load_network.network_hash","date":"2026-10-23","work_rules_hash":"$wr.work_rules_hash"}']);
+    const cut = r.named("cut").cut;
+    const trips = cut.runs.flatMap((x) => x.pieces.flatMap((p) => p.trips.map((t) => `${t.trip}@${t.start_secs}`)));
+    must(cut.runs.length > 0, "the Friday's blocks make no run");
+    must(new Set(trips).size === trips.length, "a trip is in two pieces");
+    must(cut.runs.every((x) => x.judged.pay_secs >= 28800), "a run is paid under its eight-hour guarantee");
+    must(cut.mix.length === 1 && cut.mix[0].classes[0] === "full", "the mix is not reported");
+  }],
   ["stops: validated, registered under validate's hash, read on a date, a return to service refused", () => {
     const r = caps(["stops",
       "--as", "v", "--op", `{"op":"validate","stops":${STOPS_DOC}}`,

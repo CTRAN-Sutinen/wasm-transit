@@ -1,0 +1,31 @@
+[package]
+name = "cap-runs"
+description = "The runs capability (transit-runs): a day's blocks cut into operator runs under the work rules and the scheduling constraints. cut answers each run's pieces, class, timeline, pay, and the rules it breaks, with the class mix and the trips no block carries. The kernel's load_work_rules and load_scheduling_constraints register the documents the host holds. The module writes nothing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true, optional = true }
+transit-network = { path = "../transit-network", default-features = false }
+transit-sync = { path = "../transit-sync", default-features = false }
+transit-dispatch = { path = "../transit-dispatch", default-features = false }
+transit-runs = { path = "../transit-runs", default-features = false }
+cap-abi = { path = "../cap-abi", default-features = false }
+# The worked examples' fixtures, for the `examples` feature only.
+fixtures = { path = "../fixtures", optional = true, default-features = false }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "transit-network/bindings", "transit-sync/bindings", "transit-dispatch/bindings", "transit-runs/bindings", "cap-abi/bindings", "fixtures?/bindings"]
+# The worked examples (`examples::examples`), which the generator runs.
+# No module build turns it on.
+examples = ["dep:fixtures"]
+
+[dev-dependencies]
+fixtures = { path = "../fixtures" }

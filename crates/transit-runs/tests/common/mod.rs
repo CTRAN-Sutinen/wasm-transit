@@ -4,6 +4,8 @@
 
 #![allow(dead_code)]
 
+pub mod rules_gen;
+
 use transit_date::Date;
 use transit_network::{
     Anchor, Block, CalendarRule, DateRange, Departs, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, Route,

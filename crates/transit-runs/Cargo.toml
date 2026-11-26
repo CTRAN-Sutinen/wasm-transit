@@ -13,6 +13,7 @@ ts-rs = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 transit-network = { path = "../transit-network", default-features = false }
 transit-date = { path = "../transit-date", default-features = false }
+transit-geo = { path = "../transit-geo", default-features = false }
 transit-dispatch = { path = "../transit-dispatch", default-features = false }
 
 [features]
@@ -20,7 +21,7 @@ transit-dispatch = { path = "../transit-dispatch", default-features = false }
 # module build turns it off: its crates name every workspace crate
 # with default-features = false.
 default = ["bindings"]
-bindings = ["dep:ts-rs", "dep:schemars", "transit-version/bindings", "transit-network/bindings", "transit-dispatch/bindings", "transit-date/bindings"]
+bindings = ["dep:ts-rs", "dep:schemars", "transit-version/bindings", "transit-network/bindings", "transit-dispatch/bindings", "transit-date/bindings", "transit-geo/bindings"]
 
 [dev-dependencies]
 proptest = "1"

@@ -25,7 +25,7 @@ It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). Th
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | runcut `blocks`, `block_trips` | op exists; no structure summary, QAF-15 |
+| 1 | runcut `blocks`, `block_trips`; runs `cut` | op exists: where a block is cut, at its reliefs under the rules |
 | 2 | runcut `fleet_summary`, `suggest_blocks` | op exists: a proposal's vehicle need is `suggest_blocks`' added_vehicles; fleet summary per service type, QAF-3 |
 | 3 | author `apply` issues (`scheduling_constraints_hash`), runcut `recovery` | op exists: a wait is judged against the recovery required there, and the recovery view shows required vs slack |
 | 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`), runcut `suggest_blocks` | op exists: a suggested chaining, adopted through its edits |
@@ -33,11 +33,11 @@ It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). Th
 
 ## Questions (runs)
 
-The runs questions (which runs a cut makes, each run's pieces, times,
-and pay, whether a run is legal, and run edits) have no op yet. They
-are [runs-layer.md](runs-layer.md)'s runs cut, run view, run legality,
-and run edits, and this UI reads
-them when they land.
+Runs `cut` answers which runs a cut makes, with each run's pieces,
+timeline, pay, and broken rules. Whether a run cut by hand is legal,
+and run edits, have no op yet. They are
+[runs-layer.md](runs-layer.md)'s run legality and run edits, and this
+UI reads them when they land.
 
 ## Done when
 

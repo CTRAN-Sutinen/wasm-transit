@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-134**. The
+IDs are never reused; the next new finding is **QAF-135**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
 theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
@@ -284,30 +284,25 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 The runs layer (`docs/ROADMAP.md` 7): runs cut from blocks under
 work rules, and the bid over them.
 
-- **QAF-15 OP GAP** — the block outline is answered (runcut
-  `fleet_summary` `spans`: each running block's span, trips, and
-  longest internal gap), but where a block may be CUT is not: the
-  span buckets that matter and the cut candidates are work-rule
-  questions (piece lengths, relief points), so they wait on the
-  runs layer (QAF-11, QAF-12).
-  Pin: 2026-10-26 `fleet_summary` — 93 weekday blocks span 22 (<4 h)
-  / 12 / 3 / 15 / 34 (14–18 h) / 7 (>18 h); the longest internal
-  gaps are 88, 84, and 70 min (1-WKDY/311013, /311015, /311011),
-  none ≥ 90, so every cut is a mid-layover policy cut.
-  The runs cut: `docs/units/runs-layer.md`.
-- **QAF-11 OP GAP** — no runs cut: blocks-to-runs cutting does
-  not exist, so a priced run menu cannot be produced.
-  Pin: 2026-10-26 by hand — 140 runs over 81 blocks + 25 trippers
-  under assumed 8 h max platform / 15+15 report-pull / 2 h min
-  piece.
+- **QAF-134 MODEL** — the runs cut makes few full-time runs on
+  C-TRAN. Under the 2022–2025 rules it builds a full-time run from
+  two pieces only when that run pays no premium or less than the
+  two pieces apart, so most pieces stay part-time runs, and class A
+  falls under its 35 percent minimum (Art. 19 §8).
+  Pin: 2026-11-25 `caps-run network` import of testdata/ctran-gtfs.zip,
+  `runs` `cut` for 2026-11-25 under `fixtures::ctran_2022_work_rules`:
+  139 runs over 93 blocks (98 of one piece, 41 of two), 35 A, 8 C,
+  96 part-time; no rule broken; pay 1131.6 h over 986.8 h platform
+  (1.147), premium 3.9 h, guarantee 2.6 h, median run 7.6 h; mix A
+  25 % (not met), A+B 25 %, C 5 %. QAF-11's hand count was 140 runs.
   The runs cut: `docs/units/runs-layer.md`.
 - **QAF-12 OP GAP** — the work rules have a home (the kernel's
   `work_rules` document: measures, limits, breaks, premiums,
   guarantees, travel, run classes, and the mix; relief points are
-  in `scheduling_constraints`), but nothing judges a
-  run against them, so run legality cannot be validated.
-  Pin: QAF-11's menu moves entirely with its assumed parameters;
-  no op takes a run.
+  in `scheduling_constraints`), and runs `cut` judges the runs it
+  makes (transit-runs `judge`), but no op takes a run that a
+  planner cut by hand, so a hand-cut run cannot be validated.
+  Pin: runs OPS.md has one op, `cut`.
   The runs cut: `docs/units/runs-layer.md`.
 - **QAF-14 OP GAP** — no run view: report/pull time and place,
   platform, pay, pieces, deadhead per run.

@@ -19,6 +19,11 @@
 //! 2022–2025 agreement is a fixture (`crates/fixtures`, `work_rules.rs`),
 //! never a default.
 //!
+//! [`judge`] judges and pays one run under the rules, and [`cut_runs`]
+//! cuts a day's blocks into runs with it. The cut is a heuristic. It
+//! builds runs that break no rule where it can, because a waivable limit
+//! is the operator's to waive.
+//!
 //! Without a recovery rule, an imported layover is the whole observed gap,
 //! and every delay would read infeasible (D-110). Each document's `checked`
 //! normalizes it at the kernel's load, so two orderings are one identity.
@@ -30,13 +35,17 @@
 #![forbid(unsafe_code)]
 
 mod constraints;
+mod cut;
 mod recovery;
 mod rules;
+mod run;
 mod suggest;
 pub mod load;
 pub mod version;
 
 pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
+pub use cut::{cut_runs, Cut, CutRun, MixReport, NetworkPlaces};
+pub use run::{judge, meets, timeline, Finding, Judged, Piece, PieceTrip, Places, Span};
 pub use constraints::{required, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind, CONSTRAINTS_VERSION};
 pub use rules::{
     Activity, Allowance, BreakFrom, BreakRule, Combine, Day, Event, GapBand, Guarantee, Limit, MixRule, Objective, Per, Premium, Quantity,

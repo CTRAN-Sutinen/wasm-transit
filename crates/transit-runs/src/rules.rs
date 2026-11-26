@@ -327,6 +327,20 @@ pub enum Day {
     Sun,
 }
 
+impl From<transit_date::Weekday> for Day {
+    fn from(w: transit_date::Weekday) -> Day {
+        match w {
+            transit_date::Weekday::Mon => Day::Mon,
+            transit_date::Weekday::Tue => Day::Tue,
+            transit_date::Weekday::Wed => Day::Wed,
+            transit_date::Weekday::Thu => Day::Thu,
+            transit_date::Weekday::Fri => Day::Fri,
+            transit_date::Weekday::Sat => Day::Sat,
+            transit_date::Weekday::Sun => Day::Sun,
+        }
+    }
+}
+
 /// Pays the triggered minutes of the `pays` measure at `pct` percent of
 /// the base rate (150 is time and a half, 0 to 1000).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

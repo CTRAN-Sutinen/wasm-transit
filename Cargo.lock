@@ -489,6 +489,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-runs"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "fixtures",
+ "serde",
+ "serde_json",
+ "transit-dispatch",
+ "transit-network",
+ "transit-runs",
+ "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-stops"
 version = "0.1.0"
 dependencies = [
@@ -839,6 +854,7 @@ dependencies = [
  "cap-router",
  "cap-rt",
  "cap-runcut",
+ "cap-runs",
  "cap-stops",
  "cap-streets",
  "cap-sync",
@@ -1286,6 +1302,14 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "cap-runcut",
+]
+
+[[package]]
+name = "module-runs"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-runs",
 ]
 
 [[package]]
@@ -2342,6 +2366,7 @@ dependencies = [
  "serde_json",
  "transit-date",
  "transit-dispatch",
+ "transit-geo",
  "transit-network",
  "transit-version",
  "ts-rs",
