@@ -22,7 +22,7 @@ pub fn examples() -> Vec<Example> {
     let day = transit_dispatch::day_of(network, &[], on).expect("the Friday materializes");
     let places = transit_runs::NetworkPlaces::new(network, &day.trips);
     let pieces =
-        transit_runs::cut_pieces(network, &day.trips, &rules, Some(&constraints), DATE, on.weekday().into(), &places).pieces;
+        transit_runs::cut_pieces(&transit_runs::DayBlocks::new(network, &day.trips, Some(&constraints), None), &rules, Some(&constraints), DATE, on.weekday().into(), &places).pieces;
     let refs: Vec<transit_runs::PieceRef> = pieces.iter().map(transit_runs::PieceRef::of).collect();
     // A run a planner composed by hand: the first piece, and the first later
     // piece that starts after it ends.

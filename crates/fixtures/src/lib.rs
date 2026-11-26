@@ -309,7 +309,7 @@ pub fn fixture_work_rules() -> transit_runs::WorkRules {
 }
 
 /// Five minutes or a tenth of the run after every trip, route 10's own rule,
-/// and routes 10 and 20 interlined.
+/// routes 10 and 20 interlined, and one garage, with deadheads at 30 km/h.
 pub fn fixture_scheduling_constraints() -> transit_runs::SchedulingConstraints {
     transit_runs::SchedulingConstraints { kind: Default::default(),
         schema_version: Default::default(),
@@ -320,6 +320,8 @@ pub fn fixture_scheduling_constraints() -> transit_runs::SchedulingConstraints {
         ],
         interline: vec![transit_runs::RoutePair { a: "10".into(), b: "20".into(), extra: Default::default() }],
         relief_points: vec![],
+        garages: vec![transit_runs::Garage { id: "yard".into(), name: "Fixture yard".into(), lat: 45.69, lon: -122.65, extra: Default::default() }],
+        deadhead_kph: Some(30),
         extra: Default::default(),
     }
 }

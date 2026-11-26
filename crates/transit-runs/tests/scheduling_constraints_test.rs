@@ -3,7 +3,7 @@
 
 use proptest::prelude::*;
 use transit_network::RecoveryAt;
-use transit_runs::{RecoveryRule, RoutePair, SchedulingConstraints};
+use transit_runs::{Garage, RecoveryRule, RoutePair, SchedulingConstraints};
 
 fn rule(route: Option<&str>, service_type: Option<&str>, min_secs: Option<u32>, pct_of_run: Option<u32>) -> RecoveryRule {
     RecoveryRule { route: route.map(String::from), service_type: service_type.map(String::from), min_secs, pct_of_run, extra: Default::default() }
@@ -36,6 +36,8 @@ fn the_whole_document_round_trips() {
         recovery: vec![rule(None, None, Some(300), Some(10))],
         interline: vec![pair("5", "6")],
         relief_points: vec!["A".into()],
+        garages: vec![garage("north", 45.64), garage("south", 45.60)],
+        deadhead_kph: Some(30),
         extra: Default::default(),
     };
     let text = serde_json::to_string(&constraints).unwrap();
@@ -130,4 +132,19 @@ fn a_document_that_cannot_be_read_one_way_is_refused() {
 fn relief_points_are_sorted() {
     let c = SchedulingConstraints { relief_points: vec!["B".into(), "A".into()], ..Default::default() }.checked().unwrap();
     assert_eq!(c.relief_points, vec!["A".to_string(), "B".to_string()]);
+}
+
+fn garage(id: &str, lat: f64) -> Garage {
+    Garage { id: id.into(), name: String::new(), lat, lon: -122.6, extra: Default::default() }
+}
+
+/// The first garage is every block's, so the order is meaning, not noise.
+#[test]
+fn garages_keep_their_order_and_a_garage_that_cannot_be_used_is_refused() {
+    let c = SchedulingConstraints { garages: vec![garage("z", 45.6), garage("a", 45.7)], ..Default::default() }.checked().unwrap();
+    assert_eq!(c.garages.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["z", "a"]);
+    let refused = |c: SchedulingConstraints| c.checked().unwrap_err();
+    assert!(refused(SchedulingConstraints { garages: vec![garage("a", 45.6), garage("a", 45.7)], ..Default::default() }).contains("twice"));
+    assert!(refused(SchedulingConstraints { garages: vec![garage("a", 145.6)], ..Default::default() }).contains("not a position"));
+    assert!(refused(SchedulingConstraints { deadhead_kph: Some(0), ..Default::default() }).contains("never arrive"));
 }

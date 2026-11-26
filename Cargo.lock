@@ -499,6 +499,7 @@ dependencies = [
  "transit-dispatch",
  "transit-network",
  "transit-runs",
+ "transit-streets",
  "transit-sync",
  "ts-rs",
 ]

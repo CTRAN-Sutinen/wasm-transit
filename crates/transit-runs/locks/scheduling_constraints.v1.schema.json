@@ -1,5 +1,31 @@
 {
   "$defs": {
+    "Garage": {
+      "additionalProperties": true,
+      "description": "A garage is an internal location, not a stop: it is never in the\nnetwork document, which the public feed is made from.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "lat",
+        "lon"
+      ],
+      "type": "object"
+    },
     "RecoveryRule": {
       "additionalProperties": true,
       "description": "The larger of `min_secs` and `pct_of_run` percent of the run before the\nwait, rounded up to the second. With no route or service type, the rule\ncovers every trip.",
@@ -64,6 +90,22 @@
   "additionalProperties": true,
   "description": "An empty document is `{\"kind\":\"scheduling_constraints\",\"schema_version\":1}`.",
   "properties": {
+    "deadhead_kph": {
+      "description": "The speed of a drive to or from a garage, over the streets, in\nkilometers an hour.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "garages": {
+      "description": "Where vehicles are kept. Every block leaves from and returns to the\nfirst garage.",
+      "items": {
+        "$ref": "#/$defs/Garage"
+      },
+      "type": "array"
+    },
     "interline": {
       "description": "Set per pair, in either order. A route follows itself. An\nunlisted pair never interlines.",
       "items": {

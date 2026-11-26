@@ -28,15 +28,24 @@ impl Places for Grid {
 
 fn pieces() -> impl Strategy<Value = Vec<Piece>> {
     let trip = (600u32..3_600, 0u32..1_800, 0usize..4);
-    let piece = (prop::collection::vec(trip, 1..4), 0u32..14_400, any::<bool>(), any::<bool>());
+    let drive = proptest::option::of(60u32..1_800);
+    let piece = (prop::collection::vec(trip, 1..4), 0u32..14_400, any::<bool>(), any::<bool>(), drive.clone(), drive);
     (14_400u32..36_000, prop::collection::vec(piece, 1..4)).prop_map(|(mut at, list)| {
         let mut out = Vec::new();
         let mut stop = 0usize;
-        for (i, (trips, gap, pull_out, pull_in)) in list.into_iter().enumerate() {
+        for (i, (trips, gap, pull_out, pull_in, out_secs, in_secs)) in list.into_iter().enumerate() {
             if i > 0 {
                 at += gap;
             }
-            let mut piece = Piece { block: format!("B{i}"), trips: vec![], pull_out, pull_in };
+            let mut piece = Piece {
+                block: format!("B{i}"),
+                pull_out,
+                pull_in,
+                garage: (pull_out || pull_in).then(|| "G".to_string()),
+                deadhead_out_secs: out_secs.filter(|_| pull_out),
+                deadhead_in_secs: in_secs.filter(|_| pull_in),
+                ..Default::default()
+            };
             for (j, (run, layover, next)) in trips.into_iter().enumerate() {
                 if j > 0 {
                     at += layover;
@@ -96,6 +105,44 @@ proptest! {
         }
         prop_assert!(t.first().unwrap().from_secs <= pieces[0].start_secs());
         prop_assert!(t.last().unwrap().to_secs >= pieces.last().unwrap().end_secs());
+    }
+
+    #[test]
+    fn the_run_view_reads_the_timeline_and_the_pieces((w, class, pieces, day, home) in judged()) {
+        let j = judge(&w, class.as_deref(), &pieces, day, &Grid { trips_home: home });
+        let (first, last) = (pieces.first().unwrap(), pieces.last().unwrap());
+        prop_assert_eq!(j.report.secs, j.timeline.first().unwrap().from_secs);
+        prop_assert_eq!(j.clear.secs, j.timeline.last().unwrap().to_secs);
+        let want = if first.pull_out { first.garage.clone() } else { first.trips.first().map(|t| t.from.clone()) };
+        prop_assert_eq!(&j.report.place, &want);
+        let want = if last.pull_in { last.garage.clone() } else { last.trips.last().map(|t| t.to.clone()) };
+        prop_assert_eq!(&j.clear.place, &want);
+        let on = [Activity::Revenue, Activity::Deadhead, Activity::Layover];
+        prop_assert_eq!(j.platform_secs, j.timeline.iter().filter(|s| on.contains(&s.activity)).map(len).sum::<u32>());
+    }
+
+    /// A drive that is not known is never counted as none: the run says
+    /// which it lacks.
+    #[test]
+    fn a_deadhead_is_driven_when_known_and_named_when_not((mut w, class, pieces, day, home) in judged()) {
+        // An allowance may be deadhead time too; only the drives are counted here.
+        w.rules.allowances.retain(|a| a.activity != Activity::Deadhead);
+        for c in &mut w.classes {
+            c.rules.allowances.retain(|a| a.activity != Activity::Deadhead);
+        }
+        let j = judge(&w, class.as_deref(), &pieces, day, &Grid { trips_home: home });
+        let ends: Vec<(bool, Option<u32>)> = pieces.iter().flat_map(|p| [(p.pull_out, p.deadhead_out_secs), (p.pull_in, p.deadhead_in_secs)]).filter(|e| e.0).collect();
+        let unknown = ends.iter().filter(|e| e.1.is_none()).count();
+        let named = j.not_judged.iter().filter(|f| f.rule.starts_with("the deadhead")).count();
+        prop_assert_eq!(named, unknown, "{:?}", j.not_judged);
+        prop_assert_eq!(j.deadhead_secs.is_some(), unknown == 0);
+        let driven: u32 = j.timeline.iter().filter(|s| s.activity == Activity::Deadhead).map(len).sum();
+        prop_assert!(driven <= ends.iter().filter_map(|e| e.1).sum::<u32>());
+        let first = &pieces[0];
+        if let (true, Some(d)) = (first.pull_out, first.deadhead_out_secs) {
+            let span = j.timeline.iter().find(|s| s.activity == Activity::Deadhead).unwrap();
+            prop_assert_eq!((span.from_secs, span.to_secs), (first.start_secs() - d, first.start_secs()), "the first drive out is whole");
+        }
     }
 
     #[test]
@@ -166,8 +213,8 @@ proptest! {
         let trip = |name: &str, start: u32, run: u32| PieceTrip { trip: name.into(), start_secs: start, end_secs: start + run, from: "S0".into(), to: "S0".into() };
         let start = 6 * 3_600;
         let pieces = vec![
-            Piece { block: "B1".into(), trips: vec![trip("a", start, first)], pull_out: true, pull_in: true },
-            Piece { block: "B2".into(), trips: vec![trip("b", start + first + gap, second)], pull_out: true, pull_in: true },
+            Piece { block: "B1".into(), trips: vec![trip("a", start, first)], pull_out: true, pull_in: true, ..Default::default() },
+            Piece { block: "B2".into(), trips: vec![trip("b", start + first + gap, second)], pull_out: true, pull_in: true, ..Default::default() },
         ];
         let j = judge(&w, None, &pieces, Day::Mon, &Grid { trips_home: false });
         let pct = w.rules.gap_paid_pct(gap);

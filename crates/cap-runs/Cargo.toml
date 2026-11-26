@@ -13,6 +13,7 @@ transit-network = { path = "../transit-network", default-features = false }
 transit-sync = { path = "../transit-sync", default-features = false }
 transit-dispatch = { path = "../transit-dispatch", default-features = false }
 transit-runs = { path = "../transit-runs", default-features = false }
+transit-streets = { path = "../transit-streets", default-features = false }
 cap-abi = { path = "../cap-abi", default-features = false }
 # The worked examples' fixtures, for the `examples` feature only.
 fixtures = { path = "../fixtures", optional = true, default-features = false }
@@ -22,7 +23,7 @@ fixtures = { path = "../fixtures", optional = true, default-features = false }
 # module build turns it off: its crates name every workspace crate
 # with default-features = false.
 default = ["bindings"]
-bindings = ["dep:ts-rs", "transit-network/bindings", "transit-sync/bindings", "transit-dispatch/bindings", "transit-runs/bindings", "cap-abi/bindings", "fixtures?/bindings"]
+bindings = ["dep:ts-rs", "transit-network/bindings", "transit-sync/bindings", "transit-dispatch/bindings", "transit-runs/bindings", "transit-streets/bindings", "cap-abi/bindings", "fixtures?/bindings"]
 # The worked examples (`examples::examples`), which the generator runs.
 # No module build turns it on.
 examples = ["dep:fixtures"]

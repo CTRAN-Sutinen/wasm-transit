@@ -195,25 +195,112 @@ impl Chooser<'_> {
     }
 }
 
-fn piece(block: &str, trips: &[PieceTrip], all: &[PieceTrip]) -> Piece {
+fn piece(block: &str, trips: &[PieceTrip], all: &[PieceTrip], deadheads: &Deadheads) -> Piece {
+    let (pull_out, pull_in) = (trips.first() == all.first(), trips.last() == all.last());
+    let drive = |end: bool, stop: Option<&PieceTrip>, to_garage: bool| {
+        end.then(|| stop.and_then(|t| deadheads.secs.get(&(if to_garage { t.to.clone() } else { t.from.clone() }, to_garage)).copied())).flatten()
+    };
     Piece {
         block: block.to_string(),
         trips: trips.to_vec(),
-        pull_out: trips.first() == all.first(),
-        pull_in: trips.last() == all.last(),
+        pull_out,
+        pull_in,
+        garage: (pull_out || pull_in).then(|| deadheads.garage.clone()).flatten(),
+        deadhead_out_secs: drive(pull_out, trips.first(), false),
+        deadhead_in_secs: drive(pull_in, trips.last(), true),
     }
+}
+
+/// The roads between two positions, for the drives to and from a garage.
+pub trait Roads {
+    /// Meters along the streets, or None when either end is off them.
+    fn meters(&self, from: (f64, f64), to: (f64, f64)) -> Option<f64>;
+}
+
+/// The first garage, and the drive between it and each block's first and
+/// last stop, keyed by the stop and whether the drive is to the garage.
+#[derive(Default)]
+struct Deadheads {
+    garage: Option<String>,
+    secs: BTreeMap<(String, bool), u32>,
+}
+
+fn deadheads(
+    network: &Network,
+    blocks: &BTreeMap<String, Vec<PieceTrip>>,
+    constraints: Option<&SchedulingConstraints>,
+    roads: Option<&dyn Roads>,
+) -> Deadheads {
+    let Some(garage) = constraints.and_then(|c| c.garages.first()) else { return Deadheads::default() };
+    let mut secs = BTreeMap::new();
+    if let (Some(roads), Some(kph)) = (roads, constraints.and_then(|c| c.deadhead_kph)) {
+        let at = (garage.lat, garage.lon);
+        let ends = blocks.values().flat_map(|l| [(l.first().map(|t| t.from.clone()), false), (l.last().map(|t| t.to.clone()), true)]);
+        for (stop, to_garage) in ends {
+            let Some(stop) = stop else { continue };
+            if secs.contains_key(&(stop.clone(), to_garage)) {
+                continue;
+            }
+            let Some(s) = network.stops.get(&stop) else { continue };
+            let m = if to_garage { roads.meters((s.lat, s.lon), at) } else { roads.meters(at, (s.lat, s.lon)) };
+            if let Some(m) = m {
+                secs.insert((stop, to_garage), (m * 3.6 / kph as f64).ceil() as u32);
+            }
+        }
+    }
+    Deadheads { garage: Some(garage.id.clone()), secs }
+}
+
+/// A stop where blocks lay over: a trip of the block ends there, and the
+/// block's next trip starts there or at another stop of its station.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
+pub struct ReliefPoint {
+    pub stop: String,
+    /// The blocks that lay over there.
+    pub blocks: u32,
+    /// The routes of the trips on either side of those layovers.
+    pub routes: Vec<String>,
+}
+
+/// The stops where two blocks or more lay over: transit centers and shared
+/// terminals, where one operator can most likely relieve another. A guess
+/// from the blocks, for when the constraints name no relief point.
+fn infer_relief_points(network: &Network, day: &[MaterializedTrip], blocks: &BTreeMap<String, Vec<PieceTrip>>) -> Vec<ReliefPoint> {
+    let route: BTreeMap<(&str, u32), &str> = day.iter().map(|t| ((t.trip.as_str(), t.start_secs), t.route.as_str())).collect();
+    let station = |stop: &str| network.stops.get(stop).and_then(|s| s.parent.clone()).unwrap_or_else(|| stop.to_string());
+    let mut at: BTreeMap<String, (std::collections::BTreeSet<&str>, std::collections::BTreeSet<&str>)> = BTreeMap::new();
+    for (block, list) in blocks {
+        for w in list.windows(2) {
+            if w[0].to != w[1].from && station(&w[0].to) != station(&w[1].from) {
+                continue;
+            }
+            let entry = at.entry(w[0].to.clone()).or_default();
+            entry.0.insert(block.as_str());
+            for t in w {
+                if let Some(r) = route.get(&(t.trip.as_str(), t.start_secs)) {
+                    entry.1.insert(r);
+                }
+            }
+        }
+    }
+    at.into_iter()
+        .filter(|(_, (b, _))| b.len() >= 2)
+        .map(|(stop, (b, r))| ReliefPoint { stop, blocks: b.len() as u32, routes: r.into_iter().map(String::from).collect() })
+        .collect()
 }
 
 /// The block's trips cut at reliefs into the longest pieces legal alone. A
 /// relief is after a trip that ends at a relief point, or after any trip
 /// when the constraints name none.
-fn split(block: &str, trips: &[PieceTrip], constraints: Option<&SchedulingConstraints>, chooser: &Chooser) -> Vec<Piece> {
-    let relief_points = constraints.map(|c| c.relief_points.as_slice()).unwrap_or(&[]);
+fn split(block: &str, trips: &[PieceTrip], relief_points: &[String], deadheads: &Deadheads, chooser: &Chooser) -> Vec<Piece> {
     let relief = |i: usize| relief_points.is_empty() || relief_points.iter().any(|p| *p == trips[i].to);
+    let piece = |a: &[PieceTrip], all: &[PieceTrip]| piece(block, a, all, deadheads);
     // Breaks nothing alone, and pays no premium alone: a piece that stops
     // where premiums start leaves pairing room to build a full day.
     let fits = |from: usize, to: usize| {
-        let (_, judged, score) = chooser.best(std::slice::from_ref(&piece(block, &trips[from..=to], trips)));
+        let (_, judged, score) = chooser.best(std::slice::from_ref(&piece(&trips[from..=to], trips)));
         (!score.1, !score.1 && judged.premium_secs == 0)
     };
     let mut out = Vec::new();
@@ -234,7 +321,7 @@ fn split(block: &str, trips: &[PieceTrip], constraints: Option<&SchedulingConstr
         }
         let chosen = cheap.or(clean);
         let stop = chosen.unwrap_or(ends[0]);
-        out.push(piece(block, &trips[start..=stop], trips));
+        out.push(piece(&trips[start..=stop], trips));
         start = stop + 1;
     }
     out
@@ -248,6 +335,11 @@ fn split(block: &str, trips: &[PieceTrip], constraints: Option<&SchedulingConstr
 pub struct Pieces {
     pub pieces: Vec<Piece>,
     pub unblocked: Vec<String>,
+    /// The relief points the cut guessed from the blocks, because the
+    /// constraints name none. Empty when the constraints name some.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<ReliefPoint>>"))]
+    pub inferred_relief_points: Vec<ReliefPoint>,
     pub warnings: Vec<String>,
 }
 
@@ -265,10 +357,11 @@ fn period_warnings(rules: &WorkRules, date: &str) -> Vec<String> {
 }
 
 /// Cuts the day's blocks into pieces. `day` is the service date's weekday,
-/// and `date` its "YYYY-MM-DD", which the rules' period is read against.
+/// and `date` its "YYYY-MM-DD", which the rules' period is read against. A
+/// relief is at a relief point that the constraints name, else at one the
+/// blocks suggest, else after any trip.
 pub fn cut_pieces(
-    network: &Network,
-    trips: &[MaterializedTrip],
+    blocks: &DayBlocks,
     rules: &WorkRules,
     constraints: Option<&SchedulingConstraints>,
     date: &str,
@@ -276,18 +369,20 @@ pub fn cut_pieces(
     places: &dyn Places,
 ) -> Pieces {
     let chooser = Chooser { rules, day, places };
-    let (blocks, unblocked) = day_blocks(network, trips);
+    let named = constraints.map(|c| c.relief_points.clone()).unwrap_or_default();
+    let inferred = if named.is_empty() { blocks.inferred.clone() } else { Vec::new() };
+    let relief_points: Vec<String> = if named.is_empty() { inferred.iter().map(|r| r.stop.clone()).collect() } else { named };
     let mut pieces = Vec::new();
-    for (block, list) in &blocks {
-        let one = piece(block, list, list);
+    for (block, list) in &blocks.blocks {
+        let one = piece(block, list, list, &blocks.deadheads);
         if good_whole(&chooser, &one) {
             pieces.push(one);
         } else {
-            pieces.extend(split(block, list, constraints, &chooser));
+            pieces.extend(split(block, list, &relief_points, &blocks.deadheads, &chooser));
         }
     }
     pieces.sort_by(|a, b| (a.start_secs(), &a.block).cmp(&(b.start_secs(), &b.block)));
-    Pieces { pieces, unblocked, warnings: period_warnings(rules, date) }
+    Pieces { pieces, unblocked: blocks.unblocked.clone(), inferred_relief_points: inferred, warnings: period_warnings(rules, date) }
 }
 
 /// A whole block that makes a good run alone. Composing keeps it a run of
@@ -526,15 +621,14 @@ fn toward_mix(runs: Vec<Drafted>, chooser: &Chooser) -> Vec<Drafted> {
 
 /// Cuts the day's blocks into pieces and composes them into runs.
 pub fn cut_runs(
-    network: &Network,
-    trips: &[MaterializedTrip],
+    blocks: &DayBlocks,
     rules: &WorkRules,
     constraints: Option<&SchedulingConstraints>,
     date: &str,
     day: Day,
     places: &dyn Places,
 ) -> Cut {
-    let Pieces { pieces, unblocked, warnings } = cut_pieces(network, trips, rules, constraints, date, day, places);
+    let Pieces { pieces, unblocked, warnings, .. } = cut_pieces(blocks, rules, constraints, date, day, places);
     let Composition { runs, mix_cost_secs } = compose_runs(&pieces, rules, day, places);
     let mix = mix(rules, &runs);
     Cut { runs, unblocked, mix, mix_cost_secs, warnings }
@@ -604,14 +698,24 @@ pub struct RunSet {
     pub warnings: Vec<String>,
 }
 
-/// The day's blocks, ready to resolve piece references against.
+/// The day's blocks: their trips, the drives to and from the garage at
+/// their ends, and the relief points they suggest.
 pub struct DayBlocks {
     blocks: BTreeMap<String, Vec<PieceTrip>>,
+    unblocked: Vec<String>,
+    deadheads: Deadheads,
+    inferred: Vec<ReliefPoint>,
 }
 
 impl DayBlocks {
-    pub fn new(network: &Network, trips: &[MaterializedTrip]) -> Self {
-        DayBlocks { blocks: day_blocks(network, trips).0 }
+    /// `roads` measures the drives to and from the constraints' first
+    /// garage. Without roads, a garage, or a deadhead speed, those drives
+    /// are unknown.
+    pub fn new(network: &Network, trips: &[MaterializedTrip], constraints: Option<&SchedulingConstraints>, roads: Option<&dyn Roads>) -> Self {
+        let (blocks, unblocked) = day_blocks(network, trips);
+        let deadheads = deadheads(network, &blocks, constraints, roads);
+        let inferred = infer_relief_points(network, trips, &blocks);
+        DayBlocks { blocks, unblocked, deadheads, inferred }
     }
 
     /// The piece that `r` names, or why it names none.
@@ -630,7 +734,7 @@ impl DayBlocks {
         };
         let first = at(0, &r.first_trip, r.first_start_secs)?;
         let last = at(first, &r.last_trip, r.last_start_secs)?;
-        Ok(piece(&r.block, &list[first..=last], list))
+        Ok(piece(&r.block, &list[first..=last], list, &self.deadheads))
     }
 
     /// The block's trip before the piece ends at a relief point, and so does

@@ -44,7 +44,7 @@ fn rules() -> impl Strategy<Value = WorkRules> {
 
 fn cut(net: &transit_network::Network, day: &[transit_network::MaterializedTrip], w: &WorkRules) -> Cut {
     let places = NetworkPlaces::new(net, day);
-    cut_runs(net, day, w, None, "2026-10-23", Day::Fri, &places)
+    cut_runs(&DayBlocks::new(net, day, None, None), w, None, "2026-10-23", Day::Fri, &places)
 }
 
 proptest! {

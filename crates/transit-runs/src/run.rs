@@ -18,7 +18,7 @@ use crate::rules::{Activity, BreakFrom, Combine, Day, Event, Limit, Per, Quantit
 
 /// One stretch of a block that one operator drives, from a relief or a
 /// pull-out to a relief or a pull-in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
 #[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Piece {
@@ -28,6 +28,20 @@ pub struct Piece {
     pub pull_out: bool,
     /// The piece ends at the block's last trip of the day.
     pub pull_in: bool,
+    /// The garage the block leaves from and returns to, on a piece that
+    /// pulls out or in, when the scheduling constraints name one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub garage: Option<String>,
+    /// The drive from the garage to the first trip, when it is known. On a
+    /// piece that pulls out, absent means unknown, never none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub deadhead_out_secs: Option<u32>,
+    /// The drive from the last trip to the garage, when it is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub deadhead_in_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,10 +95,32 @@ pub struct Finding {
     pub cites: Option<String>,
 }
 
+/// A time, and the place: a garage, or the stop of a relief. The place is
+/// absent when the run pulls out or in and no garage is known.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
+pub struct Moment {
+    pub secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub place: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
 #[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Judged {
+    /// Where and when the run starts: its first report.
+    pub report: Moment,
+    /// Where and when the run ends: its last clear.
+    pub clear: Moment,
+    /// Time on the vehicle: revenue, deadhead, and layover.
+    pub platform_secs: u32,
+    /// The run's drives to and from the garage. Absent when one is unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub deadhead_secs: Option<u32>,
     pub timeline: Vec<Span>,
     pub spread_secs: u32,
     pub measures: BTreeMap<String, u32>,
@@ -129,12 +165,16 @@ pub fn timeline(pieces: &[Piece], rules: &RuleSet) -> Vec<Span> {
     let allowance = |event: Event| rules.allowances.iter().filter(|a| a.event == event).collect::<Vec<_>>();
     let mut out: Vec<Span> = Vec::new();
     for (i, piece) in pieces.iter().enumerate() {
-        let start = piece.start_secs();
+        let first = piece.start_secs();
+        let out_secs = if piece.pull_out { piece.deadhead_out_secs.unwrap_or(0) } else { 0 };
         let mut before: Vec<_> = allowance(if piece.pull_out { Event::PullOut } else { Event::ReliefOn });
         before.extend(allowance(Event::PieceStart));
         let lead: u32 = before.iter().map(|a| a.secs).sum();
         let prev = out.last().map(|s| s.to_secs);
-        let mut at = start.saturating_sub(lead).max(prev.unwrap_or(0)).min(start);
+        let mut at = first.saturating_sub(out_secs + lead).max(prev.unwrap_or(0)).min(first);
+        // The allowances come before the drive, and both give way to the
+        // span before them.
+        let start = first.saturating_sub(out_secs).max(at);
         if let Some(prev) = prev.filter(|&p| at > p) {
             out.push(Span { activity: Activity::Gap, from_secs: prev, to_secs: at });
         }
@@ -144,6 +184,10 @@ pub fn timeline(pieces: &[Piece], rules: &RuleSet) -> Vec<Span> {
                 out.push(Span { activity: a.activity, from_secs: at, to_secs: to });
             }
             at = to;
+        }
+        if out_secs > 0 && first > at {
+            out.push(Span { activity: Activity::Deadhead, from_secs: at, to_secs: first });
+            at = first;
         }
         for (j, t) in piece.trips.iter().enumerate() {
             if j > 0 && t.start_secs > at {
@@ -156,6 +200,12 @@ pub fn timeline(pieces: &[Piece], rules: &RuleSet) -> Vec<Span> {
             at = at.max(t.end_secs);
         }
         let stop = pieces.get(i + 1).map_or(u32::MAX, |next| next.start_secs());
+        let in_secs = if piece.pull_in { piece.deadhead_in_secs.unwrap_or(0) } else { 0 };
+        let to = at.saturating_add(in_secs).min(stop);
+        if to > at {
+            out.push(Span { activity: Activity::Deadhead, from_secs: at, to_secs: to });
+            at = to;
+        }
         let mut after: Vec<_> = allowance(Event::PieceEnd);
         after.extend(allowance(if piece.pull_in { Event::PullIn } else { Event::ReliefOff }));
         for a in after {
@@ -328,10 +378,33 @@ pub fn judge(rules: &WorkRules, class: Option<&str>, pieces: &[Piece], day: Day,
         }
     }
 
+    for p in pieces {
+        if p.pull_out && p.deadhead_out_secs.is_none() {
+            not_judged.push(finding(format!("the deadhead to {} at the pull-out of {}", p.from(), p.block), Strength::Hard, &None));
+        }
+        if p.pull_in && p.deadhead_in_secs.is_none() {
+            not_judged.push(finding(format!("the deadhead from {} at the pull-in of {}", p.to(), p.block), Strength::Hard, &None));
+        }
+    }
+    let ends = |p: &Piece| [(p.pull_out, p.deadhead_out_secs), (p.pull_in, p.deadhead_in_secs)];
+    let deadhead_secs = pieces.iter().flat_map(ends).filter(|e| e.0).map(|e| e.1).sum::<Option<u32>>();
+    let report = Moment {
+        secs: timeline.first().map_or(0, |s| s.from_secs),
+        place: pieces.first().and_then(|p| if p.pull_out { p.garage.clone() } else { Some(p.from().to_string()) }),
+    };
+    let clear = Moment {
+        secs: timeline.last().map_or(0, |s| s.to_secs),
+        place: pieces.last().and_then(|p| if p.pull_in { p.garage.clone() } else { Some(p.to().to_string()) }),
+    };
+    let platform_secs = total(&timeline, &[Activity::Revenue, Activity::Deadhead, Activity::Layover]);
     broken.sort();
     not_judged.sort();
     not_judged.dedup();
     Judged {
+        report,
+        clear,
+        platform_secs,
+        deadhead_secs,
         spread_secs,
         measures,
         paid_secs,

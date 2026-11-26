@@ -4,7 +4,9 @@
 //! chosen as the cut chooses it, and the set reports the trips it places
 //! twice or not at all. A composition moves toward the mix only when the
 //! least-pay one misses it, never ends further from it, and names the pay
-//! it added.
+//! it added. With no relief point named, the cut relieves where two blocks
+//! or more lay over. A pull-out or a pull-in drives to or from the first
+//! garage, at the deadhead speed over the roads, or says it cannot.
 
 mod common;
 
@@ -55,7 +57,7 @@ fn refs(runs: &[CutRun], with_class: bool) -> Vec<RunRef> {
 fn least_and_cut(net: &Network, day: &[MaterializedTrip], w: &WorkRules, places: &NetworkPlaces) -> (Cut, Cut) {
     let mut free = w.clone();
     free.mix.clear();
-    (cut_runs(net, day, &free, None, DATE, Day::Fri, places), cut_runs(net, day, w, None, DATE, Day::Fri, places))
+    (cut_runs(&DayBlocks::new(net, day, None, None), &free, None, DATE, Day::Fri, places), cut_runs(&DayBlocks::new(net, day, None, None), w, None, DATE, Day::Fri, places))
 }
 
 /// Each mix rule's distance below its minimum or above its maximum, in
@@ -84,8 +86,8 @@ proptest! {
     #[test]
     fn each_piece_is_a_stretch_of_its_block_and_each_blocked_trip_is_in_one((net, day) in day(), w in rules(), c in constraints()) {
         let places = NetworkPlaces::new(&net, &day);
-        let p = cut_pieces(&net, &day, &w, c.as_ref(), DATE, Day::Fri, &places);
-        let blocks = DayBlocks::new(&net, &day);
+        let p = cut_pieces(&DayBlocks::new(&net, &day, c.as_ref(), None), &w, c.as_ref(), DATE, Day::Fri, &places);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         let mut seen: BTreeMap<(String, u32), u32> = BTreeMap::new();
         for piece in &p.pieces {
             prop_assert_eq!(&blocks.resolve(&PieceRef::of(piece)).unwrap(), piece);
@@ -101,11 +103,11 @@ proptest! {
     #[test]
     fn the_cut_is_its_pieces_composed((net, day) in day(), w in rules(), c in constraints()) {
         let places = NetworkPlaces::new(&net, &day);
-        let cut = cut_runs(&net, &day, &w, c.as_ref(), DATE, Day::Fri, &places);
-        let p = cut_pieces(&net, &day, &w, c.as_ref(), DATE, Day::Fri, &places);
+        let cut = cut_runs(&DayBlocks::new(&net, &day, c.as_ref(), None), &w, c.as_ref(), DATE, Day::Fri, &places);
+        let p = cut_pieces(&DayBlocks::new(&net, &day, c.as_ref(), None), &w, c.as_ref(), DATE, Day::Fri, &places);
         prop_assert_eq!(&compose_runs(&p.pieces, &w, Day::Fri, &places).runs, &cut.runs);
         prop_assert_eq!(&p.unblocked, &cut.unblocked);
-        let blocks = DayBlocks::new(&net, &day);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         let refs: Vec<PieceRef> = p.pieces.iter().map(PieceRef::of).collect();
         let set = compose_refs(&blocks, &refs, &w, DATE, Day::Fri, &places).unwrap();
         prop_assert_eq!(&set.runs, &cut.runs);
@@ -118,7 +120,7 @@ proptest! {
     fn a_least_pay_composition_that_meets_the_mix_is_kept_at_no_cost((net, day) in day(), w in rules()) {
         let places = NetworkPlaces::new(&net, &day);
         let (least, cut) = least_and_cut(&net, &day, &w, &places);
-        let blocks = DayBlocks::new(&net, &day);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         let judged = judge_runs(&blocks, &refs(&least.runs, true), &w, None, DATE, Day::Fri, &places).unwrap();
         if judged.mix.iter().all(|m| m.met) {
             prop_assert_eq!(&cut.runs, &least.runs);
@@ -129,7 +131,7 @@ proptest! {
     #[test]
     fn a_composition_stops_short_of_the_mix_only_when_no_move_closes_any_of_it((net, day) in day(), w in rules()) {
         let places = NetworkPlaces::new(&net, &day);
-        let cut = cut_runs(&net, &day, &w, None, DATE, Day::Fri, &places);
+        let cut = cut_runs(&DayBlocks::new(&net, &day, None, None), &w, None, DATE, Day::Fri, &places);
         if cut.mix.iter().all(|m| m.met) {
             return Ok(());
         }
@@ -187,8 +189,8 @@ proptest! {
         (net, day) in day(), w in rules(), c in constraints()
     ) {
         let places = NetworkPlaces::new(&net, &day);
-        let cut = cut_runs(&net, &day, &w, c.as_ref(), DATE, Day::Fri, &places);
-        let blocks = DayBlocks::new(&net, &day);
+        let cut = cut_runs(&DayBlocks::new(&net, &day, c.as_ref(), None), &w, c.as_ref(), DATE, Day::Fri, &places);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         let set = judge_runs(&blocks, &refs(&cut.runs, true), &w, c.as_ref(), DATE, Day::Fri, &places).unwrap();
         prop_assert_eq!(&set.runs, &cut.runs);
         prop_assert_eq!(&set.mix, &cut.mix);
@@ -202,8 +204,8 @@ proptest! {
         let places = NetworkPlaces::new(&net, &day);
         let mut free = w.clone();
         free.mix.clear();
-        let least = cut_runs(&net, &day, &free, c.as_ref(), DATE, Day::Fri, &places);
-        let blocks = DayBlocks::new(&net, &day);
+        let least = cut_runs(&DayBlocks::new(&net, &day, c.as_ref(), None), &free, c.as_ref(), DATE, Day::Fri, &places);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         let set = judge_runs(&blocks, &refs(&least.runs, false), &w, c.as_ref(), DATE, Day::Fri, &places).unwrap();
         prop_assert_eq!(&set.runs, &least.runs);
     }
@@ -211,8 +213,8 @@ proptest! {
     #[test]
     fn a_class_whose_conditions_a_run_misses_breaks_a_hard_rule((net, day) in day(), w in rules()) {
         let places = NetworkPlaces::new(&net, &day);
-        let cut = cut_runs(&net, &day, &w, None, DATE, Day::Fri, &places);
-        let blocks = DayBlocks::new(&net, &day);
+        let cut = cut_runs(&DayBlocks::new(&net, &day, None, None), &w, None, DATE, Day::Fri, &places);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         for r in &cut.runs {
             for class in &w.classes {
                 let mut one = refs(std::slice::from_ref(r), false);
@@ -230,8 +232,8 @@ proptest! {
     #[test]
     fn a_piece_twice_is_doubled_overlaps_and_is_not_legal((net, day) in day(), w in rules()) {
         let places = NetworkPlaces::new(&net, &day);
-        let p = cut_pieces(&net, &day, &w, None, DATE, Day::Fri, &places);
-        let blocks = DayBlocks::new(&net, &day);
+        let p = cut_pieces(&DayBlocks::new(&net, &day, None, None), &w, None, DATE, Day::Fri, &places);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         if let Some(piece) = p.pieces.first() {
             let r = RunRef { id: "x".into(), class: None, pieces: vec![PieceRef::of(piece), PieceRef::of(piece)] };
             let set = judge_runs(&blocks, &[r], &w, None, DATE, Day::Fri, &places).unwrap();
@@ -244,9 +246,9 @@ proptest! {
     #[test]
     fn a_piece_cut_away_from_a_relief_point_breaks_a_hard_rule((net, day) in day(), w in rules()) {
         let places = NetworkPlaces::new(&net, &day);
-        let blocks = DayBlocks::new(&net, &day);
+        let blocks = DayBlocks::new(&net, &day, None, None);
         let c = SchedulingConstraints { relief_points: vec!["C".into()], ..Default::default() };
-        let cut = cut_runs(&net, &day, &w, Some(&c), DATE, Day::Fri, &places);
+        let cut = cut_runs(&DayBlocks::new(&net, &day, Some(&c), None), &w, Some(&c), DATE, Day::Fri, &places);
         for r in &cut.runs {
             for piece in &r.pieces {
                 for (k, t) in piece.trips.iter().enumerate() {
@@ -263,13 +265,93 @@ proptest! {
     }
 }
 
+/// Straight lines, a third longer: roads are never shorter.
+struct Bent;
+
+impl Roads for Bent {
+    fn meters(&self, from: (f64, f64), to: (f64, f64)) -> Option<f64> {
+        Some(transit_geo::distance_m(from.0, from.1, to.0, to.1) * 4.0 / 3.0)
+    }
+}
+
+fn with_garage(kph: Option<u32>) -> SchedulingConstraints {
+    SchedulingConstraints {
+        garages: vec![Garage { id: "G".into(), name: String::new(), lat: 45.01, lon: -122.69, extra: Default::default() }],
+        deadhead_kph: kph,
+        ..Default::default()
+    }
+}
+
+/// Each stop where two blocks or more lay over: a trip ends there, and the
+/// block's next trip starts at the same stop or its station.
+fn layovers(net: &Network, day: &[MaterializedTrip]) -> BTreeMap<String, std::collections::BTreeSet<String>> {
+    let station = |s: &str| net.stops.get(s).and_then(|x| x.parent.clone()).unwrap_or_else(|| s.to_string());
+    let mut at: BTreeMap<String, std::collections::BTreeSet<String>> = BTreeMap::new();
+    for (id, block) in &net.blocks {
+        let ids: std::collections::BTreeSet<&str> = block.trips.iter().map(|t| t.trip.as_str()).collect();
+        let mut run: Vec<&MaterializedTrip> = day.iter().filter(|t| ids.contains(t.trip.as_str())).collect();
+        run.sort_by_key(|t| t.start_secs);
+        for w in run.windows(2) {
+            let (end, start) = (&w[0].stop_times.last().unwrap().stop, &w[1].stop_times.first().unwrap().stop);
+            if end == start || station(end) == station(start) {
+                at.entry(end.clone()).or_default().insert(id.clone());
+            }
+        }
+    }
+    at.retain(|_, b| b.len() >= 2);
+    at
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    #[test]
+    fn with_no_relief_point_named_the_cut_relieves_where_blocks_lay_over((net, day) in day(), w in rules()) {
+        let places = NetworkPlaces::new(&net, &day);
+        let p = cut_pieces(&DayBlocks::new(&net, &day, None, None), &w, None, DATE, Day::Fri, &places);
+        let want = layovers(&net, &day);
+        let got: BTreeMap<String, u32> = p.inferred_relief_points.iter().map(|r| (r.stop.clone(), r.blocks)).collect();
+        prop_assert_eq!(&got, &want.iter().map(|(s, b)| (s.clone(), b.len() as u32)).collect::<BTreeMap<_, _>>());
+        if !want.is_empty() {
+            for piece in p.pieces.iter().filter(|p| !p.pull_in) {
+                prop_assert!(want.contains_key(&piece.trips.last().unwrap().to), "the piece of {} ends away from every layover", piece.block);
+            }
+        }
+        let named = SchedulingConstraints { relief_points: vec!["A".into()], ..Default::default() };
+        let p = cut_pieces(&DayBlocks::new(&net, &day, Some(&named), None), &w, Some(&named), DATE, Day::Fri, &places);
+        prop_assert!(p.inferred_relief_points.is_empty(), "named relief points are not guessed over");
+    }
+
+    #[test]
+    fn a_pull_out_or_in_drives_to_the_first_garage_or_says_it_cannot((net, day) in day(), w in rules(), kph in proptest::option::of(10u32..60), roads in any::<bool>()) {
+        let places = NetworkPlaces::new(&net, &day);
+        let c = with_garage(kph);
+        let blocks = DayBlocks::new(&net, &day, Some(&c), if roads { Some(&Bent as &dyn Roads) } else { None });
+        let p = cut_pieces(&blocks, &w, Some(&c), DATE, Day::Fri, &places);
+        let secs = |stop: &str, to_garage: bool| {
+            let s = &net.stops[stop];
+            let (g, at) = ((45.01, -122.69), (s.lat, s.lon));
+            let m = if to_garage { Bent.meters(at, g) } else { Bent.meters(g, at) }.unwrap();
+            kph.filter(|_| roads).map(|k| (m * 3.6 / k as f64).ceil() as u32)
+        };
+        for piece in &p.pieces {
+            prop_assert_eq!(piece.garage.is_some(), piece.pull_out || piece.pull_in);
+            let out = piece.pull_out.then(|| secs(&piece.trips[0].from, false)).flatten();
+            let back = piece.pull_in.then(|| secs(&piece.trips.last().unwrap().to, true)).flatten();
+            prop_assert_eq!((piece.deadhead_out_secs, piece.deadhead_in_secs), (out, back), "{}", piece.block);
+        }
+        let none = cut_pieces(&DayBlocks::new(&net, &day, None, Some(&Bent)), &w, None, DATE, Day::Fri, &places);
+        prop_assert!(none.pieces.iter().all(|p| p.garage.is_none() && p.deadhead_out_secs.is_none() && p.deadhead_in_secs.is_none()));
+    }
+}
+
 #[test]
 fn a_reference_to_a_trip_the_block_does_not_run_is_refused() {
     let net = world(&[("5", true, 6 * H), ("5", false, 7 * H)], &[]);
     let day = materialize(&net, date()).unwrap();
     let net = apply_edits(&net, &suggest_blocks(&net, &day, None).edits).unwrap();
     let day = materialize(&net, date()).unwrap();
-    let blocks = DayBlocks::new(&net, &day);
+    let blocks = DayBlocks::new(&net, &day, None, None);
     let block = net.blocks.keys().next().unwrap().clone();
     let bad = PieceRef { block: block.clone(), first_trip: "nope".into(), first_start_secs: None, last_trip: "nope".into(), last_start_secs: None };
     assert!(blocks.resolve(&bad).unwrap_err().contains("no trip nope"));

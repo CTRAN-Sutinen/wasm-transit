@@ -48,11 +48,11 @@ pub mod version;
 
 pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
 pub use cut::{
-    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Composition, Cut, CutRun, DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces, RunRef,
-    RunSet,
+    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Composition, Cut, CutRun, DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces,
+    ReliefPoint, Roads, RunRef, RunSet,
 };
-pub use run::{judge, meets, timeline, Finding, Judged, Piece, PieceTrip, Places, Span};
-pub use constraints::{required, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind, CONSTRAINTS_VERSION};
+pub use run::{judge, meets, timeline, Finding, Judged, Moment, Piece, PieceTrip, Places, Span};
+pub use constraints::{required, Garage, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind, CONSTRAINTS_VERSION};
 pub use rules::{
     Activity, Allowance, BreakFrom, BreakRule, Combine, Day, Event, GapBand, Guarantee, Limit, MixRule, Objective, Per, Premium, Quantity,
     RuleKind, RuleSet, RunClass, ShareOf, Source, Strength, Timing, TravelAt, TravelRule, TriggerOn, Window, WorkRules, WorkRulesKind,

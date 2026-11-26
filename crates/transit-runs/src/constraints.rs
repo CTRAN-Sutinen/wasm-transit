@@ -18,7 +18,7 @@ impl transit_version::Versioned for SchedulingConstraints {
 }
 
 /// An empty document is `{"kind":"scheduling_constraints","schema_version":1}`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
 #[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct SchedulingConstraints {
@@ -50,6 +50,33 @@ pub struct SchedulingConstraints {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub relief_points: Vec<String>,
+    /// Where vehicles are kept. Every block leaves from and returns to the
+    /// first garage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<Garage>>"))]
+    pub garages: Vec<Garage>,
+    /// The speed of a drive to or from a garage, over the streets, in
+    /// kilometers an hour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub deadhead_kph: Option<u32>,
+    #[serde(flatten)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
+    pub extra: transit_version::Extra,
+}
+
+/// A garage is an internal location, not a stop: it is never in the
+/// network document, which the public feed is made from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
+pub struct Garage {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<String>"))]
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
     #[serde(flatten)]
     #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
@@ -112,7 +139,10 @@ impl SchedulingConstraints {
     /// are in order, so two orderings of one document are one identity.
     /// Refused: a version this build does not speak, a rule that requires
     /// nothing, two rules over one scope, a share over 1000 percent, a pair
-    /// that is one route or listed twice, and a relief point listed twice.
+    /// that is one route or listed twice, a relief point listed twice, a
+    /// garage id given twice or a position off the earth, and a deadhead
+    /// speed of zero. The garages keep their order, because the first is
+    /// every block's.
     pub fn checked(mut self) -> Result<SchedulingConstraints, String> {
         if self.schema_version.0 != CONSTRAINTS_VERSION {
             return Err(format!(
@@ -147,6 +177,17 @@ impl SchedulingConstraints {
         self.relief_points.sort();
         if let Some(w) = self.relief_points.windows(2).find(|w| w[0] == w[1]) {
             return Err(format!("relief point {} is given twice", w[0]));
+        }
+        for (i, g) in self.garages.iter().enumerate() {
+            if self.garages[..i].iter().any(|h| h.id == g.id) {
+                return Err(format!("garage {} is given twice", g.id));
+            }
+            if !(-90.0..=90.0).contains(&g.lat) || !(-180.0..=180.0).contains(&g.lon) {
+                return Err(format!("garage {} is at {}, {}, which is not a position", g.id, g.lat, g.lon));
+            }
+        }
+        if self.deadhead_kph == Some(0) {
+            return Err("deadhead_kph is 0: a deadhead would never arrive".into());
         }
         Ok(self)
     }

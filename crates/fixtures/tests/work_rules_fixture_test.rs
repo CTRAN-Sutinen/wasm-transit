@@ -81,7 +81,7 @@ fn trip(name: &str, start: u32, end: u32, from: &str, to: &str) -> transit_runs:
 }
 
 fn piece(block: &str, trips: Vec<transit_runs::PieceTrip>) -> transit_runs::Piece {
-    transit_runs::Piece { block: block.into(), trips, pull_out: true, pull_in: true }
+    transit_runs::Piece { block: block.into(), trips, pull_out: true, pull_in: true, ..Default::default() }
 }
 
 fn names(j: &transit_runs::Judged) -> Vec<String> {
