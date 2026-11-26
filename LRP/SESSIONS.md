@@ -1,6 +1,6 @@
 # C-TRAN 2045 — service-change sessions
 
-Dogfood sessions of the **service-change** app
+QA sessions of the **service-change** app
 (`service-change.html`), each one step a planner would take toward
 the long range plan ([README.md](README.md)). A long range plan is
 carried out a piece at a time, so each session is one service

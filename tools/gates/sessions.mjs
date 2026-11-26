@@ -5,6 +5,7 @@
 // the session and this script. sessions.test.mjs is the broken fixture.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ export class SessionFailed extends Error {}
 // Runs the runner. A session's answers print whole, because the checks
 // read them; `shaped: true` keeps the agent's default. `fails: true`
 // expects a non-zero exit.
-const COMMANDS = new Set(["list", "tools", "kind", "session", "replay"]);
+const COMMANDS = new Set(["list", "search", "tools", "kind", "session", "replay"]);
 export function caps(args, { env = {}, fails = false, root = ROOT, shaped = false } = {}) {
   let stdout = "", stderr = "", code = 0;
   const full = shaped || COMMANDS.has(args[0]) ? [] : ["--full"];
@@ -102,7 +103,7 @@ export const SESSIONS = [
     try {
       writeFileSync(join(dir, "keep.json"), '{"keep":[]}');
       const { stdout } = caps(["board", "--op", LOAD, "--load", "258:/dev/null", "--load", `257:${join(dir, "keep.json")}`,
-        "--op", '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":0,"limit":1}']);
+        "--op", '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":0,"limit":1}'], { fails: true });
       must(/"held":\[\{"kind":"network".*"dropped":\[\{"kind":"network".*"error":\{"message":"unknown network sha256:[0-9a-f]+: load_network first","code":"unknown_document"/.test(stdout.replace(/\n/g, " ")), "held, dropped, then unknown_document");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -256,6 +257,58 @@ export const SESSIONS = [
       has(none.stdout + none.stderr, "the working copy holds none");
     } finally {
       rmSync(up, { recursive: true, force: true });
+      rmSync(store, { recursive: true, force: true });
+    }
+  }],
+  ["a step that answers an error fails the command after every line, with the hint that fixes it", () => {
+    const r = caps(["board", "--op", LOAD, "--op", '{"op":"stop_board","network_hash":"$load_network.network_hash"}', "--op", '{"op":"stop_bord"}'], { fails: true });
+    must(r.lines.length === 3 && r.lines[0].ok, "a line is missing");
+    must(r.lines[1].error && r.lines[1].hint === "board stop_board(date, from_secs, limit, live_hash, network_hash, stop_id); caps-run tools board stop_board prints it in full", "a bad request has no signature");
+    must(r.lines[2].hint === "caps-run tools board lists its ops", "an unknown op does not point at the ops");
+    const unknown = caps(["board", "--op", '{"op":"stop_board","network_hash":"sha256:00","stop_id":"A","date":"2026-10-23","from_secs":0,"limit":1}'], { fails: true }).last;
+    must(unknown.hint?.startsWith("the session holds no document sha256:00"), "an unknown document has no hint");
+  }],
+  ["--op NAME field=string field:=json is the same request as its JSON", () => {
+    const json = caps(["board", "--op", LOAD, "--op", '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":2}']).last;
+    const pairs = caps(["board", "--op", LOAD, "--op", "stop_board", "network_hash=$load_network.network_hash", "stop_id=A", "date=2026-10-23", "from_secs:=25200", "limit:=2"]).last;
+    must(JSON.stringify(pairs) === JSON.stringify(json) && json.ok.op === "stop_board", "the two spellings answer differently");
+    const bad = caps(["board", "--op", "stop_board", "limit:=x"], { fails: true });
+    has(bad.stderr, "limit:= needs JSON");
+  }],
+  ["a reference projects: * over each item, {a,b} keeps fields, and a missing field under * is null", () => {
+    const r = caps(["board", "--op", LOAD,
+      "--as", "b", "--op", '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":3}',
+      "--print", "$b.board.rows.*.departure_secs", "--print", "$b.board.rows.*.{route,departure_secs}", "--print", "$b.board.rows.*.nope"], { shaped: true });
+    const secs = r.lines[0]["$b.board.rows.*.departure_secs"];
+    const picked = r.lines[1]["$b.board.rows.*.{route,departure_secs}"];
+    must(secs.length === 3 && secs.every(Number.isInteger), "* does not map over the rows");
+    must(picked.every((p, i) => Object.keys(p).join() === "route,departure_secs" && p.departure_secs === secs[i]), "{a,b} does not keep the two fields");
+    must(r.lines[2]["$b.board.rows.*.nope"].every((x) => x === null), "a missing field under * is not null");
+    const ids = caps(["directory", "--op", LOAD, "--as", "s", "--op", '{"op":"stops","network_hash":"$load_network.network_hash","limit":2}',
+      "--op", '{"op":"stops_by_ids","network_hash":"$load_network.network_hash","ids":"$s.stops.*.stop_id"}']).last;
+    must(ids.ok?.stops?.length === 2, "a projection does not reach an op");
+  }],
+  ["search: every op that holds every word, a word in the op's name first", () => {
+    const lines = caps(["search", "stop", "departures"]).stdout.trim().split("\n");
+    must(lines.findIndex((l) => l.startsWith("board stop_board(")) < lines.findIndex((l) => l.startsWith("analysis network_stats(")), "stop_board does not rank above network_stats");
+    must(lines.at(-1) === "next: caps-run tools <capability> <op>", "search does not name the next command");
+    has(caps(["search", "zzzz"]).stdout, "no op matches every word");
+  }],
+  ["replay --show lists each call's request, a load's document omitted, a page's cap field dropped, and runs nothing", () => {
+    const store = mkdtempSync(join(tmpdir(), "caps-sessions-"));
+    const env = { CAPS_RUN_SESSIONS: store };
+    try {
+      caps(["board", "--session", "show", "--op", LOAD, "--op", "stop_board", "network_hash=$load_network.network_hash", "stop_id=A", "date=2026-10-23", "from_secs:=0", "limit:=1"], { env });
+      const shown = caps(["replay", "show", "--show"], { env }).lines;
+      must(shown.length === 2 && shown[0].op === "load_network" && shown[0].request.network?.omitted?.kind === "network", "the load's document is not omitted");
+      must(JSON.stringify(shown[1].request) === JSON.stringify({ op: "stop_board", network_hash: shown[1].request.network_hash, stop_id: "A", date: "2026-10-23", from_secs: 0, limit: 1 }), "stop_board's request is not shown as asked");
+      const request = Buffer.from('{"cap":"board","op":"stop_board","stop_id":"A"}');
+      const hash = `sha256:${createHash("sha256").update(request).digest("hex")}`;
+      const page = join(store, "page.json");
+      writeFileSync(page, JSON.stringify({ journal: `${JSON.stringify({ run: "r", instance: "i", cap: "board", module: "sha256:00", call: "json", op: "stop_board", request: hash, output: "sha256:00" })}\n`, blobs: { [hash]: request.toString("base64") } }));
+      const one = caps(["replay", page, "--show"], { env }).lines;
+      must(one.length === 1 && JSON.stringify(one[0].request) === '{"op":"stop_board","stop_id":"A"}', "a page's request keeps its cap field");
+    } finally {
       rmSync(store, { recursive: true, force: true });
     }
   }],

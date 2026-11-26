@@ -11,12 +11,17 @@
 // ops the way an agent's context does.
 //
 //   caps-run list                       a line for each capability
+//   caps-run search <word>...           a line for each op that holds
+//                                       every word
 //   caps-run session [NAME]             the sessions in the store, or
 //                                       what one session holds
 //   caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]...
 //                                       replay a session's journal, or a
 //                                       page's, and compare every output
 //                                       hash
+//   caps-run replay NAME|FILE.json --show
+//                                       each call's op and request; runs
+//                                       nothing
 //   caps-run tools <capability>         a line for each op: its request
 //                                       fields and its first sentence
 //   caps-run tools <capability> <op> [<kind>]
@@ -47,7 +52,9 @@
 // itself the first time an op names its hash (below).
 //
 // --print REF prints only the value that a result reference names, after
-// every step. --upstream reads `manifest` ($manifest) and the blobs that
+// every step. --op NAME field=string field:=json spells a request without
+// JSON. A step that answers an error prints a hint, and the command
+// exits 1. --upstream reads `manifest` ($manifest) and the blobs that
 // ops name by hash from the server or an export folder (tools/upstream.mjs).
 //
 // Every run compares the registry's recorded source digest with the
@@ -103,7 +110,7 @@
 //   $import.network_hash  the last prior result tagged op:"import"
 //   $1.feed_hash       the 1st result overall, in command-line order
 // The rest of the reference is a dotted path into the result (numeric
-// segments index arrays). A reference must be the whole string value.
+// segments index arrays, `*` maps over each item, `{a,b}` keeps fields). A reference must be the whole string value.
 // An unresolvable reference fails the session.
 //
 // The host owns the clock and reads it in the agency's zone, never the
@@ -120,7 +127,7 @@
 // kernel load and runs the op again. The line lists it in `registered`.
 
 import { createHash, randomUUID } from "node:crypto";
-import { unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
+import { calls as journalCalls, unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
 import { blob as upstreamBlob, manifest as upstreamManifest, workingCopy } from "./upstream.mjs";
 import { context as kindContext, findKind, trace as traceKind } from "./kind-trace.mjs";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
@@ -203,8 +210,8 @@ function sha256(bytes) {
 
 function usage() {
   console.error(
-    "usage: caps-run list | caps-run tools <capability> [<op> [<kind>]] | caps-run kind [<tag>] | caps-run session [NAME] | " +
-      "caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]... | " +
+    "usage: caps-run list | caps-run search <word>... | caps-run tools <capability> [<op> [<kind>]] | caps-run kind [<tag>] | caps-run session [NAME] | " +
+      "caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]... [--show] | " +
       "caps-run <capability> [--session NAME] [--upstream URL|DIR] [--full] [--print REF]... [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
   process.exit(2);
@@ -222,7 +229,26 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--load") step("load", argv[++i]);
-    else if (arg === "--op") step("op", argv[++i]);
+    else if (arg === "--op") {
+      const value = argv[++i] ?? usage();
+      if (value.startsWith("{") || value.startsWith("@")) step("op", value);
+      else {
+        // `--op NAME field=string field:=json ...`, as HTTPie spells a
+        // request.
+        const request = { op: value };
+        let m;
+        while (i + 1 < argv.length && (m = /^([A-Za-z_][A-Za-z0-9_]*)(:?=)(.*)$/s.exec(argv[i + 1]))) {
+          i++;
+          try {
+            request[m[1]] = m[2] === "=" ? m[3] : JSON.parse(m[3]);
+          } catch {
+            console.error(`--op ${value}: ${m[1]}:= needs JSON; ${JSON.stringify(m[3])} is not (a string is ${m[1]}=…)`);
+            process.exit(2);
+          }
+        }
+        step("op", JSON.stringify(request));
+      }
+    }
     else if (arg === "--ask") step("ask", argv[++i] ?? usage());
     else if (arg === "--post") step("post", { url: argv[++i] ?? usage(), ref: argv[++i] ?? usage() });
     else if (arg === "--cap") current = argv[++i] ?? usage();
@@ -418,6 +444,46 @@ function shapeValue(value, ref, top = false) {
   return out;
 }
 
+// A reference's path. `*` maps the rest of the path over each item of an
+// array or each value of a map, and a missing value under it is null.
+// `{a,b}` keeps those fields of an object.
+function walk(value, segments, ref, loose) {
+  if (segments.length === 0) return value;
+  const [segment, ...rest] = segments;
+  if (value === null || value === undefined) {
+    if (loose) return null;
+    throw new Error(`reference ${ref}: path leaves the result at segment "${segment}"`);
+  }
+  if (segment === "*") {
+    if (typeof value !== "object") throw new Error(`reference ${ref}: "*" needs an array or a map`);
+    return (Array.isArray(value) ? value : Object.values(value)).map((v) => walk(v, rest, ref, true));
+  }
+  const pick = /^\{(.+)\}$/.exec(segment);
+  if (pick) {
+    const keys = pick[1].split(",").map((k) => k.trim());
+    return walk(Object.fromEntries(keys.filter((k) => value[k] !== undefined).map((k) => [k, value[k]])), rest, ref, loose);
+  }
+  return walk(value[segment], rest, ref, loose);
+}
+
+// An op as a call: its name and the fields of its example request.
+function signature(record, op) {
+  const fields = Object.keys(record.op_docs[op]?.example?.request ?? {}).filter((f) => f !== "op");
+  return `${op}(${fields.join(", ")})`;
+}
+
+// What an agent does next after an op answers an error.
+function hintFor(capability, op, text, upstream) {
+  const record = capabilityRecord(capability);
+  const missing = unknownDocument(text);
+  if (missing) {
+    const where = upstream ? "the session and the upstream hold" : "the session holds";
+    return `${where} no document ${missing.hash}: name one by a reference ($<name>.<field>_hash${upstream ? ", $manifest.<field>_hash" : ""}), or load it first`;
+  }
+  if (!record.ops.includes(op)) return `caps-run tools ${capability} lists its ops`;
+  return `${capability} ${signature(record, op)}; caps-run tools ${capability} ${op} prints it in full`;
+}
+
 function firstSentence(text, limit = 300) {
   const match = /^(.+?[.!?])(?=\s+[A-Z(`"]|$)/s.exec(text ?? "");
   const sentence = (match ? match[1] : text ?? "").replace(/\s+/g, " ").trim();
@@ -539,13 +605,7 @@ async function runSession() {
     // References resolve into the result's ok payload. The outcome wrapper
     // is transport.
     const outcome = outcomeOf(current);
-    current = outcome.ok ?? outcome;
-    for (const segment of (path ?? "").split(".").filter((s) => s.length)) {
-      if (current === null || current === undefined) {
-        throw new Error(`reference ${ref}: path leaves the result at segment "${segment}"`);
-      }
-      current = current[segment];
-    }
+    current = walk(outcome.ok ?? outcome, (path ?? "").split(".").filter((s) => s.length), ref, false);
     if (current === null || current === undefined) {
       throw new Error(`reference ${ref}: resolves to nothing`);
     }
@@ -626,6 +686,7 @@ async function runSession() {
         (result.registered ??= []).push(document ? `${kind} ${missing.hash}` : `${kind} ${missing.hash} from the upstream`);
         result.text = module.invoke(resolved);
       }
+      if (result.text.startsWith('{"error"')) result.hint = hintFor(step.capability, resolved.op, result.text, upstream);
     }
     if (!tz && result.text?.includes('"timezone"') && result.text.length < 64 * 1024 * 1024) {
       const ok = JSON.parse(result.text).ok;
@@ -653,10 +714,13 @@ async function runSession() {
         ...here.map((r, i) => (r.text.startsWith('{"error"') ? lineOf(r, i) : null)).filter(Boolean),
         ...prints.map((ref) => {
           const value = resolveRef(ref);
-          return JSON.stringify({ [ref]: full ? value : shapeValue(value, ref, true), ...(stale ? { stale } : {}) });
+          // A marker under a projection could not name its own reference.
+          const base = /[*{]/.test(ref) ? null : ref;
+          return JSON.stringify({ [ref]: full ? value : shapeValue(value, base, true), ...(stale ? { stale } : {}) });
         }),
       ];
-  parentPort.postMessage({ ok: lines });
+  const failed = here.filter((r) => r.text.startsWith('{"error"')).length;
+  parentPort.postMessage({ ok: lines, failed });
 }
 
 if (!isMainThread) {
@@ -734,11 +798,36 @@ export async function main(argv) {
     if (kernel.length) console.log(`loads: ${kernel.map((k) => `${k.name}=${k.code}`).join(", ")}`);
     for (const op of record.ops) {
       const doc = docOf(op);
-      const fields = Object.keys(doc.example?.request ?? {}).filter((f) => f !== "op");
       const kinds = doc.kinds?.length ? ` [${doc.kinds.length} kinds]` : "";
-      console.log(`  ${op}(${fields.join(", ")})${kinds}  ${firstSentence(doc.description)}`);
+      console.log(`  ${signature(record, op)}${kinds}  ${firstSentence(doc.description)}`);
     }
     console.log(`next: caps-run tools ${record.id} <op>`);
+    return 0;
+  }
+  if (argv[0] === "search") {
+    // Every op whose capability, name, or description holds every word.
+    // A word in the op's name counts twice, and one in its first sentence
+    // once.
+    const words = discoveryArgs.slice(1).map((w) => w.toLowerCase());
+    if (words.length === 0) usage();
+    const hits = [];
+    for (const { id } of registryPointer().capabilities) {
+      const record = capabilityRecord(id);
+      for (const op of record.ops) {
+        const sentence = firstSentence(record.op_docs[op]?.description);
+        const all = `${id} ${op} ${record.op_docs[op]?.description ?? ""}`.toLowerCase();
+        if (!words.every((w) => all.includes(w))) continue;
+        const said = sentence.toLowerCase();
+        const rank = words.reduce((n, w) => n + (op.includes(w) ? 2 : 0) + (said.includes(w) ? 1 : 0), 0);
+        hits.push({ rank, line: `${id} ${signature(record, op)}  ${sentence}` });
+      }
+    }
+    hits.sort((a, b) => b.rank - a.rank);
+    const shown = discoveryFull ? hits : hits.slice(0, 15);
+    for (const h of shown) console.log(h.line);
+    if (shown.length < hits.length) console.log(`… ${hits.length - shown.length} more: add a word, or --full`);
+    if (hits.length === 0) console.log("no op matches every word: try fewer words, or caps-run list");
+    else console.log("next: caps-run tools <capability> <op>");
     return 0;
   }
   if (argv[0] === "kind") {
@@ -771,9 +860,14 @@ export async function main(argv) {
     const name = argv[1] ?? usage();
     const candidates = {};
     let single = false;
+    let show = false;
     for (let i = 2; i < argv.length; i++) {
       if (argv[i] === "--single") {
         single = true;
+        continue;
+      }
+      if (argv[i] === "--show" || argv[i] === "--full") {
+        show ||= argv[i] === "--show";
         continue;
       }
       const m = argv[i] === "--module" && /^([a-z_]+)=(.+)$/.exec(argv[i + 1] ?? "");
@@ -790,6 +884,17 @@ export async function main(argv) {
       return 1;
     } else {
       warnIfStale(name);
+    }
+    // --show lists what the journal asked, and runs nothing. Each request
+    // is shaped as an answer is, so one can be asked again as an --op.
+    if (show) {
+      for (const call of journalCalls(dir)) {
+        // A load's request is the document itself, and prints as one.
+        const request = shapeValue(call.request, null, !isDocument(call.request));
+        console.log(JSON.stringify(discoveryFull ? call : { ...call, request }));
+      }
+      if (dir !== sessionDir(name)) rmSync(dir, { recursive: true, force: true });
+      return 0;
     }
     const kernelLoads = Object.fromEntries((registryPointer().kernel_ops ?? []).filter((k) => k.name.startsWith("load_")).map((k) => [k.name, k.code]));
     const assemblies = linkedAssemblies();
@@ -841,7 +946,7 @@ export async function main(argv) {
     worker.on("message", (message) => {
       clearTimeout(timer);
       worker.terminate();
-      message.error ? reject(new Error(message.error)) : resolve(message.ok);
+      message.error ? reject(new Error(message.error)) : resolve(message);
     });
     worker.on("error", (error) => {
       clearTimeout(timer);
@@ -849,8 +954,9 @@ export async function main(argv) {
     });
   });
 
-  for (const line of outcome) console.log(line);
-  return 0;
+  for (const line of outcome.ok) console.log(line);
+  // A step that answered an error fails the command, after every line.
+  return outcome.failed ? 1 : 0;
 }
 
 // Worker threads import this file, and the isMainThread check keeps them

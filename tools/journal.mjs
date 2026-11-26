@@ -107,6 +107,26 @@ function carried(ok) {
 /// - `stateOps` maps `evict` and `held` to their codes. Replay compares
 ///   their answers only on the recorded module, because an instance split
 ///   from a page's assembly holds less. It counts the rest as `unchecked`.
+// Each call with its request: the JSON a JSON request or a load held, or
+// the size of a bulk request's other bytes (a feed, an rt snapshot). A
+// page's linked assembly is asked with a `cap` field, which the entry
+// already names, so it is dropped.
+export function calls(dir) {
+  return readJournal(dir).map((entry, index) => {
+    const file = blobFile(dir, entry.request);
+    const call = { index, cap: entry.cap, op: entry.op };
+    if (!existsSync(file)) return { ...call, request: null };
+    const bytes = gunzipSync(readFileSync(file));
+    try {
+      const request = JSON.parse(bytes.toString("utf8"));
+      if (request && typeof request === "object" && !Array.isArray(request)) delete request.cap;
+      return { ...call, request };
+    } catch {
+      return { ...call, request: { bytes: bytes.length } };
+    }
+  });
+}
+
 export function replay({ dir, place, kernelLoads, stateOps = {} }) {
   const entries = readJournal(dir);
   const instances = new Map();

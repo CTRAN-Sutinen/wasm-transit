@@ -96,7 +96,14 @@ The format and replay are in `tools/journal.mjs`.
   compares their answers only on the recorded module. Elsewhere it
   counts them as `unchecked`.
 - `--module CAP=FILE` replays the capability against a candidate
-  module. To replace a module, replay the journals that use it against
+  module.
+- `--show` lists the calls and runs nothing: each call's place, its
+  capability, its op, and its request, shaped as an answer is. A load's
+  document prints as its kind and size, a bulk request's other bytes as
+  their size, and a page's `cap` field is dropped. So a request that a
+  page made can be asked again as an `--op`, which is how QA checks a
+  control against caps-run (`docs/TESTING.md`, "Dogfooding and QA").
+  `--full` prints each request whole. To replace a module, replay the journals that use it against
   the candidate.
 
 **The clock.** The runner reads the clock in the agency's zone, never
@@ -133,13 +140,26 @@ The session keeps every answer whole, so references still reach it.
   network in 17 KB.
 - `--full` prints every answer whole.
 - A reference's path may hold any key without a `.` (a route alignment
-  named `105 NB AM`).
+  named `105 NB AM`). `*` maps the rest of the path over each item of
+  an array or each value of a map, and a missing value under it is
+  null. `{a,b}` keeps those fields of an object. So
+  `--print '$b.board.rows.*.{route,departure_secs}'` prints two fields
+  of each row, and `"ids":"$s.stops.*.stop_id"` hands an op the ids.
+- `--op NAME field=string field:=json …` spells a request as HTTPie
+  does, so a request needs no shell-quoted JSON:
+  `--op stop_board network_hash='$net.network_hash' stop_id=A date='$TODAY' from_secs:=0 limit:=5`.
+- A step that answers an error still prints its line, with a `hint`:
+  the op's fields and the command that prints it in full, or what to
+  do about a document that no one holds. The command then exits 1.
 
 **Discovery.** Each discovery command prints a line for each item and
 names the next command. `--full` prints the registry's JSON.
 
 - `caps-run list` prints a line for each capability (its op count and
   purpose) and the kernel ops.
+- `caps-run search <word>…` prints a line for each op whose capability,
+  name, or description holds every word, at most 15. A word in the
+  op's name ranks it higher than a word in its first sentence.
 - `caps-run tools <capability>` prints a line for each op: its name,
   the fields of its example request, and its first sentence. Each is 3
   KB or less.

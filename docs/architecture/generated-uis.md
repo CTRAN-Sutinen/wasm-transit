@@ -210,7 +210,7 @@ any code, and delete it when the UI lands.
    that says no op does (`docs/QA-FINDINGS.md`). This first draft is a
    list of what to test, not yet a list of what works.
 3. **Dogfood the questions on real data** through `caps-run`
-   (`docs/TESTING.md`, the dogfood rules), one op per question.
+   (`docs/TESTING.md`, "Dogfooding and QA"), one op per question.
    A question is an op gap when it needs anything besides passing one
    op's answer through to the screen. Put each op gap into
    `docs/QA-FINDINGS.md` as a finding. These needs are op gaps:
@@ -309,10 +309,11 @@ any code, and delete it when the UI lands.
    write `Shell.svelte` (placement only).
 8. **Land it.** Add `ui.json`, the page, and `e2e/ui-<id>.spec.mjs`.
    The host layer names its page (`assemble("<id>")`). `just caps`
-   generates its linked assembly from `ui.json`'s `ops`. Run the UI in
-   the browser on the real feed (`just serve testdata/ctran-gtfs.zip`).
-   Check its numbers against the runner session's, and record the
-   session in the descriptor's `session` field. Describe the UI in its
+   generates its linked assembly from `ui.json`'s `ops`. QA it on the
+   real feed: walk every control on `just qa`, and check each answer
+   against `caps-run --upstream` on the same server
+   (`docs/TESTING.md`, "Dogfooding and QA"). Record the dogfood session in the
+   descriptor's `session` field. Describe the UI in its
    own file, `generated-uis/<id>.md`: its purpose, the rules its code
    does not show (with their decision ids), and its failure table, with
    no tour of its controls. Add its link to "The UIs today". The file

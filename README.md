@@ -26,7 +26,7 @@ whole GTFS Schedule spec.
   topic: per-crate detail, the server, static deployment, the web
   app, and the capability bus.
 - `docs/TESTING.md` — what every change is tested with, and the
-  real-data dogfood rules.
+  real-data dogfood and QA rules.
 - `docs/units/` — the open work. `docs/DECISIONS.md` — the questions
   waiting on a decision. `docs/QA-FINDINGS.md` — what real-data
   sessions found. `docs/ROADMAP.md` — where it is going.

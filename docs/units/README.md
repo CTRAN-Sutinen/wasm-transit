@@ -10,14 +10,18 @@ archive — nothing here records what is finished.
 - **A unit file says what is still true of the work, never its
   history.** Goal (one paragraph), scope (what it touches), the
   order inside it if any, and **Done when** — the pins that must
-  exist (tests, gates, e2e specs, a dogfood session on real data)
-  before the file is deleted.
-- **Grades are not merged.** On the bus (module + tests), the UI
-  reads it, and dogfooded on real data (the user workflow it serves,
-  as a person doing QA would run it) are three claims. A unit
-  whose work is on the bus but not read by a UI or not dogfooded
-  stays open, edited down to the missing grade. An op that no UI
-  plans to read is not open work.
+  exist (tests, gates, e2e specs, a dogfood session and QA on real
+  data) before the file is deleted.
+- **Grades are not merged.** These are four claims
+  (`docs/TESTING.md`, "Dogfooding and QA"):
+  - on the bus (module + tests);
+  - dogfooded: the user workflow it serves, asked through `caps-run` on
+    real data;
+  - read by a UI;
+  - QA'd: the UI's answers checked against `caps-run` on real data.
+
+  A unit that is missing a grade stays open, edited down to the
+  missing grade. An op that no UI plans to read is not open work.
 - **Deleting a unit is the DONE claim.** The agent that deletes a
   file reports the pins that prove it in the same change. A
   partial landing edits the file down to what is left.
@@ -119,9 +123,10 @@ before starting it.
   hand edits to the contract become a recurring cost. It needs a
   declaration of which op answers each route, which does not exist yet.
 
-- **Registry search** — a derived artifact (purpose + op docs +
-  worked examples embedded; ranking carries evidence): an agent
-  browses the catalog and assembles its own harness.
+- **Registry search, ranked by meaning** — `caps-run search` matches
+  words. Past it: a derived artifact (purpose + op docs + worked
+  examples embedded; ranking carries evidence), so a question in other
+  words finds its op.
 - **caps-run harness as data** — when a session improvisation
   recurs, crystallize it; until then improvisations are findings.
   The session journal (`docs/architecture/registry.md`, "The

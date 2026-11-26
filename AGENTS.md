@@ -53,7 +53,7 @@ Before you report, run the `doc-sweep` skill
 | The web and the generated UIs | `docs/architecture/web.md`, `docs/architecture/generated-uis.md`, and one file for each UI in `generated-uis/` |
 | Writing, traceability, gotchas | `docs/CONVENTIONS.md` |
 | The documentation sweep | `.claude/skills/doc-sweep/SKILL.md` |
-| Testing, dogfood QA, UI screenshots | `docs/TESTING.md` |
+| Testing, dogfooding and QA, UI screenshots | `docs/TESTING.md` |
 | Each recipe | the comment above it in the justfile |
 | A gate | its script, named in `_host-tests` (`tools/gates/`, `web/gates/`, or beside the code it guards) |
 | The agent runner | the header of `tools/caps-run.mjs`, and `docs/architecture/registry.md` |
@@ -62,7 +62,7 @@ Before you report, run the `doc-sweep` skill
 | Open real-data findings | `docs/QA-FINDINGS.md` |
 | The sequenced feature plan | `docs/ROADMAP.md` |
 | The standing end-to-end QA tests | `qa/`, one folder each, with a README |
-| Long range plan dogfood material | `LRP/` (`LRP/SESSIONS.md`) |
+| Long range plan QA material | `LRP/` (`LRP/SESSIONS.md`) |
 | Operator guides | `DEPLOYMENTS.md` (static), `DEPLOYMENTS-SERVER.md` (server) |
 | The guide for people | `docs/guide/` |
 
@@ -111,7 +111,7 @@ assemblies/        generated: the module crates that `just caps` builds
 server/            the Go and wazero host
 web/               the Svelte 5 and Vite frontend: one page for each generated UI
 tools/             the agent runner, the UI tools, and the docs site
-qa/, LRP/          the standing QA tests and the dogfood material
+qa/, LRP/          the standing QA tests and the long range plan's QA sessions
 ```
 
 **Ownership rules.** Breaking these caused bugs.

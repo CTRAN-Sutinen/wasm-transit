@@ -1,7 +1,7 @@
 # QA findings — open
 
-What real-data dogfood sessions (`docs/TESTING.md`, the dogfood
-rules) found that is still true: defects, op gaps, contract gaps,
+What real-data dogfood sessions and QA walks (`docs/TESTING.md`,
+"Dogfooding and QA") found that is still true: defects, op gaps, contract gaps,
 model gaps, data gaps. Open findings only — a finding is DELETED
 in the change that fixes it, and that change names its pin (the
 test, gate, or session output). Git is the archive.

@@ -301,11 +301,11 @@ and before a release.
    lands as an op with expectations 1–2, never in TypeScript.
 6. **A generated UI** (`src/uis/<id>/`) lands with
    `web/e2e/ui-<id>.spec.mjs` on the fixture feed, which walks its
-   questions end to end. It also lands with a dogfood session (below)
-   in which its numbers on the real feed match the runner's. That
-   session runs **before** the UI is built. The questions' op gaps
-   become findings and the UI's blockers
-   (`docs/architecture/generated-uis.md`, the procedure). The
+   questions end to end. A dogfood session of its questions runs
+   **before** the UI is built, and their op gaps become findings and
+   the UI's blockers. QA runs once it is built
+   (`docs/architecture/generated-uis.md`, the procedure; "Dogfooding
+   and QA", below). The
    generated UIs gate (`web/gates/uis.mjs`) refuses a UI without its spec.
    The UI ops gate (`tools/ui-ops.mjs`) refuses a host that asks an op
    its `ui.json` does not list. The failure-table gate
@@ -336,52 +336,70 @@ and before a release.
    A screen reader run by hand (VoiceOver, TalkBack, NVDA) is the part
    no gate covers. It is a dogfood session
    (`docs/units/web-conformance.md`).
-8. **Dogfood on real data.** Work that a user workflow reads is
-   dogfooded through that workflow on the C-TRAN feed: a `caps-run`
-   session or a UI walk that does what a person doing QA would do.
+8. **Dogfood and QA on real data** ("Dogfooding and QA", below). Work
+   that a user workflow reads is dogfooded through that workflow on the
+   C-TRAN feed, in a `caps-run` session. Work that a UI shows is QA'd: a
+   walk of the UI that checks each answer against `caps-run`.
    Fixture-scale gates do not catch real-data defects. Work
    that no workflow reads directly (the store, a log) is held by its
    laws, contract runs, and the e2e of the pages that read it. A change to a document's shape also runs `just soak`, whose
    schema part checks what the C-TRAN feed's import and publish answer
    against the locks.
 
-## Dogfood QA — the agent interface mirrors the human UI
+## Dogfooding and QA
 
-`caps-run` exercises the same capabilities, bytes, and laws that the
-app runs. A human who asks planner questions through it does real QA.
-The founding C-TRAN session found four real defects that fixture gates
-missed. A 64 KiB output truncation was one of them. The session earned
-these rules:
+Two activities check the work on real data, and each finds its own
+kind of defect.
 
-- **A dogfood session mirrors a person doing QA in a user workflow.**
-  Capabilities map to user workflows, so a capability is
-  dogfooded through the workflow that uses it, on real data, before
-  that workflow's work is done. It is not required because the work is
-  a capability. A session runs against
-  `testdata/ctran-gtfs.zip` through `caps-run`. This is the real C-TRAN
-  GTFS. It is not committed, because the data is licensed. Fetch it
-  from c-tran.com. The reference hashes are in `docs/QA-FINDINGS.md`'s
-  header. Import the feed once in a named session (`--session`). Later
-  commands in the session reuse the import, and name it only by
-  `$net.network_hash`. Or ask a running server (`just serve`) with
-  `--upstream http://127.0.0.1:8080` and `$manifest.network_hash`, so
-  the session reads what the pages read. Browse a capability with
-  `tools <cap>`, and read a part of an answer with `--print`
-  (`docs/architecture/registry.md`).
-- **A one-off script is never tooling. It is a finding.** If a QA
-  session needs bespoke glue (a bootstrap script, a summarizer), that
-  is a missing op or runner feature. Log it in `docs/QA-FINDINGS.md`.
-  Do not ship the script.
-- **The mirror cuts both ways.** A question that is one op through the
-  CLI but absent from the UI is a UI gap. A question that is awkward
-  through the CLI is an op gap. Dogfood sessions generate both signals.
-  Both land in `docs/QA-FINDINGS.md`.
-- **Walk a UI, control by control, before it is done.** A passing spec
-  proves the paths it names. It does not prove that each control shows
-  its answer where the planner lands. Run `just qa`. It starts the page
-  with hot reload over a server on the C-TRAN feed. The modules run
-  under the wasm-fast profile. The server uses `server/dev.toml`'s
-  settings (the stub work order system, and photos in memory). Drive it with
+- **Dogfooding** checks the modules. An agent asks a workflow's
+  questions through `caps-run`, the agents' UI, with no browser. It
+  finds defects in the domain logic that lives in the modules, and
+  questions that no op answers.
+- **QA** checks parity between the two UIs. For the same question on
+  the same data, the browser UI that a person uses and `caps-run` must
+  give the same answer. It finds UI defects, and questions that one UI
+  can ask and the other cannot.
+
+Both run on `testdata/ctran-gtfs.zip`, the real C-TRAN GTFS. It is not
+committed, because the data is licensed. Fetch it from c-tran.com. The
+reference hashes are in `docs/QA-FINDINGS.md`'s header. A session on
+the fixture feed is neither.
+
+### Dogfooding — the modules on real data, through caps-run
+
+`caps-run` runs the same capabilities, bytes, and laws that the pages
+run. The founding C-TRAN session found four real defects that fixture
+gates missed. A 64 KiB output truncation was one of them.
+
+- **A session asks one user workflow's questions.** Capabilities map
+  to user workflows, so a capability is dogfooded through the workflow
+  that uses it, before that workflow's work is done. It is not required
+  because the work is a capability. Import the feed once in a named
+  session (`--session`). Later commands in the session reuse the
+  import, and name it only by `$net.network_hash`. Or ask a running
+  server (`just serve`) with `--upstream http://127.0.0.1:8080` and
+  `$manifest.network_hash`. Find an op with `search`, browse a
+  capability with `tools <cap>`, and read a part of an answer with
+  `--print` (`docs/architecture/registry.md`).
+- **An awkward question is an op gap.** A question that needs anything
+  besides one op's answer is an op gap: a join, a threshold, a derived
+  number, or a second op stitched to the first
+  (`docs/architecture/generated-uis.md`, the procedure, step 3).
+- **A one-off script is never tooling. It is a finding.** If a session
+  needs bespoke glue (a bootstrap script, a summarizer), that is a
+  missing op or runner feature. Log it in `docs/QA-FINDINGS.md`. Do not
+  ship the script.
+
+### QA — parity between the UI and caps-run
+
+A passing spec proves the paths it names. It does not prove that each
+control shows the op's answer where the person lands. QA walks the
+page, control by control, and checks each answer against `caps-run`.
+
+- **The walk.** Run `just qa`. It starts the page with hot reload over
+  a server on the C-TRAN feed (:8091). The modules run under the
+  wasm-fast profile. The server uses `server/dev.toml`'s settings (the
+  stub work order system, and photos in memory). Drive the page with
   `tools/ui-shot.mjs`: open a selection by its hash, run steps, and
   read the screenshot, the status line, and the page's errors. Its
   browser profile (`.qa/profile`, or `.qa/NAME` with `--profile NAME`
@@ -389,13 +407,27 @@ these rules:
   A fix is then re-checked in seconds: a page edit needs no build, and
   a Rust edit needs only `just caps-fast` and a reload. Walk every
   control on every stage, on a forked plan, then the paths between
-  stages. Pin each control that you fix in the UI's spec. The
-  `ui-dogfood` skill (`.claude/skills/ui-dogfood/`) runs these steps.
+  stages. The `ui-qa` skill (`.claude/skills/ui-qa/`) runs these steps.
+- **Each control is checked against caps-run.** For each answer the
+  page shows, ask the op that the page asks, with the same arguments,
+  through `caps-run --upstream http://127.0.0.1:8091`. Both read the
+  same manifest and the same documents. The numbers on the screen must
+  match the line. A screen that shows something other than the op's
+  answer is a UI defect.
+- **A question the UI asks that caps-run cannot is a finding**: the
+  page computes an answer that no op gives (`docs/architecture/web.md`,
+  "Parity"). A question that caps-run answers and the UI does not show
+  is a finding only when the UI's workflow needs it. Many ops serve
+  agents or another UI.
+- **Pin each control that you fix** in the UI's spec.
 - **The standing end-to-end test** is `qa/route-99/`
   (`qa/route-99/run.sh`; its README has the steps). It runs one new
   route in the UI on `just qa`, from the stops app through service
   change to ride now and the stop display. It keeps its last run and
   its own findings.
+
+### Findings
+
 - **What is a finding, and what is not.**
   - A default that hides a failure a rider or an operator would see is
     a finding, not a policy choice. For example, an on-time window that
