@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/imports"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
@@ -30,7 +31,7 @@ func TestATrapDuringAWriteLeavesAuthzAnswering(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { inst.Close(ctx) })
-	s.authz.wasm = wasmhost.NewHeld("authz", inst).As("authz")
+	s.authz.Wasm = wasmhost.NewHeld("authz", inst).As("authz")
 	t.Cleanup(func() { s.long.Wait() })
 
 	now := time.Now().Unix()
@@ -67,7 +68,7 @@ func TestAnImportsInstanceIsGoneAfterTheImport(t *testing.T) {
 		t.Fatal(err) // compiled before the count
 	}
 	before := wasmhost.Live()
-	if _, _, _, err := importFeed(ctx, testWasm, fixtureZip(t)); err != nil {
+	if _, _, _, err := imports.ImportFeed(ctx, testWasm, fixtureZip(t)); err != nil {
 		t.Fatal(err)
 	}
 	if after := wasmhost.Live(); after != before {

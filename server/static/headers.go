@@ -1,9 +1,9 @@
-package main
-
-// The headers a deployment's pages must send (docs/architecture/
-// static-deployment.md, "Headers"). The server sends them on its static
-// files, and `-export` writes them as the bundle's `_headers` file, so a
-// static host sends the same.
+// Package static serves the pages of -dist, or of the store's pinned
+// build, with the headers a deployment's pages must send
+// (docs/architecture/static-deployment.md, "Headers"), and writes a static
+// bundle (-export) whose `_headers` file makes a static host send the
+// same.
+package static
 
 import (
 	"compress/gzip"
@@ -54,9 +54,9 @@ func originOf(raw string) string {
 	return u.Scheme + "://" + u.Host
 }
 
-// feedOrigins leaves out a relative proxy such as "/rt", because it is
+// FeedOrigins leaves out a relative proxy such as "/rt", because it is
 // the page's own origin.
-func feedOrigins(liveFeeds []byte, feedURL string) []string {
+func FeedOrigins(liveFeeds []byte, feedURL string) []string {
 	seen := map[string]bool{}
 	var config map[string]any
 	if json.Unmarshal(liveFeeds, &config) == nil {
@@ -128,16 +128,16 @@ func pageHeaders(page string, connect []string) []header {
 	}
 }
 
-const immutableCache = "public, max-age=31536000, immutable"
+const ImmutableCache = "public, max-age=31536000, immutable"
 
 // Every other file revalidates on each use, which a static host does by
 // default, so it needs no rule.
-func deploymentRules(pages []string, connect []string) []headerRule {
+func DeploymentRules(pages []string, connect []string) []headerRule {
 	rules := []headerRule{
 		{"/*", baselineHeaders()},
-		{"/assets/*", []header{{"Cache-Control", immutableCache}}},
-		{"/caps/*", []header{{"Cache-Control", immutableCache}}},
-		{"/blobs/*", []header{{"Cache-Control", immutableCache}}},
+		{"/assets/*", []header{{"Cache-Control", ImmutableCache}}},
+		{"/caps/*", []header{{"Cache-Control", ImmutableCache}}},
+		{"/blobs/*", []header{{"Cache-Control", ImmutableCache}}},
 		{"/manifest", []header{{"Content-Type", "application/json"}}},
 	}
 	for _, page := range pages {
@@ -148,7 +148,7 @@ func deploymentRules(pages []string, connect []string) []headerRule {
 	return rules
 }
 
-func renderHeadersFile(rules []headerRule) string {
+func RenderHeadersFile(rules []headerRule) string {
 	var b strings.Builder
 	b.WriteString("# Written by the export (server/headers.go). Upload it with the bundle.\n")
 	for _, r := range rules {
@@ -160,9 +160,9 @@ func renderHeadersFile(rules []headerRule) string {
 	return b.String()
 }
 
-// compressible excludes application/gzip, because the modules decode the
+// Compressible excludes application/gzip, because the modules decode the
 // documents themselves, and types that are compressed already.
-func compressible(contentType string) bool {
+func Compressible(contentType string) bool {
 	t := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
 	switch {
 	case strings.HasPrefix(t, "text/"):
@@ -183,7 +183,7 @@ type gzipWriter struct {
 func (g *gzipWriter) decide(code int) {
 	g.decided = true
 	h := g.Header()
-	if code != http.StatusOK || h.Get("Content-Encoding") != "" || !compressible(h.Get("Content-Type")) {
+	if code != http.StatusOK || h.Get("Content-Encoding") != "" || !Compressible(h.Get("Content-Type")) {
 		return
 	}
 	h.Set("Content-Encoding", "gzip")
@@ -219,9 +219,9 @@ func (g *gzipWriter) close() {
 	}
 }
 
-// gzipStatic answers a Range request and a HEAD request uncompressed,
+// Gzip answers a Range request and a HEAD request uncompressed,
 // because a range is a range of the stored bytes.
-func gzipStatic(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request)) {
+func Gzip(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request)) {
 	if r.Method != http.MethodGet || r.Header.Get("Range") != "" || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		serve(w, r)
 		return

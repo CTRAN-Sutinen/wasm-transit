@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/edits"
 	"rustwasm/server/store"
 )
 
@@ -98,7 +99,7 @@ func TestABucketThatStopsAnsweringServesLabelledReadsAndRefusesWrites(t *testing
 	if _, hdr, _ := httpGet(t, base+"/edits"); hdr.Get("X-Store-Stale") != "" {
 		t.Fatalf("back up, reads are unlabelled: %v", hdr)
 	}
-	entries, _ := s.store.Entries(disruptionsLog, 0, 0)
+	entries, _ := s.store.Entries(edits.DisruptionsLog, 0, 0)
 	for _, e := range entries {
 		if !strings.Contains(e.Text, `"at_ms":`) || strings.Contains(e.Text, `"at_ms":0,`) {
 			t.Fatalf("an entry without its time: %s", e.Text)

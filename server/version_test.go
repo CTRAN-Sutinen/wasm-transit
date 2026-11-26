@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/edits"
+	"rustwasm/server/imports"
 	"rustwasm/server/store"
 )
 
@@ -35,9 +37,9 @@ func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 	if !isCurrentEdits(body) {
 		t.Fatalf("the answer is the current version: %s", body)
 	}
-	data, head, err := s.disruptionsNow()
-	if err != nil || head.Envelope.SchemaVersion != editsVersion {
-		t.Fatalf("the head's envelope says v%d, want v%d (%v)", head.Envelope.SchemaVersion, editsVersion, err)
+	data, head, err := s.edits().Now()
+	if err != nil || head.Envelope.SchemaVersion != edits.Version {
+		t.Fatalf("the head's envelope says v%d, want v%d (%v)", head.Envelope.SchemaVersion, edits.Version, err)
 	}
 	if !isCurrentEdits(string(data)) || !strings.Contains(string(data), `"id":"e1"`) {
 		t.Fatalf("the head is the migrated document, its record kept: %s", data)
@@ -73,7 +75,7 @@ func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 	st.Close()
 
 	s := newStoreServer(t, bucket)
-	entries, err := s.store.Entries(disruptionsLog, 0, 0)
+	entries, err := s.store.Entries(edits.DisruptionsLog, 0, 0)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("one entry: %d %v", len(entries), err)
 	}
@@ -115,7 +117,7 @@ func TestAnOlderEditsPointerSeedsTheDisruptionsLog(t *testing.T) {
 	}
 
 	newStoreServer(t, bucket)
-	if again, _ := s.store.Entries(disruptionsLog, 0, 0); len(again) != 1 {
+	if again, _ := s.store.Entries(edits.DisruptionsLog, 0, 0); len(again) != 1 {
 		t.Fatalf("a seeded log is not seeded again: %d entries", len(again))
 	}
 }
@@ -191,7 +193,7 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 				Kind          string `json:"kind"`
 				SchemaVersion int    `json:"schema_version"`
 			}
-			if err != nil || json.Unmarshal(body, &tags) != nil || tags.Kind != "network" || tags.SchemaVersion != networkVersion {
+			if err != nil || json.Unmarshal(body, &tags) != nil || tags.Kind != "network" || tags.SchemaVersion != imports.NetworkVersion {
 				t.Errorf("pick %s: the set names its network in the current version: %v %+v", p.ID, err, tags)
 			}
 			ptr, _, _ := s.store.Head("plan." + p.ID)

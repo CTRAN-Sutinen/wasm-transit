@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"rustwasm/server/store"
+	"rustwasm/server/workorders"
 )
 
 func TestStopRequestsWritesAreValidated(t *testing.T) {
@@ -71,7 +72,7 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	s.fixedToday = "2026-09-02"
 	mux := storeMux(s)
 	mux.HandleFunc("/stop-requests", s.kindRoutes().HandleKindPost)
-	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
+	mux.HandleFunc("/stop-requests/work-order", s.workOrderRoutes().HandleWorkOrder)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL
@@ -99,7 +100,7 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	}
 
 	var err error
-	if s.workOrders, err = newWorkOrders("stub:"); err != nil {
+	if s.workOrders, err = workorders.NewSystem("stub:"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(services(), "/stop-requests/work-order") {
@@ -137,19 +138,19 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	if wo := stored(out["requests_hash"].(string))["work_order"].(map[string]any); wo["status"] != "open" || wo["read_on"] != "2026-09-09" || wo["id"] != "STUB-R-1" {
 		t.Fatalf("the status read: %v", wo)
 	}
-	if _, err := newWorkOrders("https://wo.example"); err == nil {
+	if _, err := workorders.NewSystem("https://wo.example"); err == nil {
 		t.Fatal("an adapter not written yet is refused at start, never guessed")
 	}
 }
 
 type countingWorkOrders struct {
-	workOrderSystem
+	workorders.System
 	opened int
 }
 
-func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.RawMessage) (workOrder, error) {
+func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.RawMessage) (workorders.WorkOrder, error) {
 	c.opened++
-	return c.workOrderSystem.Open(ctx, id, request)
+	return c.System.Open(ctx, id, request)
 }
 
 // A resend whose key landed gets the held work order, and the system is not
@@ -157,15 +158,15 @@ func (c *countingWorkOrders) Open(ctx context.Context, id string, request json.R
 func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
-	stub, err := newWorkOrders("stub:")
+	stub, err := workorders.NewSystem("stub:")
 	if err != nil {
 		t.Fatal(err)
 	}
-	system := &countingWorkOrders{workOrderSystem: stub}
+	system := &countingWorkOrders{System: stub}
 	s.workOrders = system
 	mux := storeMux(s)
 	mux.HandleFunc("/stop-requests", s.kindRoutes().HandleKindPost)
-	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
+	mux.HandleFunc("/stop-requests/work-order", s.workOrderRoutes().HandleWorkOrder)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	body, _ := json.Marshal(map[string]any{"from": "", "requests": map[string]any{"requests": map[string]any{"R-1": map[string]any{"stop": "A", "job": "new", "status": "submitted"}}}})

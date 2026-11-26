@@ -35,7 +35,7 @@ func (s *server) writeDate() string {
 	}
 	zone := ""
 	if s.feeder != nil {
-		zone, _ = s.feeder.zone.Load().(string)
+		zone, _ = s.feeder.Zone.Load().(string)
 	}
 	if zone == "" {
 		s.zoneMu.Lock()
@@ -55,7 +55,7 @@ func (s *server) agencyZone() *time.Location {
 	zone := ""
 	if s.feeder != nil {
 		if feed, err := s.feeder.Load(); err == nil {
-			zone = feed.timezone
+			zone = feed.Timezone
 		}
 	}
 	if zone == "" {

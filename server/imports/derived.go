@@ -1,4 +1,4 @@
-package main
+package imports
 
 // The server derives these documents (docs/architecture/storage.md,
 // "The derived documents are in the record"; docs/FORMATS.md,
@@ -25,9 +25,9 @@ import (
 const DerivationKind = "derivation"
 
 const (
-	derivedNetworkPointer = "derived.network"
-	derivedStreetsPointer = "derived.streets"
-	derivedWalksPointer   = "derived.walks"
+	DerivedNetworkPointer = "derived.network"
+	DerivedStreetsPointer = "derived.streets"
+	DerivedWalksPointer   = "derived.walks"
 )
 
 // Derivation is a host-owned kind (server/schemas/derivation.v1.schema.json).
@@ -59,7 +59,7 @@ var derivedKinds = map[string]struct {
 	storeKind string
 	version   uint32
 }{
-	"network":  {"network_document", networkVersion},
+	"network":  {"network_document", NetworkVersion},
 	"boundary": {"boundary", 1},
 	"streets":  {"streets", 1},
 	"walks":    {"walks", 1},
@@ -69,10 +69,10 @@ func isDerivedPointer(name string) bool {
 	if _, ok := derivedKinds[name]; ok {
 		return true
 	}
-	return name == derivedNetworkPointer || name == derivedStreetsPointer || name == derivedWalksPointer
+	return name == DerivedNetworkPointer || name == DerivedStreetsPointer || name == DerivedWalksPointer
 }
 
-func storedDerivation(st *store.Store, pointer string, inputs []string, tags ...string) (json.RawMessage, map[string][]byte, bool) {
+func StoredDerivation(st *store.Store, pointer string, inputs []string, tags ...string) (json.RawMessage, map[string][]byte, bool) {
 	head, found, err := st.Head(pointer)
 	if err != nil || !found {
 		return nil, nil, false
@@ -112,7 +112,7 @@ func storedDerivation(st *store.Store, pointer string, inputs []string, tags ...
 
 // A failed commit is logged, never fatal: the documents stand in memory,
 // and the next derivation tries again.
-func commitDerivation(st *store.Store, pointer string, inputs []string, module string, answer json.RawMessage, docs ...derivedDoc) {
+func CommitDerivation(st *store.Store, pointer string, inputs []string, module string, answer json.RawMessage, docs ...derivedDoc) {
 	d := Derivation{Kind: DerivationKind, SchemaVersion: 1, Inputs: inputs, Module: module, Documents: []DerivedDocument{}, Answer: answer}
 	for _, doc := range docs {
 		env := store.Envelope{Kind: doc.storeKind, SchemaVersion: doc.version, ProducedBy: module}

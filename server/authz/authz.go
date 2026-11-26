@@ -1,9 +1,8 @@
-package main
-
-// The host verifies the bearer JWT and the cap-authz module decides
-// (docs/architecture/server.md). Every write is denied when
-// there is no valid token or no matching rule. A verified subject becomes
-// the store log's `writer`.
+// Package authz is sign-in: the host verifies the bearer JWT and the
+// cap-authz module decides (docs/architecture/server.md). Every write is
+// denied when there is no valid token or no matching rule. A verified
+// subject becomes the store log's `writer`.
+package authz
 
 import (
 	"context"
@@ -28,34 +27,35 @@ import (
 	"time"
 
 	"rustwasm/server/httpx"
+	"rustwasm/server/source"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
 
-type oidcConfig struct {
-	issuer     string
-	jwksURL    string
-	audience   string
-	keyFile    string // pinned PEM public key (used when jwksURL is empty, or as bootstrap)
-	rolesClaim string // dotted claim path, default "roles"
-	nameClaim  string // dotted claim path to the person's name, default "name"
-	clientID   string // the pages' public client (PKCE), published in the manifest
-	scope      string // the scopes a page asks for
+type Config struct {
+	Issuer     string
+	JWKSURL    string
+	Audience   string
+	KeyFile    string // pinned PEM public key (used when JWKSURL is empty, or as bootstrap)
+	RolesClaim string // dotted claim path, default "roles"
+	NameClaim  string // dotted claim path to the person's name, default "name"
+	ClientID   string // the pages' public client (PKCE), published in the manifest
+	Scope      string // the scopes a page asks for
 }
 
-// A nil authzState means auth is off: the dev default, which writes
+// A nil Auth means auth is off: the dev default, which writes
 // unauthenticated.
-type authzState struct {
-	cfg oidcConfig
-	// cap-authz, in an instance of its own: a trap in another capability
-	// never takes the fail-closed check with it.
-	wasm   *WasmHost
+type Auth struct {
+	Cfg Config
+	// Wasm is cap-authz, in an instance of its own: a trap in another
+	// capability never takes the fail-closed check with it.
+	Wasm   *wasmhost.Host
 	pinned crypto.PublicKey
 
 	jwksMu          sync.Mutex
 	jwksKeys        map[string]crypto.PublicKey // by kid
 	jwksFetched     time.Time
-	jwksMinInterval time.Duration // refetch rate limit; loadAuthz sets 30s, tests 0
+	jwksMinInterval time.Duration // refetch rate limit; Load sets 30s, tests 0
 
 	// policyBytes is the policy when there is no store. With -store, each
 	// request reads the `policy` pointer instead.
@@ -63,20 +63,25 @@ type authzState struct {
 	policyBytes []byte
 }
 
-func loadAuthz(ctx context.Context, cfg oidcConfig, module *Instance, policyFile string) (*authzState, error) {
+// New is an Auth that fetches the JWKS at most once each minInterval.
+func New(cfg Config, wasm *wasmhost.Host, minInterval time.Duration) *Auth {
+	return &Auth{Cfg: cfg, Wasm: wasm, jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: minInterval}
+}
+
+func Load(ctx context.Context, cfg Config, module *wasmhost.Instance, policyFile string) (*Auth, error) {
 	inst, err := module.Fresh(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("authz instance: %w", err)
 	}
-	a := &authzState{cfg: cfg, wasm: wasmhost.NewHeld("authz", inst).As("authz"), jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: 30 * time.Second}
-	if a.cfg.nameClaim == "" {
-		a.cfg.nameClaim = "name"
+	a := New(cfg, wasmhost.NewHeld("authz", inst).As("authz"), 30*time.Second)
+	if a.Cfg.NameClaim == "" {
+		a.Cfg.NameClaim = "name"
 	}
-	if a.cfg.rolesClaim == "" {
-		a.cfg.rolesClaim = "roles"
+	if a.Cfg.RolesClaim == "" {
+		a.Cfg.RolesClaim = "roles"
 	}
-	if cfg.keyFile != "" {
-		pemBytes, err := os.ReadFile(cfg.keyFile)
+	if cfg.KeyFile != "" {
+		pemBytes, err := os.ReadFile(cfg.KeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("oidc key: %w", err)
 		}
@@ -87,7 +92,7 @@ func loadAuthz(ctx context.Context, cfg oidcConfig, module *Instance, policyFile
 		a.pinned = key
 	}
 	if policyFile != "" {
-		b, _, err := newSource(policyFile, "", "", nil).Read()
+		b, _, err := source.New(policyFile, "", "", nil).Read()
 		if err != nil {
 			return nil, fmt.Errorf("policy: %w", err)
 		}
@@ -168,10 +173,10 @@ func (k jwk) publicKey() (crypto.PublicKey, error) {
 	return nil, fmt.Errorf("unsupported kty %q", k.Kty)
 }
 
-var jwksHTTP = &http.Client{Transport: outbound, Timeout: 10 * time.Second}
+var jwksHTTP = &http.Client{Transport: httpx.Outbound, Timeout: 10 * time.Second}
 
 // keyFor fetches the JWKS on a miss, at most once per jwksMinInterval.
-func (a *authzState) keyFor(ctx context.Context, kid string) (crypto.PublicKey, error) {
+func (a *Auth) keyFor(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	if a.pinned != nil {
 		return a.pinned, nil
 	}
@@ -182,13 +187,13 @@ func (a *authzState) keyFor(ctx context.Context, kid string) (crypto.PublicKey, 
 	if ok {
 		return key, nil
 	}
-	if a.cfg.jwksURL == "" {
+	if a.Cfg.JWKSURL == "" {
 		return nil, errors.New("no JWKS URL and no pinned key configured")
 	}
 	if !canFetch {
 		return nil, fmt.Errorf("unknown kid %q (JWKS refetch rate-limited)", kid)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.jwksURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.Cfg.JWKSURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +233,7 @@ func (a *authzState) keyFor(ctx context.Context, kid string) (crypto.PublicKey, 
 	return key, nil
 }
 
-type identity struct {
+type Identity struct {
 	Sub   string   `json:"sub"`
 	Roles []string `json:"roles"`
 	// Name is the configured name claim (-oidc-name-claim), else the sub.
@@ -238,8 +243,8 @@ type identity struct {
 
 const clockLeeway = 60 * time.Second
 
-// verifyJWT accepts RS256 and ES256 only, so `none` and HS* tokens fail.
-func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, error) {
+// Verify accepts RS256 and ES256 only, so `none` and HS* tokens fail.
+func (a *Auth) Verify(ctx context.Context, token string) (*Identity, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("not a JWT")
@@ -298,24 +303,24 @@ func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, er
 		return nil, errors.New("bad claims")
 	}
 	now := time.Now()
-	if a.cfg.issuer != "" {
-		if claims["iss"] != a.cfg.issuer {
-			return nil, fmt.Errorf("iss %v != %q", claims["iss"], a.cfg.issuer)
+	if a.Cfg.Issuer != "" {
+		if claims["iss"] != a.Cfg.Issuer {
+			return nil, fmt.Errorf("iss %v != %q", claims["iss"], a.Cfg.Issuer)
 		}
 	}
-	if a.cfg.audience != "" {
-		audOK := claims["aud"] == a.cfg.audience
+	if a.Cfg.Audience != "" {
+		audOK := claims["aud"] == a.Cfg.Audience
 		if !audOK {
 			if arr, ok := claims["aud"].([]any); ok {
 				for _, v := range arr {
-					if v == a.cfg.audience {
+					if v == a.Cfg.Audience {
 						audOK = true
 					}
 				}
 			}
 		}
 		if !audOK {
-			return nil, fmt.Errorf("aud %v does not contain %q", claims["aud"], a.cfg.audience)
+			return nil, fmt.Errorf("aud %v does not contain %q", claims["aud"], a.Cfg.Audience)
 		}
 	}
 	if exp, ok := claims["exp"].(float64); ok {
@@ -332,11 +337,11 @@ func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, er
 	if sub == "" {
 		return nil, errors.New("no sub")
 	}
-	name := stringAtClaim(claims, a.cfg.nameClaim)
+	name := stringAtClaim(claims, a.Cfg.NameClaim)
 	if name == "" {
 		name = sub
 	}
-	return &identity{Sub: sub, Roles: rolesAtClaim(claims, a.cfg.rolesClaim), Name: name}, nil
+	return &Identity{Sub: sub, Roles: rolesAtClaim(claims, a.Cfg.RolesClaim), Name: name}, nil
 }
 
 func stringAtClaim(claims map[string]any, path string) string {
@@ -383,33 +388,56 @@ func rolesAtClaim(claims map[string]any, path string) []string {
 type ctxKey string
 
 const (
-	identityKey ctxKey = "identity" // the verified *identity (sub + roles)
+	identityKey ctxKey = "identity" // the verified *Identity (sub + roles)
 	auditKey    ctxKey = "audit"    // may the caller see writer identities in the log?
 )
 
-func (s *server) policyDocument() []byte {
-	if s.store != nil {
-		head, found, err := s.store.Head("policy")
+// CanAudit says whether the caller may see the writers in a log; true when
+// no check ran.
+func CanAudit(r *http.Request) bool {
+	if v, ok := r.Context().Value(auditKey).(bool); ok {
+		return v
+	}
+	return true
+}
+
+// A Gate checks a request against the policy. With a nil Auth, sign-in is
+// off and every request passes.
+type Gate struct {
+	Auth *Auth
+	// Store holds the policy pointer. With no store, the policy is the
+	// file that Load read.
+	Store func() *store.Store
+	// LogRule is the write rule of the log that /logs/<name> names, and
+	// whether the server keeps that log.
+	LogRule func(name string) (rule string, kept bool)
+}
+
+func (g *Gate) store() *store.Store { return g.Store() }
+
+func (g *Gate) PolicyDocument() []byte {
+	if g.store() != nil {
+		head, found, err := g.store().Head("policy")
 		if err != nil || !found {
 			return nil
 		}
-		b, _, err := s.store.GetBlob(head.Hash)
+		b, _, err := g.store().GetBlob(head.Hash)
 		if err != nil {
 			return nil
 		}
 		return b
 	}
-	if s.authz == nil {
+	if g.Auth == nil {
 		return nil
 	}
-	s.authz.policyMu.RLock()
-	defer s.authz.policyMu.RUnlock()
-	return s.authz.policyBytes
+	g.Auth.policyMu.RLock()
+	defer g.Auth.policyMu.RUnlock()
+	return g.Auth.policyBytes
 }
 
 // authorize denies on any error, so it fails closed.
-func (s *server) authorize(r *http.Request, id *identity, action, pointer string) (bool, string) {
-	policy := s.policyDocument()
+func (g *Gate) authorize(r *http.Request, id *Identity, action, pointer string) (bool, string) {
+	policy := g.PolicyDocument()
 	if len(policy) == 0 {
 		return false, "no policy document (fail-closed)"
 	}
@@ -420,7 +448,7 @@ func (s *server) authorize(r *http.Request, id *identity, action, pointer string
 			Reason      string  `json:"reason"`
 		} `json:"decision"`
 	}
-	err := s.authz.wasm.Invoke(r.Context(), map[string]any{
+	err := g.Auth.Wasm.Invoke(r.Context(), map[string]any{
 		"op":       "authorize",
 		"identity": map[string]any{"sub": id.Sub, "roles": id.Roles},
 		"action":   action,
@@ -436,14 +464,14 @@ func (s *server) authorize(r *http.Request, id *identity, action, pointer string
 	return true, resp.Decision.Reason
 }
 
-// protectWrite leaves reads public, except the pointer log, which
+// ProtectWrite leaves reads public, except the pointer log, which
 // carries writer identities. That read needs read on the pointer, and
 // the writers stay redacted unless the identity holds an "audit" rule.
 // pointerOf names the pointer. With auth disabled, everything passes.
-func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.HandlerFunc) http.HandlerFunc {
+func (g *Gate) ProtectWrite(pointerOf func(*http.Request) string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		isLog := r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/log")
-		if s.authz == nil || ((r.Method == http.MethodGet || r.Method == http.MethodHead) && !isLog) {
+		if g.Auth == nil || ((r.Method == http.MethodGet || r.Method == http.MethodHead) && !isLog) {
 			next(w, r)
 			return
 		}
@@ -452,7 +480,7 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 			http.Error(w, "missing bearer token", http.StatusUnauthorized)
 			return
 		}
-		id, err := s.authz.verifyJWT(r.Context(), strings.TrimPrefix(auth, "Bearer "))
+		id, err := g.Auth.Verify(r.Context(), strings.TrimPrefix(auth, "Bearer "))
 		if err != nil {
 			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
@@ -463,8 +491,8 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 		if isLog {
 			// An "audit" rule implies read. The log's `writer` fields are
 			// shown to an audit rule and redacted otherwise (D-164).
-			allowRead, reason := s.authorize(r, id, "read", pointer)
-			canAudit, _ := s.authorize(r, id, "audit", pointer)
+			allowRead, reason := g.authorize(r, id, "read", pointer)
+			canAudit, _ := g.authorize(r, id, "audit", pointer)
 			if !allowRead && !canAudit {
 				log.Printf("authz deny: sub=%s read %s: %s", id.Sub, pointer, reason)
 				http.Error(w, "forbidden: "+reason, http.StatusForbidden)
@@ -474,7 +502,7 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 			next(w, r.WithContext(ctx))
 			return
 		}
-		allow, reason := s.authorize(r, id, "write", pointer)
+		allow, reason := g.authorize(r, id, "write", pointer)
 		if !allow {
 			log.Printf("authz deny: sub=%s write %s: %s", id.Sub, pointer, reason)
 			http.Error(w, "forbidden: "+reason, http.StatusForbidden)
@@ -484,33 +512,33 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 	}
 }
 
-func (s *server) logPointer(path string) string {
+func (g *Gate) logPointer(path string) string {
 	name, _, _ := strings.Cut(strings.TrimPrefix(path, "/logs/"), "/")
-	if l := s.kept().Get(name); l != nil && l.Rule() != "" {
-		return l.Rule()
+	if rule, _ := g.LogRule(name); rule != "" {
+		return rule
 	}
 	return name
 }
 
-func (s *server) mayWrite(r *http.Request, pointer string) (bool, string) {
-	if s.authz == nil {
+func (g *Gate) MayWrite(r *http.Request, pointer string) (bool, string) {
+	if g.Auth == nil {
 		return true, ""
 	}
-	id, _ := r.Context().Value(identityKey).(*identity)
+	id, _ := r.Context().Value(identityKey).(*Identity)
 	if id == nil {
 		return false, "no verified identity"
 	}
-	return s.authorize(r, id, "write", pointer)
+	return g.authorize(r, id, "write", pointer)
 }
 
-// protectLog needs the "audit" grant on the log's pointer for every
+// ProtectLog needs the "audit" grant on the log's pointer for every
 // call, a read too. An entry names its writer inside its bytes, so the
 // server cannot redact it. An intent write (POST /logs/<log>) needs only
 // a valid token here, and the write rule of each document it writes
 // (server/logs).
-func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
+func (g *Gate) ProtectLog(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.authz == nil {
+		if g.Auth == nil {
 			next(w, r)
 			return
 		}
@@ -519,18 +547,18 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "missing bearer token", http.StatusUnauthorized)
 			return
 		}
-		id, err := s.authz.verifyJWT(r.Context(), strings.TrimPrefix(auth, "Bearer "))
+		id, err := g.Auth.Verify(r.Context(), strings.TrimPrefix(auth, "Bearer "))
 		if err != nil {
 			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
 		}
 		ctx := context.WithValue(r.Context(), identityKey, id)
 		ctx = httpx.WithWriter(httpx.WithName(ctx, id.Name), id.Sub)
-		if r.Method == http.MethodPost && s.isIntentWrite(r.URL.Path) {
+		if r.Method == http.MethodPost && g.isIntentWrite(r.URL.Path) {
 			next(w, r.WithContext(ctx))
 			return
 		}
-		if allow, reason := s.authorize(r, id, "audit", s.logPointer(r.URL.Path)); !allow {
+		if allow, reason := g.authorize(r, id, "audit", g.logPointer(r.URL.Path)); !allow {
 			log.Printf("authz deny: sub=%s audit %s: %s", id.Sub, r.URL.Path, reason)
 			http.Error(w, "forbidden: "+reason, http.StatusForbidden)
 			return
@@ -540,19 +568,18 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (s *server) isIntentWrite(path string) bool {
+func (g *Gate) isIntentWrite(path string) bool {
 	name, ok := strings.CutPrefix(path, "/logs/")
-	return ok && s.kept().Get(name) != nil
+	if !ok {
+		return false
+	}
+	_, kept := g.LogRule(name)
+	return kept
 }
 
-func pointerNameOf(r *http.Request) string {
-	rest := strings.TrimPrefix(r.URL.Path, "/pointers/")
-	return strings.Split(rest, "/")[0]
-}
-
-func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+func (g *Gate) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.authz == nil {
+		if g.Auth == nil {
 			http.Error(w, "auth is not configured", http.StatusNotFound)
 			return
 		}
@@ -561,7 +588,7 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "missing bearer token", http.StatusUnauthorized)
 			return
 		}
-		id, err := s.authz.verifyJWT(r.Context(), strings.TrimPrefix(auth, "Bearer "))
+		id, err := g.Auth.Verify(r.Context(), strings.TrimPrefix(auth, "Bearer "))
 		if err != nil {
 			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
@@ -572,17 +599,17 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// handlePermissions is the only client-readable form of the policy. The
+// HandlePermissions is the only client-readable form of the policy. The
 // policy document itself is never served: /blobs answers 404 for kind
 // "policy".
-func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
+func (g *Gate) HandlePermissions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
 		return
 	}
-	var id *identity
+	var id *Identity
 	if v := r.Context().Value(identityKey); v != nil {
-		id = v.(*identity)
+		id = v.(*Identity)
 	}
 	sub := ""
 	var roles []string
@@ -590,7 +617,7 @@ func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 		sub = id.Sub
 		roles = id.Roles
 	}
-	policy := s.policyDocument()
+	policy := g.PolicyDocument()
 	var resp struct {
 		Effective struct {
 			Roles        []string `json:"roles"`
@@ -604,7 +631,7 @@ func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	if len(rawPolicy) == 0 {
 		rawPolicy = json.RawMessage(`{"schema_version":1,"rules":[]}`)
 	}
-	err := s.authz.wasm.Invoke(r.Context(), map[string]any{
+	err := g.Auth.Wasm.Invoke(r.Context(), map[string]any{
 		"op":       "effective",
 		"identity": map[string]any{"sub": sub, "roles": roles},
 		"policy":   rawPolicy,
@@ -617,25 +644,46 @@ func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp.Effective)
 }
 
-// seedPolicy commits the -policy source as the `policy` pointer
+// SeedPolicy commits the -policy source as the `policy` pointer
 // when it does not exist yet. Later changes are ordinary CAS
 // commits.
-func (s *server) seedPolicy(policyFile string) {
-	if s.store == nil || policyFile == "" {
+func (g *Gate) SeedPolicy(policyFile string) {
+	if g.store() == nil || policyFile == "" {
 		return
 	}
-	if _, found, err := s.store.Head("policy"); err == nil && found {
+	if _, found, err := g.store().Head("policy"); err == nil && found {
 		return
 	}
-	raw, _, err := newSource(policyFile, "", "", s.store).Read()
+	raw, _, err := source.New(policyFile, "", "", g.store()).Read()
 	if err != nil || len(raw) == 0 {
 		log.Printf("seed policy: %v", err)
 		return
 	}
 	env := store.Envelope{Kind: "policy", SchemaVersion: 1, ProducedBy: "server"}
-	if _, _, err := s.store.CAS("policy", "", raw, env, "", "bootstrap:"+policyFile, time.Now().UnixMilli()); err != nil {
+	if _, _, err := g.store().CAS("policy", "", raw, env, "", "bootstrap:"+policyFile, time.Now().UnixMilli()); err != nil {
 		log.Printf("seed policy: %v", err)
 		return
 	}
 	log.Printf("policy seeded into the store from %s", policyFile)
+}
+
+// ProtectSignedIn requires any valid token and no policy rule.
+func (g *Gate) ProtectSignedIn(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if g.Auth == nil {
+			next(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			http.Error(w, "sign in to see attachments", http.StatusUnauthorized)
+			return
+		}
+		id, err := g.Auth.Verify(r.Context(), strings.TrimPrefix(auth, "Bearer "))
+		if err != nil {
+			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+		next(w, r.WithContext(httpx.WithName(context.WithValue(r.Context(), identityKey, id), id.Name)))
+	}
 }

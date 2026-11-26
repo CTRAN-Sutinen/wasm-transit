@@ -1,10 +1,12 @@
-package main
-
+// Package proxy reaches outside services for the pages: the geocoder, an
+// oracle, and the dev relay for the agency's realtime feeds.
+//
 // The geocoder proxy (docs/architecture/web.md, "External services"). The
 // page sends only what the user did. The deployment's query policy
 // (layers, distance, count) is applied here, so every host that asks
 // through this path asks the same question. This host forwards and
 // decides nothing.
+package proxy
 
 import (
 	"encoding/json"
@@ -15,6 +17,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"rustwasm/server/httpx"
+	"rustwasm/server/manifest"
 )
 
 // Anything else that the page sends is dropped.
@@ -24,16 +29,16 @@ var geocodeInputs = map[string][]string{
 	"reverse":      {"point.lat", "point.lon"},
 }
 
-var geocodeClient = &http.Client{Transport: outbound, Timeout: 5 * time.Second}
+var geocodeClient = &http.Client{Transport: httpx.Outbound, Timeout: 5 * time.Second}
 
-type geocoder struct {
+type Geocoder struct {
 	url    string
 	policy map[string]map[string]any
 }
 
 // An op that the policy file leaves out is asked with no policy.
-func loadGeocoder(base, policyPath string) (*geocoder, error) {
-	g := &geocoder{url: base, policy: map[string]map[string]any{}}
+func LoadGeocoder(base, policyPath string) (*Geocoder, error) {
+	g := &Geocoder{url: base, policy: map[string]map[string]any{}}
 	if policyPath == "" {
 		return g, nil
 	}
@@ -52,12 +57,13 @@ func loadGeocoder(base, policyPath string) (*geocoder, error) {
 	return g, nil
 }
 
-func (g *geocoder) service() Service {
-	return Service{Path: "/geocode", Query: g.policy}
+func (g *Geocoder) Service() manifest.Service {
+	return manifest.Service{Path: "/geocode", Query: g.policy}
 }
 
-func (s *server) handleGeocode(w http.ResponseWriter, r *http.Request) {
-	if s.geocoder == nil {
+// HandleGeocode answers 404 when no geocoder is configured (g is nil).
+func (g *Geocoder) HandleGeocode(w http.ResponseWriter, r *http.Request) {
+	if g == nil {
 		http.Error(w, "no geocoder configured (-geocoder)", http.StatusNotFound)
 		return
 	}
@@ -67,7 +73,7 @@ func (s *server) handleGeocode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown geocoder op", http.StatusNotFound)
 		return
 	}
-	target, err := url.JoinPath(s.geocoder.url, "v1", op)
+	target, err := url.JoinPath(g.url, "v1", op)
 	if err != nil {
 		http.Error(w, "bad geocoder url", http.StatusInternalServerError)
 		return
@@ -79,7 +85,7 @@ func (s *server) handleGeocode(w http.ResponseWriter, r *http.Request) {
 			query.Set(k, v)
 		}
 	}
-	for k, v := range s.geocoder.policy[op] {
+	for k, v := range g.policy[op] {
 		query.Set(k, fmt.Sprint(v))
 	}
 	resp, err := geocodeClient.Get(target + "?" + query.Encode())

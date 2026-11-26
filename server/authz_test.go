@@ -24,6 +24,9 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/authz"
+	"rustwasm/server/edits"
+	"rustwasm/server/pointers"
 	"rustwasm/server/store"
 )
 
@@ -126,25 +129,21 @@ func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
 	if err := os.WriteFile(policyPath, testPolicy(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.seedPolicy(policyPath)
+	s.gate().SeedPolicy(policyPath)
 
-	a := &authzState{
-		cfg: oidcConfig{
-			issuer: "https://idp.example", jwksURL: jwks.url(),
-			audience: "transit-server", rolesClaim: "roles",
-		},
-		wasm:            newAuthzTestHost(t),
-		jwksKeys:        map[string]crypto.PublicKey{},
-		jwksMinInterval: 0, // tests rotate keys immediately
-	}
+	// A JWKS fetch interval of 0: tests rotate keys immediately.
+	a := authz.New(authz.Config{
+		Issuer: "https://idp.example", JWKSURL: jwks.url(),
+		Audience: "transit-server", RolesClaim: "roles",
+	}, newAuthzTestHost(t), 0)
 	s.authz = a
 	t.Cleanup(func() { st.Close() })
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
-	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
-	mux.HandleFunc("/logs/", s.protectLog(s.kept().HandleLogs))
-	mux.HandleFunc("/blobs/", s.handleBlob)
+	mux.HandleFunc("/edits", s.gate().ProtectWrite(func(*http.Request) string { return "edits" }, s.edits().HandleEdits))
+	mux.HandleFunc("/pointers/", s.gate().ProtectWrite(pointers.NameOf, s.pointers().HandlePointers))
+	mux.HandleFunc("/logs/", s.gate().ProtectLog(s.kept().HandleLogs))
+	mux.HandleFunc("/blobs/", s.pointers().HandleBlob)
 	base := httptest.NewServer(mux).URL
 	return s, base
 }
@@ -237,7 +236,7 @@ func TestAuthzWriterIsTheVerifiedSubject(t *testing.T) {
 	if code, _ := bearerPost(t, base+"/edits", tok, editDoc("e1", "draft", 1, 100)); code != 200 {
 		t.Fatalf("post: %d", code)
 	}
-	entries, err := s.store.Entries(disruptionsLog, 0, 0)
+	entries, err := s.store.Entries(edits.DisruptionsLog, 0, 0)
 	if err != nil || len(entries) == 0 {
 		t.Fatalf("log: %d %v", len(entries), err)
 	}
@@ -320,15 +319,10 @@ func TestAuthzFailClosedWithoutPolicy(t *testing.T) {
 	st := store.NewServing(store.NewMemory())
 	s.store = st
 	s.seedStore("")
-	s.authz = &authzState{
-		cfg:             oidcConfig{issuer: "https://idp.example", jwksURL: jwks.url(), audience: "transit-server", rolesClaim: "roles"},
-		wasm:            newAuthzTestHost(t),
-		jwksKeys:        map[string]crypto.PublicKey{},
-		jwksMinInterval: 0,
-	}
+	s.authz = authz.New(authz.Config{Issuer: "https://idp.example", JWKSURL: jwks.url(), Audience: "transit-server", RolesClaim: "roles"}, newAuthzTestHost(t), 0)
 	defer st.Close()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
+	mux.HandleFunc("/edits", s.gate().ProtectWrite(func(*http.Request) string { return "edits" }, s.edits().HandleEdits))
 	base := httptest.NewServer(mux).URL
 
 	now := time.Now().Unix()
@@ -375,7 +369,7 @@ func TestAuthzPolicyBlobNeverServed(t *testing.T) {
 		t.Fatalf("policy blob as admin: want 404, got %d", resp2.StatusCode)
 	}
 
-	editsHash, err := s.store.PutBlob([]byte(editDoc("e1", "draft", 1, 100)), s.syncEnvelope(), "")
+	editsHash, err := s.store.PutBlob([]byte(editDoc("e1", "draft", 1, 100)), s.edits().Envelope(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +416,7 @@ func TestAuthzLogWriterRedaction(t *testing.T) {
 	if code, _ := bearerPost(t, base+"/edits", mk("dispatcher-7", []string{"dispatcher"}), editDoc("e1", "draft", 1, 100)); code != 200 {
 		t.Fatalf("post: %d", code)
 	}
-	if _, _, err := s.store.CAS("edits", "", []byte(editDoc("e1", "draft", 1, 100)), s.syncEnvelope(), "", "dispatcher-7", 1); err != nil {
+	if _, _, err := s.store.CAS("edits", "", []byte(editDoc("e1", "draft", 1, 100)), s.edits().Envelope(), "", "dispatcher-7", 1); err != nil {
 		t.Fatal(err)
 	}
 	entriesURL := base + "/logs/disruptions"
@@ -468,8 +462,8 @@ func TestAuthzPermissionsProjection(t *testing.T) {
 	s, _ := newAuthServer(t, jwks)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
-	mux.HandleFunc("/blobs/", s.handleBlob)
+	mux.HandleFunc("/permissions", s.gate().RequireAuth(s.gate().HandlePermissions))
+	mux.HandleFunc("/blobs/", s.pointers().HandleBlob)
 	permBase := httptest.NewServer(mux).URL
 
 	now := time.Now().Unix()
@@ -547,11 +541,11 @@ func TestAuthzNameIsTheConfiguredClaim(t *testing.T) {
 		"name": "Rosa Ortiz", "upn": "rosa.ortiz@agency.example", "ext": map[string]any{"display": "R. Ortiz"},
 	})
 	for claim, want := range map[string]string{"": "Rosa Ortiz", "name": "Rosa Ortiz", "upn": "rosa.ortiz@agency.example", "ext.display": "R. Ortiz", "preferred_username": "00u1abc"} {
-		s.authz.cfg.nameClaim = claim
+		s.authz.Cfg.NameClaim = claim
 		if claim == "" {
-			s.authz.cfg.nameClaim = "name" // loadAuthz's default
+			s.authz.Cfg.NameClaim = "name" // authz.Load's default
 		}
-		id, err := s.authz.verifyJWT(context.Background(), tok)
+		id, err := s.authz.Verify(context.Background(), tok)
 		if err != nil {
 			t.Fatal(err)
 		}

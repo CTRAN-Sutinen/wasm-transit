@@ -1,4 +1,4 @@
-package main
+package imports
 
 import (
 	"archive/zip"
@@ -15,21 +15,22 @@ import (
 	"sync/atomic"
 	"time"
 
+	"rustwasm/server/source"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
 
-func (s *server) handleNetwork(w http.ResponseWriter, r *http.Request) {
-	if s.feeder == nil {
+func (p *Published) HandleNetwork(w http.ResponseWriter, r *http.Request) {
+	if p.Feed == nil {
 		http.Error(w, "no feed configured (start with -feed <gtfs.zip>)", http.StatusNotFound)
 		return
 	}
-	feed, err := s.feeder.Load()
+	feed, err := p.Feed.Load()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("network unavailable: %v", err), http.StatusInternalServerError)
 		return
 	}
-	etag := `"` + feed.networkHash + `"`
+	etag := `"` + feed.NetworkHash + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Vary", "Accept-Encoding")
@@ -40,33 +41,33 @@ func (s *server) handleNetwork(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		w.Header().Set("Content-Encoding", "gzip")
-		w.Write(feed.networkGzip)
+		w.Write(feed.NetworkGzip)
 		return
 	}
-	w.Write(feed.network)
+	w.Write(feed.Network)
 }
 
 // The document is application/gzip, never Content-Encoding: the browser
 // hands the compressed bytes to the modules (kernel op 256 decodes gzip).
-func (s *server) handleNetworkDocument(w http.ResponseWriter, r *http.Request) {
-	s.servePublished(w, r, "application/gzip", func(f *loadedFeed) []byte { return f.documentGzip })
+func (p *Published) HandleNetworkDocument(w http.ResponseWriter, r *http.Request) {
+	p.servePublished(w, r, "application/gzip", func(f *Feed) []byte { return f.DocumentGzip })
 }
 
-func (s *server) handleNetworkBoundary(w http.ResponseWriter, r *http.Request) {
-	s.servePublished(w, r, "application/json", func(f *loadedFeed) []byte { return f.boundary })
+func (p *Published) HandleNetworkBoundary(w http.ResponseWriter, r *http.Request) {
+	p.servePublished(w, r, "application/json", func(f *Feed) []byte { return f.Boundary })
 }
 
-func (s *server) servePublished(w http.ResponseWriter, r *http.Request, contentType string, body func(*loadedFeed) []byte) {
-	if s.feeder == nil {
+func (p *Published) servePublished(w http.ResponseWriter, r *http.Request, contentType string, body func(*Feed) []byte) {
+	if p.Feed == nil {
 		http.Error(w, "no feed configured (start with -feed <gtfs.zip>)", http.StatusNotFound)
 		return
 	}
-	feed, err := s.feeder.Load()
+	feed, err := p.Feed.Load()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("network unavailable: %v", err), http.StatusInternalServerError)
 		return
 	}
-	etag := `"` + feed.networkHash + `"`
+	etag := `"` + feed.NetworkHash + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
 	if r.Header.Get("If-None-Match") == etag {
@@ -77,26 +78,26 @@ func (s *server) servePublished(w http.ResponseWriter, r *http.Request, contentT
 	w.Write(body(feed))
 }
 
-type loadedFeed struct {
-	hash        string          // "sha256:<hex>" of the zip
-	version     string          // feed_info.txt's feed_version, "" when absent
-	networkHash string          // the import's network_hash
-	network     json.RawMessage // the import's answer, served as-is
-	networkGzip []byte
+type Feed struct {
+	Hash        string          // "sha256:<hex>" of the zip
+	Version     string          // feed_info.txt's feed_version, "" when absent
+	NetworkHash string          // the import's network_hash
+	Network     json.RawMessage // the import's answer, served as-is
+	NetworkGzip []byte
 	// The network's bytes hash to networkHash. The boundary is named by the
 	// sha256 of its bytes (boundaryHash).
-	document     json.RawMessage
-	documentGzip []byte
-	boundary     json.RawMessage
-	boundaryGzip []byte
-	boundaryHash string
-	timezone     string
+	Document     json.RawMessage
+	DocumentGzip []byte
+	Boundary     json.RawMessage
+	BoundaryGzip []byte
+	BoundaryHash string
+	Timezone     string
 }
 
-// importFeed closes its instance after the import, so the import's working
+// ImportFeed closes its instance after the import, so the import's working
 // memory (several times the network's size) goes with it.
-func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.RawMessage, string, string, error) {
-	inst, err := NewWasmHost(ctx, wasmPath)
+func ImportFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.RawMessage, string, string, error) {
+	inst, err := wasmhost.New(ctx, wasmPath)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("the server's module: %w", err)
 	}
@@ -121,7 +122,7 @@ func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.Raw
 	return answer, pin.NetworkHash, "cap-network@" + host.Hash(), nil
 }
 
-func feedInfoVersion(zipBytes []byte) string {
+func FeedInfoVersion(zipBytes []byte) string {
 	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return ""
@@ -149,40 +150,44 @@ func feedInfoVersion(zipBytes []byte) string {
 	return ""
 }
 
-// feedSource re-imports only when the source's bytes change, so a
+// NetworkVersion mirrors transit_network::SCHEMA_VERSION, the version an
+// import writes. An older document comes forward through cap-migrate.
+const NetworkVersion = 2
+
+// FeedSource re-imports only when the source's bytes change, so a
 // republished feed needs no restart. In store mode a boot whose zip the
 // store already imported imports nothing.
-type feedSource struct {
-	src      *source
-	wasm     string // the server's module, a fresh instance of which imports it
-	onImport func(*loadedFeed)
-	imports  int
+type FeedSource struct {
+	Src      *source.Source
+	Wasm     string // the server's module, a fresh instance of which imports it
+	OnImport func(*Feed)
+	Imports  int
 
 	mu   sync.Mutex
-	feed *loadedFeed
-	// zone is read without the lock: a write that Load's onImport makes reads
+	feed *Feed
+	// Zone is read without the lock: a write that Load's onImport makes reads
 	// it (writeDate).
-	zone atomic.Value
+	Zone atomic.Value
 }
 
-func fileFeed(path, wasm string) *feedSource {
-	return &feedSource{src: newSource(path, "", "", nil), wasm: wasm}
+func FileFeed(path, wasm string) *FeedSource {
+	return &FeedSource{Src: source.New(path, "", "", nil), Wasm: wasm}
 }
 
-func (f *feedSource) Zip() ([]byte, error) {
-	body, _, err := f.src.Read()
+func (f *FeedSource) Zip() ([]byte, error) {
+	body, _, err := f.Src.Read()
 	return body, err
 }
 
-func (f *feedSource) Load() (*loadedFeed, error) {
+func (f *FeedSource) Load() (*Feed, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	body, hash, err := f.src.Read()
+	body, hash, err := f.Src.Read()
 	if err != nil {
 		return nil, err
 	}
-	if f.feed != nil && f.feed.hash == hash {
+	if f.feed != nil && f.feed.Hash == hash {
 		return f.feed, nil
 	}
 	started := time.Now()
@@ -198,48 +203,48 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 	if err := json.Unmarshal(network, &parts); err != nil || len(parts.Network) == 0 {
 		return nil, fmt.Errorf("import answered no network document")
 	}
-	f.feed = &loadedFeed{
-		hash:         hash,
-		version:      feedInfoVersion(body),
-		networkHash:  networkHash,
-		network:      network,
-		networkGzip:  gzipped(network),
-		document:     parts.Network,
-		documentGzip: gzipped(parts.Network),
-		boundary:     parts.Boundary,
-		boundaryGzip: gzipped(parts.Boundary),
-		boundaryHash: store.HashOf(parts.Boundary),
-		timezone:     parts.Timezone,
+	f.feed = &Feed{
+		Hash:         hash,
+		Version:      FeedInfoVersion(body),
+		NetworkHash:  networkHash,
+		Network:      network,
+		NetworkGzip:  Gzipped(network),
+		Document:     parts.Network,
+		DocumentGzip: Gzipped(parts.Network),
+		Boundary:     parts.Boundary,
+		BoundaryGzip: Gzipped(parts.Boundary),
+		BoundaryHash: store.HashOf(parts.Boundary),
+		Timezone:     parts.Timezone,
 	}
-	f.zone.Store(parts.Timezone)
+	f.Zone.Store(parts.Timezone)
 	how := "imported"
 	if stored {
 		how = "read from the store"
 	}
 	log.Printf("network %s for %s in %s: %s (%d KB, %d KB gzipped)",
-		how, f.src.raw, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
-	if f.onImport != nil {
-		f.onImport(f.feed)
+		how, f.Src.Raw(), time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.DocumentGzip)/1024)
+	if f.OnImport != nil {
+		f.OnImport(f.feed)
 	}
 	return f.feed, nil
 }
 
-func (f *feedSource) derive(body []byte, hash string) (json.RawMessage, string, bool, error) {
-	st := f.src.st
+func (f *FeedSource) derive(body []byte, hash string) (json.RawMessage, string, bool, error) {
+	st := f.Src.Store()
 	if st != nil {
-		if answer, docs, ok := storedDerivation(st, derivedNetworkPointer, []string{hash}, "network", "boundary"); ok {
+		if answer, docs, ok := StoredDerivation(st, DerivedNetworkPointer, []string{hash}, "network", "boundary"); ok {
 			network, err := answerWith(answer, map[string][]byte{"network": docs["network"], "boundary": docs["boundary"]})
 			if err == nil {
 				return network, store.HashOf(docs["network"]), true, nil
 			}
-			log.Printf("%s: %v: importing again", derivedNetworkPointer, err)
+			log.Printf("%s: %v: importing again", DerivedNetworkPointer, err)
 		}
 	}
-	network, networkHash, module, err := importFeed(context.Background(), f.wasm, body)
+	network, networkHash, module, err := ImportFeed(context.Background(), f.Wasm, body)
 	if err != nil {
 		return nil, "", false, err
 	}
-	f.imports++
+	f.Imports++
 	if st != nil {
 		var parts struct {
 			Network  json.RawMessage `json:"network"`
@@ -250,17 +255,17 @@ func (f *feedSource) derive(body []byte, hash string) (json.RawMessage, string, 
 			err = json.Unmarshal(network, &parts)
 		}
 		if err != nil || len(parts.Network) == 0 || len(parts.Boundary) == 0 {
-			log.Printf("%s: the import is not stored: %v", derivedNetworkPointer, err)
+			log.Printf("%s: the import is not stored: %v", DerivedNetworkPointer, err)
 		} else {
-			commitDerivation(st, derivedNetworkPointer, []string{hash}, module, answer,
-				derivedDoc{tag: "network", storeKind: "network_document", version: networkVersion, body: parts.Network, hash: networkHash},
+			CommitDerivation(st, DerivedNetworkPointer, []string{hash}, module, answer,
+				derivedDoc{tag: "network", storeKind: "network_document", version: NetworkVersion, body: parts.Network, hash: networkHash},
 				derivedDoc{tag: "boundary", storeKind: "boundary", version: 1, body: parts.Boundary, hash: store.HashOf(parts.Boundary)})
 		}
 	}
 	return network, networkHash, false, nil
 }
 
-func gzipped(b []byte) []byte {
+func Gzipped(b []byte) []byte {
 	var gz bytes.Buffer
 	zw, _ := gzip.NewWriterLevel(&gz, gzip.BestCompression)
 	zw.Write(b)

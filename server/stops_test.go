@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"rustwasm/server/imports"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
@@ -336,7 +337,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if code, out := postStops(t, base, "", doc); code != 200 {
 		t.Fatalf("the stops: %d %v", code, out)
 	}
-	feeder := fileFeed(sampleFeed, testWasm)
+	feeder := imports.FileFeed(sampleFeed, testWasm)
 	feed, err := feeder.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -353,7 +354,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	}
 	json.Unmarshal(held, &after)
 	last := after.Stops["A"][len(after.Stops["A"])-1]
-	if last["event"] != "changed" || last["from_feed"] != feed.hash || last["name"] == nil {
+	if last["event"] != "changed" || last["from_feed"] != feed.Hash || last["name"] == nil {
 		t.Fatalf("A's difference recorded, naming the feed: %v", last)
 	}
 	if w := lastLogWriter(t, s, "stops"); w != "import:feed" {

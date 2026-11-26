@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"rustwasm/server/imports"
 )
 
 const date = "2026-10-23" // Friday: WK + HOL both run
@@ -120,7 +122,7 @@ func TestSyncRoundTrip(t *testing.T) {
 
 	// The host reads one CSV field of feed_info.txt for the manifest's
 	// version.
-	if v := feedInfoVersion(fixtureZip(t)); v != "2026.10.1" {
+	if v := imports.FeedInfoVersion(fixtureZip(t)); v != "2026.10.1" {
 		t.Fatalf("feed_info version: %q", v)
 	}
 }
@@ -138,7 +140,7 @@ func TestEditsSyncEndpoint(t *testing.T) {
 
 	s := &server{wasm: host, editsPath: t.TempDir() + "/edits.json"}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/edits", s.handleEdits)
+	mux.HandleFunc("/edits", s.edits().HandleEdits)
 	base := httptest.NewServer(mux).URL
 
 	editJSON := func(id, status string, rev, at int64) string {
@@ -188,9 +190,9 @@ func TestEditsSyncEndpoint(t *testing.T) {
 		t.Fatalf("get: %s", got)
 	}
 
-	s2 := &server{wasm: host, edits: loadEdits(s.editsPath), editsPath: s.editsPath}
+	s2 := &server{wasm: host, editsPath: s.editsPath}
 	mux2 := http.NewServeMux()
-	mux2.HandleFunc("/edits", s2.handleEdits)
+	mux2.HandleFunc("/edits", s2.edits().HandleEdits)
 	base2 := httptest.NewServer(mux2).URL
 	resp2, err := http.Get(base2 + "/edits")
 	if err != nil {

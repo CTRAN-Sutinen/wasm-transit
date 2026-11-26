@@ -1,6 +1,6 @@
 package main
 
-// Pins the headers a deployment's pages must send (headers.go;
+// Pins the headers a deployment's pages must send (server/static;
 // docs/units/web-conformance.md, scope 2), in both shapes. The export
 // writes the same rules as a `_headers` file.
 
@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"rustwasm/server/static"
 )
 
 func headersServer(t *testing.T) *server {
@@ -44,7 +46,7 @@ func staticGet(s *server, path string, header map[string]string) *httptest.Respo
 		r.Header.Set(k, v)
 	}
 	w := httptest.NewRecorder()
-	s.handleStatic(w, r)
+	s.static().HandleStatic(w, r)
 	return w
 }
 
@@ -103,12 +105,12 @@ func TestGzipMakesTheETagWeak(t *testing.T) {
 	r := httptest.NewRequest("GET", "/a.js", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
-	gzipStatic(w, r, handler)
+	static.Gzip(w, r, handler)
 	if got := w.Header().Get("ETag"); got != `W/"sha256:abc"` {
 		t.Errorf("ETag %q, want a weak one", got)
 	}
 	w = httptest.NewRecorder()
-	gzipStatic(w, r, func(w http.ResponseWriter, r *http.Request) {
+	static.Gzip(w, r, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript")
 		w.WriteHeader(http.StatusNotModified)
 	})
@@ -131,7 +133,7 @@ func TestCompressibleTypes(t *testing.T) {
 		"font/woff2":                     false,
 		"":                               false,
 	} {
-		if got := compressible(typ); got != want {
+		if got := static.Compressible(typ); got != want {
 			t.Errorf("compressible(%q) = %v, want %v", typ, got, want)
 		}
 	}
@@ -190,15 +192,15 @@ func TestStaticSecurityHeaders(t *testing.T) {
 }
 
 func TestFeedOrigins(t *testing.T) {
-	got := feedOrigins([]byte(`{"proxy":"/rt","trips":"http://a.test/x?y=1","vehicles":"https://b.test:9/v","alerts":"not a url","n":3}`), "https://agency.test/gtfs.zip")
+	got := static.FeedOrigins([]byte(`{"proxy":"/rt","trips":"http://a.test/x?y=1","vehicles":"https://b.test:9/v","alerts":"not a url","n":3}`), "https://agency.test/gtfs.zip")
 	want := []string{"http://a.test", "https://agency.test", "https://b.test:9"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("feedOrigins = %v, want %v", got, want)
 	}
-	if got := feedOrigins(nil, ""); len(got) != 0 {
+	if got := static.FeedOrigins(nil, ""); len(got) != 0 {
 		t.Errorf("no feeds: %v", got)
 	}
-	if got := feedOrigins([]byte("{broken"), ""); len(got) != 0 {
+	if got := static.FeedOrigins([]byte("{broken"), ""); len(got) != 0 {
 		t.Errorf("broken json: %v", got)
 	}
 }
@@ -218,9 +220,9 @@ func TestExportWritesTheHeadersFile(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"/*\n  X-Content-Type-Options: nosniff\n",
-		"/assets/*\n  Cache-Control: " + immutableCache + "\n",
-		"/caps/*\n  Cache-Control: " + immutableCache + "\n",
-		"/blobs/*\n  Cache-Control: " + immutableCache + "\n",
+		"/assets/*\n  Cache-Control: " + static.ImmutableCache + "\n",
+		"/caps/*\n  Cache-Control: " + static.ImmutableCache + "\n",
+		"/blobs/*\n  Cache-Control: " + static.ImmutableCache + "\n",
 		"/manifest\n  Content-Type: application/json\n",
 		"/ride-now.html\n  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'",
 		"http://example.test",
@@ -240,8 +242,8 @@ func TestExportWritesTheHeadersFile(t *testing.T) {
 
 // A serverless deployment's policy names the agency's GTFS URL host.
 func TestExportHeadersNameTheFeedURL(t *testing.T) {
-	rules := deploymentRules([]string{"stop-display.html"}, feedOrigins(nil, "https://gtfs.agency.test/feed.zip"))
-	text := renderHeadersFile(rules)
+	rules := static.DeploymentRules([]string{"stop-display.html"}, static.FeedOrigins(nil, "https://gtfs.agency.test/feed.zip"))
+	text := static.RenderHeadersFile(rules)
 	if !strings.Contains(text, "connect-src 'self' https://gtfs.agency.test;") {
 		t.Errorf("the policy does not name the feed URL's origin:\n%s", text)
 	}

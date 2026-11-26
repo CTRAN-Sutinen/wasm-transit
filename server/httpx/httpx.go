@@ -18,6 +18,12 @@ import (
 
 const RetryAfterSecs = 5
 
+// Outbound is http.DefaultTransport as it stands when the server starts.
+// Tests replace http.DefaultTransport to check their own requests against
+// the HTTP contract, and the server's outgoing requests must not pass
+// through that check.
+var Outbound = http.DefaultTransport
+
 // Fail answers 503 with Retry-After for an unavailable bucket, because nothing
 // was written and the client resends. Other errors use code.
 func Fail(w http.ResponseWriter, err error, code int) {

@@ -1,4 +1,4 @@
-package main
+package static
 
 // The schemas at /schemas/ are ordinary build files (docs/FORMATS.md), so
 // a rollback serves the schemas of the build it moves to. The index holds
@@ -17,20 +17,20 @@ type schemaLinks struct {
 }
 
 // links is empty when the build has no index.
-func (s *server) links() schemaLinks {
+func (st *Static) links() schemaLinks {
 	var index struct {
 		Links schemaLinks `json:"links"`
 	}
-	if raw := s.staticBytes("schemas/documents.json"); raw != nil {
+	if raw := st.Bytes("schemas/documents.json"); raw != nil {
 		json.Unmarshal(raw, &index)
 	}
 	return index.Links
 }
 
-func (s *server) storedSchemaLink(kind string, version uint32) string {
-	return s.links().Stored[fmt.Sprintf("%s v%d", kind, version)]
+func (st *Static) StoredSchemaLink(kind string, version uint32) string {
+	return st.links().Stored[fmt.Sprintf("%s v%d", kind, version)]
 }
 
-func (s *server) publishedSchemaLink(tag string) string {
-	return s.links().Published[tag]
+func (st *Static) PublishedSchemaLink(tag string) string {
+	return st.links().Published[tag]
 }

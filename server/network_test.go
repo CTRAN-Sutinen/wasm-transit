@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/imports"
+	"rustwasm/server/manifest"
 	"rustwasm/server/wasmhost"
 )
 
@@ -36,12 +38,12 @@ func newNetworkHost(t *testing.T) *WasmHost {
 
 func networkServer(t *testing.T, path string) string {
 	t.Helper()
-	s := &server{wasm: newTestHost(t), feeder: fileFeed(path, testWasm)}
+	s := &server{wasm: newTestHost(t), feeder: imports.FileFeed(path, testWasm)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/network", s.handleNetwork)
-	mux.HandleFunc("/network/document", s.handleNetworkDocument)
-	mux.HandleFunc("/network/boundary", s.handleNetworkBoundary)
-	mux.HandleFunc("/manifest", s.handleManifest)
+	mux.HandleFunc("/network", s.published().HandleNetwork)
+	mux.HandleFunc("/network/document", s.published().HandleNetworkDocument)
+	mux.HandleFunc("/network/boundary", s.published().HandleNetworkBoundary)
+	mux.HandleFunc("/manifest", s.manifest().HandleManifest)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -122,7 +124,7 @@ func TestManifestPinsTheServedNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +148,7 @@ func TestManifestNamesTheAgencysZone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +157,7 @@ func TestManifestNamesTheAgencysZone(t *testing.T) {
 	}
 }
 
-// Gzip when the client takes it, the network hash as the ETag, and a matching
+// static.Gzip when the client takes it, the network hash as the ETag, and a matching
 // revalidation answers 304 with no body.
 func TestNetworkWire(t *testing.T) {
 	base := networkServer(t, writeFeed(t, fixtureZip(t)))

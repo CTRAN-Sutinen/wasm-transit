@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"rustwasm/server/imports"
+	"rustwasm/server/manifest"
+	"rustwasm/server/source"
 	"rustwasm/server/store"
 )
 
@@ -25,12 +28,12 @@ func derivedServer(t *testing.T, bucket store.Backend, layer string) *server {
 func derivedServerOf(t *testing.T, bucket store.Backend, feed, layer string) *server {
 	t.Helper()
 	s := newStoreServer(t, bucket)
-	s.feeder = &feedSource{src: newSource(feed, "source.feed", "gtfs_feed", s.store), wasm: testWasm}
-	s.streets = &streetsSource{src: newSource(layer, "source.streets", "street_layer", s.store), wasm: testWasm}
+	s.feeder = &imports.FeedSource{Src: source.New(feed, "source.feed", "gtfs_feed", s.store), Wasm: testWasm}
+	s.streets = &imports.StreetsSource{Src: source.New(layer, "source.streets", "street_layer", s.store), Wasm: testWasm}
 	return s
 }
 
-func manifestOf(t *testing.T, s *server) Manifest {
+func manifestOf(t *testing.T, s *server) manifest.Manifest {
 	t.Helper()
 	m, err := s.buildManifest()
 	if err != nil {
@@ -57,32 +60,32 @@ func TestABootOverStoredDerivationsRunsNoModule(t *testing.T) {
 	layer := writeLayer(t)
 	first := derivedServer(t, bucket, layer)
 	want := manifestOf(t, first)
-	if first.feeder.imports != 1 || first.streets.derivations != 2 {
-		t.Fatalf("the first boot derives each document once: %d imports, %d streets derivations", first.feeder.imports, first.streets.derivations)
+	if first.feeder.Imports != 1 || first.streets.Derivations != 2 {
+		t.Fatalf("the first boot derives each document once: %d imports, %d streets derivations", first.feeder.Imports, first.streets.Derivations)
 	}
 
 	second := derivedServer(t, bucket, layer)
 	got := manifestOf(t, second)
-	if second.feeder.imports != 0 || second.streets.derivations != 0 {
-		t.Fatalf("a boot over the stored derivations runs no module: %d imports, %d streets derivations", second.feeder.imports, second.streets.derivations)
+	if second.feeder.Imports != 0 || second.streets.Derivations != 0 {
+		t.Fatalf("a boot over the stored derivations runs no module: %d imports, %d streets derivations", second.feeder.Imports, second.streets.Derivations)
 	}
-	if manifestKeyOf(got) != manifestKeyOf(want) {
+	if manifest.KeyOf(got) != manifest.KeyOf(want) {
 		t.Fatalf("the same manifest: %+v, want %+v", got, want)
 	}
 	a, _ := first.feeder.Load()
 	b, _ := second.feeder.Load()
-	if !bytes.Equal(a.document, b.document) || !bytes.Equal(a.boundary, b.boundary) || a.timezone != b.timezone {
+	if !bytes.Equal(a.Document, b.Document) || !bytes.Equal(a.Boundary, b.Boundary) || a.Timezone != b.Timezone {
 		t.Fatal("the stored network and boundary are the imported ones")
 	}
 	var answerA, answerB map[string]any
-	json.Unmarshal(a.network, &answerA)
-	json.Unmarshal(b.network, &answerB)
+	json.Unmarshal(a.Network, &answerA)
+	json.Unmarshal(b.Network, &answerB)
 	if ja, _ := json.Marshal(answerA); !bytes.Equal(ja, must(json.Marshal(answerB))) {
 		t.Fatal("GET /network answers the import's answer, notes and all")
 	}
-	sa, _ := first.publishedStreets()
-	sb, _ := second.publishedStreets()
-	if !bytes.Equal(sa.streets.body, sb.streets.body) || !bytes.Equal(sa.walks.body, sb.walks.body) {
+	sa, _ := first.published().PublishedStreets()
+	sb, _ := second.published().PublishedStreets()
+	if !bytes.Equal(sa.Streets.Body, sb.Streets.Body) || !bytes.Equal(sa.Walks.Body, sb.Walks.Body) {
 		t.Fatal("the stored streets and walk table are the derived ones")
 	}
 }
@@ -134,36 +137,22 @@ func TestAChangedInputIsDerivedOnce(t *testing.T) {
 	}
 	second := derivedServerOf(t, bucket, feed, layer)
 	after := manifestOf(t, second)
-	if second.feeder.imports != 1 {
-		t.Fatalf("a new zip is imported once: %d imports", second.feeder.imports)
+	if second.feeder.Imports != 1 {
+		t.Fatalf("a new zip is imported once: %d imports", second.feeder.Imports)
 	}
-	if second.streets.derivations != 1 {
-		t.Fatalf("the unchanged layer is read from the store, and the walk table over the new network is derived: %d derivations", second.streets.derivations)
+	if second.streets.Derivations != 1 {
+		t.Fatalf("the unchanged layer is read from the store, and the walk table over the new network is derived: %d derivations", second.streets.Derivations)
 	}
 	if after.FeedHash == before.FeedHash || after.NetworkHash == before.NetworkHash || after.StreetsHash != before.StreetsHash {
 		t.Fatalf("the new network over the same streets: %+v then %+v", before, after)
 	}
 	third := derivedServerOf(t, bucket, feed, layer)
 	manifestOf(t, third)
-	if third.feeder.imports != 0 || third.streets.derivations != 0 {
-		t.Fatalf("the new derivations are stored: %d imports, %d derivations", third.feeder.imports, third.streets.derivations)
+	if third.feeder.Imports != 0 || third.streets.Derivations != 0 {
+		t.Fatalf("the new derivations are stored: %d imports, %d derivations", third.feeder.Imports, third.streets.Derivations)
 	}
 	if log, _, _ := second.store.Log("network", ""); len(log) != 2 || log[0].To != before.NetworkHash || log[1].To != after.NetworkHash {
 		t.Fatalf("the network pointer logs each import: %+v", log)
-	}
-}
-
-func TestADocumentStoredInAnotherVersionIsDerivedAgain(t *testing.T) {
-	st := store.New(store.NewMemory())
-	feed := "sha256:" + strings.Repeat("a", 64)
-	doc := []byte(`{"kind":"network","schema_version":1}`)
-	commitDerivation(st, derivedNetworkPointer, []string{feed}, "cap-network@sha256:"+strings.Repeat("b", 64), json.RawMessage(`{}`),
-		derivedDoc{tag: "network", storeKind: "network_document", version: 1, body: doc, hash: store.HashOf(doc)})
-	if _, _, ok := storedDerivation(st, derivedNetworkPointer, []string{feed}, "network"); ok {
-		t.Fatal("a network stored in version 1 is not read by a build that writes version 2")
-	}
-	if _, _, ok := storedDerivation(st, derivedNetworkPointer, []string{"sha256:" + strings.Repeat("c", 64)}, "network"); ok {
-		t.Fatal("a derivation of other inputs is not read")
 	}
 }
 
@@ -176,7 +165,7 @@ func TestOnlyTheServersDerivationsWriteTheDerivedPointers(t *testing.T) {
 		{"boundary", "boundary"},
 		{"streets", "streets"},
 		{"walks", "walks"},
-		{derivedNetworkPointer, "derivation"},
+		{imports.DerivedNetworkPointer, "derivation"},
 		{"other", "derivation"},
 		{"other", "walks"},
 	} {

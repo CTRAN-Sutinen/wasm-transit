@@ -18,6 +18,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"rustwasm/server/manifest"
+	"rustwasm/server/static"
 	"rustwasm/server/store"
 )
 
@@ -331,7 +333,7 @@ func withSchemas(t *testing.T, dist string) {
 	if _, err := os.Stat(filepath.Join(servedSchemasDir, "documents.json")); err != nil {
 		t.Fatalf("the served schemas (run `just caps`): %v", err)
 	}
-	if err := copyTree(servedSchemasDir, filepath.Join(dist, "schemas")); err != nil {
+	if err := static.CopyTree(servedSchemasDir, filepath.Join(dist, "schemas")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -394,7 +396,7 @@ func TestAnExportReachesEachDocumentsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +425,7 @@ func TestAServerLinksEachDocumentsSchema(t *testing.T) {
 		}
 		return []byte(body)
 	}
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.Unmarshal(get("manifest"), &m); err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +443,7 @@ func TestAStoredBlobLinksItsSchema(t *testing.T) {
 	writeDist(t, dist, releaseA)
 	withSchemas(t, dist)
 	s, base := newBuildServer(t, store.NewMemory(), dist)
-	hash, err := s.store.PutBlob([]byte(editDoc("e1", "submitted", 2, 100)), s.syncEnvelope(), "")
+	hash, err := s.store.PutBlob([]byte(editDoc("e1", "submitted", 2, 100)), s.edits().Envelope(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

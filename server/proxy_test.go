@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"rustwasm/server/proxy"
 )
 
 func TestTheFeedProxyIsOffUnlessAsked(t *testing.T) {
@@ -56,7 +58,7 @@ func TestTheFeedProxyRelaysWhenAsked(t *testing.T) {
 
 func TestTheFeedProxyCapsTimeAndSize(t *testing.T) {
 	big := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(strings.Repeat("x", proxyMaxBytes+1)))
+		w.Write([]byte(strings.Repeat("x", proxy.MaxBytes+1)))
 	}))
 	defer big.Close()
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

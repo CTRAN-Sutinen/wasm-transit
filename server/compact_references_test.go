@@ -36,7 +36,7 @@ func TestCompactionSkipsATombstoneThatAnAlertNames(t *testing.T) {
 		t.Fatalf("the alert: %d %s", code, resp)
 	}
 
-	s.maybeCompactEdits()
+	s.edits().Compact()
 
 	_, _, doc := httpGet(t, base+"/edits")
 	if !strings.Contains(doc, `"id":"named"`) || strings.Contains(doc, `"id":"free"`) {

@@ -1,13 +1,14 @@
-package main
-
-// The pointer and blob routes over the content-addressed store
-// (docs/architecture/storage.md; routes in openapi.json).
+// Package pointers serves the pointer and blob routes over the
+// content-addressed store (docs/architecture/storage.md; routes in
+// server/openapi.json). A generic pointer write is checked by its kind's
+// module, as the kind table names (server/kinds).
 //
-// /blobs also answers the published documents (publishedBlob) with or
-// without the store. The edits pointer's log is the pointer's history
-// before the disruptions log, read only. The published plan set, the
-// picks' networks, and the derived documents are refused here: they
-// publish through POST /plans and derived.go.
+// /blobs also answers each log's documents and the published documents
+// with or without the store. The edits pointer's log is the pointer's
+// history before the disruptions log, read only. The published plan set,
+// the picks' networks, and the derived documents are refused here: they
+// publish through POST /plans and server/imports.
+package pointers
 
 import (
 	"context"
@@ -18,118 +19,56 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"rustwasm/server/authz"
+	"rustwasm/server/edits"
 	"rustwasm/server/httpx"
+	"rustwasm/server/imports"
+	"rustwasm/server/kinds"
+	"rustwasm/server/logs"
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
-// editsVersion and networkVersion mirror transit_sync::SCHEMA_VERSION and
-// transit_network::SCHEMA_VERSION. An older document comes forward
-// through cap-migrate at receive.
-const editsVersion = 2
-
-const networkVersion = 2
-
-const emptyEdits = `{"kind":"edit_records","schema_version":2,"records":[]}`
-
-// The conflict function is content-addressed with the producing module's
-// hash, so the envelope carries it.
-func (s *server) syncEnvelope() store.Envelope {
-	return store.Envelope{
-		Kind:          "edit_records",
-		SchemaVersion: editsVersion,
-		ProducedBy:    "cap-sync@" + s.wasm.Hash(),
-	}
+// Deps is what the host gives the routes.
+type Deps struct {
+	Store func() *store.Store
+	Table func() (*kinds.Table, error)
+	Logs  *logs.Logs
+	Edits *edits.Edits
+	// Fresh is an instance of its own for a write's check, closed after.
+	Fresh func(ctx context.Context) (*wasmhost.Instance, error)
+	// PublishedBlob is a document the server publishes, by its hash.
+	PublishedBlob func(hash string) (imports.Doc, bool)
+	// StoredSchemaLink and PublishedSchemaLink are a Link header naming the
+	// document's schema, or "".
+	StoredSchemaLink    func(kind string, version uint32) string
+	PublishedSchemaLink func(tag string) string
 }
 
-func (s *server) migrator() (*WasmHost, error) {
-	return s.as("migrate"), nil
+type Pointers struct {
+	store               func() *store.Store
+	table               func() (*kinds.Table, error)
+	logs                *logs.Logs
+	edits               *edits.Edits
+	fresh               func(ctx context.Context) (*wasmhost.Instance, error)
+	publishedBlob       func(hash string) (imports.Doc, bool)
+	storedSchemaLink    func(kind string, version uint32) string
+	publishedSchemaLink func(tag string) string
+
+	gzMu    sync.Mutex
+	gzCache map[string][]byte
 }
 
-// forward returns a current or newer document unchanged. The module that
-// reads a newer one refuses it, so the host never rewrites it.
-func (s *server) forward(kind string, raw json.RawMessage) (doc json.RawMessage, migrated bool, err error) {
-	m, err := s.migrator()
-	if err != nil {
-		return nil, false, fmt.Errorf("migration module: %w", err)
-	}
-	var v struct {
-		Version uint32 `json:"version"`
-		Reads   uint32 `json:"reads"`
-	}
-	if err := m.Invoke(context.Background(), map[string]any{"op": "version", "kind": kind, "document": raw}, &v); err != nil {
-		return nil, false, err
-	}
-	if v.Version >= v.Reads {
-		return raw, false, nil
-	}
-	var out struct {
-		Canonical string `json:"canonical"`
-	}
-	if err := m.Invoke(context.Background(), map[string]any{"op": "migrate", "kind": kind, "document": raw}, &out); err != nil {
-		return nil, false, err
-	}
-	return json.RawMessage(out.Canonical), true, nil
+func New(d Deps) *Pointers {
+	return &Pointers{store: d.Store, table: d.Table, logs: d.Logs, edits: d.Edits, fresh: d.Fresh, publishedBlob: d.PublishedBlob,
+		storedSchemaLink: d.StoredSchemaLink, publishedSchemaLink: d.PublishedSchemaLink}
 }
 
-func (s *server) syncOp(req map[string]any, out any) error {
-	return s.wasm.Invoke(context.Background(), req, out)
-}
-
-func (s *server) readEdits(raw json.RawMessage) (records json.RawMessage, document string, hash string, dropped int, err error) {
-	if raw, _, err = s.forward("edit_records", raw); err != nil {
-		return nil, "", "", 0, err
-	}
-	var resp struct {
-		Records       json.RawMessage `json:"records"`
-		Dropped       int             `json:"dropped"`
-		SchemaVersion uint32          `json:"schema_version"`
-		Document      string          `json:"document"`
-		DocumentHash  string          `json:"document_hash"`
-	}
-	if err := s.syncOp(map[string]any{"op": "read_edits", "document": raw}, &resp); err != nil {
-		return nil, "", "", 0, err
-	}
-	return resp.Records, resp.Document, resp.DocumentHash, resp.Dropped, nil
-}
-
-// mergeEdits clamps the client's clock to the server's (D-56). The answer
-// carries the fields that the client's records have and this build lacks.
-func (s *server) mergeEdits(clientRaw, serverRaw json.RawMessage, nowMs int64) (document string, hash string, unknown []string, err error) {
-	clientRec, _, _, _, err := s.readEdits(clientRaw)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("read_edits client: %w", err)
-	}
-	serverRec, _, _, _, err := s.readEdits(serverRaw)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("read_edits server: %w", err)
-	}
-	var resp struct {
-		Document      string   `json:"document"`
-		DocumentHash  string   `json:"document_hash"`
-		UnknownFields []string `json:"unknown_fields"`
-	}
-	if err := s.syncOp(map[string]any{
-		"op": "sync_edits", "client": clientRec, "server": serverRec, "now_ms": nowMs,
-	}, &resp); err != nil {
-		return "", "", nil, fmt.Errorf("sync_edits: %w", err)
-	}
-	return resp.Document, resp.DocumentHash, resp.UnknownFields, nil
-}
-
-func asConflict(err error, target **store.ConflictError) bool {
-	for ; err != nil; err = errors.Unwrap(err) {
-		if ce, ok := err.(*store.ConflictError); ok {
-			*target = ce
-			return true
-		}
-	}
-	return false
-}
-
-func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+func (p *Pointers) HandlePointers(w http.ResponseWriter, r *http.Request) {
+	if p.store() == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
 		return
 	}
@@ -145,7 +84,7 @@ func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "use GET", http.StatusMethodNotAllowed)
 			return
 		}
-		s.handlePointerLog(w, r, name)
+		p.handlePointerLog(w, r, name)
 		return
 	}
 	if len(parts) != 1 {
@@ -154,17 +93,17 @@ func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		s.handlePointerHead(w, name)
+		p.handlePointerHead(w, name)
 	case http.MethodPost:
-		s.handlePointerPost(w, r, name)
+		p.handlePointerPost(w, r, name)
 	default:
 		http.Error(w, "use GET or POST", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
+func (p *Pointers) handlePointerHead(w http.ResponseWriter, name string) {
 	if name == "edits" {
-		_, head, err := s.disruptionsNow()
+		_, head, err := p.edits.Now()
 		if err != nil {
 			httpx.Fail(w, err, http.StatusInternalServerError)
 			return
@@ -175,7 +114,7 @@ func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
 		json.NewEncoder(w).Encode(head)
 		return
 	}
-	head, found, err := s.store.Head(name)
+	head, found, err := p.store().Head(name)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
@@ -189,24 +128,21 @@ func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
 	json.NewEncoder(w).Encode(head)
 }
 
-func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name string) {
+func (p *Pointers) handlePointerLog(w http.ResponseWriter, r *http.Request, name string) {
 	since := r.URL.Query().Get("since")
-	entries, found, err := s.store.Log(name, since)
+	entries, found, err := p.store().Log(name, since)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	// Writer identities leave the store only for audit-granted callers.
-	canAudit := true
-	if v := r.Context().Value(auditKey); v != nil {
-		canAudit, _ = v.(bool)
-	}
+	canAudit := authz.CanAudit(r)
 	if !canAudit {
 		for i := range entries {
 			entries[i].Writer = ""
 		}
 	}
-	head, _, _ := s.store.Head(name)
+	head, _, _ := p.store().Head(name)
 	httpx.LabelStale(w, head)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -218,7 +154,7 @@ func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name s
 	})
 }
 
-func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name string) {
+func (p *Pointers) handlePointerPost(w http.ResponseWriter, r *http.Request, name string) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
 	if err != nil {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
@@ -249,17 +185,17 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			return
 		}
 		from := req.From
-		seq, got, refusal, err := s.writeEdits(r, req.Client, &from)
+		seq, got, refusal, err := p.edits.Write(r, req.Client, &from)
 		if err != nil {
-			editsWriteFailed(w, err)
+			edits.WriteFailed(w, err)
 			return
 		}
 		if refusal != nil {
-			editsRefused(w, got, refusal)
+			edits.Refused(w, got, refusal)
 			return
 		}
 		httpx.FlagUnknown(w, "edits", writer, got.UnknownFields)
-		_, head, err := s.disruptionsNow()
+		_, head, err := p.edits.Now()
 		if err != nil {
 			httpx.Fail(w, err, http.StatusInternalServerError)
 			return
@@ -271,7 +207,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		return
 	}
 
-	head, found, err := s.store.Head(name)
+	head, found, err := p.store().Head(name)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
@@ -284,7 +220,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		return
 	}
 
-	entry, refusal, err := s.pointerRefusal(name, kind)
+	entry, refusal, err := p.pointerRefusal(name, kind)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
@@ -305,7 +241,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		http.Error(w, "document is not JSON", http.StatusBadRequest)
 		return
 	}
-	checked, err := s.checkKind(r.Context(), entry, json.RawMessage(req.Document))
+	checked, err := p.checkKind(r.Context(), entry, json.RawMessage(req.Document))
 	if err != nil {
 		http.Error(w, "the document is refused: "+err.Error(), http.StatusUnprocessableEntity)
 		return
@@ -321,10 +257,10 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	if found {
 		from = head.Hash
 	}
-	h, seq, err := s.store.CAS(name, from, []byte(*checked.document), env, checked.documentHash, writer, nowMs)
+	h, seq, err := p.store().CAS(name, from, []byte(*checked.document), env, checked.documentHash, writer, nowMs)
 	if err != nil {
 		var ce *store.ConflictError
-		if asConflict(err, &ce) {
+		if errors.As(err, &ce) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]any{"current": ce.Current, "seq": ce.Seq})
@@ -347,7 +283,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	json.NewEncoder(w).Encode(answer)
 }
 
-func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
+func (p *Pointers) HandleBlob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
 		return
@@ -376,26 +312,26 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	var data []byte
 	var env store.Envelope
 	err := store.ErrNotFound
-	if s.store != nil {
-		data, env, err = s.store.GetBlob(hash)
+	if p.store() != nil {
+		data, env, err = p.store().GetBlob(hash)
 	}
 	if err == store.ErrNotFound {
-		kind, doc, ok := s.kept().Doc(hash)
+		kind, doc, ok := p.logs.Doc(hash)
 		if ok {
 			version := docVersion(doc)
 			w.Header().Set("X-Document-Kind", kind)
 			w.Header().Set("X-Schema-Version", strconv.FormatUint(uint64(version), 10))
-			if link := s.storedSchemaLink(kind, version); link != "" {
+			if link := p.storedSchemaLink(kind, version); link != "" {
 				w.Header().Set("Link", link)
 			}
-			send(doc, func() []byte { return s.gzippedBlob(hash, doc) })
+			send(doc, func() []byte { return p.gzippedBlob(hash, doc) })
 			return
 		}
-		if doc, ok := s.publishedBlob(hash); ok {
-			if link := s.publishedSchemaLink(doc.tag); link != "" {
+		if doc, ok := p.publishedBlob(hash); ok {
+			if link := p.publishedSchemaLink(doc.Tag); link != "" {
 				w.Header().Set("Link", link)
 			}
-			send(doc.body, func() []byte { return doc.gz })
+			send(doc.Body, func() []byte { return doc.Gz })
 			return
 		}
 		http.NotFound(w, r)
@@ -408,33 +344,33 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	// The policy blob is the authorization structure itself. A client gets
 	// the manifest's policy_hash, never the document. The log endpoint is the
 	// audited path to policy changes.
-	if s.restricted(env.Kind) {
+	if p.restricted(env.Kind) {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("X-Document-Kind", env.Kind)
 	w.Header().Set("X-Schema-Version", fmt.Sprintf("%d", env.SchemaVersion))
-	if link := s.storedSchemaLink(env.Kind, env.SchemaVersion); link != "" {
+	if link := p.storedSchemaLink(env.Kind, env.SchemaVersion); link != "" {
 		w.Header().Set("Link", link)
 	}
-	send(data, func() []byte { return s.gzippedBlob(hash, data) })
+	send(data, func() []byte { return p.gzippedBlob(hash, data) })
 }
 
 // gzippedBlob caches the last few compressed blobs: every page that loads
 // a published network fetches it, and compressing 10 MB per request would
 // use the server's whole budget. Compression is transport only
 // (docs/FORMATS.md).
-func (s *server) gzippedBlob(hash string, data []byte) []byte {
-	s.gzMu.Lock()
-	defer s.gzMu.Unlock()
-	if gz, ok := s.gzCache[hash]; ok {
+func (p *Pointers) gzippedBlob(hash string, data []byte) []byte {
+	p.gzMu.Lock()
+	defer p.gzMu.Unlock()
+	if gz, ok := p.gzCache[hash]; ok {
 		return gz
 	}
-	gz := gzipped(data)
-	if s.gzCache == nil || len(s.gzCache) >= 8 {
-		s.gzCache = map[string][]byte{}
+	gz := imports.Gzipped(data)
+	if p.gzCache == nil || len(p.gzCache) >= 8 {
+		p.gzCache = map[string][]byte{}
 	}
-	s.gzCache[hash] = gz
+	p.gzCache[hash] = gz
 	return gz
 }
 
@@ -446,4 +382,61 @@ func docVersion(doc []byte) uint32 {
 		return 1
 	}
 	return tag.SchemaVersion
+}
+
+// NameOf is the pointer a /pointers/ request names.
+func NameOf(r *http.Request) string {
+	rest := strings.TrimPrefix(r.URL.Path, "/pointers/")
+	return strings.Split(rest, "/")[0]
+}
+
+// With no table, the policy is restricted: a missing table never opens it.
+func (p *Pointers) restricted(kind string) bool {
+	t, err := p.table()
+	if err != nil {
+		return kind == "policy"
+	}
+	e := t.ByStoreKind(kind)
+	return e == nil && kind == "policy" || e != nil && e.Read == "restricted"
+}
+
+func (p *Pointers) pointerRefusal(name, kind string) (*kinds.Entry, string, error) {
+	t, err := p.table()
+	if err != nil {
+		return nil, "", err
+	}
+	e, refusal := t.PointerRefusal(name, kind)
+	return e, refusal, nil
+}
+
+type kindCheck struct {
+	answer        json.RawMessage
+	document      *string
+	documentHash  string
+	unknownFields []string
+	module        string
+}
+
+// A pointer write is rare, so the module instance is fresh and closed
+// after.
+func (p *Pointers) checkKind(ctx context.Context, e *kinds.Entry, doc json.RawMessage) (kindCheck, error) {
+	inst, err := p.fresh(ctx)
+	if err != nil {
+		return kindCheck{}, fmt.Errorf("an instance for %s: %w", e.Module, err)
+	}
+	defer inst.Close(ctx)
+	host := inst.As(e.Module)
+	answer, err := host.InvokeRaw(ctx, map[string]any{"op": e.Validate, e.Tag: doc})
+	if err != nil {
+		return kindCheck{}, err
+	}
+	var out struct {
+		Document      *string  `json:"document"`
+		DocumentHash  string   `json:"document_hash"`
+		UnknownFields []string `json:"unknown_fields"`
+	}
+	if err := json.Unmarshal(answer, &out); err != nil {
+		return kindCheck{}, err
+	}
+	return kindCheck{answer: answer, document: out.Document, documentHash: out.DocumentHash, unknownFields: out.UnknownFields, module: "cap-" + e.Module + "@" + host.Hash()}, nil
 }

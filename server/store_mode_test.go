@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/edits"
 	"rustwasm/server/logs"
 	"rustwasm/server/store"
 )
@@ -32,11 +33,11 @@ func newStoreServer(t *testing.T, b store.Backend) *server {
 
 func storeMux(s *server) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/edits", s.handleEdits)
-	mux.HandleFunc("/pointers/", s.handlePointers)
+	mux.HandleFunc("/edits", s.edits().HandleEdits)
+	mux.HandleFunc("/pointers/", s.pointers().HandlePointers)
 	mux.HandleFunc("/logs/", s.kept().HandleLogs)
-	mux.HandleFunc("/blobs/", s.handleBlob)
-	mux.HandleFunc("/manifest", s.handleManifest)
+	mux.HandleFunc("/blobs/", s.pointers().HandleBlob)
+	mux.HandleFunc("/manifest", s.manifest().HandleManifest)
 	return mux
 }
 
@@ -294,7 +295,7 @@ func TestStoreQuarantineAndGap(t *testing.T) {
 	s := newStoreServer(t, bucket)
 	base := httptest.NewServer(storeMux(s)).URL
 	httpPost(t, base+"/edits", editDoc("e1", "accepted", 1, 100))
-	if err := s.store.AppendEntry(disruptionsLog, 2, []byte(`{"kind":"log_entry"`)); err != nil {
+	if err := s.store.AppendEntry(edits.DisruptionsLog, 2, []byte(`{"kind":"log_entry"`)); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, body := httpPost(t, base+"/edits", editDoc("e2", "accepted", 1, 100)); code != 200 || !strings.Contains(body, `"e1"`) || !strings.Contains(body, `"e2"`) {
@@ -339,7 +340,7 @@ func TestStoreBootsFromACheckpoint(t *testing.T) {
 		}
 	}
 	_, _, before := httpGet(t, base+"/edits")
-	if cps, _ := s.store.Checkpoints(disruptionsLog); len(cps) != 1 || cps[0] != logs.CheckpointEvery {
+	if cps, _ := s.store.Checkpoints(edits.DisruptionsLog); len(cps) != 1 || cps[0] != logs.CheckpointEvery {
 		t.Fatalf("checkpoints: %v", cps)
 	}
 	s2 := newStoreServer(t, bucket)
@@ -347,8 +348,8 @@ func TestStoreBootsFromACheckpoint(t *testing.T) {
 	if _, _, after := httpGet(t, base2+"/edits"); after != before {
 		t.Fatal("a process booted from the checkpoint serves another document")
 	}
-	if s2.kept().Get(disruptionsLog).Checkpointed() != logs.CheckpointEvery {
-		t.Fatalf("the boot started from checkpoint %d", s2.kept().Get(disruptionsLog).Checkpointed())
+	if s2.kept().Get(edits.DisruptionsLog).Checkpointed() != logs.CheckpointEvery {
+		t.Fatalf("the boot started from checkpoint %d", s2.kept().Get(edits.DisruptionsLog).Checkpointed())
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/attachments"
 	"rustwasm/server/store"
 )
 
@@ -53,8 +54,8 @@ func getAttachment(t *testing.T, url, token string) (int, string, []byte) {
 
 func attachmentMux(s *server) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
-	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
+	mux.HandleFunc("/attachments", s.gate().ProtectWrite(func(*http.Request) string { return "attachments" }, s.attachmentRoutes().HandleAttachments))
+	mux.HandleFunc("/attachments/", s.gate().ProtectSignedIn(s.attachmentRoutes().HandleAttachmentFile))
 	return mux
 }
 
@@ -84,7 +85,7 @@ func TestAttachmentsAreKeptByHash(t *testing.T) {
 	if code, _ := postAttachment(t, srv.URL+"/attachments", "", "text/html", []byte("<script>")); code != 415 {
 		t.Fatalf("a type not taken: %d", code)
 	}
-	if code, _ := postAttachment(t, srv.URL+"/attachments", "", "application/pdf", make([]byte, maxAttachment+1)); code != 413 {
+	if code, _ := postAttachment(t, srv.URL+"/attachments", "", "application/pdf", make([]byte, attachments.MaxBytes+1)); code != 413 {
 		t.Fatalf("too large: %d", code)
 	}
 }

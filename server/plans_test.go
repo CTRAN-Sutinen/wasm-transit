@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/imports"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
@@ -61,7 +62,7 @@ func fixtureNetwork(t *testing.T, id, name, effectiveFrom string) map[string]any
 			fixtureErr = err
 			return
 		}
-		answer, _, _, err := importFeed(context.Background(), testWasm, zipBytes)
+		answer, _, _, err := imports.ImportFeed(context.Background(), testWasm, zipBytes)
 		if err != nil {
 			fixtureErr = err
 			return
@@ -402,7 +403,7 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 		t.Fatalf("before the first pick, no feed configured: %d", code)
 	}
 	zipBytes, _ := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
-	s.feeder = fileFeed("../web/e2e/fixtures/sample-gtfs.zip", testWasm)
+	s.feeder = imports.FileFeed("../web/e2e/fixtures/sample-gtfs.zip", testWasm)
 	code, _, body := httpGet(t, base+"/feed?date=2026-08-15")
 	if code != 200 || body != string(zipBytes) {
 		t.Fatalf("before the first pick: the configured zip (%d, %d bytes)", code, len(body))
@@ -428,7 +429,7 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 		t.Fatalf("today after a publish: %s, want the agency's 2026-11-05", got)
 	}
 
-	fed := &server{feeder: fileFeed("../web/e2e/fixtures/sample-gtfs.zip", testWasm)}
+	fed := &server{feeder: imports.FileFeed("../web/e2e/fixtures/sample-gtfs.zip", testWasm)}
 	fed.now = func() time.Time { return instant }
 	if got := fed.today(); got != "2026-11-05" {
 		t.Fatalf("today from the feed's zone: %s, want 2026-11-05", got)

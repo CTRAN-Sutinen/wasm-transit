@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 
 	"rustwasm/server/wasmhost"
 )
@@ -85,4 +86,34 @@ func (s *server) unhosted() []string {
 		}
 	}
 	return missing
+}
+
+func (s *server) migrator() (*WasmHost, error) {
+	return s.as("migrate"), nil
+}
+
+// forward returns a current or newer document unchanged. The module that
+// reads a newer one refuses it, so the host never rewrites it.
+func (s *server) forward(kind string, raw json.RawMessage) (doc json.RawMessage, migrated bool, err error) {
+	m, err := s.migrator()
+	if err != nil {
+		return nil, false, fmt.Errorf("migration module: %w", err)
+	}
+	var v struct {
+		Version uint32 `json:"version"`
+		Reads   uint32 `json:"reads"`
+	}
+	if err := m.Invoke(context.Background(), map[string]any{"op": "version", "kind": kind, "document": raw}, &v); err != nil {
+		return nil, false, err
+	}
+	if v.Version >= v.Reads {
+		return raw, false, nil
+	}
+	var out struct {
+		Canonical string `json:"canonical"`
+	}
+	if err := m.Invoke(context.Background(), map[string]any{"op": "migrate", "kind": kind, "document": raw}, &out); err != nil {
+		return nil, false, err
+	}
+	return json.RawMessage(out.Canonical), true, nil
 }

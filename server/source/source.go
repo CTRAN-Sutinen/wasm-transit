@@ -1,4 +1,4 @@
-package main
+package source
 
 import (
 	"errors"
@@ -11,15 +11,16 @@ import (
 	"sync"
 	"time"
 
+	"rustwasm/server/httpx"
 	"rustwasm/server/store"
 )
 
-// source is where a server reads one input: an http(s) URL,
+// A Source is where a server reads one input: an http(s) URL,
 // bucket:<key> (the object inputs/<key>), or a local path for dev. Every
 // read that lands is committed as the head of its pointer (source.feed,
 // source.streets). A source that does not answer serves the last read,
 // else the store's head, so a replacement process serves the same inputs.
-type source struct {
+type Source struct {
 	raw     string
 	pointer string // "" = not committed (the policy: it seeds its own pointer)
 	kind    string // the committed blob's envelope kind
@@ -34,12 +35,13 @@ type source struct {
 	hash    string
 }
 
-func newSource(raw, pointer, kind string, st *store.Store) *source {
-	return &source{raw: raw, pointer: pointer, kind: kind, st: st,
-		every: time.Minute, client: &http.Client{Transport: outbound, Timeout: 2 * time.Minute}}
+// New reads raw. With a pointer and a store, each read commits there.
+func New(raw, pointer, kind string, st *store.Store) *Source {
+	return &Source{raw: raw, pointer: pointer, kind: kind, st: st,
+		every: time.Minute, client: &http.Client{Transport: httpx.Outbound, Timeout: 2 * time.Minute}}
 }
 
-func (s *source) Read() ([]byte, string, error) {
+func (s *Source) Read() ([]byte, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	remote := s.isRemote()
@@ -71,12 +73,12 @@ func (s *source) Read() ([]byte, string, error) {
 	return nil, "", fmt.Errorf("source %s: %w (and the store holds no earlier import)", s.raw, err)
 }
 
-func (s *source) isRemote() bool {
+func (s *Source) isRemote() bool {
 	return strings.HasPrefix(s.raw, "http://") || strings.HasPrefix(s.raw, "https://") || strings.HasPrefix(s.raw, "bucket:")
 }
 
 // fetch answers nil bytes and no error when the source is unchanged since tag.
-func (s *source) fetch() ([]byte, string, error) {
+func (s *Source) fetch() ([]byte, string, error) {
 	switch {
 	case strings.HasPrefix(s.raw, "http://"), strings.HasPrefix(s.raw, "https://"):
 		req, err := http.NewRequest(http.MethodGet, s.raw, nil)
@@ -127,7 +129,7 @@ func (s *source) fetch() ([]byte, string, error) {
 
 // A failed commit is logged, never fatal: the read stands, and the next one
 // tries again.
-func (s *source) commit() {
+func (s *Source) commit() {
 	if s.st == nil || s.pointer == "" {
 		return
 	}
@@ -146,4 +148,17 @@ func (s *source) commit() {
 			log.Printf("source %s: commit to %s: %v", s.raw, s.pointer, err)
 		}
 	}
+}
+
+// Raw is the input as configured.
+func (s *Source) Raw() string { return s.raw }
+
+// Store is where reads commit, or nil.
+func (s *Source) Store() *store.Store { return s.st }
+
+// CheckEvery sets how often a URL or bucket source checks again.
+func (s *Source) CheckEvery(d time.Duration) {
+	s.mu.Lock()
+	s.every = d
+	s.mu.Unlock()
 }

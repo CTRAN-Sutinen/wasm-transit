@@ -1,4 +1,4 @@
-package main
+package imports
 
 // Browsers register the streets document by its bytes (the kernel's
 // load_streets bulk op), and no browser reads the layer or computes the
@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"rustwasm/server/source"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
@@ -23,23 +24,23 @@ import (
 // cap-streets' own bulk op, apart from the kernel's wasmhost.OpLoadStreets.
 const opImportStreets = 0
 
-type servedDoc struct {
-	hash string
-	body []byte
-	gz   []byte
-	tag  string
+type Doc struct {
+	Hash string
+	Body []byte
+	Gz   []byte
+	Tag  string
 }
 
-func newServedDoc(hash string, body []byte) servedDoc {
+func NewDoc(hash string, body []byte) Doc {
 	var gz bytes.Buffer
 	zw, _ := gzip.NewWriterLevel(&gz, gzip.BestCompression)
 	zw.Write(body)
 	zw.Close()
-	return servedDoc{hash: hash, body: body, gz: gz.Bytes()}
+	return Doc{Hash: hash, Body: body, Gz: gz.Bytes()}
 }
 
-func (d servedDoc) serve(w http.ResponseWriter, r *http.Request) {
-	etag := `"` + d.hash + `"`
+func (d Doc) serve(w http.ResponseWriter, r *http.Request) {
+	etag := `"` + d.Hash + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Vary", "Accept-Encoding")
@@ -50,47 +51,47 @@ func (d servedDoc) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		w.Header().Set("Content-Encoding", "gzip")
-		w.Write(d.gz)
+		w.Write(d.Gz)
 		return
 	}
-	w.Write(d.body)
+	w.Write(d.Body)
 }
 
 // The walk table has an empty hash when no network is published.
-type loadedStreets struct {
-	streets servedDoc
-	walks   servedDoc
+type Streets struct {
+	Streets Doc
+	Walks   Doc
 }
 
 // In store mode a boot whose layer and network the store already
 // derived from reads the stored documents and runs no module (derived.go).
-type streetsSource struct {
-	src  *source
-	wasm string
+type StreetsSource struct {
+	Src  *source.Source
+	Wasm string
 
 	mu          sync.Mutex
 	layerHash   string
 	networkHash string
-	loaded      *loadedStreets
-	derivations int
+	loaded      *Streets
+	Derivations int
 }
 
-func fileStreets(path, wasm string) *streetsSource {
-	return &streetsSource{src: newSource(path, "", "", nil), wasm: wasm}
+func FileStreets(path, wasm string) *StreetsSource {
+	return &StreetsSource{Src: source.New(path, "", "", nil), Wasm: wasm}
 }
 
 // A nil feed means no network and no walk table.
-func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
+func (f *StreetsSource) Load(feed *Feed) (*Streets, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	body, layerHash, err := f.src.Read()
+	body, layerHash, err := f.Src.Read()
 	if err != nil {
 		return nil, err
 	}
 	networkHash := ""
 	if feed != nil {
-		networkHash = feed.networkHash
+		networkHash = feed.NetworkHash
 	}
 	if f.loaded != nil && layerHash == f.layerHash && networkHash == f.networkHash {
 		return f.loaded, nil
@@ -98,16 +99,16 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 
 	ctx := context.Background()
 	started := time.Now()
-	st := f.src.st
-	var inst *Instance
+	st := f.Src.Store()
+	var inst *wasmhost.Instance
 	defer func() {
 		if inst != nil {
 			inst.Close(ctx)
 		}
 	}()
-	open := func() (*WasmHost, error) {
+	open := func() (*wasmhost.Host, error) {
 		if inst == nil {
-			i, err := NewWasmHost(ctx, f.wasm)
+			i, err := wasmhost.New(ctx, f.Wasm)
 			if err != nil {
 				return nil, fmt.Errorf("the server's module: %w", err)
 			}
@@ -117,11 +118,11 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	}
 	streetsInHost := false
 
-	var streets servedDoc
+	var streets Doc
 	if f.loaded != nil && layerHash == f.layerHash {
-		streets = f.loaded.streets // the same layer: the document already read
-	} else if _, docs, ok := storedOf(st, derivedStreetsPointer, []string{layerHash}, "streets"); ok {
-		streets = newServedDoc(store.HashOf(docs["streets"]), docs["streets"])
+		streets = f.loaded.Streets // the same layer: the document already read
+	} else if _, docs, ok := storedOf(st, DerivedStreetsPointer, []string{layerHash}, "streets"); ok {
+		streets = NewDoc(store.HashOf(docs["streets"]), docs["streets"])
 	} else {
 		h, err := open()
 		if err != nil {
@@ -138,39 +139,39 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 		if err := json.Unmarshal(raw, &imported); err != nil {
 			return nil, fmt.Errorf("import: %w", err)
 		}
-		streets = newServedDoc(imported.StreetsHash, imported.Streets)
+		streets = NewDoc(imported.StreetsHash, imported.Streets)
 		streetsInHost = true
-		f.derivations++
+		f.Derivations++
 		if st != nil {
 			if answer, err := answerWithout(raw, "streets"); err != nil {
-				log.Printf("%s: the import is not stored: %v", derivedStreetsPointer, err)
+				log.Printf("%s: the import is not stored: %v", DerivedStreetsPointer, err)
 			} else {
-				commitDerivation(st, derivedStreetsPointer, []string{layerHash}, "cap-streets@"+h.Hash(), answer,
-					derivedDoc{tag: "streets", storeKind: "streets", version: 1, body: streets.body, hash: streets.hash})
+				CommitDerivation(st, DerivedStreetsPointer, []string{layerHash}, "cap-streets@"+h.Hash(), answer,
+					derivedDoc{tag: "streets", storeKind: "streets", version: 1, body: streets.Body, hash: streets.Hash})
 			}
 		}
 	}
 
-	loaded := &loadedStreets{streets: streets}
+	loaded := &Streets{Streets: streets}
 	if feed != nil {
-		inputs := []string{streets.hash, feed.networkHash}
-		if _, docs, ok := storedOf(st, derivedWalksPointer, inputs, "walks"); ok {
-			loaded.walks = newServedDoc(store.HashOf(docs["walks"]), docs["walks"])
+		inputs := []string{streets.Hash, feed.NetworkHash}
+		if _, docs, ok := storedOf(st, DerivedWalksPointer, inputs, "walks"); ok {
+			loaded.Walks = NewDoc(store.HashOf(docs["walks"]), docs["walks"])
 		} else {
 			h, err := open()
 			if err != nil {
 				return nil, err
 			}
 			if !streetsInHost {
-				if err := h.InvokeBytes(ctx, wasmhost.OpLoadStreets, streets.body, nil); err != nil {
+				if err := h.InvokeBytes(ctx, wasmhost.OpLoadStreets, streets.Body, nil); err != nil {
 					return nil, fmt.Errorf("load_streets: %w", err)
 				}
 			}
-			if err := h.InvokeBytes(ctx, wasmhost.OpLoadNetwork, feed.document, nil); err != nil {
+			if err := h.InvokeBytes(ctx, wasmhost.OpLoadNetwork, feed.Document, nil); err != nil {
 				return nil, fmt.Errorf("load_network: %w", err)
 			}
 			raw, err := h.InvokeRaw(ctx, map[string]any{
-				"op": "walks", "streets_hash": streets.hash, "network_hash": feed.networkHash,
+				"op": "walks", "streets_hash": streets.Hash, "network_hash": feed.NetworkHash,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("walks: %w", err)
@@ -182,14 +183,14 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 			if err := json.Unmarshal(raw, &walked); err != nil {
 				return nil, fmt.Errorf("walks: %w", err)
 			}
-			loaded.walks = newServedDoc(walked.WalksHash, walked.Walks)
-			f.derivations++
+			loaded.Walks = NewDoc(walked.WalksHash, walked.Walks)
+			f.Derivations++
 			if st != nil {
 				if answer, err := answerWithout(raw, "walks"); err != nil {
-					log.Printf("%s: the walk table is not stored: %v", derivedWalksPointer, err)
+					log.Printf("%s: the walk table is not stored: %v", DerivedWalksPointer, err)
 				} else {
-					commitDerivation(st, derivedWalksPointer, inputs, "cap-streets@"+h.Hash(), answer,
-						derivedDoc{tag: "walks", storeKind: "walks", version: 1, body: loaded.walks.body, hash: loaded.walks.hash})
+					CommitDerivation(st, DerivedWalksPointer, inputs, "cap-streets@"+h.Hash(), answer,
+						derivedDoc{tag: "walks", storeKind: "walks", version: 1, body: loaded.Walks.Body, hash: loaded.Walks.Hash})
 				}
 			}
 		}
@@ -203,8 +204,8 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 		how = "read from the store"
 	}
 	log.Printf("streets %s for %s in %s: %s (%d KB, %d KB gzipped); walk table %s (%d KB gzipped)",
-		how, f.src.raw, time.Since(started).Round(time.Millisecond), streets.hash, len(streets.body)/1024, len(streets.gz)/1024,
-		loaded.walks.hash, len(loaded.walks.gz)/1024)
+		how, f.Src.Raw(), time.Since(started).Round(time.Millisecond), streets.Hash, len(streets.Body)/1024, len(streets.Gz)/1024,
+		loaded.Walks.Hash, len(loaded.Walks.Gz)/1024)
 	return loaded, nil
 }
 
@@ -212,42 +213,42 @@ func storedOf(st *store.Store, pointer string, inputs []string, tags ...string) 
 	if st == nil {
 		return nil, nil, false
 	}
-	return storedDerivation(st, pointer, inputs, tags...)
+	return StoredDerivation(st, pointer, inputs, tags...)
 }
 
-func (s *server) publishedStreets() (*loadedStreets, error) {
-	var feed *loadedFeed
-	if s.feeder != nil {
+func (p *Published) PublishedStreets() (*Streets, error) {
+	var feed *Feed
+	if p.Feed != nil {
 		var err error
-		if feed, err = s.feeder.Load(); err != nil {
+		if feed, err = p.Feed.Load(); err != nil {
 			return nil, err
 		}
 	}
-	return s.streets.Load(feed)
+	return p.Streets.Load(feed)
 }
 
-func (s *server) handleStreets(w http.ResponseWriter, r *http.Request) {
-	if s.streets == nil {
+func (p *Published) HandleStreets(w http.ResponseWriter, r *http.Request) {
+	if p.Streets == nil {
 		http.Error(w, "no streets configured (start with -streets <layer.geojson>)", http.StatusNotFound)
 		return
 	}
-	loaded, err := s.publishedStreets()
+	loaded, err := p.PublishedStreets()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("streets unavailable: %v", err), http.StatusInternalServerError)
 		return
 	}
-	loaded.streets.serve(w, r)
+	loaded.Streets.serve(w, r)
 }
 
-func (s *server) handleWalks(w http.ResponseWriter, r *http.Request) {
-	if s.streets == nil || s.feeder == nil {
+func (p *Published) HandleWalks(w http.ResponseWriter, r *http.Request) {
+	if p.Streets == nil || p.Feed == nil {
 		http.Error(w, "no walk table (start with -feed <gtfs.zip> and -streets <layer.geojson>)", http.StatusNotFound)
 		return
 	}
-	loaded, err := s.publishedStreets()
+	loaded, err := p.PublishedStreets()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("walk table unavailable: %v", err), http.StatusInternalServerError)
 		return
 	}
-	loaded.walks.serve(w, r)
+	loaded.Walks.serve(w, r)
 }

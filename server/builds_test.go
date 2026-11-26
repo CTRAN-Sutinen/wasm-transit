@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/builds"
+	"rustwasm/server/manifest"
 	"rustwasm/server/store"
 )
 
@@ -35,14 +37,14 @@ func newBuildServer(t *testing.T, b store.Backend, dist string) (*server, string
 	s.dist = dist
 	s.buildEvery = time.Nanosecond
 	s.serverModules = map[string]string{"server": syncWasmPath}
-	s.syncBuild()
+	s.builds().Sync()
 	return s, httptest.NewServer(s.routes()).URL
 }
 
 func manifestBuild(t *testing.T, base string) string {
 	t.Helper()
 	_, _, body := httpGet(t, base+"/manifest")
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.Unmarshal([]byte(body), &m); err != nil {
 		t.Fatal(err)
 	}
@@ -199,12 +201,12 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 	s.dist = dist
 	s.buildEvery = time.Nanosecond
 	s.serverModules = map[string]string{"server": syncWasmPath}
-	uis, err := parseUIDists("stops=" + stops + ", service-change=" + change)
+	uis, err := builds.ParseUIs("stops=" + stops + ", service-change=" + change)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.uiDists = uis
-	s.syncBuild()
+	s.builds().Sync()
 	base := httptest.NewServer(s.routes()).URL
 	head := func(pointer string) string {
 		_, _, body := httpGet(t, base+"/pointers/"+pointer)
@@ -231,7 +233,7 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 
 	writeDist(t, stops, map[string]string{"sw.js": "stops B"})
 	writeDist(t, change, map[string]string{"sw.js": "change B"})
-	s.syncBuild()
+	s.builds().Sync()
 	stopsB, changeB := head("build.stops"), head("build.service-change")
 	if stopsB == stopsA || changeB == changeA {
 		t.Fatalf("each UI's new bundle is a new build: %q %q", stopsB, changeB)
@@ -249,8 +251,8 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 	if code, _, _ := httpPost(t, base+"/builds?ui=Stops/x", `{"build":"`+stopsA+`"}`); code != 400 {
 		t.Fatalf("an id that names no UI pointer: %d", code)
 	}
-	s.uiDists[0].state = buildState{}
-	s.syncBuild()
+	s.uiDists[0].State = builds.State{}
+	s.builds().Sync()
 	if head("build.stops") != stopsA {
 		t.Fatalf("a build the log holds is never committed again: %q", head("build.stops"))
 	}
@@ -258,12 +260,12 @@ func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
 
 func TestTheUIDistSettingIsRead(t *testing.T) {
 	for _, bad := range []string{"stops", "=dir", "Stops=dir", "a/b=dir", "stops=a,stops=b"} {
-		if _, err := parseUIDists(bad); err == nil {
+		if _, err := builds.ParseUIs(bad); err == nil {
 			t.Errorf("-ui-dist %q is refused", bad)
 		}
 	}
-	got, err := parseUIDists(" stops=a ,ride-now=b,")
-	if err != nil || len(got) != 2 || got[0].id != "stops" || got[0].dir != "a" || got[1].id != "ride-now" {
+	got, err := builds.ParseUIs(" stops=a ,ride-now=b,")
+	if err != nil || len(got) != 2 || got[0].ID != "stops" || got[0].Dir != "a" || got[1].ID != "ride-now" {
 		t.Fatalf("pairs: %+v %v", got, err)
 	}
 }

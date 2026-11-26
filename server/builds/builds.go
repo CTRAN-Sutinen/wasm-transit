@@ -1,4 +1,8 @@
-package main
+// Package builds keeps each release as a build in the store
+// (docs/architecture/release-artifacts.md): -dist as the `build` pointer,
+// each -ui-dist bundle as its own build.<id>, and POST /builds to move to
+// another logged build. The server serves the pinned build's files.
+package builds
 
 import (
 	"bytes"
@@ -15,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -24,17 +29,34 @@ import (
 	"rustwasm/server/store"
 )
 
+// Builds are the server's builds. With no store, there are none.
+type Builds struct {
+	store   func() *store.Store
+	dist    string
+	modules map[string]string
+	every   time.Duration
+	uis     []*UI
+	main    State
+}
+
+// New keeps -dist (dist), each -ui-dist bundle (uis), and the server's
+// modules (role to path), and re-lists a directory at most once each every
+// (0 means buildEveryDefault).
+func New(st func() *store.Store, dist string, modules map[string]string, every time.Duration, uis []*UI) *Builds {
+	return &Builds{store: st, dist: dist, modules: modules, every: every, uis: uis}
+}
+
 // In store mode the release in -dist is a build
 // (docs/architecture/release-artifacts.md). A build the log already
 // holds is never re-imported. Moving to it is POST /builds, so a
 // restart on the release that a rollback left behind keeps the
 // rollback.
 
-const buildPointer = "build"
+const Pointer = "build"
 
 // Each -ui-dist bundle is a build of its own, committed to the pointer
 // build.<id> with no server modules.
-func uiBuildPointer(id string) string { return buildPointer + "." + id }
+func UIPointer(id string) string { return Pointer + "." + id }
 
 func validUIID(id string) bool {
 	if id == "" || len(id) > 64 {
@@ -48,13 +70,13 @@ func validUIID(id string) bool {
 	return true
 }
 
-type uiDist struct {
-	id, dir string
-	state   buildState
+type UI struct {
+	ID, Dir string
+	State   State
 }
 
-func parseUIDists(spec string) ([]*uiDist, error) {
-	var out []*uiDist
+func ParseUIs(spec string) ([]*UI, error) {
+	var out []*UI
 	seen := map[string]bool{}
 	for _, part := range strings.Split(spec, ",") {
 		part = strings.TrimSpace(part)
@@ -69,7 +91,7 @@ func parseUIDists(spec string) ([]*uiDist, error) {
 			return nil, fmt.Errorf("-ui-dist: %s twice", id)
 		}
 		seen[id] = true
-		out = append(out, &uiDist{id: id, dir: dir})
+		out = append(out, &UI{ID: id, Dir: dir})
 	}
 	return out, nil
 }
@@ -87,7 +109,7 @@ func buildExcluded(rel string) bool {
 	return rel == "basemap.pmtiles" || strings.HasPrefix(rel, "basemap-assets/")
 }
 
-type buildState struct {
+type State struct {
 	mu          sync.Mutex
 	checked     time.Time
 	fingerprint string // -dist's listing (paths, sizes, modified times) last read
@@ -162,22 +184,22 @@ func contentType(rel string) string {
 	return "application/octet-stream"
 }
 
-func (s *server) syncBuild() {
-	if s.store == nil {
+func (d *Builds) Sync() {
+	if d.store() == nil {
 		return
 	}
-	if s.dist != "" {
-		s.syncBuildOf(buildPointer, s.dist, &s.builds, s.serverModules)
+	if d.dist != "" {
+		d.syncBuildOf(Pointer, d.dist, &d.main, d.modules)
 	}
-	for _, u := range s.uiDists {
-		s.syncBuildOf(uiBuildPointer(u.id), u.dir, &u.state, nil)
+	for _, u := range d.uis {
+		d.syncBuildOf(UIPointer(u.ID), u.Dir, &u.State, nil)
 	}
 }
 
-func (s *server) syncBuildOf(pointer, dist string, b *buildState, modules map[string]string) {
+func (d *Builds) syncBuildOf(pointer, dist string, b *State, modules map[string]string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	every := s.buildEvery
+	every := d.every
 	if every == 0 {
 		every = buildEveryDefault
 	}
@@ -199,7 +221,7 @@ func (s *server) syncBuildOf(pointer, dist string, b *buildState, modules map[st
 		return
 	}
 	hash := store.HashOf(doc)
-	entries, _, err := s.store.Log(pointer, "")
+	entries, _, err := d.store().Log(pointer, "")
 	if err != nil {
 		log.Printf("build: %v", err)
 		return
@@ -211,13 +233,13 @@ func (s *server) syncBuildOf(pointer, dist string, b *buildState, modules map[st
 	}
 	for attempt := 0; attempt < 5; attempt++ {
 		from := ""
-		if head, found, err := s.store.Head(pointer); err != nil {
+		if head, found, err := d.store().Head(pointer); err != nil {
 			log.Printf("build: %v", err)
 			return
 		} else if found {
 			from = head.Hash
 		}
-		_, seq, err := s.store.CommitBuild(pointer, from, doc, buildEnv, blobs, buildFileEnv, "import:"+dist, time.Now().UnixMilli())
+		_, seq, err := d.store().CommitBuild(pointer, from, doc, buildEnv, blobs, buildFileEnv, "import:"+dist, time.Now().UnixMilli())
 		var ce *store.ConflictError
 		if errors.As(err, &ce) {
 			continue
@@ -240,18 +262,18 @@ func containsString(xs []string, x string) bool {
 	return false
 }
 
-func (s *server) pinnedFiles() (string, map[string]store.BuildFile) {
-	head, found, err := s.store.Head(buildPointer)
+func (d *Builds) PinnedFiles() (string, map[string]store.BuildFile) {
+	head, found, err := d.store().Head(Pointer)
 	if err != nil || !found {
 		return "", nil
 	}
-	b := &s.builds
+	b := &d.main
 	b.pinMu.Lock()
 	defer b.pinMu.Unlock()
 	if b.pinned == head.Hash {
 		return b.pinned, b.byPath
 	}
-	data, _, err := s.store.GetBlob(head.Hash)
+	data, _, err := d.store().GetBlob(head.Hash)
 	if err != nil {
 		return "", nil
 	}
@@ -268,29 +290,29 @@ func (s *server) pinnedFiles() (string, map[string]store.BuildFile) {
 	return b.pinned, b.byPath
 }
 
-func (s *server) serveBuildFile(w http.ResponseWriter, r *http.Request, name string) bool {
-	_, files := s.pinnedFiles()
+func (d *Builds) ServeFile(w http.ResponseWriter, r *http.Request, name string) bool {
+	_, files := d.PinnedFiles()
 	f, ok := files[name]
 	if !ok {
 		return false
 	}
-	data, _, err := s.store.GetBlob(f.Hash)
+	data, _, err := d.store().GetBlob(f.Hash)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return true
 	}
 	w.Header().Set("Content-Type", f.Type)
-	w.Header().Set("Cache-Control", staticCacheControl(name))
+	w.Header().Set("Cache-Control", CacheControl(name))
 	w.Header().Set("ETag", `"`+f.Hash+`"`)
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 	return true
 }
 
-// handleBuilds moves the pointer to a logged build. Every file of a
+// HandleBuilds moves the pointer to a logged build. Every file of a
 // logged build is retained, so the move is the whole rollback, and the
 // pages follow the manifest.
-func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+func (d *Builds) HandleBuilds(w http.ResponseWriter, r *http.Request) {
+	if d.store() == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
 		return
 	}
@@ -298,7 +320,7 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
-	pointer, ok := buildsPointerOf(r)
+	pointer, ok := PointerOf(r)
 	if !ok {
 		http.Error(w, "ui: an id of a-z, 0-9, and -", http.StatusBadRequest)
 		return
@@ -311,7 +333,7 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `bad request: want {"build":"sha256:<hex>"}`, http.StatusBadRequest)
 		return
 	}
-	entries, _, err := s.store.Log(pointer, "")
+	entries, _, err := d.store().Log(pointer, "")
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
@@ -324,17 +346,17 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the "+pointer+" log holds no "+req.Build, http.StatusNotFound)
 		return
 	}
-	data, _, err := s.store.GetBlob(req.Build)
+	data, _, err := d.store().GetBlob(req.Build)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	head, _, err := s.store.Head(pointer)
+	head, _, err := d.store().Head(pointer)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	_, seq, err := s.store.CAS(pointer, head.Hash, data, buildEnv, req.Build, httpx.Writer(r, "anonymous"), time.Now().UnixMilli())
+	_, seq, err := d.store().CAS(pointer, head.Hash, data, buildEnv, req.Build, httpx.Writer(r, "anonymous"), time.Now().UnixMilli())
 	if err != nil {
 		var ce *store.ConflictError
 		if errors.As(err, &ce) {
@@ -349,13 +371,31 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"build": req.Build, "seq": seq})
 }
 
-func buildsPointerOf(r *http.Request) (string, bool) {
+func PointerOf(r *http.Request) (string, bool) {
 	ui := r.URL.Query().Get("ui")
 	if ui == "" {
-		return buildPointer, true
+		return Pointer, true
 	}
 	if !validUIID(ui) {
 		return "", false
 	}
-	return uiBuildPointer(ui), true
+	return UIPointer(ui), true
+}
+
+// A file whose name carries its content hash never changes: Vite's
+// build output under assets/ (name-<8 chars>.ext) and the
+// hash-addressed modules under caps/ (name-<sha256 hex>.wasm).
+var (
+	viteHashed   = regexp.MustCompile(`^assets/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$`)
+	moduleHashed = regexp.MustCompile(`^caps/[^/]+-[0-9a-f]{64}\.wasm$`)
+)
+
+// CacheControl is the Cache-Control of a build's file. Everything that
+// is not content-addressed revalidates on every use, so an open page meets
+// the new build on its next load.
+func CacheControl(name string) string {
+	if viteHashed.MatchString(name) || moduleHashed.MatchString(name) {
+		return "public, max-age=31536000, immutable"
+	}
+	return "no-cache"
 }

@@ -1,6 +1,6 @@
 package main
 
-// Service alerts and alert templates in store mode (D-206). A stale
+// manifest.Service alerts and alert templates in store mode (D-206). A stale
 // write is refused, the manifest pins each head, /blobs serves each by
 // hash, and both land in the alerts log.
 

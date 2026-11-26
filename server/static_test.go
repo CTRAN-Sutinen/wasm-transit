@@ -35,7 +35,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 	s := &server{dist: dist}
 	for name, want := range files {
 		w := httptest.NewRecorder()
-		s.handleStatic(w, httptest.NewRequest("GET", "/"+name, nil))
+		s.static().HandleStatic(w, httptest.NewRequest("GET", "/"+name, nil))
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: %d", name, w.Code)
 		}
@@ -44,7 +44,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 		}
 	}
 	w := httptest.NewRecorder()
-	s.handleStatic(w, httptest.NewRequest("GET", "/", nil))
+	s.static().HandleStatic(w, httptest.NewRequest("GET", "/", nil))
 	if got := w.Header().Get("Cache-Control"); got != "no-cache" {
 		t.Errorf("/: Cache-Control %q, want no-cache", got)
 	}

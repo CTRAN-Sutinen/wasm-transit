@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/imports"
+	"rustwasm/server/manifest"
 	"rustwasm/server/wasmhost"
 )
 
@@ -40,15 +42,15 @@ func writeLayer(t *testing.T) string {
 // An empty feed publishes no network.
 func streetsServer(t *testing.T, feed, layer string) string {
 	t.Helper()
-	s := &server{wasm: newTestHost(t), streets: fileStreets(layer, testWasm)}
+	s := &server{wasm: newTestHost(t), streets: imports.FileStreets(layer, testWasm)}
 	if feed != "" {
-		s.feeder = fileFeed(feed, testWasm)
+		s.feeder = imports.FileFeed(feed, testWasm)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/network", s.handleNetwork)
-	mux.HandleFunc("/streets", s.handleStreets)
-	mux.HandleFunc("/walks", s.handleWalks)
-	mux.HandleFunc("/manifest", s.handleManifest)
+	mux.HandleFunc("/network", s.published().HandleNetwork)
+	mux.HandleFunc("/streets", s.published().HandleStreets)
+	mux.HandleFunc("/walks", s.published().HandleWalks)
+	mux.HandleFunc("/manifest", s.manifest().HandleManifest)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -144,7 +146,7 @@ func TestServedStreetsAndWalksRegisterUnderTheirPins(t *testing.T) {
 	}
 
 	_, body, _ := get(t, base+"/manifest")
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.Unmarshal(body, &m); err != nil {
 		t.Fatal(err)
 	}

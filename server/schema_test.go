@@ -16,6 +16,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"rustwasm/server/imports"
 	"rustwasm/server/store"
 )
 
@@ -148,8 +149,8 @@ func TestTheDerivationSchemaNamesExactlyTheGoTypesFields(t *testing.T) {
 		goType reflect.Type
 		schema map[string]any
 	}{
-		{reflect.TypeOf(Derivation{}), doc},
-		{reflect.TypeOf(DerivedDocument{}), defs["DerivedDocument"].(map[string]any)},
+		{reflect.TypeOf(imports.Derivation{}), doc},
+		{reflect.TypeOf(imports.DerivedDocument{}), defs["DerivedDocument"].(map[string]any)},
 	} {
 		goNames, goRequired := jsonFields(c.goType)
 		names, required := schemaFields(t, c.schema)
@@ -175,7 +176,7 @@ func TestCommittedDerivationsMatchTheirSchema(t *testing.T) {
 	if _, err := s.buildManifest(); err != nil {
 		t.Fatal(err)
 	}
-	for _, pointer := range []string{derivedNetworkPointer, derivedStreetsPointer, derivedWalksPointer} {
+	for _, pointer := range []string{imports.DerivedNetworkPointer, imports.DerivedStreetsPointer, imports.DerivedWalksPointer} {
 		head, found, err := s.store.Head(pointer)
 		if err != nil || !found {
 			t.Fatalf("%s: not committed (%v)", pointer, err)

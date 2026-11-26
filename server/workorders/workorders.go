@@ -1,12 +1,11 @@
-package main
-
-// The work order system is the agency's own system, reached
-// through an adapter so nothing here couples to it. The call splits in
-// three: the kind's `call` op answers what to send, this host
+// Package workorders reaches the agency's work order system, its own
+// system, through an adapter so nothing here couples to it. The call
+// splits in three: the kind's `call` op answers what to send, this host
 // makes the call, and its `record` op, through the kind's log
 // (server/logs), records the answer under the writer
 // `work-orders:<system>`. The kind table's `work_order` names the kind,
 // the route, and both ops. The host reads nothing out of the document.
+package workorders
 
 import (
 	"context"
@@ -18,12 +17,13 @@ import (
 	"strings"
 
 	"rustwasm/server/httpx"
+	"rustwasm/server/kinds"
 	"rustwasm/server/logs"
 	"rustwasm/server/store"
 	"rustwasm/server/wasmhost"
 )
 
-type workOrder struct {
+type WorkOrder struct {
 	System string `json:"system,omitempty"`
 	ID     string `json:"id"`
 	URL    string `json:"url,omitempty"`
@@ -31,13 +31,13 @@ type workOrder struct {
 	ReadOn string `json:"read_on,omitempty"`
 }
 
-type workOrderSystem interface {
+type System interface {
 	Name() string
-	Open(ctx context.Context, requestID string, request json.RawMessage) (workOrder, error)
-	Status(ctx context.Context, held workOrder) (workOrder, error)
+	Open(ctx context.Context, requestID string, request json.RawMessage) (WorkOrder, error)
+	Status(ctx context.Context, held WorkOrder) (WorkOrder, error)
 }
 
-func newWorkOrders(spec string) (workOrderSystem, error) {
+func NewSystem(spec string) (System, error) {
 	switch {
 	case spec == "":
 		return nil, nil
@@ -56,28 +56,48 @@ type stubWorkOrders struct{ name string }
 
 func (w stubWorkOrders) Name() string { return w.name }
 
-func (w stubWorkOrders) Open(_ context.Context, requestID string, _ json.RawMessage) (workOrder, error) {
-	return workOrder{System: w.name, ID: "STUB-" + requestID, Status: "open"}, nil
+func (w stubWorkOrders) Open(_ context.Context, requestID string, _ json.RawMessage) (WorkOrder, error) {
+	return WorkOrder{System: w.name, ID: "STUB-" + requestID, Status: "open"}, nil
 }
 
-func (w stubWorkOrders) Status(_ context.Context, held workOrder) (workOrder, error) {
+func (w stubWorkOrders) Status(_ context.Context, held WorkOrder) (WorkOrder, error) {
 	if held.ID == "" {
-		return workOrder{}, errors.New("the request has no work order to read")
+		return WorkOrder{}, errors.New("the request has no work order to read")
 	}
-	return workOrder{System: w.name, ID: held.ID, Status: "open"}, nil
+	return WorkOrder{System: w.name, ID: held.ID, Status: "open"}, nil
 }
 
-func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
-	if s.workOrders == nil {
+// Orders serve the kind table's `work_order` route.
+type Orders struct {
+	store func() *store.Store
+	logs  *logs.Logs
+	// system is the adapter, nil when none is configured.
+	system func() System
+	// kind is the kind the table names with a work_order, or nil.
+	kind  func() *kinds.Entry
+	long  func() *wasmhost.Held
+	today func() string
+}
+
+func New(st func() *store.Store, l *logs.Logs, system func() System, kind func() *kinds.Entry, long func() *wasmhost.Held, today func() string) *Orders {
+	return &Orders{store: st, logs: l, system: system, kind: kind, long: long, today: today}
+}
+
+func (o *Orders) withModule(ctx context.Context, capability string, use func(*wasmhost.Host) error) error {
+	return o.long().Sequence(ctx, func(inst *wasmhost.Instance) error { return use(inst.As(capability)) })
+}
+
+func (o *Orders) HandleWorkOrder(w http.ResponseWriter, r *http.Request) {
+	if o.system() == nil {
 		httpx.JSON(w, http.StatusNotImplemented, map[string]any{"configured": false})
 		return
 	}
-	e := s.workOrderKind()
+	e := o.kind()
 	if e == nil {
 		http.NotFound(w, r)
 		return
 	}
-	if s.store == nil {
+	if o.store() == nil {
 		http.Error(w, "the "+e.StoreKind+" document needs the store (start with -store <url>)", http.StatusNotFound)
 		return
 	}
@@ -99,13 +119,13 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	l := s.kept().Of(e.StoreKind)
+	l := o.logs.Of(e.StoreKind)
 	if l == nil {
 		http.Error(w, "the kind table names no log for "+e.StoreKind, http.StatusNotFound)
 		return
 	}
 	hashField := e.HashField()
-	_, doc, found, err := s.kept().Head(e.StoreKind)
+	_, doc, found, err := o.logs.Head(e.StoreKind)
 	if err != nil {
 		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
@@ -119,10 +139,10 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	var call struct {
 		Call struct {
 			Request   json.RawMessage `json:"request"`
-			WorkOrder *workOrder      `json:"work_order"`
+			WorkOrder *WorkOrder      `json:"work_order"`
 		} `json:"call"`
 	}
-	err = s.withModule(ctx, e.Module, func(host *WasmHost) error {
+	err = o.withModule(ctx, e.Module, func(host *wasmhost.Host) error {
 		var loaded map[string]any
 		if err := host.InvokeBytes(ctx, l.LoadCode(e.StoreKind), doc, &loaded); err != nil {
 			return err
@@ -138,7 +158,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	// work order without asking the system, so a lost answer never opens
 	// a second work order.
 	if req.Key != "" {
-		landed, hash, err := s.kept().Landed(l, req.Key, e.StoreKind)
+		landed, hash, err := o.logs.Landed(l, req.Key, e.StoreKind)
 		if err != nil {
 			httpx.Fail(w, err, http.StatusInternalServerError)
 			return
@@ -148,29 +168,29 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var answer workOrder
+	var answer WorkOrder
 	if req.Action == "open" {
-		answer, err = s.workOrders.Open(ctx, req.Request, held.Request)
+		answer, err = o.system().Open(ctx, req.Request, held.Request)
 	} else {
-		var ref workOrder
+		var ref WorkOrder
 		if held.WorkOrder != nil {
 			ref = *held.WorkOrder
 		}
-		answer, err = s.workOrders.Status(ctx, ref)
+		answer, err = o.system().Status(ctx, ref)
 	}
 	if err != nil {
 		httpx.Fail(w, fmt.Errorf("the work order system: %w", err), http.StatusBadGateway)
 		return
 	}
 	if answer.System == "" {
-		answer.System = s.workOrders.Name()
+		answer.System = o.system().Name()
 	}
-	answer.ReadOn = s.today()
+	answer.ReadOn = o.today()
 	// The write runs over the records at the head, so a record written
 	// meanwhile is kept.
 	op, _ := json.Marshal(map[string]any{"cap": e.Module, "op": e.WorkOrder.Record, "args": map[string]any{"id": req.Request, "work_order": answer}})
-	write := logs.Write{Writer: "work-orders:" + s.workOrders.Name(), Op: e.WorkOrder.Method + " " + e.WorkOrder.Path, ArgsHash: store.HashOf(body), Key: req.Key}
-	_, _, got, refusal, err := s.kept().Receive(ctx, r, l, write, logs.Call{Ops: []json.RawMessage{op}})
+	write := logs.Write{Writer: "work-orders:" + o.system().Name(), Op: e.WorkOrder.Method + " " + e.WorkOrder.Path, ArgsHash: store.HashOf(body), Key: req.Key}
+	_, _, got, refusal, err := o.logs.Receive(ctx, r, l, write, logs.Call{Ops: []json.RawMessage{op}})
 	if err != nil {
 		logs.WriteFailed(w, err, http.StatusBadRequest)
 		return

@@ -16,6 +16,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"rustwasm/server/imports"
+	"rustwasm/server/manifest"
+	"rustwasm/server/source"
 	"rustwasm/server/store"
 )
 
@@ -59,7 +62,7 @@ func newOrigin(t *testing.T, body []byte) *origin {
 func bootServer(t *testing.T, bucket store.Backend, src string) *server {
 	t.Helper()
 	s := newStoreServer(t, bucket)
-	s.feeder = &feedSource{src: newSource(src, "source.feed", "gtfs_feed", s.store), wasm: testWasm}
+	s.feeder = &imports.FeedSource{Src: source.New(src, "source.feed", "gtfs_feed", s.store), Wasm: testWasm}
 	return s
 }
 
@@ -72,8 +75,8 @@ func TestAFeedFromAURLIsImportedAndCommittedWithItsSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feed.hash != shaOf(zip) || feed.networkHash == "" {
-		t.Fatalf("the feed is the URL's bytes: %+v", feed.hash)
+	if feed.Hash != shaOf(zip) || feed.NetworkHash == "" {
+		t.Fatalf("the feed is the URL's bytes: %+v", feed.Hash)
 	}
 	head, found, _ := s.store.Head("source.feed")
 	if !found || head.Hash != shaOf(zip) || head.Envelope.Kind != "gtfs_feed" {
@@ -108,7 +111,7 @@ func TestABootWhoseSourceDoesNotAnswerServesTheLastCommittedImport(t *testing.T)
 	if err != nil {
 		t.Fatalf("a source that does not answer falls back to the store: %v", err)
 	}
-	if manifestKeyOf(got) != manifestKeyOf(want) || got.NetworkHash != want.NetworkHash || got.FeedHash != want.FeedHash {
+	if manifest.KeyOf(got) != manifest.KeyOf(want) || got.NetworkHash != want.NetworkHash || got.FeedHash != want.FeedHash {
 		t.Fatalf("the replacement serves another manifest: %+v vs %+v", got, want)
 	}
 }
@@ -130,7 +133,7 @@ func TestAFeedFromTheBucketIsReadFromInputs(t *testing.T) {
 	}
 	s := bootServer(t, bucket, "bucket:gtfs/c-tran.zip")
 	feed, err := s.feeder.Load()
-	if err != nil || feed.hash != shaOf(zip) {
+	if err != nil || feed.Hash != shaOf(zip) {
 		t.Fatalf("bucket source: %v", err)
 	}
 	if log, _, _ := s.store.Log("source.feed", ""); len(log) != 1 || log[0].Writer != "import:bucket:gtfs/c-tran.zip" {
@@ -144,7 +147,7 @@ func TestAURLSourceIsRecheckedConditionally(t *testing.T) {
 	zip, _ := os.ReadFile(sampleFeed)
 	o := newOrigin(t, zip)
 	s := bootServer(t, store.NewMemory(), o.srv.URL+"/feed.zip")
-	s.feeder.src.every = 0
+	s.feeder.Src.CheckEvery(0)
 	first, err := s.feeder.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +166,7 @@ func TestThePolicySeedsFromAURL(t *testing.T) {
 	policy := testPolicy()
 	o := newOrigin(t, policy)
 	s := newStoreServer(t, store.NewMemory())
-	s.seedPolicy(o.srv.URL + "/policy.json")
+	s.gate().SeedPolicy(o.srv.URL + "/policy.json")
 	head, found, _ := s.store.Head("policy")
 	if !found || head.Hash != shaOf(policy) {
 		t.Fatalf("the policy pointer holds the URL's bytes: %+v", head)

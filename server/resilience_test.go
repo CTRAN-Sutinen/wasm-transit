@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/edits"
 	"rustwasm/server/store"
 )
 
@@ -198,10 +199,10 @@ func TestTwoCopiesOnOneStoreWriteTheSameLogAtTheSameTime(t *testing.T) {
 
 	const writers = 4
 	var wg sync.WaitGroup
-	var edits, notes []string
+	var editIDs, notes []string
 	for c, base := range []string{baseA, baseB} {
 		for i := 0; i < writers; i++ {
-			edits, notes = append(edits, editID(c, i)), append(notes, noteID(c, i))
+			editIDs, notes = append(editIDs, editID(c, i)), append(notes, noteID(c, i))
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
@@ -222,7 +223,7 @@ func TestTwoCopiesOnOneStoreWriteTheSameLogAtTheSameTime(t *testing.T) {
 	if t.Failed() {
 		return
 	}
-	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), edits)
+	onceEach(t, edits.DisruptionsLog, changedIDs(t, shared, edits.DisruptionsLog), editIDs)
 	onceEach(t, "notes", changedIDs(t, shared, "notes"), notes)
 
 	time.Sleep(store.FreshnessWindow + 100*time.Millisecond) // each copy probes the bucket again
@@ -291,7 +292,7 @@ func TestACopyStartedWhileTheBucketIsDownServesItsCache(t *testing.T) {
 	if code, rd := readyz(t, again); code != 200 || rd.Status != "ready" {
 		t.Fatalf("back up, ready: %d %+v", code, rd)
 	}
-	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), []string{"e1", "e2"})
+	onceEach(t, edits.DisruptionsLog, changedIDs(t, shared, edits.DisruptionsLog), []string{"e1", "e2"})
 	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1", "n2"})
 }
 
@@ -344,7 +345,7 @@ func TestAWriteWhoseAnswerIsLostLandsOnceWhenResent(t *testing.T) {
 		t.Fatalf("the resend is the kept record: %d %v", seq, err)
 	}
 
-	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), []string{"e1"})
+	onceEach(t, edits.DisruptionsLog, changedIDs(t, shared, edits.DisruptionsLog), []string{"e1"})
 	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1"})
 	if log, _, _ := store.New(shared).Log("policy", ""); len(log) != 1 {
 		t.Fatalf("one policy record: %d", len(log))
@@ -401,7 +402,7 @@ func TestACopyStoppedInTheMiddleOfAWriteLosesNothingAndWritesNothingTwice(t *tes
 		t.Fatalf("the other copy commits it once: %d %v", seq, err)
 	}
 
-	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), []string{"e1", "e2"})
+	onceEach(t, edits.DisruptionsLog, changedIDs(t, shared, edits.DisruptionsLog), []string{"e1", "e2"})
 	onceEach(t, "notes", changedIDs(t, shared, "notes"), []string{"n1"})
 	time.Sleep(store.FreshnessWindow + 100*time.Millisecond)
 	if _, _, body := httpGet(t, baseB+"/edits"); !strings.Contains(body, `"e1"`) || !strings.Contains(body, `"e2"`) {
@@ -435,5 +436,5 @@ func TestASlowBucketWithinTheTimeoutKeepsEveryWriteOnce(t *testing.T) {
 		t.Fatalf("slow is ready: %d %+v", code, rd)
 	}
 	view.delay.Store(0)
-	onceEach(t, disruptionsLog, changedIDs(t, shared, disruptionsLog), ids)
+	onceEach(t, edits.DisruptionsLog, changedIDs(t, shared, edits.DisruptionsLog), ids)
 }

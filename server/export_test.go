@@ -24,6 +24,8 @@ import (
 	"strings"
 	"testing"
 
+	"rustwasm/server/imports"
+	"rustwasm/server/manifest"
 	"rustwasm/server/wasmhost"
 )
 
@@ -51,8 +53,8 @@ func exportServer(t *testing.T) *server {
 	return &server{
 		dist:      dist,
 		wasm:      newTestHost(t),
-		feeder:    fileFeed(writeFeed(t, zip), testWasm),
-		streets:   fileStreets(writeLayer(t), testWasm),
+		feeder:    imports.FileFeed(writeFeed(t, zip), testWasm),
+		streets:   imports.FileStreets(writeLayer(t), testWasm),
 		publisher: "Test Transit",
 	}
 }
@@ -101,7 +103,7 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bundle manifest: %v", err)
 	}
-	var exported, live Manifest
+	var exported, live manifest.Manifest
 	if err := json.Unmarshal(raw, &exported); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +113,7 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 	}
 	json.Unmarshal(body, &live)
 	exported.GeneratedAt, live.GeneratedAt = 0, 0
-	if manifestKeyOf(exported) != manifestKeyOf(live) || exported.BoundaryHash != live.BoundaryHash {
+	if manifest.KeyOf(exported) != manifest.KeyOf(live) || exported.BoundaryHash != live.BoundaryHash {
 		t.Fatalf("exported manifest %+v != served %+v", exported, live)
 	}
 	pins := map[string]string{
@@ -230,7 +232,7 @@ func TestTheExportNamesAFeedURLAndImportsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m Manifest
+	var m manifest.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}

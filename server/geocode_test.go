@@ -12,6 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"rustwasm/server/manifest"
+	"rustwasm/server/proxy"
 )
 
 func TestGeocodeProxy(t *testing.T) {
@@ -26,14 +29,14 @@ func TestGeocodeProxy(t *testing.T) {
 
 	policy := filepath.Join(t.TempDir(), "geocoder.json")
 	os.WriteFile(policy, []byte(`{"reverse":{"size":1,"layers":"address,street","boundary.circle.radius":0.25},"autocomplete":{"size":5}}`), 0o644)
-	g, err := loadGeocoder(pelias.URL, policy)
+	g, err := proxy.LoadGeocoder(pelias.URL, policy)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := &server{wasm: newTestHost(t), geocoder: g}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/geocode/", s.handleGeocode)
-	mux.HandleFunc("/manifest", s.handleManifest)
+	mux.HandleFunc("/geocode/", s.geocode)
+	mux.HandleFunc("/manifest", s.manifest().HandleManifest)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -78,7 +81,7 @@ func TestGeocodeProxy(t *testing.T) {
 		t.Fatalf("unknown op: %d, forwarded %v", code, asked)
 	}
 
-	var m Manifest
+	var m manifest.Manifest
 	_, body = get("/manifest")
 	if err := json.Unmarshal([]byte(body), &m); err != nil {
 		t.Fatal(err)
@@ -92,14 +95,14 @@ func TestGeocodeProxy(t *testing.T) {
 		t.Fatalf("unconfigured: %d", code)
 	}
 	_, body = get("/manifest")
-	m = Manifest{}
+	m = manifest.Manifest{}
 	json.Unmarshal([]byte(body), &m)
 	if m.Services != nil {
 		t.Fatalf("unconfigured manifest lists %+v", m.Services)
 	}
 
 	os.WriteFile(policy, []byte(`{"place":{"size":1}}`), 0o644)
-	if _, err := loadGeocoder(pelias.URL, policy); err == nil {
+	if _, err := proxy.LoadGeocoder(pelias.URL, policy); err == nil {
 		t.Fatal("a policy for an unknown op loaded")
 	}
 }
