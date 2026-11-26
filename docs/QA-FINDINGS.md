@@ -303,7 +303,8 @@ work rules, and the bid over them.
   The runs cut: `docs/units/runs-layer.md`.
 - **QAF-12 OP GAP** — the work rules have a home (the kernel's
   `work_rules` document: platform, spread, report and clear,
-  pieces, meals, relief points, pay), but nothing judges a
+  pieces, meals, pay; relief points are in
+  `scheduling_constraints`), but nothing judges a
   run against them, so run legality cannot be validated.
   Pin: QAF-11's menu moves entirely with its assumed parameters;
   no op takes a run.

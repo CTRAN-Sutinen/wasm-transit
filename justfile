@@ -529,20 +529,20 @@ _host-tests:
       --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep '"layover_remaining_secs":300' > /dev/null
-    # Blocking where cutting the work begins: the work
-    # rules registered, the recovery view under them, the suggested
+    # Blocking where cutting the work begins: the scheduling
+    # constraints registered, the recovery view under them, the suggested
     # blocking of the trips no block carries, adopted through author
-    # `apply` under the same rules (no layover_infeasible), and the
+    # `apply` under the same constraints (no layover_infeasible), and the
     # adopted document's fleet peak is the one the suggestion named —
     # one chained session across runcut and author.
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
-      --as wr --op '{"op":"load_work_rules","work_rules":{"version":1,"recovery":[{"min_secs":300}],"interline":[{"a":"10","b":"20"}]}}' \
-      --as rec --op '{"op":"recovery","network_hash":"$load_network.network_hash","date":"2026-10-23","work_rules_hash":"$wr.work_rules_hash"}' \
-      --as s --op '{"op":"suggest_blocks","network_hash":"$load_network.network_hash","date":"2026-10-23","work_rules_hash":"$wr.work_rules_hash"}' \
+      --as wr --op '{"op":"load_scheduling_constraints","scheduling_constraints":{"recovery":[{"min_secs":300}],"interline":[{"a":"10","b":"20"}]}}' \
+      --as rec --op '{"op":"recovery","network_hash":"$load_network.network_hash","date":"2026-10-23","scheduling_constraints_hash":"$wr.scheduling_constraints_hash"}' \
+      --as s --op '{"op":"suggest_blocks","network_hash":"$load_network.network_hash","date":"2026-10-23","scheduling_constraints_hash":"$wr.scheduling_constraints_hash"}' \
       --cap author --op @web/public/caps/sample-network-load.json \
-      --as awr --op '{"op":"load_work_rules","work_rules":{"version":1,"recovery":[{"min_secs":300}],"interline":[{"a":"10","b":"20"}]}}' \
-      --as a --op '{"op":"apply","network_hash":"$load_network.network_hash","edits":"$s.suggestion.edits","work_rules_hash":"$awr.work_rules_hash"}' \
+      --as awr --op '{"op":"load_scheduling_constraints","scheduling_constraints":{"recovery":[{"min_secs":300}],"interline":[{"a":"10","b":"20"}]}}' \
+      --as a --op '{"op":"apply","network_hash":"$load_network.network_hash","edits":"$s.suggestion.edits","scheduling_constraints_hash":"$awr.scheduling_constraints_hash"}' \
       --cap runcut --as adopted --op '{"op":"load_network","network":"$a.network"}' \
       --as fleet --op '{"op":"fleet_summary","network_hash":"$adopted.network_hash","date":"2026-10-23"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const s = ok("s").suggestion; if (!ok("rec").recovery.waits.length || ok("a").issues.some((i) => i.layover_infeasible) || ok("fleet").summary.peak_vehicles !== s.peak_vehicles) process.exit(1)'

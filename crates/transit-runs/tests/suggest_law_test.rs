@@ -1,6 +1,6 @@
 //! Suggested blocking. Every unassigned trip is in exactly one
 //! suggested block or named as unplaceable. Every wait is at one place,
-//! interlines only a pair that the rules allow, and is at least the required
+//! interlines only a pair that the scheduling constraints allow, and is at least the required
 //! recovery. Adopting the edits keeps the authored blocks, validates clean,
 //! and gives the answer's fleet peak.
 
@@ -11,17 +11,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use common::*;
 use proptest::prelude::*;
 use transit_network::{apply_edits, materialize, validation_issues_under, Network};
-use transit_runs::{suggest_blocks, RecoveryRule, RoutePair, Suggestion, WorkRules};
+use transit_runs::{suggest_blocks, RecoveryRule, RoutePair, Suggestion, SchedulingConstraints};
 
 fn station(net: &Network, stop: &str) -> String {
     net.stops.get(stop).and_then(|s| s.parent.clone()).unwrap_or_else(|| stop.to_string())
 }
 
-fn rules(min_secs: Option<u32>, interline: bool) -> Option<WorkRules> {
+fn rules(min_secs: Option<u32>, interline: bool) -> Option<SchedulingConstraints> {
     if min_secs.is_none() && !interline {
         return None;
     }
-    Some(WorkRules {
+    Some(SchedulingConstraints {
         schema_version: Default::default(),
         recovery: min_secs.map(|m| RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None, extra: Default::default() }).into_iter().collect(),
         interline: if interline { vec![RoutePair { a: "5".into(), b: "6".into(), extra: Default::default() }] } else { vec![] },
@@ -29,7 +29,7 @@ fn rules(min_secs: Option<u32>, interline: bool) -> Option<WorkRules> {
     })
 }
 
-fn check(net: &Network, rules: Option<&WorkRules>) -> Result<Suggestion, TestCaseError> {
+fn check(net: &Network, rules: Option<&SchedulingConstraints>) -> Result<Suggestion, TestCaseError> {
     let day = materialize(net, date()).unwrap();
     let s = suggest_blocks(net, &day, rules);
     let blocked: BTreeSet<&str> = net.blocks.values().flat_map(|b| b.trips.iter().map(|t| t.trip.as_str())).collect();

@@ -1,40 +1,23 @@
-//! The work-rule document. The recovery requirement and
-//! interlining per route pair drive blocking. The run rules are for
-//! the runs cut.
+//! The work rules: what a labor agreement binds. The run rules and pay are
+//! for the runs cut. The v1 to v2 step drops what moved to the scheduling
+//! constraints.
 
-use proptest::prelude::*;
-use transit_network::RecoveryAt;
-use transit_runs::{MealBreak, Pay, RecoveryRule, RoutePair, RunRules, WorkRules, SCHEMA_VERSION};
-
-fn rule(route: Option<&str>, service_type: Option<&str>, min_secs: Option<u32>, pct_of_run: Option<u32>) -> RecoveryRule {
-    RecoveryRule { route: route.map(String::from), service_type: service_type.map(String::from), min_secs, pct_of_run, extra: Default::default() }
-}
-
-fn pair(a: &str, b: &str) -> RoutePair {
-    RoutePair { a: a.into(), b: b.into(), extra: Default::default() }
-}
-
-fn at<'a>(route: &'a str, service_type: &'a str, run_secs: u32) -> RecoveryAt<'a> {
-    RecoveryAt { route, service_type, run_secs, terminal: "C" }
-}
+use serde_json::json;
+use transit_runs::version::{migrate_step, migrate_to};
+use transit_runs::{MealBreak, Pay, RunRules, WorkRules, SCHEMA_VERSION};
 
 #[test]
 fn every_rule_is_optional() {
-    let empty: WorkRules = serde_json::from_str(r#"{"kind":"work_rules","schema_version":1}"#).unwrap();
+    let empty: WorkRules = serde_json::from_str(r#"{"kind":"work_rules","schema_version":2}"#).unwrap();
+    assert_eq!(empty, WorkRules::default());
     assert_eq!(empty.clone().checked().unwrap(), empty);
-    assert_eq!(empty.recovery_secs(&at("5", "wk", 1200)), None);
-    assert!(empty.interlines("5", "5"), "a route always follows itself");
-    assert!(!empty.interlines("5", "6"), "no pair listed, no interlining");
-    assert_eq!(serde_json::to_string(&empty).unwrap(), r#"{"kind":"work_rules","schema_version":1}"#, "nothing unset is written");
+    assert_eq!(serde_json::to_string(&empty).unwrap(), r#"{"kind":"work_rules","schema_version":2}"#, "nothing unset is written");
 }
 
 #[test]
 fn the_whole_document_round_trips() {
-    let rules = WorkRules { kind: Default::default(),
-        schema_version: Default::default(),
+    let rules = WorkRules {
         name: "Agency 2027".into(),
-        recovery: vec![rule(None, None, Some(300), Some(10))],
-        interline: vec![pair("5", "6")],
         runs: RunRules {
             max_platform_secs: Some(8 * 3600),
             max_spread_secs: Some(12 * 3600),
@@ -43,7 +26,6 @@ fn the_whole_document_round_trips() {
             min_piece_secs: Some(2 * 3600),
             max_piece_secs: Some(5 * 3600),
             meal: Some(MealBreak { within_secs: 5 * 3600, min_secs: 1800, extra: Default::default() }),
-            relief_points: vec!["A".into()],
             extra: Default::default(),
         },
         pay: Some(Pay {
@@ -54,7 +36,7 @@ fn the_whole_document_round_trips() {
             spread_pct: Some(50),
             extra: Default::default(),
         }),
-        extra: Default::default(),
+        ..Default::default()
     };
     let text = serde_json::to_string(&rules).unwrap();
     let back: WorkRules = serde_json::from_str(&text).unwrap();
@@ -63,87 +45,38 @@ fn the_whole_document_round_trips() {
 }
 
 #[test]
-fn the_most_specific_rule_answers() {
-    let rules = WorkRules {
-        schema_version: Default::default(),
-        recovery: vec![
-            rule(None, None, Some(300), None),
-            rule(None, Some("sat"), Some(400), None),
-            rule(Some("5"), None, Some(500), None),
-            rule(Some("5"), Some("sat"), Some(600), None),
-        ],
-        ..Default::default()
-    };
-    assert_eq!(rules.recovery_secs(&at("9", "wk", 1200)), Some(300));
-    assert_eq!(rules.recovery_secs(&at("9", "sat", 1200)), Some(400));
-    assert_eq!(rules.recovery_secs(&at("5", "wk", 1200)), Some(500));
-    assert_eq!(rules.recovery_secs(&at("5", "sat", 1200)), Some(600));
-}
-
-proptest! {
-    /// The larger of minutes and a percentage of the run, rounded up to the
-    /// second.
-    #[test]
-    fn a_rule_requires_the_larger_of_its_minimum_and_its_share(min in proptest::option::of(0u32..2000), pct in proptest::option::of(0u32..100), run in 0u32..10_000) {
-        prop_assume!(min.is_some() || pct.is_some());
-        let rules = WorkRules { schema_version: Default::default(), recovery: vec![rule(None, None, min, pct)], ..Default::default() };
-        let share = pct.map(|p| (run * p).div_ceil(100));
-        let want = min.into_iter().chain(share).max();
-        prop_assert_eq!(rules.recovery_secs(&at("5", "wk", run)), want);
-    }
-
-    #[test]
-    fn order_is_not_identity(swap in any::<bool>(), flip in any::<bool>()) {
-        let mut recovery = vec![rule(Some("5"), None, Some(500), None), rule(None, None, Some(300), None)];
-        let mut interline = vec![pair("6", "7"), if flip { pair("6", "5") } else { pair("5", "6") }];
-        if swap {
-            recovery.reverse();
-            interline.reverse();
-        }
-        let a = WorkRules { schema_version: Default::default(), recovery, interline, ..Default::default() }.checked().unwrap();
-        let b = WorkRules {
-            schema_version: Default::default(),
-            recovery: vec![rule(None, None, Some(300), None), rule(Some("5"), None, Some(500), None)],
-            interline: vec![pair("5", "6"), pair("6", "7")],
-            ..Default::default()
-        };
-        prop_assert_eq!(a, b);
-    }
-}
-
-#[test]
-fn interlining_is_per_route_pair_either_way() {
-    let rules = WorkRules { schema_version: Default::default(), interline: vec![pair("5", "6")], ..Default::default() };
-    assert!(rules.interlines("5", "6"));
-    assert!(rules.interlines("6", "5"));
-    assert!(!rules.interlines("5", "7"));
-    assert!(rules.interlines("7", "7"));
-}
-
-#[test]
-fn the_requirement_closure_falls_back_with_no_document() {
-    let rules = WorkRules { schema_version: Default::default(), recovery: vec![rule(None, None, Some(300), None)], ..Default::default() };
-    assert_eq!(transit_runs::required(Some(&rules))(&at("5", "wk", 1)), Some(300));
-    assert_eq!(transit_runs::required(None)(&at("5", "wk", 1)), None);
-}
-
-#[test]
 fn a_document_that_cannot_be_read_one_way_is_refused() {
     let refused = |rules: WorkRules| rules.checked().unwrap_err();
-    let base = || WorkRules { schema_version: Default::default(), ..Default::default() };
-    assert!(refused(WorkRules { schema_version: transit_version::Version(2), ..base() }).contains("version"));
-    assert!(refused(WorkRules { recovery: vec![rule(None, None, None, None)], ..base() }).contains("requires nothing"));
-    assert!(refused(WorkRules {
-        recovery: vec![rule(Some("5"), None, Some(1), None), rule(Some("5"), None, Some(2), None)],
-        ..base()
-    })
-    .contains("twice"));
-    assert!(refused(WorkRules { recovery: vec![rule(None, None, None, Some(1001))], ..base() }).contains("percent"));
-    assert!(refused(WorkRules { interline: vec![pair("5", "5")], ..base() }).contains("two routes"));
-    assert!(refused(WorkRules { interline: vec![pair("5", "6"), pair("6", "5")], ..base() }).contains("twice"));
+    assert!(refused(WorkRules { schema_version: transit_version::Version(1), ..Default::default() }).contains("version"));
     assert!(refused(WorkRules {
         runs: RunRules { min_piece_secs: Some(10), max_piece_secs: Some(5), ..Default::default() },
-        ..base()
+        ..Default::default()
     })
     .contains("piece"));
+}
+
+#[test]
+fn the_v1_step_drops_what_moved_to_the_scheduling_constraints() {
+    let v1 = json!({"kind": "work_rules", "schema_version": 1, "name": "Agency",
+        "recovery": [{"min_secs": 300}], "interline": [{"a": "5", "b": "6"}],
+        "runs": {"report_secs": 900, "relief_points": ["A"]}, "pay": {"guarantee_secs": 28800}});
+    let v2 = migrate_step(v1, 1).unwrap();
+    assert_eq!(v2, json!({"kind": "work_rules", "schema_version": 2, "name": "Agency",
+        "runs": {"report_secs": 900}, "pay": {"guarantee_secs": 28800}}));
+    let read: WorkRules = serde_json::from_value(v2).unwrap();
+    assert_eq!(read.checked().unwrap().runs.report_secs, Some(900));
+}
+
+#[test]
+fn runs_left_empty_by_the_step_are_not_written() {
+    let v2 = migrate_to(json!({"runs": {"relief_points": ["A"]}}), SCHEMA_VERSION).unwrap();
+    assert_eq!(v2, json!({"schema_version": 2}));
+}
+
+#[test]
+fn the_chain_refuses_what_it_cannot_step() {
+    assert!(migrate_to(json!({"schema_version": 2}), 2).unwrap_err().contains("nothing to migrate"));
+    assert!(migrate_to(json!({"schema_version": 1}), 3).unwrap_err().contains("newer than this build"));
+    assert!(migrate_step(json!({"schema_version": 2}), 1).unwrap_err().contains("given a v2"));
+    assert!(migrate_step(json!({"kind": "stops"}), 1).unwrap_err().contains("not a work rules document"));
 }

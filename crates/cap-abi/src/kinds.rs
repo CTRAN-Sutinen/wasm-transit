@@ -278,6 +278,8 @@ pub static KINDS: &[Declaration] = &[
     Declaration::new("recent_places", "recent_places", "transit_rider::device::RecentPlaces", "transit-rider"),
     Declaration::new("live_feeds", "live_feeds", "transit_rider::device::LiveFeeds", "transit-rider"),
     Declaration::new("work_rules", "work_rules", "transit_runs::WorkRules", "transit-runs").loaded("work_rules", "load_work_rules", 269),
+    Declaration::new("scheduling_constraints", "scheduling_constraints", "transit_runs::SchedulingConstraints", "transit-runs")
+        .loaded("scheduling_constraints", "load_scheduling_constraints", 275),
     Declaration::new("stops", "stops", "transit_stops::Stops", "transit-stops")
         .loaded("stops", "load_stops", 270)
         .stored("stops", Route, "POST /stops, POST /logs/stops", &["stops"], Merge::Log, Open)

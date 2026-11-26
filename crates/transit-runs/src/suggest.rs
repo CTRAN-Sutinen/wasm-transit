@@ -9,7 +9,7 @@ use transit_network::{
 use ts_rs::TS;
 
 use crate::recovery::end;
-use crate::WorkRules;
+use crate::SchedulingConstraints;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -84,7 +84,7 @@ struct Candidate<'a> {
 /// Each trip follows the vehicle that leaves it the least slack among those
 /// waiting where it starts (the same stop, or a bay of the same station), or
 /// else takes a new vehicle. Authored blocks stay as authored.
-pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option<&WorkRules>) -> Suggestion {
+pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: Option<&SchedulingConstraints>) -> Suggestion {
     let floors = recovery_floors(network);
     let blocked: BTreeSet<&str> =
         network.blocks.values().flat_map(|b| b.trips.iter().map(|t| t.trip.as_str())).collect();
@@ -117,13 +117,13 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], rules: Option
             terminal: to,
         };
         // A suggested wait is authored as a layover, so the floor judges it
-        // where the rules do not.
-        let required = required_recovery(&floors, rules.and_then(|r| r.recovery_secs(&at)), true, to);
+        // where the constraints do not.
+        let required = required_recovery(&floors, constraints.and_then(|c| c.recovery_secs(&at)), true, to);
         candidates.push(Candidate { trip, start: trip.start_secs, end: end(trip), from, to, required });
     }
     candidates.sort_by(|a, b| (a.start, &a.trip.trip).cmp(&(b.start, &b.trip.trip)));
 
-    let interlines = |a: &str, b: &str| a == b || rules.is_some_and(|r| r.interlines(a, b));
+    let interlines = |a: &str, b: &str| a == b || constraints.is_some_and(|c| c.interlines(a, b));
     let mut chains: Vec<Vec<usize>> = Vec::new();
     for (k, c) in candidates.iter().enumerate() {
         let best = chains

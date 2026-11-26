@@ -7,7 +7,7 @@ mod common;
 use common::*;
 use proptest::prelude::*;
 use transit_network::{materialize, validation_issues_under, Departs, Network, NetworkError, RecoverySource};
-use transit_runs::{recovery, RecoveryRule, WorkRules};
+use transit_runs::{recovery, RecoveryRule, SchedulingConstraints};
 
 /// b1 waits 40 minutes at C, b2 waits 10, both authored. C's floor is 600.
 fn shuttle() -> Network {
@@ -63,7 +63,7 @@ proptest! {
     ) {
         let mut net = shuttle();
         shift(&mut net, &trip_id("5", false, 9 * H), back);
-        let rules = min_secs.map(|m| WorkRules {
+        let rules = min_secs.map(|m| SchedulingConstraints {
             schema_version: Default::default(),
             recovery: vec![RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None, extra: Default::default() }],
             ..Default::default()

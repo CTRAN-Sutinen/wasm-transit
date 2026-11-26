@@ -15,7 +15,7 @@ fn load(network: Network) -> String {
 }
 
 fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, cap_abi::Refusal> {
-    dispatch(Request::Apply { network_hash: network_hash.into(), edits, work_rules_hash: None })
+    dispatch(Request::Apply { network_hash: network_hash.into(), edits, scheduling_constraints_hash: None })
 }
 
 #[test]
@@ -177,34 +177,33 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
-/// Work rules win over the terminal's floor.
+/// The scheduling constraints win over the terminal's floor.
 #[test]
-fn work_rules_judge_the_waits_of_the_next_document() {
+fn scheduling_constraints_judge_the_waits_of_the_next_document() {
     let base = load(network());
-    let issues = |work_rules_hash: Option<String>| {
-        match dispatch(Request::Apply { network_hash: base.clone(), edits: vec![], work_rules_hash }).unwrap() {
+    let issues = |scheduling_constraints_hash: Option<String>| {
+        match dispatch(Request::Apply { network_hash: base.clone(), edits: vec![], scheduling_constraints_hash }).unwrap() {
             Response::Apply { issues, .. } => issues,
             _ => unreachable!("apply answers apply"),
         }
     };
     assert_eq!(issues(None), vec![], "block 400 keeps the floor at its terminal");
-    let rules = transit_runs::WorkRules {
-        schema_version: Default::default(),
+    let rules = transit_runs::SchedulingConstraints {
         recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(86_400), pct_of_run: None, extra: Default::default() }],
         ..Default::default()
     };
     let loaded = cap_abi::kernel::invoke(
         &[&cap_author::CAPABILITY],
-        &serde_json::json!({ "op": "load_work_rules", "work_rules": rules }).to_string(),
+        &serde_json::json!({ "op": "load_scheduling_constraints", "scheduling_constraints": rules }).to_string(),
     );
-    let hash = serde_json::from_str::<serde_json::Value>(&loaded).unwrap()["ok"]["work_rules_hash"].as_str().unwrap().to_string();
+    let hash = serde_json::from_str::<serde_json::Value>(&loaded).unwrap()["ok"]["scheduling_constraints_hash"].as_str().unwrap().to_string();
     let ruled = issues(Some(hash));
     assert!(
         matches!(&ruled[..], [transit_network::NetworkError::LayoverInfeasible { block, required_secs: 86_400, required_by: transit_network::RecoverySource::Policy, .. }] if block == "400"),
         "{ruled:?}"
     );
-    let err = dispatch(Request::Apply { network_hash: base, edits: vec![], work_rules_hash: Some("sha256:nope".into()) }).unwrap_err();
-    assert!(err.message.contains("load_work_rules"), "{err}");
+    let err = dispatch(Request::Apply { network_hash: base, edits: vec![], scheduling_constraints_hash: Some("sha256:nope".into()) }).unwrap_err();
+    assert!(err.message.contains("load_scheduling_constraints"), "{err}");
 }
 
 /// A feed is stamped as a pick once.

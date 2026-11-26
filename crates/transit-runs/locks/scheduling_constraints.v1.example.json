@@ -1,0 +1,1 @@
+{"interline":[{"a":"10","b":"20"}],"kind":"scheduling_constraints","name":"Fixture constraints","recovery":[{"min_secs":300,"pct_of_run":10},{"min_secs":240,"route":"10"}],"schema_version":1}

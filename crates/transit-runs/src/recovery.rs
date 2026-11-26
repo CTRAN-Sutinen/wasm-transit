@@ -6,7 +6,7 @@ use transit_network::{recovery_floors, required_recovery, MaterializedTrip, Netw
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-use crate::WorkRules;
+use crate::SchedulingConstraints;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -65,8 +65,8 @@ fn pct(part: u64, whole: u64) -> u32 {
     }
 }
 
-/// With no `rules`, the terminals' floors judge.
-pub fn recovery(network: &Network, day: &[MaterializedTrip], rules: Option<&WorkRules>) -> Recovery {
+/// With no `constraints`, the terminals' floors judge.
+pub fn recovery(network: &Network, day: &[MaterializedTrip], constraints: Option<&SchedulingConstraints>) -> Recovery {
     let floors = recovery_floors(network);
     let mut waits = Vec::new();
     for (block_id, block) in &network.blocks {
@@ -96,7 +96,7 @@ pub fn recovery(network: &Network, day: &[MaterializedTrip], rules: Option<&Work
             let model_run = network.trip(&before.trip).and_then(|(_, _, t)| t.run_secs()).unwrap_or(0);
             let required = if pi + 1 == i {
                 let at = RecoveryAt { route: &before.route, service_type, run_secs: model_run, terminal };
-                required_recovery(&floors, rules.and_then(|r| r.recovery_secs(&at)), authored.is_some(), terminal)
+                required_recovery(&floors, constraints.and_then(|c| c.recovery_secs(&at)), authored.is_some(), terminal)
             } else {
                 None
             };

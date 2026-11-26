@@ -293,18 +293,11 @@ pub fn fixture_requests() -> transit_requests::StopRequests {
     .expect("the fixture requests parse")
 }
 
-/// Five minutes or a tenth of the run after every trip, route 10's own rule,
-/// routes 10 and 20 interlined, and an eight-hour run under report and clear
-/// times.
+/// An eight-hour run under report and clear times.
 pub fn fixture_work_rules() -> transit_runs::WorkRules {
     transit_runs::WorkRules { kind: Default::default(),
-        schema_version: Default::default(),
+        schema_version: transit_version::Version(transit_runs::SCHEMA_VERSION),
         name: "Fixture rules".into(),
-        recovery: vec![
-            transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(300), pct_of_run: Some(10), extra: Default::default() },
-            transit_runs::RecoveryRule { route: Some("10".into()), service_type: None, min_secs: Some(240), pct_of_run: None, extra: Default::default() },
-        ],
-        interline: vec![transit_runs::RoutePair { a: "10".into(), b: "20".into(), extra: Default::default() }],
         runs: transit_runs::RunRules {
             max_platform_secs: Some(8 * 3600),
             report_secs: Some(900),
@@ -312,6 +305,22 @@ pub fn fixture_work_rules() -> transit_runs::WorkRules {
             ..Default::default()
         },
         pay: None,
+        extra: Default::default(),
+    }
+}
+
+/// Five minutes or a tenth of the run after every trip, route 10's own rule,
+/// and routes 10 and 20 interlined.
+pub fn fixture_scheduling_constraints() -> transit_runs::SchedulingConstraints {
+    transit_runs::SchedulingConstraints { kind: Default::default(),
+        schema_version: Default::default(),
+        name: "Fixture constraints".into(),
+        recovery: vec![
+            transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(300), pct_of_run: Some(10), extra: Default::default() },
+            transit_runs::RecoveryRule { route: Some("10".into()), service_type: None, min_secs: Some(240), pct_of_run: None, extra: Default::default() },
+        ],
+        interline: vec![transit_runs::RoutePair { a: "10".into(), b: "20".into(), extra: Default::default() }],
+        relief_points: vec![],
         extra: Default::default(),
     }
 }

@@ -212,8 +212,8 @@ logged.
 cancellation.
 
 **Recovery.** The minimum time a vehicle must wait between trips, set
-by the agency's work rules or by the shortest wait already scheduled
-at that terminal. A wait longer than the recovery has slack.
+by the agency's scheduling constraints or by the shortest wait already
+scheduled at that terminal. A wait longer than the recovery has slack.
 
 **Registry.** The published set of modules, each with a record of the
 tests it passed and the source code it was built from. caps-run loads
@@ -231,6 +231,11 @@ blocks. Work on runs is still in progress.
 each may hold. Another program can check a document against it, and
 read the document without this software. See
 [architecture/registry.md](../architecture/registry.md).
+
+**Scheduling constraints.** The agency's own rules for scheduling,
+such as the minimum recovery time, which routes may share a vehicle,
+and where one operator may take over from another. Every rule is
+optional.
 
 **Screen reader.** Software that reads a screen aloud, for people who
 cannot see it well. VoiceOver (on iPhone), TalkBack (on Android), and
@@ -301,6 +306,7 @@ project's name comes from it.
 that crews work from. This app does not hold work orders; a **Stop
 request** keeps a work order's number, link, and last known status.
 
-**Work rules.** The agency's rules for scheduling vehicles and
-operators, such as minimum recovery time and which routes may share
-a vehicle. Every rule is optional.
+**Work rules.** The rules of the operators' labor agreement that a
+run must follow, such as the longest workday and when overtime starts.
+A new agreement, or a new reading of one, is a new set of work rules.
+Every rule is optional.

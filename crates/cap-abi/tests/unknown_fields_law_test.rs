@@ -159,12 +159,20 @@ fn the_policy_keeps_what_it_does_not_know() {
 
 #[test]
 fn the_work_rules_keep_what_they_do_not_know() {
-    let doc: transit_runs::WorkRules = typed(json!({"kind": "work_rules", "schema_version": 1, "name": "Fixture rules",
-        "interline": [{"a": "10", "b": "20"}],
-        "recovery": [{"min_secs": 300, "pct_of_run": 10}, {"min_secs": 240, "route": "10"}],
+    let doc: transit_runs::WorkRules = typed(json!({"kind": "work_rules", "schema_version": 2, "name": "Fixture rules",
         "runs": {"clear_secs": 900, "max_platform_secs": 28800, "report_secs": 900, "meal": {"within_secs": 18000, "min_secs": 1800}},
         "pay": {"guarantee_secs": 28800}}));
-    keeps_unknown_fields("work_rules", &doc, 5);
+    keeps_unknown_fields("work_rules", &doc, 4);
+}
+
+#[test]
+fn the_scheduling_constraints_keep_what_they_do_not_know() {
+    let doc: transit_runs::SchedulingConstraints = typed(json!({"kind": "scheduling_constraints", "schema_version": 1,
+        "name": "Fixture constraints",
+        "interline": [{"a": "10", "b": "20"}],
+        "recovery": [{"min_secs": 300, "pct_of_run": 10}, {"min_secs": 240, "route": "10"}],
+        "relief_points": ["A"]}));
+    keeps_unknown_fields("scheduling_constraints", &doc, 4);
 }
 
 #[test]

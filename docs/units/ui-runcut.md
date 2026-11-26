@@ -27,7 +27,7 @@ It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). Th
 |---|---|---|
 | 1 | runcut `blocks`, `block_trips` | op exists; no structure summary, QAF-15 |
 | 2 | runcut `fleet_summary`, `suggest_blocks` | op exists: a proposal's vehicle need is `suggest_blocks`' added_vehicles; fleet summary per service type, QAF-3 |
-| 3 | author `apply` issues (`work_rules_hash`), runcut `recovery` | op exists: a wait is judged against the recovery required there, and the recovery view shows required vs slack |
+| 3 | author `apply` issues (`scheduling_constraints_hash`), runcut `recovery` | op exists: a wait is judged against the recovery required there, and the recovery view shows required vs slack |
 | 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`), runcut `suggest_blocks` | op exists: a suggested chaining, adopted through its edits |
 | 5 | none | gap: deadhead estimation over cap-streets (`docs/ROADMAP.md` 2, 6) |
 
@@ -35,7 +35,8 @@ It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). Th
 
 The runs questions (which runs a cut makes, each run's pieces, times,
 and pay, whether a run is legal, and run edits) have no op yet. They
-are [runs-layer.md](runs-layer.md), steps 1 to 4, and this UI reads
+are [runs-layer.md](runs-layer.md)'s runs cut, run view, run legality,
+and run edits, and this UI reads
 them when they land.
 
 ## Done when

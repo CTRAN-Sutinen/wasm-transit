@@ -18,7 +18,7 @@ pub enum Request {
         edits: Vec<NetworkEdit>,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional))]
-        work_rules_hash: Option<String>,
+        scheduling_constraints_hash: Option<String>,
     },
     StampPick { network_hash: String, name: String, id: String },
 }
@@ -53,12 +53,12 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::Apply { network_hash, edits, work_rules_hash } => {
-            let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
+        Request::Apply { network_hash, edits, scheduling_constraints_hash } => {
+            let constraints = scheduling_constraints_hash.as_deref().map(|h| kind::<transit_runs::SchedulingConstraints>().require(h)).transpose()?;
             let current = network_arc(&network_hash)?;
             let transit_network::Applied { network: next, created, touched } =
                 transit_network::apply_edits_reporting(&current, &edits).map_err(|e| e.to_string())?;
-            let issues = transit_network::validation_issues_under(&next, &transit_runs::required(rules.as_deref()));
+            let issues = transit_network::validation_issues_under(&next, &transit_runs::required(constraints.as_deref()));
             let warnings = transit_network::validation_warnings(&next);
             let (network_hash, next) = kind::<transit_network::Network>().register(next)?;
             Ok(Response::Apply { network_hash, network: (*next).clone(), issues, warnings, created, touched })
@@ -91,8 +91,8 @@ cap_abi::capability! {
     id: "author",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [transit_network::Network, transit_runs::WorkRules],
+    documents: [transit_network::Network, transit_runs::SchedulingConstraints],
     request: Request,
     consumes: &[("network", "network")],
-    speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("work_rules", &[1])],
+    speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("scheduling_constraints", &[transit_runs::CONSTRAINTS_VERSION])],
 }

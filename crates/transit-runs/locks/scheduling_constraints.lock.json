@@ -1,0 +1,9 @@
+{
+  "tag": "scheduling_constraints",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:19166f49ea5f2a6e7862da070c217f5d0cbd67a45cb4fba1068253061b9b1305",
+      "schema_hash": "sha256:220ebe84adf6e2128e31ff968856cf050cac4ec508fe9e6c662a4fcc69e192a2"
+    }
+  }
+}

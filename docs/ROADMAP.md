@@ -77,10 +77,10 @@ module-composition thesis.
 
 - Blocks and layovers in the model.
 - Feasibility checks that judge the recovery required at each terminal.
-  The work rules set that recovery. Without a work rule, the terminal's
-  floor sets it.
+  The scheduling constraints set that recovery. Without a recovery rule,
+  the terminal's floor sets it.
 - The recovery view.
-- Suggested blocking of unassigned trips under the work rules, with the
+- Suggested blocking of unassigned trips under the scheduling constraints, with the
   peak it needs (no deadheads yet).
 - The street graph with routing.
 - Service-type analysis.
@@ -148,8 +148,10 @@ This is the bus's standing law.
 
 ## 7. Runs and the bid
 
-**What.** Cut blocks into operator runs under work rules. The work rules
-cover report and clear times and places, pieces, platform time, and pay.
+**What.** Cut blocks into operator runs under the work rules of the
+operators' labor agreement and the agency's scheduling constraints. The
+work rules cover limits, breaks, pay, and run classes. The scheduling
+constraints cover recovery, interlining, and relief points.
 Run the bid: operators pick runs from the pick's offer in seniority
 order. Runs, work rules, and bids are their own documents and modules,
 beside the network (D-16). They are never an extension of `Block`. The
@@ -164,7 +166,9 @@ reaches them.
 **Exists already:**
 
 - Blocks and layovers, and the block chain with the layover ripple.
-- The work-rule document: run rules and pay, every rule optional.
+- The work-rule document (run rules and pay) and the scheduling
+  constraints (recovery, interlining, relief points), every rule
+  optional.
 - The sync document's LWW-per-record discipline (a bid is shared state).
 
 **Needs:**

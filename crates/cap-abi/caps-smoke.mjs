@@ -689,16 +689,18 @@ assert(
 );
 const parkedDay = runcut.raw({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: "2026-10-24" });
 assert(parkedDay.ok && parkedDay.ok.blocks.length === 0, "a no-service day has no blocks out");
-// 600 s against the rules' 900 s is 300 s short.
-const rulesA = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, recovery: [{ min_secs: 900 }], interline: [{ a: "20", b: "10" }, { a: "10", b: "40" }] } });
-const rulesB = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, interline: [{ a: "10", b: "40" }, { a: "10", b: "20" }], recovery: [{ min_secs: 900 }] } });
-assert(rulesA.work_rules_hash === rulesB.work_rules_hash && rulesA.version === 1, "work rules: one document, one identity, however ordered");
-const refusedRules = runcut.raw({ op: "load_work_rules", work_rules: { version: 1, recovery: [{}] } });
-assert(refusedRules.error && refusedRules.error.message.includes("requires nothing"), "work rules that require nothing are refused at the load");
-const recoveryView = runcut.invoke({ op: "recovery", network_hash: loadedRuncutNet.network_hash, date: DATE, work_rules_hash: rulesA.work_rules_hash });
+// 600 s against the constraints' 900 s is 300 s short.
+const rulesA = runcut.invoke({ op: "load_scheduling_constraints", scheduling_constraints: { recovery: [{ min_secs: 900 }], interline: [{ a: "20", b: "10" }, { a: "10", b: "40" }] } });
+const rulesB = runcut.invoke({ op: "load_scheduling_constraints", scheduling_constraints: { interline: [{ a: "10", b: "40" }, { a: "10", b: "20" }], recovery: [{ min_secs: 900 }] } });
+assert(rulesA.scheduling_constraints_hash === rulesB.scheduling_constraints_hash && rulesA.version === 1, "scheduling constraints: one document, one identity, however ordered");
+const refusedRules = runcut.raw({ op: "load_scheduling_constraints", scheduling_constraints: { recovery: [{}] } });
+assert(refusedRules.error && refusedRules.error.message.includes("requires nothing"), "a recovery rule that requires nothing is refused at the load");
+const oldRules = runcut.raw({ op: "load_work_rules", work_rules: { schema_version: 1, recovery: [{ min_secs: 900 }] } });
+assert(oldRules.error && oldRules.error.message.includes("work_rules v1"), "work rules v1 are refused, naming the version");
+const recoveryView = runcut.invoke({ op: "recovery", network_hash: loadedRuncutNet.network_hash, date: DATE, scheduling_constraints_hash: rulesA.scheduling_constraints_hash });
 assert(
   recoveryView.recovery.waits.length === 1 && recoveryView.recovery.waits[0].required_secs === 900 && recoveryView.recovery.waits[0].slack_secs === -300,
-  "the recovery view: B1's 600 s wait is 300 s short of the rules' 900 s",
+  "the recovery view: B1's 600 s wait is 300 s short of the constraints' 900 s",
 );
 const suggestion = runcut.invoke({ op: "suggest_blocks", network_hash: loadedRuncutNet.network_hash, date: DATE }).suggestion;
 assert(

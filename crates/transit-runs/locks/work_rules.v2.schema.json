@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "MealBreak": {
+      "additionalProperties": true,
+      "description": "At least `min_secs` off within the first `within_secs` of work.",
+      "properties": {
+        "min_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "within_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "within_secs",
+        "min_secs"
+      ],
+      "type": "object"
+    },
+    "Pay": {
+      "additionalProperties": true,
+      "description": "Pay is in time, not dollars, because operators' rates vary by seniority.",
+      "properties": {
+        "guarantee_secs": {
+          "description": "A run is paid at least this long.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "overtime_after_secs": {
+          "description": "Work past this is overtime, paid at `overtime_pct` percent.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "overtime_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spread_after_secs": {
+          "description": "Spread past this earns a premium of `spread_pct` percent of the\ntime past it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spread_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RunRules": {
+      "additionalProperties": true,
+      "properties": {
+        "clear_secs": {
+          "description": "Paid time after the last piece (pull-in, sign-off).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_piece_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_platform_secs": {
+          "description": "The longest a run may be on the platform (driving and waiting).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_spread_secs": {
+          "description": "The longest from report to clear, breaks included.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "meal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MealBreak"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min_piece_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "report_secs": {
+          "description": "Paid time before the first piece (sign-on, pull-out).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "WorkRulesKind": {
+      "const": "work_rules"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "An empty document is `{\"kind\":\"work_rules\",\"schema_version\":2}`.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/WorkRulesKind",
+      "default": "work_rules",
+      "description": "A copy without a kind tag reads as work rules."
+    },
+    "name": {
+      "type": "string"
+    },
+    "pay": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Pay"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runs": {
+      "$ref": "#/$defs/RunRules"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1,
+      "description": "A copy without a version is version 1, which this build refuses."
+    }
+  },
+  "title": "WorkRules",
+  "type": "object"
+}

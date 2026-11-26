@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "RecoveryRule": {
+      "additionalProperties": true,
+      "description": "The larger of `min_secs` and `pct_of_run` percent of the run before the\nwait, rounded up to the second. With no route or service type, the rule\ncovers every trip.",
+      "properties": {
+        "min_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pct_of_run": {
+          "description": "A whole percent of the run time (0 to 1000).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "service_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RoutePair": {
+      "additionalProperties": true,
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "SchedulingConstraintsKind": {
+      "const": "scheduling_constraints"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "An empty document is `{\"kind\":\"scheduling_constraints\",\"schema_version\":1}`.",
+  "properties": {
+    "interline": {
+      "description": "Set per pair, in either order. A route follows itself. An\nunlisted pair never interlines.",
+      "items": {
+        "$ref": "#/$defs/RoutePair"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/$defs/SchedulingConstraintsKind",
+      "default": "scheduling_constraints",
+      "description": "A copy without a kind tag reads as scheduling constraints."
+    },
+    "name": {
+      "type": "string"
+    },
+    "recovery": {
+      "description": "The most specific rule answers. Specificity runs from route with\nservice type, to route, to service type, to neither. With no rule,\nthe terminal's floor applies, which is the smallest authored layover\nthere.",
+      "items": {
+        "$ref": "#/$defs/RecoveryRule"
+      },
+      "type": "array"
+    },
+    "relief_points": {
+      "description": "Stop ids where one operator may relieve another. When empty, only at\nthe ends of a block's trips.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1,
+      "description": "A copy without a version is version 1."
+    }
+  },
+  "title": "SchedulingConstraints",
+  "type": "object"
+}

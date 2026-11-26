@@ -11,7 +11,7 @@ The answer has these parts:
 - `network_hash`: the hash of the next document. The document is already registered.
 - `network`: the next document.
 - `issues`: problems that gate export. A block's wait is `layover_infeasible {gap_secs, required_secs, required_by}` when it is shorter than the recovery required there. A layover's own authored length is slack. It is never the requirement. The required recovery comes from the first source that applies:
-  - With `work_rules_hash`, the most specific work rule. `required_by` is `policy`, and the rule wins.
+  - With `scheduling_constraints_hash`, the scheduling constraints' most specific recovery rule. `required_by` is `policy`, and the rule wins.
   - Otherwise, for a pair that has an authored layover, the smallest authored layover at that terminal. `required_by` is `terminal`.
 - `warnings`: problems that never gate. They are unassigned trips, and a pick with no service in its period.
 - `created`: `{kind, id}` for each entity the change made.

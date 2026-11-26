@@ -122,8 +122,8 @@ fn a_network_load_refuses_other_versions_naming_both() {
     assert!(newer.message.contains(&format!("network v{}", current + 1)), "{newer}");
 }
 
-/// The derived kinds and the work rules gained their tags at v1, so an
-/// untagged copy is v1.
+/// The derived kinds and the scheduling constraints gained their tags at
+/// v1, so an untagged copy is v1.
 #[test]
 fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     use transit_version::Versioned;
@@ -148,10 +148,24 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     law::<transit_streets::walking::WalkTable>(serde_json::json!({
         "streets_hash": "sha256:s", "network_hash": "sha256:n", "speed_mps": 1.3, "max_walk_secs": 600, "walks": []
     }));
-    law::<transit_runs::WorkRules>(serde_json::json!({"schema_version": 1}));
+    law::<transit_runs::SchedulingConstraints>(serde_json::json!({}));
     law::<transit_stops::Stops>(serde_json::json!({"stops": {}}));
     law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
+}
+
+/// An untagged copy is v1, which held the scheduling constraints too.
+#[test]
+fn work_rules_read_v2_and_refuse_v1_naming_the_migration() {
+    use transit_runs::WorkRules;
+    for v1 in [&br#"{"kind":"work_rules","schema_version":1}"#[..], br#"{"recovery":[{"min_secs":300}]}"#] {
+        let err = cap_abi::parse_versioned::<WorkRules>(v1).unwrap_err();
+        assert!(err.message.contains("work_rules v1") && err.message.contains("migrate"), "{err}");
+    }
+    let read: WorkRules = cap_abi::parse_versioned(br#"{"kind":"work_rules","schema_version":2}"#).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
+    let err = cap_abi::parse_versioned::<WorkRules>(br#"{"kind":"work_rules","schema_version":3}"#).unwrap_err();
+    assert!(err.message.contains("work_rules v3") && err.message.contains("reads v2"), "{err}");
 }
 
 /// Every v1 document is a v2 document, so an untagged copy reads.

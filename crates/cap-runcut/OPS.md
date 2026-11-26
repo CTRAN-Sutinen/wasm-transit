@@ -4,7 +4,7 @@ The runcut: what does this vehicle do today? The capability answers with the day
 
 Blocking is where cutting the work begins. So the same question also covers two more views:
 
-- what a vehicle's waits require under the work rules (the recovery view);
+- what a vehicle's waits require under the scheduling constraints (the recovery view);
 - which vehicles the trips that no block carries need (the suggested blocking, adopted through author `apply`).
 
 The capability reads the materialized day over the network document, patched with the in-force edits. The domain code lives in the shared transit-dispatch and transit-runs libraries.
@@ -82,7 +82,7 @@ Each wait holds these fields:
 - `terminal`: where the vehicle waits. It is the layover's `at`, else the stop that the trip ends at.
 - `gap_secs`: the time from the arrival to the next start.
 - The recovery required there, and `required_by`, which says what requires it:
-  - `policy`: the work rules' most specific rule. The request carries `work_rules_hash`.
+  - `policy`: the scheduling constraints' most specific recovery rule. The request carries `scheduling_constraints_hash`.
   - `terminal`: the smallest authored layover at that terminal, for a pair that the block authors a layover for.
   - null: nothing is required.
 - `slack_secs`: `gap_secs` less the required recovery. It is negative when the wait is short. It is exactly validation's `layover_infeasible` under the same rules.
@@ -96,8 +96,8 @@ Suggest blocks for the trips that run on a service date and that no block carrie
 
 The op chains the trips in order of start. Each trip follows the vehicle that leaves it the least slack, among the vehicles that wait where the trip starts. A vehicle waits there when it is at the same stop, or at a bay of the same station. There are no deadheads yet. The vehicle must also meet these rules:
 
-- It ran the same route, or a route pair that the work rules interline.
-- It has had the recovery required. That is the rules' recovery, else the terminal's floor. When neither applies, nothing is required.
+- It ran the same route, or a route pair that the scheduling constraints interline.
+- It has had the recovery required. That is the scheduling constraints' recovery, else the terminal's floor. When neither applies, nothing is required.
 
 When no vehicle fits, the trip takes a new vehicle.
 

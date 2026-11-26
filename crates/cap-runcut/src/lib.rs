@@ -57,7 +57,7 @@ pub enum Request {
         date: String,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional))]
-        work_rules_hash: Option<String>,
+        scheduling_constraints_hash: Option<String>,
     },
     SuggestBlocks {
         network_hash: String,
@@ -66,7 +66,7 @@ pub enum Request {
         date: String,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional))]
-        work_rules_hash: Option<String>,
+        scheduling_constraints_hash: Option<String>,
     },
     TripPath {
         network_hash: String,
@@ -128,18 +128,18 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 stops: transit_dispatch::trip_stops(&network, &day.trips, &trip, start_secs),
             })
         }
-        Request::Recovery { network_hash, edits_hash, date, work_rules_hash } => {
+        Request::Recovery { network_hash, edits_hash, date, scheduling_constraints_hash } => {
             let day = day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
-            Ok(Response::Recovery { recovery: transit_runs::recovery(&network, &day.trips, rules.as_deref()) })
+            let constraints = scheduling_constraints_hash.as_deref().map(|h| kind::<transit_runs::SchedulingConstraints>().require(h)).transpose()?;
+            Ok(Response::Recovery { recovery: transit_runs::recovery(&network, &day.trips, constraints.as_deref()) })
         }
-        Request::SuggestBlocks { network_hash, edits_hash, date, work_rules_hash } => {
+        Request::SuggestBlocks { network_hash, edits_hash, date, scheduling_constraints_hash } => {
             let day = day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let rules = work_rules_hash.as_deref().map(|h| kind::<transit_runs::WorkRules>().require(h)).transpose()?;
+            let constraints = scheduling_constraints_hash.as_deref().map(|h| kind::<transit_runs::SchedulingConstraints>().require(h)).transpose()?;
             Ok(Response::SuggestBlocks {
-                suggestion: transit_runs::suggest_blocks(&network, &day.trips, rules.as_deref()),
+                suggestion: transit_runs::suggest_blocks(&network, &day.trips, constraints.as_deref()),
             })
         }
         Request::TripPath { network_hash, edits_hash, trip, start_secs, date } => {
@@ -166,14 +166,15 @@ cap_abi::capability! {
     id: "runcut",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [transit_network::Network, transit_sync::EditDocument, transit_live::LiveDay, transit_runs::WorkRules],
+    documents: [transit_network::Network, transit_sync::EditDocument, transit_live::LiveDay, transit_runs::WorkRules, transit_runs::SchedulingConstraints],
     request: Request,
     consumes: &[("network", "network")],
     speaks: &[
         ("network", &[transit_network::SCHEMA_VERSION]),
         ("operator_edits", &[transit_sync::SCHEMA_VERSION]),
         ("live", &[1]),
-        ("work_rules", &[1]),
+        ("work_rules", &[transit_runs::SCHEMA_VERSION]),
+        ("scheduling_constraints", &[transit_runs::CONSTRAINTS_VERSION]),
     ],
 }
 

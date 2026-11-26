@@ -100,7 +100,8 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
         load::<transit_rider::watchlist::Watchlist>("Register a WATCHLIST document (the personal saved set, version-tagged) under its canonical hash, answering its version. JSON: {\"op\": \"load_watchlist\", \"document\": …}; bulk: its JSON.", net),
         load::<transit_analysis::WeightedLayer>("Register a GeoJSON WEIGHTED LAYER — Point, Polygon and MultiPolygon features (people, jobs, households: any weighted geography; other geometries are skipped) — under the content hash of its bytes. The answer is the import handle — features, points, polygons, and the weights it can be read by (each property that is a JSON number, with its total) — so the layer's owner never parses a second copy. Which field is the weight, and what it means, are the coverage op's (`field`, `label`): one file read two ways is one layer. Bulk: the GeoJSON bytes; JSON: {\"op\": \"load_layer\", \"bytes\": [..]}.", net),
         load::<transit_codec::Feed>("Register a GTFS zip under the content hash of its bytes (idempotent), answering the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk: the raw zip.", net),
-        load::<transit_runs::WorkRules>("Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON.", net),
+        load::<transit_runs::WorkRules>("Register the WORK RULES (transit-runs: what a labor agreement binds — the run rules and pay; every rule optional) under its canonical hash, answering its version. Refused: another version, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON.", net),
+        load::<transit_runs::SchedulingConstraints>("Register the SCHEDULING CONSTRAINTS (transit-runs: the agency's own choices — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the relief points; every rule optional) under its canonical hash, answering its version. Checked and normalized at the load (rules, pairs, and relief points sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a relief point listed twice. JSON: {\"op\": \"load_scheduling_constraints\", \"scheduling_constraints\": …}; bulk: its JSON.", net),
         load::<transit_stops::Stops>("Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON.", net),
         load::<transit_requests::StopRequests>("Register a STOP REQUESTS document (transit-requests: the planning team's requests for work at a stop — new, reinstall, relocate/remove, repair/improve, temporary — each tracking the work order the work order system opens for it) under its canonical hash — the same hash the requests capability's validate answers — with how many requests it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stop_requests\", \"requests\": …}; bulk: its JSON.", net),
         load::<transit_alerts::ServiceAlerts>("Register a SERVICE ALERTS document (transit-alerts: the agency's alerts in the network's ids, each with its cause, effect, severity, texts in each language, periods, and informed entities; D-206) under its canonical hash, the same hash the alerts capability's validate answers, with how many alerts it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_service_alerts\", \"alerts\": …}; bulk: its JSON.", net),
@@ -504,6 +505,10 @@ fn migrate_requests(doc: serde_json::Value, _from: u32) -> Result<serde_json::Va
     transit_requests::version::migrate_to(doc, transit_requests::SCHEMA_VERSION)
 }
 
+fn migrate_work_rules(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_runs::version::migrate_to(doc, transit_runs::SCHEMA_VERSION)
+}
+
 fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_sync::version::migrate_to(doc, transit_sync::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
@@ -563,7 +568,8 @@ fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<D
         ),
         kind::<transit_streets::Streets>(streets_example_context().map(|c| value(&c.streets)), None),
         kind::<transit_streets::walking::WalkTable>(walks_example, None),
-        kind::<transit_runs::WorkRules>(Some(value(&fixture_work_rules())), None),
+        kind::<transit_runs::WorkRules>(Some(value(&fixture_work_rules())), Some(migrate_work_rules)),
+        kind::<transit_runs::SchedulingConstraints>(Some(value(&fixture_scheduling_constraints())), None),
         // The example holds no versions, because they would move it with
         // every schema.
         kind::<kind_table::KindTable>(
@@ -901,6 +907,14 @@ fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExa
             (
                 json!({ "op": "load_work_rules", "work_rules": fixture_work_rules() }),
                 json!({ "ok": { "op": "load_work_rules", "work_rules_hash": work_rules_hash, "version": rules.schema_version.0 } }),
+            )
+        }
+        ("kernel", "load_scheduling_constraints") => {
+            let constraints = fixture_scheduling_constraints().checked().ok()?;
+            let scheduling_constraints_hash = cap_abi::canonical_hash(&constraints).ok()?;
+            (
+                json!({ "op": "load_scheduling_constraints", "scheduling_constraints": fixture_scheduling_constraints() }),
+                json!({ "ok": { "op": "load_scheduling_constraints", "scheduling_constraints_hash": scheduling_constraints_hash, "version": constraints.schema_version.0 } }),
             )
         }
         ("kernel", "load_watchlist") => {

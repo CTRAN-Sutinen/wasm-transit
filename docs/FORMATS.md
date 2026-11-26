@@ -708,7 +708,8 @@ Every persisted kind, by what a version change does to it:
 | `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |
 | `watchlist` | transit-rider | authored | `kind`, `schema_version` (before its tags, `"version": "vN"`) |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
-| `work_rules` | transit-runs | authored | `kind`, `schema_version` |
+| `work_rules` | transit-runs | authored | `kind`, `schema_version` (v2: recovery, interline, and relief points moved to `scheduling_constraints`; the v1 step drops them) |
+| `scheduling_constraints` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
 | `stop_requests` | transit-requests | authored | `kind`, `schema_version` (v2: `routes` are names the planner writes, not a reference; v1 comes forward unchanged) |
 | `service_alerts` | transit-alerts | authored | `kind`, `schema_version` (v2: `explains` names a trip instance; v1 comes forward unchanged) |

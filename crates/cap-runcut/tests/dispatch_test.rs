@@ -435,28 +435,27 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
 }
 
 fn load_rules(min_secs: u32) -> String {
-    let rules = transit_runs::WorkRules {
-        schema_version: Default::default(),
+    let rules = transit_runs::SchedulingConstraints {
         recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(min_secs), pct_of_run: None, extra: Default::default() }],
         ..Default::default()
     };
     let answer = cap_abi::kernel::invoke(
         &[&cap_runcut::CAPABILITY],
-        &serde_json::json!({ "op": "load_work_rules", "work_rules": rules }).to_string(),
+        &serde_json::json!({ "op": "load_scheduling_constraints", "scheduling_constraints": rules }).to_string(),
     );
     let value: serde_json::Value = serde_json::from_str(&answer).unwrap();
     assert_eq!(value["ok"]["version"], 1, "{answer}");
-    value["ok"]["work_rules_hash"].as_str().unwrap().to_string()
+    value["ok"]["scheduling_constraints_hash"].as_str().unwrap().to_string()
 }
 
 #[test]
 fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
     let network_hash = load_network();
-    let view = |work_rules_hash: Option<String>| match dispatch(Request::Recovery {
+    let view = |scheduling_constraints_hash: Option<String>| match dispatch(Request::Recovery {
         network_hash: network_hash.clone(),
         edits_hash: None,
         date: DATE.into(),
-        work_rules_hash,
+        scheduling_constraints_hash,
     })
     .unwrap()
     {
@@ -475,10 +474,10 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
         network_hash,
         edits_hash: None,
         date: DATE.into(),
-        work_rules_hash: Some("sha256:nope".into()),
+        scheduling_constraints_hash: Some("sha256:nope".into()),
     })
     .unwrap_err();
-    assert!(err.message.contains("load_work_rules"), "{err}");
+    assert!(err.message.contains("load_scheduling_constraints"), "{err}");
 }
 
 /// Adopting the answer's edits makes a document whose fleet peak is the
@@ -492,7 +491,7 @@ fn a_suggestion_adopts_into_the_fleet_it_names() {
         network_hash,
         edits_hash: None,
         date: DATE.into(),
-        work_rules_hash: None,
+        scheduling_constraints_hash: None,
     })
     .unwrap()
     {

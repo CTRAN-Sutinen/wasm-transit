@@ -139,12 +139,13 @@ and before a release.
    - transit-dispatch's `dispatch_laws_test` holds the diversion and
      ripple laws. Its `cancel_law_test` holds the trip-cancel laws.
    - `transit-network`'s `recovery_law_test` holds that a block's wait
-     is judged against the recovery required there. The work rules'
-     requirement wins, else the terminal's floor. The wait is never
+     is judged against the recovery required there. The scheduling
+     constraints' requirement wins, else the terminal's floor. The wait is never
      judged against its own authored layover.
-   - `transit-runs`'s `work_rules_test` holds the work-rule document:
-     every rule is optional, the most specific rule wins, and order is
-     not identity.
+   - `transit-runs`'s `scheduling_constraints_test` holds the
+     scheduling constraints: every rule is optional, the most specific
+     recovery rule wins, and order is not identity. Its
+     `work_rules_test` holds the work rules and their v1 to v2 step.
    - `transit-runs`'s `recovery_view_test` holds that a wait is short
      exactly where validation says layover_infeasible.
    - `transit-runs`'s `suggest_law_test` holds that suggested blocking

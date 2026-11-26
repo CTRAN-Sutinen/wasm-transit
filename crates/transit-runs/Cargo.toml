@@ -1,6 +1,6 @@
 [package]
 name = "transit-runs"
-description = "The runs layer as a shared library, beside the network (D-16): the work-rule document (generic, every rule optional — recovery, interlining per route pair, the run rules, pay), the recovery a wait requires and the slack above it, and the suggested blocking a planner adopts or edits. Pure; the runcut and author capabilities dispatch through it."
+description = "The runs layer as a shared library, beside the network (D-16): the work rules (generic, every rule optional: the run rules and pay), the scheduling constraints (recovery, interlining per route pair, relief points), the recovery a wait requires and the slack above it, and the suggested blocking a planner adopts or edits. Pure; the runcut and author capabilities dispatch through it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 transit-version = { path = "../transit-version", default-features = false }
 serde = { workspace = true }
+serde_json = { workspace = true }
 ts-rs = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 transit-network = { path = "../transit-network", default-features = false }
