@@ -411,9 +411,12 @@ page, control by control, and checks each answer against `caps-run`.
 - **Each control is checked against caps-run.** For each answer the
   page shows, ask the op that the page asks, with the same arguments,
   through `caps-run --upstream http://127.0.0.1:8091`. Both read the
-  same manifest and the same documents. The numbers on the screen must
-  match the line. A screen that shows something other than the op's
-  answer is a UI defect.
+  same heads and the same documents. A forked plan's network and the
+  live feeds the page read are in the page's journal, not on the
+  server: pass the journal too (`--journal FILE.json`). The page's
+  requests are listed by `caps-run replay FILE.json --show`. The
+  numbers on the screen must match the line. A screen that shows
+  something other than the op's answer is a UI defect.
 - **A question the UI asks that caps-run cannot is a finding**: the
   page computes an answer that no op gives (`docs/architecture/web.md`,
   "Parity"). A question that caps-run answers and the UI does not show

@@ -28,8 +28,8 @@ Each host has four parts:
 
 | | Server | Browser | caps-run |
 |---|---|---|---|
-| Upstream | the bucket | the server, or the export's files | the server or an export's files (`--upstream`), and the files and URLs its user names |
-| Working copy | heads and blobs in memory; with `-store-cache`, the same on disk | IndexedDB (documents, plans, the outbox, and the disruptions page's last copy of the edit document) and the service worker's caches (the pages, the modules, the last copy of a rider page's reads) | the upstream's last manifest and its blobs by hash (`.caps-sessions/.upstreams/`), and the session folder (`.caps-sessions/NAME/`) |
+| Upstream | the bucket | the server, or the export's files | the server or an export's files (`--upstream`), a page's journal (`--journal`), and the files and URLs its user names |
+| Working copy | heads and blobs in memory; with `-store-cache`, the same on disk | IndexedDB (documents, plans, the outbox, and the disruptions page's last copy of the edit document) and the service worker's caches (the pages, the modules, the last copy of a rider page's reads) | the upstream's last heads and its blobs by hash (`.caps-sessions/.upstreams/`), and the session folder (`.caps-sessions/NAME/`) |
 | Modules | its linked assembly in wazero: a long-lived instance, authz's own, and a fresh one for each import or publish | the page's linked assembly in its bus worker | any module, or a page's assembly for a replay |
 | Clock | the server's clock | the device's clock, in the agency's zone (`web/src/clock.ts`) | the machine's clock, in the zone of `--tz` or the session's network |
 
@@ -87,7 +87,7 @@ makes the call, and an op records the answer.
    - the kit: each input's state (`src/uis/inputs.ts`), said by
      `inputLabel`. A staff page keeps a head on the device
      (`readHeadKept`) and boots on it, labelled with its age;
-   - caps-run: `"stale": {"as_of_ms": …}` on each line.
+   - caps-run: `"stale": {"<head>": {"as_of_ms": …}}` on each line.
 4. **The age passes down the chain.** A page that reads a stale answer
    from the server shows the server's as-of time. It does not show the
    time it read the answer.
@@ -122,9 +122,9 @@ The hosts differ in three ways. Each difference is a design decision.
   (`web/src/uis/host-contract.test.mjs`), and caps-run over its
   upstream (`tools/upstream.test.mjs`). Each must give the same state:
   current, stale with the upstream's age, or failed.
-- caps-run reads only `manifest` as a head. It does not read a
-  pointer's head or a log, so a session asks about the published set,
-  not a draft.
+- caps-run reads the heads that the pages read: `manifest`, `edits`,
+  and `network`. It does not read a pointer's head or a log, and no
+  page reads one.
 - A live feed that answers with old data goes undetected (QAF-129).
   An input can name the age past which it is old (`old_after_s`), and
   no live feed names one.

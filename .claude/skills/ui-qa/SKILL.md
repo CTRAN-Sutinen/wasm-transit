@@ -97,8 +97,11 @@ same documents.
   ```
 
   A screen that shows something other than the op's answer is a UI
-  defect. A forked plan's network is not the manifest's: name it by the
-  hash that the page shows or the journal records.
+  defect. A forked plan's network and the live feeds the page read are
+  not on the server. Pass the page's journal (`--journal FILE.json`),
+  and the runner registers each document the request names from the
+  page's own loads. Name the network by the hash the request names,
+  not `$manifest.network_hash`.
 - At the end of the walk, save the journal again, and run
   `node tools/caps-run.mjs replay FILE.json --single`. Every call must
   answer the same bytes on caps-run's own modules. A call that differs

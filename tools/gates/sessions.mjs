@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -236,6 +236,47 @@ export const SESSIONS = [
       rmSync(store, { recursive: true, force: true });
     }
   }],
+  ["an upstream's other heads: $edits reads the edit document; an export with none says so", () => {
+    const up = mkdtempSync(join(tmpdir(), "caps-upstream-"));
+    const env = { CAPS_RUN_SESSIONS: up };
+    try {
+      writeFileSync(join(up, "manifest"), JSON.stringify({ network_hash: "", feed_hash: "", wasm_hash: "", generated_at: 1 }));
+      const none = caps(["runcut", "--upstream", up, "--op", '{"op":"load_edits","edits":"$edits"}'], { env, fails: true });
+      has(none.stderr, "the upstream has no edits");
+      writeFileSync(join(up, "edits"), EDITS);
+      const r = caps(["runcut", "--upstream", up, "--as", "e", "--op", '{"op":"load_edits","edits":"$edits"}', "--print", "$edits.records.*.id"], { env });
+      must(r.lines[0]["$edits.records.*.id"]?.join() === "e1", "$edits does not read the edit document");
+    } finally {
+      rmSync(up, { recursive: true, force: true });
+    }
+  }],
+  ["--journal: a document that only a journal holds registers from its load, a session's or a page's", () => {
+    const store = mkdtempSync(join(tmpdir(), "caps-sessions-"));
+    const env = { CAPS_RUN_SESSIONS: store };
+    try {
+      const hash = caps(["board", "--session", "pg", "--op", LOAD, "--print", "$load_network.network_hash"], { env }).lines[0]["$load_network.network_hash"];
+      const BOARD = `{"op":"stop_board","network_hash":"${hash}","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":1}`;
+      caps(["board", "--op", BOARD], { env, fails: true });
+      const fromSession = caps(["board", "--journal", "pg", "--op", BOARD], { env }).last;
+      must(fromSession.ok?.op === "stop_board" && fromSession.registered?.[0] === `network ${hash} from the journal`, "the session's journal did not answer the network");
+      const dir = join(store, "pg");
+      // A page asks its linked assembly with a `cap` field.
+      const blobs = {};
+      const lines = readFileSync(join(dir, "journal.jsonl"), "utf8").trim().split("\n").map(JSON.parse).map((l) => {
+        const request = JSON.parse(gunzipSync(readFileSync(join(dir, "blobs", `${l.request.slice(7)}.gz`))).toString("utf8"));
+        const bytes = Buffer.from(JSON.stringify({ cap: "board", ...request }));
+        const hashed = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+        blobs[hashed] = bytes.toString("base64");
+        return `${JSON.stringify({ ...l, request: hashed })}\n`;
+      });
+      const page = join(store, "page.json");
+      writeFileSync(page, JSON.stringify({ journal: lines.join(""), blobs }));
+      const fromPage = caps(["board", "--journal", page, "--op", BOARD], { env }).last;
+      must(fromPage.ok?.op === "stop_board" && fromPage.registered?.[0]?.endsWith("from the journal"), "a page's journal did not answer the network");
+    } finally {
+      rmSync(store, { recursive: true, force: true });
+    }
+  }],
   ["an upstream: an op by $manifest reads the blob into the working copy; with no manifest, the copy answers with its age; with no copy, the read fails", () => {
     const up = mkdtempSync(join(tmpdir(), "caps-upstream-"));
     const store = mkdtempSync(join(tmpdir(), "caps-sessions-"));
@@ -249,11 +290,11 @@ export const SESSIONS = [
       const BOARD = '{"op":"stop_board","network_hash":"$manifest.network_hash","stop_id":"A","date":"$TODAY","from_secs":0,"limit":1}';
       const first = caps(["board", "--upstream", up, "--op", BOARD], { env }).last;
       must(first.ok?.op === "stop_board" && first.registered?.[0] === `network ${hash} from the upstream` && !first.stale, "the board did not read the upstream's network");
-      rmSync(join(up, "manifest"));
-      rmSync(join(up, "blobs"), { recursive: true });
+      // An export folder that is gone is an upstream that does not answer.
+      rmSync(up, { recursive: true });
       const second = caps(["board", "--upstream", up, "--op", BOARD], { env }).last;
-      must(second.ok?.op === "stop_board" && second.stale?.as_of_ms > 0, "the working copy did not answer with its age");
-      const none = caps(["board", "--upstream", up, "--op", BOARD], { env: { CAPS_RUN_SESSIONS: up }, fails: true });
+      must(second.ok?.op === "stop_board" && second.stale?.manifest?.as_of_ms > 0, "the working copy did not answer with its age");
+      const none = caps(["board", "--upstream", up, "--op", BOARD], { env: { CAPS_RUN_SESSIONS: join(store, "empty") }, fails: true });
       has(none.stdout + none.stderr, "the working copy holds none");
     } finally {
       rmSync(up, { recursive: true, force: true });

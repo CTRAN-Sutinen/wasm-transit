@@ -107,6 +107,12 @@ function carried(ok) {
 /// - `stateOps` maps `evict` and `held` to their codes. Replay compares
 ///   their answers only on the recorded module, because an instance split
 ///   from a page's assembly holds less. It counts the rest as `unchecked`.
+// A call's request bytes, or null when the store does not hold them.
+export function requestBytes(dir, entry) {
+  const file = blobFile(dir, entry.request);
+  return existsSync(file) ? gunzipSync(readFileSync(file)) : null;
+}
+
 // Each call with its request: the JSON a JSON request or a load held, or
 // the size of a bulk request's other bytes (a feed, an rt snapshot). A
 // page's linked assembly is asked with a `cap` field, which the entry

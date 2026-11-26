@@ -54,8 +54,10 @@
 // --print REF prints only the value that a result reference names, after
 // every step. --op NAME field=string field:=json spells a request without
 // JSON. A step that answers an error prints a hint, and the command
-// exits 1. --upstream reads `manifest` ($manifest) and the blobs that
-// ops name by hash from the server or an export folder (tools/upstream.mjs).
+// exits 1. --journal FILE.json|NAME registers a document that only a
+// page's journal (or a session's) holds, from its load. --upstream reads
+// the heads ($manifest, $edits, $network) and the blobs that ops name by
+// hash from the server or an export folder (tools/upstream.mjs).
 //
 // Every run compares the registry's recorded source digest with the
 // tree's and says on stderr when they differ. The registry runs the code
@@ -106,7 +108,8 @@
 //   $load.feed_hash    the last --load result ("load" op)
 //   $ask.features      the last --ask result (the oracle's answer)
 //   $post.plans_hash   the last --post result (the deployment's answer)
-//   $manifest.network_hash  the --upstream's manifest
+//   $manifest.network_hash  the --upstream's manifest; $edits and
+//                      $network are its other heads
 //   $import.network_hash  the last prior result tagged op:"import"
 //   $1.feed_hash       the 1st result overall, in command-line order
 // The rest of the reference is a dotted path into the result (numeric
@@ -127,8 +130,8 @@
 // kernel load and runs the op again. The line lists it in `registered`.
 
 import { createHash, randomUUID } from "node:crypto";
-import { calls as journalCalls, unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
-import { blob as upstreamBlob, manifest as upstreamManifest, workingCopy } from "./upstream.mjs";
+import { calls as journalCalls, requestBytes, unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
+import { blob as upstreamBlob, head as upstreamHead, HEADS as UPSTREAM_HEADS, workingCopy } from "./upstream.mjs";
 import { context as kindContext, findKind, trace as traceKind } from "./kind-trace.mjs";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -212,13 +215,13 @@ function usage() {
   console.error(
     "usage: caps-run list | caps-run search <word>... | caps-run tools <capability> [<op> [<kind>]] | caps-run kind [<tag>] | caps-run session [NAME] | " +
       "caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]... [--show] | " +
-      "caps-run <capability> [--session NAME] [--upstream URL|DIR] [--full] [--print REF]... [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
+      "caps-run <capability> [--session NAME] [--upstream URL|DIR] [--journal FILE.json|NAME]... [--full] [--print REF]... [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const out = { capability: null, steps: [], timeout: 10_000, session: null, full: false, prints: [], tz: null, upstream: null };
+  const out = { capability: null, steps: [], timeout: 10_000, session: null, full: false, prints: [], tz: null, upstream: null, journals: [] };
   let current = null;
   let pendingName = null;
   const step = (kind, value) => {
@@ -257,6 +260,7 @@ function parseArgs(argv) {
     else if (arg === "--full") out.full = true;
     else if (arg === "--print") out.prints.push(argv[++i] ?? usage());
     else if (arg === "--upstream") out.upstream = argv[++i] ?? usage();
+    else if (arg === "--journal") out.journals.push(argv[++i] ?? usage());
     else if (arg === "--tz") {
       out.tz = argv[++i] ?? usage();
       try {
@@ -497,12 +501,62 @@ function shapeText(text, ref) {
 }
 
 async function runSession() {
-  const { steps, session, full, prints, tz, upstream } = workerData;
-  // The upstream's head is read once for each command. A stale head
-  // stamps every line with its age.
+  const { steps, session, full, prints, tz, upstream, journals } = workerData;
+  // Each head is read once for each command: the manifest always, and
+  // another head when the command names it ($edits). A stale head stamps
+  // every line with its age.
   const copy = upstream && workingCopy(sessionsRoot(), upstream);
-  const head = upstream ? await upstreamManifest(upstream, copy) : null;
-  const stale = head?.state === "stale" ? { as_of_ms: head.as_of_ms, why: head.why } : null;
+  const heads = {};
+  if (upstream) {
+    const said = JSON.stringify([steps, prints]);
+    for (const name of UPSTREAM_HEADS) {
+      if (name === "manifest" || said.includes(`$${name}`)) heads[name] = await upstreamHead(upstream, copy, name);
+    }
+  }
+  const staleHeads = Object.entries(heads).filter(([, h]) => h.state === "stale");
+  const stale = staleHeads.length ? Object.fromEntries(staleHeads.map(([name, h]) => [name, { as_of_ms: h.as_of_ms, why: h.why }])) : null;
+  // A page's journal (or a session's) holds the bytes of every document
+  // that it loaded: a forked plan's network, an rt snapshot.
+  const journalDirs = (journals ?? []).map((source) => {
+    if (source.endsWith(".json") && existsSync(source)) {
+      const dir = mkdtempSync(join(tmpdir(), "caps-run-journal-"));
+      try {
+        unpackJournal(dir, JSON.parse(readFileSync(source, "utf8")));
+      } catch (e) {
+        rmSync(dir, { recursive: true, force: true });
+        throw e;
+      }
+      return { dir, temporary: true };
+    }
+    if (!existsSync(join(sessionDir(source), "journal.jsonl"))) throw new Error(`--journal ${source}: no journal file and no session by that name`);
+    return { dir: sessionDir(source), temporary: false };
+  });
+  const journalLoads = journalDirs.flatMap(({ dir }) =>
+    readJournal(dir).map((entry) => ({ dir, entry })).filter(({ entry }) => typeof entry.call === "number" || entry.op?.startsWith("load_")),
+  );
+  const triedLoads = new Set();
+  // Loads each of the journal's loads of the kind into the module until
+  // one answers the hash. A load that answers another hash stays held.
+  const fromJournal = (module, capability, missing, code) => {
+    for (const [i, { dir, entry }] of journalLoads.entries()) {
+      const key = `${capability}\n${i}`;
+      const fits = entry.call === code || (entry.call === "json" && entry.op === missing.load);
+      if (!fits || triedLoads.has(key)) continue;
+      triedLoads.add(key);
+      const bytes = requestBytes(dir, entry);
+      if (!bytes) continue;
+      let loaded;
+      if (entry.call === "json") {
+        const request = JSON.parse(bytes.toString("utf8"));
+        delete request.cap;
+        loaded = JSON.parse(module.invokeRaw(Buffer.from(JSON.stringify(request))));
+      } else {
+        loaded = JSON.parse(module.invokeBytes(code, bytes));
+      }
+      if (Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing.hash)) return true;
+    }
+    return false;
+  };
   // This is web/src/clock.ts, which has no imports.
   const { serviceClock } = await import("../web/src/clock.ts");
   const modules = new Map();
@@ -546,7 +600,7 @@ async function runSession() {
   // has seen: one that an op loads, one that an import or a document
   // answer names, or one that an earlier command saved.
   const nowMs = Date.now();
-  let zone = tz ?? [...results].reverse().find((r) => r.zone)?.zone ?? head?.manifest.timezone ?? null;
+  let zone = tz ?? [...results].reverse().find((r) => r.zone)?.zone ?? heads.manifest?.value?.timezone ?? null;
   const learnZone = (value, result) => {
     if (tz) return;
     const found = zoneOf(value);
@@ -583,9 +637,10 @@ async function runSession() {
     const here = results.filter((r) => !r.prior);
     if (named) {
       current = named;
-    } else if (base === "manifest") {
-      if (!head) throw new Error(`reference ${ref}: no --upstream to read a manifest from`);
-      current = { text: JSON.stringify({ ok: head.manifest }) };
+    } else if (UPSTREAM_HEADS.includes(base)) {
+      if (!heads[base]) throw new Error(`reference ${ref}: no --upstream to read ${base} from`);
+      if (heads[base].value == null) throw new Error(`reference ${ref}: the upstream has no ${base}`);
+      current = { text: JSON.stringify({ ok: heads[base].value }) };
     } else if (base === "load") {
       current = [...here].reverse().find((r) => r.load !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --load result to resolve against`);
@@ -672,18 +727,27 @@ async function runSession() {
         const missing = unknownDocument(result.text);
         const kind = missing && Object.values(kindLoads()).find((k) => k.name === missing.load)?.kind;
         if (!kind || loadCodes[missing.load] === undefined) break;
-        // The session's own copy first, then the upstream's blob.
+        // The session's own copy first, then the journal's loads, then the
+        // upstream's blob.
+        const code = loadCodes[missing.load];
         const document = heldDocument(kind, missing.hash);
-        const bytes = document ? Buffer.from(JSON.stringify(document)) : upstream ? await upstreamBlob(upstream, copy, missing.hash) : null;
-        if (!bytes) break;
-        const loaded = JSON.parse(module.invokeBytes(loadCodes[missing.load], bytes));
-        // A load names its hash field for the kind's short name
-        // (`alerts_hash` for service_alerts), so match any hash field.
-        const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing.hash);
-        if (!named) {
-          throw new Error(`registering ${kind} ${missing.hash}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
+        let source;
+        if (document) source = "";
+        else if (fromJournal(module, step.capability, missing, code)) source = " from the journal";
+        else if (upstream) source = " from the upstream";
+        else break;
+        if (source !== " from the journal") {
+          const bytes = document ? Buffer.from(JSON.stringify(document)) : await upstreamBlob(upstream, copy, missing.hash);
+          if (!bytes) break;
+          const loaded = JSON.parse(module.invokeBytes(code, bytes));
+          // A load names its hash field for the kind's short name
+          // (`alerts_hash` for service_alerts), so match any hash field.
+          const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing.hash);
+          if (!named) {
+            throw new Error(`registering ${kind} ${missing.hash}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
+          }
         }
-        (result.registered ??= []).push(document ? `${kind} ${missing.hash}` : `${kind} ${missing.hash} from the upstream`);
+        (result.registered ??= []).push(`${kind} ${missing.hash}${source}`);
         result.text = module.invoke(resolved);
       }
       if (result.text.startsWith('{"error"')) result.hint = hintFor(step.capability, resolved.op, result.text, upstream);
@@ -719,6 +783,7 @@ async function runSession() {
           return JSON.stringify({ [ref]: full ? value : shapeValue(value, base, true), ...(stale ? { stale } : {}) });
         }),
       ];
+  for (const { dir, temporary } of journalDirs) if (temporary) rmSync(dir, { recursive: true, force: true });
   const failed = here.filter((r) => r.text.startsWith('{"error"')).length;
   parentPort.postMessage({ ok: lines, failed });
 }
@@ -929,12 +994,12 @@ export async function main(argv) {
     return 0;
   }
 
-  const { steps, timeout, session, full, prints, tz, upstream } = parseArgs(argv);
+  const { steps, timeout, session, full, prints, tz, upstream, journals } = parseArgs(argv);
   warnIfStale(session);
   for (const capability of new Set(steps.map((s) => s.capability))) capabilityRecord(capability);
   const { Worker } = await import("node:worker_threads");
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { steps, session, full, prints, tz, upstream },
+    workerData: { steps, session, full, prints, tz, upstream, journals },
   });
 
   const outcome = await new Promise((resolve, reject) => {

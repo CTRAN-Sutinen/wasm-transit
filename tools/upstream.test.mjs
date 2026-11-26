@@ -47,6 +47,18 @@ for (const scenario of contract.scenarios) {
   });
 }
 
+test("caps-run: a 304 answers the kept copy as current, and a 404 answers the head as absent", async () => {
+  let copy = null;
+  const kept = { load: () => copy, save: (c) => void (copy = c) };
+  const never = new Promise(() => {});
+  await readHead({ fetchHead: async () => ({ text: "A", asOfMs: null, etag: '"a"' }), limit: never, nowMs: () => 1_000, kept });
+  let sent = null;
+  const same = await readHead({ fetchHead: async (etag) => ((sent = etag), { notModified: true, asOfMs: null }), limit: never, nowMs: () => 2_000, kept });
+  assert.deepEqual([sent, same.state, same.text, copy.as_of_ms], ['"a"', "current", "A", 2_000]);
+  const gone = await readHead({ fetchHead: async () => ({ text: null, asOfMs: null }), limit: never, nowMs: () => 3_000, kept });
+  assert.deepEqual([gone.state, gone.text], ["current", null]);
+});
+
 test("caps-run: the server's own age passes down the chain", async () => {
   let copy = null;
   const kept = { load: () => copy, save: (c) => void (copy = c) };

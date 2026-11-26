@@ -179,9 +179,17 @@ names the next command. `--full` prints the registry's JSON.
 folder. caps-run reads them as a page does, on the same paths
 (`tools/upstream.mjs`; [hosts.md](hosts.md)).
 
-- The runner reads `manifest` once for each command, and
-  `$manifest.<field>` resolves against it. The manifest's `timezone`
-  is the clock's zone when `--tz` and the session name none.
+- The runner reads the heads that the pages read (each UI's `ui.json`,
+  `inputs`), once for each command: `manifest` always, and `edits` (the
+  server's edit document) and `network` (the server's import) when the
+  command names `$edits` or `$network`. `$manifest.<field>`, `$edits`,
+  and `$network.<field>` resolve against them. The manifest's
+  `timezone` is the clock's zone when `--tz` and the session name none.
+- A head that the upstream does not have (404, or no file in an export
+  folder) is absent, and a reference to it fails and says so. An export
+  has no `edits`. A head whose ETag the working copy holds is asked
+  with `If-None-Match`, so an unchanged `network` (9.6 MB on C-TRAN)
+  comes back as a 304.
 - When an op names a document by a hash that the session does not
   hold, the runner reads `blobs/<hash>.gz`, keeps it, and registers it.
   The line lists it in `registered`, as `<kind> <hash> from the
@@ -190,14 +198,24 @@ folder. caps-run reads them as a page does, on the same paths
   asks about the deployment's network, and no document passes through
   the command.
 - The working copy is `.upstreams/<upstream>/` in the session store:
-  the last manifest with the time the upstream answered it, and each
-  blob by hash.
-- A manifest that the upstream does not answer within 10 s comes from
-  the working copy. Each line then carries
-  `"stale": {"as_of_ms": …, "why": …}`, where `as_of_ms` is the time
-  of the upstream's last answer. A server answer that carries
+  each head's last answer with the time the upstream gave it
+  (`heads/<name>.json`), and each blob by hash.
+- A head that the upstream does not answer within 10 s comes from the
+  working copy, and so does every head of an export folder that does
+  not exist. Each line then carries
+  `"stale": {"<head>": {"as_of_ms": …, "why": …}}`, where `as_of_ms` is
+  the time of the upstream's last answer. A server answer that carries
   `X-Store-Stale` passes the server's `X-Store-As-Of` down. With no
   copy, the command fails.
+
+**A journal as a source.** `--journal FILE.json|NAME` (repeatable)
+names a page's journal ([web.md](web.md), "The journal") or a
+session's. When an op names a document by a hash that the session does
+not hold, the runner tries the journal's loads of that kind, in order,
+until one answers the hash, and then reads the upstream. The line lists
+it as `<kind> <hash> from the journal`. So QA asks a page's request
+about a forked plan's network, which the server never holds, or about
+the rt snapshot the page read.
 
 gen-manifest (`just caps`) generates the registry records and the
 browser manifest. One source gives the contracts, and two surfaces read
