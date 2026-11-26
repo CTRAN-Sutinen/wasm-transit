@@ -89,7 +89,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [ui-runcut.md](ui-runcut.md) | the blocking UI: a plan's blocks, its peak vehicles, block edits; it reads the runs when they land |
-| [runs-layer.md](runs-layer.md) | the runs cut's class mix; the run view, legality, and run edits; suggested blocking, extended; the GTFS + TODS codec |
+| [runs-layer.md](runs-layer.md) | the composition's class mix; the run view; the runs document and its edits; suggested blocking, extended; the GTFS + TODS codec |
 
 ### Today's service
 

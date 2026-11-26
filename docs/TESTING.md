@@ -160,7 +160,11 @@ and before a release.
      more than their rates, and every broken limit is named. Its
      `cut_prop_test` holds the runs cut: every blocked trip in exactly
      one piece, each run judged as `judge` judges it, and the same
-     bytes for the same input. Its `work_rules_test` holds the migration
+     bytes for the same input. Its `compose_judge_prop_test` holds the
+     cut's two steps and judging: each piece a stretch of its block,
+     the cut its pieces composed, the cut's runs judged by reference as
+     the cut judged them, and a missed class condition, an overlap, or
+     a piece away from a relief point breaking a hard rule. Its `work_rules_test` holds the migration
      chain. `fixtures`' `work_rules_fixture_test` holds C-TRAN's
      2022–2025 rules and their paired readings.
    - `transit-runs`'s `recovery_view_test` holds that a wait is short

@@ -284,25 +284,21 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 The runs layer (`docs/ROADMAP.md` 7): runs cut from blocks under
 work rules, and the bid over them.
 
-- **QAF-134 MODEL** — the runs cut makes few full-time runs on
-  C-TRAN. Under the 2022–2025 rules it builds a full-time run from
-  two pieces only when that run pays no premium or less than the
-  two pieces apart, so most pieces stay part-time runs, and class A
-  falls under its 35 percent minimum (Art. 19 §8).
+- **QAF-134 MODEL** — the suggested composition (runs `compose`,
+  and `cut`) makes few full-time runs on C-TRAN. Under the 2022–2025
+  rules it builds a full-time run from two pieces only when that run
+  pays no premium or less than the two pieces apart, so most pieces
+  stay part-time runs, and class A falls under its 35 percent minimum
+  (Art. 19 §8). It does not say what meeting the mix would cost.
   Pin: 2026-11-25 `caps-run network` import of testdata/ctran-gtfs.zip,
   `runs` `cut` for 2026-11-25 under `fixtures::ctran_2022_work_rules`:
   139 runs over 93 blocks (98 of one piece, 41 of two), 35 A, 8 C,
   96 part-time; no rule broken; pay 1131.6 h over 986.8 h platform
   (1.147), premium 3.9 h, guarantee 2.6 h, median run 7.6 h; mix A
   25 % (not met), A+B 25 %, C 5 %. QAF-11's hand count was 140 runs.
-  The runs cut: `docs/units/runs-layer.md`.
-- **QAF-12 OP GAP** — the work rules have a home (the kernel's
-  `work_rules` document: measures, limits, breaks, premiums,
-  guarantees, travel, run classes, and the mix; relief points are
-  in `scheduling_constraints`), and runs `cut` judges the runs it
-  makes (transit-runs `judge`), but no op takes a run that a
-  planner cut by hand, so a hand-cut run cannot be validated.
-  Pin: runs OPS.md has one op, `cut`.
+  `runs` `judge` of part-time runs 72 (11:14–18:34) and 131
+  (19:05–21:33) composed as one run: legal; as A, 11.34 h of pay; as
+  B, its own pick, 10.83 h; the two apart, 9.88 h.
   The runs cut: `docs/units/runs-layer.md`.
 - **QAF-14 OP GAP** — no run view: report/pull time and place,
   platform, pay, pieces, deadhead per run.

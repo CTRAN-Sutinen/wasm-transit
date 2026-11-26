@@ -19,10 +19,13 @@
 //! 2022–2025 agreement is a fixture (`crates/fixtures`, `work_rules.rs`),
 //! never a default.
 //!
-//! [`judge`] judges and pays one run under the rules, and [`cut_runs`]
-//! cuts a day's blocks into runs with it. The cut is a heuristic. It
-//! builds runs that break no rule where it can, because a waivable limit
-//! is the operator's to waive.
+//! [`judge`] judges and pays one run under the rules. [`cut_pieces`] cuts
+//! a day's blocks into pieces, [`compose_runs`] composes pieces into runs,
+//! and [`judge_runs`] judges a set of runs, whoever composed them: the
+//! agency, an operator at the bid, or a planner by hand. [`cut_runs`] is
+//! the two steps together. The cut is a heuristic. It builds runs that
+//! break no rule where it can, because a waivable limit is the operator's
+//! to waive.
 //!
 //! Without a recovery rule, an imported layover is the whole observed gap,
 //! and every delay would read infeasible (D-110). Each document's `checked`
@@ -44,7 +47,10 @@ pub mod load;
 pub mod version;
 
 pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
-pub use cut::{cut_runs, Cut, CutRun, MixReport, NetworkPlaces};
+pub use cut::{
+    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Cut, CutRun, DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces, RunRef,
+    RunSet,
+};
 pub use run::{judge, meets, timeline, Finding, Judged, Piece, PieceTrip, Places, Span};
 pub use constraints::{required, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind, CONSTRAINTS_VERSION};
 pub use rules::{

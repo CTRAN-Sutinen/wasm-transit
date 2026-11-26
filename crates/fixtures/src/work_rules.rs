@@ -1,6 +1,5 @@
-//! C-TRAN's agreement with ATU Local 757 for 2022–2025
-//! (`Operator_Labor_Agreement_2022-2025_FINAL.pdf`) as work rules. It is a
-//! test case for the model, never a default. Where a clause reads two
+//! C-TRAN's agreement with ATU Local 757 for 2022–2025 as work rules. It
+//! is a test case for the model, never a default. Where a clause reads two
 //! ways, each reading is its own document, built from the base one.
 //!
 //! The base document holds no rule for Art. 19 §8's "no more than 5% of

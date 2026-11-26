@@ -196,6 +196,10 @@ as in the agency's service change or "pick" periods, a few times a
 year. A published pick can be retired before its date, but is never
 removed.
 
+**Piece.** A stretch of one block that one operator drives. It starts
+where the bus leaves the garage or where operators swap, and it ends
+at the next swap or back at the garage.
+
 **Plan set.** The list of published picks and their start dates.
 Each app asks which pick is in force on today's date.
 
@@ -224,8 +228,11 @@ document. See
 **Retired.** The software's form of "deleted". A retired thing stays
 in the history, marked as retired, and no longer takes effect.
 
-**Run.** A piece of work for one operator, cut from one or more
-blocks. Work on runs is still in progress.
+**Run.** One operator's work for a day: one or more pieces. The
+agency may put the pieces together, or operators may choose their own
+when they bid. Either way, the software checks the run against the
+labor agreement's rules in the same way. Work on runs is still in
+progress.
 
 **Schema.** A description of a kind of document: its fields and what
 each may hold. Another program can check a document against it, and

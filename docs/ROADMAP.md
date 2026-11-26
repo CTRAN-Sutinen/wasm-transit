@@ -169,17 +169,20 @@ reaches them.
 - The work rules, which hold any labor agreement as data, and the
   scheduling constraints (recovery, interlining, relief points), every
   rule optional.
-- The runs cut (runs `cut`): a day's blocks cut into runs, each judged
-  and paid under the work rules.
+- The runs cut (runs `cut`): a day's blocks cut into pieces (runs
+  `pieces`) and the pieces composed into runs (runs `compose`), each
+  judged and paid under the work rules. Runs that anyone composed, the
+  agency or an operator at the bid, are judged the same way (runs
+  `judge`).
 - The sync document's LWW-per-record discipline (a bid is shared state).
 
 **Needs:**
 
 - 2, since runs are cut from blocks.
 - Workforce data (QAF-17).
-- The rest of the runs layer: the cut's class mix, the run view, run
-  legality, run edits, and the codec, in `docs/units/runs-layer.md`
-  (QAF-12, QAF-14, QAF-134).
+- The rest of the runs layer: the composition's class mix, the run
+  view, the runs document and its edits, and the codec, in
+  `docs/units/runs-layer.md` (QAF-14, QAF-134).
 
 **Unblocks:** `docs/units/ui-runcut.md`'s runs questions and the bid
 (queued in `docs/units/README.md`).

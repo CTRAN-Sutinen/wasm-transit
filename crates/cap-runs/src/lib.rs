@@ -1,4 +1,5 @@
-//! cap-runs wraps transit-runs' runs cut (`OPS.md` has the op). It reads the
+//! cap-runs wraps transit-runs' runs cut, its two steps, and the judging of
+//! runs that anyone composed (`OPS.md` has the ops). It reads the
 //! same cached day as cap-runcut and cap-board. The runcut answers what a
 //! vehicle does, and this capability answers what a person does.
 
@@ -25,6 +26,38 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         scheduling_constraints_hash: Option<String>,
     },
+    Pieces {
+        network_hash: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
+        edits_hash: Option<String>,
+        date: String,
+        work_rules_hash: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
+        scheduling_constraints_hash: Option<String>,
+    },
+    Compose {
+        network_hash: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
+        edits_hash: Option<String>,
+        date: String,
+        work_rules_hash: String,
+        pieces: Vec<transit_runs::PieceRef>,
+    },
+    Judge {
+        network_hash: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
+        edits_hash: Option<String>,
+        date: String,
+        work_rules_hash: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
+        scheduling_constraints_hash: Option<String>,
+        runs: Vec<transit_runs::RunRef>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -33,20 +66,66 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Cut { cut: transit_runs::Cut },
+    Pieces { pieces: transit_runs::Pieces },
+    Compose { composed: transit_runs::RunSet },
+    Judge { judged: transit_runs::RunSet },
+}
+
+struct Loaded {
+    date: String,
+    weekday: transit_runs::Day,
+    network: std::sync::Arc<transit_network::Network>,
+    rules: std::sync::Arc<transit_runs::WorkRules>,
+    constraints: Option<std::sync::Arc<transit_runs::SchedulingConstraints>>,
+    day: std::sync::Arc<transit_dispatch::Day>,
+}
+
+fn load(
+    network_hash: &str,
+    edits_hash: Option<&str>,
+    date: String,
+    work_rules_hash: &str,
+    scheduling_constraints_hash: Option<&str>,
+) -> Result<Loaded, cap_abi::Refusal> {
+    let on = transit_dispatch::day_date(&date)?;
+    let network = kind::<transit_network::Network>().require(network_hash)?;
+    let rules = kind::<transit_runs::WorkRules>().require(work_rules_hash)?;
+    let constraints = scheduling_constraints_hash.map(|h| kind::<transit_runs::SchedulingConstraints>().require(h)).transpose()?;
+    let day = day(network_hash, edits_hash, &date)?;
+    Ok(Loaded { weekday: on.weekday().into(), date, network, rules, constraints, day })
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Cut { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash } => {
-            let on = transit_dispatch::day_date(&date)?;
-            let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let rules = kind::<transit_runs::WorkRules>().require(&work_rules_hash)?;
-            let constraints =
-                scheduling_constraints_hash.as_deref().map(|h| kind::<transit_runs::SchedulingConstraints>().require(h)).transpose()?;
-            let day = day(&network_hash, edits_hash.as_deref(), &date)?;
-            let places = transit_runs::NetworkPlaces::new(&network, &day.trips);
-            let cut = transit_runs::cut_runs(&network, &day.trips, &rules, constraints.as_deref(), &date, on.weekday().into(), &places);
+            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref())?;
+            let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
+            let cut =
+                transit_runs::cut_runs(&l.network, &l.day.trips, &l.rules, l.constraints.as_deref(), &l.date, l.weekday, &places);
             Ok(Response::Cut { cut })
+        }
+        Request::Pieces { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash } => {
+            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref())?;
+            let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
+            let pieces =
+                transit_runs::cut_pieces(&l.network, &l.day.trips, &l.rules, l.constraints.as_deref(), &l.date, l.weekday, &places);
+            Ok(Response::Pieces { pieces })
+        }
+        Request::Compose { network_hash, edits_hash, date, work_rules_hash, pieces } => {
+            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, None)?;
+            let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
+            let blocks = transit_runs::DayBlocks::new(&l.network, &l.day.trips);
+            let composed = transit_runs::compose_refs(&blocks, &pieces, &l.rules, &l.date, l.weekday, &places)
+                .map_err(cap_abi::Refusal::from)?;
+            Ok(Response::Compose { composed })
+        }
+        Request::Judge { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash, runs } => {
+            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref())?;
+            let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
+            let blocks = transit_runs::DayBlocks::new(&l.network, &l.day.trips);
+            let judged = transit_runs::judge_runs(&blocks, &runs, &l.rules, l.constraints.as_deref(), &l.date, l.weekday, &places)
+                .map_err(cap_abi::Refusal::from)?;
+            Ok(Response::Judge { judged })
         }
     }
 }

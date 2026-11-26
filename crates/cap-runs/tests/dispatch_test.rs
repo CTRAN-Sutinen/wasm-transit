@@ -1,5 +1,6 @@
 //! The runs capability's dispatch: a cut over the fixture network's Friday,
-//! and the refusals that name the load a request needs.
+//! its two steps, a hand-composed run judged, and the refusals that name
+//! the load or the piece a request lacks.
 
 use cap_abi::kernel::kind;
 use cap_runs::{dispatch, Request, Response};
@@ -22,7 +23,77 @@ fn cut(network_hash: &str, work_rules_hash: &str) -> Result<transit_runs::Cut, c
     })
     .map(|r| match r {
         Response::Cut { cut } => cut,
+        _ => unreachable!("a cut answers a cut"),
     })
+}
+
+fn pieces(network: &str, rules: &str) -> Vec<transit_runs::Piece> {
+    match dispatch(Request::Pieces {
+        network_hash: network.into(),
+        edits_hash: None,
+        date: DATE.into(),
+        work_rules_hash: rules.into(),
+        scheduling_constraints_hash: None,
+    })
+    .unwrap()
+    {
+        Response::Pieces { pieces } => pieces.pieces,
+        _ => unreachable!("pieces answer pieces"),
+    }
+}
+
+fn judge(network: &str, rules: &str, runs: Vec<transit_runs::RunRef>) -> Result<transit_runs::RunSet, cap_abi::Refusal> {
+    dispatch(Request::Judge {
+        network_hash: network.into(),
+        edits_hash: None,
+        date: DATE.into(),
+        work_rules_hash: rules.into(),
+        scheduling_constraints_hash: None,
+        runs,
+    })
+    .map(|r| match r {
+        Response::Judge { judged } => judged,
+        _ => unreachable!("a judge answers a judge"),
+    })
+}
+
+#[test]
+fn the_cuts_pieces_composed_are_the_cut() {
+    let (network, rules) = register();
+    let c = cut(&network, &rules).unwrap();
+    let refs: Vec<transit_runs::PieceRef> = pieces(&network, &rules).iter().map(transit_runs::PieceRef::of).collect();
+    let composed = match dispatch(Request::Compose {
+        network_hash: network.clone(),
+        edits_hash: None,
+        date: DATE.into(),
+        work_rules_hash: rules.clone(),
+        pieces: refs,
+    })
+    .unwrap()
+    {
+        Response::Compose { composed } => composed,
+        _ => unreachable!("compose answers compose"),
+    };
+    assert_eq!(composed.runs, c.runs);
+    assert_eq!(composed.mix, c.mix);
+}
+
+#[test]
+fn a_hand_composed_run_is_judged_and_an_unknown_piece_or_class_refused() {
+    let (network, rules) = register();
+    let p = pieces(&network, &rules);
+    let run = |class: Option<&str>, pieces: Vec<transit_runs::PieceRef>| transit_runs::RunRef { id: "hand".into(), class: class.map(String::from), pieces };
+    let set = judge(&network, &rules, vec![run(None, vec![transit_runs::PieceRef::of(&p[0])])]).unwrap();
+    assert_eq!(set.runs.len(), 1);
+    assert!(set.doubled.is_empty());
+    assert!(!set.uncovered.is_empty() || p.len() == 1, "the other pieces' trips are in no run");
+
+    let err = judge(&network, &rules, vec![run(Some("Z"), vec![transit_runs::PieceRef::of(&p[0])])]).unwrap_err();
+    assert!(err.message.contains("no class Z"), "{err}");
+    let mut bad = transit_runs::PieceRef::of(&p[0]);
+    bad.first_trip = "nope".into();
+    let err = judge(&network, &rules, vec![run(None, vec![bad])]).unwrap_err();
+    assert!(err.message.contains("no trip nope"), "{err}");
 }
 
 #[test]

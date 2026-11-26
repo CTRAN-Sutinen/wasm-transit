@@ -51,11 +51,11 @@ impl Piece {
         self.trips.last().map_or(0, |t| t.end_secs)
     }
 
-    fn from(&self) -> &str {
+    pub(crate) fn from(&self) -> &str {
         self.trips.first().map_or("", |t| t.from.as_str())
     }
 
-    fn to(&self) -> &str {
+    pub(crate) fn to(&self) -> &str {
         self.trips.last().map_or("", |t| t.to.as_str())
     }
 }
