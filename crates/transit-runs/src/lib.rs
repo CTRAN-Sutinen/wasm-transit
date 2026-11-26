@@ -48,7 +48,7 @@ pub mod version;
 
 pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
 pub use cut::{
-    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Cut, CutRun, DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces, RunRef,
+    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Composition, Cut, CutRun, DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces, RunRef,
     RunSet,
 };
 pub use run::{judge, meets, timeline, Finding, Judged, Piece, PieceTrip, Places, Span};

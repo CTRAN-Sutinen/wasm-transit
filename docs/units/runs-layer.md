@@ -6,14 +6,14 @@ documents and library are its own (`transit-runs`), and it reads the
 network by hash. The work rules, the scheduling constraints, required
 recovery, suggested blocking, the runs cut, and the judging of runs
 that anyone composed are on the bus (`crates/transit-runs/src/lib.rs`,
-cap-runcut, and cap-runs). What is left closes QAF-14 and QAF-134.
+cap-runcut, and cap-runs). What is left closes QAF-14.
 
 The model takes TODS's concepts (D-126). A run is an ordered list of
 run events: its trips and its other activities (report, deadhead,
 break, relief, clear). A run is keyed by service and run id, and a run
 id is unique within its service. A deadhead is a non-revenue trip. A
 garage or a relief point is an internal location. Nothing here reads
-TODS files. That is the codec's job (step 6).
+TODS files. That is the codec's job (step 5).
 
 ## Scope, in order
 
@@ -23,34 +23,29 @@ at the bid. Either way, blocks are cut into pieces, pieces are composed
 into runs, and any run is judged against the rules, whoever composed it.
 The mix is judged over whatever set of runs exists. The capability
 has those three steps as `pieces`, `compose`, and `judge`, and `cut` is
-the first two together.
+the first two together. A composition moves toward the rules' mix and
+names the pay that costs.
 
-1. **The composition's class mix** (QAF-134). The pairing is a
-   suggestion that people edit, and it does not aim for the mix. On
-   C-TRAN, most pieces stay part-time runs, and class A falls under
-   its minimum. Pairing weighs a full-time run against two part-time
-   runs by pay alone. It should also weigh the document's objective
-   and its mix, and say what meeting the mix would cost.
-2. **The run view.** Report and clear, platform, pay, pieces, and
+1. **The run view.** Report and clear, platform, pay, pieces, and
    deadhead per run (QAF-14). Deadhead needs a garage location as data
    and cap-streets for the distance (QAF-17, `docs/ROADMAP.md` 2 and
    6). Until then, a run's deadhead is reported as unknown, never as
    zero.
-3. **The runs document and its edits.** Cut, join, or move a piece.
+2. **The runs document and its edits.** Cut, join, or move a piece.
    These are edits to the runs document, which follows the network's
    edit discipline. Until it exists, `compose` and `judge` take their
    pieces and runs in the request.
-4. **Suggested blocking, extended.** Today a suggestion keeps
+3. **Suggested blocking, extended.** Today a suggestion keeps
    authored blocks as they are and chains only the trips no block
    carries, into new blocks, with no deadheads (D-109). Still open:
    appending a trip to an authored block's idle end, a full
    re-blocking, chaining frequency trips, and deadheads once a base
    exists (QAF-17).
-5. **A page.** The engine loads neither document. No UI holds them,
+4. **A page.** The engine loads neither document. No UI holds them,
    shows a wait's recovery (runcut `recovery`), or reads author
    `apply`'s scheduling constraints. This lands with
    `docs/units/ui-runcut.md`.
-6. **The GTFS + TODS codec** (D-126): export the network with its
+5. **The GTFS + TODS codec** (D-126): export the network with its
    runs layer as GTFS plus TODS's supplements and `run_events`, and
    import the same, losslessly, in transit-codec beside the GTFS
    codec. The export carries internal data and is served only under
@@ -68,9 +63,6 @@ serves as input for a session.
 
 ## Done when
 
-- A C-TRAN weekday's composition meets the C-TRAN rules' mix, or
-  names the pay it would cost to, and QAF-134 is deleted with that
-  pin.
 - The run view answered (QAF-14), with its finding deleted.
 - A UI reads them (`docs/units/ui-runcut.md`).
 - Generated runs export as GTFS + TODS and import back to the same

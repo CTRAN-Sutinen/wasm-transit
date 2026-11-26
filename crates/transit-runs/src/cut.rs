@@ -10,7 +10,8 @@
 //! longest that break no rule. Every trip of every block that runs is in
 //! exactly one piece.
 //!
-//! [`compose_runs`] pairs pieces into runs (its doc has the pairing), and
+//! [`compose_runs`] pairs pieces into runs and moves them toward the mix
+//! (its doc and [`toward_mix`]'s have how), and
 //! [`judge_runs`] judges a set of runs that anyone composed, with the mix
 //! over the set.
 //!
@@ -38,6 +39,9 @@ pub struct Cut {
     /// not place them.
     pub unblocked: Vec<String>,
     pub mix: Vec<MixReport>,
+    /// The pay that moving toward the mix added over the least-pay
+    /// composition, in seconds. Negative when it saved pay.
+    pub mix_cost_secs: i64,
     /// The date is outside the work rules' period, or another reason the
     /// cut may not reflect the rules in force.
     pub warnings: Vec<String>,
@@ -292,11 +296,22 @@ fn good_whole(chooser: &Chooser, p: &Piece) -> bool {
     p.pull_out && p.pull_in && !chooser.best(std::slice::from_ref(p)).2 .2
 }
 
+/// A composition, and the pay its moves toward the mix added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Composition {
+    pub runs: Vec<CutRun>,
+    /// The composition's pay minus the least-pay composition's, in
+    /// seconds. Negative when a move toward the mix also saved pay.
+    pub mix_cost_secs: i64,
+}
+
 /// Composes pieces into runs, a suggestion. A whole block that makes a good
 /// run alone stays a run. Each other piece, earliest first, takes the later
 /// piece that makes the best run with it, when that run is good or pays less
-/// than the two apart. Runs are numbered from 1 by their first piece.
-pub fn compose_runs(pieces: &[Piece], rules: &WorkRules, day: Day, places: &dyn Places) -> Vec<CutRun> {
+/// than the two apart. That is the least-pay composition. When it misses a
+/// mix rule, [`toward_mix`] moves it toward the mix. Runs are numbered from
+/// 1 by their first piece.
+pub fn compose_runs(pieces: &[Piece], rules: &WorkRules, day: Day, places: &dyn Places) -> Composition {
     let chooser = Chooser { rules, day, places };
     let mut runs = Vec::new();
     let mut open = Vec::new();
@@ -342,8 +357,171 @@ pub fn compose_runs(pieces: &[Piece], rules: &WorkRules, day: Day, places: &dyn 
             None => runs.push((vec![pieces[i].clone()], alone.0, alone.1)),
         }
     }
+    let least: i64 = runs.iter().map(|r| r.2.pay_secs as i64).sum();
+    let mut runs = toward_mix(runs, &chooser);
+    let mix_cost_secs = runs.iter().map(|r| r.2.pay_secs as i64).sum::<i64>() - least;
     runs.sort_by(|a, b| (a.0[0].start_secs(), &a.0[0].block).cmp(&(b.0[0].start_secs(), &b.0[0].block)));
-    runs.into_iter().enumerate().map(|(n, (pieces, class, judged))| CutRun { id: format!("{}", n + 1), class, pieces, judged }).collect()
+    let runs = runs.into_iter().enumerate().map(|(n, (pieces, class, judged))| CutRun { id: format!("{}", n + 1), class, pieces, judged }).collect();
+    Composition { runs, mix_cost_secs }
+}
+
+type Drafted = (Vec<Piece>, Option<String>, Judged);
+
+enum Move {
+    /// Two one-piece runs become one run of the class.
+    Merge(usize, usize, String, Judged),
+    /// A run takes another class.
+    Reclass(usize, String, Judged),
+}
+
+/// The runs and the pay in each class, and over the set.
+#[derive(Default)]
+struct Tally {
+    count: BTreeMap<Option<String>, i64>,
+    pay: BTreeMap<Option<String>, i64>,
+    runs: i64,
+    total_pay: i64,
+}
+
+impl Tally {
+    fn add(&mut self, class: &Option<String>, pay: u32, sign: i64) {
+        *self.count.entry(class.clone()).or_default() += sign;
+        *self.pay.entry(class.clone()).or_default() += sign * pay as i64;
+        self.runs += sign;
+        self.total_pay += sign * pay as i64;
+    }
+
+    fn parts(&self, m: &crate::rules::MixRule) -> (i64, i64) {
+        let of = |map: &BTreeMap<Option<String>, i64>| m.classes.iter().map(|c| map.get(&Some(c.clone())).copied().unwrap_or(0)).sum();
+        match m.of {
+            ShareOf::Runs => (of(&self.count), self.runs),
+            ShareOf::PaidTime => (of(&self.pay), self.total_pay),
+        }
+    }
+
+    /// How far the set is outside the mix: each rule's distance below its
+    /// minimum or above its maximum, in percentage points, summed.
+    fn off(&self, rules: &WorkRules) -> f64 {
+        rules
+            .mix
+            .iter()
+            .map(|m| {
+                let (part, whole) = self.parts(m);
+                let share = if whole <= 0 { 0.0 } else { part as f64 * 100.0 / whole as f64 };
+                m.min_pct.map_or(0.0, |min| (min as f64 - share).max(0.0)) + m.max_pct.map_or(0.0, |max| (share - max as f64).max(0.0))
+            })
+            .sum()
+    }
+
+    /// As [`mix`] reports `met`.
+    fn met(&self, rules: &WorkRules) -> bool {
+        rules.mix.iter().all(|m| {
+            let (part, whole) = self.parts(m);
+            let pct = if whole <= 0 { 0 } else { (part * 100 / whole) as u32 };
+            m.min_pct.is_none_or(|min| pct >= min) && m.max_pct.is_none_or(|max| pct <= max)
+        })
+    }
+}
+
+/// Moves a composition toward the rules' mix, cheapest first. A move merges
+/// two one-piece runs into one run of a class, or gives a run another class,
+/// and the run it makes breaks no rule. Each step takes the move with the
+/// least added pay for each point it closes, and the steps stop when the
+/// mix is met or no move closes any of it. So the set is never further from
+/// the mix than the least-pay composition.
+fn toward_mix(runs: Vec<Drafted>, chooser: &Chooser) -> Vec<Drafted> {
+    let rules = chooser.rules;
+    let mut tally = Tally::default();
+    for r in &runs {
+        tally.add(&r.1, r.2.pay_secs, 1);
+    }
+    if rules.mix.is_empty() || tally.met(rules) {
+        return runs;
+    }
+    let clean_as = |pieces: &[Piece], class: &str| {
+        if !meets(rules, class, pieces) {
+            return None;
+        }
+        let judged = judge(rules, Some(class), pieces, chooser.day, chooser.places);
+        judged.broken.is_empty().then_some(judged)
+    };
+    let mut moves = Vec::new();
+    for (i, a) in runs.iter().enumerate().filter(|(_, r)| r.0.len() == 1) {
+        for (j, b) in runs.iter().enumerate().filter(|(_, r)| r.0.len() == 1) {
+            if i == j || b.0[0].start_secs() < a.0[0].end_secs() {
+                continue;
+            }
+            let pair = [a.0[0].clone(), b.0[0].clone()];
+            for c in &rules.classes {
+                if let Some(judged) = clean_as(&pair, &c.id) {
+                    moves.push(Move::Merge(i, j, c.id.clone(), judged));
+                }
+            }
+        }
+    }
+    for (i, r) in runs.iter().enumerate() {
+        for c in rules.classes.iter().filter(|c| r.1.as_deref() != Some(c.id.as_str())) {
+            if let Some(judged) = clean_as(&r.0, &c.id) {
+                moves.push(Move::Reclass(i, c.id.clone(), judged));
+            }
+        }
+    }
+
+    let mut set: Vec<Option<Drafted>> = runs.into_iter().map(Some).collect();
+    loop {
+        let off = tally.off(rules);
+        let mut best: Option<(f64, i64, usize)> = None;
+        for (k, mv) in moves.iter().enumerate() {
+            let (gone, made): (Vec<&Drafted>, (Option<String>, u32)) = match mv {
+                Move::Merge(i, j, c, judged) => match (&set[*i], &set[*j]) {
+                    (Some(a), Some(b)) => (vec![a, b], (Some(c.clone()), judged.pay_secs)),
+                    _ => continue,
+                },
+                Move::Reclass(i, c, judged) => match &set[*i] {
+                    Some(a) if a.1.as_deref() != Some(c.as_str()) => (vec![a], (Some(c.clone()), judged.pay_secs)),
+                    _ => continue,
+                },
+            };
+            for g in &gone {
+                tally.add(&g.1, g.2.pay_secs, -1);
+            }
+            tally.add(&made.0, made.1, 1);
+            let gain = off - tally.off(rules);
+            tally.add(&made.0, made.1, -1);
+            for g in &gone {
+                tally.add(&g.1, g.2.pay_secs, 1);
+            }
+            if gain <= 1e-9 {
+                continue;
+            }
+            let added = made.1 as i64 - gone.iter().map(|g| g.2.pay_secs as i64).sum::<i64>();
+            let rate = added as f64 / gain;
+            let better = best.is_none_or(|(r, a, n)| rate.total_cmp(&r).then(added.cmp(&a)).then(k.cmp(&n)).is_lt());
+            if better {
+                best = Some((rate, added, k));
+            }
+        }
+        let Some((_, _, k)) = best else { break };
+        match &moves[k] {
+            Move::Merge(i, j, c, judged) => {
+                let (a, b) = (set[*i].take().expect("a live move"), set[*j].take().expect("a live move"));
+                tally.add(&a.1, a.2.pay_secs, -1);
+                tally.add(&b.1, b.2.pay_secs, -1);
+                tally.add(&Some(c.clone()), judged.pay_secs, 1);
+                set.push(Some((vec![a.0[0].clone(), b.0[0].clone()], Some(c.clone()), judged.clone())));
+            }
+            Move::Reclass(i, c, judged) => {
+                let a = set[*i].take().expect("a live move");
+                tally.add(&a.1, a.2.pay_secs, -1);
+                tally.add(&Some(c.clone()), judged.pay_secs, 1);
+                set[*i] = Some((a.0, Some(c.clone()), judged.clone()));
+            }
+        }
+        if tally.met(rules) {
+            break;
+        }
+    }
+    set.into_iter().flatten().collect()
 }
 
 /// Cuts the day's blocks into pieces and composes them into runs.
@@ -357,9 +535,9 @@ pub fn cut_runs(
     places: &dyn Places,
 ) -> Cut {
     let Pieces { pieces, unblocked, warnings } = cut_pieces(network, trips, rules, constraints, date, day, places);
-    let runs = compose_runs(&pieces, rules, day, places);
+    let Composition { runs, mix_cost_secs } = compose_runs(&pieces, rules, day, places);
     let mix = mix(rules, &runs);
-    Cut { runs, unblocked, mix, warnings }
+    Cut { runs, unblocked, mix, mix_cost_secs, warnings }
 }
 
 /// A piece named by its block and its first and last trips. A trip that the
@@ -413,6 +591,11 @@ pub struct RunRef {
 pub struct RunSet {
     pub runs: Vec<CutRun>,
     pub mix: Vec<MixReport>,
+    /// As in [`Cut`], for a set that `compose` made. Absent for a set
+    /// judged as given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    pub mix_cost_secs: Option<i64>,
     /// Trips in more than one run, as `trip@start_secs`.
     pub doubled: Vec<String>,
     /// Trips that a block carries on the day and that no run holds, as
@@ -491,7 +674,8 @@ impl DayBlocks {
 /// [`judge_runs`] does.
 pub fn compose_refs(blocks: &DayBlocks, refs: &[PieceRef], rules: &WorkRules, date: &str, day: Day, places: &dyn Places) -> Result<RunSet, String> {
     let pieces = refs.iter().map(|r| blocks.resolve(r)).collect::<Result<Vec<_>, _>>()?;
-    Ok(run_set(blocks, compose_runs(&pieces, rules, day, places), rules, date))
+    let Composition { runs, mix_cost_secs } = compose_runs(&pieces, rules, day, places);
+    Ok(RunSet { mix_cost_secs: Some(mix_cost_secs), ..run_set(blocks, runs, rules, date) })
 }
 
 fn run_set(blocks: &DayBlocks, runs: Vec<CutRun>, rules: &WorkRules, date: &str) -> RunSet {
@@ -502,7 +686,7 @@ fn run_set(blocks: &DayBlocks, runs: Vec<CutRun>, rules: &WorkRules, date: &str)
     let doubled = seen.iter().filter(|(_, &n)| n > 1).map(|((trip, start), _)| format!("{trip}@{start}")).collect();
     let placed = seen.into_keys().collect();
     let mix = mix(rules, &runs);
-    RunSet { runs, mix, doubled, uncovered: blocks.uncovered(&placed), warnings: period_warnings(rules, date) }
+    RunSet { runs, mix, mix_cost_secs: None, doubled, uncovered: blocks.uncovered(&placed), warnings: period_warnings(rules, date) }
 }
 
 /// Judges each run as the cut judges its own, whoever composed it, and the

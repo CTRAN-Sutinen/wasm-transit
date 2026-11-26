@@ -18,6 +18,7 @@ The answer has these parts:
   - `not_judged`: the rules that one run cannot answer, such as a limit over a week, and travel with no trip found home.
 - `unblocked`: each trip that runs on the day and that no block carries, as `trip@start_secs`. The cut does not place them.
 - `mix`: each mix rule's share of runs or of paid time, against its minimum, target, and maximum. `met` says whether the share is within the minimum and the maximum.
+- `mix_cost_secs`: the pay that `compose`'s moves toward the mix added over the least-pay composition. It is negative when a move also saved pay.
 
 Each trip of each block that runs is in exactly one piece of one run.
 
@@ -33,9 +34,11 @@ The answer has `pieces`, earliest first, and `unblocked`, as `cut` has them. Eac
 
 Compose pieces into runs, a suggestion. The request names its `pieces`, each by its `block`, its `first_trip`, and its `last_trip`. A trip that the block runs more than once on the day also names its start (`first_start_secs`, `last_start_secs`). A piece that names a block or a trip that does not run on the day is refused.
 
-A whole block that makes a good run alone stays a run. Each other piece, earliest first, takes the later piece that makes the best run with it, when that run is good or costs less than the two apart. A piece that pairs with none is a run alone. Composing the pieces that `pieces` answers gives the runs that `cut` answers.
+A whole block that makes a good run alone stays a run. Each other piece, earliest first, takes the later piece that makes the best run with it, when that run is good or costs less than the two apart. A piece that pairs with none is a run alone. That is the least-pay composition.
 
-The answer is the set of runs as `judge` reports it.
+When the least-pay composition misses a mix rule, composing moves it toward the mix, cheapest first. A move merges two one-piece runs into one run of a class, or gives a run another class, and the run it makes breaks no rule. Each step takes the move that adds the least pay for each percentage point of the mix it closes. The steps stop when the mix is met or no move closes any of it, and `mix` says which rules are still missed.
+
+Composing the pieces that `pieces` answers gives the runs that `cut` answers. The answer is the set of runs as `judge` reports it, with `mix_cost_secs` as `cut` has it.
 
 ## judge
 
