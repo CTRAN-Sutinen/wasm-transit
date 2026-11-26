@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_network::{
     Anchor, Block, CalendarRule, DateRange, Departs, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, Route,
     ServiceType, Stop, StopOffset, Trip, TripRef, WeekdaySet,
@@ -13,8 +13,8 @@ use transit_network::{
 pub const H: u32 = 3600;
 pub const RUN: u32 = 1200;
 
-pub fn date() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 23).unwrap()
+pub fn date() -> Date {
+    Date::from_ymd_opt(2026, 10, 23).unwrap()
 }
 
 fn pattern(route: &str, from: &str, to: &str) -> Pattern {
@@ -71,8 +71,8 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
                 rule: CalendarRule {
                     days: WeekdaySet::weekdays(),
                     ranges: vec![DateRange {
-                        start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                        end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                        start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                        end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                         extra: Default::default(),
                     }],
                     exceptions: vec![],

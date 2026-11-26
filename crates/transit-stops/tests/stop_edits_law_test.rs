@@ -1,15 +1,15 @@
 //! Editing the stops document by adding one event.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_stops::{Details, Event, EventKind, Status, Stops};
 
-fn day(n: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2027, 1, 1).unwrap() + chrono::Days::new(n as u64)
+fn day(n: u32) -> Date {
+    Date::from_ymd_opt(2027, 1, 1).unwrap() + transit_date::Days::new(n as i64)
 }
 
 fn date(n: u32) -> String {
-    day(n).format("%Y-%m-%d").to_string()
+    day(n).to_string()
 }
 
 /// Kind 0 is in service from before any record, 1 planned, 2 permitted, and
@@ -33,8 +33,8 @@ fn arb_doc() -> impl Strategy<Value = Stops> {
     })
 }
 
-fn on_of(e: &Event) -> Option<NaiveDate> {
-    e.on.as_deref().map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap())
+fn on_of(e: &Event) -> Option<Date> {
+    e.on.as_deref().map(|d| Date::parse(d).unwrap())
 }
 
 proptest! {

@@ -24,7 +24,7 @@ pub fn examples() -> Vec<Example> {
     let network = || fixtures::load_network(&net.derived);
     let stops = fixtures::fixture_stops().checked().expect("the fixture stops pass");
     let held = || vec![load_stops(&stops)];
-    let at = stops.stop_on("6124", chrono::NaiveDate::from_ymd_opt(2027, 4, 1).expect("a date")).expect("6124 on the date");
+    let at = stops.stop_on("6124", transit_date::Date::from_ymd_opt(2027, 4, 1).expect("a date")).expect("6124 on the date");
     let retired = stops.add_event("6124", event(json!({"on": "2027-10-01", "event": "retired"}))).checked().expect("6124 retires");
     let requests = fixtures::fixture_requests().checked().expect("the fixture requests pass");
     // 7001's permit has a wrong date, so the event is corrected by its id.
@@ -46,7 +46,7 @@ pub fn examples() -> Vec<Example> {
     let mut lacks_c = seed(&net.network);
     lacks_c.stops.remove("C");
     let lacks_c = lacks_c.checked().expect("the document without C passes");
-    let recorded = transit_stops::stop_record::import_feed(&lacks_c, &net.network, chrono::NaiveDate::from_ymd_opt(2026, 10, 1).expect("a date"), "sha256:feed").stops;
+    let recorded = transit_stops::stop_record::import_feed(&lacks_c, &net.network, transit_date::Date::from_ymd_opt(2026, 10, 1).expect("a date"), "sha256:feed").stops;
     let surveyed = stops.add_event("7001", event(json!({"on": "2027-02-01", "event": "changed",
         "surveyed_by": "", "site": {"position": "far_side", "surface": "concrete"}, "refs": {"sign": "S-1180"}})));
     let (mut log, _) = fixtures::fixture_log_records();

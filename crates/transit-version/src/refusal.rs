@@ -11,9 +11,10 @@ pub struct Refusal {
     pub code: Option<RefusalCode>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 #[serde(tag = "code", rename_all = "snake_case")]
-#[ts(export, export_to = "transit_version/")]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_version/"))]
 pub enum RefusalCode {
     /// The module does not hold the document. The host registers it with
     /// `load` and asks again.

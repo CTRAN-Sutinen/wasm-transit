@@ -16,19 +16,19 @@
 //! 6. After an edit that extends the rule, the export still writes the same
 //!    calendar row and every running date as an added date.
 
-use chrono::{Datelike, Duration, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 use std::collections::BTreeSet;
 use transit_codec::feed::{AgencyRow, CalendarDateRow, CalendarRow};
 use transit_codec::{export, import, Feed};
 use transit_network::{CalendarRule, DayState};
 
-fn day0() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 9, 7).unwrap() // a Monday
+fn day0() -> Date {
+    Date::from_ymd_opt(2026, 9, 7).unwrap() // a Monday
 }
 
-fn gtfs(d: NaiveDate) -> String {
-    d.format("%Y%m%d").to_string()
+fn gtfs(d: Date) -> String {
+    d.to_string().replace('-', "")
 }
 
 fn s(v: &str) -> Option<String> {
@@ -37,7 +37,7 @@ fn s(v: &str) -> Option<String> {
 
 #[derive(Clone, Debug)]
 struct Dated {
-    dates: BTreeSet<NaiveDate>,
+    dates: BTreeSet<Date>,
     /// A zero-flag calendar row and its range (offsets from day0), or none.
     row: Option<(i64, i64)>,
 }
@@ -53,21 +53,21 @@ fn dated() -> impl Strategy<Value = Dated> {
         .prop_map(|(start, weeks, mask, holes, extras)| {
             let mut dates = BTreeSet::new();
             for k in 0..weeks * 7 {
-                let d = day0() + Duration::days(start + k);
+                let d = day0() + Days::new(start + k);
                 if mask[d.weekday().num_days_from_monday() as usize] {
                     dates.insert(d);
                 }
             }
             for h in holes {
-                dates.remove(&(day0() + Duration::days(h)));
+                dates.remove(&(day0() + Days::new(h)));
             }
             for e in extras {
-                dates.insert(day0() + Duration::days(e));
+                dates.insert(day0() + Days::new(e));
             }
             dates
         });
     let sparse = proptest::collection::btree_set(0i64..150, 1..8)
-        .prop_map(|o| o.into_iter().map(|o| day0() + Duration::days(o)).collect::<BTreeSet<_>>());
+        .prop_map(|o| o.into_iter().map(|o| day0() + Days::new(o)).collect::<BTreeSet<_>>());
     (prop_oneof![3 => rhythm, 1 => sparse], proptest::option::of((0i64..10, 100i64..200)))
         .prop_filter("a service runs somewhere", |(d, _)| !d.is_empty())
         .prop_map(|(dates, row)| Dated { dates, row })
@@ -93,8 +93,8 @@ fn feed(services: &[Dated]) -> Feed {
                 friday: s("0"),
                 saturday: s("0"),
                 sunday: s("0"),
-                start_date: Some(gtfs(day0() + Duration::days(a))),
-                end_date: Some(gtfs(day0() + Duration::days(b))),
+                start_date: Some(gtfs(day0() + Days::new(a))),
+                end_date: Some(gtfs(day0() + Days::new(b))),
             });
         }
         for d in &svc.dates {
@@ -108,7 +108,7 @@ fn feed(services: &[Dated]) -> Feed {
     feed
 }
 
-fn runs(rule: &CalendarRule, date: NaiveDate) -> bool {
+fn runs(rule: &CalendarRule, date: Date) -> bool {
     if let Some(e) = rule.exceptions.iter().find(|e| e.date == date) {
         return e.state == DayState::Added;
     }
@@ -123,7 +123,7 @@ fn flags(rule: &CalendarRule) -> [bool; 7] {
 }
 
 /// An oracle for D-111.
-fn expected_flags(dates: &BTreeSet<NaiveDate>) -> [bool; 7] {
+fn expected_flags(dates: &BTreeSet<Date>) -> [bool; 7] {
     let (first, last) = (*dates.first().unwrap(), *dates.last().unwrap());
     let mut out = [false; 7];
     for (w, slot) in out.iter_mut().enumerate() {
@@ -135,7 +135,7 @@ fn expected_flags(dates: &BTreeSet<NaiveDate>) -> [bool; 7] {
                 occurrences += 1;
                 ran += dates.contains(&d) as u32;
             }
-            d += Duration::days(1);
+            d += Days::new(1);
         }
         *slot = ran >= 4 && 4 * ran >= 3 * occurrences;
     }
@@ -160,17 +160,17 @@ proptest! {
             let rule = &net.service_types[&format!("svc{i}")].rule;
             let (first, last) = (*svc.dates.first().unwrap(), *svc.dates.last().unwrap());
             // 1.
-            let mut d = first - Duration::days(21);
-            while d <= last + Duration::days(21) {
+            let mut d = first - Days::new(21);
+            while d <= last + Days::new(21) {
                 prop_assert_eq!(runs(rule, d), svc.dates.contains(&d), "svc{} on {}", i, d);
-                d += Duration::days(1);
+                d += Days::new(1);
             }
             // 2.
             let want = expected_flags(&svc.dates);
             if want.iter().any(|&b| b) {
                 prop_assert_eq!(flags(rule), want);
                 // 3.
-                let on: Vec<NaiveDate> =
+                let on: Vec<Date> =
                     svc.dates.iter().copied().filter(|d| want[d.weekday().num_days_from_monday() as usize]).collect();
                 prop_assert_eq!(rule.ranges.len(), 1);
                 prop_assert_eq!(rule.ranges[0].start, on[0]);
@@ -204,29 +204,32 @@ proptest! {
         let mut net = outcome.network.clone();
         let rule = &mut net.service_types.get_mut("svc0").unwrap().rule;
         if let Some(r) = rule.ranges.last_mut() {
-            r.end += Duration::weeks(weeks);
+            r.end += Days::weeks(weeks);
         }
         let rule = rule.clone();
         let back = export(&net, &outcome.boundary).unwrap();
         // 6.
         let (cal, _) = calendar_rows(&back);
         prop_assert_eq!(cal, calendar_rows(&f).0);
-        let exported: BTreeSet<NaiveDate> = back
+        let exported: BTreeSet<Date> = back
             .calendar_dates
             .iter()
             .map(|r| {
                 assert_eq!(r.exception_type.as_deref(), Some("1"));
-                NaiveDate::parse_from_str(r.date.as_deref().unwrap(), "%Y%m%d").unwrap()
+                {
+                    let t = r.date.as_deref().unwrap();
+                    Date::parse(&format!("{}-{}-{}", &t[0..4], &t[4..6], &t[6..8])).unwrap()
+                }
             })
             .collect();
         let first = *svc.dates.first().unwrap();
         let mut runs_on = BTreeSet::new();
-        let mut d = first - Duration::days(7);
-        while d <= first + Duration::days(400) {
+        let mut d = first - Days::new(7);
+        while d <= first + Days::new(400) {
             if runs(&rule, d) {
                 runs_on.insert(d);
             }
-            d += Duration::days(1);
+            d += Days::new(1);
         }
         prop_assert_eq!(exported, runs_on);
     }
@@ -250,7 +253,7 @@ fn a_flagged_or_removing_calendar_is_read_as_written() {
     });
     let mut dated = BTreeSet::new();
     for k in 0..10 {
-        let d = day0() + Duration::weeks(k) + Duration::days(1); // Tuesdays
+        let d = day0() + Days::weeks(k) + Days::new(1); // Tuesdays
         dated.insert(d);
         for id in ["wk", "zr"] {
             f.calendar_dates.push(CalendarDateRow { service_id: s(id), date: Some(gtfs(d)), exception_type: s("1") });
@@ -269,18 +272,18 @@ fn a_flagged_or_removing_calendar_is_read_as_written() {
 #[test]
 fn the_ctran_shapes_read_as_the_rule_says() {
     // The shapes that C-TRAN's feed shows, measured on C-TRAN's feed.
-    let span = |from: NaiveDate, to: NaiveDate, days: &[u32]| {
+    let span = |from: Date, to: Date, days: &[u32]| {
         let mut out = BTreeSet::new();
         let mut d = from;
         while d <= to {
             if days.contains(&d.weekday().num_days_from_monday()) {
                 out.insert(d);
             }
-            d += Duration::days(1);
+            d += Days::new(1);
         }
         out
     };
-    let ymd = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    let ymd = |y, m, d| Date::from_ymd_opt(y, m, d).unwrap();
     let mut weekday = span(ymd(2026, 9, 14), ymd(2027, 1, 8), &[0, 1, 2, 3, 4]);
     for gap in [ymd(2026, 11, 26), ymd(2026, 11, 27), ymd(2026, 12, 24), ymd(2026, 12, 25), ymd(2027, 1, 1)] {
         weekday.remove(&gap);

@@ -1,7 +1,7 @@
 //! GTFS export and import with the stops' history. The
 //! ops are in cap-stops' OPS.md (`export_versions`, `import_events`).
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_stops::stop_record::{feed_events, import_feed, AddedEvent, export_versions, import_events, read_records, seed};
 use transit_network::{materialize, Network};
@@ -14,12 +14,12 @@ fn fixture() -> Network {
 }
 
 /// The fixture runs its weekday and Sunday service through 2026.
-fn day(n: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 9, 1).unwrap() + chrono::Days::new(n as u64)
+fn day(n: u32) -> Date {
+    Date::from_ymd_opt(2026, 9, 1).unwrap() + transit_date::Days::new(n as i64)
 }
 
 fn date(n: u32) -> String {
-    day(n).format("%Y-%m-%d").to_string()
+    day(n).to_string()
 }
 
 fn ev(kind: EventKind, on: u32) -> Event {
@@ -72,14 +72,14 @@ fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
 /// Takes off the `@<date>` that a version or a split adds.
 fn base(id: &str) -> String {
     match id.rsplit_once('@') {
-        Some((head, tail)) if NaiveDate::parse_from_str(tail, "%Y-%m-%d").is_ok() => head.to_string(),
+        Some((head, tail)) if Date::parse(tail).is_ok() => head.to_string(),
         _ => id.to_string(),
     }
 }
 
 type Row = (String, String, u32, Vec<(String, (f64, f64, String), u32, u32)>);
 
-fn rows(net: &Network, d: NaiveDate) -> Vec<Row> {
+fn rows(net: &Network, d: Date) -> Vec<Row> {
     let mut out: Vec<Row> = materialize(net, d)
         .unwrap()
         .into_iter()

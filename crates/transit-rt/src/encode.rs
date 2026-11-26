@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlerts};
 use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use transit_network::Network;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::gtfs_rt::{
@@ -16,8 +17,9 @@ pub struct EncodedAlerts {
     pub skipped: Vec<SkippedEntity>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct SkippedEntity {
     pub alert: String,
     pub entity: u32,
@@ -31,37 +33,40 @@ pub struct EntityReading {
     pub names: EntityNames,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EntityNames {
     pub agency: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub route: Option<EntityRoute>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub route_type: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub direction: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub stop: Option<EntityStop>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub trip: Option<EntityTrip>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EntityRoute {
     pub id: String,
     pub name: String,
     pub known: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EntityStop {
     pub id: String,
     pub name: String,
@@ -69,22 +74,23 @@ pub struct EntityStop {
     pub bays: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EntityTrip {
     pub id: String,
     pub known: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub route: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub start_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub headsign: Option<String>,
 }
 
@@ -272,8 +278,9 @@ pub struct ReadAlerts {
     pub dropped: Vec<DroppedAlert>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DroppedAlert {
     pub alert: String,
     pub reason: String,
@@ -353,7 +360,7 @@ fn read_selector(network: &Network, e: &EntitySelector) -> Result<AlertEntity, S
             let date = match &t.start_date {
                 None => None,
                 Some(d) => Some(
-                    chrono::NaiveDate::parse_from_str(d, "%Y%m%d").map_err(|_| format!("start_date {d:?} is not YYYYMMDD"))?.format("%Y-%m-%d").to_string(),
+                    transit_codec::parse_gtfs_date(d).filter(|_| d.trim() == d).ok_or_else(|| format!("start_date {d:?} is not YYYYMMDD"))?.to_string(),
                 ),
             };
             let start = match &t.start_time {

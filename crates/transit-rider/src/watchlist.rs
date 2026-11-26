@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 2;
@@ -19,34 +20,36 @@ transit_version::kind_tag!(
     WatchlistKind = "watchlist"
 );
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct WatchStop {
     pub id: String,
     pub label: String,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct Watchlist {
     #[serde(default)]
-    #[ts(type = "\"watchlist\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"watchlist\""))]
     pub kind: WatchlistKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<2>,
     /// The version that a copy with no tags names (`"v2"`). Read, never
     /// written.
     #[serde(default, rename = "version", skip_serializing)]
-    #[schemars(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", schemars(skip))]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub legacy_version: Option<String>,
     pub stops: Vec<WatchStop>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -80,8 +83,9 @@ fn legacy(marker: &str) -> Option<u32> {
     marker.strip_prefix('v').and_then(|n| n.parse().ok()).filter(|&n| n >= 1)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct MigrationNote {
     pub from: u32,
     pub kind: String,

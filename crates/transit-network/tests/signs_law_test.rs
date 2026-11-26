@@ -7,8 +7,8 @@ fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
 }
 
-fn date() -> chrono::NaiveDate {
-    chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap()
+fn date() -> transit_date::Date {
+    transit_date::Date::from_ymd_opt(2026, 10, 28).unwrap()
 }
 
 fn destinations(net: &Network) -> Vec<String> {

@@ -9,6 +9,7 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use std::sync::Arc;
 
@@ -16,8 +17,9 @@ use transit_dispatch::{BoardAt, Day, GroupedBoard, Overnight, ServiceDay, StopBo
 
 pub use transit_rider::watchlist::{WatchStop, Watchlist};
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct WatchBoardStop {
     pub id: String,
     pub label: String,
@@ -28,56 +30,58 @@ pub struct WatchBoardStop {
 /// 86400 after midnight. `length_secs` is that date's length from anchor to
 /// anchor: 86400, or 82800 or 90000 across a clock change. GTFS times past
 /// 24:00 belong to the date the trip started on.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct Previous {
     pub from_secs: u32,
     pub length_secs: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     StopBoard {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         edits_hash: Option<String>,
         stop_id: String,
         date: String,
         from_secs: u32,
         limit: u32,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         live_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         previous: Option<Previous>,
     },
     /// The next-run look-ahead never uses the live document.
     GroupedBoard {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         edits_hash: Option<String>,
         stop_id: String,
         date: String,
         from_secs: u32,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         per_group: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         live_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         previous: Option<Previous>,
     },
     AlertReach {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         edits_hash: Option<String>,
         date: String,
         alert: transit_alerts::ServiceAlert,
@@ -86,22 +90,23 @@ pub enum Request {
         watchlist_hash: String,
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         edits_hash: Option<String>,
         date: String,
         from_secs: u32,
         limit: u32,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         live_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         previous: Option<Previous>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     StopBoard { board: StopBoard },
@@ -110,14 +115,15 @@ pub enum Response {
     AlertReach { entities: Vec<EntityReach>, reach: transit_dispatch::Reach },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct EntityReach {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub published: Option<transit_rt::overview::InformedView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub not_published: Option<String>,
     pub names: transit_rt::EntityNames,
     pub reach: transit_dispatch::Reach,
@@ -168,7 +174,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             if board.groups.iter().any(|g| g.departures.is_empty()) {
                 let records = edits_hash.as_deref().map(|h| cap_abi::kernel::kind::<transit_sync::EditDocument>().require(h)).transpose()?;
                 let records = records.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
-                let date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))?;
+                let date = transit_date::Date::read(&date)?;
                 transit_dispatch::with_next_service(&network, &mut board, &stop_id, date, from_secs, |on| {
                     transit_dispatch::day(&network, on, records)
                         .map(Box::new)
@@ -207,11 +213,11 @@ impl Days {
         let today = day(network_hash, edits_hash, date)?;
         let previous = match previous {
             Some(p) => {
-                let on = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                let on = transit_date::Date::parse(date)
                     .ok()
                     .and_then(|d| d.pred_opt())
                     .ok_or_else(|| format!("invalid date {date:?}"))?
-                    .format("%Y-%m-%d")
+                    
                     .to_string();
                 let day = day(network_hash, edits_hash, &on)?;
                 Some((on, day, p))

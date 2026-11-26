@@ -3,7 +3,7 @@
 //! (crates/cap-board/OPS.md "stop_board", crates/cap-divert/OPS.md "reports",
 //! crates/cap-runcut/OPS.md "blocks").
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_dispatch::{block_chain, layover_health, LayoverHealth, TIGHT_LAYOVER_SECS, board, effective_day, patch_day, report_against_network, station_board, stop_board};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
@@ -14,8 +14,8 @@ use transit_sync::{Diversion, EditRecord, EditStatus};
 
 const DATE: &str = "2026-10-23"; // a Friday inside the fixture year
 
-fn date() -> NaiveDate {
-    NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap()
+fn date() -> Date {
+    Date::parse(DATE).unwrap()
 }
 
 fn stop(id: &str, name: &str, parent: Option<&str>) -> Stop {
@@ -97,8 +97,8 @@ fn network() -> Network {
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                    end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                    end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],
@@ -506,7 +506,7 @@ fn retired_never_patches_but_a_draft_previews() {
     let t10 = find_trip(&day, "s10");
     assert_eq!(t10.stop_times.len(), 2, "a draft previews the edit");
 
-    let other = NaiveDate::from_ymd_opt(2026, 10, 30).unwrap();
+    let other = Date::from_ymd_opt(2026, 10, 30).unwrap();
     let day = effective_day(&net, other, &[record(EditStatus::Accepted, 300)]).unwrap();
     let t10 = find_trip(&day, "s10");
     assert_eq!(t10.stop_times.len(), 3, "the edit does not cover the 30th");
@@ -651,7 +651,7 @@ fn the_grouped_board_pools_skips_and_alerts() {
 #[test]
 fn the_held_day_is_the_effective_day_and_its_edits() {
     let net = network();
-    let other = chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+    let other = transit_date::Date::from_ymd_opt(2026, 10, 24).unwrap();
     for status in [EditStatus::Accepted, EditStatus::Draft, EditStatus::Retired] {
         for when in [date(), other] {
             let records = vec![record(status, 300)];

@@ -11,7 +11,10 @@
 //! * Ids are opaque strings that the model owns.
 //! * Times are `u32` seconds after the service-day anchor ([`Anchor`]).
 //!   Values past 86400 are trips after midnight.
-//! * Distances are meters, for each pattern stop.
+//! * Distances are meters, for each pattern stop, measured by
+//!   `transit_geo::distance_m`.
+//! * Dates are `transit_date::Date`, read and written as "YYYY-MM-DD" by
+//!   its one rule.
 //! * Maps are `BTreeMap`, so one network serializes to the same bytes on
 //!   every host. Per-record LWW sync depends on this.
 //! * The crate does no I/O and reads no clock.

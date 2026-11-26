@@ -8,14 +8,14 @@
 
 use std::io::Write;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_router::{earliest_arrival, plan_notice, DivertedTrips, Leg, NoticeKind, RouterNetwork};
 
 #[path = "prop_support.rs"]
 mod support;
 use support::model_day;
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 
 fn router(zip: &[u8]) -> RouterNetwork {
     let (network, day) = model_day(zip, DATE);
@@ -145,15 +145,15 @@ fn calendar_filters_trips_from_the_network() {
     let bytes = w.finish().unwrap().into_inner();
 
     let friday = {
-        let (network, day) = model_day(&bytes, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap());
-        RouterNetwork::build_from_day(&network, &day, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap())
+        let (network, day) = model_day(&bytes, Date::from_ymd_opt(2026, 10, 23).unwrap());
+        RouterNetwork::build_from_day(&network, &day, Date::from_ymd_opt(2026, 10, 23).unwrap())
     };
     assert!(earliest_arrival(&friday, "A", "B", 0, 4).expect("q").is_none(),
         "trip does not run on Friday");
 
     let sunday = {
-        let (network, day) = model_day(&bytes, NaiveDate::from_ymd_opt(2026, 10, 25).unwrap());
-        RouterNetwork::build_from_day(&network, &day, NaiveDate::from_ymd_opt(2026, 10, 25).unwrap())
+        let (network, day) = model_day(&bytes, Date::from_ymd_opt(2026, 10, 25).unwrap());
+        RouterNetwork::build_from_day(&network, &day, Date::from_ymd_opt(2026, 10, 25).unwrap())
     };
     let it = earliest_arrival(&sunday, "A", "B", 0, 4).expect("q").expect("runs Sunday");
     assert_eq!(it.arrival_hhmmss, "08:10:00");

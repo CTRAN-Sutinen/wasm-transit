@@ -60,11 +60,17 @@ pub fn class(name: &str) -> Option<Class> {
 /// does. The generator and its fixtures compute the examples of the codec.
 pub const CODEC_HOMES: &[&str] = &["transit-codec", "cap-gtfs", "cap-network", "cap-rt", "transit-rt", "generator", "fixtures"];
 
-/// Gate 1 denies by default. The kernel depends on transit-version alone, and so does the network. Only [`CODEC_HOMES`] and the assemblies
+/// Gate 1 denies by default. The kernel depends on transit-version alone. The
+/// network depends on transit-version and on libraries with no workspace
+/// dependency. Only [`CODEC_HOMES`] and the assemblies
 /// that link them read the GTFS layer.
 pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
     let mut out = Vec::new();
     let classes: BTreeMap<&str, Option<Class>> = packages.iter().map(|p| (p.name.as_str(), class(&p.name))).collect();
+    // A kind needs transit-version's tag, so a library with no workspace
+    // dependency holds none.
+    let leaves: std::collections::BTreeSet<&str> =
+        packages.iter().filter(|p| class(&p.name) == Some(Class::Library) && p.deps.is_empty()).map(|p| p.name.as_str()).collect();
     for package in packages {
         let Some(own) = class(&package.name) else {
             out.push(format!("{}: not a kernel, capability, library, assembly, generator, generator binary, or fixtures — the gate denies by default", package.name));
@@ -93,9 +99,9 @@ pub fn dependency_violations(packages: &[Package]) -> Vec<String> {
                     "cap-abi depends on {dep}: the kernel knows no kind and depends on transit-version alone; the kind's library implements transit_version::Load"
                 ));
             }
-            if package.name == "transit-network" && dep != "transit-version" {
+            if package.name == "transit-network" && dep != "transit-version" && !leaves.contains(dep.as_str()) {
                 out.push(format!(
-                    "transit-network depends on {dep}: the network is the core model and depends only on transit-version; a library that joins a document to the network depends on the network (crates/AGENTS.md, Law 1)"
+                    "transit-network depends on {dep}: the network is the core model and depends only on transit-version and on libraries with no workspace dependency (which hold no kind); a library that joins a document to the network depends on the network (crates/AGENTS.md, Law 1)"
                 ));
             }
             if dep == "transit-codec" && own != Class::Assembly && !CODEC_HOMES.contains(&package.name.as_str()) {

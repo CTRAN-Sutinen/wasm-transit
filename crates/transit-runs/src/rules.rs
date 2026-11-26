@@ -1,6 +1,7 @@
 
 use serde::{Deserialize, Serialize};
 use transit_network::RecoveryAt;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -18,112 +19,116 @@ impl transit_version::Versioned for WorkRules {
 }
 
 /// An empty document is `{"kind":"work_rules","schema_version":1}`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct WorkRules {
     /// A copy without a kind tag reads as work rules.
     #[serde(default)]
-    #[ts(type = "\"work_rules\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"work_rules\""))]
     pub kind: WorkRulesKind,
     /// A copy without a version is version 1.
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    #[ts(optional, as = "Option<String>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<String>"))]
     pub name: String,
     /// The most specific rule answers. Specificity runs from route with
     /// service type, to route, to service type, to neither. With no rule,
     /// the terminal's floor applies, which is the smallest authored layover
     /// there.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<RecoveryRule>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<RecoveryRule>>"))]
     pub recovery: Vec<RecoveryRule>,
     /// Set per pair, in either order. A route follows itself. An
     /// unlisted pair never interlines.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<RoutePair>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<RoutePair>>"))]
     pub interline: Vec<RoutePair>,
     #[serde(default, skip_serializing_if = "RunRules::is_empty")]
-    #[ts(optional, as = "Option<RunRules>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<RunRules>"))]
     pub runs: RunRules,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub pay: Option<Pay>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// The larger of `min_secs` and `pct_of_run` percent of the run before the
 /// wait, rounded up to the second. With no route or service type, the rule
 /// covers every trip.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct RecoveryRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub route: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub service_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub min_secs: Option<u32>,
     /// A whole percent of the run time (0 to 1000).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub pct_of_run: Option<u32>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct RoutePair {
     pub a: String,
     pub b: String,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct RunRules {
     /// The longest a run may be on the platform (driving and waiting).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub max_platform_secs: Option<u32>,
     /// The longest from report to clear, breaks included.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub max_spread_secs: Option<u32>,
     /// Paid time before the first piece (sign-on, pull-out).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub report_secs: Option<u32>,
     /// Paid time after the last piece (pull-in, sign-off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub clear_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub min_piece_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub max_piece_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub meal: Option<MealBreak>,
     /// Stop ids where one operator may relieve another. When empty, only at
     /// the ends of a block's trips.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub relief_points: Vec<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -134,41 +139,43 @@ impl RunRules {
 }
 
 /// At least `min_secs` off within the first `within_secs` of work.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct MealBreak {
     pub within_secs: u32,
     pub min_secs: u32,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// Pay is in time, not dollars, because operators' rates vary by seniority.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Pay {
     /// A run is paid at least this long.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub guarantee_secs: Option<u32>,
     /// Work past this is overtime, paid at `overtime_pct` percent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub overtime_after_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub overtime_pct: Option<u32>,
     /// Spread past this earns a premium of `spread_pct` percent of the
     /// time past it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub spread_after_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub spread_pct: Option<u32>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 

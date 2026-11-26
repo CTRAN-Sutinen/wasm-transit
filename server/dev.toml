@@ -34,7 +34,7 @@ publisher = "Dev Transit"
 # --- The store ----------------------------------------------------------
 
 # The agency's record: s3://bucket/prefix[?endpoint=URL&region=R],
-# azblob://container/prefix, gs://bucket/prefix, or mem:// (nothing
+# gs://bucket/prefix, or mem:// (nothing
 # survives a restart). Publishing, history, and the stops and stop
 # requests writes need it. `just store-dev` starts a SeaweedFS to keep it:
 # store = "s3://transit/dev?endpoint=http://127.0.0.1:8333"

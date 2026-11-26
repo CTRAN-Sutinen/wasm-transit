@@ -3,14 +3,50 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
+// OpenBackend opens the backend a store URL names:
+//
+//	mem://                                       in memory (dev, tests)
+//	s3://bucket[/prefix][?endpoint=URL&region=R]  S3 or any S3-compatible
+//	                                             endpoint (path-style when
+//	                                             endpoint is given)
+//	gs://bucket[/prefix]                         Google Cloud Storage
+//
+// awscreds.go and gcpauth.go name the credential sources each reads.
+// There is no directory backend: a store needs the object contract.
+func OpenBackend(ctx context.Context, raw string) (Backend, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("store URL %q: %w", raw, err)
+	}
+	switch u.Scheme {
+	case "mem":
+		return NewMemory(), nil
+	case "s3":
+		if u.Host == "" {
+			return nil, fmt.Errorf("store URL %q names no bucket", raw)
+		}
+		q := u.Query()
+		return NewS3(ctx, u.Host, strings.Trim(u.Path, "/"), q.Get("endpoint"), q.Get("region"))
+	case "gs":
+		if u.Host == "" {
+			return nil, fmt.Errorf("store URL %q names no bucket", raw)
+		}
+		return NewGCS(ctx, u.Host, strings.Trim(u.Path, "/"))
+	default:
+		return nil, fmt.Errorf("store URL %q: want s3://, gs:// or mem:// (the store lives in object storage)", raw)
+	}
+}
+
 // Backend is everything the engine may assume of an object store
-// (docs/architecture/storage.md). S3, Azure Blob and GCS all guarantee it,
+// (docs/architecture/storage.md). S3 and GCS both guarantee it,
 // and an endpoint that breaks it is unfit for the store. Keys are
 // '/'-separated, and a backend scoped to a prefix strips it from every
 // key it answers.

@@ -1,6 +1,7 @@
 //! `cap-runcut` OPS.md, `trip_path`, holds the line rules.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use transit_network::{authored_alignment, stop_point, stops_line, Coord, MaterializedTrip, Network};
@@ -121,16 +122,18 @@ fn nearest_vertex(path: &[Coord], at: Coord) -> usize {
     best.0
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum LegKind {
     Transit,
     Walk,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LegPath {
     pub kind: LegKind,
     pub path: Vec<Coord>,

@@ -76,7 +76,7 @@ All the transit logic lives in libraries: the crates named
 arguments. It never reads the clock, so the date comes in as `on`.
 
 ```rust
-pub fn records(stops: &Stops, ids: &[String], on: NaiveDate) -> BTreeMap<String, Stop> {
+pub fn records(stops: &Stops, ids: &[String], on: Date) -> BTreeMap<String, Stop> {
     ids.iter()
         .filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found))))
         .collect()

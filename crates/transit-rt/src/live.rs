@@ -12,7 +12,7 @@ use crate::progress::{progress_of, resolve_instance};
 /// so the descriptor names no instance.
 fn service_date(start_date: Option<&str>) -> Result<Option<String>, ()> {
     let Some(text) = start_date else { return Ok(None) };
-    chrono::NaiveDate::parse_from_str(text, "%Y%m%d").map(|d| Some(d.format("%Y-%m-%d").to_string())).map_err(|_| ())
+    transit_codec::parse_gtfs_date(text).filter(|_| text.trim() == text).map(|d| Some(d.to_string())).ok_or(())
 }
 
 /// The headline delay that `late_trips` and `trip_progress` also rank by.

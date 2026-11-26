@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use transit_date::Date;
 
 use crate::error::{NetworkError, NetworkWarning, RecoverySource};
 use crate::model::{Departs, Network, Trip};
@@ -412,7 +412,7 @@ fn trip_issues(trip: &Trip, pattern: Option<&crate::model::Pattern>, issues: &mu
 /// The date set of each type is computed once for each network.
 struct DaySignatures<'a> {
     network: &'a Network,
-    dates: BTreeMap<&'a str, BTreeSet<NaiveDate>>,
+    dates: BTreeMap<&'a str, BTreeSet<Date>>,
 }
 
 impl<'a> DaySignatures<'a> {
@@ -420,11 +420,11 @@ impl<'a> DaySignatures<'a> {
         Self { network, dates: BTreeMap::new() }
     }
 
-    fn dates_of(&mut self, id: &'a str) -> &BTreeSet<NaiveDate> {
+    fn dates_of(&mut self, id: &'a str) -> &BTreeSet<Date> {
         let network = self.network;
         self.dates.entry(id).or_insert_with(|| {
             let Some(st) = network.service_types.get(id) else { return BTreeSet::new() };
-            let mut candidates: BTreeSet<NaiveDate> =
+            let mut candidates: BTreeSet<Date> =
                 st.rule.exceptions.iter().map(|e| e.date).collect();
             for r in &st.rule.ranges {
                 let mut d = r.start;
@@ -443,7 +443,7 @@ impl<'a> DaySignatures<'a> {
     fn signatures(&mut self, types: &BTreeSet<&'a str>) -> Vec<BTreeSet<&'a str>> {
         let mut out: BTreeSet<BTreeSet<&'a str>> = types.iter().map(|t| [*t].into_iter().collect()).collect();
         if types.len() > 1 {
-            let mut by_date: BTreeMap<NaiveDate, BTreeSet<&'a str>> = BTreeMap::new();
+            let mut by_date: BTreeMap<Date, BTreeSet<&'a str>> = BTreeMap::new();
             for t in types {
                 for d in self.dates_of(t).clone() {
                     by_date.entry(d).or_default().insert(t);
@@ -481,7 +481,7 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
         let scheduled: BTreeSet<&str> =
             network.pattern_trips.values().map(|s| s.service_type.as_str()).collect();
         let runs_in_first_week = (0..7).any(|d| {
-            let date = from + chrono::Duration::days(d);
+            let date = from + transit_date::Days::new(d);
             network
                 .service_types
                 .iter()
@@ -490,7 +490,7 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
         if !runs_in_first_week {
             warnings.push(NetworkWarning::NoServiceInPlanPeriod {
                 plan_name: network.plan.name.clone(),
-                effective_from: from.format("%Y-%m-%d").to_string(),
+                effective_from: from.to_string(),
             });
         }
     }

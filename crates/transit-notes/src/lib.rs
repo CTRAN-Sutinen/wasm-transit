@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -26,83 +27,90 @@ impl transit_version::Versioned for Notes {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Notes {
     #[serde(default)]
-    #[ts(type = "\"notes\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"notes\""))]
     pub kind: NotesKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     pub notes: BTreeMap<String, Note>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Note {
     pub target: NoteTarget,
     pub text: String,
     pub written: Stamp,
     /// Absent until an edit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub edited: Option<Stamp>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Stamp {
     pub by: String,
     /// Unix seconds.
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub at: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NoteTarget {
     /// `start_secs` is seconds after the service-day anchor. A service date
     /// names its pick, so the instance is unambiguous.
-    #[schemars(extend("x-references" = "trip_instance"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "trip_instance")))]
     Trip { trip: String, date: String, start_secs: u32 },
     Edit {
-        #[schemars(extend("x-references" = "edit_record"))]
+        #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "edit_record")))]
         id: String,
     },
     Alert {
-        #[schemars(extend("x-references" = "service_alert"))]
+        #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "service_alert")))]
         id: String,
     },
     Stop {
-        #[schemars(extend("x-references" = "stop"))]
+        #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop")))]
         stop: String,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NoteRow {
     pub id: String,
     pub note: Note,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NoteRefusal {
     pub note: String,
     pub problem: NoteProblem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NoteProblem {
     NoId,
@@ -153,7 +161,7 @@ fn check(id: &str, n: &Note) -> Vec<NoteProblem> {
         out.push(NoteProblem::NoTarget);
     }
     if let NoteTarget::Trip { date, .. } = &n.target {
-        if date.len() != 10 || chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
+        if date.len() != 10 || transit_date::Date::parse(date).is_err() {
             out.push(NoteProblem::BadDate);
         }
     }

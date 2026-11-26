@@ -2,6 +2,7 @@
 //! host draws the same line.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::model::{Coord, Network};
@@ -45,8 +46,9 @@ pub fn stops_line<'a>(network: &Network, stops: impl IntoIterator<Item = &'a str
     out
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum EntityKind {
     Stop,
@@ -57,15 +59,17 @@ pub enum EntityKind {
     Block,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EntityFocus {
     pub lines: Vec<Vec<Coord>>,
     pub points: Vec<Coord>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteLines {
     pub route_id: String,
     pub name: String,

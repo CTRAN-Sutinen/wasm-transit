@@ -13,23 +13,23 @@
 //! 5. A `through` before `effective_from`, or not a date, is a named error,
 //!    and the input is untouched.
 
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use transit_date::{Days, Date, Weekday};
 use proptest::prelude::*;
 use transit_network::{
     apply_edits, CalendarException, CalendarRule, DateRange, DayState, Network, NetworkEdit, PlanMeta, ServiceType,
     WeekdaySet,
 };
 
-fn day0() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()
+fn day0() -> Date {
+    Date::from_ymd_opt(2026, 9, 1).unwrap()
 }
 
-fn d(offset: i64) -> NaiveDate {
-    day0() + Duration::days(offset)
+fn d(offset: i64) -> Date {
+    day0() + Days::new(offset)
 }
 
-fn iso(date: NaiveDate) -> String {
-    date.format("%Y-%m-%d").to_string()
+fn iso(date: Date) -> String {
+    date.to_string()
 }
 
 #[derive(Clone, Debug)]
@@ -90,7 +90,7 @@ fn flagged(days: &WeekdaySet, wd: Weekday) -> bool {
 }
 
 /// An exception wins. Otherwise a flagged weekday inside a range runs.
-fn runs(rule: &CalendarRule, date: NaiveDate) -> bool {
+fn runs(rule: &CalendarRule, date: Date) -> bool {
     if let Some(e) = rule.exceptions.iter().find(|e| e.date == date) {
         return e.state == DayState::Added;
     }
@@ -103,11 +103,11 @@ fn weekly(rule: &CalendarRule) -> bool {
 }
 
 /// A flagged day and a range that starts by the period's end.
-fn weekly_by(rule: &CalendarRule, through: NaiveDate) -> bool {
+fn weekly_by(rule: &CalendarRule, through: Date) -> bool {
     weekly(rule) && rule.ranges.iter().any(|r| r.start <= through)
 }
 
-fn set_plan(from: i64, through: Option<NaiveDate>) -> NetworkEdit {
+fn set_plan(from: i64, through: Option<Date>) -> NetworkEdit {
     NetworkEdit::SetPlan {
         plan: PlanMeta { id: "winter".into(), name: "Winter".into(), effective_from: Some(d(from)), extra: Default::default() },
         through: through.map(iso),
@@ -142,7 +142,7 @@ proptest! {
                 weekly_end.into_iter().chain(t.rule.exceptions.iter().filter(|e| e.state == DayState::Added && e.date <= through).map(|e| e.date))
             })
             .max();
-        let period = |date: NaiveDate| d(from) <= date && date <= through;
+        let period = |date: Date| d(from) <= date && date <= through;
         for (id, before) in &net.service_types {
             let after = &next.service_types[id];
             for r in &after.rule.ranges {
@@ -153,7 +153,7 @@ proptest! {
             prop_assert_eq!(&after.rule.exceptions, &kept);
             prop_assert_eq!(&after.name, &before.name);
             let last_end = before.rule.ranges.iter().filter(|r| r.start <= through).map(|r| r.end).max();
-            let carried = weekly_by(&before.rule, through) && last_end.unwrap() >= calendar_end.unwrap() - Duration::days(6);
+            let carried = weekly_by(&before.rule, through) && last_end.unwrap() >= calendar_end.unwrap() - Days::new(6);
             let old_end = if carried { last_end.unwrap() } else { through };
             for offset in -10..(from + len + 30) {
                 let date = d(offset);
@@ -240,8 +240,8 @@ fn the_winter_fork_runs_past_the_import_calendar() {
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: NaiveDate::from_ymd_opt(2026, 9, 13).unwrap(),
-                    end: NaiveDate::from_ymd_opt(2027, 1, 9).unwrap(),
+                    start: Date::from_ymd_opt(2026, 9, 13).unwrap(),
+                    end: Date::from_ymd_opt(2027, 1, 9).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],
@@ -258,7 +258,7 @@ fn the_winter_fork_runs_past_the_import_calendar() {
                 days: WeekdaySet::none(),
                 ranges: vec![],
                 exceptions: vec![CalendarException {
-                    date: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    date: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                     state: DayState::Added,
                     extra: Default::default(),
                 }],
@@ -274,8 +274,8 @@ fn the_winter_fork_runs_past_the_import_calendar() {
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
-                    end: NaiveDate::from_ymd_opt(2026, 10, 9).unwrap(),
+                    start: Date::from_ymd_opt(2026, 9, 14).unwrap(),
+                    end: Date::from_ymd_opt(2026, 10, 9).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],
@@ -284,7 +284,7 @@ fn the_winter_fork_runs_past_the_import_calendar() {
             extra: Default::default(),
         },
     );
-    let pick = NaiveDate::from_ymd_opt(2027, 1, 25).unwrap();
+    let pick = Date::from_ymd_opt(2027, 1, 25).unwrap();
     let edit = NetworkEdit::SetPlan {
         plan: PlanMeta { id: "winter-2027".into(), name: "Winter 2027".into(), effective_from: Some(pick), extra: Default::default() },
         through: Some("2027-05-29".into()),

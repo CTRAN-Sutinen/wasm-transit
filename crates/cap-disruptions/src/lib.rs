@@ -4,77 +4,81 @@ use std::sync::Arc;
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub use transit_disruptions::{AlertGap, AlertStart, Disruption, Filter, NamedStop, Origin, RouteDay, Today};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_disruptions/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_disruptions/"))]
 pub struct Documents {
     pub network_hash: String,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub edits_hash: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub live_hash: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub stops_hash: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub alerts_hash: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub notes_hash: Option<String>,
     pub date: String,
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub now: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_disruptions/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_disruptions/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Today {
         #[serde(flatten)]
-        #[ts(flatten)]
+        #[cfg_attr(feature = "bindings", ts(flatten))]
         documents: Documents,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         route: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         stop: Option<String>,
     },
     Gaps {
         #[serde(flatten)]
-        #[ts(flatten)]
+        #[cfg_attr(feature = "bindings", ts(flatten))]
         documents: Documents,
     },
     StartAlert {
         #[serde(flatten)]
-        #[ts(flatten)]
+        #[cfg_attr(feature = "bindings", ts(flatten))]
         documents: Documents,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         source: Option<transit_alerts::AlertSource>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_disruptions/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_disruptions/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Today {
         #[serde(flatten)]
-        #[ts(flatten)]
+        #[cfg_attr(feature = "bindings", ts(flatten))]
         today: Today,
     },
     Gaps { gaps: Vec<AlertGap> },
     StartAlert {
         #[serde(flatten)]
-        #[ts(flatten)]
+        #[cfg_attr(feature = "bindings", ts(flatten))]
         start: AlertStart,
     },
 }
@@ -86,7 +90,7 @@ struct Held {
     stops: Arc<transit_stops::Stops>,
     alerts: Arc<transit_alerts::ServiceAlerts>,
     notes: Arc<transit_notes::Notes>,
-    date: chrono::NaiveDate,
+    date: transit_date::Date,
     now: u64,
 }
 
@@ -111,7 +115,7 @@ impl Held {
                 Some(h) => kind::<transit_notes::Notes>().require(h)?,
                 None => Arc::new(Default::default()),
             },
-            date: chrono::NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").map_err(|e| format!("invalid date {:?}: {e}", d.date))?,
+            date: transit_date::Date::read(&d.date)?,
             now: d.now,
         })
     }

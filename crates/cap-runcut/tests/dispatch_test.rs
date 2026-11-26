@@ -27,7 +27,7 @@ fn load_network() -> String {
 /// The test reads the schedule id from the model and does not rely on the
 /// codec's naming.
 fn route10_schedule(net: &Network) -> String {
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     net.pattern_trips
         .iter()
         .find(|(_, s)| {
@@ -52,8 +52,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
             skipped_stops: vec!["C".into()],
             detour: None,
             added_secs,
-            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
             extra: Default::default(),
         }),
         cancel: None,
@@ -300,7 +300,7 @@ fn an_invalid_edit_record_moves_nothing() {
 /// t10 and t11 share route and stop sequence. The service type tells them
 /// apart, and only WK runs on the fixture Friday.
 fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     net.pattern_trips
         .iter()
         .find(|(_, s)| {
@@ -499,7 +499,7 @@ fn a_suggestion_adopts_into_the_fleet_it_names() {
         Response::SuggestBlocks { suggestion } => suggestion,
         _ => panic!("suggest_blocks"),
     };
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     let day = transit_network::materialize(&cleared, date).unwrap();
     let suggested: usize = suggestion.blocks.iter().map(|b| b.trips.len()).sum();
     assert_eq!(suggested + suggestion.unblocked.len(), day.len());

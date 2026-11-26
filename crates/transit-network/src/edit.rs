@@ -4,11 +4,12 @@
 //! the middle of an edit may be invalid, and `validation_issues` reports it.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 
 use crate::materialize::produce_times;
 use crate::timetable_edit;
@@ -18,25 +19,26 @@ use crate::model::{
     TripRef, WeekdaySet,
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "edit", rename_all = "snake_case")]
 pub enum NetworkEdit {
     SetPlan {
         plan: PlanMeta,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         through: Option<String>,
     },
     UpdatePlan {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         name: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         effective_from: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
     },
     SetName { name: String },
@@ -53,7 +55,7 @@ pub enum NetworkEdit {
     AddTrip {
         pattern_trips: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
         start_secs: u32,
     },
@@ -64,99 +66,99 @@ pub enum NetworkEdit {
 
     AddStop {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         lat: Option<f64>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         lon: Option<f64>,
     },
     AddRoute {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
     },
     AddPattern {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         route: Option<String>,
     },
     AddPatternThrough {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
         route: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         name: Option<String>,
         stops: Vec<String>,
         run_secs: u32,
     },
     AddServiceType {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
         from: String,
     },
     AddPatternTrips {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         pattern: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         service_type: Option<String>,
     },
     AddBlock {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
     },
 
     UpdateStop {
         id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         name: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         lat: Option<f64>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         lon: Option<f64>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         transfer: Option<bool>,
     },
     UpdateRoute {
         id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         name: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         mode: Option<Mode>,
     },
     UpdatePattern {
         id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         name: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         route: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
     },
     DrawAlignment {
@@ -164,7 +166,7 @@ pub enum NetworkEdit {
         points: Vec<Coord>,
         redraw: Redraw,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         id: Option<String>,
     },
     SetDirection { route: String, id: String, name: String },
@@ -173,10 +175,10 @@ pub enum NetworkEdit {
     SetPatternTripsRefs {
         id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         pattern: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         service_type: Option<String>,
     },
 
@@ -184,7 +186,7 @@ pub enum NetworkEdit {
         pattern: String,
         stop: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         index: Option<usize>,
     },
     RemovePatternStop { pattern: String, index: usize },
@@ -192,10 +194,10 @@ pub enum NetworkEdit {
         pattern: String,
         index: usize,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         stop: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         distance_m: Option<f64>,
     },
     ToggleTimepoint { pattern: String, index: usize },
@@ -205,10 +207,10 @@ pub enum NetworkEdit {
         pattern: String,
         index: usize,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         start_secs: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         end_secs: Option<u32>,
     },
     SetTimepointTime { pattern: String, profile: usize, timepoint: usize, secs: u32 },
@@ -217,20 +219,20 @@ pub enum NetworkEdit {
     AddServiceRange {
         id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         start: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         end: Option<String>,
     },
     SetServiceRange {
         id: String,
         index: usize,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         start: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         end: Option<String>,
     },
     RemoveServiceRange { id: String, index: usize },
@@ -241,13 +243,13 @@ pub enum NetworkEdit {
         trip: String,
         index: usize,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         start_secs: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         end_secs: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         headway_secs: Option<u32>,
     },
     AddBand { trip: String },
@@ -256,36 +258,36 @@ pub enum NetworkEdit {
     SetHeadway {
         route: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         service_type: String,
         from_secs: u32,
         to_secs: u32,
         headway_secs: u32,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         pattern: Option<String>,
     },
     SetSpan {
         route: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         service_type: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         first_secs: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         last_secs: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         headway_secs: Option<u32>,
     },
     AdjustRunningTime {
         route: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         service_type: String,
         from_secs: u32,
@@ -295,7 +297,7 @@ pub enum NetworkEdit {
     InsertDirectionStop {
         route: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         stop: String,
         after: String,
@@ -303,7 +305,7 @@ pub enum NetworkEdit {
     RemoveDirectionStop {
         route: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         stop: String,
     },
@@ -318,8 +320,9 @@ pub enum NetworkEdit {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum Day {
     Mon,
@@ -331,16 +334,18 @@ pub enum Day {
     Sun,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum Redraw {
     One,
     All,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TouchedEntity {
     pub kind: String,
     pub id: String,
@@ -353,15 +358,17 @@ pub struct Applied {
     pub touched: Vec<TouchedEntity>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CreatedEntity {
     pub kind: String,
     pub id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EditError {
     pub index: usize,
     pub reason: String,
@@ -439,7 +446,7 @@ fn draw_alignment(
 }
 
 /// A fork carries each weekly calendar that still runs in its last week to the period's end.
-fn carry_calendars(net: &mut Network, through: NaiveDate) {
+fn carry_calendars(net: &mut Network, through: Date) {
     // A range that starts after `through`, or a date past it, is outside the
     // calendar of the fork. It must not make a type look closed or
     // still running.
@@ -457,7 +464,7 @@ fn carry_calendars(net: &mut Network, through: NaiveDate) {
     else {
         return;
     };
-    let final_week = calendar_end - chrono::Duration::days(6);
+    let final_week = calendar_end - transit_date::Days::new(6);
     for service_type in net.service_types.values_mut() {
         let rule = &mut service_type.rule;
         if !weekly(rule) {
@@ -472,8 +479,8 @@ fn carry_calendars(net: &mut Network, through: NaiveDate) {
 }
 
 /// The calendar of a fork is its period.
-fn clip_calendars(net: &mut Network, from: Option<NaiveDate>, through: Option<NaiveDate>) {
-    let inside = |d: NaiveDate| from.is_none_or(|f| d >= f) && through.is_none_or(|t| d <= t);
+fn clip_calendars(net: &mut Network, from: Option<Date>, through: Option<Date>) {
+    let inside = |d: Date| from.is_none_or(|f| d >= f) && through.is_none_or(|t| d <= t);
     for service_type in net.service_types.values_mut() {
         let rule = &mut service_type.rule;
         for r in &mut rule.ranges {
@@ -501,10 +508,6 @@ fn mint<V>(map: &BTreeMap<String, V>, wanted: &Option<String>, prefix: &str, kin
 
 fn created(kind: &str, id: &str) -> Option<CreatedEntity> {
     Some(CreatedEntity { kind: kind.into(), id: id.into() })
-}
-
-fn date(text: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").map_err(|e| format!("invalid date {text:?}: {e}"))
 }
 
 fn get_mut<'a, V>(map: &'a mut BTreeMap<String, V>, id: &str, kind: &str) -> Result<&'a mut V, String> {
@@ -579,13 +582,13 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
     match edit {
         NetworkEdit::SetPlan { plan, through } => {
             if let Some(through) = through {
-                let through = date(through)?;
+                let through = Date::read(through)?;
                 if let Some(from) = plan.effective_from.filter(|from| through < *from) {
                     return Err(format!("through {through} is before the pick's effective_from {from}"));
                 }
                 carry_calendars(net, through);
             }
-            let through = through.as_deref().map(date).transpose()?;
+            let through = through.as_deref().map(Date::read).transpose()?;
             clip_calendars(net, plan.effective_from, through);
             net.plan = plan.clone();
         }
@@ -684,7 +687,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             match effective_from.as_deref() {
                 Some("") => net.plan.effective_from = None,
-                Some(day) => net.plan.effective_from = Some(date(day)?),
+                Some(day) => net.plan.effective_from = Some(Date::read(day)?),
                 None => {}
             }
             if let (Some(id), true) = (id, net.plan.id.is_empty()) {
@@ -770,7 +773,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                 .map(|(i, s)| {
                     if i > 0 {
                         let (a, b) = (&net.stops[&stops[i - 1]], &net.stops[s]);
-                        along += crate::listing::haversine_m(a.lat, a.lon, b.lat, b.lon);
+                        along += transit_geo::distance_m(a.lat, a.lon, b.lat, b.lon);
                     }
                     PatternStop { stop: s.clone(), timepoint: i == 0 || i == stops.len() - 1, distance_m: along, ..Default::default() }
                 })
@@ -791,7 +794,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             created("pattern", &id)
         }
         NetworkEdit::AddServiceType { id, from } => {
-            let start = date(from)?;
+            let start = Date::read(from)?;
             let id = mint(&net.service_types, id, "cal", "service type")?;
             net.service_types.insert(
                 id.clone(),
@@ -799,7 +802,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     name: format!("Service type {id}"),
                     rule: CalendarRule {
                         days: WeekdaySet::weekdays(),
-                        ranges: vec![DateRange { start, end: start + chrono::Days::new(364), extra: Default::default() }],
+                        ranges: vec![DateRange { start, end: start + transit_date::Days::new(364), extra: Default::default() }],
                         exceptions: vec![],
                         extra: Default::default(),
                     },
@@ -1087,8 +1090,8 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             None
         }
         NetworkEdit::AddServiceRange { id, start, end } => {
-            let start = start.as_deref().map(date).transpose()?;
-            let end = end.as_deref().map(date).transpose()?;
+            let start = start.as_deref().map(Date::read).transpose()?;
+            let end = end.as_deref().map(Date::read).transpose()?;
             let ranges = &mut get_mut(&mut net.service_types, id, "service type")?.rule.ranges;
             let start = match start {
                 Some(s) => s,
@@ -1102,8 +1105,8 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             None
         }
         NetworkEdit::SetServiceRange { id, index, start, end } => {
-            let start = start.as_deref().map(date).transpose()?;
-            let end = end.as_deref().map(date).transpose()?;
+            let start = start.as_deref().map(Date::read).transpose()?;
+            let end = end.as_deref().map(Date::read).transpose()?;
             let range = at_mut(&mut get_mut(&mut net.service_types, id, "service type")?.rule.ranges, *index, "range")?;
             if let Some(s) = start {
                 range.start = s;
@@ -1120,7 +1123,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             None
         }
         NetworkEdit::SetServiceException { id, date: day, state } => {
-            let day = date(day)?;
+            let day = Date::read(day)?;
             let exceptions = &mut get_mut(&mut net.service_types, id, "service type")?.rule.exceptions;
             match exceptions.iter_mut().find(|e| e.date == day) {
                 Some(e) => e.state = *state,
@@ -1130,7 +1133,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             None
         }
         NetworkEdit::RemoveServiceException { id, date: day } => {
-            let day = date(day)?;
+            let day = Date::read(day)?;
             get_mut(&mut net.service_types, id, "service type")?.rule.exceptions.retain(|e| e.date != day);
             None
         }

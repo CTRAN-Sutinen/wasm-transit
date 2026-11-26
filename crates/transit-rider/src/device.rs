@@ -3,6 +3,7 @@
 //! (docs/FORMATS.md, "Versions").
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 transit_version::kind_tag!(
@@ -13,48 +14,51 @@ transit_version::kind_tag!(
     LiveFeedsKind = "live_feeds"
 );
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct RecentPlaces {
     /// A copy without the kind tag and version is this kind, version 1.
     #[serde(default)]
-    #[ts(type = "\"recent_places\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"recent_places\""))]
     pub kind: RecentPlacesKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     pub places: Vec<RecentPlace>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct RecentPlace {
     pub id: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub lat: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub lon: Option<f64>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// An empty URL is a feed that the rider does not read.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_board/")]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 pub struct LiveFeeds {
     /// A copy without the kind tag and version is this kind, version 1.
     #[serde(default)]
-    #[ts(type = "\"live_feeds\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"live_feeds\""))]
     pub kind: LiveFeedsKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     #[serde(default)]
     pub trips: String,
@@ -63,7 +67,7 @@ pub struct LiveFeeds {
     #[serde(default)]
     pub alerts: String,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 

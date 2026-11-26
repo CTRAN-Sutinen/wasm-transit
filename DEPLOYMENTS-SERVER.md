@@ -42,9 +42,8 @@ a load balancer for high availability.
 
 ```
  phones, stop displays,          load balancer           container(s)          bucket
- planners' browsers      ──►     (TLS, health     ──►    the server     ──►    S3, Azure Blob,
-                                  checks)                                       or Google Cloud
-                                                                                Storage
+ planners' browsers      ──►     (TLS, health     ──►    the server     ──►    S3 or Google
+                                  checks)                                       Cloud Storage
 ```
 
 If the server goes down, the rider apps keep showing the schedule
@@ -54,8 +53,8 @@ they last loaded. Staff cannot enter detours until it is back.
 
 - **A container runtime**: Kubernetes, a cloud container service, or
   Podman or Docker on a virtual machine.
-- **A bucket** in Amazon S3 (or an S3-compatible service), Azure Blob
-  Storage, or Google Cloud Storage.
+- **A bucket** in Amazon S3 (or an S3-compatible service) or Google
+  Cloud Storage.
 - **The agency's GTFS file**, at a web address the server can reach.
 - **Optional:** a street map file (GeoJSON) for walking directions.
 - **Optional:** a sign-in provider that supports OpenID Connect
@@ -91,7 +90,7 @@ draw.
 
 ## 4. Prepare the bucket
 
-1. Create a bucket (on Azure, a container). Use one bucket per
+1. Create a bucket. Use one bucket per
    deployment.
 2. Give the server credentials that can **read, list, and create**
    objects. The server never deletes anything, so it does not need
@@ -99,18 +98,41 @@ draw.
 3. Keep a second set of credentials, **with** delete permission, for
    the clean-up tool only ([section 11](#11-look-after-the-bucket)).
 
-How the server finds its credentials:
+The store addresses:
 
-| Provider | Store address | Credentials |
-|---|---|---|
-| Amazon S3 | `s3://bucket/prefix?region=us-west-2` | The usual AWS sources: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, or the role of the machine or pod |
-| S3-compatible | `s3://bucket/prefix?endpoint=https://storage.example.com` | As for Amazon S3 |
-| Azure Blob Storage | `azblob://container/prefix` | `AZURE_STORAGE_ACCOUNT`, plus `AZURE_STORAGE_KEY`, or `AZURE_STORAGE_CONNECTION_STRING`, or a managed identity |
-| Google Cloud Storage | `gs://bucket/prefix` | The usual Google sources: `GOOGLE_APPLICATION_CREDENTIALS`, or the service account of the machine or pod |
+| Provider | Store address |
+|---|---|
+| Amazon S3 | `s3://bucket/prefix?region=us-west-2` |
+| S3-compatible | `s3://bucket/prefix?endpoint=https://storage.example.com` |
+| Google Cloud Storage | `gs://bucket/prefix` |
+
+The region comes from the address. Without one, the server reads
+`AWS_REGION`, then `AWS_DEFAULT_REGION`, and else uses `us-east-1`.
+
+The server reads its S3 credentials from the first of these that is
+set, and from no other place. It does not read `~/.aws` files or
+profiles.
+
+| Source | What to set |
+|---|---|
+| Access keys | `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN` for temporary keys) |
+| EKS service account (IRSA) | `AWS_WEB_IDENTITY_TOKEN_FILE` and `AWS_ROLE_ARN`, which EKS sets. `AWS_ROLE_SESSION_NAME` is optional. |
+| ECS task role, or EKS Pod Identity | `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, or `AWS_CONTAINER_CREDENTIALS_FULL_URI` with `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, which the platform sets |
+| EC2 instance role | Nothing. The server asks the instance metadata service (IMDSv2). |
+
+The server reads its GCS credentials from the first of these, and from
+no other place:
+
+| Source | What to set |
+|---|---|
+| A service account's key file | `GOOGLE_APPLICATION_CREDENTIALS`, the path to the JSON key file. Other kinds of credential file are refused. |
+| The service account of the machine or pod (GCE, GKE Workload Identity, Cloud Run) | Nothing. The server asks the metadata server. |
+
+Temporary credentials are renewed before they expire.
 
 If the agency must keep records for a set time, you can turn on the
 provider's lock that stops anything being deleted for that time (S3
-Object Lock, Azure immutability policies, or a GCS bucket lock). The
+Object Lock or a GCS bucket lock). The
 server works with it.
 
 Choose the provider your agency already uses. The server works the same
@@ -314,7 +336,7 @@ from the stops record; the log names that change `import:feed`.
 Stop surveys and requests can carry photos and site drawings. They are
 kept in a bucket of their own, apart from the store: create one (any
 provider the store supports) and add `-attachments s3://<bucket>` (or
-`gs://…`, `azblob://…`). Only people who are signed in can see them.
+`gs://…`). Only people who are signed in can see them.
 To let a role add them, give it write on `attachments` in the policy.
 Without `-attachments`, the pages offer no photos. The store's clean-up
 tool never touches this bucket.

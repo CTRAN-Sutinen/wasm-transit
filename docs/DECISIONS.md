@@ -167,7 +167,6 @@ first, and open only the entries you need.
 | [D-221](decisions/D-221.md) | Does a station's stop_id in an alert reach its bays? | encoded | nothing |
 | [D-223](decisions/D-223.md) | Does every install download the staff pages' modules? | encoded | nothing |
 | [D-224](decisions/D-224.md) | What does a server copy started while the bucket does not answer serve? | encoded | nothing |
-| [D-225](decisions/D-225.md) | Which object stores does the server talk to, and through what code? | decided | nothing |
 | [D-229](decisions/D-229.md) | Does the record's integrity encode the domain? | decided | nothing |
 | [D-230](decisions/D-230.md) | When an adoption breaks a live reference, does it refuse or warn? | decided | nothing |
 | [D-232](decisions/D-232.md) | How are references declared, and which stage may name which? | encoded | nothing |
@@ -180,4 +179,3 @@ first, and open only the entries you need.
 | [D-246](decisions/D-246.md) | When does a page read a failed input again? | encoded | nothing |
 | [D-247](decisions/D-247.md) | Do the staff pages follow the deployment's network as it moves? | encoded | nothing |
 | [D-249](decisions/D-249.md) | Where do the HTTP contract's wrapper shapes come from when it is generated? | decided | nothing |
-| [D-251](decisions/D-251.md) | May transit-network depend on a library that holds no kind? | unanswered | `shared-dates-and-distance.md` |

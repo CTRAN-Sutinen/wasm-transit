@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::EditRecord;
@@ -32,6 +33,7 @@ impl<'de> Deserialize<'de> for EditsKind {
     }
 }
 
+#[cfg(feature = "bindings")]
 impl schemars::JsonSchema for EditsKind {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "EditsKind".into()
@@ -41,15 +43,16 @@ impl schemars::JsonSchema for EditsKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EditDocument {
-    #[ts(type = "\"edit_records\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"edit_records\""))]
     pub kind: EditsKind,
     pub schema_version: u32,
     pub records: Vec<EditRecord>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -73,8 +76,9 @@ impl Default for EditDocument {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_sync/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_sync/"))]
 pub struct MigrationNote {
     pub from: u32,
     pub kind: String,

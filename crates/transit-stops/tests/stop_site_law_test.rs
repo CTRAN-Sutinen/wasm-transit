@@ -10,8 +10,8 @@ fn date(n: u32) -> String {
     format!("2027-01-{:02}", n + 1)
 }
 
-fn day(n: u32) -> chrono::NaiveDate {
-    chrono::NaiveDate::parse_from_str(&date(n), "%Y-%m-%d").unwrap()
+fn day(n: u32) -> transit_date::Date {
+    transit_date::Date::parse(&date(n)).unwrap()
 }
 
 fn begun(on: u32) -> Event {

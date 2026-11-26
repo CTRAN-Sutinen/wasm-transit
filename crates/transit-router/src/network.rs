@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 
 use transit_live::LiveDay;
 use transit_network::{MaterializedTrip, Network};
@@ -126,7 +126,7 @@ pub fn live_times(trip: &MaterializedTrip, live: &LiveDay) -> Option<Vec<LiveVis
 
 #[derive(Debug, Clone)]
 pub struct RouterNetwork {
-    pub date: NaiveDate,
+    pub date: Date,
     pub stops: Vec<StopNode>,
     stop_index: HashMap<String, u32>,
     pub patterns: Vec<Pattern>,
@@ -159,7 +159,7 @@ impl RouterNetwork {
             .unwrap_or(0)
     }
 
-    pub fn build_from_day(network: &Network, day: &[MaterializedTrip], date: NaiveDate) -> RouterNetwork {
+    pub fn build_from_day(network: &Network, day: &[MaterializedTrip], date: Date) -> RouterNetwork {
         Self::build(network, day, date, None)
     }
 
@@ -168,7 +168,7 @@ impl RouterNetwork {
     pub fn build(
         network: &Network,
         day: &[MaterializedTrip],
-        date: NaiveDate,
+        date: Date,
         live: Option<&LiveDay>,
     ) -> RouterNetwork {
         let mut stops: Vec<StopNode> = Vec::with_capacity(network.stops.len());

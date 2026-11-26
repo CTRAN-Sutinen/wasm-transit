@@ -37,12 +37,10 @@ against one the server writes, and the index lists them with the owner
 `server`. The manifest's schema is the HTTP contract's
 (`server/openapi.json`). Its shape is below.
 
-The store lives in object storage: S3 and S3-compatible, Azure Blob, or
-GCS. The store holds create-only objects in one bucket, under
+The store lives in object storage: S3 and S3-compatible, or GCS. The store holds create-only objects in one bucket, under
 the store URL's prefix. The store URL is one of these:
 
 - `-store s3://bucket/prefix[?endpoint=…]`
-- `azblob://container/prefix`
 - `gs://bucket/prefix`
 - `mem://`, for a store that ends with the process
 

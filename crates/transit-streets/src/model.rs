@@ -8,6 +8,7 @@
 //! a streets hash.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::StreetError;
@@ -24,14 +25,15 @@ impl transit_version::Versioned for Streets {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Streets {
     #[serde(default)]
-    #[ts(type = "\"streets\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"streets\""))]
     pub kind: StreetsKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     pub ways: Vec<Way>,
 }
@@ -45,23 +47,25 @@ impl Streets {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Way {
     pub points: Vec<[i32; 2]>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[ts(optional, as = "Option<bool>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<bool>"))]
     pub oneway: bool,
     pub class: StreetClass,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub name: Option<String>,
 }
 
 /// A mode profile decides what each mode may use. The import does
 /// not (D-30).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum StreetClass {
     Motorway,

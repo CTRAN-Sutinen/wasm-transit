@@ -9,34 +9,37 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub use transit_stops::{Answer, Event, Refusal, Status, StatusCount, StopOn, Stops};
 use transit_requests::{RequestRefusal, StopRequest, StopRequests, WorkOrder};
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_stops/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_stops/"))]
 pub struct SiteQuestion {
     pub key: String,
     pub answer: Answer,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_stops/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_stops/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Validate {
-        #[ts(as = "Stops")]
+        #[cfg_attr(feature = "bindings", ts(as = "Stops"))]
         stops: cap_abi::Base<Stops>,
     },
     StopsOn {
         stops_hash: String,
         date: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         stop_ids: Option<Vec<String>>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         statuses: Option<Vec<Status>>,
     },
     StopsNear {
@@ -45,13 +48,13 @@ pub enum Request {
         lat: f64,
         lon: f64,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         limit: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         radius_m: Option<f64>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         statuses: Option<Vec<Status>>,
     },
     Stop { stops_hash: String, stop_id: String, date: String },
@@ -60,7 +63,7 @@ pub enum Request {
         requests_hash: String,
         date: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         stop: Option<String>,
     },
     Seed { network_hash: String },
@@ -69,7 +72,7 @@ pub enum Request {
         stop_id: String,
         event: Event,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         new: Option<bool>,
     },
     Vocabulary {},
@@ -78,30 +81,30 @@ pub enum Request {
         stop_id: String,
         event_id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         event: Option<Event>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         saw: Option<String>,
     },
     LogRecords { stops_hash: String },
     Receive {
-        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
         write: transit_log::Write,
         #[serde(default)]
-        #[ts(type = "Record<string, string>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, string>"))]
         heads: std::collections::BTreeMap<String, String>,
-        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
         ops: Vec<transit_log::OpCall>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         by: Option<String>,
     },
     LogDocument {
-        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[ts(optional, type = "{ version: number, value: unknown }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
         document: Option<transit_log::Held>,
     },
     ReadRecords { network_hash: String, stops_hash: String, on: String },
@@ -111,14 +114,14 @@ pub enum Request {
         network_hash: String,
         stops_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         published: Option<transit_plans::PublishedPlans>,
     },
     ExportPick {
         network_hash: String,
         stops_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         published: Option<transit_plans::PublishedPlans>,
     },
     VisitWarnings {
@@ -126,7 +129,7 @@ pub enum Request {
         stops_hash: String,
         from: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         until: Option<String>,
     },
     ExportVersions {
@@ -134,40 +137,42 @@ pub enum Request {
         stops_hash: String,
         from: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         until: Option<String>,
     },
     ImportEvents {
         stops_hash: String,
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         on: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         feed: Option<String>,
     },
     FeedEvents { stops_hash: String, feed: String },
     Questions {},
     AttributeSurveys {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         stops_hash: Option<String>,
         stops: Stops,
         by: String,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_stops/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_stops/"))]
 pub struct RequestWarning {
     pub request: String,
     pub stop: String,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_stops/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_stops/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Validate {
@@ -175,7 +180,7 @@ pub enum Response {
         document: Option<String>,
         document_hash: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, as = "Option<Vec<String>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
     StopsOn { stops: Vec<StopOn>, counts: Vec<StatusCount> },
@@ -183,7 +188,7 @@ pub enum Response {
     Stop {
         stop: Option<StopOn>,
         events: Vec<Event>,
-        #[ts(type = "Array<\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"retired\">")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"retired\">"))]
         next: Vec<String>,
     },
     RequestWarnings { warnings: Vec<RequestWarning> },
@@ -195,11 +200,11 @@ pub enum Response {
         stops_hash: Option<String>,
         stops: Option<Stops>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         conflict: Option<String>,
     },
     LogRecords {
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     Receive(transit_log::Received),
@@ -210,21 +215,21 @@ pub enum Response {
     /// RFC 8785 canonical bytes, so a host stores what the hash covers.
     ReadRecords {
         network_hash: String,
-        #[ts(as = "transit_network::Network")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_network::Network"))]
         network: cap_abi::Canonical<transit_network::Network>,
     },
     ReadPick {
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         period: Option<transit_stops::stop_record::PickPeriod>,
         network_hash: String,
-        #[ts(as = "transit_network::Network")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_network::Network"))]
         network: cap_abi::Canonical<transit_network::Network>,
         warnings: Vec<transit_network::NetworkWarning>,
     },
     ExportPick {
         network_hash: String,
-        #[ts(as = "transit_network::Network")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_network::Network"))]
         network: cap_abi::Canonical<transit_network::Network>,
     },
     Records { records: std::collections::BTreeMap<String, transit_network::Stop> },
@@ -232,7 +237,7 @@ pub enum Response {
     VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
     ExportVersions {
         network_hash: String,
-        #[ts(as = "transit_network::Network")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_network::Network"))]
         network: cap_abi::Canonical<transit_network::Network>,
     },
     ImportEvents {
@@ -246,10 +251,6 @@ pub enum Response {
     Questions { site: Vec<SiteQuestion>, amenities: Vec<String> },
     FeedEvents { events: Vec<transit_stops::stop_record::AddedEvent> },
     AttributeSurveys { stops: Stops },
-}
-
-fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
-    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
@@ -276,7 +277,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             })
         }
         Request::StopsOn { stops_hash, date, stop_ids, statuses } => {
-            let date = parse_date(&date)?;
+            let date = transit_date::Date::read(&date)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let listed = match stop_ids {
                 None => stops.on_date(date),
@@ -293,7 +294,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             })
         }
         Request::StopsNear { stops_hash, date, lat, lon, limit, radius_m, statuses } => {
-            let date = parse_date(&date)?;
+            let date = transit_date::Date::read(&date)?;
             if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
                 return Err(format!("the point {lat}, {lon} is not on the earth").into());
             }
@@ -304,7 +305,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             Ok(Response::StopsNear { stops: stops.near(date, lat, lon, limit.unwrap_or(10) as usize, radius_m, statuses.as_deref()) })
         }
         Request::RequestWarnings { stops_hash, requests_hash, date, stop } => {
-            let date = parse_date(&date)?;
+            let date = transit_date::Date::read(&date)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let requests = kind::<transit_requests::StopRequests>().require(&requests_hash)?;
             let warnings = requests
@@ -317,7 +318,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             Ok(Response::RequestWarnings { warnings })
         }
         Request::Stop { stops_hash, stop_id, date } => {
-            let date = parse_date(&date)?;
+            let date = transit_date::Date::read(&date)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let events = stops.stops.get(&stop_id).ok_or_else(|| format!("no stop {stop_id:?} in the stops document"))?;
             let next = stops.next_events(&stop_id, date).iter().map(|k| k.as_str().to_string()).collect();
@@ -385,7 +386,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         }
         Request::Receive { write, heads, ops, by } => receive(write, heads, ops, by),
         Request::ReadRecords { network_hash, stops_hash, on } => {
-            let on = parse_date(&on)?;
+            let on = transit_date::Date::read(&on)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let read = transit_stops::stop_record::read_records(&network, &stops, on);
@@ -411,12 +412,12 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             Ok(Response::ExportPick { network_hash, network: cap_abi::Canonical((*exported).clone()) })
         }
         Request::Records { stops_hash, stop_ids, on } => {
-            let on = parse_date(&on)?;
+            let on = transit_date::Date::read(&on)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             Ok(Response::Records { records: transit_stops::stop_record::records(&stops, &stop_ids, on) })
         }
         Request::TakeStops { network_hash, stops_hash, stop_ids, on } => {
-            let on = parse_date(&on)?;
+            let on = transit_date::Date::read(&on)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             match transit_stops::stop_record::take_stops(&network, &stops, &stop_ids, on) {
@@ -425,8 +426,8 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             }
         }
         Request::VisitWarnings { network_hash, stops_hash, from, until } => {
-            let from = parse_date(&from)?;
-            let until = until.as_deref().map(parse_date).transpose()?;
+            let from = transit_date::Date::read(&from)?;
+            let until = until.as_deref().map(transit_date::Date::read).transpose()?;
             if until.is_some_and(|u| u <= from) {
                 return Err("until must come after from".into());
             }
@@ -435,8 +436,8 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             Ok(Response::VisitWarnings { warnings: transit_stops::stop_record::visit_warnings(&network, &stops, from, until) })
         }
         Request::ExportVersions { network_hash, stops_hash, from, until } => {
-            let from = parse_date(&from)?;
-            let until = until.as_deref().map(parse_date).transpose()?;
+            let from = transit_date::Date::read(&from)?;
+            let until = until.as_deref().map(transit_date::Date::read).transpose()?;
             if until.is_some_and(|u| u <= from) {
                 return Err("until must come after from".into());
             }
@@ -453,7 +454,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         Request::ImportEvents { stops_hash, network_hash, on, feed } => {
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let on = match on {
-                Some(on) => parse_date(&on)?,
+                Some(on) => transit_date::Date::read(&on)?,
                 None => transit_network::first_service_date(&network).ok_or("the feed runs no service, so it has no first service date: name `on`")?,
             };
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
@@ -704,7 +705,7 @@ fn judge_requests(
 ) -> Result<Judged, cap_abi::Refusal> {
     use transit_stops::request_rule::{request_rule, RuleBreak};
     let mut out = Judged::default();
-    let (Some(on), Some(requests_after)) = (write.today.as_deref().and_then(|d| parse_date(d).ok()), requests_after) else { return Ok(out) };
+    let (Some(on), Some(requests_after)) = (write.today.as_deref().and_then(|d| transit_date::Date::read(d).ok()), requests_after) else { return Ok(out) };
     let requests_after = kind::<transit_requests::StopRequests>().require(requests_after)?;
     let requests_before = requests_before.map(|h| kind::<transit_requests::StopRequests>().require(h)).transpose()?;
     let stops_before = stops_before.map(|h| kind::<transit_stops::Stops>().require(h)).transpose()?;

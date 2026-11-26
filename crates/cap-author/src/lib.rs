@@ -4,25 +4,28 @@ use std::sync::Arc;
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_network::{Network, NetworkEdit, NetworkError, NetworkWarning};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_author/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_author/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Apply {
         network_hash: String,
         edits: Vec<NetworkEdit>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         work_rules_hash: Option<String>,
     },
     StampPick { network_hash: String, name: String, id: String },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_author/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_author/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Apply {

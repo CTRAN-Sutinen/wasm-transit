@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_network::{
     apply_edits, materialize_service, migrate_network, validation_issues, Block, CalendarRule, DateRange,
@@ -131,8 +131,8 @@ fn build(spec: &Spec) -> Network {
         );
     }
     let range = DateRange {
-        start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-        end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+        start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+        end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
         extra: Default::default(),
     };
     let weekday = WeekdaySet::weekdays();

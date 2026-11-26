@@ -201,7 +201,6 @@ name = "cap-analysis"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "proptest",
  "serde",
@@ -209,6 +208,7 @@ dependencies = [
  "sha2",
  "transit-analysis",
  "transit-codec",
+ "transit-date",
  "transit-network",
  "ts-rs",
  "zip",
@@ -219,11 +219,11 @@ name = "cap-author"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "sha2",
+ "transit-date",
  "transit-network",
  "transit-runs",
  "ts-rs",
@@ -246,7 +246,6 @@ name = "cap-board"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "proptest",
  "serde",
@@ -254,6 +253,7 @@ dependencies = [
  "sha2",
  "transit-alerts",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-live",
  "transit-network",
@@ -268,12 +268,12 @@ name = "cap-calendar"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "sha2",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-network",
  "transit-sync",
@@ -300,11 +300,11 @@ name = "cap-disruptions"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "transit-alerts",
+ "transit-date",
  "transit-disruptions",
  "transit-live",
  "transit-network",
@@ -319,11 +319,11 @@ name = "cap-divert"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "sha2",
+ "transit-date",
  "transit-dispatch",
  "transit-network",
  "transit-sync",
@@ -376,12 +376,12 @@ name = "cap-network"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "sha2",
  "transit-codec",
+ "transit-date",
  "transit-network",
  "ts-rs",
 ]
@@ -405,10 +405,10 @@ name = "cap-plans"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-log",
  "transit-network",
  "transit-plans",
@@ -436,12 +436,12 @@ name = "cap-router"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "sha2",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-live",
  "transit-network",
@@ -474,12 +474,12 @@ name = "cap-runcut"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
  "sha2",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-live",
  "transit-network",
@@ -493,10 +493,10 @@ name = "cap-stops"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-log",
  "transit-network",
  "transit-plans",
@@ -524,10 +524,10 @@ name = "cap-sync"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-log",
  "transit-sync",
  "transit-version",
@@ -733,12 +733,12 @@ name = "fixtures"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "serde",
  "serde_json",
  "sha2",
  "transit-alerts",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-live",
  "transit-log",
@@ -850,7 +850,6 @@ name = "generator"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
  "fixtures",
  "jsonschema",
  "schemars",
@@ -861,6 +860,7 @@ dependencies = [
  "transit-analysis",
  "transit-authz",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-disruptions",
  "transit-live",
@@ -1868,7 +1868,6 @@ version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
- "chrono",
  "dyn-clone",
  "ref-cast",
  "schemars_derive",
@@ -2034,31 +2033,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
- "thiserror-impl 2.0.21",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -2116,12 +2095,12 @@ dependencies = [
 name = "transit-alerts"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
  "transit-codec",
+ "transit-date",
  "transit-network",
  "transit-version",
  "ts-rs",
@@ -2131,11 +2110,11 @@ dependencies = [
 name = "transit-analysis"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "serde",
  "serde_json",
  "transit-codec",
+ "transit-date",
  "transit-geo",
  "transit-network",
  "transit-version",
@@ -2159,13 +2138,13 @@ dependencies = [
 name = "transit-codec"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "csv",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
  "transit-analysis",
+ "transit-date",
  "transit-network",
  "transit-stops",
  "transit-version",
@@ -2174,7 +2153,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "transit-dispatch"
+name = "transit-date"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -2182,7 +2161,18 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "transit-dispatch"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
  "transit-codec",
+ "transit-date",
  "transit-geo",
  "transit-live",
  "transit-network",
@@ -2195,12 +2185,12 @@ dependencies = [
 name = "transit-disruptions"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "schemars",
  "serde",
  "serde_json",
  "transit-alerts",
  "transit-codec",
+ "transit-date",
  "transit-live",
  "transit-network",
  "transit-notes",
@@ -2244,12 +2234,12 @@ dependencies = [
 name = "transit-network"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "transit-date",
+ "transit-geo",
  "transit-version",
  "ts-rs",
 ]
@@ -2258,11 +2248,11 @@ dependencies = [
 name = "transit-notes"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-version",
  "ts-rs",
 ]
@@ -2271,11 +2261,11 @@ dependencies = [
 name = "transit-plans"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-version",
  "ts-rs",
 ]
@@ -2284,11 +2274,11 @@ dependencies = [
 name = "transit-requests"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-version",
  "ts-rs",
 ]
@@ -2309,12 +2299,11 @@ dependencies = [
 name = "transit-router"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
  "transit-codec",
+ "transit-date",
  "transit-dispatch",
  "transit-geo",
  "transit-live",
@@ -2328,16 +2317,15 @@ dependencies = [
 name = "transit-rt"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
  "transit-alerts",
  "transit-codec",
+ "transit-date",
  "transit-live",
  "transit-network",
  "transit-version",
@@ -2348,11 +2336,11 @@ dependencies = [
 name = "transit-runs"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-dispatch",
  "transit-network",
  "transit-version",
@@ -2363,12 +2351,12 @@ dependencies = [
 name = "transit-stops"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
  "sha2",
+ "transit-date",
  "transit-geo",
  "transit-network",
  "transit-plans",
@@ -2394,11 +2382,11 @@ dependencies = [
 name = "transit-sync"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
+ "transit-date",
  "transit-version",
  "ts-rs",
  "zip",
@@ -2424,7 +2412,7 @@ version = "12.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
 dependencies = [
- "thiserror 2.0.21",
+ "thiserror",
  "ts-rs-macros",
 ]
 
@@ -2722,7 +2710,6 @@ dependencies = [
  "flate2",
  "indexmap",
  "memchr",
- "zopfli",
 ]
 
 [[package]]
@@ -2730,15 +2717,3 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[package]]
-name = "zopfli"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaf7fc5d30c28483d93805c4a5e12b05bbb52407fa67c5f8bd552374cd01fb11"
-dependencies = [
- "bumpalo",
- "crc32fast",
- "log",
- "simd-adler32",
-]

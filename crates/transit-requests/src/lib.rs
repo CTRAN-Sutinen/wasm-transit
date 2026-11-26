@@ -15,8 +15,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub mod version;
@@ -47,134 +48,137 @@ pub const DIRECTIONS: [&str; 6] = ["northbound", "southbound", "eastbound", "wes
 
 pub const MARKINGS: [&str; 4] = ["hub", "curb_mark", "stake", "other"];
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopRequests {
     /// A copy without a version reads as v2, since every v1 document is a v2
     /// document. A tagged v1 is brought forward by cap-migrate.
     #[serde(default)]
-    #[ts(type = "\"stop_requests\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"stop_requests\""))]
     pub kind: StopRequestsKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<2>,
     pub requests: BTreeMap<String, StopRequest>,
     /// Fields this build does not know, kept as written.
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// C-TRAN's Bus Stop Sign & Shelter Installation Worksheet.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopRequest {
-    #[schemars(extend("x-references" = "stop"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop")))]
     pub stop: String,
     /// One of [`JOBS`].
     pub job: String,
     /// One of [`STATUSES`].
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub requested_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub requested_on: Option<String>,
     /// A new stop's intent, because no schedule serves it yet. The routes are
     /// names the planner writes, not references into the network, because a
     /// route can be one that no pick runs yet. `direction` is one of
     /// [`DIRECTIONS`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub routes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub direction: Option<String>,
     /// The offset is in feet, measured from the center of the cross street
     /// or address. The side is one of [`SIDES`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub street: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub cross_street: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub offset_ft: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub side: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub city: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub county: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub township: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub range: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub section: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub parcel: Option<String>,
     /// One of [`MARKINGS`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub marked_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub marked_note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub locate: Option<Locate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub work_order: Option<WorkOrder>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub completed_on: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub completed_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<Attachment>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<Attachment>>"))]
     pub attachments: Vec<Attachment>,
     /// Fields this build does not know, kept as written.
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// The deployment names the bucket, the server hands out the link, and only
 /// a signed-in person may read the file.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, rename = "RequestAttachment")]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, rename = "RequestAttachment"))]
 pub struct Attachment {
     /// "sha256:" and the 64 hex digits of the file.
-    #[schemars(extend("x-references" = "attachment"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "attachment")))]
     pub hash: String,
     #[serde(rename = "type")]
     pub media_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub caption: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub taken_on: Option<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -187,80 +191,86 @@ impl Attachment {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Locate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub ticket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub called_on: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub called_by: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub utilities: Vec<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// Shown as the work order system gave it. `id` is the worksheet's Control #.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct WorkOrder {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub system: Option<String>,
     #[serde(default)]
-    #[schemars(extend("x-references" = "external.work_order"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "external.work_order")))]
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub read_on: Option<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// The host makes the call, and `record_work_order` records the
 /// answer.
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct WorkOrderCall {
     pub action: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub request: Option<StopRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub work_order: Option<WorkOrder>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RequestCount {
     pub status: String,
     pub requests: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RequestRefusal {
     pub request: String,
     pub problem: RequestProblem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RequestProblem {
     NoId,
@@ -291,10 +301,6 @@ impl fmt::Display for RequestRefusal {
         };
         write!(f, "request {:?} {what}", self.request)
     }
-}
-
-fn parse_date(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
 impl StopRequests {
@@ -400,14 +406,14 @@ fn check(r: &StopRequest) -> Vec<RequestProblem> {
         r.work_order.as_ref().and_then(|w| w.read_on.as_ref()),
     ];
     for d in dates.into_iter().flatten() {
-        if parse_date(d).is_none() {
+        if Date::parse(d).is_err() {
             out.push(RequestProblem::BadDate { date: d.clone() });
         }
     }
     for a in &r.attachments {
         if !a.well_named() {
             out.push(RequestProblem::BadAttachment { hash: a.hash.clone() });
-        } else if let Some(d) = a.taken_on.as_ref().filter(|d| parse_date(d).is_none()) {
+        } else if let Some(d) = a.taken_on.as_ref().filter(|d| Date::parse(d).is_err()) {
             out.push(RequestProblem::BadDate { date: d.clone() });
         }
     }
@@ -419,7 +425,7 @@ fn check(r: &StopRequest) -> Vec<RequestProblem> {
         "completed" if r.completed_on.is_none() => out.push(RequestProblem::NoCompletion),
         _ => {}
     }
-    if let (Some(a), Some(b)) = (r.requested_on.as_deref().and_then(parse_date), r.completed_on.as_deref().and_then(parse_date)) {
+    if let (Some(a), Some(b)) = (r.requested_on.as_deref().and_then(|d| Date::parse(d).ok()), r.completed_on.as_deref().and_then(|d| Date::parse(d).ok())) {
         if b < a {
             out.push(RequestProblem::CompletedBeforeRequested);
         }

@@ -150,7 +150,7 @@ test("ride now keeps saved stops across a reload", async ({ page }) => {
   await expect(saved).toContainText("8:02");
 });
 
-/// Writes idb-keyval's default store and localStorage before the page's own scripts run.
+/// Writes the pages' IndexedDB store (web/src/idb.ts) and localStorage before the page's own scripts run.
 async function seedDevice(page, { documents, local }) {
   await page.goto("/manifest");
   await page.evaluate(

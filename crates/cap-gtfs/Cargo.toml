@@ -9,13 +9,18 @@ license.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-ts-rs = { workspace = true }
-transit-codec = { path = "../transit-codec" }
-cap-abi = { path = "../cap-abi" }
+ts-rs = { workspace = true, optional = true }
+transit-codec = { path = "../transit-codec", default-features = false }
+cap-abi = { path = "../cap-abi", default-features = false }
 # The worked examples' fixtures, for the `examples` feature only.
-fixtures = { path = "../fixtures", optional = true }
+fixtures = { path = "../fixtures", optional = true, default-features = false }
 
 [features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "transit-codec/bindings", "cap-abi/bindings", "fixtures?/bindings"]
 # The worked examples (`examples::examples`), which the generator runs.
 # No module build turns it on.
 examples = ["dep:fixtures"]

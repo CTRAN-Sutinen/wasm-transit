@@ -6,22 +6,27 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-version = { path = "../transit-version" }
+transit-version = { path = "../transit-version", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
-ts-rs = { workspace = true }
-chrono = { workspace = true }
-transit-plans = { path = "../transit-plans" }
-transit-log = { path = "../transit-log" }
+ts-rs = { workspace = true, optional = true }
+transit-date = { path = "../transit-date", default-features = false }
+transit-plans = { path = "../transit-plans", default-features = false }
+transit-log = { path = "../transit-log", default-features = false }
 # A pick's checks: the network's publish check and canonical
 # bytes, and what the pick reads of the stops document.
-transit-network = { path = "../transit-network" }
-transit-stops = { path = "../transit-stops" }
-cap-abi = { path = "../cap-abi" }
+transit-network = { path = "../transit-network", default-features = false }
+transit-stops = { path = "../transit-stops", default-features = false }
+cap-abi = { path = "../cap-abi", default-features = false }
 # The worked examples' fixtures, for the `examples` feature only.
-fixtures = { path = "../fixtures", optional = true }
+fixtures = { path = "../fixtures", optional = true, default-features = false }
 
 [features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "transit-version/bindings", "transit-plans/bindings", "transit-log/bindings", "transit-network/bindings", "transit-stops/bindings", "cap-abi/bindings", "fixtures?/bindings", "transit-date/bindings"]
 # The worked examples (`examples::examples`), which the generator runs.
 # No module build turns it on.
 examples = ["dep:fixtures"]

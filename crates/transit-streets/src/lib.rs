@@ -14,6 +14,7 @@ pub use model::{StreetClass, Streets, Way};
 use std::collections::{BinaryHeap, HashMap};
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 /// Grid cell size in degrees (about 110 m). Snapping thresholds are smaller,
@@ -23,8 +24,9 @@ const CELL: f64 = 0.001;
 /// `seg` and `t` (the parameter from the segment's first vertex) address a
 /// segment of one streets document, numbered way by way and point pair by
 /// point pair. Never commit them to another document.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StreetPosition {
     pub lat: f64,
     pub lon: f64,
@@ -33,8 +35,9 @@ pub struct StreetPosition {
     pub t: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StreetPoint {
     pub lat: f64,
     pub lon: f64,
@@ -43,12 +46,13 @@ pub struct StreetPoint {
 #[derive(Debug)]
 pub struct StreetError(pub String);
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StreetUse {
     pub class: StreetClass,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub name: Option<String>,
     pub length_m: f64,
 }

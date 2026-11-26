@@ -1,7 +1,7 @@
 //! What a pick reads of the stops document. The ops are in
 //! cap-stops' OPS.md (`read_records`, `visit_warnings`).
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_stops::stop_record::{read_records, seed, visit_warnings};
 use transit_network::{Network, NetworkWarning};
@@ -13,12 +13,12 @@ fn fixture() -> Network {
     serde_json::from_value(load["network"].clone()).unwrap()
 }
 
-fn day(n: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2027, 1, 1).unwrap() + chrono::Days::new(n as u64)
+fn day(n: u32) -> Date {
+    Date::from_ymd_opt(2027, 1, 1).unwrap() + transit_date::Days::new(n as i64)
 }
 
 fn date(n: u32) -> String {
-    day(n).format("%Y-%m-%d").to_string()
+    day(n).to_string()
 }
 
 fn ev(kind: EventKind, on: u32) -> Event {
@@ -124,8 +124,8 @@ proptest! {
                     Some(s) => match s.status {
                         Status::InService => false,
                         Status::Suspended => {
-                            let since = s.since.as_deref().map(|x| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap());
-                            let back = s.until.as_deref().map(|x| NaiveDate::parse_from_str(x, "%Y-%m-%d").unwrap());
+                            let since = s.since.as_deref().map(|x| Date::parse(x).unwrap());
+                            let back = s.until.as_deref().map(|x| Date::parse(x).unwrap());
                             back.is_none() || (since.is_none_or(|x| x <= day(first)) && until.is_some_and(|u| back.unwrap() >= u))
                         }
                         _ => true,

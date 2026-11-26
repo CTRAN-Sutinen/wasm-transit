@@ -3,10 +3,11 @@
 //! [`TimingProfile`]s of a pattern only produce times for new trips, because
 //! planners adjust individual trips to observed running times.
 
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use std::collections::BTreeMap;
 
-use chrono::{Datelike, NaiveDate, Weekday};
+use transit_date::{Date, Weekday};
 use serde::{Deserialize, Serialize};
 
 use crate::demand::DemandResponsive;
@@ -26,8 +27,9 @@ pub type TripId = String;
 pub type AlignmentId = String;
 
 /// A WGS84 position. The model never stores GeoJSON order, [lon, lat].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Coord {
     pub lat: f64,
     pub lon: f64,
@@ -36,20 +38,22 @@ pub struct Coord {
 /// It carries no timing and no stops, so it only draws. Any number of
 /// patterns may run one ([`Pattern::alignment`]). An alignment that no
 /// pattern runs still stands.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Alignment {
     pub points: Vec<AlignmentPoint>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// The distance is present where the publisher gave one, in the units of the
 /// pattern stops. The fields are in canonical key order (RFC 8785), so
 /// the canonical bytes stream in one pass.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlignmentPoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<f64>,
@@ -57,54 +61,11 @@ pub struct AlignmentPoint {
     pub lon: f64,
 }
 
-/// The workspace does not enable the serde feature of chrono.
-pub mod iso_date {
-    use chrono::NaiveDate;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(
-        date: &NaiveDate,
-        s: S,
-    ) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&date.format("%Y-%m-%d").to_string())
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        d: D,
-    ) -> Result<NaiveDate, D::Error> {
-        let raw = String::deserialize(d)?;
-        NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d")
-            .map_err(|e| serde::de::Error::custom(format!("invalid date {raw:?}: {e}")))
-    }
-}
-
-/// None serializes as null.
-pub mod iso_opt_date {
-    use chrono::NaiveDate;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(date: &Option<NaiveDate>, s: S) -> Result<S::Ok, S::Error> {
-        match date {
-            Some(d) => s.serialize_str(&d.format("%Y-%m-%d").to_string()),
-            None => s.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<NaiveDate>, D::Error> {
-        let raw: Option<String> = Option::deserialize(d)?;
-        match raw {
-            None => Ok(None),
-            Some(raw) => NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d")
-                .map(Some)
-                .map_err(|e| serde::de::Error::custom(format!("invalid date {raw:?}: {e}"))),
-        }
-    }
-}
-
 /// `NoonMinusTwelve` is the GTFS convention. No DST transition occurs near
 /// noon, so offsets stay unambiguous on change days.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum Anchor {
     NoonMinusTwelve,
@@ -116,8 +77,9 @@ impl Default for Anchor {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Stop {
     pub name: String,
     pub lat: f64,
@@ -125,23 +87,24 @@ pub struct Stop {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<StopId>,
     #[serde(default, skip_serializing_if = "StopKind::is_stop")]
-    #[ts(optional, as = "Option<StopKind>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<StopKind>"))]
     pub kind: StopKind,
     #[serde(default, skip_serializing_if = "StopInfo::is_empty")]
-    #[ts(optional, as = "Option<StopInfo>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<StopInfo>"))]
     pub info: StopInfo,
     /// Validation requires at least two routes to meet at a transfer point.
     #[serde(default)]
     pub transfer: bool,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// `name` is the short name that riders see ("12"). Display a route by
 /// [`Route::label`].
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Route {
     /// Empty for a route that has only a long name.
     pub name: String,
@@ -149,49 +112,49 @@ pub struct Route {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub long_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub text_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub sort_order: Option<u32>,
     /// `None` means riders board and alight only at stops.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub continuous_pickup: Option<StopRule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub continuous_drop_off: Option<StopRule>,
     /// `None` is the only operator of the network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub operator: Option<OperatorId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub fare_network: Option<FareNetworkId>,
     /// `None` defers to the operator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub contactless: Option<crate::operators::Contactless>,
     /// The published code for an extended type that `mode` does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub vehicle_type: Option<u16>,
     /// A pattern belongs to at most one. Empty for a route with no
     /// directions.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>"))]
     pub directions: BTreeMap<DirectionId, Direction>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -205,8 +168,9 @@ impl Route {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum StopRule {
     #[default]
@@ -222,17 +186,19 @@ impl StopRule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Direction {
     pub name: String,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Tram,
@@ -249,8 +215,9 @@ pub enum Mode {
     Other,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PatternStop {
     pub stop: StopId,
     /// Every trip carries both times here. Other stops may leave times
@@ -260,48 +227,49 @@ pub struct PatternStop {
     pub distance_m: f64,
     /// `false` when `distance_m` is an estimate.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[ts(optional, as = "Option<bool>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<bool>"))]
     pub distance_published: bool,
     /// Overrides the headsign of the trip at this visit only
     /// (`visit_destination`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub headsign: Option<String>,
     #[serde(default, skip_serializing_if = "StopRule::is_regular")]
-    #[ts(optional, as = "Option<StopRule>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<StopRule>"))]
     pub pickup: StopRule,
     #[serde(default, skip_serializing_if = "StopRule::is_regular")]
-    #[ts(optional, as = "Option<StopRule>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<StopRule>"))]
     pub drop_off: StopRule,
     /// Applies from here to the next stop. `None` defers to the route.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub continuous_pickup: Option<StopRule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub continuous_drop_off: Option<StopRule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub pickup_booking: Option<crate::demand::BookingRuleId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub drop_off_booking: Option<crate::demand::BookingRuleId>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// The run times for new trips that depart in `[start_secs, end_secs)`.
 /// `at_timepoints` has one entry for each timepoint, in pattern order. The
 /// first entry is 0.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TimingProfile {
     pub start_secs: u32,
     pub end_secs: u32,
     pub at_timepoints: Vec<u32>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -311,8 +279,9 @@ impl TimingProfile {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Pattern {
     pub route: RouteId,
     /// One of the [`Route::directions`]. Bay and short-turn variants share a
@@ -327,7 +296,7 @@ pub struct Pattern {
     #[serde(default)]
     pub timing: Vec<TimingProfile>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -347,18 +316,20 @@ impl Pattern {
 }
 
 /// GTFS calls it service_id.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceType {
     pub name: String,
     pub rule: CalendarRule,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CalendarRule {
     #[serde(default)]
     pub days: WeekdaySet,
@@ -368,13 +339,13 @@ pub struct CalendarRule {
     #[serde(default)]
     pub exceptions: Vec<CalendarException>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 impl CalendarRule {
     /// An exception for the date always wins.
-    pub fn runs_on(&self, date: NaiveDate) -> bool {
+    pub fn runs_on(&self, date: Date) -> bool {
         if let Some(exc) = self.exceptions.iter().find(|e| e.date == date) {
             return exc.state == DayState::Added;
         }
@@ -383,37 +354,34 @@ impl CalendarRule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DateRange {
-    #[serde(with = "iso_date")]
-    #[schemars(with = "chrono::NaiveDate")]
-    #[ts(type = "string")]
-    pub start: NaiveDate,
-    #[serde(with = "iso_date")]
-    #[schemars(with = "chrono::NaiveDate")]
-    #[ts(type = "string")]
-    pub end: NaiveDate,
+    #[cfg_attr(feature = "bindings", ts(type = "string"))]
+    pub start: Date,
+    #[cfg_attr(feature = "bindings", ts(type = "string"))]
+    pub end: Date,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CalendarException {
-    #[serde(with = "iso_date")]
-    #[schemars(with = "chrono::NaiveDate")]
-    #[ts(type = "string")]
-    pub date: NaiveDate,
+    #[cfg_attr(feature = "bindings", ts(type = "string"))]
+    pub date: Date,
     pub state: DayState,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DayState {
     Added,
@@ -421,8 +389,9 @@ pub enum DayState {
 }
 
 /// A rule with no flags still runs on dates that are `Added`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct WeekdaySet {
     #[serde(default)]
     pub mon: bool,
@@ -480,8 +449,9 @@ impl WeekdaySet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Departs {
     At { start_secs: u32 },
@@ -525,57 +495,60 @@ impl Departs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct HeadwayBand {
     pub start_secs: u32,
     pub end_secs: u32,
     pub headway_secs: u32,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// Seconds after the start of the instance. `None` means not scheduled there.
 /// The first arrival is 0. The first and last stops, and every timepoint,
 /// carry both times.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopOffset {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub arrival_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub departure_secs: Option<u32>,
 }
 
 /// `times[i]` is the time at `pattern.stops[i]`. The fields are in canonical
 /// key order (RFC 8785), so the canonical bytes stream in one pass.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Trip {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub bikes: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub cars: Option<bool>,
     pub departs: Departs,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub headsign: Option<String>,
     pub id: TripId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub short_name: Option<String>,
     pub times: Vec<StopOffset>,
     /// `None` is unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub wheelchair: Option<bool>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -587,41 +560,45 @@ impl Trip {
 
 /// The trips of one pattern under one service type. A timetable spans a
 /// direction of a route across its patterns (`listing::timetable`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PatternTrips {
     pub pattern: PatternId,
     pub service_type: ServiceTypeId,
     pub trips: Vec<Trip>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// A block may hold trips of service types that never share a day. On each
 /// day it is the trips that run that day, in this order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Block {
     pub trips: Vec<TripRef>,
     pub layovers: Vec<Layover>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// A frequency trip in a block is every one of its instances, back to back.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TripRef {
     pub trip: TripId,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Layover {
     /// An index into the trips of the block.
     pub after_trip: usize,
@@ -629,15 +606,16 @@ pub struct Layover {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<StopId>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// Each pick is one document, effective from its service change date until
 /// the next pick supersedes it. A document without plan metadata is
 /// unversioned, such as a fresh GTFS import.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PlanMeta {
     /// The sync key (LWW for each plan). Empty on unversioned documents.
     #[serde(default)]
@@ -646,24 +624,24 @@ pub struct PlanMeta {
     pub name: String,
     /// The service change date. None on unversioned documents. A plan in a
     /// chain must have one.
-    #[serde(default, with = "iso_opt_date", skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<chrono::NaiveDate>")]
-    #[ts(type = "string | null")]
-    pub effective_from: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "bindings", ts(type = "string | null"))]
+    pub effective_from: Option<Date>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Network {
     #[serde(default)]
-    #[ts(type = "\"network\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"network\""))]
     pub kind: crate::version::NetworkKind,
     /// A document without one is version 1.
     #[serde(default = "crate::version::NetworkVersion::untagged")]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: crate::version::NetworkVersion,
     pub name: String,
     #[serde(default)]
@@ -680,38 +658,38 @@ pub struct Network {
     pub pattern_trips: BTreeMap<PatternTripsId, PatternTrips>,
     pub blocks: BTreeMap<BlockId, Block>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<OperatorId, Operator>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<OperatorId, Operator>>"))]
     pub operators: BTreeMap<OperatorId, Operator>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub publisher: Option<Publisher>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<Attribution>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<Attribution>>"))]
     pub attributions: Vec<Attribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<Translation>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<Translation>>"))]
     pub translations: Vec<Translation>,
     /// Ids are unique across these and the stops.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<StopId, StationPart>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<StopId, StationPart>>"))]
     pub station_parts: BTreeMap<StopId, StationPart>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<LevelId, Level>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<LevelId, Level>>"))]
     pub levels: BTreeMap<LevelId, Level>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<PathwayId, Pathway>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<PathwayId, Pathway>>"))]
     pub pathways: BTreeMap<PathwayId, Pathway>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<TransferRule>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<TransferRule>>"))]
     pub transfers: Vec<TransferRule>,
     #[serde(default, skip_serializing_if = "Fares::is_empty")]
-    #[ts(optional, as = "Option<Fares>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Fares>"))]
     pub fares: Fares,
     #[serde(default, skip_serializing_if = "DemandResponsive::is_empty")]
-    #[ts(optional, as = "Option<DemandResponsive>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<DemandResponsive>"))]
     pub demand: DemandResponsive,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 

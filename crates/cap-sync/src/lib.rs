@@ -7,56 +7,59 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_sync/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_sync/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     SyncEdits {
         client: Vec<transit_sync::EditRecord>,
         server: Vec<transit_sync::EditRecord>,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
     },
     ReadEdits {
-        #[ts(type = "any")]
+        #[cfg_attr(feature = "bindings", ts(type = "any"))]
         document: serde_json::Value,
     },
     CompactEdits {
         records: Vec<transit_sync::EditRecord>,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         horizon_ms: u64,
     },
     LogRecords { document: transit_sync::EditDocument },
     LogDocument {
-        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[ts(optional, type = "{ version: number, value: unknown }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
         document: Option<transit_log::Held>,
     },
     Receive {
-        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
         write: transit_log::Write,
         #[serde(default)]
-        #[ts(type = "Record<string, unknown>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, unknown>"))]
         documents: std::collections::BTreeMap<String, serde_json::Value>,
-        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
         ops: Vec<transit_log::OpCall>,
     },
     LogRevert {
-        #[ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>"))]
         states: Vec<transit_log::RevertState>,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_sync/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_sync/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     SyncEdits {
@@ -64,7 +67,7 @@ pub enum Response {
         document: String,
         document_hash: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, as = "Option<Vec<String>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
     ReadEdits {
@@ -81,7 +84,7 @@ pub enum Response {
         dropped: usize,
     },
     LogRecords {
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     LogDocument {
@@ -90,7 +93,7 @@ pub enum Response {
     },
     Receive(transit_log::Received),
     LogRevert {
-        #[ts(type = "Array<{ kind: string, id: string, version: number, after?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, id: string, version: number, after?: unknown }>"))]
         written: Vec<transit_log::Written>,
     },
 }

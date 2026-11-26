@@ -2,7 +2,7 @@
 //! with one stops.txt row per version, sharing the stop's code. Importing that
 //! feed adds no event to the stops document.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_stops::stop_record::{export_versions, import_events, seed};
 use transit_network::Network;
 use transit_stops::{Event, EventKind};
@@ -13,8 +13,8 @@ fn fixture() -> Network {
     serde_json::from_value(load["network"].clone()).unwrap()
 }
 
-fn d(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn d(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 #[test]

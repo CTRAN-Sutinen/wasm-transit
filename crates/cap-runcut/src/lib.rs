@@ -8,11 +8,13 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_dispatch::{BlockChainTrip, DayBlock};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_runcut/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_runcut/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Blocks {
@@ -34,10 +36,10 @@ pub enum Request {
         block_id: String,
         date: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         tight_layover_secs: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         live_hash: Option<String>,
     },
     TripStops {
@@ -54,7 +56,7 @@ pub enum Request {
         edits_hash: Option<String>,
         date: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         work_rules_hash: Option<String>,
     },
     SuggestBlocks {
@@ -63,7 +65,7 @@ pub enum Request {
         edits_hash: Option<String>,
         date: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         work_rules_hash: Option<String>,
     },
     TripPath {
@@ -76,8 +78,9 @@ pub enum Request {
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_runcut/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_runcut/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Blocks { blocks: Vec<DayBlock> },

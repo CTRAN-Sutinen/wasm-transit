@@ -5,13 +5,15 @@ use serde::{Deserialize, Serialize};
 use transit_network::{
     recovery_floors, required_recovery, Departs, MaterializedTrip, Network, NetworkEdit, RecoveryAt, RecoverySource, TripRef,
 };
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::recovery::end;
 use crate::WorkRules;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Suggestion {
     pub blocks: Vec<SuggestedBlock>,
     pub unblocked: Vec<Unblocked>,
@@ -22,15 +24,17 @@ pub struct Suggestion {
     pub edits: Vec<NetworkEdit>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct SuggestedBlock {
     pub block_id: String,
     pub trips: Vec<SuggestedTrip>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct SuggestedTrip {
     pub trip: String,
     pub route: String,
@@ -41,8 +45,9 @@ pub struct SuggestedTrip {
     pub wait: Option<Wait>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Wait {
     pub gap_secs: u32,
     /// 0 when nothing is required there.
@@ -51,15 +56,17 @@ pub struct Wait {
     pub slack_secs: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Unblocked {
     pub trip: String,
     pub reason: UnblockedReason,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 #[serde(rename_all = "snake_case")]
 pub enum UnblockedReason {
     Frequency,

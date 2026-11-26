@@ -8,7 +8,7 @@
 //! * Structure: generated networks validate, and single mutations break
 //!   validation.
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 use transit_network::{
     materialize, stop_detail, validation_issues, Block, CalendarException, CalendarRule, DateRange, DayState,
@@ -16,7 +16,7 @@ use transit_network::{
     StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
-const YEAR_START: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+const YEAR_START: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 
 #[derive(Clone, Debug)]
 struct Spec {
@@ -60,7 +60,7 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
 
 /// A mid-range Sunday that weekday presets do not run, so `Added` exceptions
 /// add service.
-const EXCEPTION_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+const EXCEPTION_DATE: Date = Date::from_ymd_opt(2026, 11, 1).unwrap();
 
 fn dayset(index: u32) -> WeekdaySet {
     match index {
@@ -151,7 +151,7 @@ fn build_network(spec: &Spec) -> Network {
             days: dayset(spec.dayset),
             ranges: vec![DateRange {
                 start: YEAR_START,
-                end: YEAR_START + Duration::days(364),
+                end: YEAR_START + Days::new(364),
                 extra: Default::default(),
             }],
             exceptions: if spec.with_exception {
@@ -242,8 +242,8 @@ fn net_strategy() -> impl Strategy<Value = Network> {
 }
 
 /// Oracle calendar. Its mechanics differ from the model's on purpose.
-fn oracle_runs_on(rule: &CalendarRule, date: NaiveDate) -> bool {
-    let iso = date.format("%u").to_string();
+fn oracle_runs_on(rule: &CalendarRule, date: Date) -> bool {
+    let iso = date.weekday().number_from_monday().to_string();
     let flagged = match iso.as_str() {
         "1" => rule.days.mon,
         "2" => rule.days.tue,
@@ -279,7 +279,7 @@ fn oracle_instances(departs: &Departs) -> Vec<u32> {
     }
 }
 
-fn oracle_day(net: &Network, date: NaiveDate) -> Vec<(String, u32)> {
+fn oracle_day(net: &Network, date: Date) -> Vec<(String, u32)> {
     let mut out = Vec::new();
     for pt in net.pattern_trips.values() {
         if !oracle_runs_on(&net.service_types[&pt.service_type].rule, date) {
@@ -392,7 +392,7 @@ proptest! {
     #[test]
     fn materialize_runs_the_days_trips(net in net_strategy()) {
         for day in [1u32, 2, 5, 6, 100, 200, 304, 305, 400] {
-            let date = YEAR_START + Duration::days(day as i64);
+            let date = YEAR_START + Days::new(day as i64);
             let mut got: Vec<(String, u32)> =
                 materialize(&net, date).unwrap().into_iter().map(|t| (t.trip, t.start_secs)).collect();
             got.sort();
@@ -404,7 +404,7 @@ proptest! {
     fn calendar_runs_on_matches_brute_force(net in net_strategy()) {
         let rule = &net.service_types["cal"];
         for day in 0..365 {
-            let date = YEAR_START + Duration::days(day);
+            let date = YEAR_START + Days::new(day);
             prop_assert_eq!(rule.rule.runs_on(date), oracle_runs_on(&rule.rule, date));
         }
     }
@@ -452,7 +452,7 @@ proptest! {
         if let Some((_, pattern)) = broken.patterns.iter_mut().next() {
             pattern.timing.clear();
         }
-        let date = YEAR_START + Duration::days(3);
+        let date = YEAR_START + Days::new(3);
         let _ = materialize(&broken, date);
 
         let mut broken = net.clone();

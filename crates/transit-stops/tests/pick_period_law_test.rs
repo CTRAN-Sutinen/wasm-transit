@@ -1,7 +1,7 @@
 //! A pick's period, and what a pick reads of the stops over it.
 //! The ops are in cap-stops' OPS.md (`read_pick`, `export_pick`).
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_network::Network;
 use transit_plans::PublishedPlans;
 use transit_stops::stop_record::{export_pick, export_versions, pick_period, read_pick, read_records, seed, visit_warnings};
@@ -17,7 +17,7 @@ fn pick(id: &str, from: Option<&str>) -> Network {
     let mut net = fixture();
     net.plan.id = id.into();
     net.plan.name = id.into();
-    net.plan.effective_from = from.map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap());
+    net.plan.effective_from = from.map(|d| Date::parse(d).unwrap());
     net
 }
 
@@ -70,8 +70,8 @@ fn a_pick_reads_the_stops_over_its_period() {
     stops = stops.add_event(&id, Event { on: Some("2027-02-01".into()), event: EventKind::Retired, ..Event::default() });
     let stops = stops.checked().unwrap();
     let set = published(&[("a", "2027-01-10", "published"), ("c", "2027-06-01", "published")]);
-    let from = NaiveDate::from_ymd_opt(2027, 1, 10).unwrap();
-    let until = NaiveDate::from_ymd_opt(2027, 6, 1).unwrap();
+    let from = Date::from_ymd_opt(2027, 1, 10).unwrap();
+    let until = Date::from_ymd_opt(2027, 6, 1).unwrap();
 
     let read = read_pick(&net, &stops, Some(&set)).unwrap();
     assert_eq!(read.network, read_records(&net, &stops, from));

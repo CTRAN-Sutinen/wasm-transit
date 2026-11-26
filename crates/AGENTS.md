@@ -33,6 +33,14 @@ serialization.
   serialization of the edit document and the service alerts document)
   follow the same rule. Their row shapes stay at the boundary (D-124,
   D-126, D-127, D-206).
+- transit-network depends only on transit-version and on libraries
+  with no workspace dependency, such as transit-geo (the distance) and
+  transit-date (the service date). Such a library holds no kind,
+  because a kind needs transit-version's tag. A library that joins a
+  document to the network depends on the network, never the reverse.
+  The arch gates hold this. Rejected: the shared helpers in
+  transit-version, whose topic is what a document says about itself;
+  and the network keeping its own copies, which disagreed.
 
 ## Rule 2: do not rebuild the monolith inside a module
 

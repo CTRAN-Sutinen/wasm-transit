@@ -7,5 +7,12 @@ license.workspace = true
 
 [dependencies]
 
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = []
+
 [dev-dependencies]
 proptest = "1"

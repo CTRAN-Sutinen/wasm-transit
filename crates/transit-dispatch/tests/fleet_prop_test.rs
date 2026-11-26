@@ -11,7 +11,7 @@
 //! 4. Each running block has an outline: its span, trip count, and longest
 //!    internal gap.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_dispatch::fleet_summary;
 use transit_network::{
@@ -19,8 +19,8 @@ use transit_network::{
     ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
-fn day() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 1, 5).unwrap() // a Monday
+fn day() -> Date {
+    Date::from_ymd_opt(2026, 1, 5).unwrap() // a Monday
 }
 
 fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) -> Network {
@@ -53,8 +53,8 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                    end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                    end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],
@@ -203,7 +203,7 @@ proptest! {
             .collect();
         prop_assert_eq!(got, outlines, "each running block's outline, in block order");
 
-        let saturday = materialize(&net, NaiveDate::from_ymd_opt(2026, 1, 10).unwrap()).expect("materialize");
+        let saturday = materialize(&net, Date::from_ymd_opt(2026, 1, 10).unwrap()).expect("materialize");
         let quiet = fleet_summary(&net, &saturday);
         prop_assert_eq!((quiet.blocks, quiet.peak_vehicles), (0, 0));
         prop_assert_eq!(quiet.peak_at_secs, None);

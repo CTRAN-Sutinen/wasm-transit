@@ -119,8 +119,8 @@ fn build(spec: &Spec) -> (Network, Boundary) {
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                    end: chrono::NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    start: transit_date::Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                    end: transit_date::Date::from_ymd_opt(2026, 12, 31).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],

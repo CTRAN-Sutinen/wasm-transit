@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_network::{
     recovery_floors, validation_issues, validation_issues_under, Anchor, Block, CalendarRule, DateRange, Departs,
@@ -57,8 +57,8 @@ fn network() -> Network {
                 rule: CalendarRule {
                     days: WeekdaySet::weekdays(),
                     ranges: vec![DateRange {
-                        start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                        end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                        start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                        end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                         extra: Default::default(),
                     }],
                     exceptions: vec![],

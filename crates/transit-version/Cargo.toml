@@ -7,8 +7,8 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
-schemars = { workspace = true }
-ts-rs = { workspace = true }
+schemars = { workspace = true, optional = true }
+ts-rs = { workspace = true, optional = true }
 serde_json = { workspace = true }
 # A document's identity and its read (src/document.rs, src/jcs.rs): the
 # canonical hash streams into sha256; numbers are written as ECMAScript
@@ -17,3 +17,10 @@ sha2 = { workspace = true }
 ryu-js = { workspace = true }
 itoa = { workspace = true }
 flate2 = { workspace = true }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "dep:schemars"]

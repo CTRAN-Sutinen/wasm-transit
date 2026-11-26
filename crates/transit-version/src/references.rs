@@ -5,7 +5,7 @@
 //!
 //! ```ignore
 //! /// The stop, by the stops document's lasting id.
-//! #[schemars(extend("x-references" = "stop"))]
+//! #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop")))]
 //! pub stop: String,
 //! ```
 
@@ -15,7 +15,8 @@ pub const KEYWORD: &str = "x-references";
 
 /// The path is a JSON Pointer with `*` and `[tag=value]` added. A
 /// declaration on an array applies to each item, so its path ends in `*`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(schemars::JsonSchema))]
 pub struct Reference {
     pub path: String,
     pub target: String,

@@ -1,7 +1,7 @@
 //! A plan takes a stop from the stops document. The ops are
 //! in cap-stops' OPS.md (`records`, `take_stops`).
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_stops::stop_record::{read_records, records};
 use transit_network::{apply_edits, Network, NetworkEdit};
 use transit_stops::{Details, Event, EventKind, Stops};
@@ -10,8 +10,8 @@ fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).expect("testdata network parses")
 }
 
-fn day(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn day(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 fn planned(on: &str, lat: f64, lon: f64, name: &str, code: &str) -> Event {

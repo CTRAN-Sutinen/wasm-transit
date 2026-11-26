@@ -3,6 +3,7 @@
 //! ([`WalkTable`]) instead of straight lines.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::model::{StreetClass, Streets};
@@ -15,16 +16,18 @@ pub fn walkable(class: StreetClass) -> bool {
     !matches!(class, StreetClass::Motorway | StreetClass::Ramp | StreetClass::Unknown)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Walk {
     pub from: String,
     pub to: String,
     pub walk_secs: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PointWalk {
     pub stop_id: String,
     pub walk_secs: u32,
@@ -32,8 +35,9 @@ pub struct PointWalk {
 }
 
 /// `path` is empty when the walk is given by its seconds alone.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DirectWalk {
     pub walk_secs: u32,
     #[serde(default)]
@@ -52,18 +56,19 @@ impl transit_version::Versioned for WalkTable {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct WalkTable {
     #[serde(default)]
-    #[ts(type = "\"walks\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"walks\""))]
     pub kind: WalksKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
-    #[schemars(extend("format" = "content-hash", "x-references" = "streets"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("format" = "content-hash", "x-references" = "streets")))]
     pub streets_hash: String,
-    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("format" = "content-hash", "x-references" = "network")))]
     pub network_hash: String,
     pub speed_mps: f64,
     pub max_walk_secs: u32,

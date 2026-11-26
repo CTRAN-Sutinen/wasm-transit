@@ -21,8 +21,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use chrono::{Datelike, NaiveDate};
+use transit_date::Date;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub mod version;
@@ -30,8 +31,9 @@ pub mod load;
 
 pub use version::{ALERTS_VERSION, TEMPLATES_VERSION};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AlertCause {
     #[default]
@@ -50,8 +52,9 @@ pub enum AlertCause {
     SpecialEvent,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AlertEffect {
     NoService,
@@ -68,8 +71,9 @@ pub enum AlertEffect {
     AccessibilityIssue,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AlertSeverity {
     #[default]
@@ -80,12 +84,13 @@ pub enum AlertSeverity {
 }
 
 /// Unix seconds. An open end is unbounded.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertPeriod {
-    #[ts(type = "number | null")]
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
     pub start: Option<u64>,
-    #[ts(type = "number | null")]
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
     pub end: Option<u64>,
 }
 
@@ -113,25 +118,27 @@ impl transit_version::Versioned for AlertTemplates {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceAlerts {
     #[serde(default)]
-    #[ts(type = "\"service_alerts\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"service_alerts\""))]
     pub kind: ServiceAlertsKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<2>,
     pub alerts: BTreeMap<String, ServiceAlert>,
     /// Fields this build does not know, kept as written.
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// There is no review step (D-207).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AlertStatus {
     #[default]
@@ -140,8 +147,9 @@ pub enum AlertStatus {
     Retired,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceAlert {
     pub status: AlertStatus,
     #[serde(default)]
@@ -152,86 +160,89 @@ pub struct ServiceAlert {
     pub severity: AlertSeverity,
     pub header: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertText>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertText>>"))]
     pub description: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertText>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertText>>"))]
     pub url: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertPeriod>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertPeriod>>"))]
     pub communication: Vec<AlertPeriod>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertPeriod>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertPeriod>>"))]
     pub impact: Vec<AlertPeriod>,
     pub informed: Vec<AlertEntity>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertSource>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertSource>>"))]
     pub explains: Vec<AlertSource>,
     /// Fields this build does not know, kept as written.
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// A text in one language. No language means the agency's default.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertText {
     /// A BCP 47 language tag ("en", "es").
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub lang: Option<String>,
     pub text: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("x-references" = "network.route"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.route")))]
     pub route: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub route_type: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub direction: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("x-references" = "network.stop"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.stop")))]
     pub stop: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("x-references" = "network.trip"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.trip")))]
     pub trip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub date: Option<String>,
     /// Seconds after the service-day anchor. Needs `trip`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub start_secs: Option<u32>,
     /// Fields this build does not know, kept as written.
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AlertSource {
     Edit {
-        #[schemars(extend("x-references" = "edit_record"))]
+        #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "edit_record")))]
         id: String,
     },
     Stop {
-        #[schemars(extend("x-references" = "stop"))]
+        #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop")))]
         stop: String,
     },
     /// A trip instance that the live feed cancels. Version 2.
-    #[schemars(extend("x-references" = "trip_instance"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "trip_instance")))]
     Trip { trip: String, date: String, start_secs: u32 },
 }
 
@@ -361,8 +372,9 @@ impl ServiceAlerts {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertList {
     pub in_force: Vec<AlertRow>,
     pub upcoming: Vec<AlertRow>,
@@ -370,25 +382,28 @@ pub struct AlertList {
     pub drafts: Vec<AlertRow>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertRow {
     pub id: String,
     pub alert: ServiceAlert,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub open_secs: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertRefusal {
     pub alert: String,
     pub problem: AlertProblem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AlertProblem {
     NoId,
@@ -419,15 +434,17 @@ impl fmt::Display for AlertRefusal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertFlag {
     pub alert: String,
     pub notice: AlertNotice,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AlertNotice {
     UnknownRoute { route: String },
@@ -435,10 +452,6 @@ pub enum AlertNotice {
     UnknownStop { stop: String },
     UnknownTrip { trip: String },
     MissingTranslation { field: String, lang: String },
-}
-
-fn parse_date(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
 fn bad_period(p: &AlertPeriod) -> bool {
@@ -488,7 +501,7 @@ fn check(a: &ServiceAlert) -> Vec<AlertProblem> {
         if e.trip.is_none() && (e.date.is_some() || e.start_secs.is_some()) {
             out.push(AlertProblem::InstanceWithoutTrip);
         }
-        if let Some(d) = e.date.as_ref().filter(|d| parse_date(d).is_none()) {
+        if let Some(d) = e.date.as_ref().filter(|d| Date::parse(d).ok().is_none()) {
             out.push(AlertProblem::BadDate { date: d.clone() });
         }
     }
@@ -497,7 +510,7 @@ fn check(a: &ServiceAlert) -> Vec<AlertProblem> {
             if trip.trim().is_empty() {
                 out.push(AlertProblem::InstanceWithoutTrip);
             }
-            if parse_date(date).is_none() {
+            if Date::parse(date).ok().is_none() {
                 out.push(AlertProblem::BadDate { date: date.clone() });
             }
         }
@@ -510,23 +523,25 @@ fn check(a: &ServiceAlert) -> Vec<AlertProblem> {
 
 pub const BLANKS: [&str; 4] = ["stop", "route", "start date", "end date"];
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertTemplates {
     #[serde(default)]
-    #[ts(type = "\"alert_templates\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"alert_templates\""))]
     pub kind: AlertTemplatesKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     pub templates: BTreeMap<String, AlertTemplate>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertTemplate {
     pub name: String,
     #[serde(default)]
@@ -537,28 +552,30 @@ pub struct AlertTemplate {
     pub severity: AlertSeverity,
     pub header: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertText>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertText>>"))]
     pub description: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertText>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertText>>"))]
     pub url: Vec<AlertText>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[ts(optional, as = "Option<bool>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<bool>"))]
     pub retired: bool,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TemplateRefusal {
     pub template: String,
     pub problem: TemplateProblem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TemplateProblem {
     NoId,
@@ -593,8 +610,9 @@ fn blanks_in(text: &str) -> Vec<&str> {
     out
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TemplateRow {
     pub id: String,
     pub name: String,
@@ -663,23 +681,24 @@ impl AlertTemplates {
 }
 
 /// Dates are "YYYY-MM-DD", the host's, in the agency's zone.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FillInput {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub stops: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub routes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<AlertEntity>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<AlertEntity>>"))]
     pub informed: Vec<AlertEntity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub start_date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub end_date: Option<String>,
 }
 
@@ -705,8 +724,9 @@ fn unique(ids: impl Iterator<Item = String>) -> Vec<String> {
     out
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Filled {
     pub cause: AlertCause,
     pub effect: AlertEffect,
@@ -717,12 +737,13 @@ pub struct Filled {
     pub unfilled: Vec<Unfilled>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Unfilled {
     pub field: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub lang: Option<String>,
     pub blank: String,
 }
@@ -742,17 +763,17 @@ fn english_list(items: &[String]) -> String {
     }
 }
 
-fn english_date(d: NaiveDate) -> String {
+fn english_date(d: Date) -> String {
     const MONTHS: [&str; 12] =
         ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     let weekday = match d.weekday() {
-        chrono::Weekday::Mon => "Monday",
-        chrono::Weekday::Tue => "Tuesday",
-        chrono::Weekday::Wed => "Wednesday",
-        chrono::Weekday::Thu => "Thursday",
-        chrono::Weekday::Fri => "Friday",
-        chrono::Weekday::Sat => "Saturday",
-        chrono::Weekday::Sun => "Sunday",
+        transit_date::Weekday::Mon => "Monday",
+        transit_date::Weekday::Tue => "Tuesday",
+        transit_date::Weekday::Wed => "Wednesday",
+        transit_date::Weekday::Thu => "Thursday",
+        transit_date::Weekday::Fri => "Friday",
+        transit_date::Weekday::Sat => "Saturday",
+        transit_date::Weekday::Sun => "Sunday",
     };
     format!("{weekday}, {} {}", MONTHS[d.month0() as usize], d.day())
 }
@@ -766,7 +787,7 @@ fn value(blank: &str, lang: Option<&str>, network: &transit_network::Network, in
         Some(english_list(&names?))
     };
     let date = |d: &Option<String>| -> Option<String> {
-        let d = parse_date(d.as_deref()?)?;
+        let d = Date::parse(d.as_deref()?).ok()?;
         english(lang).then(|| english_date(d))
     };
     match blank {

@@ -59,7 +59,7 @@ step and answers the trace that the settle step exists for.
 
 A fourth runner is optional too: `just store-contract` runs the store's
 backend contract and every engine law against real object stores.
-`just store-dev` starts SeaweedFS, Azurite and fake-gcs-server in
+`just store-dev` starts SeaweedFS and fake-gcs-server in
 podman. Run `just store-contract` for changes to `server/store/` or an
 adapter. `just test` runs the same laws on `mem://`. A managed
 provider's bucket runs the same way: `just store-contract URL`, with

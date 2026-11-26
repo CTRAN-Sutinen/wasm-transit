@@ -19,10 +19,9 @@
 //	                              move dropped (docs/FORMATS.md, "Rolling
 //	                              a version back")
 //
-// <url> is a store URL: s3://bucket/prefix[?endpoint=URL&region=R],
-// azblob://container/prefix, or gs://bucket/prefix, with each
-// provider's usual credentials (DEPLOYMENTS-SERVER.md, "Prepare the
-// bucket"). Each prints its report
+// <url> is a store URL: s3://bucket/prefix[?endpoint=URL&region=R]
+// or gs://bucket/prefix, with the credentials DEPLOYMENTS-SERVER.md
+// names ("Prepare the bucket"). Each prints its report
 // as JSON on stdout.
 package main
 

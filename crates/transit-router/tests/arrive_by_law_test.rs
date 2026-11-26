@@ -14,7 +14,7 @@
 //! 5. With `k` legs, properties 1 to 3 hold against the earliest-arrival
 //!    search at `k` legs.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_router::{earliest_arrival, latest_departure, Leg, RouterNetwork};
@@ -23,7 +23,7 @@ use transit_router::{earliest_arrival, latest_departure, Leg, RouterNetwork};
 mod support;
 use support::{assert_feasible, build_zip_spaced, model_day, oracle_arrival, TripSpec, INF};
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
 
 prop_compose! {

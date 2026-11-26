@@ -337,8 +337,9 @@ impl ZipWriter {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FeedSummary {
     pub agencies: usize,
     pub routes: usize,
@@ -347,8 +348,9 @@ pub struct FeedSummary {
     pub stop_times: usize,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FeedInfo {
     pub feed_publisher_name: Option<String>,
     pub feed_publisher_url: Option<String>,

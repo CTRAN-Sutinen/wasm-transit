@@ -18,7 +18,7 @@ fn network() -> Network {
 const DATE: &str = "2026-10-23";
 
 fn day(net: &Network) -> Vec<transit_network::MaterializedTrip> {
-    transit_dispatch::day(net, chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(), &[]).unwrap().trips
+    transit_dispatch::day(net, transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(), &[]).unwrap().trips
 }
 
 fn scope(route: Option<&str>, stop: Option<&str>) -> AlertScope {
@@ -120,7 +120,7 @@ fn a_cancelled_trip_is_reached_where_the_board_lists_it_skipped() {
         updated_at: 0,
         extra: Default::default(),
     };
-    let d = transit_dispatch::day(&net, chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(), &[record]).unwrap();
+    let d = transit_dispatch::day(&net, transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(), &[record]).unwrap();
     let trip = AlertScope { route: Some("10".into()), trip: Some("t30".into()), date: Some(DATE.into()), start_secs: Some(31200), ..Default::default() };
     let r = transit_dispatch::alert_reach_day(&net, &d, &[trip], DATE);
     assert_eq!(stops(&r), [("A", 1), ("C", 1)]);

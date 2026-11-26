@@ -25,14 +25,21 @@ pub use raptor::{
     Itinerary, Leg, Place, PlaceWalk,
 };
 
-use thiserror::Error;
-
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum RouterError {
-    #[error("unknown stop: {0}")]
     UnknownStop(String),
-    #[error("a place's id names a stop: {0}")]
     PlaceIsStop(String),
 }
+
+impl std::fmt::Display for RouterError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RouterError::UnknownStop(id) => write!(f, "unknown stop: {id}"),
+            RouterError::PlaceIsStop(id) => write!(f, "a place's id names a stop: {id}"),
+        }
+    }
+}
+
+impl std::error::Error for RouterError {}
 
 pub type Result<T> = std::result::Result<T, RouterError>;

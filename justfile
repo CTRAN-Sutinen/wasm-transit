@@ -289,6 +289,12 @@ _host-tests:
     # first.
     node --test tools/ui-ops.test.mjs
     node tools/ui-ops.mjs
+    # DEPENDENCIES (tools/deps-gate.mjs): the module builds' crates, the
+    # server binary's Go modules, and the pages' run-time npm packages
+    # equal tools/dependencies.txt, each with its reason. The broken
+    # fixtures run first.
+    node --test tools/deps-gate.test.mjs
+    node tools/deps-gate.mjs
     # The runner knows which tree its registry was built from
     # (QAF-77): just published, the registry's source digest (Rust,
     # gen-manifest) equals the tree's (JS, caps-run) — nothing on
@@ -1128,18 +1134,14 @@ server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "s
     fi
 
 store_dev_image := "docker.io/chrislusf/seaweedfs:4.50"
-azurite_image := "mcr.microsoft.com/azure-storage/azurite@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5"
 fake_gcs_image := "docker.io/fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef"
 store_dev_env := "AWS_ACCESS_KEY_ID=dev AWS_SECRET_ACCESS_KEY=devsecret"
 store_dev_url := "s3://transit/dev?endpoint=http://127.0.0.1:8333"
-# Azurite's published development account (its documented key, not a secret).
-azurite_conn := "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 
 # Local object stores for the sync store, in podman: SeaweedFS (S3, on
 # 127.0.0.1:8333, its data in the volume transit-store-dev so a store
-# survives a restart — the one `just serve` uses), Azurite (Azure Blob,
-# :10000) and fake-gcs-server (GCS, :4443), the last two for the
-# contract only. Local validation only — the engine assumes the object
+# survives a restart — the one `just serve` uses) and fake-gcs-server
+# (GCS, :4443, for the contract only). Local validation only — the engine assumes the object
 # contract (server/store/backend.go) and gives no endpoint a code path
 # of its own; `just store-contract` says whether each honors it.
 store-dev:
@@ -1149,23 +1151,21 @@ store-dev:
       -p 127.0.0.1:8333:8333 -v transit-store-dev:/data \
       -e AWS_ACCESS_KEY_ID=dev -e AWS_SECRET_ACCESS_KEY=devsecret \
       {{ store_dev_image }} server -dir=/data -s3 -s3.port=8333 -master.telemetry=false >/dev/null
-    podman run -d --replace --name transit-azurite --memory 512m -p 127.0.0.1:10000:10000 \
-      {{ azurite_image }} azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck >/dev/null
     podman run -d --replace --name transit-fake-gcs --memory 512m -p 127.0.0.1:4443:4443 \
       {{ fake_gcs_image }} -scheme http -port 4443 -public-host 127.0.0.1:4443 >/dev/null
     for i in $(seq 1 60); do
-      if curl -s -o /dev/null http://127.0.0.1:8333/ && curl -s -o /dev/null http://127.0.0.1:10000/ \
+      if curl -s -o /dev/null http://127.0.0.1:8333/ \
          && curl -s -o /dev/null http://127.0.0.1:4443/storage/v1/b; then break; fi
       sleep 1
     done
     echo "s3.bucket.create -name transit" | podman exec -i transit-store-dev weed shell >/dev/null 2>&1 || true
-    echo "SeaweedFS :8333, Azurite :10000, fake-gcs-server :4443 (just store-dev-stop ends them)."
+    echo "SeaweedFS :8333, fake-gcs-server :4443 (just store-dev-stop ends them)."
     echo "Serve over SeaweedFS:"
     echo "  store = \"{{ store_dev_url }}\" in server/local.toml, then"
     echo "  {{ store_dev_env }} just serve"
 
 store-dev-stop:
-    podman rm -f transit-store-dev transit-azurite transit-fake-gcs >/dev/null 2>&1 || true
+    podman rm -f transit-store-dev transit-fake-gcs >/dev/null 2>&1 || true
 
 # The store's laws — the backend contract and every engine law — run
 # against each local store (`just store-dev` first), each test under its
@@ -1184,9 +1184,6 @@ store-contract URL="":
     fi
     echo "== s3 (SeaweedFS)"
     {{ store_dev_env }} STORE_TEST_URL='s3://transit/contract?endpoint=http://127.0.0.1:8333' \
-      go test -race -count=1 ./store/
-    echo "== azblob (Azurite)"
-    AZURE_STORAGE_CONNECTION_STRING='{{ azurite_conn }}' STORE_TEST_URL='azblob://transit/contract' \
       go test -race -count=1 ./store/
     echo "== gs (fake-gcs-server)"
     STORAGE_EMULATOR_HOST=127.0.0.1:4443 STORE_TEST_URL='gs://transit/contract' \

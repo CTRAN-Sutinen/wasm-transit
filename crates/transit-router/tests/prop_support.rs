@@ -1,7 +1,7 @@
 //! Fixture builders and the brute-force oracle that the router tests share.
 use std::io::Write;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 
 #[derive(Debug, Clone)]
 pub struct TripSpec {
@@ -12,7 +12,7 @@ pub struct TripSpec {
 
 pub fn model_day(
     zip: &[u8],
-    date: NaiveDate,
+    date: Date,
 ) -> (transit_network::Network, Vec<transit_network::MaterializedTrip>) {
     let feed = transit_codec::Feed::from_zip_bytes(zip).expect("parse");
     let outcome = transit_codec::import(&feed);

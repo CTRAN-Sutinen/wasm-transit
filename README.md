@@ -149,7 +149,7 @@ geocoder and its policy under `services`.
 The `store` setting (`-store`) is the sync store: content-addressed
 blobs and CAS'd pointers as create-only objects in object storage —
 `s3://bucket/prefix` (S3 or S3-compatible, `?endpoint=…`),
-`azblob://container/prefix`, `gs://bucket/prefix`, or `mem://`
+`gs://bucket/prefix`, or `mem://`
 (`/pointers`, `/blobs`, store-backed `/edits` and `/manifest`;
 `docs/FORMATS.md`); `server/dev.toml` holds it in memory. `just store-dev` runs a local SeaweedFS to serve
 over; `just store verify|gc|copy|revert` are the offline tools. The feed,

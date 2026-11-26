@@ -8,7 +8,7 @@
 //!    `depart_secs <= leave_secs <= arrival_secs`.
 //! 4. `leave == transit_dispatch::wait(leave_secs, depart_secs)`.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_router::{earliest_arrival_between, latest_departure_between, End, Itinerary, Leg, Place, PlaceWalk, RouterNetwork};
@@ -17,7 +17,7 @@ use transit_router::{earliest_arrival_between, latest_departure_between, End, It
 mod support;
 use support::{build_zip_spaced, model_day, TripSpec};
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 8;
 
 prop_compose! {

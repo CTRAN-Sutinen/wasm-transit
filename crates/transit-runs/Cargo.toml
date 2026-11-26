@@ -6,14 +6,21 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-version = { path = "../transit-version" }
+transit-version = { path = "../transit-version", default-features = false }
 serde = { workspace = true }
-ts-rs = { workspace = true }
-schemars = { workspace = true }
-transit-network = { path = "../transit-network" }
-transit-dispatch = { path = "../transit-dispatch" }
+ts-rs = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+transit-network = { path = "../transit-network", default-features = false }
+transit-dispatch = { path = "../transit-dispatch", default-features = false }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "dep:schemars", "transit-version/bindings", "transit-network/bindings", "transit-dispatch/bindings", "transit-date/bindings"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
-chrono = { workspace = true }
+transit-date = { path = "../transit-date", default-features = false }
 proptest = "1"

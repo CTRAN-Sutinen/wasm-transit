@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use crate::{Details, Event, EventKind, Status, StopOn, Stops};
 
 use transit_network::model::{Block, CalendarRule, DateRange, Layover, TripRef};
@@ -11,6 +11,7 @@ use transit_network::places::{StopInfo, StopKind};
 use serde::Serialize;
 use transit_network::{Network, NetworkEdit, NetworkWarning, Stop};
 use transit_plans::{PlanInfo, PublishedPlans};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 /// The `in_service` event has no date, because no feed records when a stop
@@ -49,7 +50,7 @@ fn opening(stop: &Stop) -> Event {
     }
 }
 
-pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network {
+pub fn read_records(network: &Network, stops: &Stops, on: Date) -> Network {
     let mut next = network.clone();
     for (id, stop) in next.stops.iter_mut() {
         if let Some(found) = stops.stop_on(id, on) {
@@ -60,11 +61,11 @@ pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network 
 }
 
 /// A plan takes a stop from these records.
-pub fn records(stops: &Stops, ids: &[String], on: NaiveDate) -> BTreeMap<String, Stop> {
+pub fn records(stops: &Stops, ids: &[String], on: Date) -> BTreeMap<String, Stop> {
     ids.iter().filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found)))).collect()
 }
 
-pub fn take_stops(network: &Network, stops: &Stops, ids: &[String], on: NaiveDate) -> Result<Vec<NetworkEdit>, Vec<String>> {
+pub fn take_stops(network: &Network, stops: &Stops, ids: &[String], on: Date) -> Result<Vec<NetworkEdit>, Vec<String>> {
     let mut seen = std::collections::BTreeSet::new();
     let wanted: Vec<&String> = ids.iter().filter(|id| !network.stops.contains_key(*id) && seen.insert(*id)).collect();
     let mut edits = Vec::new();
@@ -108,17 +109,17 @@ fn record(on: &StopOn) -> Stop {
     }
 }
 
-fn parse(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+fn parse(s: &str) -> Option<Date> {
+    Date::parse(s).ok()
 }
 
-pub fn visit_warnings(network: &Network, stops: &Stops, from: NaiveDate, until: Option<NaiveDate>) -> Vec<NetworkWarning> {
+pub fn visit_warnings(network: &Network, stops: &Stops, from: Date, until: Option<Date>) -> Vec<NetworkWarning> {
     let visited: BTreeSet<&str> = network.patterns.values().flat_map(|p| p.stops.iter().map(|s| s.stop.as_str())).collect();
-    let fmt = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+    let fmt = |d: Date| d.to_string();
     let mut out = Vec::new();
     for id in visited {
         let Some(events) = stops.stops.get(id) else { continue };
-        let mut days: BTreeSet<NaiveDate> = BTreeSet::from([from]);
+        let mut days: BTreeSet<Date> = BTreeSet::from([from]);
         for e in events {
             for d in [e.on.as_deref(), e.until.as_deref()].into_iter().flatten().filter_map(parse) {
                 if d > from && until.is_none_or(|u| d < u) {
@@ -126,9 +127,9 @@ pub fn visit_warnings(network: &Network, stops: &Stops, from: NaiveDate, until: 
                 }
             }
         }
-        let days: Vec<NaiveDate> = days.into_iter().collect();
-        let mut open: Option<(Option<Status>, NaiveDate)> = None;
-        let mut close = |open: &mut Option<(Option<Status>, NaiveDate)>, end: Option<NaiveDate>| {
+        let days: Vec<Date> = days.into_iter().collect();
+        let mut open: Option<(Option<Status>, Date)> = None;
+        let mut close = |open: &mut Option<(Option<Status>, Date)>, end: Option<Date>| {
             if let Some((status, start)) = open.take() {
                 out.push(NetworkWarning::StopNotInService { stop: id.to_string(), status: status.map(|s| s.as_str().to_string()), from: fmt(start), until: end.map(fmt) });
             }
@@ -164,22 +165,22 @@ pub fn visit_warnings(network: &Network, stops: &Stops, from: NaiveDate, until: 
     out
 }
 
-fn fmt_date(d: NaiveDate) -> String {
-    d.format("%Y-%m-%d").to_string()
+fn fmt_date(d: Date) -> String {
+    d.to_string()
 }
 
 /// An id `<id>@<date>` is a version of `<id>`.
-fn made_base(id: &str) -> Option<(&str, NaiveDate)> {
+fn made_base(id: &str) -> Option<(&str, Date)> {
     let (head, tail) = id.rsplit_once('@')?;
     Some((head, parse(tail)?))
 }
 
-pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until: Option<NaiveDate>) -> Network {
+pub fn export_versions(network: &Network, stops: &Stops, from: Date, until: Option<Date>) -> Network {
     let mut out = read_records(network, stops, from);
-    let mut versions: BTreeMap<String, Vec<(NaiveDate, Stop)>> = BTreeMap::new();
+    let mut versions: BTreeMap<String, Vec<(Date, Stop)>> = BTreeMap::new();
     for (id, own) in &network.stops {
         let Some(events) = stops.stops.get(id) else { continue };
-        let mut days: BTreeSet<NaiveDate> = BTreeSet::from([from]);
+        let mut days: BTreeSet<Date> = BTreeSet::from([from]);
         for e in events {
             for d in [e.on.as_deref(), e.until.as_deref()].into_iter().flatten().filter_map(parse) {
                 if d > from && until.is_none_or(|u| d < u) {
@@ -187,7 +188,7 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
                 }
             }
         }
-        let mut v: Vec<(NaiveDate, Stop)> = Vec::new();
+        let mut v: Vec<(Date, Stop)> = Vec::new();
         for d in days {
             let rec = stops.stop_on(id, d).map(|s| record(&s)).unwrap_or_else(|| own.clone());
             if v.last().is_none_or(|(_, last)| *last != rec) {
@@ -201,7 +202,7 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
     if versions.is_empty() {
         return out;
     }
-    let version_id = |id: &str, on: NaiveDate| -> String {
+    let version_id = |id: &str, on: Date| -> String {
         match versions.get(id) {
             None => id.to_string(),
             Some(v) => {
@@ -219,7 +220,7 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
 
     let mut copies: BTreeMap<String, Vec<String>> = BTreeMap::new(); // trip → its earlier copies
     for (pid, pattern) in &network.patterns {
-        let starts: BTreeSet<NaiveDate> = pattern
+        let starts: BTreeSet<Date> = pattern
             .stops
             .iter()
             .filter_map(|ps| versions.get(&ps.stop))
@@ -228,7 +229,7 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
         if starts.is_empty() {
             continue;
         }
-        let mut bounds: Vec<NaiveDate> = vec![from];
+        let mut bounds: Vec<Date> = vec![from];
         bounds.extend(starts.iter().copied());
         let last = bounds.len() - 1;
         for (j, &start) in bounds.iter().enumerate() {
@@ -277,8 +278,8 @@ pub fn export_versions(network: &Network, stops: &Stops, from: NaiveDate, until:
     out
 }
 
-fn clip(rule: &CalendarRule, lo: Option<NaiveDate>, hi: Option<NaiveDate>) -> CalendarRule {
-    let inside = |d: NaiveDate| lo.is_none_or(|l| d >= l) && hi.is_none_or(|h| d <= h);
+fn clip(rule: &CalendarRule, lo: Option<Date>, hi: Option<Date>) -> CalendarRule {
+    let inside = |d: Date| lo.is_none_or(|l| d >= l) && hi.is_none_or(|h| d <= h);
     CalendarRule {
         days: rule.days.clone(),
         ranges: rule
@@ -316,8 +317,9 @@ fn with_copies(block: &Block, copies: &BTreeMap<String, Vec<String>>) -> Block {
     Block { trips, layovers, extra: Default::default() }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AddedEvent {
     pub stop: String,
     pub event: Event,
@@ -336,11 +338,11 @@ pub struct ImportedStops {
 
 /// `on` is the feed's first service date, the only date a feed states.
 /// This function never writes the document.
-pub fn import_events(stops: &Stops, feed: &Network, on: NaiveDate) -> ImportedStops {
+pub fn import_events(stops: &Stops, feed: &Network, on: Date) -> ImportedStops {
     import(stops, feed, on, None)
 }
 
-pub fn import_feed(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: &str) -> ImportedStops {
+pub fn import_feed(stops: &Stops, feed: &Network, on: Date, feed_id: &str) -> ImportedStops {
     import(stops, feed, on, Some(feed_id))
 }
 
@@ -354,13 +356,13 @@ pub fn feed_events(stops: &Stops, feed_id: &str) -> Vec<AddedEvent> {
         .collect()
 }
 
-fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -> ImportedStops {
+fn import(stops: &Stops, feed: &Network, on: Date, feed_id: Option<&str>) -> ImportedStops {
     let mut next = stops.clone();
     let mut added = Vec::new();
     let mut unapplied = Vec::new();
     // A stop's own id stands for its last version, so an earlier version in
     // force on `on` wins over it.
-    let mut listed: BTreeMap<&str, (NaiveDate, &Stop)> = BTreeMap::new();
+    let mut listed: BTreeMap<&str, (Date, &Stop)> = BTreeMap::new();
     for (id, stop) in &feed.stops {
         match made_base(id).filter(|(base, _)| feed.stops.contains_key(*base)) {
             Some((base, start)) => {
@@ -369,7 +371,7 @@ fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -
                 }
             }
             None => {
-                listed.entry(id.as_str()).or_insert((NaiveDate::MIN, stop));
+                listed.entry(id.as_str()).or_insert((Date::MIN, stop));
             }
         }
     }
@@ -451,13 +453,14 @@ fn differing(now: &Details, feed: &Details) -> Details {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_stops/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_stops/"))]
 pub struct PickPeriod {
     pub from: String,
     /// The date of the next pick that is not retired.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub until: Option<String>,
 }
 
@@ -469,7 +472,7 @@ pub fn pick_period(network: &Network, published: Option<&PublishedPlans>) -> Opt
     if plan.id.is_empty() {
         return None;
     }
-    let fmt = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+    let fmt = |d: Date| d.to_string();
     let info = PlanInfo { id: plan.id.clone(), name: plan.name.clone(), effective_from: Some(fmt(from)) };
     Some(PickPeriod { from: fmt(from), until: transit_plans::period_in(published, &info) })
 }
@@ -497,7 +500,7 @@ pub fn export_pick(network: &Network, stops: &Stops, published: Option<&Publishe
     Some(export_versions(network, stops, from, until))
 }
 
-fn period_dates(period: &PickPeriod) -> Option<(NaiveDate, Option<NaiveDate>)> {
-    let parse = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+fn period_dates(period: &PickPeriod) -> Option<(Date, Option<Date>)> {
+    let parse = |s: &str| Date::parse(s).ok();
     Some((parse(&period.from)?, period.until.as_deref().and_then(parse)))
 }

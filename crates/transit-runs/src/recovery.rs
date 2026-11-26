@@ -3,19 +3,22 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use transit_network::{recovery_floors, required_recovery, MaterializedTrip, Network, RecoveryAt, RecoverySource};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::WorkRules;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct Recovery {
     pub waits: Vec<RecoveryWait>,
     pub patterns: Vec<PatternRecovery>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct RecoveryWait {
     pub block_id: String,
     pub after_trip: usize,
@@ -31,25 +34,26 @@ pub struct RecoveryWait {
     pub required_secs: Option<u32>,
     pub required_by: Option<RecoverySource>,
     /// Negative when the wait is short (validation's `layover_infeasible`).
-    #[ts(type = "number | null")]
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
     pub slack_secs: Option<i64>,
     /// The gap as a whole percent of the run.
     pub recovery_pct: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_runs/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_runs/"))]
 pub struct PatternRecovery {
     pub pattern: String,
     pub route: String,
     pub waits: u32,
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub run_secs: u64,
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub gap_secs: u64,
     pub recovery_pct: u32,
     pub short: u32,
-    #[ts(type = "number | null")]
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
     pub min_slack_secs: Option<i64>,
 }
 

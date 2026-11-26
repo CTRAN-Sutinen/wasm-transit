@@ -6,7 +6,7 @@
 // every use (a rider's recent places) passes `replace` and keeps only the
 // records that a migration came from.
 
-import { get as idbGet, set as idbSet } from "idb-keyval";
+import { idbGet, idbSet } from "./idb";
 
 export type DocRecord = {
   hash: string;

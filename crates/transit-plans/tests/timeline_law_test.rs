@@ -3,11 +3,11 @@
 //! retired pick is no row. A device plan is published when its id is a
 //! published pick's or it is `served`.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_plans::{timeline, DevicePlan, PlanIssue, PublishedPlans};
 
-fn day(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn day(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 fn set(picks: &[(&str, &str, &str, &str)]) -> PublishedPlans {

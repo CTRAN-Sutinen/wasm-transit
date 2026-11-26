@@ -16,7 +16,7 @@
 //! property test checks that the rule covers every status in
 //! `transit_requests::STATUSES`.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::{Deserialize, Serialize};
 use transit_requests::StopRequest;
 
@@ -67,7 +67,7 @@ impl RuleBreak {
     }
 }
 
-pub fn request_rule(stops: &Stops, id: &str, request: &StopRequest, on: NaiveDate) -> Option<RuleBreak> {
+pub fn request_rule(stops: &Stops, id: &str, request: &StopRequest, on: Date) -> Option<RuleBreak> {
     let needs = request_needs(&request.status)?;
     let stop = stops.stop_on(&request.stop, on)?;
     if allows(needs, stop.status) {

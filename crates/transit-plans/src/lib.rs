@@ -6,12 +6,14 @@
 //! A retired pick is the tombstone and never governs. A freeze puts
 //! nothing in force, and `adopt` is `publish` of a frozen version (D-191).
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct PlanInfo {
     pub id: String,
     pub name: String,
@@ -20,8 +22,9 @@ pub struct PlanInfo {
 }
 
 /// The `until` end is derived, never stored, because a plan's date may move.
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct PlanPeriod {
     pub id: String,
     /// "YYYY-MM-DD".
@@ -31,8 +34,9 @@ pub struct PlanPeriod {
     pub until: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlanIssue {
     DuplicatePlanId { id: String },
@@ -49,18 +53,13 @@ pub enum PlanIssue {
     NotFrozen { network_hash: String },
 }
 
-fn parse_date(s: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        .map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
-}
-
 /// Ties break by id, so a chain with duplicate dates resolves the same way
 /// for any input order. Unversioned plans never resolve.
-pub fn resolve(plans: &[PlanInfo], date: NaiveDate) -> Result<Option<String>, String> {
-    let mut best: Option<(NaiveDate, String)> = None;
+pub fn resolve(plans: &[PlanInfo], date: Date) -> Result<Option<String>, String> {
+    let mut best: Option<(Date, String)> = None;
     for plan in plans {
         let Some(from) = &plan.effective_from else { continue };
-        let from = parse_date(from)?;
+        let from = Date::read(from)?;
         if from <= date {
             let key = (from, plan.id.clone());
             if best.as_ref().map_or(true, |b| &key > b) {
@@ -146,8 +145,9 @@ impl transit_version::Versioned for PublishedPlans {
 }
 
 /// Republishing a retired pick's id restores it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 #[serde(rename_all = "snake_case")]
 pub enum PickStatus {
     #[default]
@@ -155,26 +155,27 @@ pub enum PickStatus {
     Retired,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct PublishedPlan {
     pub id: String,
     pub name: String,
     /// "YYYY-MM-DD". A published pick is always dated.
     pub effective_from: String,
     /// "sha256:<hex>" of the canonical network document.
-    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("format" = "content-hash", "x-references" = "network")))]
     pub network_hash: String,
     #[serde(default)]
     pub status: PickStatus,
     /// Absent when the adoption read no stops, or the pick predates the plans
     /// log (D-191).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("x-references" = "log.stops"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "log.stops")))]
     pub stops_seq: Option<u64>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -190,8 +191,9 @@ fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
 
 /// `served` marks the deployment's feed, which production serves until a
 /// pick takes effect.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct DevicePlan {
     pub key: String,
     /// Empty for a plan with no pick identity.
@@ -203,11 +205,12 @@ pub struct DevicePlan {
 }
 
 /// `key` is absent for a published pick that the device does not hold yet.
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct TimelineRow {
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub key: Option<String>,
     pub id: String,
     pub name: String,
@@ -217,8 +220,9 @@ pub struct TimelineRow {
     pub loaded: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct Timeline {
     pub rows: Vec<TimelineRow>,
     pub in_force: Option<String>,
@@ -228,7 +232,7 @@ pub struct Timeline {
 
 /// A device plan is published when its id is a published pick's, or when it
 /// is the deployment's feed. A retired pick is no row.
-pub fn timeline(device: &[DevicePlan], set: Option<&PublishedPlans>, today: NaiveDate) -> Result<Timeline, String> {
+pub fn timeline(device: &[DevicePlan], set: Option<&PublishedPlans>, today: Date) -> Result<Timeline, String> {
     let picks: Vec<&PublishedPlan> = set.map(|s| s.plans.iter().filter(|p| p.status == PickStatus::Published).collect()).unwrap_or_default();
     let mut rows: Vec<TimelineRow> = device
         .iter()
@@ -269,17 +273,18 @@ pub fn period_in(set: Option<&PublishedPlans>, pick: &PlanInfo) -> Option<String
 
 /// Picks are sorted by (effective_from, id), one entry per id, so one set of
 /// picks is one byte sequence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct PublishedPlans {
     /// A copy without a kind tag reads as the plans document.
     #[serde(default)]
-    #[ts(type = "\"plans\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"plans\""))]
     pub kind: PlansKind,
     pub schema_version: u32,
     pub plans: Vec<PublishedPlan>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -296,7 +301,7 @@ pub fn publish(
     set: &PublishedPlans,
     plan: &PlanInfo,
     network_hash: &str,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<PublishedPlans, Vec<PlanIssue>> {
     if plan.id.is_empty() {
         return Err(vec![PlanIssue::UnversionedPlan]);
@@ -304,7 +309,7 @@ pub fn publish(
     let Some(from) = &plan.effective_from else {
         return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
     };
-    let Ok(date) = parse_date(from) else {
+    let Ok(date) = Date::read(from) else {
         return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
     };
     let correction = set
@@ -315,7 +320,7 @@ pub fn publish(
         return Err(vec![PlanIssue::PickDatedInPast {
             id: plan.id.clone(),
             effective_from: from.clone(),
-            today: today.format("%Y-%m-%d").to_string(),
+            today: today.to_string(),
         }]);
     }
     let mut plans: Vec<PublishedPlan> = set.plans.iter().filter(|p| p.id != plan.id).cloned().collect();
@@ -338,14 +343,14 @@ pub fn publish(
 
 /// Only a pick dated after `today` is retired. One that has taken effect is
 /// corrected by republishing it.
-pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<PublishedPlans, Vec<PlanIssue>> {
+pub fn retire(set: &PublishedPlans, id: &str, today: Date) -> Result<PublishedPlans, Vec<PlanIssue>> {
     let Some(pick) = set.plans.iter().find(|p| p.id == id) else {
         return Err(vec![PlanIssue::UnknownPick { id: id.to_string() }]);
     };
     if pick.status == PickStatus::Retired {
         return Ok(set.clone());
     }
-    let from = parse_date(&pick.effective_from).map_err(|_| {
+    let from = Date::read(&pick.effective_from).map_err(|_| {
         vec![PlanIssue::PlanMissingEffectiveDate { id: id.to_string() }]
     })?;
     if from <= today {
@@ -359,17 +364,17 @@ pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<Publis
     Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
 }
 
-pub fn in_force(set: &PublishedPlans, date: NaiveDate) -> Result<Option<&PublishedPlan>, String> {
+pub fn in_force(set: &PublishedPlans, date: Date) -> Result<Option<&PublishedPlan>, String> {
     Ok(resolve(&chain(&set.plans), date)?.and_then(|id| set.plans.iter().find(|p| p.id == id)))
 }
 
 /// The server brings these picks' networks forward at startup
 /// (docs/FORMATS.md, "Versions"). The others stay in their version.
-pub fn in_use(set: &PublishedPlans, today: NaiveDate) -> Result<Vec<&PublishedPlan>, String> {
+pub fn in_use(set: &PublishedPlans, today: Date) -> Result<Vec<&PublishedPlan>, String> {
     let current = in_force(set, today)?.map(|p| p.id.as_str());
     let mut used = Vec::new();
     for pick in set.plans.iter().filter(|p| p.status == PickStatus::Published) {
-        if Some(pick.id.as_str()) == current || parse_date(&pick.effective_from)? > today {
+        if Some(pick.id.as_str()) == current || Date::read(&pick.effective_from)? > today {
             used.push(pick);
         }
     }
@@ -391,10 +396,11 @@ impl transit_version::Versioned for FrozenVersions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct FrozenVersion {
-    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("format" = "content-hash", "x-references" = "network")))]
     pub network_hash: String,
     pub plan_id: String,
     pub name: String,
@@ -404,26 +410,27 @@ pub struct FrozenVersion {
     /// The network hash of the frozen version that a migration brought
     /// forward (D-232).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("format" = "content-hash", "x-references" = "network"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("format" = "content-hash", "x-references" = "network")))]
     pub from_network_hash: Option<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// A version stays when adopted, so every network that was ever in force is
 /// here (D-191).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 pub struct FrozenVersions {
     #[serde(default)]
-    #[ts(type = "\"frozen_versions\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"frozen_versions\""))]
     pub kind: FrozenKind,
     pub schema_version: u32,
     pub versions: std::collections::BTreeMap<String, FrozenVersion>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -444,7 +451,7 @@ pub fn freeze_from(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str,
     if plan.id.is_empty() {
         return Err(vec![PlanIssue::UnversionedPlan]);
     }
-    let Some(from) = plan.effective_from.as_ref().filter(|f| parse_date(f).is_ok()) else {
+    let Some(from) = plan.effective_from.as_ref().filter(|f| Date::read(f).is_ok()) else {
         return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
     };
     if purpose.trim().is_empty() {
@@ -473,7 +480,7 @@ pub fn adopt(
     set: &PublishedPlans,
     frozen: &FrozenVersions,
     network_hash: &str,
-    today: NaiveDate,
+    today: Date,
     stops_seq: Option<u64>,
 ) -> Result<PublishedPlans, Vec<PlanIssue>> {
     let Some(version) = frozen.versions.get(network_hash) else {

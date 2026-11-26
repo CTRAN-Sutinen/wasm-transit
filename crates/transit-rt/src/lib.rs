@@ -22,10 +22,31 @@ pub use encode::{encode_alerts, entity_reading, read_alerts, DroppedAlert, Encod
 
 use prost::Message;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum RtError {
-    #[error("protobuf decode failed: {0}")]
-    Decode(#[from] prost::DecodeError),
+    Decode(prost::DecodeError),
+}
+
+impl std::fmt::Display for RtError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RtError::Decode(e) => write!(f, "protobuf decode failed: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for RtError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            RtError::Decode(e) => Some(e),
+        }
+    }
+}
+
+impl From<prost::DecodeError> for RtError {
+    fn from(e: prost::DecodeError) -> Self {
+        RtError::Decode(e)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, RtError>;

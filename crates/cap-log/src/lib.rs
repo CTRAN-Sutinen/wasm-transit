@@ -6,121 +6,124 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use transit_log::{Checkpoint, Header, KindRecords, Quarantined, Records, Stored};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_log/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_log/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Compose {
         #[serde(default)]
-        #[ts(optional, type = "any")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "any"))]
         checkpoint: Option<serde_json::Value>,
-        #[ts(type = "any")]
+        #[cfg_attr(feature = "bindings", ts(type = "any"))]
         header: serde_json::Value,
-        #[ts(type = "any")]
+        #[cfg_attr(feature = "bindings", ts(type = "any"))]
         next: serde_json::Value,
         #[serde(default)]
-        #[ts(optional, type = "Array<{ seq: number, text: string }>")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "Array<{ seq: number, text: string }>"))]
         unread: Option<serde_json::Value>,
     },
     Fold {
         log: String,
         #[serde(default)]
-        #[ts(optional, type = "any")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "any"))]
         checkpoint: Option<serde_json::Value>,
-        #[ts(type = "Array<{ seq: number, text: string }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ seq: number, text: string }>"))]
         entries: serde_json::Value,
     },
     Revert {
         log: String,
         #[serde(default)]
-        #[ts(optional, type = "any")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "any"))]
         checkpoint: Option<serde_json::Value>,
-        #[ts(type = "Array<{ seq: number, text: string }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ seq: number, text: string }>"))]
         entries: serde_json::Value,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         target: u64,
-        #[ts(type = "any")]
+        #[cfg_attr(feature = "bindings", ts(type = "any"))]
         header: serde_json::Value,
         #[serde(default)]
-        #[ts(optional, type = "Array<{ kind: string, id: string, version: number, after?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "Array<{ kind: string, id: string, version: number, after?: unknown }>"))]
         written: Option<serde_json::Value>,
     },
     CloseGap {
-        #[ts(type = "any")]
+        #[cfg_attr(feature = "bindings", ts(type = "any"))]
         header: serde_json::Value,
     },
     References {
-        #[ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>"))]
         kinds: serde_json::Value,
-        #[ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>"))]
         folds: serde_json::Value,
         #[serde(default)]
-        #[ts(optional, type = "Record<string, Array<{ seq: number, text: string }>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "Record<string, Array<{ seq: number, text: string }>>"))]
         entries: Option<serde_json::Value>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         log: Option<String>,
         #[serde(default)]
-        #[ts(optional, type = "{ seq: number, text: string }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ seq: number, text: string }"))]
         entry: Option<serde_json::Value>,
     },
     Naming {
-        #[ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>"))]
         kinds: serde_json::Value,
-        #[ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>"))]
         folds: serde_json::Value,
         hashes: Vec<String>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_log/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_log/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Compose {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         entry: Option<String>,
         changes: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, type = "number")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "number"))]
         landed: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, type = "{ kind: string, id: string, seq: number }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ kind: string, id: string, seq: number }"))]
         overlap: Option<transit_log::Overlap>,
     },
     Fold {
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         seq: u64,
         checkpoint: String,
-        #[ts(type = "Record<string, Record<string, { version: number, value: unknown }>>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, Record<string, { version: number, value: unknown }>>"))]
         records: Records,
-        #[ts(type = "Array<{ seq: number, reason: string }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ seq: number, reason: string }>"))]
         quarantined: Vec<Quarantined>,
     },
     Revert {
         entry: String,
         changes: usize,
-        #[ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>"))]
         states: Vec<transit_log::RevertState>,
     },
     CloseGap {
         entry: String,
     },
     References {
-        #[ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string, entry?: { log: string, seq: number } }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string, entry?: { log: string, seq: number } }>"))]
         broken: Vec<transit_log::Broken>,
         /// Absent with `entry`.
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, type = "Array<{ log: string, kind: string, id: string, version: number, reads: number }>")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "Array<{ log: string, kind: string, id: string, version: number, reads: number }>"))]
         unjudged: Vec<transit_log::Unjudged>,
     },
     Naming {
-        #[ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string }>"))]
         references: Vec<transit_log::Naming>,
     },
 

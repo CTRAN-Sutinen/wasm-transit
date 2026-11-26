@@ -4,14 +4,16 @@
 //! the token and the clock, and passes the policy document on each call.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// `"*"` in a rule matches all. `Audit` reads the pointer log with writer
 /// identities, the only place a user identity leaves the store.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
     Read,
@@ -31,8 +33,9 @@ impl Action {
 
 /// The subject and the roles from the configured claim path. Nothing
 /// else is trusted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Identity {
     pub sub: String,
     pub roles: Vec<String>,
@@ -40,8 +43,9 @@ pub struct Identity {
 
 /// `"*"` matches all actions or pointers. A rule with empty `roles` never
 /// matches.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Rule {
     pub name: String,
     pub roles: Vec<String>,
@@ -50,7 +54,7 @@ pub struct Rule {
     #[serde(default)]
     pub actions: Vec<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -76,18 +80,19 @@ impl transit_version::Versioned for Policy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Policy {
     /// A copy without a kind tag reads as a policy.
     #[serde(default)]
-    #[ts(type = "\"policy\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"policy\""))]
     pub kind: PolicyKind,
     pub schema_version: u32,
     #[serde(default)]
     pub rules: Vec<Rule>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -97,8 +102,9 @@ impl Policy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Decision {
     pub allow: bool,
     pub matched_rule: Option<String>,
@@ -132,8 +138,9 @@ pub fn authorize(policy: &Policy, identity: &Identity, action: Action, pointer: 
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Capability {
     pub pointer: String,
     pub actions: Vec<String>,
@@ -141,8 +148,9 @@ pub struct Capability {
 
 /// A client drives its UI from it without learning anything about other
 /// roles, other rules, or the rest of the policy's structure.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EffectivePolicy {
     pub roles: Vec<String>,
     pub capabilities: Vec<Capability>,
@@ -376,8 +384,9 @@ mod prop {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PolicyIssue {
     UnknownAction { rule: String, action: String },
@@ -385,15 +394,17 @@ pub enum PolicyIssue {
     DuplicateRuleName { name: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PolicyWarning {
     NoPolicyWriter,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PolicyCheck {
     pub issues: Vec<PolicyIssue>,
     pub warnings: Vec<PolicyWarning>,

@@ -6,18 +6,24 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-geo = { path = "../transit-geo" }
-transit-network = { path = "../transit-network" }
+transit-geo = { path = "../transit-geo", default-features = false }
+transit-network = { path = "../transit-network", default-features = false }
 # The live document (read-only): predicted times per trip instance.
-transit-live = { path = "../transit-live" }
+transit-live = { path = "../transit-live", default-features = false }
 # The walk table (read-only): street walks between the network's stops.
-transit-streets = { path = "../transit-streets" }
+transit-streets = { path = "../transit-streets", default-features = false }
 # The board's one wait rule (D-24): "leave in N min".
-transit-dispatch = { path = "../transit-dispatch" }
-chrono = { workspace = true }
-thiserror = { workspace = true }
+transit-dispatch = { path = "../transit-dispatch", default-features = false }
+transit-date = { path = "../transit-date", default-features = false }
 serde = { workspace = true }
-ts-rs = { workspace = true }
+ts-rs = { workspace = true, optional = true }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "transit-geo/bindings", "transit-network/bindings", "transit-live/bindings", "transit-streets/bindings", "transit-dispatch/bindings", "transit-date/bindings"]
 
 [dev-dependencies]
 # Tests compose over real documents: fixture feeds go through the

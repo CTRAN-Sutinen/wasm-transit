@@ -8,22 +8,27 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-chrono = { workspace = true }
-ts-rs = { workspace = true }
-transit-network = { path = "../transit-network" }
-transit-sync = { path = "../transit-sync" }
-transit-dispatch = { path = "../transit-dispatch" }
-transit-rider = { path = "../transit-rider" }
+transit-date = { path = "../transit-date", default-features = false }
+ts-rs = { workspace = true, optional = true }
+transit-network = { path = "../transit-network", default-features = false }
+transit-sync = { path = "../transit-sync", default-features = false }
+transit-dispatch = { path = "../transit-dispatch", default-features = false }
+transit-rider = { path = "../transit-rider", default-features = false }
 # The live document (minted by cap-rt) the realtime-first board reads.
-transit-live = { path = "../transit-live" }
+transit-live = { path = "../transit-live", default-features = false }
 # An alert's entities read as the feed reads them (alert_reach).
-transit-alerts = { path = "../transit-alerts" }
-transit-rt = { path = "../transit-rt" }
-cap-abi = { path = "../cap-abi" }
+transit-alerts = { path = "../transit-alerts", default-features = false }
+transit-rt = { path = "../transit-rt", default-features = false }
+cap-abi = { path = "../cap-abi", default-features = false }
 # The worked examples' fixtures, for the `examples` feature only.
-fixtures = { path = "../fixtures", optional = true }
+fixtures = { path = "../fixtures", optional = true, default-features = false }
 
 [features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "transit-network/bindings", "transit-sync/bindings", "transit-dispatch/bindings", "transit-rider/bindings", "transit-live/bindings", "transit-alerts/bindings", "transit-rt/bindings", "cap-abi/bindings", "fixtures?/bindings", "transit-date/bindings"]
 # The worked examples (`examples::examples`), which the generator runs.
 # No module build turns it on.
 examples = ["dep:fixtures"]

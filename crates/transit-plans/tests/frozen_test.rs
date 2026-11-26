@@ -1,7 +1,7 @@
 //! Freezing and adopting (D-191). A frozen version is in the record and not
 //! in force. Only a frozen version is adopted.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_plans::{
     adopt, freeze, freeze_from, in_force, publish, retire, FrozenVersions, PlanInfo, PlanIssue, PublishedPlans, FROZEN_SCHEMA_VERSION,
@@ -15,11 +15,11 @@ fn hash(n: u8) -> String {
     format!("sha256:{}", format!("{n:02x}").repeat(32))
 }
 
-fn date(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn date(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
-fn early() -> NaiveDate {
+fn early() -> Date {
     date("2000-01-01")
 }
 

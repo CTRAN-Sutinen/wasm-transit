@@ -10,15 +10,17 @@ pub mod load;
 
 use serde::{Deserialize, Serialize};
 use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct OnTimeWindow {
     /// The default is 0, because a bus that leaves before its time is a
     /// missed bus.
     #[serde(default)]
-    #[ts(optional, as = "Option<u32>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<u32>"))]
     pub early_secs: u32,
     pub late_secs: u32,
     pub very_late_secs: u32,
@@ -30,8 +32,9 @@ impl Default for OnTimeWindow {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum LiveStatus {
     Early,
@@ -55,8 +58,9 @@ pub fn classify(delay: Option<i32>, window: &OnTimeWindow) -> LiveStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LiveStop {
     pub stop: String,
     /// Seconds after the service-day anchor. The delay is relative to it.
@@ -65,17 +69,18 @@ pub struct LiveStop {
     pub departure_delay: Option<i32>,
     pub predicted_departure: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[ts(optional, as = "Option<bool>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<bool>"))]
     pub skipped: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LiveTrip {
     pub trip: String,
     /// "YYYY-MM-DD". Absent is the current service day ([`LiveDay::on`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub date: Option<String>,
     pub start_secs: u32,
     pub route: Option<String>,
@@ -83,13 +88,14 @@ pub struct LiveTrip {
     pub worst_delay_secs: Option<i32>,
     pub status: LiveStatus,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[ts(optional, as = "Option<bool>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<bool>"))]
     pub canceled: bool,
     pub stops: Vec<LiveStop>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LiveVehicle {
     /// The vehicle id, else the rt entity id, so it is stable per snapshot.
     pub key: String,
@@ -104,26 +110,27 @@ pub struct LiveVehicle {
     pub trip: Option<String>,
     /// "YYYY-MM-DD". Absent is the current service day ([`LiveDay::on`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub date: Option<String>,
     pub start_secs: Option<u32>,
     pub delay_secs: Option<i32>,
     pub status: LiveStatus,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertScope {
     pub route: Option<String>,
     /// A model direction of `route`. Present only with `route`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub direction: Option<String>,
     pub stop: Option<String>,
     pub trip: Option<String>,
     /// "YYYY-MM-DD". Absent is the current service day ([`LiveDay::on`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub date: Option<String>,
     pub start_secs: Option<u32>,
 }
@@ -153,8 +160,9 @@ impl AlertScope {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LiveAlert {
     pub id: String,
     pub cause: AlertCause,
@@ -195,24 +203,25 @@ impl transit_version::Versioned for LiveDay {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LiveDay {
     #[serde(default)]
-    #[ts(type = "\"live\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"live\""))]
     pub kind: LiveKind,
     #[serde(default = "version_one")]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<2>,
     pub window: OnTimeWindow,
     pub trips: Vec<LiveTrip>,
     pub vehicles: Vec<LiveVehicle>,
     pub unmatched_trips: u32,
     #[serde(default)]
-    #[ts(optional, as = "Option<Vec<LiveAlert>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<LiveAlert>>"))]
     pub alerts: Vec<LiveAlert>,
     #[serde(default)]
-    #[ts(optional, as = "Option<u32>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<u32>"))]
     pub unmatched_alerts: u32,
 }
 
@@ -263,8 +272,9 @@ impl LiveDay {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StatusCounts {
     pub early: u32,
     pub on_time: u32,
@@ -273,8 +283,9 @@ pub struct StatusCounts {
     pub no_prediction: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LateEntry {
     pub key: String,
     pub route: Option<String>,
@@ -286,8 +297,9 @@ pub struct LateEntry {
     pub status: LiveStatus,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LiveSummary {
     pub vehicles: u32,
     pub counts: StatusCounts,

@@ -9,20 +9,25 @@ license.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-ts-rs = { workspace = true }
-transit-rt = { path = "../transit-rt" }
-transit-network = { path = "../transit-network" }
+ts-rs = { workspace = true, optional = true }
+transit-rt = { path = "../transit-rt", default-features = false }
+transit-network = { path = "../transit-network", default-features = false }
 # The live document: minted here from the snapshot and the network;
 # the import's Boundary carries the published stop_sequence
 # numbering rt updates name.
-transit-codec = { path = "../transit-codec" }
-transit-live = { path = "../transit-live" }
-transit-alerts = { path = "../transit-alerts" }
-cap-abi = { path = "../cap-abi" }
+transit-codec = { path = "../transit-codec", default-features = false }
+transit-live = { path = "../transit-live", default-features = false }
+transit-alerts = { path = "../transit-alerts", default-features = false }
+cap-abi = { path = "../cap-abi", default-features = false }
 # The worked examples' fixtures, for the `examples` feature only.
-fixtures = { path = "../fixtures", optional = true }
+fixtures = { path = "../fixtures", optional = true, default-features = false }
 
 [features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "transit-rt/bindings", "transit-network/bindings", "transit-codec/bindings", "transit-live/bindings", "transit-alerts/bindings", "cap-abi/bindings", "fixtures?/bindings"]
 # The worked examples (`examples::examples`), which the generator runs.
 # No module build turns it on.
 examples = ["dep:fixtures"]

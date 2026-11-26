@@ -79,7 +79,7 @@ fn the_answer_comes_from_the_effective_day() {
     );
 
     let net = derived_network();
-    let friday = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let friday = transit_date::Date::parse(DATE).unwrap();
     assert!(
         net.service_types["HOL"].rule.runs_on(friday),
         "the fixture pins the law: HOL's rule runs that day"
@@ -101,8 +101,8 @@ fn edits_can_take_a_key_off_the_board() {
             skipped_stops: vec!["C".into()],
             detour: None,
             added_secs: 60,
-            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
             extra: Default::default(),
         }),
         cancel: None,
@@ -184,8 +184,8 @@ fn the_reverse_read_comes_from_the_effective_day() {
             skipped_stops: vec!["C".into()],
             detour: None,
             added_secs: 60,
-            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
             extra: Default::default(),
         }),
         cancel: None,
@@ -218,8 +218,8 @@ fn an_invalid_edit_record_moves_nothing() {
             skipped_stops: vec![],
             detour: None,
             added_secs: 60,
-            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
             extra: Default::default(),
         }),
         cancel: None,

@@ -39,8 +39,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
             skipped_stops: vec!["C".into()],
             detour: None,
             added_secs,
-            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
             extra: Default::default(),
         }),
         cancel: None,
@@ -89,7 +89,7 @@ fn the_network_identity_is_the_modules_canonical_serialization() {
 fn the_board_is_the_materialized_day_model_vocabulary() {
     let net = derived_network();
     let network_hash = load_network();
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     let (trip_id, start) = net
         .pattern_trips
         .iter()

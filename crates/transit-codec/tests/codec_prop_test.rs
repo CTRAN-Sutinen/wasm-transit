@@ -4,10 +4,10 @@
 
 use std::io::Write;
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 
-const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+const EPOCH: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 
 #[derive(Clone, Debug)]
 struct GenTrip {
@@ -123,7 +123,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
 
 fn trips_of(
     net: &transit_network::Network,
-    date: NaiveDate,
+    date: Date,
 ) -> Vec<(String, String, u32, Vec<(String, u32, u32)>)> {
     let mut trips: Vec<_> = transit_network::materialize(net, date)
         .expect("valid documents materialize")
@@ -178,7 +178,7 @@ proptest! {
         let first = import(&gen_feed(&trips));
         let second = round_trip(&first);
         for day in [0i64, 4, 9, 400] {
-            let date = EPOCH + Duration::days(day);
+            let date = EPOCH + Days::new(day);
             prop_assert_eq!(
                 trips_of(&second.network, date),
                 trips_of(&first.network, date),

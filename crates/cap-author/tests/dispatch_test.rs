@@ -34,7 +34,7 @@ fn changes_chain_by_hash_and_report_the_result() {
             plan: PlanMeta {
                 id: "spring".into(),
                 name: "Spring 2027".into(),
-                effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+                effective_from: transit_date::Date::from_ymd_opt(2027, 1, 10),
                 extra: Default::default(),
             },
             through: None,
@@ -79,7 +79,7 @@ fn changes_chain_by_hash_and_report_the_result() {
             plan: PlanMeta {
                 id: "spring".into(),
                 name: "Spring 2027".into(),
-                effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+                effective_from: transit_date::Date::from_ymd_opt(2027, 1, 10),
                 extra: Default::default(),
             },
             through: None,
@@ -97,7 +97,7 @@ fn changes_chain_by_hash_and_report_the_result() {
             plan: PlanMeta {
                 id: "spring".into(),
                 name: "Spring 2027".into(),
-                effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+                effective_from: transit_date::Date::from_ymd_opt(2027, 1, 10),
                 extra: Default::default(),
             },
             through: Some("2027-05-29".into()),
@@ -106,7 +106,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     .unwrap() else {
         panic!("apply")
     };
-    let monday = chrono::NaiveDate::from_ymd_opt(2027, 1, 11).unwrap();
+    let monday = transit_date::Date::from_ymd_opt(2027, 1, 11).unwrap();
     assert!(network.service_types["weekday"].rule.runs_on(monday));
     assert_eq!(warnings, vec![NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 }]);
 }

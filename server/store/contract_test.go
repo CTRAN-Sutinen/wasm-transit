@@ -9,15 +9,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type testBackend struct {
@@ -56,29 +57,30 @@ func ensureBucket(t *testing.T, b Backend) {
 		if ensured[b.bucket] {
 			return
 		}
-		_, err = b.c.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &b.bucket})
+		var body []byte
+		if b.region != "us-east-1" && !b.pathStyle {
+			body = []byte("<CreateBucketConfiguration><LocationConstraint>" + b.region +
+				"</LocationConstraint></CreateBucketConfiguration>")
+		}
+		var resp *http.Response
+		if resp, err = b.do(ctx, "PUT", "", nil, nil, body); err == nil {
+			_, err = check("CreateBucket", resp)
+		}
 		if status(err) == 409 {
 			err = nil
 		}
 		ensured[b.bucket] = true
-	case *Azure:
-		if ensured[b.container] {
-			return
-		}
-		_, err = b.c.CreateContainer(ctx, b.container, nil)
-		if bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
-			err = nil
-		}
-		ensured[b.container] = true
 	case *GCS:
-		if ensured[b.b.BucketName()] {
+		if ensured[b.bucket] {
 			return
 		}
-		err = b.b.Create(ctx, "transit-test", nil)
+		body, _ := json.Marshal(map[string]string{"name": b.bucket})
+		_, _, err = b.do(ctx, "buckets.insert", "POST", "/storage/v1/b", url.Values{"project": {"transit-test"}},
+			http.Header{"Content-Type": {"application/json"}}, body)
 		if gcsCode(err) == 409 {
 			err = nil
 		}
-		ensured[b.b.BucketName()] = true
+		ensured[b.bucket] = true
 	}
 	if err != nil {
 		t.Fatalf("ensure bucket: %v", err)

@@ -6,18 +6,25 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-geo = { path = "../transit-geo" }
-transit-version = { path = "../transit-version" }
-schemars = { workspace = true }
+transit-geo = { path = "../transit-geo", default-features = false }
+transit-version = { path = "../transit-version", default-features = false }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
-ts-rs = { workspace = true }
-chrono = { workspace = true }
-transit-network = { path = "../transit-network" }
-transit-sync = { path = "../transit-sync" }
+ts-rs = { workspace = true, optional = true }
+transit-date = { path = "../transit-date", default-features = false }
+transit-network = { path = "../transit-network", default-features = false }
+transit-sync = { path = "../transit-sync", default-features = false }
 # The live document (model vocabulary) the realtime-first board reads.
-transit-live = { path = "../transit-live" }
+transit-live = { path = "../transit-live", default-features = false }
 # The watchlist's migration chain steps over JSON values.
 serde_json = { workspace = true }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "dep:schemars", "transit-geo/bindings", "transit-version/bindings", "transit-network/bindings", "transit-sync/bindings", "transit-live/bindings", "transit-date/bindings"]
 
 [dev-dependencies]
 proptest = "1"

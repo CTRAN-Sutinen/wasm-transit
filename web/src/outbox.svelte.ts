@@ -1,4 +1,4 @@
-import { get as idbGet, set as idbSet } from "idb-keyval";
+import { idbGet, idbSet } from "./idb";
 import { Outbox, type Outcome, type Waiting, type Write } from "./outbox";
 import { writeFetch } from "./signin.svelte";
 

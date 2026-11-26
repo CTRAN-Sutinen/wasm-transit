@@ -1,7 +1,7 @@
 //! Every reader treats an empty cell as absent. Every writer uses the
 //! spec's spelling.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_network::operators::Contactless;
 use transit_network::StopRule;
 
@@ -27,12 +27,19 @@ pub(crate) fn time_cell(secs: Option<u32>) -> Option<String> {
     secs.map(format_time)
 }
 
-pub(crate) fn parse_date(text: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(text.trim(), "%Y%m%d").ok()
+/// GTFS's "YYYYMMDD", the date's form at the boundary. Spaces around the
+/// cell are dropped; anything else that is not eight digits naming a day
+/// is no date.
+pub fn parse_gtfs_date(text: &str) -> Option<Date> {
+    let t = text.trim();
+    if t.len() != 8 || !t.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Date::from_ymd_opt(t[0..4].parse().ok()?, t[4..6].parse().ok()?, t[6..8].parse().ok()?)
 }
 
-pub(crate) fn format_date(date: NaiveDate) -> String {
-    date.format("%Y%m%d").to_string()
+pub(crate) fn format_date(date: Date) -> String {
+    format!("{:04}{:02}{:02}", date.year(), date.month(), date.day())
 }
 
 pub(crate) fn parse_f64(text: &Option<String>) -> Option<f64> {

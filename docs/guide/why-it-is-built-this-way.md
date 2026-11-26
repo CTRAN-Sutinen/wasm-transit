@@ -155,9 +155,8 @@ one change replaces the other. Review is what catches this.
 ## 8. Store in object storage, not a database
 
 **The choice.** The server keeps its data in cloud object storage:
-Amazon S3 (or a compatible service), Azure Blob Storage, or Google
-Cloud Storage. It relies on only two things these services all
-provide: writing a whole file, and creating a file only if it does
+Amazon S3 (or a compatible service) or Google Cloud Storage. It
+relies on only two things that these services both provide: writing a whole file, and creating a file only if it does
 not already exist.
 
 **Why.** Object storage keeps data safe when a server fails. Because
@@ -177,6 +176,9 @@ share one store, a server may see another's change up to two seconds
 late. The store is not built for searching rows by their contents.
 That is one reason day-to-day dispatch data stays in the systems
 built for it.
+The server talks to each provider through its own short code, not the
+provider's toolkit, which would bring in many outside packages. Adding
+a third provider means writing that code.
 
 ## 9. Let the rider apps run without a server
 
@@ -221,6 +223,10 @@ checks enforce them on every change. For example:
 - every example in the module documentation is run, and must give
   the same answer from a module on its own and from inside each app;
 - the web code is checked so that it never calculates answers.
+- every outside package that the server, the modules, and the apps
+  use is on a list with the reason for it, so adding one is a choice
+  that someone reviews. Each package is code the agency must keep up
+  after its makers move on, so the list is kept short.
 
 Tests are written from what the behavior is meant to be (the agency's
 intent and the GTFS specification), before the code. A test's

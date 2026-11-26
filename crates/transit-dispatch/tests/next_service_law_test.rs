@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{Datelike, Days, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 use transit_dispatch::{grouped_board, with_next_service, Day, NEXT_SERVICE_DAYS};
 use transit_live::{LiveDay, LiveStatus, LiveTrip, OnTimeWindow};
@@ -21,8 +21,8 @@ use transit_sync::{Diversion, EditRecord, EditStatus};
 
 const DAY_SECS: u32 = 86_400;
 
-fn today() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 23).unwrap() // a Friday
+fn today() -> Date {
+    Date::from_ymd_opt(2026, 10, 23).unwrap() // a Friday
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +72,7 @@ fn build(routes: &[GenRoute]) -> Network {
                     days,
                     ranges: vec![DateRange {
                         start: today(),
-                        end: today().checked_add_days(Days::new(route.ends_after)).unwrap(),
+                        end: today().checked_add_days(Days::new(route.ends_after as i64)).unwrap(),
                         extra: Default::default(),
                     }],
                     exceptions: vec![],
@@ -141,8 +141,8 @@ fn edits(routes: &[GenRoute]) -> Vec<EditRecord> {
                     skipped_stops: vec!["X".into()],
                     detour: None,
                     added_secs: 0,
-                    start_date: today().checked_add_days(Days::new(from)).unwrap(),
-                    end_date: today().checked_add_days(Days::new(to)).unwrap(),
+                    start_date: today().checked_add_days(Days::new(from as i64)).unwrap(),
+                    end_date: today().checked_add_days(Days::new(to as i64)).unwrap(),
                     extra: Default::default(),
                 }),
                 cancel: None,
@@ -157,7 +157,7 @@ fn edits(routes: &[GenRoute]) -> Vec<EditRecord> {
 
 fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
     for k in 1..=7u64 {
-        let d = today().checked_add_days(Days::new(k)).unwrap();
+        let d = today().checked_add_days(Days::new(k as i64)).unwrap();
         let wd = d.weekday().num_days_from_monday() as usize;
         let runs = route.days[wd] && k <= route.ends_after;
         let diverted = route.diverted.is_some_and(|(a, b)| a <= k && k <= b);
@@ -208,7 +208,7 @@ proptest! {
     ) {
         let net = build(&routes);
         let records = edits(&routes);
-        let day_on = |d: NaiveDate| transit_dispatch::day(&net, d, &records).map_err(|e| e.to_string()).map(Box::new);
+        let day_on = |d: Date| transit_dispatch::day(&net, d, &records).map_err(|e| e.to_string()).map(Box::new);
         let today_day = day_on(today()).unwrap();
         let live = cancel_live.then(|| all_cancelled(&net, &today_day));
         let mut board = grouped_board(&net, &today_day.trips, "X", from_secs, 3, live.as_ref(), today_day.edits.as_ref());
@@ -225,11 +225,11 @@ proptest! {
             match (&group.next, expected) {
                 (None, None) => {}
                 (Some(next), Some((k, dep))) => {
-                    let date = today().checked_add_days(Days::new(k as u64)).unwrap();
+                    let date = today().checked_add_days(Days::new(k as i64)).unwrap();
                     prop_assert_eq!(next.days_ahead, k, "law 2: the first later day that serves it");
                     prop_assert!(next.days_ahead >= 1 && next.days_ahead <= NEXT_SERVICE_DAYS);
-                    prop_assert_eq!(&next.date, &date.format("%Y-%m-%d").to_string());
-                    prop_assert_eq!(&next.weekday, &date.format("%A").to_string());
+                    prop_assert_eq!(&next.date, &date.to_string());
+                    prop_assert_eq!(&next.weekday, &date.weekday().name().to_string());
                     prop_assert_eq!(next.departure_secs, dep, "law 2: its earliest departure");
                     prop_assert_eq!(&next.stop, "X");
                 }
@@ -245,7 +245,7 @@ fn a_weekday_route_stopped_on_friday_night_next_runs_monday() {
     days[..5].fill(true);
     let routes = vec![GenRoute { days, ends_after: 30, starts: vec![18_000, 79_200], diverted: None }];
     let net = build(&routes);
-    let day_on = |d: NaiveDate| transit_dispatch::day(&net, d, &[]).map_err(|e| e.to_string()).map(Box::new);
+    let day_on = |d: Date| transit_dispatch::day(&net, d, &[]).map_err(|e| e.to_string()).map(Box::new);
     let today_day = day_on(today()).unwrap();
     let mut board = grouped_board(&net, &today_day.trips, "X", 82_000, 3, None, None);
     with_next_service(&net, &mut board, "X", today(), 82_000, day_on).unwrap();

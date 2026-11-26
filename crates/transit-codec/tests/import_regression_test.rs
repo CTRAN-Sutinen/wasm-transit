@@ -290,7 +290,7 @@ fn import_flags_transfer_points_and_reports_unusable_ones() {
     assert!(network.validate().is_ok(), "{:?}", transit_network::validation_issues(&network));
     // The walking group pools both routes, and the day gives route 10 to 20
     // a usable timed connection.
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     let stats = transit_analysis::network_stats(&network, date);
     assert_eq!(stats.transfer_stops, 2);
     let n1 = stats.stops.iter().find(|s| s.stop_id == "N1").expect("N1");
@@ -305,7 +305,7 @@ fn import_flags_transfer_points_and_reports_unusable_ones() {
 #[test]
 fn imported_network_preserves_the_service_view() {
     // Read off the fixture by hand. HOL's only trip starts at B.
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     let at_a = |net: &transit_network::Network| -> Vec<(u32, String)> {
         let mut out: Vec<(u32, String)> = transit_network::materialize(net, date)
             .unwrap()

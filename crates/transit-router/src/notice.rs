@@ -7,12 +7,14 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use transit_network::{MaterializedTrip, Network};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::raptor::{fmt_time, Itinerary, Leg};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NoticeKind {
     NoTrip,
@@ -21,8 +23,9 @@ pub enum NoticeKind {
     Diverted,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PlanNotice {
     pub kind: NoticeKind,
     pub delay_secs: Option<u32>,

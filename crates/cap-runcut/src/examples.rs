@@ -10,7 +10,7 @@ pub fn examples() -> Vec<Example> {
     let network = || fixtures::load_network(&net.derived);
     let with_rules = || vec![network(), fixtures::load("load_work_rules", "work_rules", &rules)];
     let with_edits = || vec![network(), fixtures::load("load_edits", "edits", &edits)];
-    let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("a date");
+    let date = transit_date::Date::from_ymd_opt(2026, 10, 23).expect("a date");
     let day = transit_dispatch::effective_day(&net.network, date, &records).expect("the patched day");
     let diverted = day.iter().find(|t| t.stop_times.len() == 2 && t.start_secs == 8 * 3600 + 40 * 60).expect("the diverted trip");
     let on_day = |op: &'static str, loads: Vec<serde_json::Value>, extra: serde_json::Value| {

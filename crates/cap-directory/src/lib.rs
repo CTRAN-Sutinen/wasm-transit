@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_network::Network;
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 pub struct DirectoryStop {
     pub stop_id: String,
     pub name: String,
@@ -19,8 +21,9 @@ pub struct DirectoryStop {
     pub transfer: bool,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 pub struct DirectoryRoute {
     pub route_id: String,
     pub name: String,
@@ -29,15 +32,17 @@ pub struct DirectoryRoute {
     pub color: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 pub struct StopName {
     pub stop_id: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 pub struct PatternStops {
     pub pattern: String,
     pub name: String,
@@ -45,22 +50,24 @@ pub struct PatternStops {
 }
 
 /// A `walks` entry of a cap-streets `access` answer. Its path is ignored.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 pub struct StopWalk {
     pub stop_id: String,
     pub walk_secs: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     About { network_hash: String },
     Stops {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         query: Option<String>,
         #[serde(default)]
         limit: Option<u32>,
@@ -70,13 +77,13 @@ pub enum Request {
         lat: f64,
         lon: f64,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         limit: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         radius_m: Option<f64>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         walks: Option<Vec<StopWalk>>,
     },
     StopsByIds { network_hash: String, ids: Vec<String> },
@@ -87,14 +94,14 @@ pub enum Request {
     RouteLines {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         members: Option<Vec<String>>,
     },
     Entities {
         network_hash: String,
         kind: transit_network::EntityKind,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         query: Option<String>,
     },
     RouteDetail { network_hash: String, route_id: String },
@@ -102,24 +109,25 @@ pub enum Request {
         network_hash: String,
         stop_id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         members: Option<Vec<String>>,
     },
     Timetable {
         network_hash: String,
         route_id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         direction: Option<String>,
         members: Vec<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         compare_hash: Option<String>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_directory/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     About { name: String, plan: transit_network::PlanMeta },

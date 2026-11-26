@@ -1,7 +1,7 @@
 //! The published plan set (kind `plans`): one canonical document, one byte
 //! sequence for one set of picks, and a chain it holds is valid.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_plans::{
     in_force, in_use, publish, resolve, retire, PickStatus, PlanInfo, PlanIssue, PublishedPlans, PUBLISHED_SCHEMA_VERSION,
@@ -15,12 +15,12 @@ fn hash(n: u8) -> String {
     format!("sha256:{}", format!("{n:02x}").repeat(32))
 }
 
-fn date(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn date(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 /// A "today" before every fixture date, so every pick is a future one.
-fn early() -> NaiveDate {
+fn early() -> Date {
     date("2000-01-01")
 }
 
@@ -91,8 +91,8 @@ fn arb_steps() -> impl Strategy<Value = Vec<(PlanInfo, String)>> {
             .into_iter()
             .filter(|(_, (day, _))| seen_days.insert(*day))
             .map(|(id, (day, h))| {
-                let d = date("2026-01-01") + chrono::Days::new(day as u64);
-                (info(&format!("p{id}"), Some(&d.format("%Y-%m-%d").to_string())), hash(h))
+                let d = date("2026-01-01") + transit_date::Days::new(day as i64);
+                (info(&format!("p{id}"), Some(&d.to_string())), hash(h))
             })
             .collect()
     })
@@ -106,7 +106,7 @@ proptest! {
         steps in arb_steps(), day in 0u32..500, retire_first in any::<bool>()
     ) {
         let mut set = published(&steps);
-        let today = date("2025-12-01") + chrono::Days::new(day as u64);
+        let today = date("2025-12-01") + transit_date::Days::new(day as i64);
         if retire_first {
             let later = set.plans.iter().find(|p| date(&p.effective_from) > today).map(|p| p.id.clone());
             if let Some(id) = later {
@@ -121,8 +121,8 @@ proptest! {
             .map(|p| p.id.clone())
             .collect();
         prop_assert_eq!(&used, &expected);
-        for later in 0..600u64 {
-            if let Some(p) = in_force(&set, today + chrono::Days::new(later)).unwrap() {
+        for later in 0..600i64 {
+            if let Some(p) = in_force(&set, today + transit_date::Days::new(later)).unwrap() {
                 prop_assert!(used.contains(&p.id), "{} governs a day from today on", p.id);
             }
         }
@@ -156,7 +156,7 @@ proptest! {
     #[test]
     fn in_force_agrees_with_the_chain(steps in arb_steps(), day in 0u32..500) {
         let set = published(&steps);
-        let d = date("2025-12-01") + chrono::Days::new(day as u64);
+        let d = date("2025-12-01") + transit_date::Days::new(day as i64);
         let infos: Vec<PlanInfo> = set.plans.iter().map(|p| info(&p.id, Some(&p.effective_from))).collect();
         let chain = resolve(&infos, d).unwrap();
         let found = in_force(&set, d).unwrap();
@@ -169,7 +169,7 @@ proptest! {
 }
 
 
-fn today() -> NaiveDate {
+fn today() -> Date {
     date("2026-11-05")
 }
 
@@ -279,7 +279,7 @@ proptest! {
                 set = retire(&set, &plan.id, early()).unwrap();
             }
         }
-        let d = date("2025-12-01") + chrono::Days::new(day as u64);
+        let d = date("2025-12-01") + transit_date::Days::new(day as i64);
         let live: Vec<PlanInfo> = set.plans.iter()
             .filter(|p| p.status == PickStatus::Published)
             .map(|p| info(&p.id, Some(&p.effective_from)))

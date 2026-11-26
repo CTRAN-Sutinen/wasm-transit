@@ -1,6 +1,6 @@
 // Only the host layer imports this file. Shells and components never do.
 
-import { get as idbGet, set as idbSet } from "idb-keyval";
+import { idbGet, idbSet } from "../idb";
 import { onNewerBuild } from "../versions";
 import { previousClock, serviceClock } from "../clock";
 import { available, readJournal, startJournal, type CapId } from "../engine";

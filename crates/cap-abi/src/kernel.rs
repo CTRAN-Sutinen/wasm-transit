@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub use transit_version::{Form, Load};
@@ -28,14 +29,16 @@ use crate::registry::{Held, Registry, Retain, OP_EVICT, OP_HELD};
 /// The bytes are ignored.
 pub const OP_ABOUT: u32 = 268;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct About {
     pub capabilities: Vec<AboutCap>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct AboutCap {
     pub id: String,
     pub documents: Vec<String>,

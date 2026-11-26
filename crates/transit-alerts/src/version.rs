@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const KIND: &str = "service_alerts";
@@ -13,8 +14,9 @@ pub const ALERTS_VERSION: u32 = 2;
 
 pub const TEMPLATES_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_alerts/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_alerts/"))]
 pub struct MigrationNote {
     pub from: u32,
     pub kind: String,

@@ -1,7 +1,7 @@
 //! A trip cancel in the edit document changes the effective day and the
 //! boards (the cancelled visit's listing, D-100).
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_dispatch::{cancel_day, cancel_of, cancel_rows, day, grouped_board, report_against_network, stop_board};
 use transit_network::{
@@ -10,8 +10,8 @@ use transit_network::{
 };
 use transit_sync::{EditRecord, EditStatus, TripCancel};
 
-fn date() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 23).unwrap() // a Friday
+fn date() -> Date {
+    Date::from_ymd_opt(2026, 10, 23).unwrap() // a Friday
 }
 
 fn stop(name: &str) -> Stop {
@@ -54,8 +54,8 @@ fn network() -> Network {
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                    end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                    end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],
@@ -86,7 +86,7 @@ fn network() -> Network {
     net
 }
 
-fn cancel(trip_id: &str, start_secs: Option<u32>, on: NaiveDate) -> TripCancel {
+fn cancel(trip_id: &str, start_secs: Option<u32>, on: Date) -> TripCancel {
     TripCancel { id: format!("c-{trip_id}"), trip_id: trip_id.into(), start_secs, date: on, extra: Default::default() }
 }
 
@@ -137,7 +137,7 @@ fn the_effective_day_drops_a_cancelled_trip_and_keeps_the_rest() {
 fn a_cancel_holds_on_its_date_only_and_never_retired() {
     let net = network();
     let plain = transit_network::materialize(&net, date()).unwrap();
-    let other = record("e1", cancel("t0800", None, NaiveDate::from_ymd_opt(2026, 10, 22).unwrap()), EditStatus::Accepted);
+    let other = record("e1", cancel("t0800", None, Date::from_ymd_opt(2026, 10, 22).unwrap()), EditStatus::Accepted);
     let retired = record("e2", cancel("t0800", None, date()), EditStatus::Retired);
     let d = day(&net, date(), &[other, retired]).unwrap();
     assert!(d.edits.is_none(), "nothing is in force");

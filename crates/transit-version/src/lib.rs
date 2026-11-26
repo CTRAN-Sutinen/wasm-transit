@@ -15,6 +15,7 @@ pub use references::{references, Reference};
 pub use refusal::{Refusal, RefusalCode};
 
 #[doc(hidden)]
+#[cfg(feature = "bindings")]
 pub use schemars;
 #[doc(hidden)]
 pub use serde;
@@ -192,6 +193,7 @@ impl std::hash::Hash for Extra {
     }
 }
 
+#[cfg(feature = "bindings")]
 impl schemars::JsonSchema for Extra {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "Extra".into()
@@ -214,6 +216,7 @@ impl<const N: u32> Default for Version<N> {
     }
 }
 
+#[cfg(feature = "bindings")]
 impl<const N: u32> schemars::JsonSchema for Version<N> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "SchemaVersion".into()
@@ -257,6 +260,17 @@ macro_rules! kind_tag {
             }
         }
 
+        $crate::__kind_tag_schema!($name, $kind);
+    };
+}
+
+// The schema impl follows this crate's `bindings` feature, not the
+// calling crate's.
+#[cfg(feature = "bindings")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __kind_tag_schema {
+    ($name:ident, $kind:literal) => {
         impl $crate::schemars::JsonSchema for $name {
             fn schema_name() -> ::std::borrow::Cow<'static, str> {
                 stringify!($name).into()
@@ -266,6 +280,13 @@ macro_rules! kind_tag {
             }
         }
     };
+}
+
+#[cfg(not(feature = "bindings"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __kind_tag_schema {
+    ($name:ident, $kind:literal) => {};
 }
 
 #[cfg(test)]

@@ -35,7 +35,7 @@ transit-log = { path = "../transit-log" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-chrono = { workspace = true }
+transit-date = { path = "../transit-date" }
 schemars = { workspace = true }
 ts-rs = { workspace = true }
 # The real-output check (src/doc_check.rs) compiles the locked schemas.

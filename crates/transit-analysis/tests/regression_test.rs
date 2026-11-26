@@ -71,7 +71,7 @@ fn stats_report_route_and_stop_activity() {
     // that is two
     // trips.
     let network = import_production();
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let date = transit_date::Date::parse(DATE).unwrap();
     let stats = network_stats(&network, date);
     assert_eq!(stats.date, DATE);
     assert_eq!(stats.trips, 5); // t9, t1, t3, t5, t7

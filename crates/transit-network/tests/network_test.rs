@@ -1,15 +1,15 @@
 //! Hand-computed examples for the network model, and one rejection test per
 //! validation invariant. `prop_test.rs` generalizes them.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_network::{
     validation_issues, Anchor, Block, CalendarException, CalendarRule, DateRange, DayState, Departs, HeadwayBand,
     Layover, Mode, Network, NetworkError, Pattern, PatternStop, PatternTrips, Route, ServiceType, StopOffset,
     TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
-fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+fn date(y: i32, m: u32, d: u32) -> Date {
+    Date::from_ymd_opt(y, m, d).unwrap()
 }
 
 fn stop(id: &str, lat: f64, lon: f64) -> (String, transit_network::Stop) {

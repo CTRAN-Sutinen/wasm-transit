@@ -19,6 +19,7 @@
 
 pub mod feed;
 pub use feed::{base64_encode, Feed, FeedError, FeedInfo, FeedSummary};
+pub use values::parse_gtfs_date;
 mod extras;
 mod values;
 pub mod load;
@@ -27,9 +28,10 @@ use values::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use feed::{CalendarDateRow, CalendarRow, FrequencyRow, RouteNetworkRow, RouteRow, ShapeRow, StopTimeRow, TripRow};
@@ -53,49 +55,51 @@ impl transit_version::Versioned for Boundary {
 
 /// Serialization only, never planner intent. `Boundary::default()` exports
 /// stop_sequence as 1..=n and bases a frequency trip's rows at its first band.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Boundary {
     #[serde(default)]
-    #[ts(type = "\"boundary\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"boundary\""))]
     pub kind: BoundaryKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     /// Kept only where the numbers are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>"))]
     pub stop_sequences: BTreeMap<String, Vec<u32>>,
     /// The first arrival of a frequency trip's rows. The spec reads those
     /// rows as offsets only.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, u32>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, u32>>"))]
     pub frequency_bases: BTreeMap<String, u32>,
     /// Kept only where the numbers are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>"))]
     pub shape_sequences: BTreeMap<String, Vec<u32>>,
     /// The id given to the one agency that the feed names without an
     /// agency_id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub anonymous_operator: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[ts(optional, as = "Option<bool>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<bool>"))]
     pub fare_networks_on_routes: bool,
     /// The export writes these services back as dates, under the
     /// calendar.txt row they had (zero flags), if any.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>"))]
     pub dated_calendars: BTreeMap<String, DatedCalendar>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DatedCalendar {
     /// start_date and end_date as written. None when the feed had no row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub row: Option<(String, String)>,
 }
 
@@ -109,23 +113,23 @@ pub const WEEKLY_MIN_SHARE: (u32, u32) = (3, 4);
 /// The rule runs on exactly `dates`: one range over the qualifying
 /// weekdays, a removed date for each one it skips, and an added date for each
 /// other date. None when no weekday qualifies, so the service stays dated.
-pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
-    use chrono::Datelike;
+pub fn read_weekly_rule(dates: &BTreeSet<Date>) -> Option<CalendarRule> {
+    
     let (first, last) = (*dates.first()?, *dates.last()?);
-    let index = |d: NaiveDate| d.weekday().num_days_from_monday() as usize;
+    let index = |d: Date| d.weekday().num_days_from_monday() as usize;
     let (mut occurrences, mut ran) = ([0u32; 7], [0u32; 7]);
     let mut d = first;
     while d <= last {
         occurrences[index(d)] += 1;
         ran[index(d)] += dates.contains(&d) as u32;
-        d += Duration::days(1);
+        d += Days::new(1);
     }
     let (num, den) = WEEKLY_MIN_SHARE;
     let on: [bool; 7] = std::array::from_fn(|w| ran[w] >= WEEKLY_MIN_DAYS && den * ran[w] >= num * occurrences[w]);
     if !on.iter().any(|&b| b) {
         return None;
     }
-    let flagged: Vec<NaiveDate> = dates.iter().copied().filter(|&d| on[index(d)]).collect();
+    let flagged: Vec<Date> = dates.iter().copied().filter(|&d| on[index(d)]).collect();
     let range = DateRange { start: flagged[0], end: *flagged.last().expect("a weekday qualified"), extra: Default::default() };
     let mut exceptions = Vec::new();
     let (mut d, end) = (first.min(range.start), last.max(range.end));
@@ -136,14 +140,15 @@ pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
             (false, true) => exceptions.push(CalendarException { date: d, state: DayState::Added, extra: Default::default() }),
             _ => {}
         }
-        d += Duration::days(1);
+        d += Days::new(1);
     }
     let [mon, tue, wed, thu, fri, sat, sun] = on;
     Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions, extra: Default::default() })
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ImportNote {
     DroppedTrips {
@@ -157,8 +162,9 @@ pub enum ImportNote {
     UnknownShape { shape: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ImportOutcome {
     pub network: Network,
     pub boundary: Boundary,
@@ -570,13 +576,13 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             sun: flag(&row.sunday),
         };
         if let (Some(start), Some(end)) =
-            (row.start_date.as_deref().and_then(parse_date), row.end_date.as_deref().and_then(parse_date))
+            (row.start_date.as_deref().and_then(parse_gtfs_date), row.end_date.as_deref().and_then(parse_gtfs_date))
         {
             rule.ranges.push(DateRange { start, end, extra: Default::default() });
         }
     }
     for row in &feed.calendar_dates {
-        let (Some(id), Some(date)) = (&row.service_id, row.date.as_deref().and_then(parse_date)) else { continue };
+        let (Some(id), Some(date)) = (&row.service_id, row.date.as_deref().and_then(parse_gtfs_date)) else { continue };
         let state = match row.exception_type.as_deref().map(str::trim) {
             Some("1") => DayState::Added,
             Some("2") => DayState::Removed,
@@ -594,7 +600,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             && !rule.exceptions.is_empty()
             && rule.exceptions.iter().all(|e| e.state == DayState::Added);
         if dated {
-            let dates: BTreeSet<NaiveDate> = rule.exceptions.iter().map(|e| e.date).collect();
+            let dates: BTreeSet<Date> = rule.exceptions.iter().map(|e| e.date).collect();
             if let Some(weekly) = read_weekly_rule(&dates) {
                 let row = feed
                     .calendar
@@ -902,7 +908,7 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
                             exception_type: s("1"),
                         });
                     }
-                    date += Duration::days(1);
+                    date += Days::new(1);
                 }
             }
             continue;
@@ -921,15 +927,15 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
                 end_date: Some(format_date(first.end)),
             });
         }
-        let mut dates: BTreeMap<NaiveDate, &str> = BTreeMap::new();
+        let mut dates: BTreeMap<Date, &str> = BTreeMap::new();
         for range in rule.ranges.iter().skip(1) {
             let mut date = range.start;
             while date <= range.end {
                 let in_first = rule.ranges[0].start <= date && date <= rule.ranges[0].end;
-                if !in_first && rule.days.runs_on(chrono::Datelike::weekday(&date)) {
+                if !in_first && rule.days.runs_on(date.weekday()) {
                     dates.insert(date, "1");
                 }
-                date += Duration::days(1);
+                date += Days::new(1);
             }
         }
         for e in &rule.exceptions {

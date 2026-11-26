@@ -11,14 +11,14 @@
 
 use std::io::Write;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_router::{earliest_arrival, Leg, RouterNetwork};
 
 #[path = "prop_support.rs"]
 mod support;
 use support::model_day;
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 
 fn fixture() -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));

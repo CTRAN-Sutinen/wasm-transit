@@ -4,6 +4,7 @@
 //! the next rev, so it wins the merge over a copy that a page still holds
 //! (`revert_record`, D-193).
 
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
@@ -11,30 +12,32 @@ pub mod version;
 pub mod load;
 pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DetourPoint {
     pub lat: f64,
     pub lon: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Diversion {
     pub id: String,
-    #[schemars(extend("x-references" = "network.route"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.route")))]
     pub route_id: String,
     /// `None` means both directions.
     #[serde(default)]
     pub direction_id: Option<u8>,
     /// The detour runs between the kept stops, and they stay served.
-    #[schemars(extend("x-references" = "network.stop"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.stop")))]
     pub first_kept_stop: String,
-    #[schemars(extend("x-references" = "network.stop"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.stop")))]
     pub last_kept_stop: String,
     /// Never includes the kept stops.
     #[serde(default)]
-    #[schemars(extend("x-references" = "network.stop"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.stop")))]
     pub skipped_stops: Vec<String>,
     /// `None` skips the stops and leaves the alignment unchanged.
     #[serde(default)]
@@ -42,21 +45,17 @@ pub struct Diversion {
     /// Seconds of running time, added from the last kept stop onward.
     #[serde(default)]
     pub added_secs: u32,
-    #[serde(with = "iso_date")]
-    #[schemars(with = "chrono::NaiveDate")]
-    #[ts(type = "string")]
-    pub start_date: chrono::NaiveDate,
-    #[serde(with = "iso_date")]
-    #[schemars(with = "chrono::NaiveDate")]
-    #[ts(type = "string")]
-    pub end_date: chrono::NaiveDate,
+    #[cfg_attr(feature = "bindings", ts(type = "string"))]
+    pub start_date: transit_date::Date,
+    #[cfg_attr(feature = "bindings", ts(type = "string"))]
+    pub end_date: transit_date::Date,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 impl Diversion {
-    pub fn covers(&self, date: chrono::NaiveDate) -> bool {
+    pub fn covers(&self, date: transit_date::Date) -> bool {
         self.start_date <= date && date <= self.end_date
     }
 }
@@ -64,26 +63,25 @@ impl Diversion {
 /// The boards list a cancelled trip among the visits that the edits of the
 /// day took away (D-100). It cancels the whole trip, never from a stop on.
 /// Cover, hold, and swap belong to CAD/AVL.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TripCancel {
     pub id: String,
-    #[schemars(extend("x-references" = "network.trip"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "network.trip")))]
     pub trip_id: String,
     /// Seconds after the service-day anchor. `None` cancels every instance.
     #[serde(default)]
     pub start_secs: Option<u32>,
-    #[serde(with = "iso_date")]
-    #[schemars(with = "chrono::NaiveDate")]
-    #[ts(type = "string")]
-    pub date: chrono::NaiveDate,
+    #[cfg_attr(feature = "bindings", ts(type = "string"))]
+    pub date: transit_date::Date,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 impl TripCancel {
-    pub fn covers(&self, date: chrono::NaiveDate) -> bool {
+    pub fn covers(&self, date: transit_date::Date) -> bool {
         self.date == date
     }
 
@@ -92,29 +90,12 @@ impl TripCancel {
     }
 }
 
-mod iso_date {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(
-        date: &chrono::NaiveDate,
-        s: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        s.serialize_str(&date.format("%Y-%m-%d").to_string())
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        d: D,
-    ) -> std::result::Result<chrono::NaiveDate, D::Error> {
-        let raw = String::deserialize(d)?;
-        chrono::NaiveDate::parse_from_str(&raw, "%Y-%m-%d")
-            .map_err(|e| serde::de::Error::custom(format!("invalid date {raw:?}: {e}")))
-    }
-}
 
 /// `Retired` is the tombstone: the record stays so that sync sees the
 /// deletion, and the UI hides it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum EditStatus {
     Draft,
@@ -133,8 +114,9 @@ impl EditStatus {
 /// Exactly one of `diversion` and `cancel`. [`sanitize_records`] drops a
 /// record with neither or both. An absent payload is omitted, never `null`,
 /// so a diversion record keeps its bytes and its hash.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EditRecord {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -143,13 +125,13 @@ pub struct EditRecord {
     pub cancel: Option<TripCancel>,
     pub status: EditStatus,
     /// Monotonic per id. The writer bumps it on every change.
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub rev: u64,
     /// Unix epoch milliseconds.
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub updated_at: u64,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -159,8 +141,9 @@ impl EditRecord {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EditReport {
     pub id: String,
     pub valid: bool,
@@ -169,19 +152,20 @@ pub struct EditReport {
     pub affected_trips: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FeedManifest {
     /// sha256 of the authoritative GTFS zip.
     pub feed_hash: String,
     pub feed_version: Option<String>,
     /// Unix epoch seconds.
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub generated_at: u64,
     pub publisher: Option<String>,
 }
 
-pub fn in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<Diversion> {
+pub fn in_force_on(records: &[EditRecord], date: transit_date::Date) -> Vec<Diversion> {
     records
         .iter()
         .filter(|r| r.status.in_force())
@@ -191,7 +175,7 @@ pub fn in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<Diver
         .collect()
 }
 
-pub fn cancels_in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<TripCancel> {
+pub fn cancels_in_force_on(records: &[EditRecord], date: transit_date::Date) -> Vec<TripCancel> {
     records
         .iter()
         .filter(|r| r.status.in_force())
@@ -302,8 +286,9 @@ pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_m
     Ok(next)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentKind {
     NetworkDocument,
@@ -314,8 +299,9 @@ pub enum DocumentKind {
     Policy,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Envelope {
     pub kind: DocumentKind,
     pub schema_version: u32,
@@ -425,7 +411,7 @@ pub fn sanitize_records(items: &serde_json::Value) -> (Vec<EditRecord>, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use transit_date::Date;
 
     fn record(status: EditStatus) -> EditRecord {
         EditRecord {
@@ -439,8 +425,8 @@ mod tests {
                 skipped_stops: vec![],
                 detour: None,
                 added_secs: 60,
-                start_date: NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-                end_date: NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                start_date: Date::from_ymd_opt(2026, 10, 23).unwrap(),
+                end_date: Date::from_ymd_opt(2026, 10, 23).unwrap(),
                 extra: Default::default(),
             }),
             cancel: None,
@@ -505,7 +491,7 @@ mod tests {
         assert_eq!(sanitize_records(&serde_json::json!({"not": "an array"})), (vec![], 0));
     }
 
-    fn cancel(trip: &str, start_secs: Option<u32>, date: NaiveDate) -> TripCancel {
+    fn cancel(trip: &str, start_secs: Option<u32>, date: Date) -> TripCancel {
         TripCancel { id: format!("c-{trip}"), trip_id: trip.into(), start_secs, date, extra: Default::default() }
     }
 
@@ -516,7 +502,7 @@ mod tests {
             json,
             r#"{"id":"e1","diversion":{"id":"d1","route_id":"r1","direction_id":null,"first_kept_stop":"s0","last_kept_stop":"s1","skipped_stops":[],"detour":null,"added_secs":60,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"submitted","rev":1,"updated_at":1000}"#
         );
-        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         let c = EditRecord { diversion: None, cancel: Some(cancel("755768", None, day)), ..record(EditStatus::Draft) };
         let json = serde_json::to_string(&c).unwrap();
         assert_eq!(
@@ -528,7 +514,7 @@ mod tests {
 
     #[test]
     fn sanitize_keeps_only_records_with_exactly_one_payload() {
-        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         let div = record(EditStatus::Draft);
         let can = EditRecord { diversion: None, cancel: Some(cancel("t", Some(60), day)), ..record(EditStatus::Draft) };
         let both = EditRecord { cancel: Some(cancel("t", None, day)), ..record(EditStatus::Draft) };
@@ -540,8 +526,8 @@ mod tests {
 
     #[test]
     fn cancels_are_in_force_on_their_one_date_and_never_retired() {
-        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
-        let next = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+        let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
+        let next = Date::from_ymd_opt(2026, 10, 24).unwrap();
         let docs = propose_cancel(&[record(EditStatus::Accepted)], "e2", cancel("t1", None, day), 2_000);
         assert_eq!(cancels_in_force_on(&docs, day), vec![cancel("t1", None, day)]);
         assert!(cancels_in_force_on(&docs, next).is_empty(), "a cancel holds on its one date");
@@ -552,7 +538,7 @@ mod tests {
 
     #[test]
     fn a_cancel_names_its_instance_or_every_instance() {
-        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         assert!(cancel("t", None, day).cancels("t", 100) && cancel("t", None, day).cancels("t", 200));
         assert!(cancel("t", Some(100), day).cancels("t", 100));
         assert!(!cancel("t", Some(100), day).cancels("t", 200), "another instance runs");
@@ -561,7 +547,7 @@ mod tests {
 
     #[test]
     fn propose_cancel_follows_the_envelope_rule() {
-        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         let base = vec![record(EditStatus::Accepted)];
         let next = propose_cancel(&base, "e2", cancel("t1", None, day), 2_000);
         assert_eq!((next[1].rev, next[1].status, next[1].updated_at), (1, EditStatus::Draft, 2_000));
@@ -595,8 +581,8 @@ mod tests {
 
     #[test]
     fn in_force_filters_by_status_and_date() {
-        let date = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
-        let other = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+        let date = Date::from_ymd_opt(2026, 10, 23).unwrap();
+        let other = Date::from_ymd_opt(2026, 10, 24).unwrap();
         let mut docs = vec![record(EditStatus::Draft), record(EditStatus::Accepted)];
         docs[1].id = "e2".into();
         let d = docs[1].diversion.as_mut().unwrap();
@@ -628,8 +614,8 @@ mod receive_tests {
                 skipped_stops: vec![],
                 detour: None,
                 added_secs: 60,
-                start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-                end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+                end_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
                 extra: Default::default(),
             }),
             cancel: None,
@@ -735,8 +721,8 @@ mod merge_tests {
                 skipped_stops: vec![],
                 detour: None,
                 added_secs: (updated_at % 300) as u32,
-                start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-                end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap(),
+                start_date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+                end_date: transit_date::Date::from_ymd_opt(2026, 10, 24).unwrap(),
                 extra: Default::default(),
             }),
             cancel: None,
@@ -754,7 +740,7 @@ mod merge_tests {
                 id: format!("c{id}"),
                 trip_id: format!("t{}", updated_at % 3),
                 start_secs: (updated_at % 2 == 0).then_some(3_600),
-                date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                date: transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
                 extra: Default::default(),
             }),
             ..sample_record(id, rev, updated_at, status)

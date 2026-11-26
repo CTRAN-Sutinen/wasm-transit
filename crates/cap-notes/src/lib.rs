@@ -2,69 +2,72 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub use transit_notes::{Note, NoteRefusal, NoteRow, NoteTarget, Notes};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_notes/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_notes/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Validate {
-        #[ts(as = "Notes")]
+        #[cfg_attr(feature = "bindings", ts(as = "Notes"))]
         notes: cap_abi::Base<Notes>,
     },
     Write {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         notes_hash: Option<String>,
         id: String,
         target: NoteTarget,
         text: String,
         by: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         at: u64,
     },
     On {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         notes_hash: Option<String>,
         target: NoteTarget,
     },
     Between {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         notes_hash: Option<String>,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         from: u64,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         to: u64,
     },
     LogRecords {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         notes_hash: Option<String>,
     },
     Receive {
-        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
         write: transit_log::Write,
         #[serde(default)]
-        #[ts(type = "Record<string, string>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, string>"))]
         heads: std::collections::BTreeMap<String, String>,
-        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
         ops: Vec<transit_log::OpCall>,
     },
     LogDocument {
-        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[ts(optional, type = "{ version: number, value: unknown }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
         document: Option<transit_log::Held>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_notes/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_notes/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Validate {
@@ -72,14 +75,14 @@ pub enum Response {
         document: Option<String>,
         document_hash: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, as = "Option<Vec<String>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
     Write { refusals: Vec<NoteRefusal>, notes_hash: Option<String>, notes: Option<Notes> },
     On { notes: Vec<NoteRow> },
     Between { notes: Vec<NoteRow> },
     LogRecords {
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     Receive(transit_log::Received),

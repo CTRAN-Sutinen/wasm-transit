@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_analysis::{
     coverage_compare, network_stats, service_type_compare, service_type_detail, service_type_overview,
@@ -16,8 +17,9 @@ use transit_analysis::{
 };
 use transit_network::Network;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_analysis/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_analysis/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     NetworkStats {
@@ -39,16 +41,16 @@ pub enum Request {
         layer_hash: String,
         members: Vec<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         field: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         label: Option<String>,
         radius_m: f64,
         frequent_secs: u32,
         min_departures: u32,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<CoverageWindow>,
     },
     StopGaps {
@@ -73,7 +75,7 @@ pub enum Request {
         date: String,
         stop_id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<transit_analysis::TransferWindow>,
     },
     HubConnections {
@@ -81,7 +83,7 @@ pub enum Request {
         date: String,
         stop_id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<transit_analysis::TransferWindow>,
     },
     MissedConnections {
@@ -89,49 +91,49 @@ pub enum Request {
         date: String,
         stop_id: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<transit_analysis::TransferWindow>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         miss_secs: Option<u32>,
     },
     LongestWaits {
         network_hash: String,
         date: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<CoverageWindow>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         limit: Option<u32>,
     },
     DayTypes {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         from: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         through: Option<String>,
     },
     PlanCompare {
         base_hash: String,
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         from: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         through: Option<String>,
     },
     NetworkFindings {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         base_hash: Option<String>,
         members: Vec<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         params: Option<transit_analysis::FindingParams>,
     },
     RouteFrequency {
@@ -142,10 +144,10 @@ pub enum Request {
         network_hash: String,
         layer_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         field: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         label: Option<String>,
         radius_m: f64,
         members: Vec<String>,
@@ -156,10 +158,10 @@ pub enum Request {
         network_hash: String,
         layer_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         field: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         label: Option<String>,
         base_members: Vec<String>,
         members: Vec<String>,
@@ -167,13 +169,14 @@ pub enum Request {
         frequent_secs: u32,
         min_departures: u32,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<CoverageWindow>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_analysis/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_analysis/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     NetworkStats { stats: NetworkStats },
@@ -202,11 +205,6 @@ fn default_true() -> bool {
     true
 }
 
-fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map_err(|e| format!("invalid date {date:?}: {e}"))
-}
-
 fn with_network<T>(
     network_hash: &str,
     f: impl FnOnce(&Network) -> Result<T, String>,
@@ -221,7 +219,7 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::NetworkStats { network_hash, date, include_routes, include_stops, include_service_types } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             with_network(&network_hash, |network| {
                 let mut stats = network_stats(network, parsed);
                 if !include_routes {
@@ -267,14 +265,14 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             })
         }
         Request::StopGaps { network_hash, date, stop_id } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::StopGaps {
                 gaps: transit_analysis::stop_gaps(&network_arc, parsed, &stop_id),
             })
         }
         Request::HourlyTrips { network_hash, date } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::HourlyTrips {
                 hours: transit_analysis::hourly_trips(&network_arc, parsed),
@@ -287,40 +285,40 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             })
         }
         Request::RouteOverlap { network_hash, date } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::RouteOverlap {
                 overlaps: transit_analysis::route_overlap(&network_arc, parsed),
             })
         }
         Request::HubConnections { network_hash, date, stop_id, window } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::HubConnections {
                 connections: transit_analysis::hub_connections(&network_arc, parsed, &stop_id, window),
             })
         }
         Request::MissedConnections { network_hash, date, stop_id, window, miss_secs } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::MissedConnections {
                 missed: transit_analysis::missed_connections(&network_arc, parsed, &stop_id, window, miss_secs),
             })
         }
         Request::LongestWaits { network_hash, date, window, limit } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::LongestWaits {
                 waits: transit_analysis::longest_waits(&network_arc, parsed, window, limit),
             })
         }
         Request::DayTypes { network_hash, from, through } => {
-            let (from, through) = (from.as_deref().map(parse_date).transpose()?, through.as_deref().map(parse_date).transpose()?);
+            let (from, through) = (from.as_deref().map(transit_date::Date::read).transpose()?, through.as_deref().map(transit_date::Date::read).transpose()?);
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::DayTypes { day_types: transit_analysis::day_types(&network_arc, from, through) })
         }
         Request::PlanCompare { base_hash, network_hash, from, through } => {
-            let (from, through) = (from.as_deref().map(parse_date).transpose()?, through.as_deref().map(parse_date).transpose()?);
+            let (from, through) = (from.as_deref().map(transit_date::Date::read).transpose()?, through.as_deref().map(transit_date::Date::read).transpose()?);
             let base = network_arc(&base_hash)?;
             let proposal = network_arc(&network_hash)?;
             Ok(Response::PlanCompare { day_types: transit_analysis::plan_compare(&base, &proposal, from, through) })
@@ -339,7 +337,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             })
         }
         Request::TimedTransfers { network_hash, date, stop_id, window } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::TimedTransfers {
                 transfers: transit_analysis::timed_transfers(&network_arc, parsed, &stop_id, window),

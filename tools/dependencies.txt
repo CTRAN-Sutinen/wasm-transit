@@ -1,0 +1,86 @@
+# Every external dependency of each shipped tree, with the reason we keep
+# it (docs/CONVENTIONS.md). `node tools/deps-gate.mjs`
+# (in `just test`) fails when a tree's dependencies and this list
+# differ. A new dependency is a reviewed edit to this file.
+#
+# Format: a [tree] line, then one dependency per line: its name, then
+# its reason. A dependency that another one brings names that one.
+
+[module]
+# The crates of every module build (assemblies/module-*, wasm32,
+# bindings off): cargo tree -e normal.
+serde               the documents' encoding: every type that crosses a boundary
+serde_core          via serde
+serde_derive        via serde
+serde_json          JSON, the wire and the at-rest format
+itoa                integers written as ECMAScript writes them (canonical JSON)
+ryu-js              floats written as ECMAScript writes them (canonical JSON)
+ryu                 via csv
+zmij                via serde_json
+memchr              via serde_json, csv
+sha2                the content hash that names every document
+digest              via sha2
+block-buffer        via sha2
+crypto-common       via sha2
+generic-array       via sha2
+typenum             via sha2
+cfg-if              via sha2, crc32fast
+flate2              gzip: a published document crosses into a module compressed
+miniz_oxide         via flate2
+adler2              via flate2
+simd-adler32        via flate2
+crc32fast           via flate2, zip
+csv                 GTFS's tables, read and written at the boundary (transit-codec)
+csv-core            via csv
+zip                 the GTFS zip, read and written at the boundary (transit-codec)
+indexmap            via zip
+equivalent          via indexmap
+hashbrown           via indexmap
+prost               GTFS-realtime's protobuf (transit-rt); a decoder of our own is a project of its own
+prost-derive        via prost
+bytes               via prost
+anyhow              via prost-derive (compile time only)
+itertools           via prost-derive (compile time only)
+either              via itertools
+proc-macro2         via serde_derive, prost-derive (compile time only)
+quote               via serde_derive, prost-derive (compile time only)
+syn                 via serde_derive, prost-derive (compile time only)
+unicode-ident       via proc-macro2 (compile time only)
+
+[server]
+# The Go modules the server binary links: go list -deps . in server/.
+github.com/BurntSushi/toml          the settings files (-config)
+github.com/tetratelabs/wazero       runs the capability modules, with no cgo
+golang.org/x/sys                    via wazero
+
+[pages]
+# The npm packages the pages ship at run time: web/package-lock.json
+# without the dev packages.
+maplibre-gl                         the map
+pmtiles                             the basemap's tiles, read from one file with no tile server
+@protomaps/basemaps                 the basemap's style
+@mapbox/jsonlint-lines-primitives   via maplibre-gl
+@mapbox/point-geometry              via maplibre-gl
+@mapbox/tiny-sdf                    via maplibre-gl
+@mapbox/unitbezier                  via maplibre-gl
+@mapbox/vector-tile                 via maplibre-gl
+@maplibre/geojson-vt                via maplibre-gl
+@maplibre/maplibre-gl-style-spec    via maplibre-gl
+@maplibre/mlt                       via maplibre-gl
+@maplibre/vt-pbf                    via maplibre-gl
+@types/geojson                      via maplibre-gl
+bidi-js                             via maplibre-gl
+earcut                              via maplibre-gl
+gl-matrix                           via maplibre-gl
+json-stringify-pretty-compact       via maplibre-gl
+kdbush                              via maplibre-gl
+minimist                            via maplibre-gl
+murmurhash-js                       via maplibre-gl
+pbf                                 via maplibre-gl
+potpack                             via maplibre-gl
+protocol-buffers-schema             via maplibre-gl
+quickselect                         via maplibre-gl
+require-from-string                 via maplibre-gl
+resolve-protobuf-schema             via maplibre-gl
+tinyqueue                           via maplibre-gl
+fflate                              via pmtiles

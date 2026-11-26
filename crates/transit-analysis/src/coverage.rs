@@ -18,8 +18,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::Serialize;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use transit_network::Network;
@@ -65,15 +66,17 @@ pub struct WeightedLayer {
     skipped: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LayerField {
     pub name: String,
     pub total: f64,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LayerReading {
     pub label: String,
     pub field: String,
@@ -313,8 +316,9 @@ fn sample(parts: &[Rings]) -> (Vec<(f64, f64, f64)>, f64) {
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CoverageWindow {
     pub start_secs: u32,
     pub end_secs: u32,
@@ -335,7 +339,7 @@ pub(crate) struct Served {
     frequent: Vec<(f64, f64)>,
 }
 
-fn on_date(net: &Network, date: NaiveDate) -> impl Fn(&str) -> bool + '_ {
+fn on_date(net: &Network, date: Date) -> impl Fn(&str) -> bool + '_ {
     move |t: &str| net.service_types.get(t).is_some_and(|st| st.rule.runs_on(date))
 }
 
@@ -446,8 +450,9 @@ fn classify(weights: &Weights, radius_m: f64, served: &Served) -> Vec<(bool, boo
 
 
 /// `min_departures` keeps a two-trip pocket from reading as frequent.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CoverageStats {
     pub date: Option<String>,
     pub layer: LayerReading,
@@ -466,7 +471,7 @@ pub struct CoverageStats {
 
 pub fn coverage(
     net: &Network,
-    date: NaiveDate,
+    date: Date,
     weights: &Weights,
     radius_m: f64,
     frequent_secs: u32,
@@ -491,7 +496,7 @@ pub(crate) fn coverage_of_members(
 }
 
 fn stats(
-    date: Option<NaiveDate>,
+    date: Option<Date>,
     weights: &Weights,
     radius_m: f64,
     frequent_secs: u32,
@@ -502,7 +507,7 @@ fn stats(
     let (served_w, frequent_w) = weigh(weights, &classify(weights, radius_m, served));
     let total = weights.reading.total;
     CoverageStats {
-        date: date.map(|d| d.format("%Y-%m-%d").to_string()),
+        date: date.map(|d| d.to_string()),
         layer: weights.reading.clone(),
         radius_m,
         frequent_secs,
@@ -532,8 +537,9 @@ fn weigh(weights: &Weights, flags: &[(bool, bool)]) -> (f64, f64) {
     })
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct UnservedPoint {
     pub lat: f64,
     pub lon: f64,
@@ -545,8 +551,9 @@ pub struct UnservedPoint {
     pub polygon: Option<Vec<Rings>>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct UnservedPlaces {
     pub group: String,
     pub members: Vec<String>,
@@ -615,8 +622,9 @@ fn unserved_of(net: &Network, weights: &Weights, members: &[String], radius_m: f
     out
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CoverageSide {
     pub members: Vec<String>,
     pub served: f64,
@@ -628,8 +636,9 @@ pub struct CoverageSide {
 }
 
 /// The proposal's served weight is the base's plus gained minus lost.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CoverageDelta {
     pub base: CoverageSide,
     pub proposal: CoverageSide,

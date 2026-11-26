@@ -11,7 +11,7 @@
 //!    that the active plan rides.
 //! 4. The text is not empty.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_network::MaterializedTrip;
@@ -21,7 +21,7 @@ use transit_router::{diverted_instances, earliest_arrival, plan_notice, Leg, Not
 mod support;
 use support::{build_zip_spaced, model_day, TripSpec};
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap();
 const MAX_LEGS: usize = 6;
 
 #[derive(Debug, Clone)]

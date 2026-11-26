@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_dispatch::{grouped_board, stop_board, BoardRow, Wait};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
@@ -16,8 +16,8 @@ use transit_network::{
 const DATE: &str = "2026-10-23"; // a Friday
 const TERMINALS: usize = 3;
 
-fn date() -> NaiveDate {
-    NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap()
+fn date() -> Date {
+    Date::parse(DATE).unwrap()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -123,8 +123,8 @@ fn build(routes: &[GenRoute]) -> Network {
             rule: CalendarRule {
                 days: WeekdaySet::weekdays(),
                 ranges: vec![DateRange {
-                    start: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                    end: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+                    start: Date::from_ymd_opt(2026, 1, 1).unwrap(),
+                    end: Date::from_ymd_opt(2026, 12, 31).unwrap(),
                     extra: Default::default(),
                 }],
                 exceptions: vec![],

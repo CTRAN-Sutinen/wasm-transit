@@ -12,13 +12,15 @@
 use std::sync::Arc;
 
 use cap_abi::kernel::{kind, GRAPH};
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_streets::walking::{DirectWalk, WalkTable};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_router/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_router/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Plan {
@@ -85,8 +87,9 @@ pub enum Request {
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_router/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_router/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Plan { itinerary: Option<transit_router::Itinerary> },
@@ -114,11 +117,6 @@ fn walks_arc(walks_hash: &str, network_hash: &str) -> Result<Arc<WalkTable>, cap
     Ok(table)
 }
 
-fn parse_date(date: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map_err(|e| format!("invalid date {date:?}: {e}"))
-}
-
 fn graph(
     network_hash: &str,
     edits_hash: Option<&str>,
@@ -128,7 +126,7 @@ fn graph(
 ) -> Result<Arc<transit_router::RouterNetwork>, cap_abi::Refusal> {
     // Parse the date first, so a bad date is a caller error and not a
     // missing-document error.
-    let date = parse_date(date_str)?;
+    let date = Date::read(date_str)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
     let live = live_hash.map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
     let walks = walks_hash.map(|h| walks_arc(h, network_hash)).transpose()?;
@@ -216,7 +214,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         Request::PlanCompare {
             network_hash, edits_hash, from, to, date, depart_secs, max_legs, live_hash, walks_hash, direct,
         } => {
-            parse_date(&date)?;
+            Date::read(&date)?;
             let legs = max_legs.max(1) as usize;
             let net = graph(&network_hash, edits_hash.as_deref(), live_hash.as_deref(), walks_hash.as_deref(), &date)?;
             let direct_secs = direct.map(|d| d.walk_secs);

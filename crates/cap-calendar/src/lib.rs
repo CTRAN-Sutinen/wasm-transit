@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_calendar/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_calendar/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     ActiveServices {
@@ -26,17 +28,13 @@ pub enum Request {
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_calendar/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_calendar/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     ActiveServices { services: Vec<String> },
     ServiceDates { dates: Vec<String> },
-}
-
-fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map_err(|e| format!("invalid date {date:?}: {e}"))
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
@@ -51,8 +49,8 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         Request::ServiceDates { network_hash, edits_hash, service_type, from, to } => {
             // Check the request's own fields first, so a garbage date is a
             // caller error and not a missing-document error.
-            let from = parse_date(&from)?;
-            let to = parse_date(&to)?;
+            let from = transit_date::Date::read(&from)?;
+            let to = transit_date::Date::read(&to)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let records = match edits_hash.as_deref() {
                 Some(hash) => kind::<transit_sync::EditDocument>().require(hash)?,
@@ -61,7 +59,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             let dates = transit_dispatch::service_dates(&network, &records.records, &service_type, from, to)
                 .map_err(|e| format!("the network does not materialize: {e}"))?;
             Ok(Response::ServiceDates {
-                dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),
+                dates: dates.iter().map(|d| d.to_string()).collect(),
             })
         }
     }

@@ -235,7 +235,7 @@ impl<T> std::ops::Deref for Canonical<T> {
 /// Any version other than the one this build reads, or the next one that it
 /// reads ahead ([`versioned`]), fails the request (docs/FORMATS.md,
 /// "Versions"). An op that writes over a document uses [`Base`]. On the wire
-/// it is the document itself (`#[ts(as = "T")]` on the field).
+/// it is the document itself (`#[cfg_attr(feature = "bindings", ts(as = "T"))]` on the field).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(transparent)]
 pub struct Current<T>(pub T);

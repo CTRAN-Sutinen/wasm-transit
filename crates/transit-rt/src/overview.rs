@@ -1,11 +1,13 @@
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
 use crate::gtfs_rt::trip_descriptor::ScheduleRelationship as TripRelationship;
 use crate::gtfs_rt::trip_update::stop_time_update::ScheduleRelationship as StopRelationship;
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TripUpdateView {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
@@ -17,8 +19,9 @@ pub struct TripUpdateView {
     pub stop_updates: Vec<StopUpdateView>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopUpdateView {
     pub stop_id: Option<String>,
     pub stop_sequence: Option<u32>,
@@ -28,8 +31,9 @@ pub struct StopUpdateView {
     pub skipped: bool,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct VehicleView {
     pub entity_id: String,
     pub trip_id: Option<String>,
@@ -44,8 +48,9 @@ pub struct VehicleView {
     pub label: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct InformedView {
     pub agency_id: Option<String>,
     pub route_id: Option<String>,
@@ -57,8 +62,9 @@ pub struct InformedView {
     pub direction_id: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct AlertView {
     pub entity_id: String,
     pub cause: transit_alerts::AlertCause,
@@ -75,8 +81,9 @@ pub struct AlertView {
     pub informed: Vec<InformedView>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RtOverview {
     pub gtfs_realtime_version: Option<String>,
     /// Unix seconds.

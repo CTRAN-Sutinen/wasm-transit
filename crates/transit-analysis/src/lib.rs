@@ -18,8 +18,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::Serialize;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use transit_network::Network;
@@ -32,8 +33,9 @@ pub use coverage::{
 };
 use coverage::coverage_of_members;
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopStats {
     pub stop_id: String,
     pub name: String,
@@ -49,8 +51,9 @@ pub struct StopStats {
     pub transfer_pairs: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteStats {
     pub route_id: String,
     pub name: String,
@@ -68,8 +71,9 @@ pub struct RouteStats {
     pub revenue_miles: f64,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceTypeSummary {
     pub service_type: String,
     pub name: String,
@@ -80,8 +84,9 @@ pub struct ServiceTypeSummary {
     pub revenue_miles: f64,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PatternTripsSummary {
     pub pattern_trips: String,
     pub pattern: String,
@@ -89,8 +94,9 @@ pub struct PatternTripsSummary {
     pub trips: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceTypeDetail {
     pub group: String,
     pub members: Vec<String>,
@@ -147,8 +153,9 @@ fn pooled_detail(net: &Network, members: &[String]) -> ServiceTypeDetail {
 
 /// Starts pool across every schedule that runs the pattern, because one pattern
 /// runs under several service ids and a per-id read gives thin, wrong headways.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PatternTexture {
     pub schedules: u32,
     pub route: String,
@@ -160,8 +167,9 @@ pub struct PatternTexture {
     pub on_clockface: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ScheduleTexture {
     pub group: String,
     pub members: Vec<String>,
@@ -228,8 +236,9 @@ pub fn schedule_texture(net: &Network, members: &[String]) -> Option<ScheduleTex
     })
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceTypeComparison {
     pub group: String,
     pub members: Vec<String>,
@@ -239,8 +248,9 @@ pub struct ServiceTypeComparison {
     pub unchanged_routes: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ComparedTotals {
     /// 0 when the members never run together on this side.
     pub days: u32,
@@ -250,8 +260,9 @@ pub struct ComparedTotals {
     pub routes: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteChange {
     pub route_id: String,
     pub name: String,
@@ -308,11 +319,12 @@ pub fn service_type_compare(base: &Network, proposal: &Network, members: &[Strin
     })
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceGroup {
     #[serde(flatten)]
-    #[ts(flatten)]
+    #[cfg_attr(feature = "bindings", ts(flatten))]
     pub combination: transit_network::ServiceCombination,
     pub trips: u32,
     pub active_routes: u32,
@@ -362,8 +374,9 @@ pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
         .collect()
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DayTypeGroup {
     pub id: String,
     pub members: Vec<String>,
@@ -372,8 +385,9 @@ pub struct DayTypeGroup {
     pub weekdays: Vec<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DayType {
     /// A day type's regular group runs on more than half of a weekday's dates
     /// in the period. Otherwise the type takes every weekday it runs on.
@@ -384,15 +398,15 @@ pub struct DayType {
 /// An absent `from` or `through` is the first or last in-period date that any
 /// combination holds. A combination with no date in the period is left out
 /// (D-137).
-pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDate>) -> Vec<DayType> {
-    use chrono::Datelike;
+pub fn day_types(net: &Network, from: Option<Date>, through: Option<Date>) -> Vec<DayType> {
+    
     let mut groups: Vec<DayTypeGroup> = transit_network::service_combinations(net)
         .into_iter()
         .filter_map(|c| {
-            let dates: Vec<NaiveDate> = c
+            let dates: Vec<Date> = c
                 .dates
                 .iter()
-                .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .filter_map(|d| Date::parse(d).ok())
                 .filter(|d| from.map_or(true, |f| *d >= f) && through.map_or(true, |t| *d <= t))
                 .collect();
             if dates.is_empty() {
@@ -406,7 +420,7 @@ pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDa
                 id: c.id,
                 members: c.members,
                 spans: transit_network::date_spans(&dates),
-                dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),
+                dates: dates.iter().map(|d| d.to_string()).collect(),
                 weekdays,
             })
         })
@@ -414,13 +428,13 @@ pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDa
     groups.sort_by(|a, b| {
         b.dates.len().cmp(&a.dates.len()).then_with(|| a.dates[0].cmp(&b.dates[0])).then_with(|| a.id.cmp(&b.id))
     });
-    let first = from.or_else(|| groups.iter().filter_map(|g| g.dates.first()).min().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()));
-    let last = through.or_else(|| groups.iter().filter_map(|g| g.dates.last()).max().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()));
+    let first = from.or_else(|| groups.iter().filter_map(|g| g.dates.first()).min().and_then(|d| Date::parse(d).ok()));
+    let last = through.or_else(|| groups.iter().filter_map(|g| g.dates.last()).max().and_then(|d| Date::parse(d).ok()));
     let mut period = [0u32; 7];
     if let (Some(mut d), Some(end)) = (first, last) {
         while d <= end {
             period[d.weekday().num_days_from_monday() as usize] += 1;
-            d += chrono::Duration::days(1);
+            d += transit_date::Days::new(1);
         }
     }
     let within = |a: &[bool], b: &[bool]| a.iter().zip(b).all(|(x, y)| !*x || *y);
@@ -430,7 +444,7 @@ pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDa
             Some(t) => t.groups.push(g),
             None => {
                 let mut held = [0u32; 7];
-                for d in g.dates.iter().filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+                for d in g.dates.iter().filter_map(|d| Date::parse(d).ok()) {
                     held[d.weekday().num_days_from_monday() as usize] += 1;
                 }
                 let most: Vec<bool> = (0..7).map(|w| held[w] * 2 > period[w]).collect();
@@ -442,15 +456,17 @@ pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDa
     types
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DayTypeGroupComparison {
     pub group: DayTypeGroup,
     pub comparison: Option<ServiceTypeComparison>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DayTypeComparison {
     pub weekdays: Vec<bool>,
     pub groups: Vec<DayTypeGroupComparison>,
@@ -459,8 +475,8 @@ pub struct DayTypeComparison {
 pub fn plan_compare(
     base: &Network,
     proposal: &Network,
-    from: Option<NaiveDate>,
-    through: Option<NaiveDate>,
+    from: Option<Date>,
+    through: Option<Date>,
 ) -> Vec<DayTypeComparison> {
     day_types(proposal, from, through)
         .into_iter()
@@ -482,8 +498,9 @@ pub fn service_type_overview(net: &Network) -> Vec<ServiceTypeSummary> {
     service_type_summaries(net, None)
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CombinationCoverage {
     pub group: String,
     pub members: Vec<String>,
@@ -524,7 +541,7 @@ pub fn type_coverage(
 
 /// With `running_on`, only the types whose calendar runs on that date are
 /// listed.
-fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<ServiceTypeSummary> {
+fn service_type_summaries(net: &Network, running_on: Option<Date>) -> Vec<ServiceTypeSummary> {
     let mut out = Vec::with_capacity(net.service_types.len());
     for (type_id, service_type) in &net.service_types {
         if running_on.is_some_and(|date| !service_type.rule.runs_on(date)) {
@@ -567,8 +584,9 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
     out
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NetworkStats {
     pub date: String,
     pub trips: u32,
@@ -650,7 +668,7 @@ fn median_gap_secs(times: &[u32]) -> Option<u32> {
     Some(gaps[gaps.len() / 2])
 }
 
-pub fn network_stats(net: &Network, date: NaiveDate) -> NetworkStats {
+pub fn network_stats(net: &Network, date: Date) -> NetworkStats {
     day_stats(net, date, None)
 }
 
@@ -667,7 +685,7 @@ fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f
     }
 }
 
-fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) -> NetworkStats {
+fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Date) -> NetworkStats {
     let mut pattern_starts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     let mut route_trips: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_first: BTreeMap<String, u32> = BTreeMap::new();
@@ -822,7 +840,7 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
     }
 
     NetworkStats {
-        date: date.format("%Y-%m-%d").to_string(),
+        date: date.to_string(),
         trips,
         active_routes: route_trips.len() as u32,
         active_stops: stop_activity.len() as u32,
@@ -837,7 +855,7 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
     }
 }
 
-fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> NetworkStats {
+fn day_stats(net: &Network, date: Date, only_type: Option<&str>) -> NetworkStats {
     let mut stats = stats_fold(net, |sid| {
         net.service_types
             .get(sid)
@@ -849,14 +867,15 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
 }
 
 fn family_stats(net: &Network, group: &BTreeSet<String>) -> NetworkStats {
-    stats_fold(net, |sid| group.contains(sid), NaiveDate::MIN)
+    stats_fold(net, |sid| group.contains(sid), Date::MIN)
 }
 
 
 /// The hour is the service-day hour, 0..47. A gap belongs to the hour it starts
 /// in.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopHourGaps {
     pub hour: u32,
     pub departures: u32,
@@ -865,8 +884,9 @@ pub struct StopHourGaps {
 }
 
 /// Two routes that leave together make no gap, and `departures` counts both.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopGaps {
     pub stop_id: String,
     pub name: String,
@@ -879,7 +899,7 @@ pub struct StopGaps {
     pub hourly: Vec<StopHourGaps>,
 }
 
-pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
+pub fn stop_gaps(net: &Network, date: Date, stop_id: &str) -> StopGaps {
     let pooled: BTreeSet<&str> = std::iter::once(stop_id)
         .chain(
             net.stops
@@ -953,8 +973,9 @@ pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
     }
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopWait {
     pub stop_id: String,
     pub name: String,
@@ -965,7 +986,7 @@ pub struct StopWait {
 
 pub fn longest_waits(
     net: &Network,
-    date: NaiveDate,
+    date: Date,
     window: Option<CoverageWindow>,
     limit: Option<u32>,
 ) -> Vec<StopWait> {
@@ -1021,22 +1042,24 @@ pub fn longest_waits(
 }
 
 /// The hour is the service-day hour, 0..47.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct HourlyTypeTrips {
     pub service_type: String,
     pub trips: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct HourlyTrips {
     pub hour: u32,
     pub trips: u32,
     pub service_types: Vec<HourlyTypeTrips>,
 }
 
-pub fn hourly_trips(net: &Network, date: NaiveDate) -> Vec<HourlyTrips> {
+pub fn hourly_trips(net: &Network, date: Date) -> Vec<HourlyTrips> {
     let mut by_hour: BTreeMap<u32, BTreeMap<String, u32>> = BTreeMap::new();
     for (service_id, service) in &net.pattern_trips {
         if !net
@@ -1070,8 +1093,9 @@ pub fn hourly_trips(net: &Network, date: NaiveDate) -> Vec<HourlyTrips> {
         .collect()
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteOverlap {
     pub a: String,
     pub b: String,
@@ -1081,7 +1105,7 @@ pub struct RouteOverlap {
     pub stack_departures: u32,
 }
 
-pub fn route_overlap(net: &Network, date: NaiveDate) -> Vec<RouteOverlap> {
+pub fn route_overlap(net: &Network, date: Date) -> Vec<RouteOverlap> {
     struct RouteDay {
         stops: BTreeSet<String>,
         segs: BTreeSet<(String, String)>,
@@ -1155,8 +1179,9 @@ pub fn route_overlap(net: &Network, date: NaiveDate) -> Vec<RouteOverlap> {
 /// A wait is a transfer when `min_secs <= wait <= max_secs`. The defaults are
 /// the transfer-point bounds: 60 s and 900 s. A hub with widely separated bays
 /// needs a wider window.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TransferWindow {
     pub min_secs: u32,
     pub max_secs: u32,
@@ -1168,8 +1193,9 @@ impl Default for TransferWindow {
     }
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TimedTransfer {
     pub from_route: String,
     pub to_route: String,
@@ -1182,7 +1208,7 @@ pub struct TimedTransfer {
 
 pub fn timed_transfers(
     net: &Network,
-    date: NaiveDate,
+    date: Date,
     stop_id: &str,
     window: Option<TransferWindow>,
 ) -> Vec<TimedTransfer> {
@@ -1216,7 +1242,7 @@ pub fn timed_transfers(
 }
 
 type Visits = Vec<(String, String, u32)>;
-fn hub_visits(net: &Network, date: NaiveDate, stop_id: &str) -> (Visits, Visits) {
+fn hub_visits(net: &Network, date: Date, stop_id: &str) -> (Visits, Visits) {
     let group = transit_network::walking_group(net, stop_id);
     let mut arrivals: Visits = Vec::new();
     let mut departures: Visits = Vec::new();
@@ -1252,8 +1278,9 @@ fn hub_visits(net: &Network, date: NaiveDate, stop_id: &str) -> (Visits, Visits)
 /// Seconds. The default is provisional (D-133).
 pub const MISS_SECS: u32 = 300;
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct MissedConnection {
     pub from_route: String,
     pub to_route: String,
@@ -1267,7 +1294,7 @@ pub struct MissedConnection {
 
 pub fn missed_connections(
     net: &Network,
-    date: NaiveDate,
+    date: Date,
     stop_id: &str,
     window: Option<TransferWindow>,
     miss_secs: Option<u32>,
@@ -1312,26 +1339,27 @@ pub fn missed_connections(
 
 
 /// Provisional thresholds (D-136).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FindingParams {
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub hole_factor: Option<f64>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub wait_secs: Option<u32>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub miss_cost_secs: Option<u32>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub window: Option<CoverageWindow>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub limit: Option<u32>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub watch: Option<Vec<String>>,
 }
 
@@ -1339,8 +1367,9 @@ const HOLE_FACTOR: f64 = 1.5;
 const LONG_WAIT_SECS: u32 = 3600;
 const MISS_COST_SECS: u32 = 900;
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FrequencyHole {
     /// The key is "hole|<route>|<hour>", so the same hole in another version
     /// has the same key.
@@ -1352,8 +1381,9 @@ pub struct FrequencyHole {
     pub around_gap_secs: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LongWait {
     /// The key is "wait|<stop>".
     pub key: String,
@@ -1363,8 +1393,9 @@ pub struct LongWait {
     pub wait_from_secs: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CostlyMiss {
     /// The key is "miss|<hub>|<from route>|<to route>".
     pub key: String,
@@ -1377,29 +1408,33 @@ pub struct CostlyMiss {
     pub stranded: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct HoleRow {
     pub now: FrequencyHole,
     pub base: Option<FrequencyHole>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct WaitRow {
     pub now: LongWait,
     pub base: Option<LongWait>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct MissRow {
     pub now: CostlyMiss,
     pub base: Option<CostlyMiss>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AnyFinding {
     Hole(FrequencyHole),
@@ -1407,24 +1442,27 @@ pub enum AnyFinding {
     Miss(CostlyMiss),
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Watched {
     pub key: String,
     pub now: Option<AnyFinding>,
     pub base: Option<AnyFinding>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ResolvedFindings {
     pub holes: Vec<FrequencyHole>,
     pub waits: Vec<LongWait>,
     pub misses: Vec<CostlyMiss>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NetworkFindings {
     pub group: String,
     /// Every date that the combination holds answers alike, so this is
@@ -1459,7 +1497,7 @@ impl Found {
 fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<Found> {
     let combination = transit_network::service_combination(net, members)?;
     let date_text = combination.dates.first()?.clone();
-    let date = NaiveDate::parse_from_str(&date_text, "%Y-%m-%d").ok()?;
+    let date = Date::parse(&date_text).ok()?;
     let factor = p.hole_factor.unwrap_or(HOLE_FACTOR);
     let in_hour = |h: u32| p.window.map_or(true, |w| h * 3600 >= w.start_secs && h * 3600 < w.end_secs);
     let in_secs = |t: u32| p.window.map_or(true, |w| t >= w.start_secs && t <= w.end_secs);
@@ -1595,8 +1633,9 @@ pub fn network_findings(
     })
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteConnections {
     pub from_route: String,
     pub to_route: String,
@@ -1608,7 +1647,7 @@ pub struct RouteConnections {
 
 pub fn hub_connections(
     net: &Network,
-    date: NaiveDate,
+    date: Date,
     stop_id: &str,
     window: Option<TransferWindow>,
 ) -> Vec<RouteConnections> {
@@ -1635,8 +1674,9 @@ pub fn hub_connections(
 
 /// A target headway that varies through the day reads as the range it runs,
 /// never rounded to a grid.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteHourGaps {
     pub hour: u32,
     pub departures: u32,
@@ -1645,8 +1685,9 @@ pub struct RouteHourGaps {
     pub median_gap_secs: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteFrequencyRow {
     pub route_id: String,
     pub name: String,
@@ -1655,8 +1696,9 @@ pub struct RouteFrequencyRow {
     pub stats: RouteStats,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteFrequency {
     pub group: String,
     pub members: Vec<String>,

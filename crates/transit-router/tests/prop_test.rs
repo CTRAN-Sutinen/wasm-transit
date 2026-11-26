@@ -3,7 +3,7 @@
 //! search. The test fails when RAPTOR arrives earlier than the oracle or misses
 //! a connection that the oracle finds.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_router::{earliest_arrival, Itinerary, Leg, RouterNetwork};
@@ -13,7 +13,7 @@ mod support;
 use support::{build_zip, model_day, TripSpec};
 
 const INF: u32 = u32::MAX;
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
 
 prop_compose! {

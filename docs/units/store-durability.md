@@ -1,7 +1,7 @@
 # Store durability — the sync store on object storage
 
 The sync store (`server/store/`; the layout and protocol in
-`docs/FORMATS.md`, the model in `docs/architecture/storage.md`) runs over object storage — S3, Azure Blob, GCS —
+`docs/FORMATS.md`, the model in `docs/architecture/storage.md`) runs over object storage — S3 or GCS —
 with offline GC, boot sources, and degraded mode. Which provider a
 deployment runs on is the operator's choice, and the operator
 checks it with `just store-contract URL`; the engine favors none. What
@@ -46,9 +46,8 @@ suite against their own bucket (`just store-contract URL`).
 
 | Endpoint | Release | Date | Result |
 |---|---|---|---|
-| SeaweedFS (S3, podman) | 4.50 | 2026-11-18 | all pass (racing creates ~4 s against ~ms in memory) |
-| Azurite (Azure Blob, podman) | 3.37.0 | 2026-11-18 | all pass |
-| fake-gcs-server (GCS, podman) | `sha256:797ce226…` (2026-08-24) | 2026-11-18 | all pass |
+| SeaweedFS (S3, podman) | 4.50 | 2026-11-25 | all pass |
+| fake-gcs-server (GCS, podman) | `sha256:797ce226…` (2026-08-24) | 2026-11-25 | all pass |
 
 ## Scope
 
@@ -59,8 +58,8 @@ suite against their own bucket (`just store-contract URL`).
    is create-only, so a copy taken records first, then the blobs they
    name, is consistent, and blobs copy incrementally by key. Restore
    points the server at the copy and runs `store verify`. The bucket
-   can carry the provider's immutability (S3 Object Lock, Azure
-   immutability policies, GCS bucket lock) for the agency's retention
+   can carry the provider's immutability (S3 Object Lock, GCS
+   bucket lock) for the agency's retention
    period: serving processes never delete, and `store gc` keeps what
    retention refuses.
 

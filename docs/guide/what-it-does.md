@@ -62,8 +62,8 @@ features stay with the server.
 - **Open data, no lock-in.** Everything the software stores is in an
   open format: GTFS, GTFS-realtime, GeoJSON, or plain JSON with a
   published description. You can read it without the software. The
-  server's store works with Amazon S3, Azure Blob Storage, or Google
-  Cloud Storage, and favors none of them.
+  server's store works with Amazon S3 or Google Cloud Storage, and
+  favors neither.
 - **Nothing is overwritten.** A change creates a new version and keeps
   the old one. "Deleting" marks a thing as retired. This gives a
   complete history for audits, and makes rolling back a matter of

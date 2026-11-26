@@ -5,17 +5,17 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use serde_json::{json, Value};
 use transit_stops::{Details, Event, EventKind, Problem, Status, StopOn, Stops};
 
-fn day(n: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2027, 1, 1).unwrap() + chrono::Days::new(n as u64)
+fn day(n: u32) -> Date {
+    Date::from_ymd_opt(2027, 1, 1).unwrap() + transit_date::Days::new(n as i64)
 }
 
 fn date(n: u32) -> String {
-    day(n).format("%Y-%m-%d").to_string()
+    day(n).to_string()
 }
 
 fn event(kind: EventKind, on: Option<u32>) -> Event {
@@ -41,8 +41,8 @@ fn doc(stops: Vec<(&str, Vec<Event>)>) -> Stops {
 
 const STAGES: [EventKind; 4] = [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService];
 
-fn active(e: &Event, d: NaiveDate) -> bool {
-    let p = |s: &String| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+fn active(e: &Event, d: Date) -> bool {
+    let p = |s: &String| Date::parse(s).unwrap();
     e.on.as_ref().map_or(true, |on| p(on) <= d) && e.until.as_ref().map_or(true, |u| d < p(u))
 }
 
@@ -58,7 +58,7 @@ fn status_of(k: &EventKind) -> Option<Status> {
     }
 }
 
-fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
+fn oracle(events: &[Event], id: &str, d: Date) -> Option<StopOn> {
     let live: Vec<&Event> = events.iter().filter(|e| active(e, d)).collect();
     let by = live.iter().rev().find(|e| status_of(&e.event).is_some())?;
     let status = status_of(&by.event)?;
@@ -92,7 +92,7 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         status,
         since: by.on.clone(),
         until: by.until.as_ref().map(|u| {
-            let p = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+            let p = |s: &str| Date::parse(s).unwrap();
             events
                 .iter()
                 .filter(|e| status_of(&e.event).is_some())
@@ -385,8 +385,8 @@ proptest! {
             .collect();
         prop_assume!(!temporary.is_empty());
         let (id, i) = pick.get(&temporary).clone();
-        let until = NaiveDate::parse_from_str(doc.stops[&id][i].until.as_ref().unwrap(), "%Y-%m-%d").unwrap();
-        let when = until + chrono::Days::new(after as u64);
+        let until = Date::parse(doc.stops[&id][i].until.as_ref().unwrap()).unwrap();
+        let when = until + transit_date::Days::new(after as i64);
         let mut without = doc.clone();
         without.stops.get_mut(&id).unwrap().remove(i);
         prop_assert_eq!(doc.stop_on(&id, when), without.stop_on(&id, when));
@@ -711,7 +711,7 @@ fn the_worked_example_reads_as_the_unit_says() {
     }))
     .unwrap();
     let d = d.checked().unwrap();
-    let at = |id: &str, s: &str| d.stop_on(id, NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap());
+    let at = |id: &str, s: &str| d.stop_on(id, Date::parse(s).unwrap());
     assert_eq!(at("6124", "2004-08-31"), None, "before it went into service, the stop is not there");
     assert_eq!(at("6124", "2025-05-11").unwrap().details.amenities, BTreeMap::new(), "amenities not recorded yet");
     assert_eq!(at("6124", "2025-05-12").unwrap().details.amenities.get("shelter"), Some(&true));
@@ -723,7 +723,7 @@ fn the_worked_example_reads_as_the_unit_says() {
     assert_eq!((at("6124", "2027-08-31").unwrap().lat, at("6124", "2027-09-01").unwrap().lat), (45.6934, 45.6936));
     assert_eq!(at("7001", "2027-01-01").unwrap().status, Status::Planned);
     assert_eq!(at("7001", "2027-06-01").unwrap().status, Status::Built);
-    assert!(!d.served("7001", NaiveDate::from_ymd_opt(2027, 9, 5).unwrap(), 0) && d.served("7001", NaiveDate::from_ymd_opt(2027, 9, 6).unwrap(), 0));
+    assert!(!d.served("7001", Date::from_ymd_opt(2027, 9, 5).unwrap(), 0) && d.served("7001", Date::from_ymd_opt(2027, 9, 6).unwrap(), 0));
 }
 
 #[test]

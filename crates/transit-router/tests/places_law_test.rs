@@ -13,7 +13,7 @@
 //!    unknown stop.
 //! 6. The direct walk wins its ties.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_router::{
@@ -25,7 +25,7 @@ use transit_router::{
 mod support;
 use support::{assert_feasible, build_zip_spaced, model_day, oracle_arrival, TripSpec, INF};
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
 
 prop_compose! {

@@ -1,7 +1,7 @@
 //! `apply_edits` over the committed planner network (testdata/network.json).
 //! The edit semantics are in cap-author/OPS.md.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_network::{
     apply_edits, materialize, validation_issues, Departs, Network, NetworkEdit, PlanMeta,
 };
@@ -10,8 +10,8 @@ fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).expect("testdata network parses")
 }
 
-fn tuesday() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 27).unwrap()
+fn tuesday() -> Date {
+    Date::from_ymd_opt(2026, 10, 27).unwrap()
 }
 
 fn remove(edit: fn(String) -> NetworkEdit, id: &str) -> NetworkEdit {

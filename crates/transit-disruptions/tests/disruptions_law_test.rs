@@ -7,7 +7,7 @@
 //! runs t20 (A to B at 08:20), and route 40 runs t40 and t41 between the
 //! station's bays SA and SB.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde_json::json;
 use transit_alerts::{AlertEffect, AlertPeriod, AlertSource, AlertStatus, ServiceAlert, ServiceAlerts};
 use transit_disruptions::*;
@@ -18,8 +18,8 @@ fn network() -> transit_network::Network {
     transit_codec::import(&feed).network
 }
 
-fn day() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 11, 19).unwrap()
+fn day() -> Date {
+    Date::from_ymd_opt(2026, 11, 19).unwrap()
 }
 
 const NOW: u64 = 10_000;

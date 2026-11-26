@@ -8,14 +8,16 @@ use std::sync::Arc;
 
 use cap_abi::kernel::{kind, STREET_GRAPH, WALK_GRAPH};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_streets::walking::{DirectWalk, PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
 use transit_streets::{StreetClass, StreetNetwork, StreetPoint, StreetPosition, StreetUse, Streets};
 
 pub const OP_IMPORT: u32 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_streets/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_streets/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Import { bytes: Vec<u8> },
@@ -44,18 +46,19 @@ pub enum Request {
         from: StreetPosition,
         to: StreetPosition,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         confirm: Option<Vec<StreetClass>>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_streets/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_streets/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Import {
         streets_hash: String,
-        #[ts(as = "Streets")]
+        #[cfg_attr(feature = "bindings", ts(as = "Streets"))]
         streets: cap_abi::Canonical<Streets>,
         ways: u32,
         segments: u32,
@@ -63,7 +66,7 @@ pub enum Response {
     },
     Walks {
         walks_hash: String,
-        #[ts(as = "WalkTable")]
+        #[cfg_attr(feature = "bindings", ts(as = "WalkTable"))]
         walks: cap_abi::Canonical<WalkTable>,
     },
     Access { walks: Vec<PointWalk>, direct: Option<DirectWalk> },

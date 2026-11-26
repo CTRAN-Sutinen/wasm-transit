@@ -463,7 +463,7 @@ func TestOpenNamesItsBackend(t *testing.T) {
 	if _, _, err := s.CAS("edits", "", []byte(`[]`), env("edit_records"), "", "w", 0); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"", "./store", "/var/store", "file:///x", "s3://", "azblob://", "gs://", "ftp://x/y"} {
+	for _, bad := range []string{"", "./store", "/var/store", "file:///x", "s3://", "azblob://x", "gs://", "ftp://x/y"} {
 		if _, err := Open(bad); err == nil {
 			t.Fatalf("store URL %q must be refused", bad)
 		}

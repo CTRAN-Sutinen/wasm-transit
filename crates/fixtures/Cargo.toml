@@ -9,24 +9,31 @@ license.workspace = true
 # the kernel and the libraries, and only the generator, an `examples`
 # feature, or a dev-dependency names it.
 [dependencies]
-cap-abi = { path = "../cap-abi" }
-transit-version = { path = "../transit-version" }
-transit-network = { path = "../transit-network" }
-transit-codec = { path = "../transit-codec" }
-transit-rt = { path = "../transit-rt" }
-transit-live = { path = "../transit-live" }
-transit-sync = { path = "../transit-sync" }
-transit-dispatch = { path = "../transit-dispatch" }
-transit-rider = { path = "../transit-rider" }
-transit-runs = { path = "../transit-runs" }
-transit-stops = { path = "../transit-stops" }
-transit-requests = { path = "../transit-requests" }
-transit-alerts = { path = "../transit-alerts" }
-transit-notes = { path = "../transit-notes" }
-transit-streets = { path = "../transit-streets" }
-transit-plans = { path = "../transit-plans" }
-transit-log = { path = "../transit-log" }
+cap-abi = { path = "../cap-abi", default-features = false }
+transit-version = { path = "../transit-version", default-features = false }
+transit-network = { path = "../transit-network", default-features = false }
+transit-codec = { path = "../transit-codec", default-features = false }
+transit-rt = { path = "../transit-rt", default-features = false }
+transit-live = { path = "../transit-live", default-features = false }
+transit-sync = { path = "../transit-sync", default-features = false }
+transit-dispatch = { path = "../transit-dispatch", default-features = false }
+transit-rider = { path = "../transit-rider", default-features = false }
+transit-runs = { path = "../transit-runs", default-features = false }
+transit-stops = { path = "../transit-stops", default-features = false }
+transit-requests = { path = "../transit-requests", default-features = false }
+transit-alerts = { path = "../transit-alerts", default-features = false }
+transit-notes = { path = "../transit-notes", default-features = false }
+transit-streets = { path = "../transit-streets", default-features = false }
+transit-plans = { path = "../transit-plans", default-features = false }
+transit-log = { path = "../transit-log", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-chrono = { workspace = true }
+transit-date = { path = "../transit-date", default-features = false }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["cap-abi/bindings", "transit-version/bindings", "transit-network/bindings", "transit-codec/bindings", "transit-rt/bindings", "transit-live/bindings", "transit-sync/bindings", "transit-dispatch/bindings", "transit-rider/bindings", "transit-runs/bindings", "transit-stops/bindings", "transit-requests/bindings", "transit-alerts/bindings", "transit-notes/bindings", "transit-streets/bindings", "transit-plans/bindings", "transit-log/bindings", "transit-date/bindings"]

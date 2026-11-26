@@ -14,6 +14,7 @@ pub use references::{added, added_in, blame, broken, named, naming, touched, tou
 pub use receive::{receive, Conflict, Failed, Moved, OpCall, Received, Refused, MadeDocument, Write};
 use std::collections::BTreeMap;
 
+#[cfg(feature = "bindings")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,7 +33,8 @@ transit_version::kind_tag!(
 
 pub type Hash<'a> = &'a dyn Fn(&Value) -> String;
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Intent {
     pub op: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,7 +50,8 @@ pub struct Intent {
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Header {
     pub log: String,
     /// From 1.
@@ -59,7 +62,8 @@ pub struct Header {
     pub intent: Intent,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Change {
     pub kind: String,
     pub version: u32,
@@ -73,7 +77,8 @@ pub struct Change {
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Entry {
     pub kind: EntryKind,
     pub schema_version: u32,
@@ -118,7 +123,8 @@ impl Entry {
 }
 
 /// A record as the entry that wrote it stored it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Held {
     pub version: u32,
     pub value: Value,
@@ -126,7 +132,8 @@ pub struct Held {
 
 pub type Records = BTreeMap<String, BTreeMap<String, Held>>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Checkpoint {
     pub kind: CheckpointKind,
     pub schema_version: u32,
@@ -164,7 +171,8 @@ impl Checkpoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct KindRecords {
     pub kind: String,
     pub version: u32,
@@ -222,7 +230,8 @@ pub fn compose(fold: &Checkpoint, header: Header, next: &[KindRecords], hash: Ha
     Composed::Entry(Entry::new(header, changes, None))
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Overlap {
     pub kind: String,
     pub id: String,
@@ -277,13 +286,15 @@ pub fn apply(fold: &mut Checkpoint, entry: &Entry, hash: Hash) -> Result<(), Str
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Stored {
     pub seq: u64,
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Quarantined {
     pub seq: u64,
     pub reason: String,
@@ -331,7 +342,8 @@ pub fn fold(start: Checkpoint, entries: &[Stored], hash: Hash) -> Result<Folded,
     Ok(Folded { fold, quarantined })
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct RevertState {
     pub kind: String,
     pub id: String,
@@ -343,7 +355,8 @@ pub struct RevertState {
 
 /// For a kind whose merge would bring the state before back over the revert
 /// (D-193).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 pub struct Written {
     pub kind: String,
     pub id: String,

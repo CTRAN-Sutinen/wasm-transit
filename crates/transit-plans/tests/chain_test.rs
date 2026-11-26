@@ -1,15 +1,15 @@
 //! The chain is derived from the plan set's metadata on every call, and
 //! does not depend on input order.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_plans::{periods, resolve, validate, PlanInfo};
 
 fn info(id: &str, name: &str, from: Option<&str>) -> PlanInfo {
     PlanInfo { id: id.into(), name: name.into(), effective_from: from.map(Into::into) }
 }
 
-fn date(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn date(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn resolution_picks_the_latest_effective_plan() {
     let imported = vec![info("", "imported", None)];
     assert_eq!(resolve(&imported, date("2026-10-24")).unwrap(), None);
 
-    assert!(resolve(&chain, NaiveDate::MAX).is_ok());
+    assert!(resolve(&chain, Date::MAX).is_ok());
 }
 
 #[test]

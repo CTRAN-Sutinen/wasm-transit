@@ -8,6 +8,7 @@
 //!   legs" is exact.
 //! * `parent[k][s]` records how round `k` improved stop `s`.
 
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +26,9 @@ pub(crate) fn fmt_time(secs: u32) -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Leg {
     /// Footpaths reach only nearby stops, so a longer walk is a chain of them,
@@ -60,8 +62,9 @@ pub enum Leg {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Itinerary {
     pub from_stop_id: String,
     pub from_stop_name: String,
@@ -132,8 +135,9 @@ enum Parent {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(untagged)]
 pub enum End {
     Stop(String),
@@ -148,8 +152,9 @@ impl From<&str> for End {
 
 /// A spot off the network, such as a tapped spot or the rider's location. Its
 /// id is never a stop's id.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Place {
     pub id: String,
     pub name: String,
@@ -159,8 +164,9 @@ pub struct Place {
 /// A place's walk to one stop and back (walks are symmetric). Planning reads
 /// the seconds, and [`crate::walk_path`] draws the path, which is empty when
 /// the walk is given by its seconds alone.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PlaceWalk {
     pub stop_id: String,
     pub walk_secs: u32,
@@ -689,8 +695,9 @@ fn merge_walks(legs: Vec<Leg>) -> Vec<Leg> {
     out
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ArriveBy {
     pub arrive_by_secs: u32,
     pub itinerary: Option<Itinerary>,

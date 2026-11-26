@@ -9,7 +9,8 @@ use serde_json::Value;
 
 use crate::{compose, overlap, read_entry, Checkpoint, Composed, Entry, Hash, Header, KindRecords, Overlap, Stored};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(schemars::JsonSchema))]
 pub struct Write {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<Value>,
@@ -18,24 +19,24 @@ pub struct Write {
     pub unread: Vec<Stored>,
     /// Absent means no reference check (D-233).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
+    #[cfg_attr(feature = "bindings", schemars(skip))]
     pub references: Option<Vec<crate::KindReferences>>,
     /// A reference that the write adds to a record missing then refuses the
     /// write ([`Received::broken`]). A log left out is not judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
+    #[cfg_attr(feature = "bindings", schemars(skip))]
     pub read: Option<BTreeMap<String, crate::Records>>,
     /// Absent means as `read`. The write's own log is the fold after the
     /// entry. The references that the entry touches and that are broken now
     /// are its warnings ([`Received::references`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
+    #[cfg_attr(feature = "bindings", schemars(skip))]
     pub now: Option<BTreeMap<String, crate::Records>>,
     /// "YYYY-MM-DD" in the agency's time zone, from the host's clock. A
     /// reference rule reads a dated state on it. Absent means no rule
     /// that needs a date is judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
+    #[cfg_attr(feature = "bindings", schemars(skip))]
     pub today: Option<String>,
 }
 
@@ -79,65 +80,67 @@ impl Write {
 /// `entry` is absent when the write changes nothing, landed before, hit an
 /// overlap, a refusal, a moved head, or a conflict. `unknown_fields` names
 /// the fields that a written document carries and this build does not know.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Received {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub entry: Option<String>,
     pub changes: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional, type = "number")]
+    #[cfg_attr(feature = "bindings", ts(optional, type = "number"))]
     pub landed: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional, type = "{ kind: string, id: string, seq: number }")]
+    #[cfg_attr(feature = "bindings", ts(optional, type = "{ kind: string, id: string, seq: number }"))]
     pub overlap: Option<Overlap>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub refused: Option<Refused>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub moved: Option<Moved>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub conflict: Option<Conflict>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub failed: Option<Failed>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub unknown_fields: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, String>>"))]
     pub heads: BTreeMap<String, String>,
     /// The write is refused and no entry comes back (`Write::read`, D-233).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<crate::Broken>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<crate::Broken>>"))]
     pub broken: Vec<crate::Broken>,
     /// The write's warnings, for a person (`Write::now`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<crate::Broken>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<crate::Broken>>"))]
     pub references: Vec<crate::Broken>,
     /// The host stores these before the entry, so the entry never names a
     /// document that the store does not hold.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<MadeDocument>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<MadeDocument>>"))]
     pub made: Vec<MadeDocument>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional, type = "unknown")]
+    #[cfg_attr(feature = "bindings", ts(optional, type = "unknown"))]
     pub answer: Option<Value>,
 }
 
 /// `pointer` is absent for a blob only.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct MadeDocument {
     pub kind: String,
     pub version: u32,
     pub document: String,
     pub document_hash: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub pointer: Option<String>,
 }
 
@@ -163,24 +166,27 @@ impl Received {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Failed {
     pub op: usize,
-    #[ts(type = "{ message: string, code?: string }")]
+    #[cfg_attr(feature = "bindings", ts(type = "{ message: string, code?: string }"))]
     pub error: transit_version::Refusal,
 }
 
 /// Nothing is written, and the writer reads again.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Conflict {
     pub op: usize,
     pub id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Moved {
     /// Empty means no head.
     pub current: String,
@@ -233,7 +239,8 @@ pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn 
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(schemars::JsonSchema))]
 pub struct OpCall {
     pub cap: String,
     pub op: String,
@@ -255,10 +262,11 @@ impl OpCall {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Refused {
     pub op: usize,
-    #[ts(type = "Array<unknown>")]
+    #[cfg_attr(feature = "bindings", ts(type = "Array<unknown>"))]
     pub refusals: Value,
 }

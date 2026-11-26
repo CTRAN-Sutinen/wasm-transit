@@ -1,12 +1,14 @@
 use serde::Serialize;
 use transit_codec::Boundary;
 use transit_network::{trip_instance, Departs, MaterializedTrip, Network};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::overview::{RtOverview, TripUpdateView, VehicleView};
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ProgressStop {
     pub stop_id: String,
     pub stop_sequence: u32,
@@ -20,8 +22,9 @@ pub struct ProgressStop {
     pub skipped: bool,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TripProgress {
     pub trip_id: String,
     pub start_secs: u32,
@@ -31,8 +34,9 @@ pub struct TripProgress {
     pub stops: Vec<ProgressStop>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct LateTrip {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
@@ -52,29 +56,30 @@ pub struct LateTrip {
     pub lat: Option<f64>,
     pub lon: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub route_name: Option<String>,
     /// Absent for a frequency trip, whose instances share the trip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub start_secs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub first_stop: Option<StopName>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub headsign: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub near_stop: Option<StopName>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopName {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub name: Option<String>,
 }
 

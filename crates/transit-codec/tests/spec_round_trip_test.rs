@@ -568,15 +568,15 @@ fn build(feed: &SpecFeed) -> Builder {
         row.push(("start_date", s("20260301")));
         row.push(("end_date", s("20260531")));
         b.push("calendar.txt", row);
-        let mut date = chrono::NaiveDate::from_ymd_opt(2026, 3, 2).unwrap();
-        while date <= chrono::NaiveDate::from_ymd_opt(2026, 5, 27).unwrap() {
-            if date != chrono::NaiveDate::from_ymd_opt(2026, 4, 6).unwrap() {
-                let d = date.format("%Y%m%d").to_string();
+        let mut date = transit_date::Date::from_ymd_opt(2026, 3, 2).unwrap();
+        while date <= transit_date::Date::from_ymd_opt(2026, 5, 27).unwrap() {
+            if date != transit_date::Date::from_ymd_opt(2026, 4, 6).unwrap() {
+                let d = date.to_string().replace('-', "");
                 b.push("calendar_dates.txt", vec![("service_id", s("3")), ("date", d.clone()), ("exception_type", s("1"))]);
-                let wed = (date + chrono::Duration::days(2)).format("%Y%m%d").to_string();
+                let wed = (date + transit_date::Days::new(2)).to_string().replace('-', "");
                 b.push("calendar_dates.txt", vec![("service_id", s("3")), ("date", wed), ("exception_type", s("1"))]);
             }
-            date += chrono::Duration::days(7);
+            date += transit_date::Days::new(7);
         }
         b.push("calendar_dates.txt", vec![("service_id", s("3")), ("date", s("20260404")), ("exception_type", s("1"))]);
     }

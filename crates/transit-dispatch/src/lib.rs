@@ -29,7 +29,8 @@ pub use divert::{cancel_of, cancel_rows, diversion_of, diversion_rows, draft_vie
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use transit_date::Date;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use transit_network::{materialize, MaterializedTrip, Network, StopTime};
@@ -38,15 +39,16 @@ use transit_sync::{Diversion, EditRecord, EditReport, TripCancel};
 
 /// The trip instance is the (trip, start) identity. On a pooled station
 /// board, `stop` is the bay.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct BoardDeparture {
     pub trip: String,
     /// The service date, "YYYY-MM-DD". Only a board asked at a moment
     /// ([`stop_board_at`], [`grouped_board_at`]) sets it. `departure_secs`
     /// counts from this date's anchor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub date: Option<String>,
     pub start_secs: u32,
     pub route: String,
@@ -60,8 +62,9 @@ pub struct BoardDeparture {
     pub destination: String,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct BlockChainTrip {
     /// A frequency trip's instances share it.
     pub trip: String,
@@ -82,8 +85,9 @@ pub struct BlockChainTrip {
     pub layover_health: Option<LayoverHealth>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum LayoverHealth {
     Ok,
@@ -282,11 +286,12 @@ pub fn station_board(
     board_over(network, day, &group, from_secs, limit)
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct BoardRow {
     #[serde(flatten)]
-    #[ts(flatten)]
+    #[cfg_attr(feature = "bindings", ts(flatten))]
     pub departure: BoardDeparture,
     pub expected_secs: Option<u32>,
     pub delay_secs: Option<i32>,
@@ -295,8 +300,9 @@ pub struct BoardRow {
     pub alerts: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Wait {
     Due,
@@ -325,19 +331,21 @@ fn wait_after(at_secs: u32, from: i64) -> Wait {
 /// A departure the edits took away from this stop, and why: the diversion that
 /// skips the stop, or the cancel that takes the trip out. A live-feed
 /// cancellation is not listed here (D-100).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct SkippedVisit {
     #[serde(flatten)]
-    #[ts(flatten)]
+    #[cfg_attr(feature = "bindings", ts(flatten))]
     pub departure: BoardDeparture,
     pub diversion: Option<String>,
     pub cancel: Option<String>,
     pub alerts: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopBoard {
     pub rows: Vec<BoardRow>,
     pub skipped: Vec<SkippedVisit>,
@@ -359,7 +367,7 @@ pub struct Day {
     pub edits: Option<DayEdits>,
 }
 
-pub fn day(network: &Network, date: NaiveDate, records: &[EditRecord]) -> Result<Day, transit_network::NetworkError> {
+pub fn day(network: &Network, date: Date, records: &[EditRecord]) -> Result<Day, transit_network::NetworkError> {
     let base = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
     let cancels = transit_sync::cancels_in_force_on(records, date);
@@ -376,13 +384,13 @@ pub fn day_key(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Stri
 
 /// Read a request's date before any document, so a date that does not parse
 /// is the caller's error and not a missing document.
-pub fn day_date(date: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))
+pub fn day_date(date: &str) -> Result<Date, String> {
+    Date::read(date)
 }
 
 /// Every capability computes the day here, under [`day_key`], so one assembly
 /// caches one copy.
-pub fn day_of(network: &Network, records: &[EditRecord], date: NaiveDate) -> Result<Day, String> {
+pub fn day_of(network: &Network, records: &[EditRecord], date: Date) -> Result<Day, String> {
     day(network, date, records).map_err(|e| format!("the network does not materialize: {e}"))
 }
 
@@ -415,8 +423,9 @@ pub fn stop_board(
     with_alerts(network, rows, skipped, &own, false, live)
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DepartureGroup {
     pub route: String,
     pub route_name: String,
@@ -432,8 +441,9 @@ pub struct DepartureGroup {
 
 pub const NEXT_SERVICE_DAYS: u32 = 7;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NextService {
     pub date: String,
     /// Days after the board's date. 1 is tomorrow. At most
@@ -451,9 +461,9 @@ pub fn with_next_service<D: std::ops::Deref<Target = Day>>(
     network: &Network,
     board: &mut GroupedBoard,
     stop_id: &str,
-    date: NaiveDate,
+    date: Date,
     from_secs: u32,
-    mut day_on: impl FnMut(NaiveDate) -> Result<D, String>,
+    mut day_on: impl FnMut(Date) -> Result<D, String>,
 ) -> Result<(), String> {
     let stops: Vec<String> = if board.pooled {
         transit_network::walking_group(network, stop_id).into_keys().collect()
@@ -465,7 +475,7 @@ pub fn with_next_service<D: std::ops::Deref<Target = Day>>(
         if pending.is_empty() {
             break;
         }
-        let Some(on) = date.checked_add_days(chrono::Days::new(k as u64)) else { break };
+        let Some(on) = date.checked_add_days(transit_date::Days::new(k as i64)) else { break };
         let day = day_on(on)?;
         let rows = board_over(network, &day.trips, &stops, from_secs.saturating_sub(k * 86_400), usize::MAX);
         pending.retain(|&i| {
@@ -474,9 +484,9 @@ pub fn with_next_service<D: std::ops::Deref<Target = Day>>(
                 return true;
             };
             group.next = Some(NextService {
-                date: on.format("%Y-%m-%d").to_string(),
+                date: on.to_string(),
                 days_ahead: k,
-                weekday: on.format("%A").to_string(),
+                weekday: on.weekday().name().to_string(),
                 departure_secs: row.departure_secs,
                 stop: row.stop.clone(),
             });
@@ -486,8 +496,9 @@ pub fn with_next_service<D: std::ops::Deref<Target = Day>>(
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct GroupedBoard {
     pub groups: Vec<DepartureGroup>,
     pub alerts: Vec<LiveAlert>,
@@ -737,19 +748,21 @@ pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_grou
 }
 
 /// A trip scope speaks on its date only ([`AlertScope::on`]).
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Reach {
     pub departures: u32,
     pub stops: Vec<ReachedStop>,
     pub routes: Vec<String>,
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub visits: Vec<(String, String, u32)>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ReachedStop {
     pub stop: String,
     pub name: String,
@@ -1068,7 +1081,7 @@ pub fn block_chain(
 
 pub fn effective_day(
     network: &Network,
-    date: NaiveDate,
+    date: Date,
     records: &[EditRecord],
 ) -> Result<Vec<MaterializedTrip>, transit_network::NetworkError> {
     let day = materialize(network, date)?;
@@ -1076,8 +1089,9 @@ pub fn effective_day(
     Ok(cancel_day(&patch_day(&day, &diversions), &transit_sync::cancels_in_force_on(records, date)))
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DayBlock {
     pub block_id: String,
     pub trip_count: u32,
@@ -1095,8 +1109,9 @@ pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> 
     out
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct FleetSummary {
     pub blocks: u32,
     pub peak_vehicles: u32,
@@ -1107,8 +1122,9 @@ pub struct FleetSummary {
     pub spans: Vec<BlockSpan>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct BlockSpan {
     pub block_id: String,
     pub trips: u32,
@@ -1207,9 +1223,9 @@ pub fn service_dates(
     network: &Network,
     records: &[EditRecord],
     service_type: &str,
-    from: NaiveDate,
-    to: NaiveDate,
-) -> Result<Vec<NaiveDate>, transit_network::NetworkError> {
+    from: Date,
+    to: Date,
+) -> Result<Vec<Date>, transit_network::NetworkError> {
     // The agreement with `active_services` depends on this check.
     if !network.pattern_trips.values().any(|s| s.service_type == service_type) {
         return Ok(Vec::new());
@@ -1229,13 +1245,14 @@ pub fn service_dates(
         if runs {
             out.push(date);
         }
-        date += chrono::Duration::days(1);
+        date += transit_date::Days::new(1);
     }
     Ok(out)
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TripStopView {
     pub stop_id: String,
     pub name: String,

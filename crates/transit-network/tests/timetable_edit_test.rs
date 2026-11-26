@@ -119,7 +119,7 @@ fn running_time_changes_only_inside_the_window() {
     };
     let slower = apply(&net, vec![adjust(120)]);
     assert_eq!(slower.patterns, net.patterns, "the profiles are a production tool, untouched");
-    let day = materialize(&slower, chrono::NaiveDate::from_ymd_opt(2026, 10, 27).unwrap()).unwrap();
+    let day = materialize(&slower, transit_date::Date::from_ymd_opt(2026, 10, 27).unwrap()).unwrap();
     let end = |start: u32| day.iter().find(|t| t.start_secs == start).unwrap().stop_times.last().unwrap().arrival_secs - start;
     assert_eq!((end(28_800), end(91_800)), (720, 600), "the 08:00 trip runs longer, the 25:30 does not");
     assert!(validation_issues(&slower).is_empty(), "12 min + 15 min layover still makes 08:30");

@@ -13,7 +13,7 @@
 //!    alighted at. The live plan is the schedule plan of the world
 //!    without them.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_live::LiveDay;
@@ -23,7 +23,7 @@ use transit_router::{earliest_arrival, Leg, RouterNetwork};
 mod support;
 use support::{build_zip_timed, model_day};
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
 /// No walk crosses this spacing, so the plans of property 5 ride.
 const SPREAD: f64 = 0.05;

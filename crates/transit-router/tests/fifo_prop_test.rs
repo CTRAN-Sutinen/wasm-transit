@@ -2,7 +2,7 @@
 //! property needs no oracle, so it also catches a boarding-window off-by-one
 //! that the fixpoint oracle shares.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use transit_router::{earliest_arrival, RouterNetwork};
@@ -11,7 +11,7 @@ use transit_router::{earliest_arrival, RouterNetwork};
 mod support;
 use support::{build_zip, model_day, TripSpec};
 
-const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap();
 const MAX_LEGS: usize = 12;
 
 prop_compose! {

@@ -10,6 +10,7 @@
 use cap_abi::kernel::kind;
 use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub use transit_plans::{
@@ -21,8 +22,9 @@ pub const PLANS_DOCUMENT: &str = "plans";
 pub const FROZEN_RECORD: &str = "frozen_version";
 pub const FROZEN_DOCUMENT: &str = "frozen_versions";
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Resolve { plans: Vec<PlanInfo>, date: String },
@@ -30,84 +32,85 @@ pub enum Request {
     Timeline {
         plans: Vec<DevicePlan>,
         #[serde(default)]
-        #[ts(optional, as = "Option<PublishedPlans>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<PublishedPlans>"))]
         published: Option<Current<PublishedPlans>>,
         today: String,
     },
     Periods { plans: Vec<PlanInfo> },
     Publish {
-        #[ts(as = "Option<PublishedPlans>")]
+        #[cfg_attr(feature = "bindings", ts(as = "Option<PublishedPlans>"))]
         published: Option<Base<PublishedPlans>>,
         plan: PlanInfo,
         network_hash: String,
         today: String,
     },
     Retire {
-        #[ts(as = "PublishedPlans")]
+        #[cfg_attr(feature = "bindings", ts(as = "PublishedPlans"))]
         published: Base<PublishedPlans>,
         id: String,
         today: String,
     },
     InForce {
-        #[ts(as = "PublishedPlans")]
+        #[cfg_attr(feature = "bindings", ts(as = "PublishedPlans"))]
         published: Current<PublishedPlans>,
         date: String,
     },
     InUse {
-        #[ts(as = "PublishedPlans")]
+        #[cfg_attr(feature = "bindings", ts(as = "PublishedPlans"))]
         published: Current<PublishedPlans>,
         today: String,
     },
     Freeze {
-        #[ts(as = "Option<FrozenVersions>")]
+        #[cfg_attr(feature = "bindings", ts(as = "Option<FrozenVersions>"))]
         frozen: Option<Base<FrozenVersions>>,
         plan: PlanInfo,
         network_hash: String,
         purpose: String,
     },
     Adopt {
-        #[ts(as = "Option<PublishedPlans>")]
+        #[cfg_attr(feature = "bindings", ts(as = "Option<PublishedPlans>"))]
         published: Option<Base<PublishedPlans>>,
-        #[ts(as = "FrozenVersions")]
+        #[cfg_attr(feature = "bindings", ts(as = "FrozenVersions"))]
         frozen: Base<FrozenVersions>,
         network_hash: String,
         today: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         stops_seq: Option<u64>,
     },
     LogRecords {
         #[serde(default)]
-        #[ts(optional, as = "Option<PublishedPlans>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<PublishedPlans>"))]
         published: Option<Base<PublishedPlans>>,
         #[serde(default)]
-        #[ts(optional, as = "Option<FrozenVersions>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<FrozenVersions>"))]
         frozen: Option<Base<FrozenVersions>>,
     },
     Receive {
-        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
         write: transit_log::Write,
         #[serde(default)]
-        #[ts(type = "Record<string, unknown>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, unknown>"))]
         documents: std::collections::BTreeMap<String, serde_json::Value>,
         #[serde(default)]
-        #[ts(type = "Record<string, string>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, string>"))]
         loaded: std::collections::BTreeMap<String, String>,
-        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
         ops: Vec<transit_log::OpCall>,
     },
     LogDocument {
         kind: String,
-        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[ts(optional, type = "{ version: number, value: unknown }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
         document: Option<transit_log::Held>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_plans/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Resolve { plan: Option<String> },
@@ -133,7 +136,7 @@ pub enum Response {
         frozen: Option<FrozenVersions>,
         document: Option<String>,
         document_hash: Option<String>,
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     Adopt {
@@ -141,11 +144,11 @@ pub enum Response {
         published: Option<PublishedPlans>,
         document: Option<String>,
         document_hash: Option<String>,
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     LogRecords {
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     Receive(transit_log::Received),
@@ -186,15 +189,10 @@ fn frozen_spoken(frozen: &FrozenVersions) -> Result<(), cap_abi::Refusal> {
     cap_abi::speaks(FrozenVersions::KIND, frozen.schema_version(), FrozenVersions::READS)
 }
 
-fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
-    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        .map_err(|e| format!("invalid date {s:?}, expected YYYY-MM-DD: {e}"))
-}
-
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
         Request::Resolve { plans, date } => {
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             Ok(Response::Resolve { plan: transit_plans::resolve(&plans, parsed)? })
         }
         Request::Validate { plans } => {
@@ -204,7 +202,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             if let Some(p) = &published {
                 spoken(&p.0)?;
             }
-            let today = parse_date(&today)?;
+            let today = transit_date::Date::read(&today)?;
             let t = transit_plans::timeline(&plans, published.as_ref().map(|p| &p.0), today)?;
             Ok(Response::Timeline { rows: t.rows, in_force: t.in_force, periods: t.periods, issues: t.issues })
         }
@@ -214,25 +212,25 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         Request::Publish { published, plan, network_hash, today } => {
             let base = published.map(|b| b.0).unwrap_or_else(PublishedPlans::empty);
             spoken(&base)?;
-            let today = parse_date(&today)?;
+            let today = transit_date::Date::read(&today)?;
             let (issues, published, document, document_hash) =
                 answered(transit_plans::publish(&base, &plan, &network_hash, today))?;
             Ok(Response::Publish { issues, published, document, document_hash })
         }
         Request::Retire { published, id, today } => {
             spoken(&published.0)?;
-            let today = parse_date(&today)?;
+            let today = transit_date::Date::read(&today)?;
             let (issues, published, document, document_hash) = answered(transit_plans::retire(&published.0, &id, today))?;
             Ok(Response::Retire { issues, published, document, document_hash })
         }
         Request::InForce { published, date } => {
             spoken(&published.0)?;
-            let parsed = parse_date(&date)?;
+            let parsed = transit_date::Date::read(&date)?;
             Ok(Response::InForce { plan: transit_plans::in_force(&published.0, parsed)?.cloned() })
         }
         Request::InUse { published, today } => {
             spoken(&published.0)?;
-            let today = parse_date(&today)?;
+            let today = transit_date::Date::read(&today)?;
             Ok(Response::InUse { plans: transit_plans::in_use(&published.0, today)?.into_iter().cloned().collect() })
         }
         Request::Freeze { frozen, plan, network_hash, purpose } => {
@@ -252,7 +250,7 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             let base = published.map(|b| b.0).unwrap_or_else(PublishedPlans::empty);
             spoken(&base)?;
             frozen_spoken(&frozen.0)?;
-            let today = parse_date(&today)?;
+            let today = transit_date::Date::read(&today)?;
             let (issues, published, document, document_hash) =
                 answered(transit_plans::adopt(&base, &frozen.0, &network_hash, today, stops_seq))?;
             let next = match &published {
@@ -356,14 +354,14 @@ fn step(heads: &mut Heads, intent: Intent, loaded: &std::collections::BTreeMap<S
         Intent::Adopt { network_hash, today, stops_seq } => {
             let base = heads.published.clone().unwrap_or_else(PublishedPlans::empty);
             let frozen = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
-            match transit_plans::adopt(&base, &frozen, &network_hash, parse_date(&today)?, stops_seq) {
+            match transit_plans::adopt(&base, &frozen, &network_hash, transit_date::Date::read(&today)?, stops_seq) {
                 Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
                 Err(i) => return issues(i),
             }
         }
         Intent::Retire { id, today } => {
             let base = heads.published.clone().ok_or("nothing is published")?;
-            match transit_plans::retire(&base, &id, parse_date(&today)?) {
+            match transit_plans::retire(&base, &id, transit_date::Date::read(&today)?) {
                 Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
                 Err(i) => return issues(i),
             }
@@ -444,7 +442,7 @@ fn pick(
     if adopt {
         let base = heads.published.clone().unwrap_or_else(PublishedPlans::empty);
         let frozen = heads.frozen.clone().unwrap_or_else(FrozenVersions::empty);
-        match transit_plans::adopt(&base, &frozen, &document_hash, parse_date(today)?, stops_seq) {
+        match transit_plans::adopt(&base, &frozen, &document_hash, transit_date::Date::read(today)?, stops_seq) {
             Ok(next) => (heads.published, heads.wrote_published) = (Some(next), true),
             Err(i) => return issues(i),
         }

@@ -4,7 +4,7 @@
 
 use std::io::Write;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::prelude::*;
 use transit_analysis::{coverage, coverage_compare, parse_layer, type_coverage, unserved_points, CoverageWindow};
 use transit_network::service_combinations;
@@ -83,8 +83,8 @@ fn network(trips: &[GenTrip]) -> transit_network::Network {
     transit_codec::import(&feed).network
 }
 
-fn monday() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 3, 2).unwrap()
+fn monday() -> Date {
+    Date::from_ymd_opt(2026, 3, 2).unwrap()
 }
 
 fn square(lat: f64, lon: f64, side_m: f64) -> String {
@@ -198,7 +198,7 @@ proptest! {
             prop_assert_eq!(&unserved.group, &c.id);
             let n = c.dates.len();
             for i in [0, n / 3, n / 2, 2 * n / 3, n - 1] {
-                let date = NaiveDate::parse_from_str(&c.dates[i], "%Y-%m-%d").unwrap();
+                let date = Date::parse(&c.dates[i]).unwrap();
                 let day = coverage(&net, date, &weights, radius, 1800, 2, window);
                 prop_assert!(close(tc.served, day.served) && close(tc.frequent, day.frequent), "{} on {date}", c.id);
                 prop_assert!(close(tc.served_pct, day.served_pct) && close(tc.frequent_pct, day.frequent_pct));

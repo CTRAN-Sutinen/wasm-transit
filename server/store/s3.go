@@ -3,155 +3,203 @@ package store
 import (
 	"bytes"
 	"context"
-	"errors"
+	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// OpenBackend opens the backend a store URL names:
-//
-//	mem://                                       in memory (dev, tests)
-//	s3://bucket[/prefix][?endpoint=URL&region=R]  S3 or any S3-compatible
-//	                                             endpoint (path-style when
-//	                                             endpoint is given)
-//	azblob://container[/prefix][?endpoint=URL]   Azure Blob Storage
-//	gs://bucket[/prefix]                         Google Cloud Storage
-//
-// Credentials come from each provider's own chain: the AWS SDK's
-// (AWS_ACCESS_KEY_ID, a profile, an instance role); NewAzure's; GCS
-// Application Default Credentials. There is no directory backend: a
-// store needs the object contract (backend.go).
-func OpenBackend(ctx context.Context, raw string) (Backend, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return nil, fmt.Errorf("store URL %q: %w", raw, err)
-	}
-	switch u.Scheme {
-	case "mem":
-		return NewMemory(), nil
-	case "s3":
-		if u.Host == "" {
-			return nil, fmt.Errorf("store URL %q names no bucket", raw)
-		}
-		q := u.Query()
-		return NewS3(ctx, u.Host, strings.Trim(u.Path, "/"), q.Get("endpoint"), q.Get("region"))
-	case "azblob":
-		if u.Host == "" {
-			return nil, fmt.Errorf("store URL %q names no container", raw)
-		}
-		return NewAzure(u.Host, strings.Trim(u.Path, "/"), u.Query().Get("endpoint"))
-	case "gs":
-		if u.Host == "" {
-			return nil, fmt.Errorf("store URL %q names no bucket", raw)
-		}
-		return NewGCS(ctx, u.Host, strings.Trim(u.Path, "/"))
-	default:
-		return nil, fmt.Errorf("store URL %q: want s3://, azblob://, gs:// or mem:// (the store lives in object storage)", raw)
-	}
-}
-
-// The conditional create is PutObject with If-None-Match: *.
+// S3 speaks the S3 REST API on the standard library. The conditional
+// create is PutObject with If-None-Match: *.
 type S3 struct {
-	c      *s3.Client
-	bucket string
-	prefix string // "" or "<prefix>/"
+	httpc     *http.Client
+	creds     *awsCredCache
+	base      *url.URL // the endpoint; the bucket is its host's first label or its path's first segment
+	pathStyle bool
+	region    string
+	bucket    string
+	prefix    string // "" or "<prefix>/"
+	now       func() time.Time
 }
 
 // A non-empty endpoint names an S3-compatible server and uses path-style
-// addressing. region defaults to the SDK's, else us-east-1.
-func NewS3(ctx context.Context, bucket, prefix, endpoint, region string) (*S3, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("s3 config: %w", err)
+// addressing. region defaults to AWS_REGION, then AWS_DEFAULT_REGION,
+// then us-east-1.
+func NewS3(_ context.Context, bucket, prefix, endpoint, region string) (*S3, error) {
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
 	}
-	if region != "" {
-		cfg.Region = region
-	} else if cfg.Region == "" {
-		cfg.Region = "us-east-1"
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
 	}
-	c := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		if endpoint != "" {
-			o.BaseEndpoint = aws.String(endpoint)
-			o.UsePathStyle = true
+	if region == "" {
+		region = "us-east-1"
+	}
+	b := &S3{
+		httpc:  &http.Client{Timeout: 5 * time.Minute},
+		region: region,
+		bucket: bucket,
+		now:    time.Now,
+	}
+	if endpoint != "" {
+		u, err := url.Parse(strings.TrimRight(endpoint, "/"))
+		if err != nil || u.Host == "" {
+			return nil, fmt.Errorf("s3 endpoint %q: not a URL", endpoint)
 		}
-		// S3-compatible servers differ on the streaming trailer checksums
-		// that the SDK otherwise adds.
-		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
-		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
-	})
+		b.base, b.pathStyle = u, true
+	} else {
+		b.base = &url.URL{Scheme: "https", Host: bucket + ".s3." + region + ".amazonaws.com"}
+	}
+	b.creds = &awsCredCache{src: defaultAWSEnv().source(region), now: time.Now}
 	if prefix != "" {
 		prefix += "/"
 	}
-	return &S3{c: c, bucket: bucket, prefix: prefix}, nil
+	b.prefix = prefix
+	return b, nil
 }
 
-// status answers 0 when the error has no HTTP status.
+// s3Error is a non-2xx answer.
+type s3Error struct {
+	op     string
+	status int
+	code   string
+	msg    string
+}
+
+func (e *s3Error) Error() string {
+	return fmt.Sprintf("s3 %s: HTTP %d %s %s", e.op, e.status, e.code, e.msg)
+}
+
+func (e *s3Error) HTTPStatusCode() int { return e.status }
+
+// do sends one signed request. key "" with query names the bucket.
+func (b *S3) do(ctx context.Context, method, key string, q url.Values, hdr http.Header, body []byte) (*http.Response, error) {
+	u := *b.base
+	p := "/" + key
+	if b.pathStyle {
+		p = strings.TrimRight(u.Path, "/") + "/" + b.bucket + p
+		if key == "" {
+			p = strings.TrimSuffix(p, "/")
+		}
+	}
+	u.Path = p
+	u.RawPath = awsEscapePath(p)
+	u.RawQuery = awsCanonicalQuery(q)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.ContentLength = int64(len(body))
+	if body == nil {
+		req.Body = http.NoBody
+	}
+	for k, vs := range hdr {
+		req.Header[k] = vs
+	}
+	c, err := b.creds.get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	hash := emptySHA256
+	if len(body) > 0 {
+		hash = sha256Hex(body)
+	}
+	signV4(req, hash, c, b.region, "s3", b.now())
+	return b.httpc.Do(req)
+}
+
+// check answers the body of a 2xx, and an *s3Error otherwise.
+func check(op string, resp *http.Response) ([]byte, error) {
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode/100 == 2 {
+		return data, nil
+	}
+	var e struct {
+		Code    string `xml:"Code"`
+		Message string `xml:"Message"`
+	}
+	xml.Unmarshal(data, &e)
+	return nil, &s3Error{op: op, status: resp.StatusCode, code: e.Code, msg: e.Message}
+}
+
 func status(err error) int {
-	var re interface{ HTTPStatusCode() int }
-	if errors.As(err, &re) {
-		return re.HTTPStatusCode()
+	if e, ok := err.(*s3Error); ok {
+		return e.status
 	}
 	return 0
 }
 
+const amzMeta = "X-Amz-Meta-"
+
 func (b *S3) Get(ctx context.Context, key string) ([]byte, map[string]string, error) {
-	out, err := b.c.GetObject(ctx, &s3.GetObjectInput{Bucket: &b.bucket, Key: aws.String(b.prefix + key)})
+	resp, err := b.do(ctx, "GET", b.prefix+key, nil, nil, nil)
 	if err != nil {
-		if status(err) == 404 {
-			return nil, nil, ErrNotFound
-		}
 		return nil, nil, err
 	}
-	defer out.Body.Close()
-	data, err := io.ReadAll(out.Body)
+	data, err := check("GetObject", resp)
+	if status(err) == 404 {
+		return nil, nil, ErrNotFound
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 	meta := map[string]string{}
-	for k, v := range out.Metadata {
-		meta[strings.ToLower(k)] = v
+	for k, vs := range resp.Header {
+		if strings.HasPrefix(k, amzMeta) && len(vs) > 0 {
+			meta[strings.ToLower(k[len(amzMeta):])] = vs[0]
+		}
 	}
 	return data, meta, nil
 }
 
 func (b *S3) Stat(ctx context.Context, key string) (ObjectInfo, error) {
-	out, err := b.c.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &b.bucket, Key: aws.String(b.prefix + key)})
+	resp, err := b.do(ctx, "HEAD", b.prefix+key, nil, nil, nil)
 	if err != nil {
+		return ObjectInfo{}, err
+	}
+	if _, err := check("HeadObject", resp); err != nil {
 		if status(err) == 404 {
 			return ObjectInfo{}, ErrNotFound
 		}
 		return ObjectInfo{}, err
 	}
-	return ObjectInfo{Key: key, Modified: aws.ToTime(out.LastModified)}, nil
+	mod, err := http.ParseTime(resp.Header.Get("Last-Modified"))
+	if err != nil {
+		return ObjectInfo{}, fmt.Errorf("s3 HeadObject %s: Last-Modified: %w", key, err)
+	}
+	return ObjectInfo{Key: key, Modified: mod}, nil
 }
 
 func (b *S3) Create(ctx context.Context, key string, data []byte, meta map[string]string) error {
-	in := &s3.PutObjectInput{
-		Bucket:        &b.bucket,
-		Key:           aws.String(b.prefix + key),
-		Body:          bytes.NewReader(data),
-		ContentLength: aws.Int64(int64(len(data))),
-		IfNoneMatch:   aws.String("*"),
-		Metadata:      meta,
+	hdr := http.Header{"If-None-Match": {"*"}}
+	for k, v := range meta {
+		hdr.Set(amzMeta+k, v)
+	}
+	if data == nil {
+		data = []byte{}
 	}
 	// 409 is a conditional write racing another in flight on the same
 	// key: retry, and the retry answers 412 or lands.
 	for attempt := 0; ; attempt++ {
-		_, err := b.c.PutObject(ctx, in)
+		resp, err := b.do(ctx, "PUT", b.prefix+key, nil, hdr, data)
+		if err != nil {
+			return err
+		}
+		_, err = check("PutObject", resp)
 		switch {
 		case err == nil:
 			return nil
 		case status(err) == 412:
 			return ErrExists
 		case status(err) == 409 && attempt < 5:
-			in.Body = bytes.NewReader(data)
 			time.Sleep(time.Duration(10<<attempt) * time.Millisecond)
 		default:
 			return err
@@ -160,29 +208,47 @@ func (b *S3) Create(ctx context.Context, key string, data []byte, meta map[strin
 }
 
 func (b *S3) List(ctx context.Context, prefix, startAfter string) ([]ObjectInfo, error) {
-	in := &s3.ListObjectsV2Input{Bucket: &b.bucket, Prefix: aws.String(b.prefix + prefix)}
+	q := url.Values{"list-type": {"2"}, "prefix": {b.prefix + prefix}}
 	if startAfter != "" {
-		in.StartAfter = aws.String(b.prefix + startAfter)
+		q.Set("start-after", b.prefix+startAfter)
 	}
 	var out []ObjectInfo
-	pages := s3.NewListObjectsV2Paginator(b.c, in)
-	for pages.HasMorePages() {
-		page, err := pages.NextPage(ctx)
+	for {
+		resp, err := b.do(ctx, "GET", "", q, nil, nil)
 		if err != nil {
 			return nil, err
 		}
-		for _, o := range page.Contents {
-			out = append(out, ObjectInfo{
-				Key:      strings.TrimPrefix(aws.ToString(o.Key), b.prefix),
-				Modified: aws.ToTime(o.LastModified),
-			})
+		body, err := check("ListObjectsV2", resp)
+		if err != nil {
+			return nil, err
 		}
+		var page struct {
+			IsTruncated           bool
+			NextContinuationToken string
+			Contents              []struct {
+				Key          string
+				LastModified time.Time
+			}
+		}
+		if err := xml.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("s3 ListObjectsV2: %w", err)
+		}
+		for _, o := range page.Contents {
+			out = append(out, ObjectInfo{Key: strings.TrimPrefix(o.Key, b.prefix), Modified: o.LastModified})
+		}
+		if !page.IsTruncated || page.NextContinuationToken == "" {
+			return out, nil
+		}
+		q.Set("continuation-token", page.NextContinuationToken)
 	}
-	return out, nil
 }
 
 func (b *S3) Delete(ctx context.Context, key string) error {
-	_, err := b.c.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &b.bucket, Key: aws.String(b.prefix + key)})
+	resp, err := b.do(ctx, "DELETE", b.prefix+key, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	_, err = check("DeleteObject", resp)
 	if status(err) == 404 {
 		return nil
 	}

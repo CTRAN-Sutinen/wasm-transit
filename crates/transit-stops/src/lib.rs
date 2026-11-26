@@ -42,8 +42,9 @@ pub mod load;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -60,104 +61,107 @@ impl transit_version::Versioned for Stops {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Stops {
     #[serde(default)]
-    #[ts(type = "\"stops\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"stops\""))]
     pub kind: StopsKind,
     #[serde(default)]
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "bindings", ts(type = "number"))]
     pub schema_version: transit_version::Version<1>,
     /// The key stays the same through a move.
     pub stops: BTreeMap<String, Vec<Event>>,
     /// Fields this build does not know, kept as written.
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Event {
     /// Unique within its stop (D-166). A write gives an event without one an
     /// id ([`Stops::identified`]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    #[ts(optional, as = "Option<String>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<String>"))]
     pub id: String,
     /// "YYYY-MM-DD" in the agency's zone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub on: Option<String>,
-    #[ts(type = "\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"moved\" | \"changed\" | \"retired\"")]
+    #[cfg_attr(feature = "bindings", ts(type = "\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"moved\" | \"changed\" | \"retired\""))]
     pub event: EventKind,
     /// The first service date after a temporary `suspended` or `moved`,
     /// when the earlier state returns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub until: Option<String>,
     /// WGS 84 degrees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub lat: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub lon: Option<f64>,
     #[serde(flatten)]
-    #[ts(flatten)]
+    #[cfg_attr(feature = "bindings", ts(flatten))]
     pub details: Details,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<String>>")]
-    #[schemars(extend("x-references" = "stop"))]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop")))]
     pub replaces: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub note: Option<String>,
     /// Marks the event as a site survey, dated the day of the survey.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub surveyed_by: Option<String>,
     /// The id of the stop request that this event carries out. Not
     /// checked here, because the requests are their own document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("x-references" = "stop_request"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop_request")))]
     pub request: Option<String>,
     /// The id (hash) of the feed that an import recorded this event from.
     /// A person's own event has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[schemars(extend("x-references" = "feed"))]
+    #[cfg_attr(feature = "bindings", ts(optional))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "feed")))]
     pub from_feed: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(optional, as = "Option<Vec<Attachment>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<Attachment>>"))]
     pub attachments: Vec<Attachment>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
 /// The deployment names the bucket, the server hands out the link, and only
 /// a signed-in person may read the file.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Attachment {
     /// "sha256:" and the 64 hex digits of the file.
-    #[schemars(extend("x-references" = "attachment"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "attachment")))]
     pub hash: String,
     #[serde(rename = "type")]
     pub media_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub caption: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub taken_on: Option<String>,
     #[serde(flatten)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "bindings", ts(skip))]
     pub extra: transit_version::Extra,
 }
 
@@ -237,6 +241,7 @@ impl<'de> Deserialize<'de> for EventKind {
     }
 }
 
+#[cfg(feature = "bindings")]
 impl schemars::JsonSchema for EventKind {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "EventKind".into()
@@ -246,8 +251,9 @@ impl schemars::JsonSchema for EventKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum StopKind {
     #[default]
@@ -255,79 +261,81 @@ pub enum StopKind {
     Station,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Details {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub kind: Option<StopKind>,
-    #[schemars(extend("x-references" = "stop"))]
+    #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "stop")))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub parent: Option<String>,
     /// The number on the sign. It is not unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub spoken_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub fare_zone: Option<String>,
     /// Absent means not recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub wheelchair: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub transfer: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub timezone: Option<String>,
     /// Whether the stop is reached from the street, not only through its
     /// station.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub street_access: Option<bool>,
     /// `true` is there, `false` is checked and not there, and absent is not
     /// recorded. The agency's own names beside [`AMENITIES`] are
     /// kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, bool>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, bool>>"))]
     pub amenities: BTreeMap<String, bool>,
     /// A survey may contradict the agency's other data. It is kept as given
     /// (D-161).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, String>>"))]
     pub site: BTreeMap<String, String>,
     /// Ids in other systems, by system or part name (`sign`, `tms`, `gis`).
     /// Kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(optional, as = "Option<BTreeMap<String, String>>")]
+    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, String>>"))]
     pub refs: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", content = "answers", rename_all = "snake_case")]
 pub enum Answer {
-    OneOf(#[ts(type = "Array<string>")] &'static [&'static str]),
+    OneOf(#[cfg_attr(feature = "bindings", ts(type = "Array<string>"))] &'static [&'static str]),
     Number,
     Text,
 }
@@ -435,8 +443,9 @@ impl Details {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Planned,
@@ -473,46 +482,49 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopOn {
     pub stop_id: String,
     pub status: Status,
     /// None for a stop in service from before any record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub since: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub until: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub note: Option<String>,
     /// None if the stop was never surveyed, or the survey was undated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub surveyed_on: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub surveyed_by: Option<String>,
     pub lat: f64,
     pub lon: f64,
     #[serde(flatten)]
-    #[ts(flatten)]
+    #[cfg_attr(feature = "bindings", ts(flatten))]
     pub details: Details,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NearStop {
     pub distance_m: f64,
     #[serde(flatten)]
-    #[ts(flatten)]
+    #[cfg_attr(feature = "bindings", ts(flatten))]
     pub stop: StopOn,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StatusCount {
     pub status: Status,
     pub stops: u32,
@@ -520,18 +532,20 @@ pub struct StatusCount {
 
 /// `event` is the event's index in the stop's list, none for the stop as a
 /// whole.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Refusal {
     pub stop: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub event: Option<u32>,
     pub problem: Problem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Problem {
     NoEvents,
@@ -587,23 +601,19 @@ impl fmt::Display for Refusal {
     }
 }
 
-fn parse_date(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
-}
-
-fn active(e: &Event, date: NaiveDate) -> bool {
+fn active(e: &Event, date: Date) -> bool {
     let from = match &e.on {
-        Some(on) => parse_date(on).is_some_and(|on| on <= date),
+        Some(on) => Date::parse(on).ok().is_some_and(|on| on <= date),
         None => true,
     };
     let until = match &e.until {
-        Some(u) => parse_date(u).is_some_and(|u| date < u),
+        Some(u) => Date::parse(u).ok().is_some_and(|u| date < u),
         None => true,
     };
     from && until
 }
 
-fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
+fn fold(id: &str, events: &[Event], date: Date) -> Option<StopOn> {
     let mut state: Option<StopOn> = None;
     for e in events.iter().filter(|e| active(e, date)) {
         let status = match e.event {
@@ -647,15 +657,15 @@ fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
         }
     }
     if let Some(s) = state.as_mut() {
-        if let Some(until) = s.until.as_deref().and_then(parse_date) {
+        if let Some(until) = s.until.as_deref().and_then(|d| Date::parse(d).ok()) {
             let sooner = events
                 .iter()
                 .filter(|e| e.event.stage().is_some() || matches!(e.event, EventKind::Suspended | EventKind::Retired))
-                .filter_map(|e| e.on.as_deref().and_then(parse_date))
+                .filter_map(|e| e.on.as_deref().and_then(|d| Date::parse(d).ok()))
                 .filter(|&on| on > date && on < until)
                 .min();
             if let Some(on) = sooner {
-                s.until = Some(on.format("%Y-%m-%d").to_string());
+                s.until = Some(on.to_string());
             }
         }
     }
@@ -667,15 +677,15 @@ impl Stops {
         Stops::default()
     }
 
-    pub fn stop_on(&self, id: &str, date: NaiveDate) -> Option<StopOn> {
+    pub fn stop_on(&self, id: &str, date: Date) -> Option<StopOn> {
         fold(id, self.stops.get(id)?, date)
     }
 
-    pub fn on_date(&self, date: NaiveDate) -> Vec<StopOn> {
+    pub fn on_date(&self, date: Date) -> Vec<StopOn> {
         self.stops.iter().filter_map(|(id, events)| fold(id, events, date)).collect()
     }
 
-    pub fn near(&self, date: NaiveDate, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>, statuses: Option<&[Status]>) -> Vec<NearStop> {
+    pub fn near(&self, date: Date, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>, statuses: Option<&[Status]>) -> Vec<NearStop> {
         let mut out: Vec<NearStop> = self
             .on_date(date)
             .into_iter()
@@ -690,7 +700,7 @@ impl Stops {
 
     /// `_secs` is not read at a service day's grain. It stays so
     /// that a finer grain changes this function and not its callers.
-    pub fn served(&self, id: &str, date: NaiveDate, _secs: u32) -> bool {
+    pub fn served(&self, id: &str, date: Date, _secs: u32) -> bool {
         self.stop_on(id, date).is_some_and(|s| s.status == Status::InService)
     }
 
@@ -712,8 +722,8 @@ impl Stops {
         next
     }
 
-    pub fn next_events(&self, id: &str, date: NaiveDate) -> Vec<EventKind> {
-        let on = date.format("%Y-%m-%d").to_string();
+    pub fn next_events(&self, id: &str, date: Date) -> Vec<EventKind> {
+        let on = date.to_string();
         [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService, EventKind::Suspended, EventKind::Retired]
             .into_iter()
             .filter(|kind| {
@@ -723,7 +733,7 @@ impl Stops {
             .collect()
     }
 
-    pub fn counts_on(&self, date: NaiveDate) -> Vec<StatusCount> {
+    pub fn counts_on(&self, date: Date) -> Vec<StatusCount> {
         let mut counts: BTreeMap<Status, u32> = BTreeMap::new();
         for s in self.on_date(date) {
             *counts.entry(s.status).or_default() += 1;
@@ -811,7 +821,7 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         out.push(Refusal { stop: id.into(), event: None, problem: Problem::NoEvents });
         return out;
     }
-    let mut last: Option<NaiveDate> = None;
+    let mut last: Option<Date> = None;
     let mut retired = false;
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, e) in events.iter().enumerate() {
@@ -830,7 +840,7 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         let first = i == 0;
 
         let on = match &e.on {
-            Some(s) => match parse_date(s) {
+            Some(s) => match Date::parse(s).ok() {
                 Some(d) => Some(d),
                 None => {
                     refuse(Problem::BadDate { date: s.clone() });
@@ -855,7 +865,7 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
             if !matches!(e.event, EventKind::Suspended | EventKind::Moved) {
                 refuse(Problem::Misplaced { field: "until".into() });
             } else {
-                match parse_date(u) {
+                match Date::parse(u).ok() {
                     None => refuse(Problem::BadDate { date: u.clone() }),
                     Some(u) if on.is_none_or(|on| u <= on) => refuse(Problem::UntilNotAfter),
                     Some(_) => {}
@@ -903,7 +913,7 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         for a in &e.attachments {
             if !a.well_named() {
                 refuse(Problem::BadAttachment { hash: a.hash.clone() });
-            } else if let Some(d) = a.taken_on.as_ref().filter(|d| parse_date(d).is_none()) {
+            } else if let Some(d) = a.taken_on.as_ref().filter(|d| Date::parse(d).ok().is_none()) {
                 refuse(Problem::BadDate { date: d.clone() });
             }
         }

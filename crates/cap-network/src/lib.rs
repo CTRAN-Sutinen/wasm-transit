@@ -6,12 +6,14 @@
 use cap_abi::content_hash;
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_codec::{Boundary, FeedSummary, ImportNote, ImportOutcome};
 use transit_network::Network;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_network/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_network/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Import { feed_hash: String },
@@ -19,25 +21,26 @@ pub enum Request {
     Export {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         boundary_hash: Option<String>,
     },
     Document { network_hash: String },
     Publishable { network_hash: String },
     StoredPlans {
-        #[ts(type = "unknown")]
+        #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
         document: serde_json::Value,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_network/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_network/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Import {
-        #[ts(as = "Network")]
+        #[cfg_attr(feature = "bindings", ts(as = "Network"))]
         network: cap_abi::Canonical<Network>,
-        #[ts(as = "Boundary")]
+        #[cfg_attr(feature = "bindings", ts(as = "Boundary"))]
         boundary: cap_abi::Canonical<Boundary>,
         notes: Vec<ImportNote>,
         network_hash: String,
@@ -54,7 +57,7 @@ pub enum Response {
         warnings: Vec<transit_network::NetworkWarning>,
     },
     StoredPlans {
-        #[ts(type = "Record<string, unknown>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, unknown>"))]
         plans: std::collections::BTreeMap<String, serde_json::Value>,
     },
 }

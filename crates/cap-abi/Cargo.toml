@@ -6,14 +6,21 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-version = { path = "../transit-version" }
+transit-version = { path = "../transit-version", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
-ts-rs = { workspace = true }
-schemars = { workspace = true }
+ts-rs = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 # No domain library: each kind's library implements
 # `transit_version::Load`, and the kernel keeps one registry for each
 # type. An arch gate holds the kernel to transit-version alone.
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "dep:schemars", "transit-version/bindings"]
 
 [dev-dependencies]
 proptest = "1"

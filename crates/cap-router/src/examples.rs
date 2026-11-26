@@ -6,7 +6,7 @@ pub fn examples() -> Vec<Example> {
     let (live, live_hash) = fixtures::live_example().expect("the fixture live document");
     let edits = transit_sync::EditDocument::new(fixtures::dispatch_fixture_edits());
     let network = || fixtures::load_network(&net.derived);
-    let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("a date");
+    let date = transit_date::Date::from_ymd_opt(2026, 10, 23).expect("a date");
     let day = transit_network::materialize(&net.network, date).expect("the fixture day");
     let graph = transit_router::RouterNetwork::build_from_day(&net.network, &day, date);
     let itinerary = transit_router::earliest_arrival(&graph, "A", "B", 25200, 4).expect("query").expect("A→B on the fixture Friday");

@@ -24,17 +24,17 @@ saved note, one new feed, and one published service change make.
 ## The record
 
 With `-store <url>` the server keeps the record in object storage.
-The URL takes one of four forms: `s3://bucket/prefix` (S3 or an
-S3-compatible endpoint, named by `?endpoint=`), `azblob://container/prefix`,
-`gs://bucket/prefix`, or `mem://`, which is gone when the process exits. The agency chooses the
+The URL takes one of three forms: `s3://bucket/prefix` (S3 or an
+S3-compatible endpoint, named by `?endpoint=`), `gs://bucket/prefix`,
+or `mem://`, which is gone when the process exits. The agency chooses the
 provider, and the engine favors none.
 
 The engine (`server/store/`) runs over one small backend interface
 (`backend.go`: get, stat, create-if-absent, list from a key, delete).
-The engine assumes no append, rename, fsync, or lock. The in-memory backend and the S3, Azure Blob and GCS
-adapters (`s3.go`, `azure.go`, `gcs.go`) all pass one contract suite
+The engine assumes no append, rename, fsync, or lock. The in-memory backend and the S3 and GCS
+adapters (`s3.go`, `gcs.go`) all pass one contract suite
 (`contract_test.go`). `just store-contract` runs that suite and every
-engine property test against local SeaweedFS, Azurite and fake-gcs-server, or
+engine property test against local SeaweedFS and fake-gcs-server, or
 against one store's address (an operator's own bucket).
 
 - **Blobs** are `blobs/<hex>` objects. Each blob is immutable. Each
@@ -267,14 +267,25 @@ is what must stay true. Change it only with the user, after reading
   conditional create of an absent key. It assumes no append, rename,
   fsync, or lock. Serving processes never delete. `store gc` runs
   offline with its own credentials.
-- **Because:** the store must survive losing a node. S3, Azure Blob, and
-  GCS all provide that contract. A server that cannot delete cannot
+- **Because:** the store must survive losing a node. S3 and GCS both
+  provide that contract. A server that cannot delete cannot
   erase history, and the bucket can carry the provider's immutability
   settings.
 - **Rejected:** a crash-hardened directory store. It runs on one node, so
   the disk's failure is the store's failure. Online GC in every server
   races a commit over object storage, and it needs delete rights
   everywhere.
+
+### Two providers, each through a client on the Go standard library (`server/store/s3.go`, `gcs.go`, `sigv4.go`, `awscreds.go`, `gcpauth.go`)
+- **Holds:** the server speaks the S3 REST API (SigV4) and the GCS JSON
+  API itself. It links no cloud SDK. Each client reads only the
+  credential sources that `DEPLOYMENTS-SERVER.md` names.
+- **Because:** the agency must keep building and patching every
+  dependency after the vendor is gone. The GCS SDK alone brought 83 Go
+  modules. The S3 API reaches AWS and every S3-compatible store, and the
+  GCS JSON API takes the least code of the three.
+- **Rejected:** Azure Blob (the user cut it, 2026-11-20). A third
+  hand-written client costs more than the reach it adds.
 
 ### The record is documents in a bucket, not rows in a database (this file)
 - **Holds:** the record is immutable, self-describing objects in open
@@ -303,8 +314,7 @@ is what must stay true. Change it only with the user, after reading
   restore, fix, change, roll back, and integrate with. Ease of
   monitoring and troubleshooting weighs most. Never score a design by
   the number of stores or services it has.
-- **Holds:** no choice ties the record to one provider (S3, Azure Blob,
-  or GCS), also not in a unit's "Done when". A store that runs on a
+- **Holds:** no choice ties the record to one provider (S3 or GCS), also not in a unit's "Done when". A store that runs on a
   developer's machine is a convenience for development, not a target.
 - **Because:** an agency already runs many systems, a data lake among
   them. Integration pain comes from the data model and its access, not

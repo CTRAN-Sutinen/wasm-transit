@@ -11,14 +11,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 use transit_network::{
     first_service_date, service_combination, service_combinations, CalendarException, CalendarRule, DateRange, DayState, Network, ServiceType,
     WeekdaySet,
 };
 
-const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+const EPOCH: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 
 fn base() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
@@ -65,8 +65,8 @@ fn network(types: &[GenType]) -> Network {
                 sun: t.days[6],
             },
             ranges: vec![DateRange {
-                start: EPOCH + Duration::days(t.start as i64),
-                end: EPOCH + Duration::days((t.start + t.len) as i64),
+                start: EPOCH + Days::new(t.start as i64),
+                end: EPOCH + Days::new((t.start + t.len) as i64),
                 extra: Default::default(),
             }],
             exceptions: t
@@ -74,7 +74,7 @@ fn network(types: &[GenType]) -> Network {
                 .iter()
                 .filter(|(d, _)| seen.insert(*d))
                 .map(|&(d, added)| CalendarException {
-                    date: EPOCH + Duration::days(d as i64),
+                    date: EPOCH + Days::new(d as i64),
                     state: if added { DayState::Added } else { DayState::Removed },
                     extra: Default::default(),
                 })
@@ -103,7 +103,7 @@ proptest! {
             .map(|pt| pt.service_type.clone())
             .collect();
         let oracle = (0..200i64)
-            .map(|day| EPOCH + Duration::days(day))
+            .map(|day| EPOCH + Days::new(day))
             .find(|date| net.service_types.iter().any(|(id, st)| with_trips.contains(id) && st.rule.runs_on(*date)));
         prop_assert_eq!(first_service_date(&net), oracle);
     }
@@ -117,9 +117,9 @@ proptest! {
             .filter(|pt| !pt.trips.is_empty())
             .map(|pt| pt.service_type.clone())
             .collect();
-        let mut running: BTreeMap<NaiveDate, BTreeSet<String>> = BTreeMap::new();
+        let mut running: BTreeMap<Date, BTreeSet<String>> = BTreeMap::new();
         for day in 0..200i64 {
-            let date = EPOCH + Duration::days(day);
+            let date = EPOCH + Days::new(day);
             let set: BTreeSet<String> = net.service_types.iter()
                 .filter(|(id, st)| with_trips.contains(*id) && st.rule.runs_on(date))
                 .map(|(id, _)| id.clone())
@@ -135,7 +135,7 @@ proptest! {
             prop_assert!(!c.dates.is_empty(), "a combination holds on some date");
             let members: BTreeSet<String> = c.members.iter().cloned().collect();
             for d in &c.dates {
-                let date = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
+                let date = Date::parse(d).unwrap();
                 prop_assert_eq!(running.get(&date), Some(&members), "{} runs exactly {:?}", d, c.members);
                 prop_assert!(placed.insert(d.clone(), i).is_none(), "{} is in one combination", d);
             }
@@ -146,8 +146,8 @@ proptest! {
             prop_assert_eq!(&sorted, &c.members, "members sorted and distinct");
             prop_assert_eq!(&c.id, &c.members.join(" + "));
             prop_assert!(c.dates.windows(2).all(|w| w[0] < w[1]), "dates sorted and distinct");
-            let dates: Vec<NaiveDate> = c.dates.iter().map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap()).collect();
-            let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
+            let dates: Vec<Date> = c.dates.iter().map(|d| Date::parse(d).unwrap()).collect();
+            let mut spans: Vec<(Date, Date, u32)> = Vec::new();
             for &d in &dates {
                 match spans.last_mut() {
                     Some(s) if (d - s.1).num_days() <= 7 => { s.1 = d; s.2 += 1; }
@@ -156,8 +156,8 @@ proptest! {
             }
             prop_assert_eq!(c.spans.len(), spans.len(), "{} spans", c.id);
             for (got, want) in c.spans.iter().zip(&spans) {
-                prop_assert_eq!(&got.start, &want.0.format("%Y-%m-%d").to_string());
-                prop_assert_eq!(&got.end, &want.1.format("%Y-%m-%d").to_string());
+                prop_assert_eq!(&got.start, &want.0.to_string());
+                prop_assert_eq!(&got.end, &want.1.to_string());
                 prop_assert_eq!(got.days, want.2);
             }
             let mut reversed = c.members.clone();
@@ -189,7 +189,7 @@ proptest! {
     fn every_date_of_a_combination_materializes_the_same_day(types in proptest::collection::vec(gen_type(), 0..=5)) {
         let net = network(&types);
         for c in service_combinations(&net) {
-            let day = |d: &String| transit_network::materialize(&net, NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap()).unwrap();
+            let day = |d: &String| transit_network::materialize(&net, Date::parse(d).unwrap()).unwrap();
             let first = day(&c.dates[0]);
             for d in &c.dates[1..] {
                 prop_assert_eq!(&day(d), &first, "{} materializes {}'s day", d, c.dates[0]);
@@ -209,7 +209,7 @@ fn successive_overlays_are_separate_combinations() {
     net.pattern_trips.clear();
     net.blocks.clear();
     let weekdays = WeekdaySet { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false };
-    let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+    let d = |s: &str| Date::parse(s).unwrap();
     let ty = |start: &str, end: &str, exceptions: Vec<CalendarException>| ServiceType {
         name: String::new(),
         rule: CalendarRule { days: weekdays.clone(), ranges: vec![DateRange { start: d(start), end: d(end), extra: Default::default() }], exceptions, extra: Default::default() },

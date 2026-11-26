@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::model::Network;
@@ -36,6 +37,7 @@ impl<'de> Deserialize<'de> for NetworkKind {
     }
 }
 
+#[cfg(feature = "bindings")]
 impl schemars::JsonSchema for NetworkKind {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "NetworkKind".into()
@@ -54,7 +56,8 @@ impl transit_version::Versioned for Network {
 }
 
 /// A network built in code is the current version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct NetworkVersion(pub u32);
 
@@ -70,8 +73,9 @@ impl NetworkVersion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "transit_network/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "transit_network/"))]
 pub struct MigrationNote {
     pub from: u32,
     /// For example "dropped_field".

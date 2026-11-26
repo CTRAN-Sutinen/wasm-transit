@@ -206,7 +206,8 @@ deployment runs with `-store`.
 the command line overrides every file. A key that names no flag stops
 the boot with the file's name. A value that its flag refuses does the
 same. Secrets stay out of the files: the store's credentials come from
-each SDK's own chain (the environment, a workload identity).
+the environment or the workload's identity, from the sources that
+`DEPLOYMENTS-SERVER.md` names ("Prepare the bucket").
 
 `server/dev.toml` holds the development defaults: the fixture feed and
 streets, `mem://` store and attachments, the stub work order system,

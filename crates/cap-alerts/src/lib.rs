@@ -2,6 +2,7 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub use transit_alerts::{
@@ -9,17 +10,18 @@ pub use transit_alerts::{
     TemplateRefusal,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_alerts/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_alerts/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Validate {
-        #[ts(as = "ServiceAlerts")]
+        #[cfg_attr(feature = "bindings", ts(as = "ServiceAlerts"))]
         alerts: cap_abi::Base<ServiceAlerts>,
     },
     Put {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         alerts_hash: Option<String>,
         id: String,
         alert: ServiceAlert,
@@ -27,69 +29,70 @@ pub enum Request {
     End {
         alerts_hash: String,
         id: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         at: u64,
     },
     List {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         alerts_hash: Option<String>,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now: u64,
     },
     Flags {
         alerts_hash: String,
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         languages: Option<Vec<String>>,
     },
     ValidateTemplates {
-        #[ts(as = "AlertTemplates")]
+        #[cfg_attr(feature = "bindings", ts(as = "AlertTemplates"))]
         templates: cap_abi::Base<AlertTemplates>,
     },
     PutTemplate {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         templates_hash: Option<String>,
         id: String,
         template: AlertTemplate,
     },
     Templates {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         templates_hash: Option<String>,
     },
     Fill { templates_hash: String, template: String, network_hash: String, input: FillInput },
     LogRecords {
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         alerts_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         templates_hash: Option<String>,
     },
     Receive {
-        #[ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }")]
+        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
         write: transit_log::Write,
         #[serde(default)]
-        #[ts(type = "Record<string, string>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, string>"))]
         heads: std::collections::BTreeMap<String, String>,
-        #[ts(type = "Array<{ cap: string, op: string, args?: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
         ops: Vec<transit_log::OpCall>,
     },
     LogDocument {
         kind: String,
-        #[ts(type = "Record<string, { version: number, value: unknown }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[ts(optional, type = "{ version: number, value: unknown }")]
+        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
         document: Option<transit_log::Held>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_alerts/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_alerts/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Validate {
@@ -97,14 +100,14 @@ pub enum Response {
         document: Option<String>,
         document_hash: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, as = "Option<Vec<String>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
     Put { refusals: Vec<AlertRefusal>, alerts_hash: Option<String>, alerts: Option<ServiceAlerts> },
     End { refusals: Vec<AlertRefusal>, alerts_hash: Option<String>, alerts: Option<ServiceAlerts> },
     List {
         #[serde(flatten)]
-        #[ts(flatten)]
+        #[cfg_attr(feature = "bindings", ts(flatten))]
         list: AlertList,
     },
     Flags { flags: Vec<AlertFlag> },
@@ -113,14 +116,14 @@ pub enum Response {
         document: Option<String>,
         document_hash: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, as = "Option<Vec<String>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
     PutTemplate { refusals: Vec<TemplateRefusal>, templates_hash: Option<String>, templates: Option<AlertTemplates> },
     Templates { templates: Vec<transit_alerts::TemplateRow> },
     Fill { filled: Filled },
     LogRecords {
-        #[ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>")]
+        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
         next: Vec<transit_log::KindRecords>,
     },
     Receive(transit_log::Received),

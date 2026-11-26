@@ -101,6 +101,15 @@ documentation sweep is the `doc-sweep` skill
   type. The JSON lane removes the envelope and keeps the document as
   raw JSON (`RawValue`). No capability's `Request` carries a document
   to register.
+- **A dependency is code the agency must keep building and patching**
+  after the vendor is gone. Keep one only when the code we would write
+  in its place is worse. `tools/dependencies.txt` lists each shipped
+  tree's dependencies with the reason for each, and `just test` fails
+  when a tree and its list differ. A module build names every
+  workspace crate with `default-features = false`, so it compiles
+  without the `bindings` feature (ts-rs and schemars). A new workspace
+  dependency in a library or a capability needs the same, or the
+  module tree grows and the gate fails.
 
 ## Writing
 
@@ -277,6 +286,12 @@ visible.
   - ts-rs derives on the model crates write `web/src/types/*.ts`.
     These files are gitignored. Do not commit them or edit them by
     hand.
+  - Write each ts-rs and schemars attribute under the crate's
+    `bindings` feature: `#[cfg_attr(feature = "bindings", derive(TS,
+    schemars::JsonSchema))]`, and `#[cfg_attr(feature = "bindings",
+    ts(...))]` for each helper attribute. A host build has the
+    feature by default. A module build does not, and an ungated
+    attribute fails it.
   - Rust is the source of truth. The manifest's computed op examples
     show the wire shape that the serde attributes produce (tags,
     flatten, optional fields).

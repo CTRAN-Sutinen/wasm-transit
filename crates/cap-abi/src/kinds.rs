@@ -11,6 +11,7 @@
 //! No module reads the list. A kind costs a module nothing until a
 //! capability names it.
 
+#[cfg(feature = "bindings")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +111,8 @@ pub struct Pick {
     pub export: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Write {
     /// `POST /pointers/<name>`, where the name is one of `pointers`. The
@@ -125,7 +127,8 @@ pub enum Write {
 }
 
 /// Who reads a kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Read {
     /// Anyone reads the kind by hash (`/blobs/<hash>`).
@@ -139,7 +142,8 @@ pub enum Read {
 }
 
 /// How two writes of a kind merge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Merge {
     /// The write replaces the whole document, by CAS on the head that the

@@ -1,13 +1,13 @@
 //! The rule from a stop request to its stop (D-233). The rule is
 //! documented in `request_rule.rs`.
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_requests::{StopRequest, STATUSES};
 use transit_stops::request_rule::{allows, request_needs, request_rule, Needs};
 use transit_stops::{Event, EventKind, Status, Stops};
 
-fn day(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn day(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 fn ev(kind: EventKind, on: &str) -> Event {

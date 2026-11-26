@@ -8,32 +8,35 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_authz/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_authz/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Authorize {
         identity: transit_authz::Identity,
         action: String,
         pointer: String,
-        #[ts(as = "transit_authz::Policy")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_authz::Policy"))]
         policy: cap_abi::Current<transit_authz::Policy>,
     },
     Effective {
         identity: transit_authz::Identity,
-        #[ts(as = "transit_authz::Policy")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_authz::Policy"))]
         policy: cap_abi::Current<transit_authz::Policy>,
     },
     Validate {
-        #[ts(as = "transit_authz::Policy")]
+        #[cfg_attr(feature = "bindings", ts(as = "transit_authz::Policy"))]
         policy: cap_abi::Base<transit_authz::Policy>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_authz/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_authz/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Authorize { decision: transit_authz::Decision },
@@ -44,7 +47,7 @@ pub enum Response {
         document: Option<String>,
         document_hash: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        #[ts(optional, as = "Option<Vec<String>>")]
+        #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
 }

@@ -1,0 +1,23 @@
+[package]
+name = "transit-date"
+description = "The service date: a civil date read and written as \"YYYY-MM-DD\" by one rule, its weekday, and its day arithmetic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:schemars"]
+
+[dev-dependencies]
+# The oracle for the laws (tests/date_law_test.rs).
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+proptest = "1"
+serde_json = { workspace = true }

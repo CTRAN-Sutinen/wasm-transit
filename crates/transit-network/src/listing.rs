@@ -4,14 +4,16 @@
 //! the day that the model runs.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::geometry::EntityKind;
 use crate::materialize::materialize_service;
 use crate::model::{Departs, Network};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct EntityRow {
     pub id: String,
     pub name: String,
@@ -22,16 +24,18 @@ pub struct EntityRow {
     pub long_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct PatternTripsGroup {
     pub service_type: String,
     pub name: String,
     pub pattern_trips: Vec<EntityRow>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteDetail {
     pub patterns: Vec<EntityRow>,
     pub stops: Vec<EntityRow>,
@@ -39,8 +43,9 @@ pub struct RouteDetail {
     pub directions: Vec<DirectionGroup>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DirectionGroup {
     pub direction: Option<String>,
     pub name: String,
@@ -49,8 +54,9 @@ pub struct DirectionGroup {
     pub variants: Vec<RouteVariant>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RouteVariant {
     pub name: String,
     pub patterns: Vec<String>,
@@ -58,16 +64,18 @@ pub struct RouteVariant {
     pub trips: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct VariantStop {
     pub place: String,
     pub name: String,
     pub stops: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Timetable {
     pub route: String,
     pub route_name: String,
@@ -82,8 +90,9 @@ pub struct Timetable {
     pub removed: Vec<RemovedTrip>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct RemovedTrip {
     pub trip: String,
     pub pattern_trips: String,
@@ -91,8 +100,9 @@ pub struct RemovedTrip {
     pub pattern: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TimetableStop {
     pub stop: String,
     pub name: String,
@@ -101,8 +111,9 @@ pub struct TimetableStop {
     pub timepoint: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TimetablePattern {
     pub pattern: String,
     pub name: String,
@@ -111,8 +122,9 @@ pub struct TimetablePattern {
     pub headway: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct TimetableTrip {
     pub trip: String,
     pub pattern_trips: String,
@@ -126,8 +138,9 @@ pub struct TimetableTrip {
     pub retimed_from_secs: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceKeyRoute {
     pub route_id: String,
     pub name: String,
@@ -135,8 +148,9 @@ pub struct ServiceKeyRoute {
     pub trips: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceKey {
     pub id: String,
     pub name: String,
@@ -184,8 +198,9 @@ pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopDetail {
     pub routes: Vec<EntityRow>,
     #[serde(default)]
@@ -194,8 +209,9 @@ pub struct StopDetail {
     pub visits: Vec<StopVisit>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopVisit {
     pub route: String,
     pub route_name: String,
@@ -212,8 +228,9 @@ pub struct StopVisit {
     pub next: Option<Neighbour>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct Neighbour {
     pub stop: String,
     /// The id, where the network has no such stop.
@@ -644,8 +661,9 @@ pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) ->
     Some(StopDetail { routes, stop: record, visits })
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct NearbyStop {
     pub stop_id: String,
     pub name: String,
@@ -655,14 +673,6 @@ pub struct NearbyStop {
     pub transfer: bool,
     pub distance_m: f64,
     pub walk_secs: Option<u32>,
-}
-
-/// Great-circle distance in meters (haversine, mean earth radius).
-pub(crate) fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
-    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
-    2.0 * 6_371_000.0 * a.sqrt().asin()
 }
 
 pub fn stops_near(network: &Network, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>) -> Vec<NearbyStop> {
@@ -688,7 +698,7 @@ pub fn stops_near_walked(
     let mut nearest: std::collections::BTreeMap<&str, (f64, Option<u32>)> = Default::default();
     for (id, s) in &network.stops {
         let place = place_of(id).expect("a held stop");
-        let d = haversine_m(lat, lon, s.lat, s.lon);
+        let d = transit_geo::distance_m(lat, lon, s.lat, s.lon);
         let e = nearest.entry(place).or_insert((f64::INFINITY, None));
         e.0 = e.0.min(d);
     }

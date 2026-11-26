@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_dispatch::{grouped_board_at, stop_board_at, BoardAt, Overnight, ServiceDay, Wait};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
@@ -18,8 +18,8 @@ use transit_sync::{EditRecord, EditStatus, TripCancel};
 const FRI: &str = "2026-10-23";
 const SAT: &str = "2026-10-24";
 
-fn date(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+fn date(s: &str) -> Date {
+    Date::parse(s).unwrap()
 }
 
 /// Route r1 runs A → X → T every day (X is 600 s in). "late" starts at 24:35 (X

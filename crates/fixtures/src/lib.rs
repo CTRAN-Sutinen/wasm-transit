@@ -37,7 +37,7 @@ pub fn pick_example(net: &NetworkExampleContext) -> Option<(transit_network::Net
     let mut pick = net.derived_network().clone();
     pick.plan.id = "fall-2026".into();
     pick.plan.name = "Fall 2026".into();
-    pick.plan.effective_from = chrono::NaiveDate::from_ymd_opt(2026, 10, 19);
+    pick.plan.effective_from = transit_date::Date::from_ymd_opt(2026, 10, 19);
     let entry = |id: &str, name: &str, from: &str, status: &str| {
         serde_json::json!({ "id": id, "name": name, "effective_from": from, "network_hash": "sha256:…", "status": status })
     };
@@ -317,8 +317,8 @@ pub fn fixture_work_rules() -> transit_runs::WorkRules {
 }
 
 /// Before every fixture pick, so each publishes as a future one.
-pub fn fixture_today() -> chrono::NaiveDate {
-    chrono::NaiveDate::from_ymd_opt(2026, 1, 1).expect("a date")
+pub fn fixture_today() -> transit_date::Date {
+    transit_date::Date::from_ymd_opt(2026, 1, 1).expect("a date")
 }
 
 /// The spring pick is in force on the fixture Friday. The fall pick takes
@@ -409,7 +409,7 @@ pub fn fixture_stops_log() -> (transit_log::Checkpoint, Vec<transit_log::Entry>)
 }
 
 pub fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {
-    let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+    let date = transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap();
     vec![transit_sync::EditRecord {
         id: "e1".into(),
         diversion: Some(transit_sync::Diversion {

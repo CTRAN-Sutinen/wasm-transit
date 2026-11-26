@@ -267,7 +267,7 @@ fn publishable_answers_what_refuses_a_pick() {
         }
         other => panic!("publishable: {other:?}"),
     }
-    doc.plan.effective_from = chrono::NaiveDate::from_ymd_opt(2099, 1, 5);
+    doc.plan.effective_from = transit_date::Date::from_ymd_opt(2099, 1, 5);
     let past_calendar = cap_abi::kernel::kind::<transit_network::Network>().register(doc).unwrap().0;
     match dispatch(Request::Publishable { network_hash: past_calendar }).unwrap() {
         Response::Publishable { refusals, .. } => assert!(

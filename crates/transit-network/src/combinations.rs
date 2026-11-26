@@ -5,14 +5,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::{DayState, Network};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct ServiceCombination {
     /// The members joined by " + ", as in "1-WKDY + 1-WKDY/30".
     pub id: String,
@@ -23,8 +25,9 @@ pub struct ServiceCombination {
     pub spans: Vec<DateSpan>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DateSpan {
     pub start: String,
     pub end: String,
@@ -34,8 +37,8 @@ pub struct DateSpan {
 /// The longest gap between two dates of one span (D-94).
 const SPAN_GAP_DAYS: i64 = 7;
 
-pub fn date_spans(dates: &[NaiveDate]) -> Vec<DateSpan> {
-    let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
+pub fn date_spans(dates: &[Date]) -> Vec<DateSpan> {
+    let mut spans: Vec<(Date, Date, u32)> = Vec::new();
     for &d in dates {
         match spans.last_mut() {
             Some(s) if (d - s.1).num_days() <= SPAN_GAP_DAYS => {
@@ -45,18 +48,18 @@ pub fn date_spans(dates: &[NaiveDate]) -> Vec<DateSpan> {
             _ => spans.push((d, d, 1)),
         }
     }
-    let iso = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+    let iso = |d: Date| d.to_string();
     spans.into_iter().map(|(start, end, days)| DateSpan { start: iso(start), end: iso(end), days }).collect()
 }
 
-fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
+fn candidate_dates(network: &Network) -> BTreeSet<Date> {
     let mut out = BTreeSet::new();
     for st in network.service_types.values() {
         for r in &st.rule.ranges {
             let mut d = r.start;
             while d <= r.end {
                 out.insert(d);
-                d += Duration::days(1);
+                d += Days::new(1);
             }
         }
         out.extend(st.rule.exceptions.iter().filter(|e| e.state == DayState::Added).map(|e| e.date));
@@ -65,11 +68,11 @@ fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
 }
 
 /// An imported feed picks on this date.
-pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
+pub fn first_service_date(network: &Network) -> Option<Date> {
     service_combinations(network)
         .iter()
         .filter_map(|c| c.dates.first())
-        .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .filter_map(|d| Date::parse(d).ok())
         .min()
 }
 
@@ -93,7 +96,7 @@ pub fn service_combinations(network: &Network) -> Vec<ServiceCombination> {
         .filter(|pt| !pt.trips.is_empty())
         .map(|pt| pt.service_type.as_str())
         .collect();
-    let mut by_members: BTreeMap<Vec<String>, Vec<NaiveDate>> = BTreeMap::new();
+    let mut by_members: BTreeMap<Vec<String>, Vec<Date>> = BTreeMap::new();
     for date in candidate_dates(network) {
         let members: Vec<String> = network
             .service_types
@@ -110,7 +113,7 @@ pub fn service_combinations(network: &Network) -> Vec<ServiceCombination> {
         .map(|(members, dates)| ServiceCombination {
             id: members.join(" + "),
             members,
-            dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),
+            dates: dates.iter().map(|d| d.to_string()).collect(),
             spans: date_spans(&dates),
         })
         .collect();

@@ -8,15 +8,15 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use support::{build_zip_spaced, model_day, TripSpec};
 use transit_router::{earliest_arrival, Leg, RouterNetwork};
 use transit_streets::walking::{Walk, WalkTable};
 
-fn date() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 23).unwrap()
+fn date() -> Date {
+    Date::from_ymd_opt(2026, 10, 23).unwrap()
 }
 
 fn table(walks: Vec<Walk>) -> WalkTable {

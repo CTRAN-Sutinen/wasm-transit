@@ -120,6 +120,26 @@ fn the_network_depending_on_a_document_library_fails() {
     assert!(found.iter().any(|v| v.starts_with("transit-network depends on transit-stops")), "{found:?}");
 }
 
+/// A library with no workspace dependency holds no kind, so the network may
+/// use it. One that reads transit-version may hold a kind.
+#[test]
+fn the_network_may_depend_on_a_leaf_library_only() {
+    let mut ws = lawful();
+    ws.push(package("transit-geo", &[]));
+    ws.push(package("transit-alerts", &["transit-version"]));
+    for p in ws.iter_mut().filter(|p| p.name == "transit-network") {
+        p.deps.push("transit-geo".into());
+        p.required.push("transit-geo".into());
+    }
+    assert_eq!(dependency_violations(&ws), Vec::<String>::new());
+    for p in ws.iter_mut().filter(|p| p.name == "transit-network") {
+        p.deps.push("transit-alerts".into());
+        p.required.push("transit-alerts".into());
+    }
+    let found = dependency_violations(&ws);
+    assert!(found.iter().any(|v| v.starts_with("transit-network depends on transit-alerts")), "{found:?}");
+}
+
 #[test]
 fn an_unknown_package_is_denied_by_default() {
     let mut ws = lawful();

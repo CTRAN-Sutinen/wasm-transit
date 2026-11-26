@@ -9,29 +9,32 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_migrate/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_migrate/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Migrate {
         kind: String,
-        #[ts(type = "unknown")]
+        #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
         document: serde_json::Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         to: Option<u32>,
     },
     Version {
         kind: String,
-        #[ts(type = "unknown")]
+        #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
         document: serde_json::Value,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_migrate/")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_migrate/"))]
 pub struct MigrationNote {
     pub from: u32,
     pub kind: String,
@@ -39,12 +42,13 @@ pub struct MigrationNote {
     pub count: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_migrate/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_migrate/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Migrate {
-        #[ts(type = "unknown")]
+        #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
         document: serde_json::Value,
         canonical: String,
         document_hash: String,

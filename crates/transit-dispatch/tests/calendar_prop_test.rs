@@ -9,7 +9,7 @@
 //! 3. An unknown type, or one no pattern trips run under, answers empty however
 //!    its rule reads. So does an inverted window.
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 use transit_dispatch::{active_services, service_dates};
 use transit_network::{
@@ -17,7 +17,7 @@ use transit_network::{
     Pattern, PatternTrips, PatternStop, Route, ServiceType, Stop, TimingProfile, WeekdaySet,
 };
 
-const YEAR_START: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+const YEAR_START: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 const TYPES: [&str; 3] = ["WK", "SAT", "HOL"];
 
 /// An exception always wins. An `Added` exception may sit outside every range.
@@ -41,8 +41,8 @@ fn gen_rule() -> impl Strategy<Value = GenRule> {
         })
 }
 
-fn day(offset: u16) -> NaiveDate {
-    YEAR_START + Duration::days(offset as i64)
+fn day(offset: u16) -> Date {
+    YEAR_START + Days::new(offset as i64)
 }
 
 /// A generated rule may belong to a type that runs no trips. That type never
@@ -172,7 +172,7 @@ proptest! {
 
         let mut actives_by_date = Vec::new();
         for d in 0..=30 {
-            let date = from + Duration::days(d);
+            let date = from + Days::new(d);
             let day = materialize(&net, date).unwrap();
             actives_by_date.push(active_services(&net, &day));
         }
@@ -180,15 +180,15 @@ proptest! {
         for ty in TYPES {
             // Property 1.
             for d in 0..=30 {
-                let date = from + Duration::days(d);
+                let date = from + Days::new(d);
                 let named = service_dates(&net, &[], ty, date, date).unwrap();
                 let listed = actives_by_date[d as usize].contains(&ty.to_string());
                 prop_assert_eq!(named.len(), listed as usize);
             }
             // Property 2.
             let window = service_dates(&net, &[], ty, from, to).unwrap();
-            let expect: Vec<NaiveDate> = (0..=30)
-                .map(|d| from + Duration::days(d))
+            let expect: Vec<Date> = (0..=30)
+                .map(|d| from + Days::new(d))
                 .filter(|date| actives_by_date[(*date - from).num_days() as usize].contains(&ty.to_string()))
                 .collect();
             prop_assert_eq!(window, expect);

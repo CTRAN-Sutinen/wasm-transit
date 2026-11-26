@@ -9,10 +9,12 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct CapManifest {
     /// A module rejects a document with another version at load, not later
     /// inside an op.
@@ -26,8 +28,9 @@ pub struct CapManifest {
     pub assemblies: Vec<LinkedAssembly>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct LinkedAssembly {
     pub ui: String,
     /// "sha256:<hex>".
@@ -41,22 +44,24 @@ pub struct LinkedAssembly {
 }
 
 /// The request of its worked example is the bytes, as JSON.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct KernelOp {
     pub code: u32,
     pub name: String,
     /// Absent for an op that is not a load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub kind: Option<String>,
     pub description: String,
     pub example: Option<OpExample>,
 }
 
 /// The host verifies the fetched bytes against the hash.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct Capability {
     pub id: String,
     /// "sha256:<hex>".
@@ -81,8 +86,9 @@ pub struct Capability {
     pub op_docs: BTreeMap<String, OpDoc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct MigrationSpec {
     pub from: u32,
     pub to: u32,
@@ -90,8 +96,9 @@ pub struct MigrationSpec {
 
 /// The examples are raw JSON, so the float_roundtrip workspace feature keeps
 /// them exact.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct OpDoc {
     pub description: String,
     pub example: Option<OpExample>,
@@ -101,11 +108,12 @@ pub struct OpDoc {
     pub kinds: Vec<KindExample>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct KindExample {
     pub kind: String,
-    #[ts(type = "unknown")]
+    #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
     pub example: serde_json::Value,
 }
 
@@ -122,12 +130,13 @@ pub struct Example {
     pub request: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_abi/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_abi/"))]
 pub struct OpExample {
     /// TS sees only `unknown`.
-    #[ts(type = "unknown")]
+    #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
     pub request: serde_json::Value,
-    #[ts(type = "unknown")]
+    #[cfg_attr(feature = "bindings", ts(type = "unknown"))]
     pub response: serde_json::Value,
 }

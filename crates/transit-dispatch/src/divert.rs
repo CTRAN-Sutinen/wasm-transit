@@ -2,24 +2,26 @@
 //! ready draft into a record, by one rule for every host.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use transit_network::{Coord, Network};
 use transit_sync::{DetourPoint, Diversion, EditRecord, EditStatus, TripCancel};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DiversionDraft {
     pub route_id: String,
     /// If unset, or not the route's, the route's longest pattern applies.
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub pattern: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub first_kept_stop: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "bindings", ts(optional))]
     pub last_kept_stop: Option<String>,
     /// Every interior stop that is not listed here is skipped, so new anchors
     /// never leave stale skips behind.
@@ -36,16 +38,18 @@ pub struct DiversionDraft {
     pub end_date: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DraftPattern {
     pub pattern: String,
     pub name: String,
     pub stop_count: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DraftStopRole {
     FirstKept,
@@ -54,8 +58,9 @@ pub enum DraftStopRole {
     Outside,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DraftStop {
     pub index: u32,
     pub stop_id: String,
@@ -64,8 +69,9 @@ pub struct DraftStop {
     pub skipped: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DraftView {
     pub patterns: Vec<DraftPattern>,
     pub pattern: Option<String>,
@@ -169,7 +175,7 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
     if !(draft.added_mins.is_finite() && draft.added_mins >= 0.0) {
         problems.push("added time must be zero or more minutes".into());
     }
-    match (parse_date(&draft.start_date), parse_date(&draft.end_date)) {
+    match (transit_date::Date::parse(&draft.start_date).ok(), transit_date::Date::parse(&draft.end_date).ok()) {
         (Some(a), Some(b)) if a > b => problems.push("the start date is after the end date".into()),
         (Some(_), Some(_)) => {}
         _ => problems.push("both dates must be YYYY-MM-DD".into()),
@@ -196,8 +202,8 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
         skipped_stops: view.skipped_stops,
         detour: (view.detour.len() >= 2).then_some(view.detour),
         added_secs: (draft.added_mins * 60.0).round() as u32,
-        start_date: parse_date(&draft.start_date).expect("checked by the view"),
-        end_date: parse_date(&draft.end_date).expect("checked by the view"),
+        start_date: transit_date::Date::parse(&draft.start_date).ok().expect("checked by the view"),
+        end_date: transit_date::Date::parse(&draft.end_date).ok().expect("checked by the view"),
         extra: Default::default(),
     })
 }
@@ -211,7 +217,7 @@ pub fn cancel_of(
     start_secs: Option<u32>,
     date: &str,
 ) -> Result<TripCancel, String> {
-    let on = parse_date(date).ok_or_else(|| format!("invalid date {date:?} (YYYY-MM-DD)"))?;
+    let on = transit_date::Date::read(date)?;
     let (_, pattern_trips, trip) = network.trip(trip_id).ok_or_else(|| format!("unknown trip {trip_id}"))?;
     if let Some(s) = start_secs {
         if !trip.departs.instances().contains(&s) {
@@ -226,8 +232,9 @@ pub fn cancel_of(
 }
 
 /// An id that the network lacks shows as itself.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct DiversionRow {
     pub record_id: String,
     pub status: EditStatus,
@@ -257,16 +264,17 @@ pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<Diversio
                 skipped_names: d.skipped_stops.iter().map(|s| stop_name(network, s)).collect(),
                 added_secs: d.added_secs,
                 detour_drawn: d.detour.as_ref().is_some_and(|p| !p.is_empty()),
-                start_date: d.start_date.format("%Y-%m-%d").to_string(),
-                end_date: d.end_date.format("%Y-%m-%d").to_string(),
+                start_date: d.start_date.to_string(),
+                end_date: d.end_date.to_string(),
             }
         })
         .collect()
 }
 
 /// An id that the network lacks shows as itself.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct CancelRow {
     pub record_id: String,
     pub status: EditStatus,
@@ -304,7 +312,7 @@ pub fn cancel_rows(network: &Network, records: &[EditRecord]) -> Vec<CancelRow> 
                     .unwrap_or_else(|| c.trip_id.clone()),
                 from_name: end(false),
                 to_name: end(true),
-                date: c.date.format("%Y-%m-%d").to_string(),
+                date: c.date.to_string(),
             }
         })
         .collect()
@@ -312,10 +320,6 @@ pub fn cancel_rows(network: &Network, records: &[EditRecord]) -> Vec<CancelRow> 
 
 fn stop_name(network: &Network, stop: &str) -> String {
     network.stops.get(stop).map(|s| s.name.clone()).unwrap_or_else(|| stop.to_string())
-}
-
-fn parse_date(raw: &str) -> Option<chrono::NaiveDate> {
-    chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok()
 }
 
 /// Path length in meters.

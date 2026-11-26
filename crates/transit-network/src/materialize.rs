@@ -10,14 +10,16 @@
 //! The functions return `Err` for any input that fails validation. They
 //! cannot fail on a validated network.
 
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
-use chrono::NaiveDate;
+use transit_date::Date;
 
 use crate::error::NetworkError;
 use crate::model::{Departs, Network, Pattern, Trip};
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct MaterializedTrip {
     /// The instances of a frequency trip share it.
     pub trip: String,
@@ -29,8 +31,9 @@ pub struct MaterializedTrip {
     pub stop_times: Vec<StopTime>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
+#[cfg_attr(feature = "bindings", ts(export))]
 pub struct StopTime {
     pub stop: String,
     pub arrival_secs: u32,
@@ -133,7 +136,7 @@ pub fn trip_instance(network: &Network, trip: &str, start_secs: u32) -> Option<M
 /// Sorted by start time, then pattern trips id, then trip id.
 pub fn materialize(
     network: &Network,
-    date: NaiveDate,
+    date: Date,
 ) -> Result<Vec<MaterializedTrip>, NetworkError> {
     let mut trips = Vec::new();
     for (pattern_trips_id, service) in &network.pattern_trips {

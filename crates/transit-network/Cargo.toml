@@ -6,15 +6,22 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-version = { path = "../transit-version" }
+transit-version = { path = "../transit-version", default-features = false }
+transit-geo = { path = "../transit-geo", default-features = false }
 serde = { workspace = true }
-ts-rs = { workspace = true }
-schemars = { workspace = true }
-chrono = { workspace = true }
-thiserror = { workspace = true }
+ts-rs = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+transit-date = { path = "../transit-date", default-features = false }
 # read_network: documents written before trips were stored migrate
 # as JSON values.
 serde_json = { workspace = true }
+
+[features]
+# The TS bindings and the JSON Schemas (`just types`, gen-manifest). A
+# module build turns it off: its crates name every workspace crate
+# with default-features = false.
+default = ["bindings"]
+bindings = ["dep:ts-rs", "dep:schemars", "transit-version/bindings", "transit-geo/bindings", "transit-date/bindings"]
 
 [dev-dependencies]
 proptest = "1"

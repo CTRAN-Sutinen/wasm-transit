@@ -11,20 +11,22 @@ use serde::{Deserialize, Serialize};
 use transit_codec::Boundary;
 use transit_live::{LiveDay, LiveSummary, OnTimeWindow};
 use transit_rt::{LateTrip, RtOverview, TripProgress};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 /// The runner's `--load` default.
 pub const OP_DECODE: u32 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_rt/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_rt/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Decode { bytes: Vec<u8> },
     TripProgress {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         boundary_hash: Option<String>,
         rt_hash: String,
         trip_id: String,
@@ -39,38 +41,39 @@ pub enum Request {
     Live {
         network_hash: String,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         boundary_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         rt_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         vp_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         alerts_hash: Option<String>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         window: Option<OnTimeWindow>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         late_limit: Option<u32>,
         #[serde(default)]
-        #[ts(optional)]
+        #[cfg_attr(feature = "bindings", ts(optional))]
         with_document: Option<bool>,
     },
     EncodeAlerts {
         network_hash: String,
         alerts_hash: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         timestamp: u64,
     },
     ReadAlerts { network_hash: String, bytes: Vec<u8> },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_rt/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_rt/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Decode { overview: RtOverview, rt_hash: String },

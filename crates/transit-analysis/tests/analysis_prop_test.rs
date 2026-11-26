@@ -7,10 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-use chrono::{Duration, NaiveDate};
+use transit_date::{Days, Date};
 use proptest::prelude::*;
 
-const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+const EPOCH: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 
 
 #[derive(Clone, Debug)]
@@ -187,7 +187,7 @@ proptest! {
         let net = transit_codec::import(&feed).network;
 
         for day in [0i64, 3, 400] {
-            let date = EPOCH + Duration::days(day);
+            let date = EPOCH + Days::new(day);
             let stats = transit_analysis::network_stats(&net, date);
 
             let materialized = transit_network::materialize(&net, date).expect("materialize");
@@ -312,7 +312,7 @@ proptest! {
     ) {        let layer = transit_analysis::parse_layer(&build_layer(&net, &points))
             .expect("generated layer parses");
         let weights = layer.weights(Some("pop"), None).expect("the pop weight reads");
-        let date = EPOCH + Duration::days(0); // a weekday: service 0 runs
+        let date = EPOCH + Days::new(0); // a weekday: service 0 runs
 
         let c50 = transit_analysis::coverage(&net, date, &weights, 50.0, 3600, 2, None);
         let c200 = transit_analysis::coverage(&net, date, &weights, 200.0, 3600, 2, None);
@@ -350,7 +350,7 @@ proptest! {
             prop_assert_eq!(&entry.group, &c.id);
             let n = c.dates.len();
             for i in [0, n / 2, n - 1] {
-                let date = NaiveDate::parse_from_str(&c.dates[i], "%Y-%m-%d").expect("ISO dates");
+                let date = Date::parse(&c.dates[i]).expect("ISO dates");
                 let day = transit_analysis::coverage(&net, date, &weights, 500.0, 3600, 2, None);
                 prop_assert!(close(entry.served_pct, day.served_pct, 1e-9),
                     "served_pct disagrees for {} on {}", c.id, date);
@@ -369,13 +369,13 @@ proptest! {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("generated feeds parse");
         let net = transit_codec::import(&feed).network;
         for date in [
-            NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(),
+            Date::from_ymd_opt(2026, 1, 5).unwrap(),
+            Date::from_ymd_opt(2026, 1, 10).unwrap(),
         ] {
             let stats = transit_analysis::network_stats(&net, date);
             let mut expected: BTreeSet<&str> = Default::default();
             for (id, st) in &net.service_types {
-                let iso = date.format("%u").to_string();
+                let iso = date.weekday().number_from_monday().to_string();
                 let flagged = match iso.as_str() {
                     "1" => st.rule.days.mon,
                     "2" => st.rule.days.tue,
@@ -412,7 +412,7 @@ proptest! {
     fn stop_gaps_match_the_departure_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
 
         let materialized = transit_network::materialize(&net, date).expect("materialize");
         let mut raw: BTreeMap<String, Vec<u32>> = BTreeMap::new();
@@ -485,7 +485,7 @@ proptest! {
         prop_assume!(parented.iter().any(|&p| p));
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed_stations(&trips, &parented)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         let materialized = transit_network::materialize(&net, date).expect("materialize");
         let mut raw: BTreeMap<String, Vec<u32>> = BTreeMap::new();
         for trip in &materialized {
@@ -542,7 +542,7 @@ proptest! {
     ) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         let window = windowed.then(|| transit_analysis::CoverageWindow {
             start_secs: start_h * 3600,
             end_secs: (start_h + len_h) * 3600,
@@ -627,7 +627,7 @@ proptest! {
         let miss_secs = miss.unwrap_or(300) as i64;
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed_stations(&trips, &parented)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         let materialized = transit_network::materialize(&net, date).expect("materialize");
 
         for stop_id in net.stops.keys() {
@@ -682,19 +682,19 @@ proptest! {
     ) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let from = from_day.map(|d| EPOCH + Duration::days(d));
-        let through = len.map(|l| from.unwrap_or(EPOCH) + Duration::days(l));
+        let from = from_day.map(|d| EPOCH + Days::new(d));
+        let through = len.map(|l| from.unwrap_or(EPOCH) + Days::new(l));
         let types = transit_analysis::day_types(&net, from, through);
 
-        let iso = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+        let iso = |d: Date| d.to_string();
         let inside = |d: &String| {
             from.map_or(true, |f| *d >= iso(f)) && through.map_or(true, |t| *d <= iso(t))
         };
         let weekdays_of = |dates: &[String]| {
             let mut w = vec![false; 7];
             for d in dates {
-                let day = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
-                w[chrono::Datelike::weekday(&day).num_days_from_monday() as usize] = true;
+                let day = Date::parse(d).unwrap();
+                w[day.weekday().num_days_from_monday() as usize] = true;
             }
             w
         };
@@ -726,17 +726,17 @@ proptest! {
         );
         let mut period = [0u32; 7];
         if let (Some(lo), Some(hi)) = (lo, hi) {
-            let (mut d, end) = (NaiveDate::parse_from_str(&lo, "%Y-%m-%d").unwrap(), NaiveDate::parse_from_str(&hi, "%Y-%m-%d").unwrap());
+            let (mut d, end) = (Date::parse(&lo).unwrap(), Date::parse(&hi).unwrap());
             while d <= end {
-                period[chrono::Datelike::weekday(&d).num_days_from_monday() as usize] += 1;
-                d += Duration::days(1);
+                period[d.weekday().num_days_from_monday() as usize] += 1;
+                d += Days::new(1);
             }
         }
         for (i, t) in types.iter().enumerate() {
             let mut held = [0u32; 7];
             for d in &t.groups[0].dates {
-                let day = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
-                held[chrono::Datelike::weekday(&day).num_days_from_monday() as usize] += 1;
+                let day = Date::parse(d).unwrap();
+                held[day.weekday().num_days_from_monday() as usize] += 1;
             }
             let most: Vec<bool> = (0..7).map(|w| held[w] * 2 > period[w]).collect();
             let expected = if most.contains(&true) { most } else { t.groups[0].weekdays.clone() };
@@ -770,7 +770,7 @@ proptest! {
     ) {
         let base = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&gen_feed(&base_trips)).expect("parse")).network;
         let net = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse")).network;
-        let from = from_day.map(|d| EPOCH + Duration::days(d));
+        let from = from_day.map(|d| EPOCH + Days::new(d));
         let compared = transit_analysis::plan_compare(&base, &net, from, None);
         let types = transit_analysis::day_types(&net, from, None);
         prop_assert_eq!(compared.len(), types.len());
@@ -809,7 +809,7 @@ proptest! {
         };
         let combination = transit_network::service_combination(&net, &members).unwrap();
         prop_assert_eq!(&found.date, &combination.dates[0]);
-        let date = NaiveDate::parse_from_str(&found.date, "%Y-%m-%d").unwrap();
+        let date = Date::parse(&found.date).unwrap();
         let in_hour = |h: u32| window.map_or(true, |w| h * 3600 >= w.start_secs && h * 3600 < w.end_secs);
         let in_secs = |t: u32| window.map_or(true, |w| t >= w.start_secs && t <= w.end_secs);
         let cut = |n: usize| limit.map_or(n, |l| n.min(l as usize));
@@ -948,8 +948,8 @@ proptest! {
         let net = transit_codec::import(&feed).network;
 
         for date in [
-            NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), // a Monday
-            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(), // a Saturday
+            Date::from_ymd_opt(2026, 1, 5).unwrap(), // a Monday
+            Date::from_ymd_opt(2026, 1, 10).unwrap(), // a Saturday
         ] {
             let profile = transit_analysis::hourly_trips(&net, date);
             let materialized = transit_network::materialize(&net, date).expect("materialize");
@@ -1043,7 +1043,7 @@ proptest! {
     fn route_overlap_matches_the_pair_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
 
         let overlaps = transit_analysis::route_overlap(&net, date);
         let materialized = transit_network::materialize(&net, date).expect("materialize");
@@ -1116,7 +1116,7 @@ proptest! {
         };
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         let materialized = transit_network::materialize(&net, date).expect("materialize");
 
         for stop_id in net.stops.keys() {
@@ -1189,11 +1189,11 @@ proptest! {
         let layer = transit_analysis::parse_layer(&build_layer(&net, &points))
             .expect("generated layer parses");
         let weights = layer.weights(Some("pop"), None).expect("the pop weight reads");
-        let date = EPOCH + Duration::days(0); // a weekday: service 0 runs
+        let date = EPOCH + Days::new(0); // a weekday: service 0 runs
 
         let Some(combination) = transit_network::service_combinations(&net)
             .into_iter()
-            .find(|c| c.dates.contains(&date.format("%Y-%m-%d").to_string()))
+            .find(|c| c.dates.contains(&date.to_string()))
         else {
             return Ok(());
         };
@@ -1295,7 +1295,7 @@ proptest! {
             let detail = transit_analysis::service_type_detail(&net, &group.combination.members).expect("its detail");
             prop_assert_eq!(detail.trips, group.trips);
             for d in &group.combination.dates {
-                let date = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
+                let date = Date::parse(d).unwrap();
                 let day = transit_analysis::network_stats(&net, date);
                 prop_assert_eq!(day.trips, group.trips, "{} on {}: trips", id, d);
                 prop_assert_eq!(day.active_routes, group.active_routes, "{} on {}: routes", id, d);
@@ -1394,7 +1394,7 @@ proptest! {
     fn hub_connections_fold_the_timed_transfers(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
-        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let date = Date::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         for stop_id in net.stops.keys() {
             let pairs = transit_analysis::hub_connections(&net, date, stop_id, None);
             let mut oracle: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();

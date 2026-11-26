@@ -8,65 +8,68 @@ use std::sync::Arc;
 use cap_abi::kernel::kind;
 use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "bindings")]
 use ts_rs::TS;
 use transit_dispatch::{CancelRow, DiversionDraft, DiversionRow, DraftView};
 use transit_network::Network;
 use transit_sync::EditDocument;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "cap_divert/")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_divert/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Draft { network_hash: String, draft: DiversionDraft },
     List {
         network_hash: String,
-        #[ts(as = "EditDocument")]
+        #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
         edits: Current<EditDocument>,
     },
     Reports {
         network_hash: String,
-        #[ts(as = "EditDocument")]
+        #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
         edits: Current<EditDocument>,
     },
     Propose {
         network_hash: String,
         draft: DiversionDraft,
-        #[ts(as = "EditDocument")]
+        #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
         edits: Base<EditDocument>,
         record_id: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
     },
     Cancel {
         network_hash: String,
-        #[ts(as = "EditDocument")]
+        #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
         edits: Base<EditDocument>,
         record_id: String,
         trip_id: String,
         #[serde(default)]
         start_secs: Option<u32>,
         date: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
     },
     Retire {
-        #[ts(as = "EditDocument")]
+        #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
         edits: Base<EditDocument>,
         record_id: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
     },
     Restore {
-        #[ts(as = "EditDocument")]
+        #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
         edits: Base<EditDocument>,
         record_id: String,
-        #[ts(type = "number")]
+        #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
     },
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_divert/")]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "bindings", derive(TS))]
+#[cfg_attr(feature = "bindings", ts(export, export_to = "cap_divert/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Draft { view: DraftView },

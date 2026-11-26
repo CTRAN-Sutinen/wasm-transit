@@ -1,7 +1,7 @@
 //! The line a trip draws, and the segment ridden along it
 //! (crates/cap-runcut/OPS.md "trip_path").
 
-use chrono::NaiveDate;
+use transit_date::Date;
 use transit_dispatch::{patch_day, trip_path, trip_segment};
 use transit_network::{materialize, Alignment, AlignmentPoint, Coord, MaterializedTrip, Network};
 use transit_sync::{DetourPoint, Diversion};
@@ -21,8 +21,8 @@ fn network() -> Network {
     net
 }
 
-fn date() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 10, 23).unwrap()
+fn date() -> Date {
+    Date::from_ymd_opt(2026, 10, 23).unwrap()
 }
 
 fn day(net: &Network) -> Vec<MaterializedTrip> {

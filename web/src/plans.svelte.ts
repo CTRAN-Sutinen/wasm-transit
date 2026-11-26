@@ -2,7 +2,7 @@
 // is `plan.id`, which is empty on unversioned imports. IndexedDB holds the
 // set as one `PlanSet` document, so plans survive reloads.
 
-import { get as idbGet, set as idbSet } from "idb-keyval";
+import { idbGet, idbSet } from "./idb";
 import { keepRecord } from "./documents.svelte";
 import type { Network } from "./types/Network";
 import type { PlanSet } from "./types/PlanSet";
