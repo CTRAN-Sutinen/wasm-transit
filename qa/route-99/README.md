@@ -145,7 +145,7 @@ It does not stop any step.
 IDs continue `docs/QA-FINDINGS.md`'s sequence.
 
 - **QAF-114 DEFECT** — The server's walk table is always derived over
-  the `-feed` import's network (`server/streets.go`, the `walks` op on
+  the `-feed` import's network (`server/imports/streets.go`, the `walks` op on
   `feed.networkHash`), never over the pick in force. Once a published
   pick that changes the network takes effect, ride now's trip planner
   refuses the walk table, and **no trip can be planned** for any rider.

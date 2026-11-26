@@ -151,7 +151,12 @@ and before a release.
    - `transit-runs`'s `scheduling_constraints_test` holds the
      scheduling constraints: every rule is optional, the most specific
      recovery rule wins, and order is not identity. Its
-     `work_rules_test` holds the work rules and their v1 to v2 step.
+     `labor_rules_prop_test` holds the work rules over generated
+     documents: order is not identity, a measure or class the document
+     lacks is refused, a class replaces or adds rules as it says, and a
+     gap is paid by its band. Its `work_rules_test` holds the migration
+     chain. `fixtures`' `work_rules_fixture_test` holds C-TRAN's
+     2022–2025 rules and their paired readings.
    - `transit-runs`'s `recovery_view_test` holds that a wait is short
      exactly where validation says layover_infeasible.
    - `transit-runs`'s `suggest_law_test` holds that suggested blocking

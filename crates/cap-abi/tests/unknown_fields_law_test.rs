@@ -159,10 +159,20 @@ fn the_policy_keeps_what_it_does_not_know() {
 
 #[test]
 fn the_work_rules_keep_what_they_do_not_know() {
-    let doc: transit_runs::WorkRules = typed(json!({"kind": "work_rules", "schema_version": 2, "name": "Fixture rules",
-        "runs": {"clear_secs": 900, "max_platform_secs": 28800, "report_secs": 900, "meal": {"within_secs": 18000, "min_secs": 1800}},
-        "pay": {"guarantee_secs": 28800}}));
-    keeps_unknown_fields("work_rules", &doc, 4);
+    let doc: transit_runs::WorkRules = typed(json!({"kind": "work_rules", "schema_version": 3, "name": "Fixture rules",
+        "source": {"title": "An agreement", "effective_from": "2022-01-01"},
+        "measures": {"worked": ["report", "revenue"]},
+        "allowances": [{"event": "pull_out", "secs": 600, "activity": "report"}],
+        "gaps": [{"from_secs": 0, "paid_pct": 100}],
+        "limits": [{"quantity": "spread", "max": 54000}],
+        "breaks": [{"min_secs": 1800, "window_from_secs": 7200, "window_to_secs": 18000}],
+        "premiums": [{"on": "measure", "measure": "worked", "after_secs": 28800, "pays": "worked", "pct": 150}],
+        "guarantees": [{"per": "report", "min_secs": 7200, "counts": "worked"}],
+        "travel": [{"at": "day_end", "beyond_m": 2414, "within_m": 402, "timed": "next_trip"}],
+        "classes": [{"id": "B", "conditions": [{"quantity": "pieces", "min": 2}], "guarantees": [{"per": "day", "min_secs": 28800, "counts": "worked"}]}],
+        "mix": [{"classes": ["B"], "max_pct": 30}],
+        "objective": {"maximize": ["B"]}}));
+    keeps_unknown_fields("work_rules", &doc, 14);
 }
 
 #[test]

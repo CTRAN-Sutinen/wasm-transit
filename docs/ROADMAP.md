@@ -166,9 +166,9 @@ reaches them.
 **Exists already:**
 
 - Blocks and layovers, and the block chain with the layover ripple.
-- The work-rule document (run rules and pay) and the scheduling
-  constraints (recovery, interlining, relief points), every rule
-  optional.
+- The work rules, which hold any labor agreement as data, and the
+  scheduling constraints (recovery, interlining, relief points), every
+  rule optional.
 - The sync document's LWW-per-record discipline (a bid is shared state).
 
 **Needs:**

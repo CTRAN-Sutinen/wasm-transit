@@ -45,7 +45,7 @@ A page under a path prefix works. The pages and the service worker read
 every path relative to themselves.
 
 A host must send these headers. The rules are in
-`server/headers.go`. The server sends them on its
+`server/static/headers.go`. The server sends them on its
 static files, and the export writes the same rules as `_headers` in the
 bundle. Cloudflare Workers and Netlify read that file. A host that does
 not read it must send the same headers by hand
@@ -56,7 +56,7 @@ not read it must send the same headers by hand
   `blobs/<hash>.gz`. These files revalidate (`no-cache`): the pages,
   `manifest`, `caps/manifest.json`, `live-feeds.json`, and `sw.js`.
   The host's default does that, so the file has no rule for them. The
-  server applies the same rule (`staticCacheControl`). Without the
+  server applies the same rule (`builds.CacheControl`). Without the
   immutable rule, a first visit fetches each large file twice, because
   the service worker's precache cannot reuse an uncached response.
 - **Every file** sends `X-Content-Type-Options: nosniff` and

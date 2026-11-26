@@ -8,6 +8,10 @@
     "2": {
       "example_hash": "sha256:ebef054a7d008c888548e75947b0ba317af21023563b567b022fbce17afde9ed",
       "schema_hash": "sha256:ca27d3b0218e807c22043ce95c24dd8149bd7ca0a1cf9188ba12777e649ce3ca"
+    },
+    "3": {
+      "example_hash": "sha256:6b00dae7c123b3b6ccc13aba399565eef0c1b43bc909a01538f2431a676ee800",
+      "schema_hash": "sha256:82b90b4d918871eb56e25df821ad0b583892f2e114732898e893b9d35787f049"
     }
   }
 }

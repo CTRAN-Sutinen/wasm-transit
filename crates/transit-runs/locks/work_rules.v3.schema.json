@@ -1,0 +1,822 @@
+{
+  "$defs": {
+    "Activity": {
+      "description": "The run events of TODS, and `gap`, the time between two pieces.",
+      "enum": [
+        "report",
+        "clear",
+        "revenue",
+        "deadhead",
+        "layover",
+        "travel",
+        "standby",
+        "gap"
+      ],
+      "type": "string"
+    },
+    "Allowance": {
+      "additionalProperties": true,
+      "description": "Paid time added at an event, as the given activity.",
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/Activity"
+        },
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "$ref": "#/$defs/Event"
+        },
+        "secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event",
+        "secs",
+        "activity"
+      ],
+      "type": "object"
+    },
+    "BreakFrom": {
+      "oneOf": [
+        {
+          "enum": [
+            "report"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "measure_start",
+          "description": "The first minute of the break rule's `measure`.",
+          "type": "string"
+        }
+      ]
+    },
+    "BreakRule": {
+      "additionalProperties": true,
+      "description": "`count` breaks of at least `min_secs` each, inside the window from\n`window_from_secs` to `window_to_secs` after `from`. The rule applies\nonly to a run whose `when_measure` totals more than `when_over_secs`.",
+      "properties": {
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "$ref": "#/$defs/BreakFrom"
+        },
+        "measure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "min_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paid": {
+          "type": "boolean"
+        },
+        "when_measure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "when_over_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "window_from_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window_to_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "min_secs",
+        "window_from_secs",
+        "window_to_secs"
+      ],
+      "type": "object"
+    },
+    "Combine": {
+      "description": "Where premiums overlap on a minute: only the highest rate, or the\nrates added.",
+      "enum": [
+        "highest",
+        "sum"
+      ],
+      "type": "string"
+    },
+    "Day": {
+      "enum": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun"
+      ],
+      "type": "string"
+    },
+    "Event": {
+      "enum": [
+        "pull_out",
+        "pull_in",
+        "relief_on",
+        "relief_off",
+        "piece_start",
+        "piece_end"
+      ],
+      "type": "string"
+    },
+    "GapBand": {
+      "additionalProperties": true,
+      "description": "Gaps of at least `from_secs`, up to the next band, are paid at\n`paid_pct` percent (0 to 100).",
+      "properties": {
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paid_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from_secs",
+        "paid_pct"
+      ],
+      "type": "object"
+    },
+    "Guarantee": {
+      "additionalProperties": true,
+      "description": "At least `min_secs` paid per `per`, counting the `counts` measure.",
+      "properties": {
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "counts": {
+          "type": "string"
+        },
+        "min_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per": {
+          "$ref": "#/$defs/Per"
+        }
+      },
+      "required": [
+        "per",
+        "min_secs",
+        "counts"
+      ],
+      "type": "object"
+    },
+    "Limit": {
+      "additionalProperties": true,
+      "description": "`min` and `max` are seconds, or a count for `pieces` and `days_worked`.",
+      "properties": {
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "measure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "min": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "over": {
+          "$ref": "#/$defs/Window"
+        },
+        "quantity": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "strength": {
+          "$ref": "#/$defs/Strength"
+        }
+      },
+      "required": [
+        "quantity"
+      ],
+      "type": "object"
+    },
+    "MixRule": {
+      "additionalProperties": true,
+      "description": "Bounds the share of runs, or of paid time, in `classes`. Each percent\nis 0 to 100. The cut reports a miss and does not refuse it.",
+      "properties": {
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "of": {
+          "$ref": "#/$defs/ShareOf"
+        },
+        "target_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "classes"
+      ],
+      "type": "object"
+    },
+    "Objective": {
+      "additionalProperties": true,
+      "description": "The cut makes the most runs in `maximize`, then the least premium\ntime when `minimize_premium` is set.",
+      "properties": {
+        "maximize": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "minimize_premium": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Per": {
+      "enum": [
+        "run",
+        "report",
+        "day",
+        "week"
+      ],
+      "type": "string"
+    },
+    "Premium": {
+      "additionalProperties": true,
+      "description": "Pays the triggered minutes of the `pays` measure at `pct` percent of\nthe base rate (150 is time and a half, 0 to 1000).",
+      "properties": {
+        "after_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "days": {
+          "items": {
+            "$ref": "#/$defs/Day"
+          },
+          "type": "array"
+        },
+        "from_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "measure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on": {
+          "$ref": "#/$defs/TriggerOn"
+        },
+        "pays": {
+          "type": "string"
+        },
+        "pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "on",
+        "pays",
+        "pct"
+      ],
+      "type": "object"
+    },
+    "Quantity": {
+      "oneOf": [
+        {
+          "const": "measure",
+          "description": "The total of the limit's `measure`, in seconds.",
+          "type": "string"
+        },
+        {
+          "const": "spread",
+          "description": "From the first report to the last clear, in seconds.",
+          "type": "string"
+        },
+        {
+          "const": "piece",
+          "description": "One piece's length, in seconds.",
+          "type": "string"
+        },
+        {
+          "const": "pieces",
+          "description": "The number of pieces.",
+          "type": "string"
+        },
+        {
+          "const": "gap",
+          "description": "One gap's length, in seconds.",
+          "type": "string"
+        },
+        {
+          "const": "days_worked",
+          "description": "The days with work in the window, a count. A roster judges it.",
+          "type": "string"
+        },
+        {
+          "const": "rest",
+          "description": "The time off from one day's last clear to the next day's first\nreport, in seconds. A roster judges it.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuleKind": {
+      "enum": [
+        "allowances",
+        "gaps",
+        "limits",
+        "breaks",
+        "premiums",
+        "guarantees",
+        "travel"
+      ],
+      "type": "string"
+    },
+    "RunClass": {
+      "additionalProperties": true,
+      "description": "A run in the class meets every limit in `conditions`. The class's\n`rules` replace the document's list of each kind in `replaces`, and add\nto the others. Gap bands always replace, because two sets of bands\nwould pay one gap twice.",
+      "properties": {
+        "allowances": {
+          "items": {
+            "$ref": "#/$defs/Allowance"
+          },
+          "type": "array"
+        },
+        "breaks": {
+          "items": {
+            "$ref": "#/$defs/BreakRule"
+          },
+          "type": "array"
+        },
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/Limit"
+          },
+          "type": "array"
+        },
+        "gaps": {
+          "description": "A gap's share paid is the band with the largest `from_secs` at or\nunder the gap. With no bands, a gap is unpaid.",
+          "items": {
+            "$ref": "#/$defs/GapBand"
+          },
+          "type": "array"
+        },
+        "guarantees": {
+          "items": {
+            "$ref": "#/$defs/Guarantee"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "limits": {
+          "items": {
+            "$ref": "#/$defs/Limit"
+          },
+          "type": "array"
+        },
+        "premiums": {
+          "items": {
+            "$ref": "#/$defs/Premium"
+          },
+          "type": "array"
+        },
+        "replaces": {
+          "items": {
+            "$ref": "#/$defs/RuleKind"
+          },
+          "type": "array"
+        },
+        "travel": {
+          "items": {
+            "$ref": "#/$defs/TravelRule"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "ShareOf": {
+      "enum": [
+        "runs",
+        "paid_time"
+      ],
+      "type": "string"
+    },
+    "Source": {
+      "additionalProperties": true,
+      "properties": {
+        "effective_from": {
+          "description": "\"YYYY-MM-DD\". A cut for a date outside the period warns.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "Strength": {
+      "oneOf": [
+        {
+          "const": "hard",
+          "description": "A run that breaks it is not legal.",
+          "type": "string"
+        },
+        {
+          "const": "waivable",
+          "description": "A run that breaks it is legal and flagged, as when an operator may\nwaive the limit.",
+          "type": "string"
+        }
+      ]
+    },
+    "Timing": {
+      "oneOf": [
+        {
+          "const": "next_trip",
+          "description": "The wait and the ride on the next trip back.",
+          "type": "string"
+        },
+        {
+          "const": "fixed",
+          "description": "`fixed_secs`, however far.",
+          "type": "string"
+        },
+        {
+          "const": "speed",
+          "description": "The distance at `speed_kph`.",
+          "type": "string"
+        }
+      ]
+    },
+    "TravelAt": {
+      "enum": [
+        "day_end",
+        "between_pieces"
+      ],
+      "type": "string"
+    },
+    "TravelRule": {
+      "additionalProperties": true,
+      "description": "Pays the trip home when the place it applies at is more than\n`beyond_m` meters from home. The trip ends within `within_m` meters of\nhome. Home is a place in the scheduling constraints, else where the\nday began.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/TravelAt"
+        },
+        "beyond_m": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cites": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixed_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pct": {
+          "description": "A percent of the base rate (0 to 1000). With none, 100.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "speed_kph": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timed": {
+          "$ref": "#/$defs/Timing"
+        },
+        "within_m": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "at",
+        "beyond_m",
+        "within_m",
+        "timed"
+      ],
+      "type": "object"
+    },
+    "TriggerOn": {
+      "oneOf": [
+        {
+          "const": "measure",
+          "description": "The minutes of `measure` past its first `after_secs`.",
+          "type": "string"
+        },
+        {
+          "const": "spread",
+          "description": "The minutes past `after_secs` of spread.",
+          "type": "string"
+        },
+        {
+          "const": "time_of_day",
+          "description": "The minutes from `from_secs` to `to_secs` after service-day midnight.",
+          "type": "string"
+        },
+        {
+          "const": "day_of_week",
+          "description": "Every minute on one of `days`.",
+          "type": "string"
+        },
+        {
+          "const": "class",
+          "description": "Every minute of a run in `class`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Window": {
+      "oneOf": [
+        {
+          "enum": [
+            "run",
+            "week"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "rolling24h",
+          "description": "Any 24 hours. It spans days, so a roster judges it, not the cut.",
+          "type": "string"
+        }
+      ]
+    },
+    "WorkRulesKind": {
+      "const": "work_rules"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The rules of one labor agreement, or of one reading of it. Every number\nand every measure is data, and every rule list may be empty. A rule's\n`cites` names the clause it comes from.",
+  "properties": {
+    "allowances": {
+      "items": {
+        "$ref": "#/$defs/Allowance"
+      },
+      "type": "array"
+    },
+    "breaks": {
+      "items": {
+        "$ref": "#/$defs/BreakRule"
+      },
+      "type": "array"
+    },
+    "classes": {
+      "items": {
+        "$ref": "#/$defs/RunClass"
+      },
+      "type": "array"
+    },
+    "combine": {
+      "$ref": "#/$defs/Combine"
+    },
+    "gaps": {
+      "description": "A gap's share paid is the band with the largest `from_secs` at or\nunder the gap. With no bands, a gap is unpaid.",
+      "items": {
+        "$ref": "#/$defs/GapBand"
+      },
+      "type": "array"
+    },
+    "guarantees": {
+      "items": {
+        "$ref": "#/$defs/Guarantee"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/$defs/WorkRulesKind",
+      "default": "work_rules",
+      "description": "A copy without a kind tag reads as work rules."
+    },
+    "limits": {
+      "items": {
+        "$ref": "#/$defs/Limit"
+      },
+      "type": "array"
+    },
+    "measures": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/Activity"
+        },
+        "type": "array"
+      },
+      "description": "Each measure is a named set of activities. A rule names the measure\nthat it limits, pays, or counts, so two readings of \"drive\" or\n\"work\" differ only here.",
+      "type": "object"
+    },
+    "mix": {
+      "items": {
+        "$ref": "#/$defs/MixRule"
+      },
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    },
+    "objective": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Objective"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "premiums": {
+      "items": {
+        "$ref": "#/$defs/Premium"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1,
+      "description": "A copy without a version is version 1, which this build refuses."
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Source"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "travel": {
+      "items": {
+        "$ref": "#/$defs/TravelRule"
+      },
+      "type": "array"
+    }
+  },
+  "title": "WorkRules",
+  "type": "object"
+}

@@ -293,20 +293,19 @@ pub fn fixture_requests() -> transit_requests::StopRequests {
     .expect("the fixture requests parse")
 }
 
-/// An eight-hour run under report and clear times.
+/// An eight-hour platform limit, report and clear times, and overtime past
+/// eight hours worked.
 pub fn fixture_work_rules() -> transit_runs::WorkRules {
-    transit_runs::WorkRules { kind: Default::default(),
-        schema_version: transit_version::Version(transit_runs::SCHEMA_VERSION),
-        name: "Fixture rules".into(),
-        runs: transit_runs::RunRules {
-            max_platform_secs: Some(8 * 3600),
-            report_secs: Some(900),
-            clear_secs: Some(900),
-            ..Default::default()
-        },
-        pay: None,
-        extra: Default::default(),
-    }
+    serde_json::from_value::<transit_runs::WorkRules>(serde_json::json!({
+        "kind": "work_rules",
+        "schema_version": transit_runs::SCHEMA_VERSION,
+        "name": "Fixture rules",
+        "measures": {"platform": ["revenue", "deadhead", "layover"], "worked": ["report", "revenue", "deadhead", "layover", "clear"]},
+        "allowances": [{"event": "pull_out", "secs": 900, "activity": "report"}, {"event": "pull_in", "secs": 900, "activity": "clear"}],
+        "limits": [{"quantity": "measure", "measure": "platform", "max": 28_800}],
+        "premiums": [{"on": "measure", "measure": "worked", "after_secs": 28_800, "pays": "worked", "pct": 150}]
+    }))
+    .expect("the fixture work rules read")
 }
 
 /// Five minutes or a tenth of the run after every trip, route 10's own rule,
@@ -324,6 +323,9 @@ pub fn fixture_scheduling_constraints() -> transit_runs::SchedulingConstraints {
         extra: Default::default(),
     }
 }
+
+mod work_rules;
+pub use work_rules::*;
 
 /// Before every fixture pick, so each publishes as a future one.
 pub fn fixture_today() -> transit_date::Date {

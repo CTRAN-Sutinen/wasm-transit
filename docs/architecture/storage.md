@@ -387,7 +387,7 @@ is what must stay true. Change it only with the user, after reading
   record (its order is not in its content); an engine of its own for
   each log (two engines to keep, and the same rules written twice).
 
-### The derived documents are stored when they are made (`server/derived.go`)
+### The derived documents are stored when they are made (`server/imports/derived.go`)
 - **Holds:** the network, the boundary, the streets, and the walk table
   are blobs in the record, each the head of its tag's pointer, with the
   module that made it in its envelope. A `derivation` record names the

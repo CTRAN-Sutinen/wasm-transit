@@ -158,7 +158,7 @@ Each entry covers one choice that the design depends on. Its heading
 names the code the choice governs. **Holds** is what must stay true.
 Change it only with the user, and only after you read **Because**.
 
-### Every build is kept in the sync store (`build` pointer, `POST /builds`, `builds.go`)
+### Every build is kept in the sync store (`build` pointer, `POST /builds`, `server/builds`)
 - **Holds:** module, assembly, and app-shell bytes are blobs in the sync store. A `build` document names them, and the log keeps it. A rollback is a pointer move to a build the log holds. GC keeps a logged build's files.
 - **Because:** rolling code back and expand-then-contract need every deployed build's exact bytes, and `just caps` rewrites `web/public/caps/` each time. One store means one backup and one verification for data and code alike.
 - **Rejected:** a separate artifact store beside the registry (a second thing to back up and verify); release tarballs kept wherever the agency keeps releases.

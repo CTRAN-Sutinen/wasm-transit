@@ -55,7 +55,7 @@ feed gives it (D-213). The interface has two directions.
    oracle's label follows the same rule.
 
 **The work order system** is reached the other way. The
-server calls it through an adapter (`server/workorders.go`), and nothing
+server calls it through an adapter (`server/workorders`), and nothing
 else here couples to the system. A stop request tracks the work order it
 opens. The adapter opens one for a submitted request and reads its
 status back. It writes its answer onto the request through cap-requests
@@ -101,7 +101,7 @@ the user, after you read **Because**.
   positions, with an operator half from the runs layer; cover,
   hold, and swap as edit kinds.
 
-### The work order system is behind an adapter, and optional (`server/workorders.go`, `-work-orders`)
+### The work order system is behind an adapter, and optional (`server/workorders`, `-work-orders`)
 - **Holds:** the server reaches the agency's work order system only
   through an adapter. With no adapter configured, nothing is offered,
   and a request's work order is entered by hand. What the system answers

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc def38a4a5c61b61493da522024acf529c4f00f2edbdf12a1756a132bd6664c80 # shrinks to w = WorkRules { kind: WorkRulesKind, schema_version: Version(3), name: "", source: None, measures: {"m0": [Gap], "m1": [Gap], "m2": [Layover]}, rules: RuleSet { allowances: [], gaps: [], limits: [], breaks: [], premiums: [], guarantees: [], travel: [] }, combine: Highest, classes: [RunClass { id: "c0", conditions: [], replaces: [], rules: RuleSet { allowances: [], gaps: [], limits: [], breaks: [], premiums: [Premium { on: Class, pays: "m0", pct: 0, measure: None, after_secs: None, from_secs: None, to_secs: None, days: [], class: Some("c0"), cites: None, extra: Extra({}) }], guarantees: [], travel: [] }, cites: None, extra: Extra({}) }], mix: [], objective: None, extra: Extra({}) }

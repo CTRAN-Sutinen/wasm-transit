@@ -156,16 +156,16 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
 
 /// An untagged copy is v1, which held the scheduling constraints too.
 #[test]
-fn work_rules_read_v2_and_refuse_v1_naming_the_migration() {
+fn work_rules_read_v3_and_refuse_older_copies_naming_the_migration() {
     use transit_runs::WorkRules;
-    for v1 in [&br#"{"kind":"work_rules","schema_version":1}"#[..], br#"{"recovery":[{"min_secs":300}]}"#] {
-        let err = cap_abi::parse_versioned::<WorkRules>(v1).unwrap_err();
-        assert!(err.message.contains("work_rules v1") && err.message.contains("migrate"), "{err}");
+    for (old, v) in [(&br#"{"kind":"work_rules","schema_version":1}"#[..], 1), (br#"{"recovery":[{"min_secs":300}]}"#, 1), (br#"{"schema_version":2,"runs":{}}"#, 2)] {
+        let err = cap_abi::parse_versioned::<WorkRules>(old).unwrap_err();
+        assert!(err.message.contains(&format!("work_rules v{v}")) && err.message.contains("migrate"), "{err}");
     }
-    let read: WorkRules = cap_abi::parse_versioned(br#"{"kind":"work_rules","schema_version":2}"#).unwrap();
-    assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
-    let err = cap_abi::parse_versioned::<WorkRules>(br#"{"kind":"work_rules","schema_version":3}"#).unwrap_err();
-    assert!(err.message.contains("work_rules v3") && err.message.contains("reads v2"), "{err}");
+    let read: WorkRules = cap_abi::parse_versioned(br#"{"kind":"work_rules","schema_version":3}"#).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 3);
+    let err = cap_abi::parse_versioned::<WorkRules>(br#"{"kind":"work_rules","schema_version":4}"#).unwrap_err();
+    assert!(err.message.contains("work_rules v4") && err.message.contains("reads v3"), "{err}");
 }
 
 /// Every v1 document is a v2 document, so an untagged copy reads.

@@ -1,6 +1,6 @@
 [package]
 name = "transit-runs"
-description = "The runs layer as a shared library, beside the network (D-16): the work rules (generic, every rule optional: the run rules and pay), the scheduling constraints (recovery, interlining per route pair, relief points), the recovery a wait requires and the slack above it, and the suggested blocking a planner adopts or edits. Pure; the runcut and author capabilities dispatch through it."
+description = "The runs layer as a shared library, beside the network (D-16): the work rules (any labor agreement as data: measures, limits, breaks, premiums, guarantees, travel, run classes, and the mix; every rule optional), the scheduling constraints (recovery, interlining per route pair, relief points), the recovery a wait requires and the slack above it, and the suggested blocking a planner adopts or edits. Pure; the runcut and author capabilities dispatch through it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,6 +12,7 @@ serde_json = { workspace = true }
 ts-rs = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 transit-network = { path = "../transit-network", default-features = false }
+transit-date = { path = "../transit-date", default-features = false }
 transit-dispatch = { path = "../transit-dispatch", default-features = false }
 
 [features]
@@ -22,6 +23,4 @@ default = ["bindings"]
 bindings = ["dep:ts-rs", "dep:schemars", "transit-version/bindings", "transit-network/bindings", "transit-dispatch/bindings", "transit-date/bindings"]
 
 [dev-dependencies]
-serde_json = { workspace = true }
-transit-date = { path = "../transit-date", default-features = false }
 proptest = "1"

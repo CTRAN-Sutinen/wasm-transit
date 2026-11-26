@@ -5,12 +5,17 @@
 //! for the scheduling constraints, which are the agency's choices and
 //! not an agreement's. The step drops them. A planner who had them loads
 //! them again as scheduling constraints.
+//!
+//! v2 to v3: the rule types (measures, allowances, gap bands, limits,
+//! break rules, premiums, guarantees, travel rules, run classes, and the
+//! mix) replaced `runs` and `pay`. Those fields named no measure, so the
+//! step cannot say what they limited or paid, and drops them.
 
 use serde_json::Value;
 
 pub const KIND: &str = "work_rules";
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// A document that names no version is v1.
 pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
@@ -44,6 +49,14 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<Value, String> {
                 }
             }
             root.insert("schema_version".into(), 2.into());
+            Ok(doc)
+        }
+        2 => {
+            let mut doc = doc;
+            let root = doc.as_object_mut().ok_or("a work rules document is a JSON object")?;
+            root.remove("runs");
+            root.remove("pay");
+            root.insert("schema_version".into(), 3.into());
             Ok(doc)
         }
         n => Err(format!("no work rules step from v{n} (this build reads up to v{SCHEMA_VERSION})")),

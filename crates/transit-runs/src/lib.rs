@@ -6,6 +6,19 @@
 //! and an agency's values are data, because nothing may couple to one labor
 //! agreement.
 //!
+//! The work rules hold any operator agreement, and any reading of one, as
+//! data. Agreements change at each negotiation, and a memorandum or a
+//! grievance changes how a clause is read. Each is a new document, and the
+//! code changes only when an agreement needs a kind of rule that
+//! [`WorkRules`] cannot express. The set of rule types is fixed, and a new
+//! type is a new schema version. A document names its own measures as sets
+//! of activities, because agreements mean different things by "drive",
+//! "work", and "platform". The pay that the rules give is a planning
+//! measure for comparing cuts, in time and not dollars. It is not payroll,
+//! so an unknown field is kept and ignored, as in every kind. C-TRAN's
+//! 2022–2025 agreement is a fixture (`crates/fixtures`, `work_rules.rs`),
+//! never a default.
+//!
 //! Without a recovery rule, an imported layover is the whole observed gap,
 //! and every delay would read infeasible (D-110). Each document's `checked`
 //! normalizes it at the kernel's load, so two orderings are one identity.
@@ -25,5 +38,9 @@ pub mod version;
 
 pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
 pub use constraints::{required, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind, CONSTRAINTS_VERSION};
-pub use rules::{MealBreak, Pay, RunRules, WorkRules, WorkRulesKind, SCHEMA_VERSION};
+pub use rules::{
+    Activity, Allowance, BreakFrom, BreakRule, Combine, Day, Event, GapBand, Guarantee, Limit, MixRule, Objective, Per, Premium, Quantity,
+    RuleKind, RuleSet, RunClass, ShareOf, Source, Strength, Timing, TravelAt, TravelRule, TriggerOn, Window, WorkRules, WorkRulesKind,
+    SCHEMA_VERSION,
+};
 pub use suggest::{suggest_blocks, SuggestedBlock, SuggestedTrip, Suggestion, Unblocked, UnblockedReason, Wait};

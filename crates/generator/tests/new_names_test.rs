@@ -43,8 +43,12 @@ fn a_new_kind_and_capability_pass_with_no_other_file_changed() {
         "server/kinds/kinds.go",
         "server/kindroutes/kindroutes.go",
         "server/plans/plans.go",
-        "server/kinds.go",
+        "server/wire.go",
         "server/main.go",
+        "server/pointers/pointers.go",
+        "server/edits/edits.go",
+        "server/workorders/workorders.go",
+        "server/imports/feedevents.go",
         "web/src/engine.ts",
         "tools/caps-run.mjs",
     ] {

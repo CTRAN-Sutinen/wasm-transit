@@ -15,16 +15,29 @@ or receive a kind, so a new kind's capability needs no line in the
 list. At boot the server refuses a module that does not link them.
 The manifest's `wasm_hash` names the module.
 
-**The code, by concept.** `package main` holds the wiring, the flags,
-the mux (`routes()` in `main.go`), the host's clock (`clock.go`), and the
-routes of its own concepts (the network, the streets, the pointers, the
-builds, the attachments, sign-in). Each other concept is a package:
+**The code, by concept.** `package main` holds only the wiring: the
+flags and config (`flags.go`, `config.go`), the boot and the mux (`main.go`,
+`routes()`), the host's clock (`clock.go`), the health probes
+(`health.go`), the module's instances (`wasm.go`), and what the manifest
+pins (`buildManifest`). `wire.go` builds each package from the server's
+fields. Each concept is a package:
 
 | Package | Holds |
 |---|---|
 | `server/logs` | the logs: the fold (`fold.go`), one write through a receive op (`receive.go`), each kind's document at the head (`read.go`), `/logs/` (`routes.go`), and the first entry from the old pointers (`seed.go`) |
+| `server/edits` | the edit document's protocol, `/edits`, over the disruptions log or the dev store |
 | `server/plans` | publishing: `POST /plans`, the freeze, the adoption, the retire, `GET /feed`, and the picks brought forward at boot |
 | `server/kindroutes` | each kind's `post` route, which its log receives |
+| `server/pointers` | `/pointers/` and `/blobs/`, and a generic pointer write's check |
+| `server/imports` | the documents derived from the inputs (the feed's network and boundary, the streets and walk table), their derivation records, their routes, and the feed's changes to the stops |
+| `server/source` | where one input is read: a URL, the bucket, or a file |
+| `server/manifest` | the manifest's document and `/manifest` |
+| `server/builds` | each release as a build, `POST /builds`, and a build file's caching |
+| `server/static` | the pages, their headers and compression, the schema links, and the static bundle (`-export`) |
+| `server/authz` | sign-in: the token's check, the policy's gate on each route, `/permissions` |
+| `server/attachments` | `/attachments` |
+| `server/workorders` | the work order system's adapter and route |
+| `server/proxy` | the geocoder proxy and the dev `/rt` relay |
 | `server/kinds` | the kind table, read |
 | `server/store` | the bucket: blobs, pointers, the logs' entries and checkpoints |
 | `server/wasmhost` | the module ABI, and the long-lived instance (`Held`) |
@@ -291,7 +304,7 @@ body or an answer only where the behavior needs it.
     `immutable`. Everything else is `no-cache`, so an open page's update
     check meets a new build ([updates-offline.md](updates-offline.md)).
   - The server gzips text and wasm types for a client that sends
-    `Accept-Encoding: gzip` (`gzipStatic` in `headers.go`). It never
+    `Accept-Encoding: gzip` (`static.Gzip`). It never
     compresses a Range request, a HEAD request, or any other type: the
     basemap archive and the `.gz` documents go out as stored. A
     compressed answer has a weak ETag and `Vary: Accept-Encoding`.
@@ -378,7 +391,7 @@ body or an answer only where the behavior needs it.
   path. Every blob's bytes hash to its name. A static host serves this
   same layout ([static-deployment.md](static-deployment.md)), so one
   page code reads either deployment. A store blob of the same hash wins,
-  with its envelope in headers (`publishedBlob` in `export.go`). A blob
+  with its envelope in headers (`imports.Published.Blob`). A blob
   whose kind's read class is `restricted` (the policy) is never served:
   404.
 - **Authentication and authorization.** Any `-oidc-*` flag
@@ -555,7 +568,7 @@ body or an answer only where the behavior needs it.
     cap-stops `import_events` runs on the feed's first service date, and
     each event names the feed's hash. One entry of the stops log records
     them, and the writer is `import:feed`. The server records nothing
-    when the feed differs in nothing (`recordFeed`, `stops.go`).
+    when the feed differs in nothing (`imports.RecordFeed`).
 - `POST /attachments` and `GET /attachments/<hash>` (`-attachments`, a
   bucket of its own: any store URL) carry the photos and drawings that
   surveys and requests hold. The server creates each object
@@ -563,7 +576,7 @@ body or an answer only where the behavior needs it.
   object's metadata.
   - A POST needs a write on the policy's `attachments` pointer.
   - A GET needs any signed-in person whenever sign-in is on
-    (`protectSignedIn`). It answers with `Cache-Control: private`.
+    (`authz.Gate.ProtectSignedIn`). It answers with `Cache-Control: private`.
   - The manifest's `services.attachments` offers the route only with a
     bucket.
   - `store gc` never touches this bucket.
@@ -718,7 +731,7 @@ Each entry is one important choice, headed by the code it governs.
 **Holds** is what must stay true. Change it only with the user, after
 reading **Because**.
 
-### No domain logic in Go (`server/*.go`)
+### No domain logic in Go (`server/`)
 - **Holds:** every domain answer comes from a capability module. The Go host does I/O, routing, and proxies only. Logic that the server needs becomes a capability.
 - **Because:** the server and a page that have the same documents must answer the same bytes ([web.md](web.md), "Parity"). Go logic is a second implementation to keep in step.
 
@@ -726,12 +739,12 @@ reading **Because**.
 - **Holds:** each write the server takes is one op of its log's receive op. A pick's checks (the network's publish check, the stops it reads) run inside cap-plans' `pick`, which links their libraries. Go registers the documents and stores what the op made, and sequences no checks.
 - **Because:** checks sequenced in Go are host logic, and the read-seq check (D-233) replays a write's check as one op. The cost is a larger single cap-plans module: it links transit-network and transit-stops.
 
-### The server imports the feed; pages register the network (`network.go`, `feedSource`)
+### The server imports the feed; pages register the network (`server/imports`, `FeedSource`)
 - **Holds:** with a server, pages never parse GTFS. They register the imported network.
 - **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module. Registering the result costs ~0.45 s and ~9–12 MB.
 - **Exception:** a serverless deployment may have each page import the agency's GTFS URL ([static-deployment.md](static-deployment.md)).
 
-### One module, fresh per import (`wasm.go`, `importFeed`, `streetsSource.Load`, `exportedPick`)
+### One module, fresh per import (`wasm.go`, `imports.ImportFeed`, `StreetsSource.Load`, `plans` `exportedPick`)
 - **Holds:** the server links one assembly, as each UI does. The long-lived instance holds the logs' heads and refreshes past a memory ceiling. An import, a publish, and a pointer write's check get a fresh instance, closed after. authz keeps its own instance. A boot whose documents the store holds imports nothing.
 - **Because:** one host shape for every host ([hosts.md](hosts.md)), and each document registered once in the server too. Wasm memory never shrinks, so closing an instance is the memory hygiene, and the refresh does the same for the instance that lives on. A trap in another capability must not take the fail-closed authz check with it.
 - **Rejected:** a module for each capability, with one flag each: eleven flags, a flow that needs two capabilities composed in Go across modules, and each long-lived module holding its own copy of a document.
@@ -744,13 +757,13 @@ reading **Because**.
 - **Holds:** the server serves a gzipped document as `application/gzip` bytes, never `Content-Encoding: gzip`. `/blobs/<hash>` answers gzip on `Accept: application/gzip`. `/blobs/<hash>.gz` answers it by path. Both stay.
 - **Because:** the page hands compressed bytes to the module, which decodes as it parses (kernel op 256). The 9.6 MB network text therefore never exists whole on the page. The `.gz` path exists because a static host cannot negotiate on a header. A host that decompresses anyway still works, because the modules read either form.
 
-### The server compresses its static files and sends the rider pages' policies (`headers.go`, `gzipStatic`)
+### The server compresses its static files and sends the rider pages' policies (`server/static`, `static.Gzip`)
 - **Holds:** the server compresses text and wasm itself, and it sends a strict policy on the two rider pages. Both come from the same rules as the export's `_headers`.
 - **Because:** a deployment is right with no load balancer rule. A missing rule would cost a rider three times the bytes with no error. The policy needs the deployment's own origins, and the server and the export know them. The operator would let them drift.
 - **Rejected:** a load balancer that compresses. A policy on every page: only the rider pages have been walked under one.
 - **Provisional:** D-182 and D-183.
 
-### Inputs from a URL or the bucket (`-feed`, `-streets`, `-policy`, `source.go`)
+### Inputs from a URL or the bucket (`-feed`, `-streets`, `-policy`, `server/source`)
 - **Holds:** each input is a URL, `bucket:<key>`, or a dev path. With `-store`, the server commits each read (`source.feed`, `source.streets`).
 - **Because:** a process must be disposable. Its replacement, given the bucket and the same flags, serves the same manifest. Local files tie a deployment to one machine.
 - **Rejected:** the bucket only, with a separate import step.
@@ -760,7 +773,7 @@ reading **Because**.
 - **Because:** blobs are immutable, so only a head can be stale. Reads peak during disruptions, when outages are likeliest. If the server acknowledged a write that the bucket has not taken, the write would be lost with the process. The browser keeps its documents and resends.
 - **Rejected:** failing reads past an age. Failing every request.
 
-### Public reads, authenticated writes (`authz.go`, `protectWrite`, `-oidc-*`, `-policy`)
+### Public reads, authenticated writes (`server/authz`, `Gate.ProtectWrite`, `-oidc-*`, `-policy`)
 - **Holds:**
   - GETs are public.
   - Writes need a role that the policy grants on that pointer.
@@ -769,7 +782,7 @@ reading **Because**.
   - The policy is a store document, seeded from a file at first boot and changed by audited commits.
 - **Because:** reads publish what riders need. Writes are the shared state. Symmetric or `none` algorithms would let anyone forge tokens. The claim's location is the IdP's. A file re-read per request would leave policy changes unaudited. A store-only policy needs a break-glass bootstrap.
 
-### Attachments live apart and are read only signed in (`attachments.go`, `-attachments`)
+### Attachments live apart and are read only signed in (`server/attachments`, `-attachments`)
 - **Holds:** photos and drawings sit in a bucket of their own, and each object is named by its content hash. A record names a file only by that hash, never a URL. The server hands out the bytes to a signed-in person whenever sign-in is on, unlike every other read. Only `POST /attachments` adds a file, behind the write check on `attachments`. `/attachments/<hash>` is behind sign-in alone, so it only reads (405 for any other method).
 - **Because:** files are large, and their access and keeping differ from the documents'. A URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider). A hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people. The deployment is internal-facing, and its attachments are staff's to see.
 - **Rejected:** URLs in the records. Attachments among the store's blobs. Public reads.
@@ -792,7 +805,7 @@ reading **Because**.
 - **Holds:** `-config` sets flags from TOML files. The command line beats a file, and a later file beats an earlier file. An unknown key refuses the boot. The flags themselves stay, every one.
 - **Because:** the server grew past thirty flags. A long command line (or an environment variable per flag, passed through each recipe) is hard to read, review, and keep. A file keeps a deployment's settings in one reviewed place and the developer's defaults in the tree. Keys that are the flags' own names mean one vocabulary (`-help` documents both). The flags stay, so the image, the e2e servers, and a one-off override need no file. TOML is used because people edit it and it takes comments. An unknown key is refused because a misspelt setting that the server ignores silently is a deployment that runs on a default nobody chose.
 
-### `/rt` is a dev relay, off by default (`handleProxy`, `-rt-proxy`)
+### `/rt` is a dev relay, off by default (`proxy.Relay`, `-rt-proxy`)
 - **Holds:** the route exists only with `-rt-proxy`, which binds localhost. Deployments fetch feeds directly.
 - **Because:** it fetches any URL for any caller. Beyond localhost it is an open relay into the server's network. Feeds are fixed at their source (HTTPS with CORS).
 
