@@ -45,7 +45,7 @@ Before you report, run the `doc-sweep` skill
 | The three architecture rules | `crates/AGENTS.md` (arch gates in `just test` enforce them) |
 | Architecture, one file for each topic | `docs/architecture/` (its README indexes them) |
 | A library | its `//!` crate comment |
-| A capability | `crates/cap-<id>/OPS.md` (`node tools/caps-run.mjs tools <id>` prints it), and its `//!` crate comment |
+| A capability | `crates/cap-<id>/OPS.md` (`node tools/caps-run.mjs tools <id>` lists its ops, and `tools <id> <op>` prints one), and its `//!` crate comment |
 | cap-abi, the modules, the assemblies | `docs/architecture/bus.md`, `docs/architecture/registry.md` |
 | The document kinds and formats at rest | `crates/cap-abi/src/kinds.rs`, `docs/FORMATS.md` |
 | The server and the capabilities it hosts | `docs/architecture/server.md` (`node tools/caps-run.mjs kind <tag>` prints a kind's path through it) |

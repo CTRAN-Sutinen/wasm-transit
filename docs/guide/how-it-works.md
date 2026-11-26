@@ -261,11 +261,17 @@ List the capabilities:
 node tools/caps-run.mjs list
 ```
 
-See what the board capability can answer, with an example for each
-question:
+See what the board capability can answer. Each line is one question
+and the values it needs:
 
 ```
 node tools/caps-run.mjs tools board
+```
+
+See one question in full, with an example:
+
+```
+node tools/caps-run.mjs tools board stop_board
 ```
 
 Ask for the departures at a station in the small test network. The

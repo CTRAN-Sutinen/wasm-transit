@@ -1,6 +1,7 @@
 // Runs web/src/uis/host-contract.json (docs/architecture/hosts.md, "The
 // rules every host keeps"). The server runs the same scenarios in
-// server/hostcontract_test.go, and both hosts must give the same state
+// server/hostcontract_test.go and caps-run in tools/upstream.test.mjs,
+// and every host must give the same state
 // for each step.
 
 import { test } from "node:test";

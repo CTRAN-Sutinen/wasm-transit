@@ -112,27 +112,72 @@ runner and the pages give the same date at the same instant.
   zone.
 - With no zone known, `$TODAY` and `$NOW_SECS` fail and name `--tz`.
 
-`--brief` prints each whole document as its kind, version, and size:
-`{"omitted": {"kind": "network", "schema_version": 2, "bytes": …}}`.
-A document is any object that carries `kind` and `schema_version`
-("Every document says what it is", in [bus.md](bus.md)). The session
-keeps the whole document, so references still reach it.
+**The output is shaped for an agent's context.** caps-run is the host
+for agents, so an answer prints small unless the agent asks for more.
+The session keeps every answer whole, so references still reach it.
 
-**Discovery.** `caps-run tools <capability>` prints every op with its
-full description and worked example. The examples carry whole fixture
-documents, so the analysis catalog is about 100 KB.
+- A document prints as its kind, version, and size, with the reference
+  that prints it:
+  `{"omitted": {"kind": "network", "schema_version": 2, "bytes": …}, "print": "$net.network"}`.
+  A document is any object that carries `kind` and `schema_version`
+  ("Every document says what it is", in [bus.md](bus.md)). The C-TRAN
+  import prints 718 bytes, where its network is 9.6 MB.
+- An array of more than 10 items prints its first 3 and
+  `{"more": N, "print": REF}`. A map of more than 20 keys prints its
+  first 5 and `"…": {"more": N, "print": REF}`. A string of more than
+  2000 characters prints its first 200 and the reference.
+- `--print REF` (repeatable) prints only the values that the
+  references name, one line each, after every step. The named value
+  prints whole at its top level, and shaped below it. A step that fails
+  still prints its line. `--print '$net.network'` browses the C-TRAN
+  network in 17 KB.
+- `--full` prints every answer whole.
+- A reference's path may hold any key without a `.` (a route alignment
+  named `105 NB AM`).
 
-- `caps-run tools <capability> --brief` prints each op's first sentence
-  and its example request, with each document omitted: about 13 KB for
-  analysis, and 3 to 8 KB for the others.
+**Discovery.** Each discovery command prints a line for each item and
+names the next command. `--full` prints the registry's JSON.
+
+- `caps-run list` prints a line for each capability (its op count and
+  purpose) and the kernel ops.
+- `caps-run tools <capability>` prints a line for each op: its name,
+  the fields of its example request, and its first sentence. Each is 3
+  KB or less.
 - `caps-run tools <capability> <op>` prints one op in full: its
-  description and its example request and answer.
-- `caps-run kind <tag>` prints one kind's path through the code, from
-  the kind table: each route and its Go handler, its log, its load,
-  check, and receive ops with the library functions behind them, its
-  read rights, and its store layout (`tools/kind-trace.mjs`). With no
-  tag it prints every kind. `just test` fails when a printed handler or
-  op does not exist.
+  description and its example request and answer, each document
+  omitted. An op that takes a tagged vocabulary lists its kinds by
+  name, and `caps-run tools <capability> <op> <kind>` prints one kind's
+  example.
+- `caps-run kind` prints a line for each kind. `caps-run kind <tag>`
+  prints one kind's path through the code, from the kind table: each
+  route and its Go handler, its log, its load, check, and receive ops
+  with the library functions behind them, its read rights, and its
+  store layout (`tools/kind-trace.mjs`). `just test` fails when a
+  printed handler or op does not exist.
+
+**The upstream.** `--upstream URL|DIR` names the server or an export
+folder. caps-run reads them as a page does, on the same paths
+(`tools/upstream.mjs`; [hosts.md](hosts.md)).
+
+- The runner reads `manifest` once for each command, and
+  `$manifest.<field>` resolves against it. The manifest's `timezone`
+  is the clock's zone when `--tz` and the session name none.
+- When an op names a document by a hash that the session does not
+  hold, the runner reads `blobs/<hash>.gz`, keeps it, and registers it.
+  The line lists it in `registered`, as `<kind> <hash> from the
+  upstream`. So
+  `--upstream http://127.0.0.1:8080 --op '{"op":"stop_board","network_hash":"$manifest.network_hash",…}'`
+  asks about the deployment's network, and no document passes through
+  the command.
+- The working copy is `.upstreams/<upstream>/` in the session store:
+  the last manifest with the time the upstream answered it, and each
+  blob by hash.
+- A manifest that the upstream does not answer within 10 s comes from
+  the working copy. Each line then carries
+  `"stale": {"as_of_ms": …, "why": …}`, where `as_of_ms` is the time
+  of the upstream's last answer. A server answer that carries
+  `X-Store-Stale` passes the server's `X-Store-As-Of` down. With no
+  copy, the command fails.
 
 gen-manifest (`just caps`) generates the registry records and the
 browser manifest. One source gives the contracts, and two surfaces read

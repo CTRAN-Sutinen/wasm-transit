@@ -5,7 +5,8 @@
 // the session and this script. sessions.test.mjs is the broken fixture.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,11 +32,15 @@ const LIVE_CHAIN = [
 
 export class SessionFailed extends Error {}
 
-// Runs the runner. `fails: true` expects a non-zero exit.
-export function caps(args, { env = {}, fails = false, root = ROOT } = {}) {
+// Runs the runner. A session's answers print whole, because the checks
+// read them; `shaped: true` keeps the agent's default. `fails: true`
+// expects a non-zero exit.
+const COMMANDS = new Set(["list", "tools", "kind", "session", "replay"]);
+export function caps(args, { env = {}, fails = false, root = ROOT, shaped = false } = {}) {
   let stdout = "", stderr = "", code = 0;
+  const full = shaped || COMMANDS.has(args[0]) ? [] : ["--full"];
   try {
-    stdout = execFileSync("node", ["tools/caps-run.mjs", ...args], { cwd: root, env: { ...process.env, ...env }, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "pipe"] });
+    stdout = execFileSync("node", ["tools/caps-run.mjs", ...args, ...full], { cwd: root, env: { ...process.env, ...env }, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) {
     ({ stdout = "", stderr = "", status: code } = e);
   }
@@ -106,9 +111,13 @@ export const SESSIONS = [
   ["network: load_feed into import reports the dropped single-stop trip", () => {
     has(caps(["network", "--load", FEED, "--op", '{"op":"import","feed_hash":"$load.feed_hash"}']).stdout, '"kind":"dropped_trips"');
   }],
-  ["`tools author` carries a worked example for each edit kind (QAF-52)", () => {
-    const apply = JSON.parse(caps(["tools", "author"]).stdout).tools.apply;
-    must(apply.kinds?.some((k) => k.kind === "add_trip" && k.example.edit === "add_trip"), "apply has no add_trip example");
+  ["`tools author apply` names each edit kind, and each kind prints its worked example (QAF-52)", () => {
+    const apply = JSON.parse(caps(["tools", "author", "apply"]).stdout);
+    must(apply.kinds?.includes("add_trip") && apply.next === "caps-run tools author apply <kind>", "apply does not list add_trip");
+    const one = JSON.parse(caps(["tools", "author", "apply", "add_trip"]).stdout);
+    must(one.kind === "add_trip" && one.example.edit === "add_trip", "add_trip has no example");
+    const full = JSON.parse(caps(["tools", "author", "--full"]).stdout).tools.apply;
+    must(full.kinds.some((k) => k.kind === "add_trip" && k.example.edit === "add_trip"), "--full has no add_trip example");
   }],
   ["gtfs: the feed's identity", () => {
     has(caps(["gtfs", "--load", FEED, "--op", '{"op":"feed_info","feed_hash":"$load.feed_hash"}']).stdout, '"feed_version":"2026.10.1"');
@@ -135,15 +144,42 @@ export const SESSIONS = [
     const { stdout, stderr } = caps(["analysis", "--op", '{"op":"network_stats","network_hash":"sha256:00","date":"$TODAY"}'], { fails: true });
     has(stdout + stderr, "--tz");
   }],
-  ["discovery stays cheap: `tools --brief`, and one op in full", () => {
-    const text = caps(["tools", "analysis", "--brief"]).stdout;
-    const j = JSON.parse(text);
-    const ops = Object.values(j.tools);
-    must(text.length <= 30000 && ops.length >= 10, "the brief catalog is too long or too short");
-    must(ops.every((o) => typeof o.summary === "string" && o.summary.length <= 400), "a summary is missing or too long");
-    must(j.tools.network_stats.example.request.network_hash !== undefined, "network_stats has no example request");
+  ["discovery stays cheap: a line for each capability, op, and kind; one op in full", () => {
+    const list = caps(["list"]).stdout;
+    const ids = JSON.parse(caps(["list", "--full"]).stdout).capabilities.map((c) => c.id);
+    must(list.length <= 4000 && ids.every((id) => list.includes(`\n${id} `)), "`list` is too long or misses a capability");
+    for (const id of ids) {
+      const text = caps(["tools", id]).stdout;
+      const ops = JSON.parse(caps(["tools", id, "--full"]).stdout).tools;
+      must(text.length <= 5000, `\`tools ${id}\` prints ${text.length} bytes`);
+      must(Object.keys(ops).every((op) => text.includes(`\n  ${op}(`)), `\`tools ${id}\` misses an op`);
+    }
+    must(caps(["tools", "analysis"]).stdout.includes("network_stats(date, "), "network_stats does not name its request fields");
+    const kinds = caps(["kind"]).stdout;
+    must(kinds.length <= 4000 && /^network +network_document +write: route/m.test(kinds), "`kind` is too long or misses network");
     const one = JSON.parse(caps(["tools", "analysis", "stop_gaps"]).stdout);
     must(one.op === "stop_gaps" && one.description.length > 100 && one.example?.request?.op === "stop_gaps", "stop_gaps in full");
+  }],
+  ["an answer is shaped for an agent: a document omitted, a long array cut, each named by the reference that prints it", () => {
+    const xs = JSON.stringify({ xs: Array.from({ length: 20 }, (_, i) => i), long: "x".repeat(3000) });
+    const r = caps(["network", "--load", FEED, "--as", "net", "--op", '{"op":"import","feed_hash":"$load.feed_hash"}',
+      "--as", "list", "--ask", `data:application/json,${xs}`], { shaped: true });
+    const net = r.named("net");
+    const line = r.stdout.trim().split("\n")[r.lines.findIndex((x) => x.as === "net")];
+    must(line.length <= 1000 && net.network.omitted?.kind === "network" && net.network.omitted.bytes > 1000 && net.network.print === "$net.network", "the network is not omitted with its reference");
+    must(net.boundary.omitted?.kind === "boundary", "the boundary is not omitted");
+    const list = r.named("list");
+    must(list.xs.length === 4 && list.xs[3].more === 17 && list.xs[3].print === "$list.xs", "the array is not cut to three and a marker");
+    must(list.long.length < 300 && list.long.includes("--print $list.long"), "the long string is not cut");
+  }],
+  ["--print prints only the named values, whole at the top and shaped below; --full prints them whole", () => {
+    const steps = ["network", "--load", FEED, "--as", "net", "--op", '{"op":"import","feed_hash":"$load.feed_hash"}'];
+    const r = caps([...steps, "--print", "$net.network_hash", "--print", "$net.network"], { shaped: true });
+    must(r.lines.length === 2 && /^sha256:/.test(r.lines[0]["$net.network_hash"]), "the hash is not the first line");
+    const net = r.lines[1]["$net.network"];
+    must(net.kind === "network" && net.routes["10"] !== undefined, "the document is not printed at the top");
+    const whole = caps([...steps, "--print", "$net.network"]).lines[0]["$net.network"];
+    must(JSON.stringify(whole).length >= JSON.stringify(net).length && whole.kind === "network", "--full does not print it whole");
   }],
   ["calendar: WK's dates read backwards across the removed 10-29", () => {
     has(caps(["calendar", "--op", LOAD, "--op", '{"op":"service_dates","network_hash":"$load_network.network_hash","service_type":"WK","from":"2026-10-23","to":"2026-11-03"}']).stdout,
@@ -199,16 +235,36 @@ export const SESSIONS = [
       rmSync(store, { recursive: true, force: true });
     }
   }],
-  ["--brief prints a document as its kind, version, and size, and the session keeps it whole", () => {
-    const r = caps(["network", "--brief", "--load", FEED,
+  ["an upstream: an op by $manifest reads the blob into the working copy; with no manifest, the copy answers with its age; with no copy, the read fails", () => {
+    const up = mkdtempSync(join(tmpdir(), "caps-upstream-"));
+    const store = mkdtempSync(join(tmpdir(), "caps-sessions-"));
+    const env = { CAPS_RUN_SESSIONS: store };
+    try {
+      const network = JSON.parse(readFileSync(join(ROOT, LOAD.slice(1)), "utf8")).network;
+      const hash = caps(["board", "--op", LOAD, "--print", "$load_network.network_hash"]).lines[0]["$load_network.network_hash"];
+      mkdirSync(join(up, "blobs"));
+      writeFileSync(join(up, "blobs", `${hash}.gz`), gzipSync(JSON.stringify(network)));
+      writeFileSync(join(up, "manifest"), JSON.stringify({ network_hash: hash, feed_hash: "", wasm_hash: "", generated_at: 1, timezone: "America/Montreal" }));
+      const BOARD = '{"op":"stop_board","network_hash":"$manifest.network_hash","stop_id":"A","date":"$TODAY","from_secs":0,"limit":1}';
+      const first = caps(["board", "--upstream", up, "--op", BOARD], { env }).last;
+      must(first.ok?.op === "stop_board" && first.registered?.[0] === `network ${hash} from the upstream` && !first.stale, "the board did not read the upstream's network");
+      rmSync(join(up, "manifest"));
+      rmSync(join(up, "blobs"), { recursive: true });
+      const second = caps(["board", "--upstream", up, "--op", BOARD], { env }).last;
+      must(second.ok?.op === "stop_board" && second.stale?.as_of_ms > 0, "the working copy did not answer with its age");
+      const none = caps(["board", "--upstream", up, "--op", BOARD], { env: { CAPS_RUN_SESSIONS: up }, fails: true });
+      has(none.stdout + none.stderr, "the working copy holds none");
+    } finally {
+      rmSync(up, { recursive: true, force: true });
+      rmSync(store, { recursive: true, force: true });
+    }
+  }],
+  ["an omitted document stays whole in the session, and reaches the next op", () => {
+    const r = caps(["network", "--load", FEED,
       "--as", "net", "--op", '{"op":"import","feed_hash":"$load.feed_hash"}',
-      "--cap", "board", "--as", "bnet", "--op", '{"op":"load_network","network":"$net.network"}']);
-    const line = r.stdout.trim().split("\n")[r.lines.findIndex((x) => x.as === "net")];
-    const net = r.named("net");
-    const o = net.network.omitted;
-    must(line.length <= 1000 && o?.kind === "network" && o.schema_version === 2 && o.bytes > 1000, "the network is not omitted by kind, version, and size");
-    must(net.boundary.omitted?.kind === "boundary", "the boundary is not omitted");
-    must(r.named("bnet").network_hash === net.network_hash, "the board did not get the whole network");
+      "--cap", "board", "--as", "bnet", "--op", '{"op":"load_network","network":"$net.network"}'], { shaped: true });
+    must(r.named("net").network.omitted?.schema_version === 2, "the network is not omitted");
+    must(r.named("bnet").network_hash === r.named("net").network_hash, "the board did not get the whole network");
   }],
   ["the live board: import, cap-rt's live document, the board reads it by hash (08:01 at A: t10 expected 08:02)", () => {
     const r = caps([...LIVE_CHAIN, "--op", '{"op":"stop_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":28860,"limit":3,"live_hash":"$blive.live_hash"}']);

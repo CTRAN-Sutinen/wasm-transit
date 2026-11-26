@@ -1,39 +1,37 @@
-// caps-run is the agent and human runner for the capability registry. It
-// pulls a module by its pinned hash, verifies the bytes, and runs ops in
-// the sandbox (no imports), with a wall-clock guard that terminates the
-// worker.
+// caps-run is the agents' host (docs/architecture/hosts.md). It pulls a
+// module by its pinned hash, verifies the bytes, and runs ops in the
+// sandbox (no imports), with a wall-clock guard that terminates the
+// worker. Every default is chosen for an agent's context: an answer
+// prints small, and each part left out names the reference that prints
+// it (docs/architecture/registry.md).
 //
 // A human answers the same questions that an agent can, through the same
 // calls. The registry record's op_docs are the tool descriptions, the
 // worked examples are the few-shot examples, and the output hashes chain
 // ops the way an agent's context does.
 //
-//   caps-run list                       capabilities + evidence
+//   caps-run list                       a line for each capability
 //   caps-run session [NAME]             the sessions in the store, or
 //                                       what one session holds
 //   caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]...
 //                                       replay a session's journal, or a
 //                                       page's, and compare every output
 //                                       hash
-//   caps-run tools <capability> <op>    one op: its description and
-//                                       its worked example
-//   caps-run tools <capability> --brief each op's first sentence and
-//                                       its example request, with the
-//                                       documents omitted
-//   caps-run tools <capability>         the tool catalog (op docs, and
-//                                       per-kind examples where an op
-//                                       takes a tagged vocabulary)
-//   caps-run kind [<tag>|<store kind>]  a kind's path through the code,
-//                                       from the kind table: each route
-//                                       and its Go handler, its log, its
-//                                       load, check, and receive ops and
-//                                       the library functions behind them,
-//                                       its read rights, and its store
-//                                       layout (tools/kind-trace.mjs).
-//                                       Every kind when none is named
-//   caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME]
-//          [--load [N:|KIND:]FILE]... [--op '<json>|@FILE']... [--ask URL]...
-//          [--post URL REF]... [--timeout MS]   run a session
+//   caps-run tools <capability>         a line for each op: its request
+//                                       fields and its first sentence
+//   caps-run tools <capability> <op> [<kind>]
+//                                       one op in full, or one kind of a
+//                                       tagged vocabulary, with each
+//                                       document in the example omitted
+//   caps-run kind [<tag>|<store kind>]  a kind's path through the code
+//                                       (tools/kind-trace.mjs), or a line
+//                                       for each kind
+//   caps-run <capability> [--session NAME] [--upstream URL|DIR] [--full] [--print REF]...
+//          [--tz ZONE] [--cap ID] [--as NAME] [--load [N:|KIND:]FILE]...
+//          [--op '<json>|@FILE']... [--ask URL]... [--post URL REF]...
+//          [--timeout MS]               run a session
+//
+// --full on any command prints the whole answer or the registry's JSON.
 //
 // --session NAME keeps the session across commands. Each result named
 // with --as is saved in the session's store (.caps-sessions/NAME/, or
@@ -48,9 +46,9 @@
 // Each command makes new module instances. A stored document registers
 // itself the first time an op names its hash (below).
 //
-// --brief prints each whole document (an object that carries `kind`
-// and `schema_version`) as {"omitted": {kind, schema_version, bytes}}.
-// The session keeps the whole document, so references still reach it.
+// --print REF prints only the value that a result reference names, after
+// every step. --upstream reads `manifest` ($manifest) and the blobs that
+// ops name by hash from the server or an export folder (tools/upstream.mjs).
 //
 // Every run compares the registry's recorded source digest with the
 // tree's and says on stderr when they differ. The registry runs the code
@@ -101,6 +99,7 @@
 //   $load.feed_hash    the last --load result ("load" op)
 //   $ask.features      the last --ask result (the oracle's answer)
 //   $post.plans_hash   the last --post result (the deployment's answer)
+//   $manifest.network_hash  the --upstream's manifest
 //   $import.network_hash  the last prior result tagged op:"import"
 //   $1.feed_hash       the 1st result overall, in command-line order
 // The rest of the reference is a dotted path into the result (numeric
@@ -122,6 +121,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
+import { blob as upstreamBlob, manifest as upstreamManifest, workingCopy } from "./upstream.mjs";
 import { context as kindContext, findKind, trace as traceKind } from "./kind-trace.mjs";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -203,15 +203,15 @@ function sha256(bytes) {
 
 function usage() {
   console.error(
-    "usage: caps-run list | caps-run tools <capability> [<op>] [--brief] | caps-run kind [<tag>] | caps-run session [NAME] | " +
+    "usage: caps-run list | caps-run tools <capability> [<op> [<kind>]] | caps-run kind [<tag>] | caps-run session [NAME] | " +
       "caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]... | " +
-      "caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
+      "caps-run <capability> [--session NAME] [--upstream URL|DIR] [--full] [--print REF]... [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const out = { capability: null, steps: [], timeout: 10_000, session: null, brief: false, tz: null };
+  const out = { capability: null, steps: [], timeout: 10_000, session: null, full: false, prints: [], tz: null, upstream: null };
   let current = null;
   let pendingName = null;
   const step = (kind, value) => {
@@ -228,7 +228,9 @@ function parseArgs(argv) {
     else if (arg === "--cap") current = argv[++i] ?? usage();
     else if (arg === "--as") pendingName = argv[++i] ?? usage();
     else if (arg === "--timeout") out.timeout = Number(argv[++i]);
-    else if (arg === "--brief") out.brief = true;
+    else if (arg === "--full") out.full = true;
+    else if (arg === "--print") out.prints.push(argv[++i] ?? usage());
+    else if (arg === "--upstream") out.upstream = argv[++i] ?? usage();
     else if (arg === "--tz") {
       out.tz = argv[++i] ?? usage();
       try {
@@ -326,8 +328,12 @@ function bulkOpName(code) {
 
 // index.json lists the named results. Each result is its outcome text,
 // gzipped, in <name>.json.gz.
+function sessionsRoot() {
+  return process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions");
+}
+
 function sessionDir(name) {
-  return join(process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions"), name);
+  return join(sessionsRoot(), name);
 }
 
 function readSessionIndex(name) {
@@ -383,25 +389,54 @@ function saveSession(name, named) {
   renameSync(join(dir, "index.json.tmp"), join(dir, "index.json"));
 }
 
-function briefValue(value) {
-  if (Array.isArray(value)) return value.map(briefValue);
-  if (value === null || typeof value !== "object") return value;
-  if (isDocument(value)) {
-    return { omitted: { kind: value.kind, schema_version: value.schema_version, bytes: Buffer.byteLength(JSON.stringify(value)) } };
+// The output is shaped for an agent's context. A document prints as its
+// kind, version, and size. Past the limits below, an array keeps its first
+// items, a map its first keys, and a string its start. Each part left out
+// names the result reference that prints it (--print). The session keeps
+// every answer whole. A key that holds a "." cannot be named by a
+// reference, so its marker names the nearest reference that can be.
+const SHAPE = { items: 10, keepItems: 3, keys: 20, keepKeys: 5, chars: 2000, keepChars: 200 };
+
+function shapeValue(value, ref, top = false) {
+  const marker = (extra) => (ref ? { ...extra, print: ref } : extra);
+  const child = (key) => (ref && !String(key).includes(".") ? `${ref}.${key}` : null);
+  if (typeof value === "string") {
+    return !top && value.length > SHAPE.chars ? `${value.slice(0, SHAPE.keepChars)}… [${value.length} chars: --print ${ref ?? "--full"}]` : value;
   }
-  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, briefValue(v)]));
+  if (value === null || typeof value !== "object") return value;
+  if (!top && isDocument(value)) {
+    return marker({ omitted: { kind: value.kind, schema_version: value.schema_version, bytes: Buffer.byteLength(JSON.stringify(value)) } });
+  }
+  if (Array.isArray(value)) {
+    if (top || value.length <= SHAPE.items) return value.map((v, i) => shapeValue(v, child(i)));
+    return [...value.slice(0, SHAPE.keepItems).map((v, i) => shapeValue(v, child(i))), marker({ more: value.length - SHAPE.keepItems })];
+  }
+  const entries = Object.entries(value);
+  const kept = top || entries.length <= SHAPE.keys ? entries : entries.slice(0, SHAPE.keepKeys);
+  const out = Object.fromEntries(kept.map(([k, v]) => [k, shapeValue(v, child(k))]));
+  if (kept.length < entries.length) out["…"] = marker({ more: entries.length - kept.length });
+  return out;
 }
 
-function briefText(text) {
+function firstSentence(text, limit = 300) {
+  const match = /^(.+?[.!?])(?=\s+[A-Z(`"]|$)/s.exec(text ?? "");
+  const sentence = (match ? match[1] : text ?? "").replace(/\s+/g, " ").trim();
+  return sentence.length > limit ? `${sentence.slice(0, limit - 1)}…` : sentence;
+}
+
+function shapeText(text, ref) {
   const outcome = JSON.parse(text);
-  if (outcome.ok && typeof outcome.ok === "object") {
-    outcome.ok = Object.fromEntries(Object.entries(outcome.ok).map(([k, v]) => [k, briefValue(v)]));
-  }
+  if (outcome.ok !== undefined) outcome.ok = shapeValue(outcome.ok, ref, true);
   return JSON.stringify(outcome);
 }
 
 async function runSession() {
-  const { steps, session, brief, tz } = workerData;
+  const { steps, session, full, prints, tz, upstream } = workerData;
+  // The upstream's head is read once for each command. A stale head
+  // stamps every line with its age.
+  const copy = upstream && workingCopy(sessionsRoot(), upstream);
+  const head = upstream ? await upstreamManifest(upstream, copy) : null;
+  const stale = head?.state === "stale" ? { as_of_ms: head.as_of_ms, why: head.why } : null;
   // This is web/src/clock.ts, which has no imports.
   const { serviceClock } = await import("../web/src/clock.ts");
   const modules = new Map();
@@ -445,7 +480,7 @@ async function runSession() {
   // has seen: one that an op loads, one that an import or a document
   // answer names, or one that an earlier command saved.
   const nowMs = Date.now();
-  let zone = tz ?? [...results].reverse().find((r) => r.zone)?.zone ?? null;
+  let zone = tz ?? [...results].reverse().find((r) => r.zone)?.zone ?? head?.manifest.timezone ?? null;
   const learnZone = (value, result) => {
     if (tz) return;
     const found = zoneOf(value);
@@ -474,7 +509,7 @@ async function runSession() {
     return null;
   };
   const resolveRef = (ref) => {
-    const m = /^\$(load|ask|post|\d+|[a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
+    const m = /^\$(load|ask|post|\d+|[a-zA-Z_][a-zA-Z0-9_]*)(?:\.(.*))?$/s.exec(ref);
     if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<name|load|ask|post|op|N>.<path>`);
     const [, base, path] = m;
     let current;
@@ -482,6 +517,9 @@ async function runSession() {
     const here = results.filter((r) => !r.prior);
     if (named) {
       current = named;
+    } else if (base === "manifest") {
+      if (!head) throw new Error(`reference ${ref}: no --upstream to read a manifest from`);
+      current = { text: JSON.stringify({ ok: head.manifest }) };
     } else if (base === "load") {
       current = [...here].reverse().find((r) => r.load !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --load result to resolve against`);
@@ -573,16 +611,19 @@ async function runSession() {
       for (let tries = 0; tries < 8; tries++) {
         const missing = unknownDocument(result.text);
         const kind = missing && Object.values(kindLoads()).find((k) => k.name === missing.load)?.kind;
-        const document = kind && heldDocument(kind, missing.hash);
-        if (!document || loadCodes[missing.load] === undefined) break;
-        const loaded = JSON.parse(module.invokeBytes(loadCodes[missing.load], Buffer.from(JSON.stringify(document))));
+        if (!kind || loadCodes[missing.load] === undefined) break;
+        // The session's own copy first, then the upstream's blob.
+        const document = heldDocument(kind, missing.hash);
+        const bytes = document ? Buffer.from(JSON.stringify(document)) : upstream ? await upstreamBlob(upstream, copy, missing.hash) : null;
+        if (!bytes) break;
+        const loaded = JSON.parse(module.invokeBytes(loadCodes[missing.load], bytes));
         // A load names its hash field for the kind's short name
         // (`alerts_hash` for service_alerts), so match any hash field.
         const named = Object.entries(loaded.ok ?? {}).some(([field, value]) => field.endsWith("_hash") && value === missing.hash);
         if (!named) {
           throw new Error(`registering ${kind} ${missing.hash}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
         }
-        (result.registered ??= []).push(`${kind} ${missing.hash}`);
+        (result.registered ??= []).push(document ? `${kind} ${missing.hash}` : `${kind} ${missing.hash} from the upstream`);
         result.text = module.invoke(resolved);
       }
     }
@@ -598,13 +639,23 @@ async function runSession() {
     journal.flush();
     saveSession(session, here.filter((r) => r.as));
   }
-  // Without --brief the outcome's fields are spliced as text and never
-  // parsed again.
-  const lines = here.map(({ text, op, ...lead }) => {
-    const head = JSON.stringify(lead);
-    const body = brief ? briefText(text) : text;
+  // With --full the outcome's fields are spliced as text and never parsed
+  // again. A line's reference is its --as name, else its place ($N).
+  const lineOf = ({ text, op, ...lead }, i) => {
+    const head = JSON.stringify(stale ? { ...lead, stale } : lead);
+    const body = full ? text : shapeText(text, lead.as ? `$${lead.as}` : `$${i + 1}`);
     return head === "{}" ? body : `${head.slice(0, -1)},${body.slice(1)}`;
-  });
+  };
+  // --print replaces the step lines. A step that failed still prints.
+  const lines = prints.length === 0
+    ? here.map(lineOf)
+    : [
+        ...here.map((r, i) => (r.text.startsWith('{"error"') ? lineOf(r, i) : null)).filter(Boolean),
+        ...prints.map((ref) => {
+          const value = resolveRef(ref);
+          return JSON.stringify({ [ref]: full ? value : shapeValue(value, ref, true), ...(stale ? { stale } : {}) });
+        }),
+      ];
   parentPort.postMessage({ ok: lines });
 }
 
@@ -616,57 +667,98 @@ if (!isMainThread) {
 
 
 export async function main(argv) {
+  // Discovery prints a line for each item, and names the command that
+  // prints one item in full. --full prints the registry's JSON.
+  const discoveryFull = argv.includes("--full");
+  const discoveryArgs = argv.filter((a) => a !== "--full");
   if (argv[0] === "list") {
     warnIfStale();
     const pointer = registryPointer();
-    const kernel_ops = (pointer.kernel_ops ?? []).map(({ code, name, description }) => ({ code, name, description }));
-    console.log(JSON.stringify({ ...pointer, kernel_ops }, null, 2));
+    if (discoveryFull) {
+      const kernel_ops = (pointer.kernel_ops ?? []).map(({ code, name, description }) => ({ code, name, description }));
+      console.log(JSON.stringify({ ...pointer, kernel_ops }, null, 2));
+      return 0;
+    }
+    const e = pointer.evidence ?? {};
+    console.log(`registry: ${e.recipe ?? "?"}, ${e.profile ?? "?"}, from ${(e.source_commit ?? "?").slice(0, 9)}${e.dirty_tree ? " (dirty tree)" : ""}`);
+    for (const { id } of pointer.capabilities) {
+      const record = capabilityRecord(id);
+      console.log(`${id.padEnd(12)} ${String(record.ops.length).padStart(2)} ops  ${firstSentence(record.purpose, 120)}`);
+    }
+    console.log("kernel ops: " + (pointer.kernel_ops ?? []).map((k) => `${k.name}=${k.code}`).join(", "));
+    console.log("next: caps-run tools <capability>");
     return 0;
   }
   if (argv[0] === "tools") {
     warnIfStale();
-    const args = argv.slice(1);
-    const brief = args.includes("--brief");
-    const [id, only] = args.filter((a) => a !== "--brief");
+    const [, id, only, kindName] = discoveryArgs;
     const record = capabilityRecord(id ?? usage());
     const docOf = (op) => record.op_docs[op] ?? { description: null, example: null };
+    const reads = new Set(record.documents ?? []);
+    const kernel = (registryPointer().kernel_ops ?? []).filter((k) => reads.has(k.kind));
     if (only !== undefined) {
       if (!record.ops.includes(only)) {
         console.error(`${record.id} has no op ${only}; its ops: ${record.ops.join(", ")}`);
         return 1;
       }
-      console.log(JSON.stringify({ id: record.id, op: only, documents: record.documents ?? [], ...docOf(only) }, null, 2));
+      const doc = docOf(only);
+      if (kindName !== undefined) {
+        const one = doc.kinds?.find((k) => k.kind === kindName);
+        if (!one) {
+          console.error(`${record.id} ${only} has no kind ${kindName}; its kinds: ${(doc.kinds ?? []).map((k) => k.kind).join(", ") || "none"}`);
+          return 1;
+        }
+        console.log(JSON.stringify({ id: record.id, op: only, ...(discoveryFull ? one : { ...one, example: shapeValue(one.example, null, true) }) }, null, discoveryFull ? 2 : 0));
+        return 0;
+      }
+      // A tagged vocabulary lists its kinds by name, and each kind's
+      // example prints on its own.
+      const shaped = discoveryFull
+        ? doc
+        : {
+            ...doc,
+            ...(doc.example ? { example: shapeValue(doc.example, null, true) } : {}),
+            ...(doc.kinds ? { kinds: doc.kinds.map((k) => k.kind), next: `caps-run tools ${record.id} ${only} <kind>` } : {}),
+          };
+      console.log(JSON.stringify({ id: record.id, op: only, documents: record.documents ?? [], ...shaped }, null, discoveryFull ? 2 : 0));
       return 0;
     }
-    const firstSentence = (text) => {
-      const match = /^(.+?[.!?])(?=\s+[A-Z(`"]|$)/s.exec(text ?? "");
-      const sentence = (match ? match[1] : text ?? "").replace(/\s+/g, " ").trim();
-      return sentence.length > 300 ? `${sentence.slice(0, 297)}…` : sentence;
-    };
-    const tools = Object.fromEntries(
-      record.ops.map((op) => {
-        const doc = docOf(op);
-        if (!brief) return [op, doc];
-        return [op, { summary: firstSentence(doc.description), example: { request: briefValue(doc.example?.request ?? null) } }];
-      }),
-    );
-    const reads = new Set(record.documents ?? []);
-    const kernel = (registryPointer().kernel_ops ?? []).filter((k) => reads.has(k.kind));
-    const loads = brief
-      ? Object.fromEntries(kernel.map((k) => [k.name, k.code]))
-      : Object.fromEntries(kernel.map((k) => [k.name, k]));
-    console.log(JSON.stringify({ id: record.id, purpose: record.purpose, documents: record.documents ?? [], loads, tools }, null, 2));
+    if (discoveryFull) {
+      const tools = Object.fromEntries(record.ops.map((op) => [op, docOf(op)]));
+      const loads = Object.fromEntries(kernel.map((k) => [k.name, k]));
+      console.log(JSON.stringify({ id: record.id, purpose: record.purpose, documents: record.documents ?? [], loads, tools }, null, 2));
+      return 0;
+    }
+    console.log(`${record.id}: ${firstSentence(record.purpose)}`);
+    console.log(`reads: ${(record.documents ?? []).join(", ") || "no documents"}`);
+    if (kernel.length) console.log(`loads: ${kernel.map((k) => `${k.name}=${k.code}`).join(", ")}`);
+    for (const op of record.ops) {
+      const doc = docOf(op);
+      const fields = Object.keys(doc.example?.request ?? {}).filter((f) => f !== "op");
+      const kinds = doc.kinds?.length ? ` [${doc.kinds.length} kinds]` : "";
+      console.log(`  ${op}(${fields.join(", ")})${kinds}  ${firstSentence(doc.description)}`);
+    }
+    console.log(`next: caps-run tools ${record.id} <op>`);
     return 0;
   }
   if (argv[0] === "kind") {
     const ctx = kindContext(join(HERE, ".."));
-    const kinds = argv[1] === undefined ? ctx.table : [findKind(ctx.table, argv[1])];
+    const tag = discoveryArgs[1];
+    const kinds = tag === undefined ? ctx.table : [findKind(ctx.table, tag)];
     if (kinds[0] === undefined) {
-      console.error(`the kind table names no kind ${argv[1]}; its kinds: ${ctx.table.map((k) => k.tag || k.store_kind).join(", ")}`);
+      console.error(`the kind table names no kind ${tag}; its kinds: ${ctx.table.map((k) => k.tag || k.store_kind).join(", ")}`);
       return 1;
     }
     const traces = kinds.map((k) => traceKind(ctx, k));
-    console.log(JSON.stringify(argv[1] === undefined ? traces : traces[0], null, 2));
+    if (tag !== undefined) console.log(JSON.stringify(traces[0], null, discoveryFull ? 2 : 0));
+    else if (discoveryFull) console.log(JSON.stringify(traces, null, 2));
+    else {
+      for (const t of traces) {
+        const routes = (t.routes ?? []).map((r) => r.route).join(", ");
+        console.log(`${(t.tag || "-").padEnd(16)} ${t.kind.padEnd(24)} write: ${t.write ?? "-"}${routes ? `  routes: ${routes}` : ""}${t.missing.length ? `  MISSING: ${t.missing.join("; ")}` : ""}`);
+      }
+      console.log("next: caps-run kind <tag>");
+    }
     return traces.some((t) => t.missing.length) ? 1 : 0;
   }
   if (argv[0] === "replay") {
@@ -732,12 +824,12 @@ export async function main(argv) {
     return 0;
   }
 
-  const { steps, timeout, session, brief, tz } = parseArgs(argv);
+  const { steps, timeout, session, full, prints, tz, upstream } = parseArgs(argv);
   warnIfStale(session);
   for (const capability of new Set(steps.map((s) => s.capability))) capabilityRecord(capability);
   const { Worker } = await import("node:worker_threads");
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { steps, session, brief, tz },
+    workerData: { steps, session, full, prints, tz, upstream },
   });
 
   const outcome = await new Promise((resolve, reject) => {

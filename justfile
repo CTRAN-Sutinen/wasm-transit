@@ -260,8 +260,10 @@ _host-tests:
     # (web/src/uis/host-contract.json; docs/architecture/hosts.md): the
     # upstream does not answer, answers slowly, answers again, and moves
     # its head while the host holds a copy. The server runs the same
-    # scenarios (server/hostcontract_test.go, in `go test` below).
+    # scenarios (server/hostcontract_test.go, in `go test` below), and so
+    # does caps-run's upstream read (tools/upstream.test.mjs).
     node --test web/src/uis/host-contract.test.mjs
+    node --test tools/upstream.test.mjs
     # FAILURE TABLES (tools/failure-tables.mjs): every input a UI
     # declares in its ui.json names rows that its failure table in
     # docs/architecture/generated-uis/<id>.md has. The broken fixtures run

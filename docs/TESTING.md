@@ -361,10 +361,12 @@ these rules:
   `testdata/ctran-gtfs.zip` through `caps-run`. This is the real C-TRAN
   GTFS. It is not committed, because the data is licensed. Fetch it
   from c-tran.com. The reference hashes are in `docs/QA-FINDINGS.md`'s
-  header. Import the feed once in a named session (`--session`), and
-  use `--brief` so the 9.6 MB network does not print. Later commands in
-  the session reuse the import, and name it only by
-  `$net.network_hash`. Browse a capability with `tools <cap> --brief`
+  header. Import the feed once in a named session (`--session`). Later
+  commands in the session reuse the import, and name it only by
+  `$net.network_hash`. Or ask a running server (`just serve`) with
+  `--upstream http://127.0.0.1:8080` and `$manifest.network_hash`, so
+  the session reads what the pages read. Browse a capability with
+  `tools <cap>`, and read a part of an answer with `--print`
   (`docs/architecture/registry.md`).
 - **A one-off script is never tooling. It is a finding.** If a QA
   session needs bespoke glue (a bootstrap script, a summarizer), that
