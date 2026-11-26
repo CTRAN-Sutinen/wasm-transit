@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	"rustwasm/server/httpx"
 	"rustwasm/server/store"
 )
 
@@ -29,7 +30,7 @@ func attachmentKey(hexHash string) string { return "attachments/" + hexHash }
 
 func (s *server) handleAttachments(w http.ResponseWriter, r *http.Request) {
 	if s.attachments == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]any{"configured": false})
+		httpx.JSON(w, http.StatusNotImplemented, map[string]any{"configured": false})
 		return
 	}
 	switch r.Method {
@@ -75,10 +76,10 @@ func (s *server) addAttachment(w http.ResponseWriter, r *http.Request) {
 	hexHash := hex.EncodeToString(sum[:])
 	err = s.attachments.Create(r.Context(), attachmentKey(hexHash), data, map[string]string{"type": media})
 	if err != nil && !errors.Is(err, store.ErrExists) {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"hash": "sha256:" + hexHash, "type": media, "bytes": len(data)})
+	httpx.JSON(w, http.StatusOK, map[string]any{"hash": "sha256:" + hexHash, "type": media, "bytes": len(data)})
 }
 
 func (s *server) readAttachment(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +94,7 @@ func (s *server) readAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	etag := `"sha256:` + name + `"`
@@ -126,6 +127,6 @@ func (s *server) protectSignedIn(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
 		}
-		next(w, r.WithContext(context.WithValue(r.Context(), identityKey, id)))
+		next(w, r.WithContext(httpx.WithName(context.WithValue(r.Context(), identityKey, id), id.Name)))
 	}
 }

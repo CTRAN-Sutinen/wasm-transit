@@ -320,7 +320,7 @@ is what must stay true. Change it only with the user, after reading
   them. Integration pain comes from the data model and its access, not
   from the database engine.
 
-### What people edit is an append-only log (`server/store/log.go`, `server/caplog.go`, `crates/transit-log`)
+### What people edit is an append-only log (`server/store/log.go`, `server/logs`, `crates/transit-log`)
 - **Holds:** each write that changes a record is one entry, with each
   changed record's hash before and its new state, the writer, the intent,
   and the module build. The current document is the module's fold of the
@@ -354,7 +354,7 @@ is what must stay true. Change it only with the user, after reading
   then is fed from the logs.
 - **Decided:** D-190.
 
-### One log engine for every kind, and a revert takes out what it created (`crates/transit-log`, `crates/cap-log`, `server/caplog.go`)
+### One log engine for every kind, and a revert takes out what it created (`crates/transit-log`, `crates/cap-log`, `server/logs`)
 - **Holds:** cap-log never reads a record. A change is `{kind, version,
   id, before, after}`. Each kind's capability turns its document into
   records (its collection, and the document's own record) and back. One
@@ -411,7 +411,7 @@ is what must stay true. Change it only with the user, after reading
   verify would follow one more kind of reference).
 - **Provisional:** D-200 (the derivation record).
 
-### Freezing and adopting are two acts in one log (`crates/transit-plans`, `crates/cap-plans` `receive`, `server/planslog.go`)
+### Freezing and adopting are two acts in one log (`crates/transit-plans`, `crates/cap-plans` `receive`, `server/plans`)
 - **Holds:** a freeze writes a network version to the record by hash,
   with what it is, and puts nothing in force. Only a frozen version is
   adopted, and the pick names the stops log entry it read. The published
@@ -433,7 +433,7 @@ is what must stay true. Change it only with the user, after reading
   adopted would have no place); a generic revert of the plans log.
 - **Decided:** D-191. **Provisional:** D-201 (how the server serves it).
 
-### Every kind has one entry, beside the server's modules (`crates/cap-abi/src/kinds.rs`, `server/kinds.go`)
+### Every kind has one entry, beside the server's modules (`crates/cap-abi/src/kinds.rs`, `server/kinds`)
 - **Holds:** gen-manifest generates one kind table for each build from
   the kind list, writes it beside the server's modules
   (`web/pkg/kinds.json`), and stops while the checked-in copy

@@ -1,6 +1,6 @@
 package main
 
-// The stops log over HTTP (D-190; logkinds.go, cap-stops
+// The stops log over HTTP (D-190; server/logs, cap-stops
 // receive). The properties a writer relies on:
 //
 //  1. Two writers who change different stops both land. A writer who
@@ -27,10 +27,10 @@ func newStopsLogServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
 	s := newStoreServer(t, b)
 	closeModules(t, s)
-	s.seedKept(nil)
+	s.kept().Seed(nil)
 	mux := storeMux(s)
-	mux.HandleFunc("/stops", s.handleKeptRoute)
-	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
+	mux.HandleFunc("/stops", s.kindRoutes().HandleKindPost)
+	mux.HandleFunc("/stop-requests", s.kindRoutes().HandleKindPost)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -54,7 +54,7 @@ func addEvent(stop string, event map[string]any) map[string]any {
 
 func stopsDocNow(t *testing.T, s *server) (string, map[string][]map[string]any) {
 	t.Helper()
-	hash, doc, found, err := s.keptHead("stops")
+	hash, doc, found, err := s.kept().Head("stops")
 	if err != nil || !found {
 		t.Fatalf("the stops document: %v %v", found, err)
 	}
@@ -200,7 +200,7 @@ func TestTheOldPointersSeedTheStopsLog(t *testing.T) {
 	}
 
 	s, _ := newStopsLogServer(t, bucket)
-	hash, _, found, err := s.keptHead("stops")
+	hash, _, found, err := s.kept().Head("stops")
 	if err != nil || !found || hash != stopsHash {
 		t.Fatalf("the log serves the pointer's document under its hash: %s vs %s (%v)", hash, stopsHash, err)
 	}
@@ -303,7 +303,7 @@ func TestAnOldV1RequestsPointerSeedsTheLogAtTheCurrentVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ := newStopsLogServer(t, bucket)
-	_, body, found, err := s.keptHead("stop_requests")
+	_, body, found, err := s.kept().Head("stop_requests")
 	if err != nil || !found {
 		t.Fatalf("the log serves a stop requests head: %v %v", found, err)
 	}

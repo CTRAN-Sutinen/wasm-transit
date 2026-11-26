@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"rustwasm/server/wasmhost"
 )
 
 // The walking fixture is a residential street through the sample
@@ -98,7 +100,7 @@ func TestServedStreetsAndWalksRegisterUnderTheirPins(t *testing.T) {
 	var registered struct {
 		StreetsHash string `json:"streets_hash"`
 	}
-	if err := newStreetsHost(t).InvokeBytes(ctx, opLoadStreets, doc, &registered); err != nil {
+	if err := newStreetsHost(t).InvokeBytes(ctx, wasmhost.OpLoadStreets, doc, &registered); err != nil {
 		t.Fatalf("load_streets: %v", err)
 	}
 	if registered.StreetsHash != streetsHash {

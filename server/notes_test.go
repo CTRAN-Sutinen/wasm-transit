@@ -16,7 +16,7 @@ func TestNotesWritesAreStampedAndLogged(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/notes", s.handleKeptRoute)
+	mux.HandleFunc("/notes", s.kindRoutes().HandleKindPost)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL

@@ -26,7 +26,12 @@ import (
 	"syscall"
 	"time"
 
+	"rustwasm/server/httpx"
+	"rustwasm/server/kinds"
+	"rustwasm/server/logs"
+	"rustwasm/server/plans"
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 func main() {
@@ -52,7 +57,7 @@ func main() {
 
 	s := &server{
 		dist:          *f.dist,
-		long:          newHeld("long-lived", inst),
+		long:          wasmhost.NewHeld("long-lived", inst),
 		publisher:     *f.publisher,
 		editsPath:     *f.editsPath,
 		retentionDays: *f.retentionDays,
@@ -99,7 +104,7 @@ func main() {
 			log.Fatalf("store mode: the kind table names %s, which the server's module does not link (run `just caps`)", strings.Join(missing, ", "))
 		}
 		s.seedStore(*f.editsPath)
-		s.commitPicksForward()
+		s.planner().CommitForward()
 		s.seedPolicy(*f.policyFile)
 		s.maybeCompactEdits()
 		uiDists, err := parseUIDists(*f.uiDist)
@@ -245,27 +250,28 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/walks", s.handleWalks)
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
-	mux.HandleFunc("/logs/", s.protectLog(s.handleLogs))
-	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
-	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
-	mux.HandleFunc("/plans/freeze", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleFreeze))
-	mux.HandleFunc("/plans/adopt", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleAdopt))
+	mux.HandleFunc("/logs/", s.protectLog(s.kept().HandleLogs))
+	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.planner().HandlePlans))
+	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.planner().HandleRetire))
+	mux.HandleFunc("/plans/freeze", s.protectWrite(func(*http.Request) string { return "plans" }, s.planner().HandleFreeze))
+	mux.HandleFunc("/plans/adopt", s.protectWrite(func(*http.Request) string { return "plans" }, s.planner().HandleAdopt))
 	// Each kind's `post` route is answered by its log's receive op
-	// (logkinds.go). Its write rule is its store kind.
+	// (server/kindroutes). Its write rule is its store kind.
 	if t, err := s.kindTable(); err == nil {
+		kr := s.kindRoutes()
 		for _, k := range t.Kinds {
 			if k.Post != nil && k.Receive != "" {
-				mux.HandleFunc(k.Post.Path, s.protectWrite(s.keptRouteRule, s.handleKeptRoute))
+				mux.HandleFunc(k.Post.Path, s.protectWrite(kr.Rule, kr.HandleKindPost))
 			}
 		}
 	}
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
 	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
 	if e := s.workOrderKind(); e != nil {
-		mux.HandleFunc(e.WorkOrder.Path, s.protectWrite(func(*http.Request) string { return e.rule() }, s.handleWorkOrder))
+		mux.HandleFunc(e.WorkOrder.Path, s.protectWrite(func(*http.Request) string { return e.Rule() }, s.handleWorkOrder))
 	}
 	mux.HandleFunc("/builds", s.protectWrite(func(r *http.Request) string { p, _ := buildsPointerOf(r); return p }, s.handleBuilds))
-	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/feed", s.planner().HandleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	mux.HandleFunc("/geocode/", s.handleGeocode)
@@ -310,14 +316,16 @@ type server struct {
 
 	// long is the long-lived instance (wasm.go). wasm and plans speak to
 	// it as cap-sync and cap-plans.
-	long        *held
+	long        *wasmhost.Held
 	longOnce    sync.Once
 	plans       *WasmHost
 	keptOnce    sync.Once
-	kept        map[string]*keptLog
+	keptLogs    *logs.Logs
+	plannerOnce sync.Once
+	plansRoutes *plans.Plans
 	kindsPath   string
 	kindsOnce   sync.Once
-	kinds       *kindTable
+	kinds       *kinds.Table
 	kindsErr    error
 	attachments store.Backend
 	workOrders  workOrderSystem
@@ -327,9 +335,6 @@ type server struct {
 	// when no feed is configured.
 	zoneMu sync.Mutex
 	zone   string
-
-	feedMu    sync.Mutex
-	feedCache map[string][]byte
 
 	gzMu    sync.Mutex
 	gzCache map[string][]byte
@@ -629,7 +634,7 @@ func (s *server) buildManifest() (Manifest, error) {
 		// One lock reads each log's documents and the seq of their fold.
 		// The write that carries the seq as read_seq is checked against
 		// the records it changes.
-		pins, seqs := s.keptPins()
+		pins, seqs := s.kept().Pins()
 		manifest.Logged = pins
 		for name, seq := range seqs {
 			if manifest.LogSeqs == nil {
@@ -666,7 +671,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	s.syncBuild() // a release that landed in -dist is the build the manifest pins
 	manifest, err := s.buildManifest()
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if s.store == nil {
@@ -694,7 +699,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 			head, found, err := s.store.Head("manifest")
 			if err != nil {
 				s.manifestMu.Unlock()
-				fail(w, err, http.StatusInternalServerError)
+				httpx.Fail(w, err, http.StatusInternalServerError)
 				return
 			}
 			from := ""
@@ -711,7 +716,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				s.manifestMu.Unlock()
-				fail(w, err, http.StatusInternalServerError)
+				httpx.Fail(w, err, http.StatusInternalServerError)
 				return
 			}
 			s.manifestKey = key
@@ -722,19 +727,19 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 
 	head, found, err := s.store.Head("manifest")
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
-		fail(w, store.ErrUnavailable, http.StatusInternalServerError)
+		httpx.Fail(w, store.ErrUnavailable, http.StatusInternalServerError)
 		return
 	}
 	data, _, err := s.store.GetBlob(head.Hash)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	labelStale(w, head)
+	httpx.LabelStale(w, head)
 	etag := `"` + head.Hash + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
@@ -748,7 +753,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) seedStore(editsPath string) {
 	s.describeStore()
-	s.seedKept(map[string]seedFile{"edit_records": {flag: "edits", path: editsPath}})
+	s.kept().Seed(map[string]logs.SeedFile{"edit_records": {Flag: "edits", Path: editsPath}})
 }
 
 // A failure is logged and the next boot tries again. The schemas sit
@@ -756,7 +761,7 @@ func (s *server) seedStore(editsPath string) {
 func (s *server) describeStore() {
 	path := s.kindsPath
 	if path == "" {
-		path = defaultKindsPath
+		path = kinds.DefaultPath
 	}
 	table, err := os.ReadFile(path)
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"rustwasm/server/httpx"
 	"rustwasm/server/store"
 )
 
@@ -275,7 +276,7 @@ func (s *server) serveBuildFile(w http.ResponseWriter, r *http.Request, name str
 	}
 	data, _, err := s.store.GetBlob(f.Hash)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return true
 	}
 	w.Header().Set("Content-Type", f.Type)
@@ -312,7 +313,7 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, _, err := s.store.Log(pointer, "")
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	logged := false
@@ -325,22 +326,22 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	data, _, err := s.store.GetBlob(req.Build)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	head, _, err := s.store.Head(pointer)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	_, seq, err := s.store.CAS(pointer, head.Hash, data, buildEnv, req.Build, writerOf(r, "anonymous"), time.Now().UnixMilli())
+	_, seq, err := s.store.CAS(pointer, head.Hash, data, buildEnv, req.Build, httpx.Writer(r, "anonymous"), time.Now().UnixMilli())
 	if err != nil {
 		var ce *store.ConflictError
 		if errors.As(err, &ce) {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	log.Printf("build: %s moved to %s (seq %d)", pointer, req.Build, seq)

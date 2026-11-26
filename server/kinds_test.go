@@ -81,7 +81,7 @@ func TestEveryBlobTheServerWritesIsAKindTheTableNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07"))
-	if _, refused := s.publishNetwork(context.Background(), body, "anonymous"); refused != nil {
+	if _, refused := s.planner().Publish(context.Background(), body, "anonymous"); refused != nil {
 		t.Fatal(refused)
 	}
 	srv := httptest.NewServer(storeMux(s))
@@ -106,7 +106,7 @@ func TestEveryBlobTheServerWritesIsAKindTheTableNames(t *testing.T) {
 			t.Fatal(err)
 		}
 		seen[env.Kind] = true
-		if table.byStoreKind(env.Kind) == nil {
+		if table.ByStoreKind(env.Kind) == nil {
 			t.Errorf("the server wrote a %s blob, and the kind table names no such kind", env.Kind)
 		}
 	}

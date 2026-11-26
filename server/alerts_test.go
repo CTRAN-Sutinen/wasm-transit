@@ -16,8 +16,8 @@ func TestAlertsWritesAreValidatedAndLogged(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/service-alerts", s.handleKeptRoute)
-	mux.HandleFunc("/alert-templates", s.handleKeptRoute)
+	mux.HandleFunc("/service-alerts", s.kindRoutes().HandleKindPost)
+	mux.HandleFunc("/alert-templates", s.kindRoutes().HandleKindPost)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL

@@ -98,7 +98,6 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [reference-rules.md](reference-rules.md) | the rules between records: each reference's rule at both ends, and the transitions that pin or warn |
-| [locality.md](locality.md) | find the code a contract names: a trace of each kind, the server in packages by concept, the gates out of the justfile |
 
 ### The documents
 

@@ -178,7 +178,7 @@ types:
 # The host-side runner, and the check a change runs before it is
 # called done: Rust suites, Go -race, artifact smoke in Node,
 # capability-module smoke (hash-pinned modules and the manifest the
-# smoke verifies against), runner gates, web parity ratchets. No
+# smoke verifies against), the runner's sessions, the source and web gates. No
 # browser — pair with a real-data caps-run session (docs/TESTING.md,
 # dogfood QA). Browser cover is `e2e`. It builds the wasm-fast modules
 # (`caps-fast`: no whole-program LTO, incremental), which behave as the

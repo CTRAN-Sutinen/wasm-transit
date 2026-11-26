@@ -1,184 +1,90 @@
 package main
 
-// The kind table (docs/FORMATS.md, "The kind table"; D-202) governs a
-// generic pointer write (POST /pointers/<name>). The host reads the table
-// and decides nothing: each check is the module's.
+// The kind table (server/kinds) governs a generic pointer write
+// (POST /pointers/<name>). The host reads the table and decides nothing:
+// each check is the module's.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
+
+	"rustwasm/server/kindroutes"
+	"rustwasm/server/kinds"
+	"rustwasm/server/logs"
+	"rustwasm/server/plans"
+	"rustwasm/server/store"
 )
 
-type kindTable struct {
-	Kinds []kindEntry `json:"kinds"`
-	// raw keeps the table's other fields for cap-log's existence check.
-	raw json.RawMessage
-}
-
-type kindEntry struct {
-	StoreKind string `json:"store_kind"`
-	Tag       string `json:"tag"`
-	Versions  []struct {
-		Version uint32 `json:"version"`
-		Schema  string `json:"schema"`
-	} `json:"versions"`
-	Write    string   `json:"write"` // pointer, route, server
-	Route    string   `json:"route"`
-	Pointers []string `json:"pointers"`
-	Log      string   `json:"log,omitempty"`
-	Records  []struct {
-		Kind       string `json:"kind"`
-		Collection string `json:"collection"`
-	} `json:"records,omitempty"`
-	Receive string `json:"receive,omitempty"`
-	// A false Intent means only the kind's routes write the log, never
-	// POST /logs/<log>.
-	Intent    *bool          `json:"intent,omitempty"`
-	Post      *kindPost      `json:"post,omitempty"`
-	WorkOrder  *kindWorkOrder `json:"work_order,omitempty"`
-	Pick       *kindPick      `json:"pick,omitempty"`
-	FeedEvents string         `json:"feed_events,omitempty"`
-	Load      *struct {
-		Op   string `json:"op"`
-		Code uint32 `json:"code"`
-	} `json:"load,omitempty"`
-	Module   string `json:"module,omitempty"`
-	Validate string `json:"validate,omitempty"`
-	Merge    string `json:"merge"`
-	Read     string `json:"read"` // open, restricted, audit
-}
-
-type kindWorkOrder struct {
-	Method string `json:"method"`
-	Path   string `json:"path"`
-	Call   string `json:"call"`
-	Record string `json:"record"`
-}
-
-type kindPick struct {
-	Seq    string `json:"seq"`
-	Export string `json:"export"`
-}
-
-// kindWhere is the first kind the table names that has the field, or nil.
-func (s *server) kindWhere(has func(*kindEntry) bool) *kindEntry {
-	t, err := s.kindTable()
-	if err != nil {
-		return nil
-	}
-	for i := range t.Kinds {
-		if has(&t.Kinds[i]) {
-			return &t.Kinds[i]
-		}
-	}
-	return nil
-}
-
-func (s *server) workOrderKind() *kindEntry {
-	return s.kindWhere(func(e *kindEntry) bool { return e.WorkOrder != nil })
-}
-
-// pickKind is the kind a pick reads (kindPick).
-func (s *server) pickKind() *kindEntry {
-	return s.kindWhere(func(e *kindEntry) bool { return e.Pick != nil && e.Load != nil })
-}
-
-// hashField names the kind's document in an op's arguments and answers.
-func (e *kindEntry) hashField() string {
-	if e.Post != nil {
-		return e.Post.Answer
-	}
-	return e.StoreKind + "_hash"
-}
-
-type kindPost struct {
-	Path   string   `json:"path"`
-	Op     string   `json:"op"`
-	Answer string   `json:"answer"`
-	Echo   []string `json:"echo,omitempty"`
-}
-
-const defaultKindsPath = "../web/pkg/kinds.json"
-
-func loadKindTable(path string) (*kindTable, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("the kind table: %w (run `just caps`)", err)
-	}
-	var t kindTable
-	if err := json.Unmarshal(raw, &t); err != nil {
-		return nil, fmt.Errorf("the kind table %s: %w", path, err)
-	}
-	var kinds struct {
-		Kinds json.RawMessage `json:"kinds"`
-	}
-	json.Unmarshal(raw, &kinds)
-	t.raw = kinds.Kinds
-	return &t, nil
-}
-
-func (s *server) kindTable() (*kindTable, error) {
+func (s *server) kindTable() (*kinds.Table, error) {
 	s.kindsOnce.Do(func() {
 		if s.kinds != nil {
 			return
 		}
 		path := s.kindsPath
 		if path == "" {
-			path = defaultKindsPath
+			path = kinds.DefaultPath
 		}
-		s.kinds, s.kindsErr = loadKindTable(path)
+		s.kinds, s.kindsErr = kinds.Load(path)
 	})
 	return s.kinds, s.kindsErr
 }
 
-func (t *kindTable) byStoreKind(kind string) *kindEntry {
-	for i := range t.Kinds {
-		if t.Kinds[i].StoreKind == kind {
-			return &t.Kinds[i]
-		}
-	}
-	return nil
+// kept builds the logs from the server's fields at first use, so a test
+// sets them first.
+func (s *server) kept() *logs.Logs {
+	s.keptOnce.Do(func() {
+		s.keptLogs = logs.New(logs.Deps{Store: s.store, Table: s.kindTable, Long: s.longLived, MayWrite: s.mayWrite, WriteDate: s.writeDate, Forward: s.forward})
+	})
+	return s.keptLogs
 }
 
-func (t *kindTable) heading(pointer string) *kindEntry {
-	for i := range t.Kinds {
-		if t.Kinds[i].heads(pointer) {
-			return &t.Kinds[i]
-		}
-	}
-	return nil
+// planner builds the plans at first use. It reads the store and cap-plans
+// at each call, so a test sets them first.
+func (s *server) planner() *plans.Plans {
+	s.plannerOnce.Do(func() {
+		s.plansRoutes = plans.New(plans.Deps{
+			Store: func() *store.Store { return s.store },
+			Logs:  s.kept(),
+			Table: s.kindTable,
+			Host:  func() *WasmHost { return s.plans },
+			Fresh: s.fresh,
+			Today: s.today,
+			SetZone: func(zone string) {
+				s.zoneMu.Lock()
+				s.zone = zone
+				s.zoneMu.Unlock()
+			},
+			Forward:        s.forward,
+			MigratorHash:   func() string { m, _ := s.migrator(); return m.Hash() },
+			NetworkVersion: networkVersion,
+			FeedZip: func() ([]byte, bool, error) {
+				if s.feeder == nil {
+					return nil, false, nil
+				}
+				zip, err := s.feeder.Zip()
+				return zip, true, err
+			},
+		})
+	})
+	return s.plansRoutes
 }
 
-// A pointer pattern ending in `*` is a prefix.
-func (e *kindEntry) heads(pointer string) bool {
-	for _, p := range e.Pointers {
-		if prefix, ok := strings.CutSuffix(p, "*"); ok && strings.HasPrefix(pointer, prefix) || p == pointer {
-			return true
-		}
-	}
-	return false
+func (s *server) kindRoutes() *kindroutes.Routes {
+	return kindroutes.New(s.kept(), s.store)
 }
 
-func (e *kindEntry) rule() string {
-	for _, p := range e.Pointers {
-		if !strings.HasSuffix(p, "*") {
-			return p
-		}
+// kindWhere is the first kind the table names that has the field, or nil.
+func (s *server) kindWhere(has func(*kinds.Entry) bool) *kinds.Entry {
+	t, err := s.kindTable()
+	if err != nil {
+		return nil
 	}
-	return e.StoreKind
+	return t.Where(has)
 }
 
-func (e *kindEntry) current() uint32 {
-	v := uint32(1)
-	for _, x := range e.Versions {
-		if x.Version > v {
-			v = x.Version
-		}
-	}
-	return v
+func (s *server) workOrderKind() *kinds.Entry {
+	return s.kindWhere(func(e *kinds.Entry) bool { return e.WorkOrder != nil })
 }
 
 // With no table, the policy is restricted: a missing table never opens it.
@@ -187,32 +93,17 @@ func (s *server) restricted(kind string) bool {
 	if err != nil {
 		return kind == "policy"
 	}
-	e := t.byStoreKind(kind)
+	e := t.ByStoreKind(kind)
 	return e == nil && kind == "policy" || e != nil && e.Read == "restricted"
 }
 
-func (s *server) pointerRefusal(name, kind string) (*kindEntry, string, error) {
+func (s *server) pointerRefusal(name, kind string) (*kinds.Entry, string, error) {
 	t, err := s.kindTable()
 	if err != nil {
 		return nil, "", err
 	}
-	e := t.byStoreKind(kind)
-	if e == nil {
-		return nil, fmt.Sprintf("the store keeps no kind %q (the kind table names every kind it keeps)", kind), nil
-	}
-	if h := t.heading(name); h != nil && h != e {
-		return nil, fmt.Sprintf("the %s pointer holds a %s document, not a %s one", name, h.StoreKind, kind), nil
-	}
-	if e.Write != "pointer" {
-		return nil, fmt.Sprintf("a %s document is written through %s", kind, e.Route), nil
-	}
-	if !e.heads(name) {
-		return nil, fmt.Sprintf("a %s document heads only the pointers %s", kind, strings.Join(e.Pointers, ", ")), nil
-	}
-	if e.Module == "" || e.Validate == "" {
-		return nil, fmt.Sprintf("the kind table names no check for a %s write", kind), nil
-	}
-	return e, "", nil
+	e, refusal := t.PointerRefusal(name, kind)
+	return e, refusal, nil
 }
 
 type kindCheck struct {
@@ -225,7 +116,7 @@ type kindCheck struct {
 
 // A pointer write is rare, so the module instance is fresh and closed
 // after.
-func (s *server) checkKind(ctx context.Context, e *kindEntry, doc json.RawMessage) (kindCheck, error) {
+func (s *server) checkKind(ctx context.Context, e *kinds.Entry, doc json.RawMessage) (kindCheck, error) {
 	inst, err := s.fresh(ctx)
 	if err != nil {
 		return kindCheck{}, fmt.Errorf("an instance for %s: %w", e.Module, err)

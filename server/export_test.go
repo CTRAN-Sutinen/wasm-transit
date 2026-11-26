@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"rustwasm/server/wasmhost"
 )
 
 func exportServer(t *testing.T) *server {
@@ -158,14 +160,14 @@ func TestTheExportIsWhatTheServerServes(t *testing.T) {
 	var network struct {
 		NetworkHash string `json:"network_hash"`
 	}
-	if err := newNetworkHost(t).InvokeBytes(ctx, opLoadNetwork, gzNetwork, &network); err != nil || network.NetworkHash != exported.NetworkHash {
+	if err := newNetworkHost(t).InvokeBytes(ctx, wasmhost.OpLoadNetwork, gzNetwork, &network); err != nil || network.NetworkHash != exported.NetworkHash {
 		t.Fatalf("network blob registers as %q (%v), pinned %s", network.NetworkHash, err, exported.NetworkHash)
 	}
 	gzStreets, _ := os.ReadFile(filepath.Join(bundle, "blobs", exported.StreetsHash+".gz"))
 	var streets struct {
 		StreetsHash string `json:"streets_hash"`
 	}
-	if err := newStreetsHost(t).InvokeBytes(ctx, opLoadStreets, gzStreets, &streets); err != nil || streets.StreetsHash != exported.StreetsHash {
+	if err := newStreetsHost(t).InvokeBytes(ctx, wasmhost.OpLoadStreets, gzStreets, &streets); err != nil || streets.StreetsHash != exported.StreetsHash {
 		t.Fatalf("streets blob registers as %q (%v), pinned %s", streets.StreetsHash, err, exported.StreetsHash)
 	}
 

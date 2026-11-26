@@ -73,7 +73,7 @@ func TestAFreezePutsNothingInForce(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("freeze: %d %v", code, out)
 	}
-	if _, _, found, _ := s.keptHead("plans"); found {
+	if _, _, found, _ := s.kept().Head("plans"); found {
 		t.Fatal("a frozen version is not in force: nothing is published")
 	}
 	if head := mustHead(t, s, "plan.fall-2026"); head != out["network_hash"] {

@@ -15,9 +15,9 @@ import (
 func TestCompactionSkipsATombstoneThatAnAlertNames(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
-	s.seedKept(nil)
+	s.kept().Seed(nil)
 	mux := storeMux(s)
-	mux.HandleFunc("/service-alerts", s.handleKeptRoute)
+	mux.HandleFunc("/service-alerts", s.kindRoutes().HandleKindPost)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL

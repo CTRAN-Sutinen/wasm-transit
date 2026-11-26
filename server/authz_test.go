@@ -143,7 +143,7 @@ func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
-	mux.HandleFunc("/logs/", s.protectLog(s.handleLogs))
+	mux.HandleFunc("/logs/", s.protectLog(s.kept().HandleLogs))
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	base := httptest.NewServer(mux).URL
 	return s, base

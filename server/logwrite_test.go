@@ -81,7 +81,7 @@ func TestAResentWriteLandsOnceAfterAnotherWriterChangedTheRecord(t *testing.T) {
 	if head.Seq != 2 {
 		t.Fatalf("no third entry: head %d", head.Seq)
 	}
-	_, doc, _, _ := s.keptHead("notes")
+	_, doc, _, _ := s.kept().Head("notes")
 	var notes struct {
 		Notes map[string]struct {
 			Text    string `json:"text"`
@@ -149,7 +149,7 @@ func TestAnAlertEndedThroughItsIntent(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("end: %d %v", code, out)
 	}
-	_, doc, _, _ := s.keptHead("service_alerts")
+	_, doc, _, _ := s.kept().Head("service_alerts")
 	var alerts struct {
 		Alerts map[string]map[string]any `json:"alerts"`
 	}
@@ -162,7 +162,7 @@ func TestAnAlertEndedThroughItsIntent(t *testing.T) {
 func closeModules(t *testing.T, s *server) {
 	t.Cleanup(func() {
 		if s.long != nil {
-			s.long.refreshes.Wait()
+			s.long.Wait()
 		}
 	})
 }

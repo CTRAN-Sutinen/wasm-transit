@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"rustwasm/server/kinds"
 )
 
 func writeConfig(t *testing.T, dir, name, body string) string {
@@ -213,7 +215,7 @@ func TestTheModuleLinksEveryCapabilityTheKindTableNames(t *testing.T) {
 		t.Fatalf("the kind table names %v, which the module does not link", missing)
 	}
 	s = &server{wasm: newTestHost(t)}
-	s.kinds = &kindTable{Kinds: []kindEntry{{StoreKind: "test_kind", Module: "testkind", Receive: "testlog"}}}
+	s.kinds = &kinds.Table{Kinds: []kinds.Entry{{StoreKind: "test_kind", Module: "testkind", Receive: "testlog"}}}
 	s.kindsOnce.Do(func() {})
 	if got := s.unhosted(); len(got) != 2 || got[0] != "testkind" || got[1] != "testlog" {
 		t.Fatalf("a kind whose capabilities are not linked: %v", got)

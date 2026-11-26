@@ -154,17 +154,17 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 		}
 		set = json.RawMessage(*next.Document)
 	}
-	oldSet, _, err := s.store.CAS("plans", "", set, s.plansEnvelope(), "", "anonymous", time.Now().UnixMilli())
+	oldSet, _, err := s.store.CAS("plans", "", set, s.planner().Envelope(), "", "anonymous", time.Now().UnixMilli())
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.seedKept(nil)
+	s.kept().Seed(nil)
 	if got := plansHash(t, s); got != oldSet {
 		t.Fatalf("the seeded log holds the pointer's set: %s, want %s", got, oldSet)
 	}
 
 	s.fixedToday = "2026-10-01"
-	s.commitPicksForward()
+	s.planner().CommitForward()
 
 	if plansHash(t, s) == oldSet {
 		t.Fatal("the set was republished with the migrated networks")
@@ -217,7 +217,7 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 	}
 	// Each frozen version brought forward pins the version it came from
 	// (D-232).
-	_, frozenDoc, _, err := s.keptHead("frozen_versions")
+	_, frozenDoc, _, err := s.kept().Head("frozen_versions")
 	var frozen struct {
 		Versions map[string]struct {
 			PlanID          string `json:"plan_id"`
@@ -236,7 +236,7 @@ func TestThePicksInUseCommitForwardAtStartup(t *testing.T) {
 		}
 	}
 
-	s.commitPicksForward()
+	s.planner().CommitForward()
 	if after, _ := s.store.LogHeadOf("plans"); after.Seq != head.Seq {
 		t.Fatalf("current picks are not committed again: entry %d, want %d", after.Seq, head.Seq)
 	}

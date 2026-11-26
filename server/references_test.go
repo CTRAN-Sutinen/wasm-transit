@@ -1,6 +1,6 @@
 package main
 
-// Pins D-233 (logkinds.go, caplog.go):
+// Pins D-233 (server/logs):
 //
 //  1. A write that adds a reference to a record missing from the world
 //     its writer read is refused, 422 with `references`. A writer that
@@ -52,12 +52,12 @@ func TestAWriteIsJudgedAsOfTheSeqItsWriterRead(t *testing.T) {
 		t.Fatalf("the stops: %d %v", code, out)
 	}
 
-	before := s.keptSeq("stops")
+	before := s.kept().Seq("stops")
 	code, out := opsPost(t, base, "desk/1", putRequest("R-1", "NO-SUCH-STOP"))
 	if code != http.StatusUnprocessableEntity || len(refs(out)) != 1 || refs(out)[0] != "R-1 names NO-SUCH-STOP" {
 		t.Fatalf("a reference the writer could not have seen is refused: %d %v", code, out)
 	}
-	if s.keptSeq("stops") != before {
+	if s.kept().Seq("stops") != before {
 		t.Fatalf("a refused write writes nothing")
 	}
 
@@ -65,7 +65,7 @@ func TestAWriteIsJudgedAsOfTheSeqItsWriterRead(t *testing.T) {
 		"event": map[string]any{"on": "2026-09-01", "event": "planned", "lat": 45.6, "lon": -122.6}}}); code != 200 {
 		t.Fatalf("the new stop: %d %v", code, out)
 	}
-	read := s.keptSeq("stops")
+	read := s.kept().Seq("stops")
 	code, _, resp := httpPost(t, base+"/logs/stops/revert", `{"seq":`+itoa(read)+`}`)
 	if code != 200 {
 		t.Fatalf("the revert: %d %s", code, resp)
@@ -83,7 +83,7 @@ func TestAWriteIsJudgedAsOfTheSeqItsWriterRead(t *testing.T) {
 		"event": map[string]any{"on": "2026-09-01", "event": "planned", "lat": 45.61, "lon": -122.61}}}); code != 200 {
 		t.Fatalf("stop M: %d %v", code, out)
 	}
-	madeM := s.keptSeq("stops")
+	madeM := s.kept().Seq("stops")
 	if code, out := opsPost(t, base, "desk/5", putRequest("R-4", "M")); code != 200 || out["references"] != nil {
 		t.Fatalf("a request naming a held stop has no warning: %d %v", code, out)
 	}

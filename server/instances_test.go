@@ -30,8 +30,8 @@ func TestATrapDuringAWriteLeavesAuthzAnswering(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { inst.Close(ctx) })
-	s.authz.wasm = newHeld("authz", inst).as("authz")
-	t.Cleanup(func() { s.long.refreshes.Wait() })
+	s.authz.wasm = wasmhost.NewHeld("authz", inst).As("authz")
+	t.Cleanup(func() { s.long.Wait() })
 
 	now := time.Now().Unix()
 	token := func(role string) string {
@@ -41,18 +41,18 @@ func TestATrapDuringAWriteLeavesAuthzAnswering(t *testing.T) {
 		})
 	}
 	trapped := s.longLived().Current()
-	s.longLived().seq.Lock()
-	if err := trapped.Fault(ctx); err == nil {
-		t.Fatal("the fault did not trap")
-	}
-	s.longLived().seq.Unlock()
+	s.longLived().Locked(func() {
+		if err := trapped.Fault(ctx); err == nil {
+			t.Error("the fault did not trap")
+		}
+	})
 	if code, body := bearerPost(t, base+"/edits", token("dispatcher"), editDoc("e1", "draft", 1, 100)); code == 200 {
 		t.Fatalf("a write on the trapped instance: %d %s", code, body)
 	}
 	if code, _ := bearerPost(t, base+"/edits", token("rider"), editDoc("e1", "draft", 1, 100)); code != 403 {
 		t.Fatalf("authz answers through the trap: want 403 for a rider, got %d", code)
 	}
-	s.long.refreshes.Wait()
+	s.long.Wait()
 	if s.long.Current() == trapped {
 		t.Fatal("the trapped instance was not replaced")
 	}
@@ -79,7 +79,7 @@ func TestARefreshAnswersEveryRequestAndSwapsCleanly(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/notes", s.handleKeptRoute)
+	mux.HandleFunc("/notes", s.kindRoutes().HandleKindPost)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	trip := map[string]any{"kind": "trip", "trip": "t10", "date": "2026-10-23", "start_secs": 28800}
@@ -96,23 +96,19 @@ func TestARefreshAnswersEveryRequestAndSwapsCleanly(t *testing.T) {
 		t.Fatal("the first note")
 	}
 	reached, release := make(chan struct{}), make(chan struct{})
-	long.hook = func(stage string) {
+	long.Hook = func(stage string) {
 		if stage == "registered" {
 			close(reached)
 			<-release
 		}
 	}
-	long.seq.Lock()
-	long.ceiling = 0
-	long.seq.Unlock()
+	long.SetCeiling(0)
 	old := long.Current()
 	if post("n2", "Late.") != 200 {
 		t.Fatal("the note that starts the refresh")
 	}
 	<-reached
-	long.seq.Lock()
-	long.ceiling = memoryCeiling
-	long.seq.Unlock()
+	long.SetCeiling(wasmhost.MemoryCeiling)
 
 	started := time.Now()
 	if post("n3", "Covered.") != 200 {
@@ -125,7 +121,7 @@ func TestARefreshAnswersEveryRequestAndSwapsCleanly(t *testing.T) {
 		t.Fatal("the old instance answers until the swap")
 	}
 	close(release)
-	long.refreshes.Wait()
+	long.Wait()
 	if long.Current() == old {
 		t.Fatal("no swap")
 	}
@@ -135,18 +131,14 @@ func TestARefreshAnswersEveryRequestAndSwapsCleanly(t *testing.T) {
 
 	// The head that moved during the refresh (n3) was registered before the
 	// swap, so a write after it registers nothing.
-	long.seq.Lock()
-	loads, heads := long.loads, len(long.heads)
-	long.seq.Unlock()
+	loads, heads := long.Loads()
 	if heads == 0 {
 		t.Fatal("the long-lived instance holds no head")
 	}
 	if post("n4", " ") != 422 {
 		t.Fatal("a blank note is refused")
 	}
-	long.seq.Lock()
-	defer long.seq.Unlock()
-	if long.loads != loads {
-		t.Fatalf("a write after the swap registered %d heads the instance held", long.loads-loads)
+	if after, _ := long.Loads(); after != loads {
+		t.Fatalf("a write after the swap registered %d heads the instance held", after-loads)
 	}
 }

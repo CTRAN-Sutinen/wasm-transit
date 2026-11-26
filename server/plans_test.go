@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 func newPlansHost(t *testing.T) *WasmHost {
@@ -34,11 +35,11 @@ func newPlansServer(t *testing.T, b store.Backend) (*server, string) {
 	s.plans = newPlansHost(t)
 	s.fixedToday = "2026-08-01" // before every pick below; the fixture runs through 2026-12-31
 	mux := storeMux(s)
-	mux.HandleFunc("/plans", s.handlePlans)
-	mux.HandleFunc("/plans/retire", s.handleRetire)
-	mux.HandleFunc("/plans/freeze", s.handleFreeze)
-	mux.HandleFunc("/plans/adopt", s.handleAdopt)
-	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/plans", s.planner().HandlePlans)
+	mux.HandleFunc("/plans/retire", s.planner().HandleRetire)
+	mux.HandleFunc("/plans/freeze", s.planner().HandleFreeze)
+	mux.HandleFunc("/plans/adopt", s.planner().HandleAdopt)
+	mux.HandleFunc("/feed", s.planner().HandleFeed)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -384,7 +385,7 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 	var loaded struct {
 		NetworkHash string `json:"network_hash"`
 	}
-	if err := host.InvokeBytes(context.Background(), opLoadNetwork, blob, &loaded); err != nil {
+	if err := host.InvokeBytes(context.Background(), wasmhost.OpLoadNetwork, blob, &loaded); err != nil {
 		t.Fatal(err)
 	}
 	var exported struct {
@@ -436,7 +437,7 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 
 func plansHash(t *testing.T, s *server) string {
 	t.Helper()
-	hash, _, found, err := s.keptHead("plans")
+	hash, _, found, err := s.kept().Head("plans")
 	if err != nil || !found {
 		t.Fatalf("the plans log's set: %v %v", found, err)
 	}
@@ -445,7 +446,7 @@ func plansHash(t *testing.T, s *server) string {
 
 func plansSet(t *testing.T, s *server) []byte {
 	t.Helper()
-	_, doc, found, err := s.keptHead("plans")
+	_, doc, found, err := s.kept().Head("plans")
 	if err != nil || !found {
 		t.Fatalf("the plans log's set: %v %v", found, err)
 	}

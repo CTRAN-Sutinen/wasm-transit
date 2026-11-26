@@ -48,13 +48,14 @@ Before you report, run the `doc-sweep` skill
 | A capability | `crates/cap-<id>/OPS.md` (`node tools/caps-run.mjs tools <id>` prints it), and its `//!` crate comment |
 | cap-abi, the modules, the assemblies | `docs/architecture/bus.md`, `docs/architecture/registry.md` |
 | The document kinds and formats at rest | `crates/cap-abi/src/kinds.rs`, `docs/FORMATS.md` |
-| The server and the capabilities it hosts | `docs/architecture/server.md` |
+| The server and the capabilities it hosts | `docs/architecture/server.md` (`node tools/caps-run.mjs kind <tag>` prints a kind's path through it) |
 | The HTTP contract | `server/openapi.json`, held to the server by Go tests |
 | The web and the generated UIs | `docs/architecture/web.md`, `docs/architecture/generated-uis.md`, and one file for each UI in `generated-uis/` |
 | Writing, traceability, gotchas | `docs/CONVENTIONS.md` |
 | The documentation sweep | `.claude/skills/doc-sweep/SKILL.md` |
 | Testing, dogfood QA, UI screenshots | `docs/TESTING.md` |
 | Each recipe | the comment above it in the justfile |
+| A gate | its script, named in `_host-tests` (`tools/gates/`, `web/gates/`, or beside the code it guards) |
 | The agent runner | the header of `tools/caps-run.mjs`, and `docs/architecture/registry.md` |
 | Open work | `docs/units/` (read its README before you touch anything) |
 | Open questions for the user, and answers not built yet | `docs/DECISIONS.md` (the rules and the summary), one file for each entry in `docs/decisions/` |

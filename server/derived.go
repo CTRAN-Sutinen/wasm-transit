@@ -15,11 +15,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"slices"
-	"time"
 
 	"rustwasm/server/store"
 )
@@ -118,7 +116,7 @@ func commitDerivation(st *store.Store, pointer string, inputs []string, module s
 	d := Derivation{Kind: DerivationKind, SchemaVersion: 1, Inputs: inputs, Module: module, Documents: []DerivedDocument{}, Answer: answer}
 	for _, doc := range docs {
 		env := store.Envelope{Kind: doc.storeKind, SchemaVersion: doc.version, ProducedBy: module}
-		if err := commitHead(st, doc.tag, doc.body, env, doc.hash, "server"); err != nil {
+		if err := st.CommitHead(doc.tag, doc.body, env, doc.hash, "server"); err != nil {
 			log.Printf("%s: commit its %s: %v", pointer, doc.tag, err)
 			return
 		}
@@ -130,36 +128,8 @@ func commitDerivation(st *store.Store, pointer string, inputs []string, module s
 		return
 	}
 	env := store.Envelope{Kind: DerivationKind, SchemaVersion: 1, ProducedBy: "server"}
-	if err := commitHead(st, pointer, body, env, "", "server"); err != nil {
+	if err := st.CommitHead(pointer, body, env, "", "server"); err != nil {
 		log.Printf("%s: commit the derivation: %v", pointer, err)
-	}
-}
-
-// Another process that committed the same bytes first is a success. A
-// derivation of the same inputs makes the same bytes, so another head is
-// retried over a few times.
-func commitHead(st *store.Store, pointer string, body []byte, env store.Envelope, wantHash, writer string) error {
-	for attempt := 0; ; attempt++ {
-		head, found, err := st.Head(pointer)
-		if err != nil {
-			return err
-		}
-		from := ""
-		if found {
-			from = head.Hash
-		}
-		_, _, err = st.CAS(pointer, from, body, env, wantHash, writer, time.Now().UnixMilli())
-		var ce *store.ConflictError
-		switch {
-		case err == nil:
-			return nil
-		case !errors.As(err, &ce):
-			return err
-		case ce.Current == store.HashOf(body):
-			return nil
-		case attempt >= 2:
-			return err
-		}
 	}
 }
 

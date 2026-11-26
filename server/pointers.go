@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"rustwasm/server/httpx"
 	"rustwasm/server/store"
 )
 
@@ -165,25 +166,25 @@ func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
 	if name == "edits" {
 		_, head, err := s.disruptionsNow()
 		if err != nil {
-			fail(w, err, http.StatusInternalServerError)
+			httpx.Fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		head.Name = name
-		labelStale(w, head)
+		httpx.LabelStale(w, head)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(head)
 		return
 	}
 	head, found, err := s.store.Head(name)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
 		http.Error(w, "no such pointer", http.StatusNotFound)
 		return
 	}
-	labelStale(w, head)
+	httpx.LabelStale(w, head)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(head)
 }
@@ -192,7 +193,7 @@ func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name s
 	since := r.URL.Query().Get("since")
 	entries, found, err := s.store.Log(name, since)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	// Writer identities leave the store only for audit-granted callers.
@@ -206,7 +207,7 @@ func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name s
 		}
 	}
 	head, _, _ := s.store.Head(name)
-	labelStale(w, head)
+	httpx.LabelStale(w, head)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"name":        name,
@@ -234,7 +235,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	writer := writerOf(r, "anonymous")
+	writer := httpx.Writer(r, "anonymous")
 	nowMs := time.Now().UnixMilli()
 
 	// One attempt on the client's last-seen hash. The caller retries on 409.
@@ -257,10 +258,10 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			editsRefused(w, got, refusal)
 			return
 		}
-		flagUnknown(w, "edits", writer, got.UnknownFields)
+		httpx.FlagUnknown(w, "edits", writer, got.UnknownFields)
 		_, head, err := s.disruptionsNow()
 		if err != nil {
-			fail(w, err, http.StatusInternalServerError)
+			httpx.Fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		hash := head.Hash
@@ -272,7 +273,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 
 	head, found, err := s.store.Head(name)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	kind := req.Kind
@@ -285,7 +286,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 
 	entry, refusal, err := s.pointerRefusal(name, kind)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if refusal != "" {
@@ -315,7 +316,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		w.Write(checked.answer)
 		return
 	}
-	env := store.Envelope{Kind: kind, SchemaVersion: entry.current(), ProducedBy: checked.module}
+	env := store.Envelope{Kind: kind, SchemaVersion: entry.Current(), ProducedBy: checked.module}
 	from := ""
 	if found {
 		from = head.Hash
@@ -329,10 +330,10 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			json.NewEncoder(w).Encode(map[string]any{"current": ce.Current, "seq": ce.Seq})
 			return
 		}
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	flagUnknown(w, name, writer, checked.unknownFields)
+	httpx.FlagUnknown(w, name, writer, checked.unknownFields)
 	var warned struct {
 		Warnings json.RawMessage `json:"warnings"`
 	}
@@ -379,7 +380,7 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		data, env, err = s.store.GetBlob(hash)
 	}
 	if err == store.ErrNotFound {
-		kind, doc, ok := s.keptDoc(hash)
+		kind, doc, ok := s.kept().Doc(hash)
 		if ok {
 			version := docVersion(doc)
 			w.Header().Set("X-Document-Kind", kind)
@@ -401,7 +402,7 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		fail(w, err, http.StatusBadRequest)
+		httpx.Fail(w, err, http.StatusBadRequest)
 		return
 	}
 	// The policy blob is the authorization structure itself. A client gets

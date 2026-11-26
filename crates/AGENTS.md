@@ -169,7 +169,9 @@ Only a generated assembly (`assemblies/`) links capabilities.
 ## Enforcement
 
 `just test` checks rules 1 and 2 and the linking rule, with the arch
-gates, the `compile_fail` doctests on the registry, and the assembly
+gates (`crates/cap-abi/src/bin/arch_gates.rs`, and
+`tools/gates/crate-laws.mjs` for the whole-feed write and a module's
+determinism), the `compile_fail` doctests on the registry, and the assembly
 independence check (`docs/architecture/bus.md`, "Bus rules"). Rule 3
 is a review gate, and the criteria above are its checklist.
 

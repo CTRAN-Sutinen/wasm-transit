@@ -44,6 +44,12 @@ test("a handler that does not exist fails", () => {
   assert.ok(trace(broken, stops).missing.some((m) => /POST \/stops: no Go func/.test(m)));
 });
 
+test("a handler name that two Go funcs share fails", () => {
+  const twice = ctx.mux.find((r) => r.field?.endsWith("Post.Path")).handler;
+  const broken = { ...ctx, funcs: { ...ctx.funcs, [twice]: [...ctx.funcs[twice], "server/other.go:1"] } };
+  assert.ok(trace(broken, stops).missing.some((m) => /names 2 Go funcs/.test(m)));
+});
+
 test("an op that does not exist fails", () => {
   assert.ok(trace(ctx, { ...stops, validate: "no_such_op" }).missing.some((m) => /cap-stops has no op no_such_op/.test(m)));
   assert.ok(trace(ctx, { ...stops, module: "nothing" }).missing.some((m) => /no capability nothing/.test(m)));

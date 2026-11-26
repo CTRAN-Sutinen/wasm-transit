@@ -27,7 +27,9 @@ import (
 	"sync"
 	"time"
 
+	"rustwasm/server/httpx"
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 type oidcConfig struct {
@@ -66,7 +68,7 @@ func loadAuthz(ctx context.Context, cfg oidcConfig, module *Instance, policyFile
 	if err != nil {
 		return nil, fmt.Errorf("authz instance: %w", err)
 	}
-	a := &authzState{cfg: cfg, wasm: newHeld("authz", inst).as("authz"), jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: 30 * time.Second}
+	a := &authzState{cfg: cfg, wasm: wasmhost.NewHeld("authz", inst).As("authz"), jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: 30 * time.Second}
 	if a.cfg.nameClaim == "" {
 		a.cfg.nameClaim = "name"
 	}
@@ -381,7 +383,6 @@ func rolesAtClaim(claims map[string]any, path string) []string {
 type ctxKey string
 
 const (
-	writerKey   ctxKey = "writer"
 	identityKey ctxKey = "identity" // the verified *identity (sub + roles)
 	auditKey    ctxKey = "audit"    // may the caller see writer identities in the log?
 )
@@ -458,7 +459,7 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 		}
 		pointer := pointerOf(r)
 		ctx := context.WithValue(r.Context(), identityKey, id)
-		ctx = context.WithValue(ctx, writerKey, id.Sub)
+		ctx = httpx.WithWriter(httpx.WithName(ctx, id.Name), id.Sub)
 		if isLog {
 			// An "audit" rule implies read. The log's `writer` fields are
 			// shown to an audit rule and redacted otherwise (D-164).
@@ -485,8 +486,8 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 
 func (s *server) logPointer(path string) string {
 	name, _, _ := strings.Cut(strings.TrimPrefix(path, "/logs/"), "/")
-	if l := s.keptLog(name); l != nil && len(l.kinds) > 0 {
-		return l.kinds[0].rule()
+	if l := s.kept().Get(name); l != nil && l.Rule() != "" {
+		return l.Rule()
 	}
 	return name
 }
@@ -506,7 +507,7 @@ func (s *server) mayWrite(r *http.Request, pointer string) (bool, string) {
 // call, a read too. An entry names its writer inside its bytes, so the
 // server cannot redact it. An intent write (POST /logs/<log>) needs only
 // a valid token here, and the write rule of each document it writes
-// (logkinds.go).
+// (server/logs).
 func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.authz == nil {
@@ -524,7 +525,7 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		ctx := context.WithValue(r.Context(), identityKey, id)
-		ctx = context.WithValue(ctx, writerKey, id.Sub)
+		ctx = httpx.WithWriter(httpx.WithName(ctx, id.Name), id.Sub)
 		if r.Method == http.MethodPost && s.isIntentWrite(r.URL.Path) {
 			next(w, r.WithContext(ctx))
 			return
@@ -541,7 +542,7 @@ func (s *server) protectLog(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *server) isIntentWrite(path string) bool {
 	name, ok := strings.CutPrefix(path, "/logs/")
-	return ok && s.keptLog(name) != nil
+	return ok && s.kept().Get(name) != nil
 }
 
 func pointerNameOf(r *http.Request) string {
@@ -566,7 +567,7 @@ func (s *server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		ctx := context.WithValue(r.Context(), identityKey, id)
-		ctx = context.WithValue(ctx, writerKey, id.Sub)
+		ctx = httpx.WithWriter(httpx.WithName(ctx, id.Name), id.Sub)
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -637,24 +638,4 @@ func (s *server) seedPolicy(policyFile string) {
 		return
 	}
 	log.Printf("policy seeded into the store from %s", policyFile)
-}
-
-// nameOf prefers the verified token's name claim.
-func nameOf(r *http.Request, fallback string) string {
-	if id, ok := r.Context().Value(identityKey).(*identity); ok && id != nil && id.Name != "" {
-		return id.Name
-	}
-	return writerOf(r, fallback)
-}
-
-func writerOf(r *http.Request, fallback string) string {
-	if v := r.Context().Value(writerKey); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			return s
-		}
-	}
-	if h := r.Header.Get("X-Writer"); h != "" {
-		return h
-	}
-	return fallback
 }

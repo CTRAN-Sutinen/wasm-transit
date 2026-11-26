@@ -30,6 +30,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"rustwasm/server/httpcontract"
+	"rustwasm/server/kinds"
 )
 
 const contractFile = "openapi.json"
@@ -69,7 +70,7 @@ func muxPatterns(t *testing.T) map[string]bool {
 		t.Fatal(err)
 	}
 	out := map[string]bool{}
-	table, err := loadKindTable(defaultKindsPath)
+	table, err := kinds.Load(kinds.DefaultPath)
 	if err != nil {
 		t.Fatal(err)
 	}

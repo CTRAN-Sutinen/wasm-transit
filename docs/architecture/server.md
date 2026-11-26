@@ -15,6 +15,27 @@ or receive a kind, so a new kind's capability needs no line in the
 list. At boot the server refuses a module that does not link them.
 The manifest's `wasm_hash` names the module.
 
+**The code, by concept.** `package main` holds the wiring, the flags,
+the mux (`routes()` in `main.go`), the host's clock (`clock.go`), and the
+routes of its own concepts (the network, the streets, the pointers, the
+builds, the attachments, sign-in). Each other concept is a package:
+
+| Package | Holds |
+|---|---|
+| `server/logs` | the logs: the fold (`fold.go`), one write through a receive op (`receive.go`), each kind's document at the head (`read.go`), `/logs/` (`routes.go`), and the first entry from the old pointers (`seed.go`) |
+| `server/plans` | publishing: `POST /plans`, the freeze, the adoption, the retire, `GET /feed`, and the picks brought forward at boot |
+| `server/kindroutes` | each kind's `post` route, which its log receives |
+| `server/kinds` | the kind table, read |
+| `server/store` | the bucket: blobs, pointers, the logs' entries and checkpoints |
+| `server/wasmhost` | the module ABI, and the long-lived instance (`Held`) |
+| `server/httpx` | the answers every route shares: a failure, a module's error, a stale head, unknown fields, the writer |
+
+The server registers a kind's routes from the kind table, so a grep of a
+route finds no handler. `node tools/caps-run.mjs kind <tag>` prints a
+kind's whole path: each route and its Go handler, its log, its ops and
+the library functions behind them, its read rights, and its store
+layout.
+
 Each call names its capability: a JSON request carries `"cap"`, and a
 capability's bulk op carries its index (`wasmhost.Speak`). The server
 runs these instances of the one compiled module:
@@ -32,7 +53,7 @@ runs these instances of the one compiled module:
   write's check, closed after, so the memory it used goes with it.
 
 **A refresh.** Wasm memory never shrinks. When the long-lived instance
-passes its memory ceiling (256 MB, `memoryCeiling` in `wasm.go`), the
+passes its memory ceiling (256 MB, `wasmhost.MemoryCeiling`), the
 server starts a fresh instance of the same compiled module beside it and
 registers the held heads in it. Requests go on to the held instance, with
 no wait. Before the swap, the server registers each head that moved
@@ -179,7 +200,7 @@ answers `unavailable`.
 a working copy: it caches heads, and it reads at most 2 s behind
 another copy's commit. Two copies that write the same log at the same
 time race for the next entry's conditional create. The loser reads the
-log again and asks its receive op again (`receiveLog`), so every write
+log again and asks its receive op again (`logs.Receive`), so every write
 lands once, in one order. `server/resilience_test.go` pins this with the
 fault harness: an answer lost after the bucket kept the write, a copy
 stopped in the middle of a write, and a slow bucket.
@@ -601,7 +622,7 @@ body or an answer only where the behavior needs it.
     and no log gets entry 1 from their heads at startup (writer
     `migrate:stops`, the note naming each head). The pointers stay, read
     only.
-- **One path for a log** (`logkinds.go`) covers each log whose
+- **One path for a log** (`server/logs`) covers each log whose
   kinds the kind table names with a receiving capability (`receive`):
   the disruptions, stops, plans, alerts, and notes logs. The server
   reads the head, makes one call, and creates the entry.
@@ -701,7 +722,7 @@ reading **Because**.
 - **Holds:** every domain answer comes from a capability module. The Go host does I/O, routing, and proxies only. Logic that the server needs becomes a capability.
 - **Because:** the server and a page that have the same documents must answer the same bytes ([web.md](web.md), "Parity"). Go logic is a second implementation to keep in step.
 
-### A write is one op (`logkinds.go`, `planslog.go` `writePick`)
+### A write is one op (`server/logs` `Receive`, `server/plans` `writePick`)
 - **Holds:** each write the server takes is one op of its log's receive op. A pick's checks (the network's publish check, the stops it reads) run inside cap-plans' `pick`, which links their libraries. Go registers the documents and stores what the op made, and sequences no checks.
 - **Because:** checks sequenced in Go are host logic, and the read-seq check (D-233) replays a write's check as one op. The cost is a larger single cap-plans module: it links transit-network and transit-stops.
 
@@ -734,7 +755,7 @@ reading **Because**.
 - **Because:** a process must be disposable. Its replacement, given the bucket and the same flags, serves the same manifest. Local files tie a deployment to one machine.
 - **Rejected:** the bucket only, with a separate import step.
 
-### Stale reads labelled, writes refused (`degraded.go`, `X-Store-Stale`)
+### Stale reads labelled, writes refused (`httpx.Fail`, `httpx.LabelStale`, `X-Store-Stale`)
 - **Holds:** while the bucket does not answer, the server serves cached heads and blobs labelled with their age. It refuses every write (503).
 - **Because:** blobs are immutable, so only a head can be stale. Reads peak during disruptions, when outages are likeliest. If the server acknowledged a write that the bucket has not taken, the write would be lost with the process. The browser keeps its documents and resends.
 - **Rejected:** failing reads past an age. Failing every request.

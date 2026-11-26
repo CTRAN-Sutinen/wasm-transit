@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 func (s *server) handleNetwork(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +105,7 @@ func importFeed(ctx context.Context, wasmPath string, zipBytes []byte) (json.Raw
 	var loaded struct {
 		FeedHash string `json:"feed_hash"`
 	}
-	if err := host.InvokeBytes(ctx, opLoadFeed, zipBytes, &loaded); err != nil {
+	if err := host.InvokeBytes(ctx, wasmhost.OpLoadFeed, zipBytes, &loaded); err != nil {
 		return nil, "", "", fmt.Errorf("load_feed: %w", err)
 	}
 	answer, err := host.InvokeRaw(ctx, map[string]any{"op": "import", "feed_hash": loaded.FeedHash})

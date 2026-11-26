@@ -17,9 +17,10 @@ import (
 	"time"
 
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
-// cap-streets' own bulk op, apart from the kernel's opLoadStreets.
+// cap-streets' own bulk op, apart from the kernel's wasmhost.OpLoadStreets.
 const opImportStreets = 0
 
 type servedDoc struct {
@@ -161,11 +162,11 @@ func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 				return nil, err
 			}
 			if !streetsInHost {
-				if err := h.InvokeBytes(ctx, opLoadStreets, streets.body, nil); err != nil {
+				if err := h.InvokeBytes(ctx, wasmhost.OpLoadStreets, streets.body, nil); err != nil {
 					return nil, fmt.Errorf("load_streets: %w", err)
 				}
 			}
-			if err := h.InvokeBytes(ctx, opLoadNetwork, feed.document, nil); err != nil {
+			if err := h.InvokeBytes(ctx, wasmhost.OpLoadNetwork, feed.document, nil); err != nil {
 				return nil, fmt.Errorf("load_network: %w", err)
 			}
 			raw, err := h.InvokeRaw(ctx, map[string]any{

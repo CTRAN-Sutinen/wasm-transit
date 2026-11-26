@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"rustwasm/server/wasmhost"
 )
 
 type served struct {
@@ -87,7 +89,7 @@ func TestServedNetworkIsTheImport(t *testing.T) {
 	var loaded struct {
 		FeedHash string `json:"feed_hash"`
 	}
-	if err := own.InvokeBytes(ctx, opLoadFeed, zip, &loaded); err != nil {
+	if err := own.InvokeBytes(ctx, wasmhost.OpLoadFeed, zip, &loaded); err != nil {
 		t.Fatalf("load_feed: %v", err)
 	}
 	var imported served
@@ -102,7 +104,7 @@ func TestServedNetworkIsTheImport(t *testing.T) {
 	var registered struct {
 		NetworkHash string `json:"network_hash"`
 	}
-	if err := fresh.InvokeBytes(ctx, opLoadNetwork, got.Network, &registered); err != nil {
+	if err := fresh.InvokeBytes(ctx, wasmhost.OpLoadNetwork, got.Network, &registered); err != nil {
 		t.Fatalf("load_network: %v", err)
 	}
 	if registered.NetworkHash != got.NetworkHash {
@@ -267,7 +269,7 @@ func TestServedDocumentIsTheGzippedNetwork(t *testing.T) {
 	var registered struct {
 		NetworkHash string `json:"network_hash"`
 	}
-	if err := fresh.InvokeBytes(ctx, opLoadNetwork, zipped, &registered); err != nil {
+	if err := fresh.InvokeBytes(ctx, wasmhost.OpLoadNetwork, zipped, &registered); err != nil {
 		t.Fatalf("load_network (gzip): %v", err)
 	}
 	if registered.NetworkHash != envelope.NetworkHash {

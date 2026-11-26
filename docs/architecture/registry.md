@@ -127,6 +127,12 @@ documents, so the analysis catalog is about 100 KB.
   analysis, and 3 to 8 KB for the others.
 - `caps-run tools <capability> <op>` prints one op in full: its
   description and its example request and answer.
+- `caps-run kind <tag>` prints one kind's path through the code, from
+  the kind table: each route and its Go handler, its log, its load,
+  check, and receive ops with the library functions behind them, its
+  read rights, and its store layout (`tools/kind-trace.mjs`). With no
+  tag it prints every kind. `just test` fails when a printed handler or
+  op does not exist.
 
 gen-manifest (`just caps`) generates the registry records and the
 browser manifest. One source gives the contracts, and two surfaces read
@@ -145,8 +151,9 @@ docs site renders the lists. An op that takes a tagged union of edits
 (`apply` in author) gives one item for each edit, with its arguments and
 its rule, not one long paragraph.
 
-`just test` gates the runner itself. The fixture feed hash is stable, so
-registry or fixture drift fails the gate.
+`just test` gates the runner itself (`tools/gates/sessions.mjs`). The
+fixture feed hash is stable, so registry or fixture drift fails the
+gate.
 
 ## The docs site
 

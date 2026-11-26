@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 func newStopsServer(t *testing.T, b store.Backend) (*server, string) {
@@ -24,10 +25,10 @@ func newStopsServer(t *testing.T, b store.Backend) (*server, string) {
 	s.fixedToday = "2026-08-01"
 	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/plans", s.handlePlans)
-	mux.HandleFunc("/plans/retire", s.handleRetire)
-	mux.HandleFunc("/stops", s.handleKeptRoute)
-	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/plans", s.planner().HandlePlans)
+	mux.HandleFunc("/plans/retire", s.planner().HandleRetire)
+	mux.HandleFunc("/stops", s.kindRoutes().HandleKindPost)
+	mux.HandleFunc("/feed", s.planner().HandleFeed)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -55,7 +56,7 @@ func seededStops(t *testing.T) map[string]any {
 		var loaded struct {
 			NetworkHash string `json:"network_hash"`
 		}
-		if seededErr = host.InvokeBytes(context.Background(), opLoadNetwork, fixtureDoc, &loaded); seededErr != nil {
+		if seededErr = host.InvokeBytes(context.Background(), wasmhost.OpLoadNetwork, fixtureDoc, &loaded); seededErr != nil {
 			return
 		}
 		var seeded struct {
@@ -237,7 +238,7 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 		req := httptest.NewRequest("POST", "/stops", strings.NewReader(string(body)))
 		req.Header.Set("X-Writer", writer)
 		w := httptest.NewRecorder()
-		s.handleKeptRoute(w, req)
+		s.kindRoutes().HandleKindPost(w, req)
 		var out map[string]any
 		json.Unmarshal(w.Body.Bytes(), &out)
 		return w.Code, out
@@ -343,7 +344,7 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if err := s.recordFeed(context.Background(), feed); err != nil {
 		t.Fatal(err)
 	}
-	head, held, _, err := s.keptHead("stops")
+	head, held, _, err := s.kept().Head("stops")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,14 +362,14 @@ func TestTheFeedRecordsItsDifferences(t *testing.T) {
 	if err := s.recordFeed(context.Background(), feed); err != nil {
 		t.Fatal(err)
 	}
-	if again, _, _, _ := s.keptHead("stops"); again != head {
+	if again, _, _, _ := s.kept().Head("stops"); again != head {
 		t.Fatalf("a feed that differs in nothing writes nothing: %s → %s", head, again)
 	}
 }
 
 func logBlob(t *testing.T, s *server, hash string) []byte {
 	t.Helper()
-	_, doc, ok := s.keptDoc(hash)
+	_, doc, ok := s.kept().Doc(hash)
 	if !ok {
 		t.Fatalf("the stops log holds no document %s now", hash)
 	}

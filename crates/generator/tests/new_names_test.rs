@@ -34,7 +34,20 @@ fn a_new_kind_and_capability_pass_with_no_other_file_changed() {
     let routed = gates::routed_kinds(&serde_json::json!({ "kinds": table }));
     let test_kind: Vec<_> = routed.into_iter().filter(|k| k.kind == "test_kind").collect();
     assert_eq!(test_kind.len(), 1);
-    for file in ["server/logkinds.go", "server/kinds.go", "server/main.go", "web/src/engine.ts", "tools/caps-run.mjs"] {
+    for file in [
+        "server/logs/logs.go",
+        "server/logs/read.go",
+        "server/logs/receive.go",
+        "server/logs/routes.go",
+        "server/logs/seed.go",
+        "server/kinds/kinds.go",
+        "server/kindroutes/kindroutes.go",
+        "server/plans/plans.go",
+        "server/kinds.go",
+        "server/main.go",
+        "web/src/engine.ts",
+        "tools/caps-run.mjs",
+    ] {
         let source = std::fs::read_to_string(root.join(file)).unwrap();
         assert_eq!(gates::kind_name_violations(file, &source, &test_kind), Vec::<String>::new());
     }

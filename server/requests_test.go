@@ -18,7 +18,7 @@ func TestStopRequestsWritesAreValidated(t *testing.T) {
 	s := newStoreServer(t, store.NewMemory())
 	closeModules(t, s)
 	mux := storeMux(s)
-	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
+	mux.HandleFunc("/stop-requests", s.kindRoutes().HandleKindPost)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	base := srv.URL
@@ -70,7 +70,7 @@ func TestWorkOrdersGoThroughTheAdapter(t *testing.T) {
 	closeModules(t, s)
 	s.fixedToday = "2026-09-02"
 	mux := storeMux(s)
-	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
+	mux.HandleFunc("/stop-requests", s.kindRoutes().HandleKindPost)
 	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -164,7 +164,7 @@ func TestAWorkOrderResentWithItsKeyOpensOnce(t *testing.T) {
 	system := &countingWorkOrders{workOrderSystem: stub}
 	s.workOrders = system
 	mux := storeMux(s)
-	mux.HandleFunc("/stop-requests", s.handleKeptRoute)
+	mux.HandleFunc("/stop-requests", s.kindRoutes().HandleKindPost)
 	mux.HandleFunc("/stop-requests/work-order", s.handleWorkOrder)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

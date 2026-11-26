@@ -136,6 +136,7 @@ export function trace(ctx, k) {
   const handlerAt = (handler, what) => {
     const at = ctx.funcs[handler]?.[0];
     if (!at) missing.push(`${what}: no Go func ${handler} in server/`);
+    else if (ctx.funcs[handler].length > 1) missing.push(`${what}: ${handler} names ${ctx.funcs[handler].length} Go funcs (${ctx.funcs[handler].join(", ")}); give the handler its own name`);
     return at ?? null;
   };
   const route = (method, path) => {

@@ -242,8 +242,10 @@ its home in the [architecture reference](../architecture/README.md).
 
 ## When the build fails
 
-The build checks the project's rules, and its message names the rule.
-The common ones on a first change are these:
+The build checks the project's rules. When a check fails, the build
+prints `GATE FAIL:` and the command that failed. The command names the
+check's script, and the script's first lines say what it checks. The
+common failures on a first change are these:
 
 - **An op has no section in `OPS.md`, or the sections are in a
   different order from the ops.** Fix the file.
@@ -252,7 +254,10 @@ The common ones on a first change are these:
 - **A capability uses another capability.** Capabilities never call
   each other. Move the shared logic into a library.
 - **Code in `web/` calls a module directly.** Only the engine does.
-  Ask through `ask()`.
+  Ask through `ask()` (`web/gates/parity.mjs`).
+- **A session in `tools/gates/sessions.mjs` gets a different answer.**
+  The message names the session. Run its command by hand with
+  `node tools/caps-run.mjs` to see the whole answer.
 
 [crates/AGENTS.md](../../crates/AGENTS.md) lists every rule and the
 check that enforces it.

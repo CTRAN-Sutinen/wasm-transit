@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"rustwasm/server/logs"
 	"rustwasm/server/store"
 )
 
@@ -33,7 +34,7 @@ func storeMux(s *server) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/edits", s.handleEdits)
 	mux.HandleFunc("/pointers/", s.handlePointers)
-	mux.HandleFunc("/logs/", s.handleLogs)
+	mux.HandleFunc("/logs/", s.kept().HandleLogs)
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	return mux
@@ -331,14 +332,14 @@ func TestStoreBootsFromACheckpoint(t *testing.T) {
 	bucket := store.NewMemory()
 	s := newStoreServer(t, bucket)
 	base := httptest.NewServer(storeMux(s)).URL
-	for i := 0; i < checkpointEvery+3; i++ {
+	for i := 0; i < logs.CheckpointEvery+3; i++ {
 		id := "e" + strconv.Itoa(i)
 		if code, _, body := httpPost(t, base+"/edits", editDoc(id, "accepted", 1, 100)); code != 200 {
 			t.Fatalf("post %d: %d %s", i, code, body)
 		}
 	}
 	_, _, before := httpGet(t, base+"/edits")
-	if cps, _ := s.store.Checkpoints(disruptionsLog); len(cps) != 1 || cps[0] != checkpointEvery {
+	if cps, _ := s.store.Checkpoints(disruptionsLog); len(cps) != 1 || cps[0] != logs.CheckpointEvery {
 		t.Fatalf("checkpoints: %v", cps)
 	}
 	s2 := newStoreServer(t, bucket)
@@ -346,8 +347,8 @@ func TestStoreBootsFromACheckpoint(t *testing.T) {
 	if _, _, after := httpGet(t, base2+"/edits"); after != before {
 		t.Fatal("a process booted from the checkpoint serves another document")
 	}
-	if s2.keptLog(disruptionsLog).fold.stored != checkpointEvery {
-		t.Fatalf("the boot started from checkpoint %d", s2.keptLog(disruptionsLog).fold.stored)
+	if s2.kept().Get(disruptionsLog).Checkpointed() != logs.CheckpointEvery {
+		t.Fatalf("the boot started from checkpoint %d", s2.kept().Get(disruptionsLog).Checkpointed())
 	}
 }
 

@@ -4,7 +4,7 @@ package main
 // through an adapter so nothing here couples to it. The call splits in
 // three: the kind's `call` op answers what to send, this host
 // makes the call, and its `record` op, through the kind's log
-// (logkinds.go), records the answer under the writer
+// (server/logs), records the answer under the writer
 // `work-orders:<system>`. The kind table's `work_order` names the kind,
 // the route, and both ops. The host reads nothing out of the document.
 
@@ -17,7 +17,10 @@ import (
 	"net/http"
 	"strings"
 
+	"rustwasm/server/httpx"
+	"rustwasm/server/logs"
 	"rustwasm/server/store"
+	"rustwasm/server/wasmhost"
 )
 
 type workOrder struct {
@@ -66,7 +69,7 @@ func (w stubWorkOrders) Status(_ context.Context, held workOrder) (workOrder, er
 
 func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	if s.workOrders == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]any{"configured": false})
+		httpx.JSON(w, http.StatusNotImplemented, map[string]any{"configured": false})
 		return
 	}
 	e := s.workOrderKind()
@@ -96,15 +99,15 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	l := s.keptLogOf(e.StoreKind)
+	l := s.kept().Of(e.StoreKind)
 	if l == nil {
 		http.Error(w, "the kind table names no log for "+e.StoreKind, http.StatusNotFound)
 		return
 	}
-	hashField := e.hashField()
-	_, doc, found, err := s.keptHead(e.StoreKind)
+	hashField := e.HashField()
+	_, doc, found, err := s.kept().Head(e.StoreKind)
 	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
+		httpx.Fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
@@ -121,10 +124,10 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	err = s.withModule(ctx, e.Module, func(host *WasmHost) error {
 		var loaded map[string]any
-		if err := host.InvokeBytes(ctx, l.loadCode(e.StoreKind), doc, &loaded); err != nil {
+		if err := host.InvokeBytes(ctx, l.LoadCode(e.StoreKind), doc, &loaded); err != nil {
 			return err
 		}
-		return host.Invoke(ctx, map[string]any{"op": e.WorkOrder.Call, hashField: loadedHash(loaded), "id": req.Request, "action": req.Action}, &call)
+		return host.Invoke(ctx, map[string]any{"op": e.WorkOrder.Call, hashField: wasmhost.LoadedHash(loaded), "id": req.Request, "action": req.Action}, &call)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -135,17 +138,13 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	// work order without asking the system, so a lost answer never opens
 	// a second work order.
 	if req.Key != "" {
-		f := l.fold
-		f.mu.Lock()
-		_, landed, err := s.keyLanded(f, req.Key)
-		hash := l.docs[e.StoreKind].hash
-		f.mu.Unlock()
+		landed, hash, err := s.kept().Landed(l, req.Key, e.StoreKind)
 		if err != nil {
-			fail(w, err, http.StatusInternalServerError)
+			httpx.Fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		if landed {
-			writeJSON(w, http.StatusOK, map[string]any{hashField: hash, "work_order": held.WorkOrder, "landed": true})
+			httpx.JSON(w, http.StatusOK, map[string]any{hashField: hash, "work_order": held.WorkOrder, "landed": true})
 			return
 		}
 	}
@@ -160,7 +159,7 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 		answer, err = s.workOrders.Status(ctx, ref)
 	}
 	if err != nil {
-		fail(w, fmt.Errorf("the work order system: %w", err), http.StatusBadGateway)
+		httpx.Fail(w, fmt.Errorf("the work order system: %w", err), http.StatusBadGateway)
 		return
 	}
 	if answer.System == "" {
@@ -170,25 +169,23 @@ func (s *server) handleWorkOrder(w http.ResponseWriter, r *http.Request) {
 	// The write runs over the records at the head, so a record written
 	// meanwhile is kept.
 	op, _ := json.Marshal(map[string]any{"cap": e.Module, "op": e.WorkOrder.Record, "args": map[string]any{"id": req.Request, "work_order": answer}})
-	write := logWrite{writer: "work-orders:" + s.workOrders.Name(), op: e.WorkOrder.Method + " " + e.WorkOrder.Path, argsHash: store.HashOf(body), key: req.Key}
-	_, _, got, refusal, err := s.receiveLog(ctx, r, l, write, receiveCall{ops: []json.RawMessage{op}})
+	write := logs.Write{Writer: "work-orders:" + s.workOrders.Name(), Op: e.WorkOrder.Method + " " + e.WorkOrder.Path, ArgsHash: store.HashOf(body), Key: req.Key}
+	_, _, got, refusal, err := s.kept().Receive(ctx, r, l, write, logs.Call{Ops: []json.RawMessage{op}})
 	if err != nil {
-		logWriteFailed(w, err, http.StatusBadRequest)
+		logs.WriteFailed(w, err, http.StatusBadRequest)
 		return
 	}
 	if refusal != nil {
 		if got.Failed != nil {
-			answerFailed(w, got.Failed.Error, http.StatusBadRequest, "")
+			httpx.AnswerFailed(w, got.Failed.Error, http.StatusBadRequest, "")
 			return
 		}
-		if body, ok := refusal.body.(map[string]any); ok {
+		if body, ok := refusal.Body.(map[string]any); ok {
 			delete(body, "op")
 		}
-		writeRefused(w, refusal)
+		logs.WriteRefused(w, refusal)
 		return
 	}
-	l.fold.mu.Lock()
-	hash := l.docs[e.StoreKind].hash
-	l.fold.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{hashField: hash, "work_order": answer})
+	hash := l.Hash(e.StoreKind)
+	httpx.JSON(w, http.StatusOK, map[string]any{hashField: hash, "work_order": answer})
 }

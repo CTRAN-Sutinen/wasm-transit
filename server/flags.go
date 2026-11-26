@@ -4,6 +4,8 @@ import (
 	"flag"
 	"os"
 	"time"
+
+	"rustwasm/server/kinds"
 )
 
 // Precedence: the command line, then a -config file (config.go), then
@@ -63,7 +65,7 @@ func serverFlags(fs *flag.FlagSet) *settings {
 		today:          fs.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired"),
 		attachmentsURL: fs.String("attachments", "", "the attachments' own bucket: any store URL (s3://, gs://, mem://); photos and drawings on surveys and requests, read only by the signed-in; unset, none are taken"),
 		workOrdersSpec: fs.String("work-orders", "", "the work order system's adapter: unset, none — a request's work order is entered by hand; stub: (or stub:<name>) a stand-in that opens STUB-<request>, for tests and demos"),
-		kindsPath:      fs.String("kinds", dataPath("pkg/kinds.json", defaultKindsPath), "the kind table (`just caps`; D-202): how each kind the store keeps is written, checked, and read. Store mode refuses a write of a kind it does not name"),
+		kindsPath:      fs.String("kinds", dataPath("pkg/kinds.json", kinds.DefaultPath), "the kind table (`just caps`; D-202): how each kind the store keeps is written, checked, and read. Store mode refuses a write of a kind it does not name"),
 		oidcIssuer:     fs.String("oidc-issuer", "", "expected JWT iss; with any -oidc flag this turns authentication on"),
 		oidcJWKS:       fs.String("oidc-jwks-url", "", "the IdP's JWKS URL: keys are fetched, cached by kid, refetched on an unknown kid (rate-limited)"),
 		oidcAud:        fs.String("oidc-audience", "", "expected JWT aud (string or array member)"),

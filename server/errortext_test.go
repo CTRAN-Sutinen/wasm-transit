@@ -31,7 +31,7 @@ func TestTheGateFindsAnErrorTextMatch(t *testing.T) {
 	if got := errorTextMatches(`	case strings.Contains(err.Error(), "moved on every attempt"):`); len(got) != 1 {
 		t.Fatalf("a text match went unseen: %v", got)
 	}
-	if got := errorTextMatches(`	case errors.Is(err, errLogMoved):`); len(got) != 0 {
+	if got := errorTextMatches(`	case errors.Is(err, logs.ErrMoved):`); len(got) != 0 {
 		t.Fatalf("errors.Is is not a text match: %v", got)
 	}
 }

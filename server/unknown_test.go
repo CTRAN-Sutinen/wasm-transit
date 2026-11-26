@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"rustwasm/server/httpx"
 	"rustwasm/server/store"
 )
 
@@ -24,7 +25,7 @@ func TestAStopsWriteKeepsAndFlagsFieldsThisBuildDoesNotKnow(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("a field this build does not know is never refused: %d %s", code, resp)
 	}
-	if got := hdr.Get(unknownFieldsHeader); got != "shelter_model, survey_round" {
+	if got := hdr.Get(httpx.UnknownFieldsHeader); got != "shelter_model, survey_round" {
 		t.Fatalf("the response names the unknown fields: %q", got)
 	}
 	var out map[string]any
@@ -44,14 +45,14 @@ func TestAnEditsWriteKeepsAndFlagsFieldsThisBuildDoesNotKnow(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("a field this build does not know is never refused: %d %s", code, body)
 	}
-	if got := hdr.Get(unknownFieldsHeader); got != "flagger_needed" {
+	if got := hdr.Get(httpx.UnknownFieldsHeader); got != "flagger_needed" {
 		t.Fatalf("the response names the unknown field: %q", got)
 	}
 	if !strings.Contains(body, `"flagger_needed":true`) {
 		t.Fatalf("the merged document keeps it: %s", body)
 	}
 	code, hdr, _ = httpPost(t, base+"/edits", editDoc("e2", "draft", 1, 200))
-	if code != 200 || hdr.Get(unknownFieldsHeader) != "" {
-		t.Fatalf("a write with every field known sends no header: %d %q", code, hdr.Get(unknownFieldsHeader))
+	if code != 200 || hdr.Get(httpx.UnknownFieldsHeader) != "" {
+		t.Fatalf("a write with every field known sends no header: %d %q", code, hdr.Get(httpx.UnknownFieldsHeader))
 	}
 }

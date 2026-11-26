@@ -45,6 +45,12 @@ There are two runners:
   user-visible flows.
 - `just check` runs both, for changes that touch both sides.
 
+`just test` runs a list of commands, each a test file or a gate
+script with its broken fixture first: the gates that span the repo in
+`tools/gates/` (the runner's sessions, the crate laws), the web's in
+`web/gates/`, and each other gate beside the code it guards. A failure
+prints `GATE FAIL:` and the command, which names its script.
+
 A third runner is optional: `just spec` model-checks the sync store
 engine (`server/store/store.tla`). It needs Java 11+ plus
 tla2tools.jar. Run it only when a change touches the sync engine
@@ -155,8 +161,8 @@ and before a release.
      peak it named.
 2. **A dispatch test if a new op exists** (native, JSON round-trip).
    Add it in the module's `tests/dispatch_test.rs`. Add a flow in
-   `crates/cap-abi/caps-smoke.mjs` and a chained runner gate in the
-   justfile. `just test` runs both. `just test` and `just e2e` build
+   `crates/cap-abi/caps-smoke.mjs` and a chained session in
+   `tools/gates/sessions.mjs`. `just test` runs both. `just test` and `just e2e` build
    `caps` first. The manifest records each op's worked example as the
    module answers it: add the example to the capability's
    `src/examples.rs` (its `examples` feature), the documents to load and
@@ -275,13 +281,13 @@ and before a release.
    Extend those specs for bus-visible changes. Capability law tests
    (migration laws, validator mutation law, the dispatch diversion
    laws) follow expectation 1.
-5. **Web parity ratchets** (the web gates of `just test`). Three ratchets
-   exist: components never import the engine or the bus, no host code
-   reads raw rt `stop_updates`, and nothing clones a document to
-   mutate it. Each runs against an allowlist that only shrinks, and all
-   are empty (`docs/architecture/web.md`, "Parity"). Logic that a view
-   needs lands as an op with expectations 1–2, never in TypeScript. A
-   unit that empties an allowlist entry removes it in the same change.
+5. **Web parity** (`web/gates/parity.mjs`, in `just test`). Each rule
+   names what web/ may not do: a component imports the engine or the
+   bus, host code reads raw rt `stop_updates`, code clones a document
+   to mutate it, code outside the engine reaches the bus or a module,
+   or a host tests a lifecycle status or fetches by hand
+   (`docs/architecture/web.md`, "Parity"). Logic that a view needs
+   lands as an op with expectations 1–2, never in TypeScript.
 6. **A generated UI** (`src/uis/<id>/`) lands with
    `web/e2e/ui-<id>.spec.mjs` on the fixture feed, which walks its
    questions end to end. It also lands with a dogfood session (below)
@@ -289,7 +295,7 @@ and before a release.
    session runs **before** the UI is built. The questions' op gaps
    become findings and the UI's blockers
    (`docs/architecture/generated-uis.md`, the procedure). The
-   generated UIs gate in `just test` refuses a UI without its spec.
+   generated UIs gate (`web/gates/uis.mjs`) refuses a UI without its spec.
    The UI ops gate (`tools/ui-ops.mjs`) refuses a host that asks an op
    its `ui.json` does not list. The failure-table gate
    (`tools/failure-tables.mjs`) refuses an input whose `fails_as` names
