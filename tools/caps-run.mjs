@@ -23,6 +23,14 @@
 //   caps-run tools <capability>         the tool catalog (op docs, and
 //                                       per-kind examples where an op
 //                                       takes a tagged vocabulary)
+//   caps-run kind [<tag>|<store kind>]  a kind's path through the code,
+//                                       from the kind table: each route
+//                                       and its Go handler, its log, its
+//                                       load, check, and receive ops and
+//                                       the library functions behind them,
+//                                       its read rights, and its store
+//                                       layout (tools/kind-trace.mjs).
+//                                       Every kind when none is named
 //   caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME]
 //          [--load [N:|KIND:]FILE]... [--op '<json>|@FILE']... [--ask URL]...
 //          [--post URL REF]... [--timeout MS]   run a session
@@ -114,6 +122,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { unknownDocument, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
+import { context as kindContext, findKind, trace as traceKind } from "./kind-trace.mjs";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -194,7 +203,7 @@ function sha256(bytes) {
 
 function usage() {
   console.error(
-    "usage: caps-run list | caps-run tools <capability> [<op>] [--brief] | caps-run session [NAME] | " +
+    "usage: caps-run list | caps-run tools <capability> [<op>] [--brief] | caps-run kind [<tag>] | caps-run session [NAME] | " +
       "caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]... | " +
       "caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
@@ -648,6 +657,17 @@ export async function main(argv) {
       : Object.fromEntries(kernel.map((k) => [k.name, k]));
     console.log(JSON.stringify({ id: record.id, purpose: record.purpose, documents: record.documents ?? [], loads, tools }, null, 2));
     return 0;
+  }
+  if (argv[0] === "kind") {
+    const ctx = kindContext(join(HERE, ".."));
+    const kinds = argv[1] === undefined ? ctx.table : [findKind(ctx.table, argv[1])];
+    if (kinds[0] === undefined) {
+      console.error(`the kind table names no kind ${argv[1]}; its kinds: ${ctx.table.map((k) => k.tag || k.store_kind).join(", ")}`);
+      return 1;
+    }
+    const traces = kinds.map((k) => traceKind(ctx, k));
+    console.log(JSON.stringify(argv[1] === undefined ? traces : traces[0], null, 2));
+    return traces.some((t) => t.missing.length) ? 1 : 0;
   }
   if (argv[0] === "replay") {
     // NAME is a session in the store, or a page's journal file (FILE.json,
