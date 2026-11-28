@@ -56,46 +56,143 @@
   }
 </script>
 
-<TaskFrame title="New stop" subtitle={point ? `At ${point.lat}, ${point.lon}` : "Place on map"} steps={["Location", "Details"]} {step} onstep={(i) => (step = i)} {onclose} closeLabel="Cancel" testid="new-stop"
-  problems={[...refusals.map((r) => `Not saved: ${problemWords(r.problem.kind)}.`), ...(error ? [error] : [])]}>
+<TaskFrame
+  title="New stop"
+  subtitle={point ? `At ${point.lat}, ${point.lon}` : "Place on map"}
+  steps={["Location", "Details"]}
+  {step}
+  onstep={(i) => (step = i)}
+  {onclose}
+  closeLabel="Cancel"
+  testid="new-stop"
+  problems={[
+    ...refusals.map((r) => `Not saved: ${problemWords(r.problem.kind)}.`),
+    ...(error ? [error] : []),
+  ]}
+>
   {#if step === 0}
-    <p class="f-hint lead">Click the map, enter coordinates, or use this device's location.</p>
+    <p class="f-hint lead">
+      Click the map, enter coordinates, or use this device's location.
+    </p>
     <PointFields {point} {onpoint} {onlocate} testid="new-point" />
   {:else}
     <label class="f-field">
       <span class="f-label">Stop ID</span>
       <input type="text" bind:value={id} required data-testid="new-id" />
-      
     </label>
     <div class="f-pair">
-      <label class="f-field"><span class="f-label">Name</span><input type="text" bind:value={name} placeholder="e.g. NE 99th St & Hwy 99" data-testid="new-name" /></label>
-      <label class="f-field"><span class="f-label">Stop code</span><input type="text" bind:value={code} data-testid="new-code" /></label>
+      <label class="f-field">
+        <span class="f-label">Name</span><input
+          type="text"
+          bind:value={name}
+          placeholder="e.g. NE 99th St & Hwy 99"
+          data-testid="new-name"
+        />
+      </label>
+      <label class="f-field">
+        <span class="f-label">Stop code</span><input
+          type="text"
+          bind:value={code}
+          data-testid="new-code"
+        />
+      </label>
     </div>
     <ul class="f-choices start" role="list" aria-label="Initial status">
-      <li><button type="button" aria-pressed={start === "planned"} onclick={() => (start = "planned")} data-testid="new-start-planned"><strong>Planned</strong><span>Not built yet.</span></button></li>
-      <li><button type="button" aria-pressed={start === "in_service"} onclick={() => (start = "in_service")} data-testid="new-start-in_service"><strong>In service</strong><span>Existing stop, not yet recorded.</span></button></li>
+      <li>
+        <button
+          type="button"
+          aria-pressed={start === "planned"}
+          onclick={() => (start = "planned")}
+          data-testid="new-start-planned"
+        >
+          <strong>Planned</strong><span>Not built yet.</span>
+        </button>
+      </li>
+      <li>
+        <button
+          type="button"
+          aria-pressed={start === "in_service"}
+          onclick={() => (start = "in_service")}
+          data-testid="new-start-in_service"
+        >
+          <strong>In service</strong><span>
+            Existing stop, not yet recorded.
+          </span>
+        </button>
+      </li>
     </ul>
-    <label class="f-field"><span class="f-label">Effective date</span><input type="date" bind:value={on} required data-testid="new-on" /></label>
-    <label class="f-field"><span class="f-label">Notes</span><input type="text" bind:value={note} placeholder="Optional" data-testid="new-note" /></label>
+    <label class="f-field">
+      <span class="f-label">Effective date</span><input
+        type="date"
+        bind:value={on}
+        required
+        data-testid="new-on"
+      />
+    </label>
+    <label class="f-field">
+      <span class="f-label">Notes</span><input
+        type="text"
+        bind:value={note}
+        placeholder="Optional"
+        data-testid="new-note"
+      />
+    </label>
     {#if start === "planned"}
-      <label class="check"><input type="checkbox" bind:checked={request} data-testid="new-request" /> Create installation request</label>
+      <label class="check">
+        <input
+          type="checkbox"
+          bind:checked={request}
+          data-testid="new-request"
+        /> Create installation request
+      </label>
     {/if}
   {/if}
 
   {#snippet actions()}
-    <button type="button" disabled={step === 0} onclick={() => (step = 0)}>Back</button>
+    <button type="button" disabled={step === 0} onclick={() => (step = 0)}>
+      Back
+    </button>
     <span class="grow"></span>
     {#if step === 0}
-      <button type="button" class="primary" disabled={!point} onclick={() => (step = 1)} data-testid="new-next">Next</button>
+      <button
+        type="button"
+        class="primary"
+        disabled={!point}
+        onclick={() => (step = 1)}
+        data-testid="new-next"
+      >
+        Next
+      </button>
     {:else}
-      <button type="button" class="primary" disabled={busy || !point || !id.trim() || !on} onclick={save} data-testid="new-save">Create stop</button>
+      <button
+        type="button"
+        class="primary"
+        disabled={busy || !point || !id.trim() || !on}
+        onclick={save}
+        data-testid="new-save"
+      >
+        Create stop
+      </button>
     {/if}
   {/snippet}
 </TaskFrame>
 
 <style>
-  .lead { margin-bottom: 0.9rem; }
-  .start { margin: 0 0 1rem; }
-  .check { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 1rem; font-size: 0.92rem; }
-  .check input { width: 1.2rem; height: 1.2rem; }
+  .lead {
+    margin-bottom: 0.9rem;
+  }
+  .start {
+    margin: 0 0 1rem;
+  }
+  .check {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0 0 1rem;
+    font-size: 0.92rem;
+  }
+  .check input {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
 </style>

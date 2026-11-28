@@ -35,9 +35,16 @@ export function stopsFeatures(stops: DirectoryStop[]): StopFeatureCollection {
   };
 }
 
-export function lineFeature(path: Coord[], props: Record<string, string | number | null>): LineFeature | null {
+export function lineFeature(
+  path: Coord[],
+  props: Record<string, string | number | null>,
+): LineFeature | null {
   return path.length >= 2
-    ? { type: "Feature", geometry: { type: "LineString", coordinates: lonLat(path) }, properties: props }
+    ? {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: lonLat(path) },
+        properties: props,
+      }
     : null;
 }
 

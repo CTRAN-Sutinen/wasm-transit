@@ -1,5 +1,11 @@
 <script lang="ts">
-  type Place = { id: string; name: string; lat?: number; lon?: number; detail?: string };
+  type Place = {
+    id: string;
+    name: string;
+    lat?: number;
+    lon?: number;
+    detail?: string;
+  };
 
   let {
     label,
@@ -33,8 +39,13 @@
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listId = `ps-${crypto.randomUUID()}`;
 
-  const open = $derived(editing && text.trim().length > 0 && (found !== null || addresses !== null));
-  const items = $derived([...(found?.places ?? []), ...(addresses?.places ?? [])]);
+  const open = $derived(
+    editing && text.trim().length > 0 && (found !== null || addresses !== null),
+  );
+  const items = $derived([
+    ...(found?.places ?? []),
+    ...(addresses?.places ?? []),
+  ]);
   const stopCount = $derived(found?.places.length ?? 0);
 
   function input(e: Event) {
@@ -75,8 +86,15 @@
     }
   }
 
-  function marked(name: string, typedText: string): { s: string; hit: boolean }[] {
-    const words = typedText.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  function marked(
+    name: string,
+    typedText: string,
+  ): { s: string; hit: boolean }[] {
+    const words = typedText
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     if (words.length === 0) return [{ s: name, hit: false }];
     // A capturing split puts every match at an odd index.
     return name
@@ -90,7 +108,21 @@
   <label class="field">
     <span class="icon {icon}" aria-hidden="true">
       {#if icon === "search"}
-        <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2" /><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        <svg viewBox="0 0 24 24" width="18" height="18">
+          <circle
+            cx="11"
+            cy="11"
+            r="6.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          /><path
+            d="M16 16l4.5 4.5"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </svg>
       {/if}
     </span>
     <input
@@ -102,38 +134,59 @@
       role="combobox"
       aria-expanded={open}
       aria-controls={listId}
-      aria-activedescendant={open && items[active] ? `${listId}-${active}` : undefined}
+      aria-activedescendant={open && items[active]
+        ? `${listId}-${active}`
+        : undefined}
       value={editing ? text : value}
       oninput={input}
       onkeydown={key}
       onfocus={(e) => e.currentTarget.select()}
-      onblur={() => setTimeout(() => { if (editing && !text.trim()) close(); }, 150)}
+      onblur={() =>
+        setTimeout(() => {
+          if (editing && !text.trim()) close();
+        }, 150)}
       disabled={off}
     />
   </label>
 
   {#if off}
-    <p class="off">Stop search is unavailable right now — tap a stop on the map instead.</p>
+    <p class="off">
+      Stop search is unavailable right now — tap a stop on the map instead.
+    </p>
   {:else if open}
     <ul class="results" id={listId} role="listbox">
       {#if found}
         {#each found.places as p, i (p.id)}
           <!-- The input owns the keys (arrows, Enter, Escape); a pointer picks with a click. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <li role="option" id="{listId}-{i}" aria-selected={i === active} class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
+          <li
+            role="option"
+            id="{listId}-{i}"
+            aria-selected={i === active}
+            class:active={i === active}
+            onmousedown={(e) => e.preventDefault()}
+            onclick={() => pick(p)}
+          >
             <span class="pin" aria-hidden="true"></span>
-            <span class="name">{#each marked(p.name, found.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
+            <span class="name">
+              {#each marked(p.name, found.text) as part, j (j)}{#if part.hit}<b>
+                    {part.s}
+                  </b>{:else}{part.s}{/if}{/each}
+            </span>
             <span class="id">#{p.id}</span>
           </li>
         {:else}
           {#if !addresses?.places.length}
             <li class="none">
-              No stop is named “{found.text}”. Stop names follow the sign — try another word, the stop number, or tap the map.
+              No stop is named “{found.text}”. Stop names follow the sign — try
+              another word, the stop number, or tap the map.
             </li>
           {/if}
         {/each}
         {#if found.places.length === limit}
-          <li class="more">Showing the first {limit} — keep typing to narrow it.</li>
+          <li class="more">
+            Showing the first {limit} — keep typing to narrow it.
+          </li>
         {/if}
       {/if}
       {#if addresses?.places.length}
@@ -141,9 +194,21 @@
         {#each addresses.places as p, k (p.id)}
           {@const i = stopCount + k}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <li role="option" id="{listId}-{i}" aria-selected={i === active} class:active={i === active} data-testid="address-result" onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
+          <li
+            role="option"
+            id="{listId}-{i}"
+            aria-selected={i === active}
+            class:active={i === active}
+            data-testid="address-result"
+            onmousedown={(e) => e.preventDefault()}
+            onclick={() => pick(p)}
+          >
             <span class="pin addr" aria-hidden="true"></span>
-            <span class="name">{#each marked(p.name, addresses.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
+            <span class="name">
+              {#each marked(p.name, addresses.text) as part, j (j)}{#if part.hit}<b>
+                    {part.s}
+                  </b>{:else}{part.s}{/if}{/each}
+            </span>
             {#if p.detail}<span class="id">{p.detail}</span>{/if}
           </li>
         {/each}
@@ -153,42 +218,136 @@
 </div>
 
 <style>
-  .ps { position: relative; }
+  .ps {
+    position: relative;
+  }
   .field {
-    display: flex; align-items: center; gap: 0.4rem;
-    background: var(--hover); border: 1px solid var(--line); border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--hover);
+    border: 1px solid var(--line);
+    border-radius: 12px;
     padding: 0 0.7rem;
   }
   /* The ring is an outline: forced colors keep it (a box-shadow is dropped). */
-  .field:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; background: var(--surface); }
-  .icon { display: grid; place-items: center; color: var(--muted); width: 18px; flex: none; }
-  .icon.from::before, .icon.to::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2.5px solid var(--accent); }
-  .icon.to::before { background: var(--accent); }
-  input {
-    flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text);
-    font: inherit; font-size: 1rem; padding: 0.7rem 0; outline: none;
+  .field:focus-within {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    background: var(--surface);
   }
-  input::-webkit-search-cancel-button { cursor: pointer; }
+  .icon {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    width: 18px;
+    flex: none;
+  }
+  .icon.from::before,
+  .icon.to::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2.5px solid var(--accent);
+  }
+  .icon.to::before {
+    background: var(--accent);
+  }
+  input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 1rem;
+    padding: 0.7rem 0;
+    outline: none;
+  }
+  input::-webkit-search-cancel-button {
+    cursor: pointer;
+  }
   .results {
-    list-style: none; margin: 0.35rem 0 0; padding: 0.25rem; position: absolute; left: 0; right: 0; z-index: 5;
-    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
-    box-shadow: 0 12px 32px rgb(0 0 0 / 0.16); max-height: min(22rem, 50dvh); overflow-y: auto;
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0.25rem;
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+    max-height: min(22rem, 50dvh);
+    overflow-y: auto;
   }
   .results li[role="option"] {
-    display: flex; align-items: center; gap: 0.6rem; text-align: left;
-    color: var(--text); padding: 0.55rem 0.6rem; border-radius: 8px; cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    text-align: left;
+    color: var(--text);
+    padding: 0.55rem 0.6rem;
+    border-radius: 8px;
+    cursor: pointer;
   }
-  .results li[role="option"].active, .results li[role="option"]:hover { background: var(--hover); }
-  .pin { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
-  .pin.addr { border-radius: 2px; }
+  .results li[role="option"].active,
+  .results li[role="option"]:hover {
+    background: var(--hover);
+  }
+  .pin {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 2px solid var(--muted);
+    flex: none;
+  }
+  .pin.addr {
+    border-radius: 2px;
+  }
   .head {
-    padding: 0.5rem 0.6rem 0.2rem; color: var(--muted); font-size: 0.72rem; font-weight: 650;
-    text-transform: uppercase; letter-spacing: 0.04em; border-top: 1px solid var(--line); margin-top: 0.2rem;
+    padding: 0.5rem 0.6rem 0.2rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-top: 1px solid var(--line);
+    margin-top: 0.2rem;
   }
-  .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .name b { color: var(--accent); font-weight: 650; }
-  .id { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
-  .none, .more { padding: 0.6rem; color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
-  .more { font-size: 0.75rem; border-top: 1px solid var(--line); }
-  .off { color: var(--bad); font-size: 0.85rem; margin: 0.4rem 0 0; }
+  .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .name b {
+    color: var(--accent);
+    font-weight: 650;
+  }
+  .id {
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .none,
+  .more {
+    padding: 0.6rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+  .more {
+    font-size: 0.75rem;
+    border-top: 1px solid var(--line);
+  }
+  .off {
+    color: var(--bad);
+    font-size: 0.85rem;
+    margin: 0.4rem 0 0;
+  }
 </style>

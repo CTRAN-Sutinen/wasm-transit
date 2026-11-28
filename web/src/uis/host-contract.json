@@ -4,38 +4,72 @@
     {
       "name": "the upstream does not answer",
       "steps": [
-        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
-        { "upstream": "silent", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } }
+        {
+          "upstream": "answers",
+          "head": "A",
+          "expect": { "state": "current", "head": "A" }
+        },
+        {
+          "upstream": "silent",
+          "expect": { "state": "stale", "head": "A", "as_of": "last-answer" }
+        }
       ]
     },
     {
       "name": "the upstream answers slowly",
       "steps": [
-        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
-        { "upstream": "slow", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } }
+        {
+          "upstream": "answers",
+          "head": "A",
+          "expect": { "state": "current", "head": "A" }
+        },
+        {
+          "upstream": "slow",
+          "expect": { "state": "stale", "head": "A", "as_of": "last-answer" }
+        }
       ]
     },
     {
       "name": "the upstream answers again",
       "steps": [
-        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
-        { "upstream": "silent", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } },
-        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } }
+        {
+          "upstream": "answers",
+          "head": "A",
+          "expect": { "state": "current", "head": "A" }
+        },
+        {
+          "upstream": "silent",
+          "expect": { "state": "stale", "head": "A", "as_of": "last-answer" }
+        },
+        {
+          "upstream": "answers",
+          "head": "A",
+          "expect": { "state": "current", "head": "A" }
+        }
       ]
     },
     {
       "name": "a head moves while the host holds a copy",
       "steps": [
-        { "upstream": "answers", "head": "A", "expect": { "state": "current", "head": "A" } },
-        { "upstream": "silent", "expect": { "state": "stale", "head": "A", "as_of": "last-answer" } },
-        { "upstream": "answers", "head": "B", "expect": { "state": "current", "head": "B" } }
+        {
+          "upstream": "answers",
+          "head": "A",
+          "expect": { "state": "current", "head": "A" }
+        },
+        {
+          "upstream": "silent",
+          "expect": { "state": "stale", "head": "A", "as_of": "last-answer" }
+        },
+        {
+          "upstream": "answers",
+          "head": "B",
+          "expect": { "state": "current", "head": "B" }
+        }
       ]
     },
     {
       "name": "the host holds no copy",
-      "steps": [
-        { "upstream": "silent", "expect": { "state": "failed" } }
-      ]
+      "steps": [{ "upstream": "silent", "expect": { "state": "failed" } }]
     }
   ]
 }

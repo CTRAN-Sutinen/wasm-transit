@@ -53,24 +53,93 @@
 
 <fieldset class="point" data-testid={testid}>
   <legend>Point</legend>
-  <label>Latitude
-    <input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="decimal degrees" value={lat} oninput={(e) => { lat = e.currentTarget.value; typed(); }} data-testid="{testid}-lat" />
+  <label>
+    Latitude
+    <input
+      type="text"
+      inputmode="decimal"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="decimal degrees"
+      value={lat}
+      oninput={(e) => {
+        lat = e.currentTarget.value;
+        typed();
+      }}
+      data-testid="{testid}-lat"
+    />
   </label>
-  <label>Longitude
-    <input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="decimal degrees" value={lon} oninput={(e) => { lon = e.currentTarget.value; typed(); }} data-testid="{testid}-lon" />
+  <label>
+    Longitude
+    <input
+      type="text"
+      inputmode="decimal"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="decimal degrees"
+      value={lon}
+      oninput={(e) => {
+        lon = e.currentTarget.value;
+        typed();
+      }}
+      data-testid="{testid}-lon"
+    />
   </label>
   {#if onlocate}
-    <button type="button" class="here" disabled={locating} onclick={here} data-testid="{testid}-here">Use my location</button>
+    <button
+      type="button"
+      class="here"
+      disabled={locating}
+      onclick={here}
+      data-testid="{testid}-here"
+    >
+      Use my location
+    </button>
   {/if}
-  <p class="muted small" data-testid="{testid}-fix">{fix || (point ? "Click the map, or type the measured point." : "Click the map where the stop goes, or type its measured point.")}</p>
+  <p class="muted small" data-testid="{testid}-fix">
+    {fix ||
+      (point
+        ? "Click the map, or type the measured point."
+        : "Click the map where the stop goes, or type its measured point.")}
+  </p>
 </fieldset>
 
 <style>
-  .point { display: flex; flex-direction: column; gap: 0.35rem; border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.6rem 0.5rem; margin: 0; }
-  legend { padding: 0 0.25rem; font-size: 0.85rem; color: var(--muted); }
-  label { display: flex; justify-content: space-between; gap: 0.6rem; align-items: center; }
-  input { flex: 1; min-width: 0; max-width: 12rem; font-variant-numeric: tabular-nums; }
-  p { margin: 0; }
-  .here { align-self: flex-start; min-height: 2.25rem; padding: 0 0.8rem; }
-  .small { font-size: 0.8rem; }
+  .point {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem 0.5rem;
+    margin: 0;
+  }
+  legend {
+    padding: 0 0.25rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  label {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    align-items: center;
+  }
+  input {
+    flex: 1;
+    min-width: 0;
+    max-width: 12rem;
+    font-variant-numeric: tabular-nums;
+  }
+  p {
+    margin: 0;
+  }
+  .here {
+    align-self: flex-start;
+    min-height: 2.25rem;
+    padding: 0 0.8rem;
+  }
+  .small {
+    font-size: 0.8rem;
+  }
 </style>

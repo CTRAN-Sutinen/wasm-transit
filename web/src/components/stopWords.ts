@@ -1,4 +1,3 @@
-
 export const STATUS_WORDS: Record<string, string> = {
   planned: "Planned",
   permitted: "Permitted",
@@ -43,7 +42,8 @@ const PROBLEMS: Record<string, string> = {
   bad_date: "that is not a date",
   no_date: "the event needs a date",
   out_of_order: "it would be dated before the event above it",
-  first_event: "a stop's history must begin with a stage: planned, permitted, built, or in service",
+  first_event:
+    "a stop's history must begin with a stage: planned, permitted, built, or in service",
   after_retired: "the stop is retired by then",
   stage_back: "the stop is already at or past that stage then",
   not_in_service: "the stop is not in service then",
@@ -123,10 +123,56 @@ const SITE_WORDS: Record<string, string> = {
 };
 
 export const SITE_GROUPS: { title: string; keys: string[] }[] = [
-  { title: "Location", keys: ["on_street", "cross_street", "city", "county", "direction", "side", "position", "land_use"] },
-  { title: "Street", keys: ["lanes", "speed_limit_mph", "shoulder", "turnout", "crossing", "street_light"] },
-  { title: "Surface and access", keys: ["surface", "sidewalk", "sidewalk:surface", "sidewalk:connection", "ada", "curb", "curb_cut"] },
-  { title: "Fixtures", keys: ["post:type", "sign:type", "shelter:type", "kiosk:type", "seat:type", "bin:type", "light:source", "light:type", "advertising"] },
+  {
+    title: "Location",
+    keys: [
+      "on_street",
+      "cross_street",
+      "city",
+      "county",
+      "direction",
+      "side",
+      "position",
+      "land_use",
+    ],
+  },
+  {
+    title: "Street",
+    keys: [
+      "lanes",
+      "speed_limit_mph",
+      "shoulder",
+      "turnout",
+      "crossing",
+      "street_light",
+    ],
+  },
+  {
+    title: "Surface and access",
+    keys: [
+      "surface",
+      "sidewalk",
+      "sidewalk:surface",
+      "sidewalk:connection",
+      "ada",
+      "curb",
+      "curb_cut",
+    ],
+  },
+  {
+    title: "Fixtures",
+    keys: [
+      "post:type",
+      "sign:type",
+      "shelter:type",
+      "kiosk:type",
+      "seat:type",
+      "bin:type",
+      "light:source",
+      "light:type",
+      "advertising",
+    ],
+  },
   { title: "Notes", keys: ["landmark", "remarks"] },
 ];
 
@@ -164,7 +210,12 @@ export function refWords(name: string): string {
   return REFS.find(([k]) => k === name)?.[1] ?? plain(name);
 }
 
-export function requestProblemWords(p: { kind: string; field?: string; value?: string; date?: string }): string {
+export function requestProblemWords(p: {
+  kind: string;
+  field?: string;
+  value?: string;
+  date?: string;
+}): string {
   switch (p.kind) {
     case "no_id":
       return "the request needs an id";
@@ -213,13 +264,21 @@ export function requestStatusWords(status: string): string {
   return REQUEST_STATUS_WORDS[status] ?? plain(status);
 }
 
-export function changedWords(kind: string, status: string | undefined, name: string, from: string, until: string): string {
+export function changedWords(
+  kind: string,
+  status: string | undefined,
+  name: string,
+  from: string,
+  until: string,
+): string {
   const till = until ? ` until ${until}` : "";
   switch (kind) {
     case "suspended":
       return `Suspended ${name} from ${from}${till}.`;
     case "in_service":
-      return status === "suspended" ? `Returned ${name} to service from ${from}.` : `${name} in service from ${from}.`;
+      return status === "suspended"
+        ? `Returned ${name} to service from ${from}.`
+        : `${name} in service from ${from}.`;
     case "retired":
       return `Retired ${name} from ${from}.`;
     case "move":
@@ -231,7 +290,10 @@ export function changedWords(kind: string, status: string | undefined, name: str
   }
 }
 
-export function changeWords(kind: string, status: string | undefined): [string, string] {
+export function changeWords(
+  kind: string,
+  status: string | undefined,
+): [string, string] {
   switch (kind) {
     case "planned":
       return ["Mark planned", ""];
@@ -240,7 +302,9 @@ export function changeWords(kind: string, status: string | undefined): [string, 
     case "built":
       return ["Mark built", "Installed, not yet served."];
     case "in_service":
-      return status === "suspended" ? ["Return to service", ""] : ["Put in service", ""];
+      return status === "suspended"
+        ? ["Return to service", ""]
+        : ["Put in service", ""];
     case "suspended":
       return ["Suspend", "Temporary closure."];
     case "retired":

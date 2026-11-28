@@ -21,25 +21,42 @@ import fs from "node:fs";
 import path from "node:path";
 
 const [root, port, mode = ""] = process.argv.slice(2);
-const corsHeaders = mode === "cors" ? { "Access-Control-Allow-Origin": "*" } : {};
-const upstream = mode.startsWith("forward=") ? mode.slice("forward=".length).replace(/\/+$/, "") : null;
+const corsHeaders =
+  mode === "cors" ? { "Access-Control-Allow-Origin": "*" } : {};
+const upstream = mode.startsWith("forward=")
+  ? mode.slice("forward=".length).replace(/\/+$/, "")
+  : null;
 
 /// A pattern that ends in "/" is a prefix.
 function dataPaths() {
-  const contract = JSON.parse(fs.readFileSync(new URL("../../server/openapi.json", import.meta.url), "utf8"));
-  const patterns = new Set(Object.values(contract.paths).map((item) => item["x-mux"]));
+  const contract = JSON.parse(
+    fs.readFileSync(
+      new URL("../../server/openapi.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const patterns = new Set(
+    Object.values(contract.paths).map((item) => item["x-mux"]),
+  );
   patterns.delete("/");
   return [...patterns, "/basemap.pmtiles", "/basemap-assets/"];
 }
 const forwarded = upstream ? dataPaths() : [];
-const isData = (pathname) => forwarded.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p));
+const isData = (pathname) =>
+  forwarded.some((p) =>
+    p.endsWith("/") ? pathname.startsWith(p) : pathname === p,
+  );
 
 function forward(req, res) {
   const target = new URL(req.url, upstream);
-  const out = http.request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, (answer) => {
-    res.writeHead(answer.statusCode ?? 502, answer.headers);
-    answer.pipe(res);
-  });
+  const out = http.request(
+    target,
+    { method: req.method, headers: { ...req.headers, host: target.host } },
+    (answer) => {
+      res.writeHead(answer.statusCode ?? 502, answer.headers);
+      answer.pipe(res);
+    },
+  );
   out.on("error", () => res.writeHead(502).end());
   req.pipe(out);
 }
@@ -67,9 +84,14 @@ function headerRules(dir) {
     if (!line.trim() || line.startsWith("#")) continue;
     if (/^\s/.test(line)) {
       const at = line.indexOf(":");
-      rules.at(-1)?.headers.push([line.slice(0, at).trim(), line.slice(at + 1).trim()]);
+      rules
+        .at(-1)
+        ?.headers.push([line.slice(0, at).trim(), line.slice(at + 1).trim()]);
     } else {
-      const pattern = line.trim().replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+      const pattern = line
+        .trim()
+        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*");
       rules.push({ match: new RegExp(`^${pattern}$`), headers: [] });
     }
   }
@@ -81,9 +103,13 @@ function headerRules(dir) {
 function headersFor(pathname) {
   const segment = pathname.split("/")[1] ?? "";
   const sent = {};
-  for (const [dir, relative] of [[root, pathname], [path.join(root, segment), pathname.slice(segment.length + 1) || "/"]]) {
+  for (const [dir, relative] of [
+    [root, pathname],
+    [path.join(root, segment), pathname.slice(segment.length + 1) || "/"],
+  ]) {
     for (const rule of headerRules(dir)) {
-      if (rule.match.test(relative)) for (const [name, value] of rule.headers) sent[name] = value;
+      if (rule.match.test(relative))
+        for (const [name, value] of rule.headers) sent[name] = value;
     }
   }
   return sent;
@@ -101,14 +127,20 @@ http
       res.writeHead(400).end();
       return;
     }
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
+    if (fs.existsSync(file) && fs.statSync(file).isDirectory())
+      file = path.join(file, "index.html");
     fs.readFile(file, (err, body) => {
       if (err) {
         res.writeHead(404).end();
         return;
       }
       res
-        .writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream", ...corsHeaders, ...headersFor(pathname) })
+        .writeHead(200, {
+          "Content-Type":
+            types[path.extname(file)] ?? "application/octet-stream",
+          ...corsHeaders,
+          ...headersFor(pathname),
+        })
         .end(body);
     });
   })

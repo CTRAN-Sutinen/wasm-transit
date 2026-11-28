@@ -46,9 +46,17 @@ export type AnswerHost = {
 };
 
 // The full type is `InputState` in inputs.ts. This file imports nothing.
-type InputSeen = { kind: string; input: string; name: string; sinceMs?: number; held?: boolean };
+type InputSeen = {
+  kind: string;
+  input: string;
+  name: string;
+  sinceMs?: number;
+  held?: boolean;
+};
 
-export type Request = ((...inputs: string[]) => Promise<void>) & { retry: () => Promise<void> };
+export type Request = ((...inputs: string[]) => Promise<void>) & {
+  retry: () => Promise<void>;
+};
 
 const yieldToPaint = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -65,7 +73,10 @@ export function answers(nodes: AnswerNode[], host: AnswerHost): Request {
   const ids = new Set(nodes.map((n) => n.id));
   for (const node of nodes) {
     for (const need of node.needs) {
-      if (ids.has(need) && !declared.has(need)) throw new Error(`answer node ${node.id} reads ${need} before it is declared`);
+      if (ids.has(need) && !declared.has(need))
+        throw new Error(
+          `answer node ${node.id} reads ${need} before it is declared`,
+        );
     }
     declared.add(node.id);
   }
@@ -89,13 +100,22 @@ export function answers(nodes: AnswerNode[], host: AnswerHost): Request {
     }
     for (const id of node.inputs ?? []) {
       const seen = host.inputs?.[id];
-      if (seen?.kind === "failed" && !seen.held) return { kind: "unread", input: id, name: seen.name, sinceMs: seen.sinceMs ?? 0 };
+      if (seen?.kind === "failed" && !seen.held)
+        return {
+          kind: "unread",
+          input: id,
+          name: seen.name,
+          sinceMs: seen.sinceMs ?? 0,
+        };
     }
     const missing = node.requires?.() ?? null;
     return missing ? { kind: "starved", missing } : null;
   }
 
-  async function answer(node: AnswerNode, touch: (input: string) => void): Promise<void> {
+  async function answer(
+    node: AnswerNode,
+    touch: (input: string) => void,
+  ): Promise<void> {
     if (node.frame === "") {
       try {
         await node.run(touch);
@@ -124,7 +144,11 @@ export function answers(nodes: AnswerNode[], host: AnswerHost): Request {
 
   async function pass(changed: Set<string>): Promise<void> {
     for (const node of nodes) {
-      if (!node.needs.some((n) => changed.has(n)) && !changed.has(`retry:${node.id}`)) continue;
+      if (
+        !node.needs.some((n) => changed.has(n)) &&
+        !changed.has(`retry:${node.id}`)
+      )
+        continue;
       if (node.visible && !node.visible()) {
         node.clear?.();
         if (node.frame !== "") settle(node, null);
@@ -157,7 +181,9 @@ export function answers(nodes: AnswerNode[], host: AnswerHost): Request {
     return draining;
   } as Request;
   request.retry = () => {
-    const failed = nodes.filter((n) => states.get(n.id)?.kind === "failed").map((n) => `retry:${n.id}`);
+    const failed = nodes
+      .filter((n) => states.get(n.id)?.kind === "failed")
+      .map((n) => `retry:${n.id}`);
     return request(...failed);
   };
   return request;

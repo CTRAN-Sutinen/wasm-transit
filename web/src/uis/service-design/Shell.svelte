@@ -2,10 +2,43 @@
   import SignInControl from "../../components/SignInControl.svelte";
   import { signin as signinState, signIn, signOut } from "../../signin.svelte";
   import {
-    sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, setLayerReading, selectGroup, openRoute, clearRoute,
-    selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
-    redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, why, setEditType, type View,
-    heldWrites, sendNow, retryHeld, discardHeld, applyUpdate, offline, asOf,
+    sd,
+    VIEWS,
+    setView,
+    openPlan,
+    setCompare,
+    fork,
+    loadFeedBytes,
+    loadLayerBytes,
+    setLayerReading,
+    selectGroup,
+    openRoute,
+    clearRoute,
+    selectDirection,
+    selectTimetableStop,
+    openStop,
+    clearStop,
+    setWindow,
+    setCoverageParams,
+    gestures,
+    undoChange,
+    redoChange,
+    exportPlan,
+    publishPlan,
+    toggleEdit,
+    selectTrip,
+    pickUnserved,
+    retry,
+    why,
+    setEditType,
+    type View,
+    heldWrites,
+    sendNow,
+    retryHeld,
+    discardHeld,
+    applyUpdate,
+    offline,
+    asOf,
   } from "./host.svelte";
   import { dismissWarning, outbox, warnedWrites } from "../../outbox.svelte";
   import SyncStatus from "../../components/SyncStatus.svelte";
@@ -42,22 +75,38 @@
   import Readiness from "../../components/Readiness.svelte";
 
   const bytesOf = async (f: File) => new Uint8Array(await f.arrayBuffer());
-  const planName = (key: string) => sd.plans.find((p) => p.key === key)?.name ?? "";
+  const planName = (key: string) =>
+    sd.plans.find((p) => p.key === key)?.name ?? "";
   const framed = $derived(!!sd.plans.find((p) => p.key === sd.activeKey)?.id);
   const group = $derived(sd.groups.find((g) => g.id === sd.group) ?? null);
   /// A sibling group is a type that shares a combination with it (D-95).
-  const alsoIn = $derived(sd.groups.filter((g) => g.id !== sd.group && g.members.includes(sd.editType)).map((g) => g.id));
-  const routeRow = $derived(sd.routes.find((r) => r.route_id === sd.route) ?? null);
+  const alsoIn = $derived(
+    sd.groups
+      .filter((g) => g.id !== sd.group && g.members.includes(sd.editType))
+      .map((g) => g.id),
+  );
+  const routeRow = $derived(
+    sd.routes.find((r) => r.route_id === sd.route) ?? null,
+  );
   const changed = $derived(sd.comparison?.routes.map((r) => r.route_id) ?? []);
-  const stopOptions = $derived(sd.stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
+  const stopOptions = $derived(
+    sd.stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })),
+  );
   let tableMode = $state(false);
 
   function keys(e: KeyboardEvent) {
     const target = e.target as HTMLElement;
-    if (target.closest("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (
+      target.closest("input, select, textarea") ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.altKey
+    )
+      return;
     const n = Number(e.key);
     if (n >= 1 && n <= VIEWS.length) setView(VIEWS[n - 1].id);
-    else if ((e.key === "e" || e.key === "E") && sd.view === "route") toggleEdit();
+    else if ((e.key === "e" || e.key === "E") && sd.view === "route")
+      toggleEdit();
   }
 </script>
 
@@ -68,7 +117,13 @@
 {/snippet}
 
 <div class="shell">
-  <div class="rail"><DesignRail views={VIEWS} active={sd.view} onselect={(v) => setView(v as View)} /></div>
+  <div class="rail">
+    <DesignRail
+      views={VIEWS}
+      active={sd.view}
+      onselect={(v) => setView(v as View)}
+    />
+  </div>
   <div class="main">
     <ContextBar
       plans={sd.plans}
@@ -76,7 +131,11 @@
       compareKey={sd.compareKey}
       groups={sd.groups}
       group={sd.group}
-      routes={sd.routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.long_name ?? undefined }))}
+      routes={sd.routes.map((r) => ({
+        value: r.route_id,
+        label: r.name,
+        sub: r.long_name ?? undefined,
+      }))}
       route={sd.route}
       stopName={sd.stop ? (sd.gaps?.name ?? sd.stop) : ""}
       window={sd.window}
@@ -139,22 +198,50 @@
           {#if sd.frames.Groups}
             {@render failure("Groups", "Service groups")}
           {:else}
-            <GroupTable groups={sd.groups} selected={sd.group} onselect={selectGroup} />
+            <GroupTable
+              groups={sd.groups}
+              selected={sd.group}
+              onselect={selectGroup}
+            />
           {/if}
         </div>
       {:else if sd.view === "network"}
-        <h1>Network <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
-        {#if sd.frames.Comparison}{@render failure("Comparison", "Against the baseline")}{/if}
-        <GroupLedger {group} comparison={sd.comparison} baselineName={planName(sd.compareKey)} vehicles={sd.vehicles} vehiclesError={why("Vehicles")} />
+        <h1>
+          Network <span>
+            {group ? `${group.id} — ${spansText(group.spans)}` : ""}
+          </span>
+        </h1>
+        {#if sd.frames.Comparison}{@render failure(
+            "Comparison",
+            "Against the baseline",
+          )}{/if}
+        <GroupLedger
+          {group}
+          comparison={sd.comparison}
+          baselineName={planName(sd.compareKey)}
+          vehicles={sd.vehicles}
+          vehiclesError={why("Vehicles")}
+        />
         {#if sd.frames.DayProfile}
           {@render failure("DayProfile", "Trips per hour")}
         {:else if sd.hourly}
-          <DayProfile hours={sd.hourly} stats={sd.dayStats} window={sd.window} onwindow={setWindow} />
+          <DayProfile
+            hours={sd.hourly}
+            stats={sd.dayStats}
+            window={sd.window}
+            onwindow={setWindow}
+          />
         {/if}
         {#if sd.frames.FrequencyGrid}
           {@render failure("FrequencyGrid", "Frequency by hour")}
         {:else if sd.frequency}
-          <FrequencyGrid frequency={sd.frequency} window={sd.window} {changed} selected={sd.route} onroute={openRoute} />
+          <FrequencyGrid
+            frequency={sd.frequency}
+            window={sd.window}
+            {changed}
+            selected={sd.route}
+            onroute={openRoute}
+          />
         {/if}
       {:else if sd.view === "coverage"}
         <div class="split">
@@ -172,14 +259,34 @@
             onselect={pickUnserved}
           />
           <div class="map-area">
-            {#if sd.frames.Coverage}{@render failure("Coverage", "Coverage")}{/if}
-            {#if sd.frames.Unserved}{@render failure("Unserved", "Unserved points")}{/if}
-            <Unavailable title="Gained and lost against the baseline" reason="Not shown yet: who gains and who loses coverage against the baseline. It waits on a rule for matching this plan's service groups to the baseline's when a fork renames or splits a service type." blockers={["D-43", "QAF-20"]} />
-            <div class="map"><CoverageMap points={sd.unserved ?? []} selected={sd.unservedPick} onselect={pickUnserved} /></div>
+            {#if sd.frames.Coverage}{@render failure(
+                "Coverage",
+                "Coverage",
+              )}{/if}
+            {#if sd.frames.Unserved}{@render failure(
+                "Unserved",
+                "Unserved points",
+              )}{/if}
+            <Unavailable
+              title="Gained and lost against the baseline"
+              reason="Not shown yet: who gains and who loses coverage against the baseline. It waits on a rule for matching this plan's service groups to the baseline's when a fork renames or splits a service type."
+              blockers={["D-43", "QAF-20"]}
+            />
+            <div class="map">
+              <CoverageMap
+                points={sd.unserved ?? []}
+                selected={sd.unservedPick}
+                onselect={pickUnserved}
+              />
+            </div>
           </div>
         </div>
       {:else if sd.view === "hubs"}
-        <h1>Hubs &amp; corridors <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
+        <h1>
+          Hubs &amp; corridors <span>
+            {group ? `${group.id} — ${spansText(group.spans)}` : ""}
+          </span>
+        </h1>
         <div class="picker">
           {#if sd.frames.HubPicker}
             {@render failure("HubPicker", "Stops")}
@@ -197,38 +304,66 @@
           {#if sd.frames.HubMatrix}
             {@render failure("HubMatrix", "Connections")}
           {:else if sd.connections && sd.stop}
-            <HubMatrix connections={sd.connections} stopName={sd.gaps?.name ?? sd.stop} onroute={openRoute} />
+            <HubMatrix
+              connections={sd.connections}
+              stopName={sd.gaps?.name ?? sd.stop}
+              onroute={openRoute}
+            />
           {:else}
-            <Unavailable title="Connections" reason="Pick a stop or station to read who connects to whom there." />
+            <Unavailable
+              title="Connections"
+              reason="Pick a stop or station to read who connects to whom there."
+            />
           {/if}
           <div class="col">
             {#if sd.frames.StopWaits}
               {@render failure("StopWaits", "Waits")}
             {:else if sd.gaps && sd.gaps.departures === 0}
-              <Unavailable title="Waits at {sd.gaps.name}" reason="Nothing departs here on the group's day." />
+              <Unavailable
+                title="Waits at {sd.gaps.name}"
+                reason="Nothing departs here on the group's day."
+              />
             {:else if sd.gaps}
               <StopWaits gaps={sd.gaps} window={sd.window} />
             {/if}
             {#if sd.frames.NearMisses}
               {@render failure("NearMisses", "Just missed")}
             {:else if sd.missed && sd.stop}
-              <NearMisses missed={sd.missed} stopName={sd.gaps?.name ?? sd.stop} onroute={openRoute} />
+              <NearMisses
+                missed={sd.missed}
+                stopName={sd.gaps?.name ?? sd.stop}
+                onroute={openRoute}
+              />
             {/if}
             {#if sd.frames.LongestWaits}
-              {@render failure("LongestWaits", "Longest waits across the network")}
+              {@render failure(
+                "LongestWaits",
+                "Longest waits across the network",
+              )}
             {:else if sd.waits}
-              <LongestWaits waits={sd.waits} window={sd.window} onstop={openStop} />
+              <LongestWaits
+                waits={sd.waits}
+                window={sd.window}
+                onstop={openStop}
+              />
             {/if}
           </div>
         </div>
         {#if sd.frames.Corridors}
           {@render failure("Corridors", "Shared corridors")}
         {:else if sd.overlaps}
-          <CorridorTable overlaps={sd.overlaps} onroute={openRoute} onstop={openStop} />
+          <CorridorTable
+            overlaps={sd.overlaps}
+            onroute={openRoute}
+            onstop={openStop}
+          />
         {/if}
       {:else if sd.view === "route"}
         {#if !sd.route}
-          <Unavailable title="No route picked" reason="Pick a route: click its row in the Network view's grid, a route in a hub's connections, or type it in the Jump to route box at the top right." />
+          <Unavailable
+            title="No route picked"
+            reason="Pick a route: click its row in the Network view's grid, a route in a hub's connections, or type it in the Jump to route box at the top right."
+          />
         {:else}
           <RouteHeader
             route={sd.route}
@@ -242,11 +377,20 @@
           />
           <div class="workbench">
             <div class="center">
-              {#if sd.frames.RouteHeader}{@render failure("RouteHeader", "The route")}{/if}
+              {#if sd.frames.RouteHeader}{@render failure(
+                  "RouteHeader",
+                  "The route",
+                )}{/if}
               {#if sd.routeDetail}
                 <div class="dirs">
-                  <DirectionTabs directions={sd.routeDetail.directions} selected={sd.direction} onselect={selectDirection} />
-                  <label class="mode"><input type="checkbox" bind:checked={tableMode} /> timetable</label>
+                  <DirectionTabs
+                    directions={sd.routeDetail.directions}
+                    selected={sd.direction}
+                    onselect={selectDirection}
+                  />
+                  <label class="mode">
+                    <input type="checkbox" bind:checked={tableMode} /> timetable
+                  </label>
                 </div>
               {/if}
               {#if sd.frames.StringLine}
@@ -254,28 +398,33 @@
               {:else if sd.timetable}
                 {#if sd.editing}
                   {#key `${sd.route}|${sd.direction}`}
-                  <GesturePanel
-                    {framed}
-                    members={group?.members ?? []}
-                    editType={sd.editType}
-                    {alsoIn}
-                    onedittype={setEditType}
-                    stops={sd.timetable.stops}
-                    allStops={stopOptions}
-                    selectedStop={sd.selectedStop}
-                    trips={sd.timetable.trips}
-                    selectedTrip={sd.selectedTrip}
-                    window={sd.window}
-                    onspan={gestures.span}
-                    onrunning={gestures.running}
-                    onretime={gestures.retime}
-                    oninsertstop={gestures.insertStop}
-                    onremovestop={gestures.removeStop}
-                  />
+                    <GesturePanel
+                      {framed}
+                      members={group?.members ?? []}
+                      editType={sd.editType}
+                      {alsoIn}
+                      onedittype={setEditType}
+                      stops={sd.timetable.stops}
+                      allStops={stopOptions}
+                      selectedStop={sd.selectedStop}
+                      trips={sd.timetable.trips}
+                      selectedTrip={sd.selectedTrip}
+                      window={sd.window}
+                      onspan={gestures.span}
+                      onrunning={gestures.running}
+                      onretime={gestures.retime}
+                      oninsertstop={gestures.insertStop}
+                      onremovestop={gestures.removeStop}
+                    />
                   {/key}
                 {/if}
                 {#if tableMode}
-                  <TimetableGrid timetable={sd.timetable} baselineName={planName(sd.compareKey)} selectedStop={sd.selectedStop} onstop={selectTimetableStop} />
+                  <TimetableGrid
+                    timetable={sd.timetable}
+                    baselineName={planName(sd.compareKey)}
+                    selectedStop={sd.selectedStop}
+                    onstop={selectTimetableStop}
+                  />
                 {:else}
                   <StringLine
                     timetable={sd.timetable}
@@ -289,11 +438,18 @@
                   />
                 {/if}
                 <div class="row">
-                  {#if sd.frequency}<HourGaps frequency={sd.frequency} route={sd.route} window={sd.window} />{/if}
+                  {#if sd.frequency}<HourGaps
+                      frequency={sd.frequency}
+                      route={sd.route}
+                      window={sd.window}
+                    />{/if}
                   <RunTimes timetable={sd.timetable} />
                 </div>
               {:else}
-                <Unavailable title="Timetable" reason="This direction runs nothing under the group." />
+                <Unavailable
+                  title="Timetable"
+                  reason="This direction runs nothing under the group."
+                />
               {/if}
             </div>
             <aside class="side">
@@ -309,30 +465,65 @@
               {#if sd.frames.RouteMap}
                 {@render failure("RouteMap", "Where it runs")}
               {:else}
-                <div class="route-map"><FocusMap focus={sd.focus} label={`route ${sd.route}`} /></div>
+                <div class="route-map">
+                  <FocusMap focus={sd.focus} label={`route ${sd.route}`} />
+                </div>
               {/if}
             </aside>
           </div>
         {/if}
       {:else if sd.view === "proposal"}
-        <h1>{planName(sd.activeKey)} <span>{sd.compareKey ? `against ${planName(sd.compareKey)}` : "no baseline"}</span></h1>
+        <h1>
+          {planName(sd.activeKey)}
+          <span>
+            {sd.compareKey
+              ? `against ${planName(sd.compareKey)}`
+              : "no baseline"}
+          </span>
+        </h1>
         {#if sd.frames.Comparison}
           {@render failure("Comparison", "Against the baseline")}
         {:else if sd.comparison}
-          <ProposalScore comparison={sd.comparison} vehicles={sd.vehicles} vehiclesError={why("Vehicles")} />
+          <ProposalScore
+            comparison={sd.comparison}
+            vehicles={sd.vehicles}
+            vehiclesError={why("Vehicles")}
+          />
         {:else}
-          <Unavailable title="Against the baseline" reason="Choose a baseline plan on the bar to compare against." />
+          <Unavailable
+            title="Against the baseline"
+            reason="Choose a baseline plan on the bar to compare against."
+          />
         {/if}
         <div class="row">
-          {#if sd.comparison}<Redline comparison={sd.comparison} onroute={openRoute} />{/if}
+          {#if sd.comparison}<Redline
+              comparison={sd.comparison}
+              onroute={openRoute}
+            />{/if}
           {#if sd.frames.Readiness}
             {@render failure("Readiness", "Ready to publish?")}
           {:else}
-            <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={why("Export")} onexport={exportPlan}
-              published={sd.published} publishRefused={sd.publishRefused} publishError={why("Publish")} onpublish={publishPlan}
-              onhold={gestures.retime}>
-            {#snippet signin()}<SignInControl available={signinState.available} name={signinState.name} error={signinState.error} onsignin={signIn} onsignout={signOut} />{/snippet}
-          </Readiness>
+            <Readiness
+              issues={sd.issues}
+              warnings={sd.warnings}
+              {framed}
+              exported={sd.exported}
+              exportError={why("Export")}
+              onexport={exportPlan}
+              published={sd.published}
+              publishRefused={sd.publishRefused}
+              publishError={why("Publish")}
+              onpublish={publishPlan}
+              onhold={gestures.retime}
+            >
+              {#snippet signin()}<SignInControl
+                  available={signinState.available}
+                  name={signinState.name}
+                  error={signinState.error}
+                  onsignin={signIn}
+                  onsignout={signOut}
+                />{/snippet}
+            </Readiness>
           {/if}
         </div>
       {/if}
@@ -341,28 +532,133 @@
 </div>
 
 <style>
-  .shell { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); height: 100dvh; }
-  .rail { min-height: 0; }
-  .main { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: color-mix(in srgb, var(--hover) 60%, var(--surface)); }
-  .view { flex: 1; overflow-y: auto; padding: 1rem 1.2rem 2rem; display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
-  h1 { margin: 0; font-size: 1.2rem; }
-  h1 span { font-size: 0.8rem; font-weight: 400; color: var(--muted); margin-left: 0.4rem; }
-  .row { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: flex-start; }
-  .row > :global(*) { flex: 1 1 24rem; min-width: 0; }
-  .col { display: flex; flex-direction: column; gap: 0.6rem; }
-  .split { display: flex; flex-wrap: wrap; margin: -1rem -1.2rem -2rem; flex: 1 1 0; min-height: 30rem; }
-  .split > :global(aside) { flex: 0 1 22rem; min-width: 18rem; max-height: 100%; }
-  .map-area { flex: 999 1 30rem; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem; min-width: 0; max-height: 100%; }
-  .map { position: relative; flex: 1 1 0; min-height: 20rem; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
-  .map > :global(.coverage-map) { position: absolute; inset: 0; min-height: 0; }
-  .picker { max-width: 28rem; }
-  .workbench { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: flex-start; }
-  .center { flex: 999 1 40rem; min-width: 0; display: flex; flex-direction: column; gap: 0.9rem; }
-  .side { flex: 1 1 17rem; display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
-  .route-map { height: 18rem; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
-  .dirs { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
-  .mode { margin-left: auto; font-size: 0.8rem; color: var(--muted); }
+  .shell {
+    display: grid;
+    grid-template-columns: 4.6rem minmax(0, 1fr);
+    height: 100dvh;
+  }
+  .rail {
+    min-height: 0;
+  }
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    background: color-mix(in srgb, var(--hover) 60%, var(--surface));
+  }
+  .view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.2rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    min-width: 0;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+  h1 span {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 0.4rem;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    align-items: flex-start;
+  }
+  .row > :global(*) {
+    flex: 1 1 24rem;
+    min-width: 0;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .split {
+    display: flex;
+    flex-wrap: wrap;
+    margin: -1rem -1.2rem -2rem;
+    flex: 1 1 0;
+    min-height: 30rem;
+  }
+  .split > :global(aside) {
+    flex: 0 1 22rem;
+    min-width: 18rem;
+    max-height: 100%;
+  }
+  .map-area {
+    flex: 999 1 30rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.6rem;
+    min-width: 0;
+    max-height: 100%;
+  }
+  .map {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 20rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .map > :global(.coverage-map) {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+  }
+  .picker {
+    max-width: 28rem;
+  }
+  .workbench {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    align-items: flex-start;
+  }
+  .center {
+    flex: 999 1 40rem;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+  .side {
+    flex: 1 1 17rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    min-width: 0;
+  }
+  .route-map {
+    height: 18rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .dirs {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+  .mode {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
   @media (max-width: 720px) {
-    .shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    .shell {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
   }
 </style>

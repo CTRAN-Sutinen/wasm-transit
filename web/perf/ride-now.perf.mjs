@@ -21,7 +21,10 @@ import fs from "node:fs";
 import { Probe } from "./probe.mjs";
 import { headerSecs, snapshots } from "./live.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 const rtDir = path.resolve(root, process.env.PERF_RT ?? "testdata/perf-rt");
 const SAMPLE_EVERY = 10;
 const POLL_MS = 30_000;
@@ -31,9 +34,14 @@ test.use({
   permissions: ["geolocation"],
 });
 
-test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) => {
+test("ride now: boot, a rider's session, the poll, the soak", async ({
+  page,
+}) => {
   const snaps = snapshots(rtDir);
-  expect(snaps.length, `recorded snapshots in ${rtDir} (node web/perf/record-rt.mjs)`).toBeGreaterThan(4);
+  expect(
+    snaps.length,
+    `recorded snapshots in ${rtDir} (node web/perf/record-rt.mjs)`,
+  ).toBeGreaterThan(4);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const probe = new Probe(page, path.join(root, "web/perf-results", stamp));
 
@@ -43,9 +51,13 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     const url = decodeURIComponent(route.request().url());
     const kind = /VehiclePositions/i.test(url) ? "vehicles" : "trips";
     const body = snaps[Math.min(tick, snaps.length - 1)][kind];
-    return body ? route.fulfill({ contentType: "application/octet-stream", body }) : route.fulfill({ status: 404 });
+    return body
+      ? route.fulfill({ contentType: "application/octet-stream", body })
+      : route.fulfill({ status: 404 });
   });
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) =>
+    route.fulfill({ contentType: "application/json", body: "[]" }),
+  );
   await page.clock.install({ time: headerSecs(snaps[0].trips) * 1000 });
   await probe.start();
 
@@ -63,7 +75,14 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   async function settle() {
     await page.waitForTimeout(300);
     await page.evaluate(
-      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestIdleCallback(() => r(), { timeout: 5000 })))),
+      () =>
+        new Promise((r) =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+              requestIdleCallback(() => r(), { timeout: 5000 }),
+            ),
+          ),
+        ),
     );
   }
 
@@ -71,13 +90,16 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     const input = page.getByLabel(field, { exact: true });
     await input.fill("");
     await input.pressSequentially(text, { delay: 60 });
-    await expect(page.getByRole("option").first()).toContainText(name, { timeout: 15_000 });
+    await expect(page.getByRole("option").first()).toContainText(name, {
+      timeout: 15_000,
+    });
     await input.press("Enter");
   }
 
   async function home() {
     const routes = page.getByRole("button", { name: "Routes" });
-    for (let i = 0; i < 4 && !(await routes.isVisible()); i++) await page.getByRole("button", { name: "back" }).first().click();
+    for (let i = 0; i < 4 && !(await routes.isVisible()); i++)
+      await page.getByRole("button", { name: "back" }).first().click();
     await expect(routes).toBeVisible();
   }
 
@@ -88,8 +110,12 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   await page.goto("/live-feeds.json");
   await probe.step("boot: network registered, near you live", async () => {
     await page.goto("/ride-now.html");
-    await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByTestId("live-feeds")).toContainText("Live", { timeout: 30_000 });
+    await expect(
+      page.getByTestId("nearby").getByTestId("stop-card").first(),
+    ).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId("live-feeds")).toContainText("Live", {
+      timeout: 30_000,
+    });
     await settle();
   });
   await probe.sample("after boot");
@@ -97,7 +123,9 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   await probe.step("type-ahead → stop board", async () => {
     await pick("stop name", "fisher", "Fisher");
     await expect(board.locator("h2")).toBeVisible();
-    await expect(board.getByTestId("board-rows").locator("li").first()).toBeVisible();
+    await expect(
+      board.getByTestId("board-rows").locator("li").first(),
+    ).toBeVisible();
     await settle();
   });
 
@@ -108,7 +136,9 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
 
   await probe.step("save the stop", async () => {
     await board.getByRole("button", { name: "Save this stop" }).click();
-    await expect(board.getByRole("button", { name: "Remove from saved" })).toBeVisible();
+    await expect(
+      board.getByRole("button", { name: "Remove from saved" }),
+    ).toBeVisible();
     await settle();
   });
 
@@ -139,15 +169,26 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
   await home();
   await probe.step("routes list → filter → a route", async () => {
     await page.getByRole("button", { name: "Routes" }).click();
-    await page.getByLabel("filter routes").pressSequentially("vine", { delay: 60 });
+    await page
+      .getByLabel("filter routes")
+      .pressSequentially("vine", { delay: 60 });
     await page.getByTestId("route-list").locator("li button").first().click();
-    await expect(page.getByTestId("route-view").getByTestId("route-variant").first()).toBeVisible();
+    await expect(
+      page.getByTestId("route-view").getByTestId("route-variant").first(),
+    ).toBeVisible();
     await settle();
   });
 
   await probe.step("a stop on the route → its board", async () => {
-    await page.getByTestId("route-variant").first().locator(".line button").first().click();
-    await expect(board.getByTestId("board-rows").locator("li").first()).toBeVisible();
+    await page
+      .getByTestId("route-variant")
+      .first()
+      .locator(".line button")
+      .first()
+      .click();
+    await expect(
+      board.getByTestId("board-rows").locator("li").first(),
+    ).toBeVisible();
     await settle();
   });
 
@@ -159,12 +200,21 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     tracking = await board
       .getByRole("button", { name: "Track this bus ›" })
       .waitFor({ timeout: 2_000 })
-      .then(() => true, () => false);
+      .then(
+        () => true,
+        () => false,
+      );
   }
   if (tracking) {
     await probe.step("track a bus", async () => {
       await board.getByRole("button", { name: "Track this bus ›" }).click();
-      await expect(page.getByTestId("bus-view").getByTestId("bus-stops").locator("li").first()).toBeVisible();
+      await expect(
+        page
+          .getByTestId("bus-view")
+          .getByTestId("bus-stops")
+          .locator("li")
+          .first(),
+      ).toBeVisible();
       await settle();
     });
     await probe.step("poll tick on bus view", pollTick);
@@ -180,7 +230,9 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     const before = await probe.counters();
     await pollTick();
     const after = await probe.counters();
-    const longTasks = await page.evaluate(() => window.__perf.longtasks.slice());
+    const longTasks = await page.evaluate(() =>
+      window.__perf.longtasks.slice(),
+    );
     ticks.push({
       tick,
       mainThreadMs: Math.round((after.taskMs - before.taskMs) * 10) / 10,
@@ -188,7 +240,10 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
       longTasks: longTasks.length,
       longestTaskMs: Math.round(Math.max(0, ...longTasks)),
     });
-    if (tick % SAMPLE_EVERY === 0 || tick === snaps.length - 1) await probe.sample(`tick ${tick} (${Math.round((tick * POLL_MS) / 60_000)} min)`);
+    if (tick % SAMPLE_EVERY === 0 || tick === snaps.length - 1)
+      await probe.sample(
+        `tick ${tick} (${Math.round((tick * POLL_MS) / 60_000)} min)`,
+      );
   }
 
   const report = probe.write({
@@ -199,5 +254,7 @@ test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) =
     build: "dist-perf (unminified, wasm name sections)",
     ticks,
   });
-  console.log(`perf report: ${path.relative(root, probe.outDir)}/summary.md (${report.steps.length} steps, ${ticks.length} soak ticks)`);
+  console.log(
+    `perf report: ${path.relative(root, probe.outDir)}/summary.md (${report.steps.length} steps, ${ticks.length} soak ticks)`,
+  );
 });

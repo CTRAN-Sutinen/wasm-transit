@@ -35,28 +35,44 @@ class Instance {
   }
 
   text(text: string): string {
-    return this.#call(new TextEncoder().encode(text), (ptr, len) => this.#exports.transit_invoke(ptr, len));
+    return this.#call(new TextEncoder().encode(text), (ptr, len) =>
+      this.#exports.transit_invoke(ptr, len),
+    );
   }
 
   bytes(op: number, payload: Uint8Array): string {
-    return this.#call(payload, (ptr, len) => this.#exports.transit_invoke_bytes(op, ptr, len));
+    return this.#call(payload, (ptr, len) =>
+      this.#exports.transit_invoke_bytes(op, ptr, len),
+    );
   }
 
-  #call(payload: Uint8Array, enter: (ptr: number, len: number) => number): string {
+  #call(
+    payload: Uint8Array,
+    enter: (ptr: number, len: number) => number,
+  ): string {
     const wasm = this.#exports;
     const ptr = wasm.transit_alloc(payload.length);
     new Uint8Array(wasm.memory.buffer, ptr, payload.length).set(payload);
     const outPtr = enter(ptr, payload.length);
     wasm.transit_free(ptr, payload.length);
     const len = new DataView(wasm.memory.buffer).getUint32(outPtr, true);
-    const text = new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, outPtr + 4, len));
+    const text = new TextDecoder().decode(
+      new Uint8Array(wasm.memory.buffer, outPtr + 4, len),
+    );
     wasm.transit_free(outPtr, len + 4);
     return text;
   }
 }
 
 // The compiled module is kept so a reset re-instantiates without fetching.
-type Assembled = { key: string; hash: string; module: WebAssembly.Module; instance: Instance; resets: number; resetAt: number };
+type Assembled = {
+  key: string;
+  hash: string;
+  module: WebAssembly.Module;
+  instance: Instance;
+  resets: number;
+  resetAt: number;
+};
 
 // The ceiling is twice the largest measured working set (D-70). The engine
 // may lower it, and the e2e does to force a reset.
@@ -72,7 +88,9 @@ const errors: Record<string, string> = {};
 
 async function contentHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  const hex = Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
   return "sha256:" + hex;
 }
 
@@ -84,12 +102,15 @@ async function loadManifest(ui: string | undefined): Promise<CapManifest> {
   if (ui) url.searchParams.set("ui", ui);
   const loaded = (await (await fetch(url)).json()) as CapManifest;
   if (loaded.kernel !== KERNEL_VERSION) {
-    throw new Error(`manifest kernel v${loaded.kernel} != host kernel v${KERNEL_VERSION}`);
+    throw new Error(
+      `manifest kernel v${loaded.kernel} != host kernel v${KERNEL_VERSION}`,
+    );
   }
   const ids = new Set<string>();
   for (const cap of loaded.capabilities) {
     if (ids.has(cap.id)) throw new Error(`duplicate capability id ${cap.id}`);
-    if (!cap.hash.startsWith("sha256:")) throw new Error(`capability ${cap.id} has no content hash`);
+    if (!cap.hash.startsWith("sha256:"))
+      throw new Error(`capability ${cap.id} has no content hash`);
     ids.add(cap.id);
   }
   return loaded;
@@ -97,18 +118,27 @@ async function loadManifest(ui: string | undefined): Promise<CapManifest> {
 
 // A failure resolves null, so the assembly degrades and does not fail
 // wholesale.
-function assemble(key: string, entry: { url: string; hash: string }): Promise<Assembled | null> {
+function assemble(
+  key: string,
+  entry: { url: string; hash: string },
+): Promise<Assembled | null> {
   let pending = assembled.get(key);
   if (!pending) {
     pending = (async () => {
       try {
-        const bytes = new Uint8Array(await (await fetch(new URL(entry.url, base))).arrayBuffer());
+        const bytes = new Uint8Array(
+          await (await fetch(new URL(entry.url, base))).arrayBuffer(),
+        );
         const hash = await contentHash(bytes);
         if (hash !== entry.hash) {
-          throw new Error(`module ${key} hash mismatch: fetched ${hash}, manifest pins ${entry.hash}`);
+          throw new Error(
+            `module ${key} hash mismatch: fetched ${hash}, manifest pins ${entry.hash}`,
+          );
         }
         const module = await WebAssembly.compile(bytes);
-        const instance = new Instance(await WebAssembly.instantiate(module, {}).then((i) => i.exports));
+        const instance = new Instance(
+          await WebAssembly.instantiate(module, {}).then((i) => i.exports),
+        );
         return { key, hash, module, instance, resets: 0, resetAt: 0 };
       } catch (error) {
         errors[key] = error instanceof Error ? error.message : String(error);
@@ -120,15 +150,25 @@ function assemble(key: string, entry: { url: string; hash: string }): Promise<As
   return pending;
 }
 
-async function place(cap: Capability, linked: LinkedAssembly | undefined): Promise<Route | null> {
+async function place(
+  cap: Capability,
+  linked: LinkedAssembly | undefined,
+): Promise<Route | null> {
   if (linked?.capabilities.includes(cap.id)) {
     const key = `ui:${linked.ui}`;
     if (await assemble(key, linked)) {
-      return { module: key, hash: linked.hash, index: linked.capabilities.indexOf(cap.id), linked: linked.capabilities.length > 1 };
+      return {
+        module: key,
+        hash: linked.hash,
+        index: linked.capabilities.indexOf(cap.id),
+        linked: linked.capabilities.length > 1,
+      };
     }
   }
   const key = `cap:${cap.id}`;
-  return (await assemble(key, cap)) ? { module: key, hash: cap.hash, index: 0, linked: false } : null;
+  return (await assemble(key, cap))
+    ? { module: key, hash: cap.hash, index: 0, linked: false }
+    : null;
 }
 
 async function assembledOf(cap: string): Promise<Assembled> {
@@ -142,8 +182,15 @@ async function assembledOf(cap: string): Promise<Assembled> {
 // before a registration.
 async function reclaim(a: Assembled): Promise<boolean> {
   const now = Date.now();
-  if (a.instance.memory <= ceiling || a.instance.ops === 0 || now - a.resetAt < minResetMs) return false;
-  a.instance = new Instance((await WebAssembly.instantiate(a.module, {})).exports);
+  if (
+    a.instance.memory <= ceiling ||
+    a.instance.ops === 0 ||
+    now - a.resetAt < minResetMs
+  )
+    return false;
+  a.instance = new Instance(
+    (await WebAssembly.instantiate(a.module, {})).exports,
+  );
   a.resets += 1;
   a.resetAt = now;
   return true;
@@ -152,26 +199,51 @@ async function reclaim(a: Assembled): Promise<boolean> {
 // Off until the engine starts it, because it keeps every request's bytes.
 // A line's place is taken when the module answers, so the lines keep the
 // order of the calls while their hashes are computed.
-type Journal = { run: string; lines: (string | null)[]; blobs: Map<string, Uint8Array>; pending: Promise<void>[] };
+type Journal = {
+  run: string;
+  lines: (string | null)[];
+  blobs: Map<string, Uint8Array>;
+  pending: Promise<void>[];
+};
 let journal: Journal | null = null;
 
 // The engine writes `cap` (in a linked assembly) and `op` first.
 const OP_NAME = /^\{(?:"cap":"[a-z_]+",)?"op":"([a-z_]+)"/;
 
-function record(a: Assembled, cap: string, call: "json" | number, payload: Uint8Array, outcome: string): void {
+function record(
+  a: Assembled,
+  cap: string,
+  call: "json" | number,
+  payload: Uint8Array,
+  outcome: string,
+): void {
   const j = journal;
   // The engine recovers from an unknown document by registering it, so it
   // is not journaled.
   if (!j || unknownDocument(outcome)) return;
   const slot = j.lines.push(null) - 1;
   const instance = `${j.run}/${a.key}@${a.resets}`;
-  const op = call === "json" ? (OP_NAME.exec(new TextDecoder().decode(payload.subarray(0, 120)))?.[1] ?? null) : `bulk ${call}`;
+  const op =
+    call === "json"
+      ? (OP_NAME.exec(
+          new TextDecoder().decode(payload.subarray(0, 120)),
+        )?.[1] ?? null)
+      : `bulk ${call}`;
   j.pending.push(
     (async () => {
       const request = await contentHash(payload as Uint8Array<ArrayBuffer>);
       j.blobs.set(request, payload);
       const output = await contentHash(new TextEncoder().encode(outcome));
-      j.lines[slot] = JSON.stringify({ run: j.run, instance, cap, module: a.hash, call, op, request, output });
+      j.lines[slot] = JSON.stringify({
+        run: j.run,
+        instance,
+        cap,
+        module: a.hash,
+        call,
+        op,
+        request,
+        output,
+      });
     })(),
   );
 }
@@ -185,7 +257,9 @@ async function handle(request: BusRequest): Promise<BusReply> {
       manifest ??= loadManifest(request.ui ?? undefined);
       const loaded = await manifest;
       const byId = new Map(loaded.capabilities.map((c) => [c.id, c]));
-      const linked = request.ui ? loaded.assemblies?.find((a) => a.ui === request.ui) : undefined;
+      const linked = request.ui
+        ? loaded.assemblies?.find((a) => a.ui === request.ui)
+        : undefined;
       const statuses: Record<string, CapStatus> = {};
       const caps: Record<string, Capability> = {};
       const placed: Record<string, Route> = {};
@@ -200,15 +274,28 @@ async function handle(request: BusRequest): Promise<BusReply> {
           placed[id] = route;
         }
       }
-      const loads = Object.fromEntries(loaded.kernel_ops.filter((k) => k.kind).map((k) => [k.kind as string, k.code]));
-      return { ok: { statuses, caps, routes: placed, errors: { ...errors }, loads } };
+      const loads = Object.fromEntries(
+        loaded.kernel_ops
+          .filter((k) => k.kind)
+          .map((k) => [k.kind as string, k.code]),
+      );
+      return {
+        ok: { statuses, caps, routes: placed, errors: { ...errors }, loads },
+      };
     }
     case "text": {
       const a = await assembledOf(request.cap);
       const reset = !request.load && (await reclaim(a));
       const out = a.instance.text(request.text);
       if (!request.load && out.startsWith('{"ok"')) a.instance.ops += 1;
-      if (journal) record(a, request.cap, "json", new TextEncoder().encode(request.text), out);
+      if (journal)
+        record(
+          a,
+          request.cap,
+          "json",
+          new TextEncoder().encode(request.text),
+          out,
+        );
       return { ok: out, reset };
     }
     case "bytes": {
@@ -231,10 +318,18 @@ async function handle(request: BusRequest): Promise<BusReply> {
       journal = { run: request.run, lines: [], blobs: new Map(), pending: [] };
       return { ok: null };
     case "journal-read": {
-      if (!journal) throw new Error("the journal is off: the engine's startJournal() turns it on");
+      if (!journal)
+        throw new Error(
+          "the journal is off: the engine's startJournal() turns it on",
+        );
       await Promise.all(journal.pending);
       const lines = journal.lines.filter((l): l is string => l !== null);
-      return { ok: { journal: lines.map((l) => l + "\n").join(""), blobs: Object.fromEntries(journal.blobs) } };
+      return {
+        ok: {
+          journal: lines.map((l) => l + "\n").join(""),
+          blobs: Object.fromEntries(journal.blobs),
+        },
+      };
     }
   }
 }
@@ -243,6 +338,12 @@ self.onmessage = (event: MessageEvent<{ id: number; request: BusRequest }>) => {
   const { id, request } = event.data;
   handle(request).then(
     (reply) => self.postMessage({ id, reply }),
-    (error: unknown) => self.postMessage({ id, reply: { error: error instanceof Error ? error.message : String(error) } }),
+    (error: unknown) =>
+      self.postMessage({
+        id,
+        reply: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      }),
   );
 };

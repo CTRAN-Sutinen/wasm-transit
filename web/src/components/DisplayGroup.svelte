@@ -1,6 +1,12 @@
 <script lang="ts">
   import type { DepartureGroup } from "../types/DepartureGroup";
-  import { nextText, routeColor, statusText, statusTone, waitText } from "./rideFormat";
+  import {
+    nextText,
+    routeColor,
+    statusText,
+    statusTone,
+    waitText,
+  } from "./rideFormat";
 
   let {
     group,
@@ -14,17 +20,28 @@
   } = $props();
 
   const bg = $derived(routeColor(group.route_color) ?? "var(--accent)");
-  const fg = $derived(routeColor(group.route_text_color) ?? (group.route_color ? "#fff" : "var(--on-accent)"));
+  const fg = $derived(
+    routeColor(group.route_text_color) ??
+      (group.route_color ? "#fff" : "var(--on-accent)"),
+  );
   const cancelled = $derived(group.skipped.filter((s) => s.cancel).length);
   const detoured = $derived(group.skipped.length - cancelled);
 </script>
 
-<article class="group {variant}" data-testid="display-group" data-route={group.route}>
+<article
+  class="group {variant}"
+  data-testid="display-group"
+  data-route={group.route}
+>
   <header>
-    <span class="badge" style:background={bg} style:color={fg}>{group.route_name}</span>
+    <span class="badge" style:background={bg} style:color={fg}>
+      {group.route_name}
+    </span>
     <div class="where">
       <span class="dest" data-testid="display-dest">{group.destination}</span>
-      {#if group.route_long_name && variant !== "row"}<span class="long">{group.route_long_name}</span>{/if}
+      {#if group.route_long_name && variant !== "row"}<span class="long">
+          {group.route_long_name}
+        </span>{/if}
     </div>
   </header>
   {#if group.departures.length}
@@ -33,19 +50,32 @@
         <li class={statusTone(d.status)} data-testid="display-time">
           <span class="wait">{waitText(d.wait)}</span>
           <span class="meta">
-            {#if d.status !== "no_prediction"}<span class="live" aria-label="live">●</span>{/if}
+            {#if d.status !== "no_prediction"}<span
+                class="live"
+                aria-label="live"
+              >
+                ●
+              </span>{/if}
             {statusText(d.status, d.delay_secs)}
-            {#if bays}<span class="bay">{d.platform ? `Bay ${d.platform}` : d.stop_name}</span>{/if}
+            {#if bays}<span class="bay">
+                {d.platform ? `Bay ${d.platform}` : d.stop_name}
+              </span>{/if}
           </span>
         </li>
       {/each}
     </ol>
   {:else if detoured}
-    <p class="none detour" data-testid="display-none">Detoured — not serving this stop</p>
-    {#if group.next}<p class="none" data-testid="display-next">{nextText(group.next)}</p>{/if}
+    <p class="none detour" data-testid="display-none">
+      Detoured — not serving this stop
+    </p>
+    {#if group.next}<p class="none" data-testid="display-next">
+        {nextText(group.next)}
+      </p>{/if}
   {:else if cancelled}
     <p class="none detour" data-testid="display-none">Cancelled</p>
-    {#if group.next}<p class="none" data-testid="display-next">{nextText(group.next)}</p>{/if}
+    {#if group.next}<p class="none" data-testid="display-next">
+        {nextText(group.next)}
+      </p>{/if}
   {:else if group.next}
     <p class="none" data-testid="display-none">{nextText(group.next)}</p>
   {:else}
@@ -55,68 +85,217 @@
     <p class="note">Some trips detoured away from this stop</p>
   {/if}
   {#if (group.departures.length || detoured) && cancelled}
-    <p class="note" data-testid="display-cancelled">{cancelled === 1 ? "A trip was cancelled" : `${cancelled} trips were cancelled`}</p>
+    <p class="note" data-testid="display-cancelled">
+      {cancelled === 1
+        ? "A trip was cancelled"
+        : `${cancelled} trips were cancelled`}
+    </p>
   {/if}
 </article>
 
 <style>
-  .group { display: grid; gap: 0.6em; min-width: 0; }
-  header { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
-  .badge {
-    flex: none; min-width: 2.6em; padding: 0.15em 0.45em; border-radius: 0.3em;
-    font-weight: 800; text-align: center; font-variant-numeric: tabular-nums;
+  .group {
+    display: grid;
+    gap: 0.6em;
+    min-width: 0;
   }
-  .where { display: grid; min-width: 0; }
-  .dest { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .long { color: var(--muted); font-size: 0.6em; }
-  .times { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5em; }
-  .times li { display: grid; gap: 0.1em; }
-  .wait { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .meta { font-size: 0.5em; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; }
-  .live { color: var(--ok); }
-  li.warn .meta { color: var(--warn); }
-  li.bad .meta { color: var(--bad); }
-  li.ok .meta { color: var(--ok); }
-  .bay { border: 1px solid var(--line); border-radius: 0.3em; padding: 0 0.35em; color: var(--text); font-weight: 700; }
-  .none { margin: 0; color: var(--muted); font-weight: 600; }
-  .none.detour, .note { color: var(--warn); }
-  .note { margin: 0; font-size: 0.5em; }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    min-width: 0;
+  }
+  .badge {
+    flex: none;
+    min-width: 2.6em;
+    padding: 0.15em 0.45em;
+    border-radius: 0.3em;
+    font-weight: 800;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .where {
+    display: grid;
+    min-width: 0;
+  }
+  .dest {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .long {
+    color: var(--muted);
+    font-size: 0.6em;
+  }
+  .times {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5em;
+  }
+  .times li {
+    display: grid;
+    gap: 0.1em;
+  }
+  .wait {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .meta {
+    font-size: 0.5em;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    align-items: center;
+  }
+  .live {
+    color: var(--ok);
+  }
+  li.warn .meta {
+    color: var(--warn);
+  }
+  li.bad .meta {
+    color: var(--bad);
+  }
+  li.ok .meta {
+    color: var(--ok);
+  }
+  .bay {
+    border: 1px solid var(--line);
+    border-radius: 0.3em;
+    padding: 0 0.35em;
+    color: var(--text);
+    font-weight: 700;
+  }
+  .none {
+    margin: 0;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .none.detour,
+  .note {
+    color: var(--warn);
+  }
+  .note {
+    margin: 0;
+    font-size: 0.5em;
+  }
 
-  .row { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr); align-items: center; font-size: clamp(1rem, 2.6vh, 2.2rem); padding: 0.45em 0; border-bottom: 1px solid var(--line); }
-  .row .note { grid-column: 2; }
+  .row {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+    align-items: center;
+    font-size: clamp(1rem, 2.6vh, 2.2rem);
+    padding: 0.45em 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .row .note {
+    grid-column: 2;
+  }
   /* This is one route, large. The type follows the box that the placement gives it, and
      a time never outgrows its third of the width. */
   .hero {
-    height: 100%; align-content: space-evenly; gap: 0.4em;
-    font-size: clamp(1.4rem, min(11cqh, 4.6cqw), 9rem); padding: 0 0.3em;
+    height: 100%;
+    align-content: space-evenly;
+    gap: 0.4em;
+    font-size: clamp(1.4rem, min(11cqh, 4.6cqw), 9rem);
+    padding: 0 0.3em;
   }
-  .hero .times { gap: 0.6em; }
-  .hero .wait { font-size: min(1.8em, 6.6cqw, 24cqh); }
-  .hero .meta { font-size: max(0.4em, 1rem); }
-  .hero .long { font-size: max(0.42em, 0.85rem); }
-  .hero .none { font-size: 0.8em; }
-  .hero header { flex-wrap: wrap; row-gap: 0.2em; }
-  .hero .dest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.1; }
+  .hero .times {
+    gap: 0.6em;
+  }
+  .hero .wait {
+    font-size: min(1.8em, 6.6cqw, 24cqh);
+  }
+  .hero .meta {
+    font-size: max(0.4em, 1rem);
+  }
+  .hero .long {
+    font-size: max(0.42em, 0.85rem);
+  }
+  .hero .none {
+    font-size: 0.8em;
+  }
+  .hero header {
+    flex-wrap: wrap;
+    row-gap: 0.2em;
+  }
+  .hero .dest {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.1;
+  }
   @container (max-width: 40rem) {
-    .hero { font-size: clamp(1rem, min(6cqh, 8cqw), 4rem); }
-    .hero .times { grid-template-columns: minmax(0, 1fr); gap: 0.5em; }
-    .hero .times li { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 0.6em; }
-    .hero .wait { font-size: min(1.7em, 14cqw, 11cqh); }
+    .hero {
+      font-size: clamp(1rem, min(6cqh, 8cqw), 4rem);
+    }
+    .hero .times {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.5em;
+    }
+    .hero .times li {
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: baseline;
+      column-gap: 0.6em;
+    }
+    .hero .wait {
+      font-size: min(1.7em, 14cqw, 11cqh);
+    }
   }
   .band {
-    height: 100%; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; column-gap: 1.2em;
-    font-size: clamp(1rem, min(15cqh, 3.4cqw), 7rem); padding: 0 0.8em;
-    border: 1px solid var(--line); border-radius: 0.3em;
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    align-items: center;
+    column-gap: 1.2em;
+    font-size: clamp(1rem, min(15cqh, 3.4cqw), 7rem);
+    padding: 0 0.8em;
+    border: 1px solid var(--line);
+    border-radius: 0.3em;
   }
-  .band header { flex-wrap: wrap; row-gap: 0.2em; }
-  .band .dest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.1; }
-  .band .long { font-size: max(0.42em, 0.85rem); }
-  .band .times { gap: 0.8em; }
-  .band .meta { font-size: max(0.36em, 0.85rem); }
-  .band .none { font-size: 0.7em; }
-  .band .note { grid-column: 2; font-size: max(0.36em, 0.85rem); }
+  .band header {
+    flex-wrap: wrap;
+    row-gap: 0.2em;
+  }
+  .band .dest {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.1;
+  }
+  .band .long {
+    font-size: max(0.42em, 0.85rem);
+  }
+  .band .times {
+    gap: 0.8em;
+  }
+  .band .meta {
+    font-size: max(0.36em, 0.85rem);
+  }
+  .band .none {
+    font-size: 0.7em;
+  }
+  .band .note {
+    grid-column: 2;
+    font-size: max(0.36em, 0.85rem);
+  }
   @container (max-width: 40rem) {
-    .band { grid-template-columns: minmax(0, 1fr); align-content: center; row-gap: 0.4em; font-size: clamp(1rem, min(11cqh, 7cqw), 4rem); }
-    .band .note { grid-column: 1; }
+    .band {
+      grid-template-columns: minmax(0, 1fr);
+      align-content: center;
+      row-gap: 0.4em;
+      font-size: clamp(1rem, min(11cqh, 7cqw), 4rem);
+    }
+    .band .note {
+      grid-column: 1;
+    }
   }
 </style>

@@ -1,4 +1,3 @@
-
 /// Seconds since service-day midnight as "H:MM". Times after midnight read
 /// past 24:00.
 export function clock(secs: number | null | undefined): string {
@@ -17,7 +16,12 @@ export function count(n: number | null | undefined): string {
 }
 
 export function fixed(n: number | null | undefined, digits = 1): string {
-  return n == null ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return n == null
+    ? "—"
+    : n.toLocaleString(undefined, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
 }
 
 export function change(a: string, b: string): string {
@@ -29,8 +33,14 @@ export function parseClock(text: string): number | null {
   return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null;
 }
 
-export function spansText(spans: { start: string; end: string; days: number }[]): string {
-  return spans.map((s) => (s.start === s.end ? s.start : `${s.start} – ${s.end} (${s.days} days)`)).join(", ");
+export function spansText(
+  spans: { start: string; end: string; days: number }[],
+): string {
+  return spans
+    .map((s) =>
+      s.start === s.end ? s.start : `${s.start} – ${s.end} (${s.days} days)`,
+    )
+    .join(", ");
 }
 
 export function issueWords(item: object): { kind: string; detail: string } {
@@ -40,27 +50,52 @@ export function issueWords(item: object): { kind: string; detail: string } {
   }
   const [tag, body] = Object.entries(item)[0] ?? ["", {}];
   const f = (body ?? {}) as Record<string, unknown>;
-  const secs = (k: string) => (typeof f[k] === "number" ? (f[k] as number) : null);
+  const secs = (k: string) =>
+    typeof f[k] === "number" ? (f[k] as number) : null;
   const kind = tag.replace(/_/g, " ");
   switch (tag) {
     case "block_infeasible":
-      return { kind, detail: `Block ${f.block}: trip ${f.trip} arrives at ${clock(secs("arrival_secs"))}, after its next trip ${f.next} leaves at ${clock(secs("start_secs"))}. One bus cannot run both.` };
+      return {
+        kind,
+        detail: `Block ${f.block}: trip ${f.trip} arrives at ${clock(secs("arrival_secs"))}, after its next trip ${f.next} leaves at ${clock(secs("start_secs"))}. One bus cannot run both.`,
+      };
     case "layover_infeasible":
       // `after_trip` is the trip's place in the block, counted from 0.
-      return { kind, detail: `Block ${f.block}: the wait after trip number ${Number(f.after_trip) + 1} of the block is ${mins(secs("gap_secs"))} min; ${mins(secs("required_secs"))} min is required there.` };
+      return {
+        kind,
+        detail: `Block ${f.block}: the wait after trip number ${Number(f.after_trip) + 1} of the block is ${mins(secs("gap_secs"))} min; ${mins(secs("required_secs"))} min is required there.`,
+      };
     case "stop_not_in_service": {
       // The stops document's status over the plan's dates.
-      const status = typeof f.status === "string" ? f.status.replace(/_/g, " ") : "not there yet";
-      const when = typeof f.until === "string" ? `from ${f.from} until ${f.until}` : `from ${f.from} on`;
-      return { kind, detail: `The plan stops at ${f.stop}, which is ${status} ${when}, as the stops record has it.` };
+      const status =
+        typeof f.status === "string"
+          ? f.status.replace(/_/g, " ")
+          : "not there yet";
+      const when =
+        typeof f.until === "string"
+          ? `from ${f.from} until ${f.until}`
+          : `from ${f.from} on`;
+      return {
+        kind,
+        detail: `The plan stops at ${f.stop}, which is ${status} ${when}, as the stops record has it.`,
+      };
     }
     case "unassigned_trips":
-      return { kind, detail: `${f.trips} ${f.trips === 1 ? "trip" : "trips"} of ${f.pattern_trips} ${f.trips === 1 ? "is" : "are"} on no block, so no vehicle is counted for ${f.trips === 1 ? "it" : "them"}.` };
+      return {
+        kind,
+        detail: `${f.trips} ${f.trips === 1 ? "trip" : "trips"} of ${f.pattern_trips} ${f.trips === 1 ? "is" : "are"} on no block, so no vehicle is counted for ${f.trips === 1 ? "it" : "them"}.`,
+      };
     case "no_service_in_plan_period":
-      return { kind, detail: `${f.plan_name} picks on ${f.effective_from}, and no service type runs from that day. Fork with a "runs through" date to carry the calendar.` };
+      return {
+        kind,
+        detail: `${f.plan_name} picks on ${f.effective_from}, and no service type runs from that day. Fork with a "runs through" date to carry the calendar.`,
+      };
   }
   const detail = Object.entries(f)
-    .map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "object" ? JSON.stringify(v) : v}`)
+    .map(
+      ([k, v]) =>
+        `${k.replace(/_/g, " ")} ${typeof v === "object" ? JSON.stringify(v) : v}`,
+    )
     .join(", ");
   return { kind, detail };
 }
@@ -77,7 +112,11 @@ export function weekdaysText(days: boolean[]): string {
     }
     let j = i;
     while (j + 1 < 7 && days[j + 1]) j++;
-    parts.push(j - i >= 2 ? `${DAY_NAMES[i]}–${DAY_NAMES[j]}` : DAY_NAMES.slice(i, j + 1).join(", "));
+    parts.push(
+      j - i >= 2
+        ? `${DAY_NAMES[i]}–${DAY_NAMES[j]}`
+        : DAY_NAMES.slice(i, j + 1).join(", "),
+    );
     i = j + 1;
   }
   return parts.join(", ") || "no day";

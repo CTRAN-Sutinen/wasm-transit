@@ -23,10 +23,19 @@
   {#if starts === null}
     <p class="muted">Headway-band schedule — its trips are its bands.</p>
   {:else}
-    {#if !framed}<p class="note">Fork the import into a plan to change it.</p>{/if}
+    {#if !framed}<p class="note">
+        Fork the import into a plan to change it.
+      </p>{/if}
     <div class="starts">
       {#each starts as s, i (i)}
-        <span class="start">{hm(s)}{#if framed}<button title="remove this trip" onclick={() => onremove(i)}>×</button>{/if}</span>
+        <span class="start">
+          {hm(s)}{#if framed}<button
+              title="remove this trip"
+              onclick={() => onremove(i)}
+            >
+              ×
+            </button>{/if}
+        </span>
       {/each}
       {#if framed}<button class="add" onclick={onadd}>+ trip</button>{/if}
     </div>
@@ -34,11 +43,39 @@
 </section>
 
 <style>
-  h3 { margin: 0 0 0.25rem; font-size: 0.95rem; }
-  .muted { color: var(--muted); font-weight: normal; font-size: 0.85rem; }
-  .note { font-size: 0.85rem; margin: 0 0 0.25rem; }
-  .starts { display: flex; flex-wrap: wrap; gap: 4px; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-  .start { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
-  .start button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 3px; }
-  .add { font-size: 0.8rem; }
+  h3 {
+    margin: 0 0 0.25rem;
+    font-size: 0.95rem;
+  }
+  .muted {
+    color: var(--muted);
+    font-weight: normal;
+    font-size: 0.85rem;
+  }
+  .note {
+    font-size: 0.85rem;
+    margin: 0 0 0.25rem;
+  }
+  .starts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .start {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .start button {
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 0 0 3px;
+  }
+  .add {
+    font-size: 0.8rem;
+  }
 </style>

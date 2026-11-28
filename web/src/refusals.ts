@@ -4,7 +4,9 @@
 
 import type { RefusalCode } from "./types/transit_version/RefusalCode";
 
-export type ModuleError = { message: string } & (RefusalCode | { code?: undefined });
+export type ModuleError = { message: string } & (
+  RefusalCode | { code?: undefined }
+);
 
 export class Refused extends Error {
   readonly error: ModuleError;
@@ -28,7 +30,12 @@ export function moduleError(value: unknown): ModuleError | null {
   }
   if (value && typeof value === "object" && "error" in value) {
     const error = (value as { error: unknown }).error;
-    if (error && typeof error === "object" && typeof (error as ModuleError).message === "string") return error as ModuleError;
+    if (
+      error &&
+      typeof error === "object" &&
+      typeof (error as ModuleError).message === "string"
+    )
+      return error as ModuleError;
   }
   return null;
 }
@@ -41,7 +48,11 @@ export function unknownDocument(value: unknown): string | null {
 }
 
 // A document that a newer build wrote, which asks for the deployment's build.
-export function newerVersion(value: unknown): { kind: string; version: number } | null {
+export function newerVersion(
+  value: unknown,
+): { kind: string; version: number } | null {
   const error = moduleError(value);
-  return error?.code === "newer_version" ? { kind: error.kind, version: error.found } : null;
+  return error?.code === "newer_version"
+    ? { kind: error.kind, version: error.found }
+    : null;
 }

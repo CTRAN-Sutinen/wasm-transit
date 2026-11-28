@@ -24,37 +24,115 @@
 
 <section class="ledger" aria-label="Group ledger" data-testid="group-ledger">
   {#if p && b}
-    <div class="stat"><small>Trips</small><b>{change(count(b.trips), count(p.trips))}</b></div>
-    <div class="stat"><small>Routes</small><b>{change(String(b.routes), String(p.routes))}</b><span class="muted">{comparison!.routes.length} changed</span></div>
-    <div class="stat"><small>Revenue hours</small><b>{change(fixed(b.revenue_hours), fixed(p.revenue_hours))}</b></div>
-    <div class="stat"><small>Revenue miles</small><b>{change(count(Math.round(b.revenue_miles)), count(Math.round(p.revenue_miles)))}</b></div>
+    <div class="stat">
+      <small>Trips</small><b>{change(count(b.trips), count(p.trips))}</b>
+    </div>
+    <div class="stat">
+      <small>Routes</small><b>
+        {change(String(b.routes), String(p.routes))}
+      </b><span class="muted">{comparison!.routes.length} changed</span>
+    </div>
+    <div class="stat">
+      <small>Revenue hours</small><b>
+        {change(fixed(b.revenue_hours), fixed(p.revenue_hours))}
+      </b>
+    </div>
+    <div class="stat">
+      <small>Revenue miles</small><b>
+        {change(
+          count(Math.round(b.revenue_miles)),
+          count(Math.round(p.revenue_miles)),
+        )}
+      </b>
+    </div>
   {:else if group}
     <div class="stat"><small>Trips</small><b>{count(group.trips)}</b></div>
     <div class="stat"><small>Routes</small><b>{group.active_routes}</b></div>
-    <div class="stat"><small>Revenue hours</small><b>{fixed(group.revenue_hours)}</b></div>
-    <div class="stat"><small>Revenue miles</small><b>{count(Math.round(group.revenue_miles))}</b></div>
+    <div class="stat">
+      <small>Revenue hours</small><b>{fixed(group.revenue_hours)}</b>
+    </div>
+    <div class="stat">
+      <small>Revenue miles</small><b>
+        {count(Math.round(group.revenue_miles))}
+      </b>
+    </div>
   {/if}
   <div class="stat" data-testid="ledger-vehicles">
     <small>Peak vehicles</small>
     {#if vehicles}
       <b>{vehicles.peak_vehicles}</b>
-      <span class="muted">{vehicles.added_vehicles > 0 ? `${vehicles.authored_peak_vehicles} blocked + ${vehicles.added_vehicles} suggested` : vehicles.blocks.length ? "unblocked trips fit under the peak" : "all on its blocks"}</span>
+      <span class="muted">
+        {vehicles.added_vehicles > 0
+          ? `${vehicles.authored_peak_vehicles} blocked + ${vehicles.added_vehicles} suggested`
+          : vehicles.blocks.length
+            ? "unblocked trips fit under the peak"
+            : "all on its blocks"}
+      </span>
     {:else}
-      <b class="muted">—</b>{#if vehiclesError}<span class="muted" title={vehiclesError}>couldn't answer</span>{/if}
+      <b class="muted">—</b>{#if vehiclesError}<span
+          class="muted"
+          title={vehiclesError}
+        >
+          couldn't answer
+        </span>{/if}
     {/if}
   </div>
-  <div class="stat"><small>Hours against budget</small><b class="muted">—</b><span class="blocker">D-108</span></div>
+  <div class="stat">
+    <small>Hours against budget</small><b class="muted">—</b><span
+      class="blocker"
+    >
+      D-108
+    </span>
+  </div>
   <p class="note muted">
-    {#if p && b}against {baselineName}, over the same service types (it holds on {b.days} → {p.days} days){:else if group}{group.id}: {spansText(group.spans)}{/if}
+    {#if p && b}against {baselineName}, over the same service types (it holds on {b.days}
+      → {p.days} days){:else if group}{group.id}: {spansText(group.spans)}{/if}
   </p>
 </section>
 
 <style>
-  .ledger { display: flex; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-variant-numeric: tabular-nums; }
-  .stat { flex: 1 1 9rem; padding: 0.6rem 0.9rem; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 0.1rem; }
-  .stat small { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat b { font-size: 1.05rem; font-weight: 600; }
-  .muted { color: var(--muted); font-size: 0.78rem; }
-  .blocker { font-size: 0.7rem; padding: 0 0.35rem; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); align-self: flex-start; }
-  .note { flex-basis: 100%; margin: 0; padding: 0.35rem 0.9rem; border-top: 1px solid var(--line); }
+  .ledger {
+    display: flex;
+    flex-wrap: wrap;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat {
+    flex: 1 1 9rem;
+    padding: 0.6rem 0.9rem;
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .stat small {
+    color: var(--muted);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .stat b {
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .muted {
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .blocker {
+    font-size: 0.7rem;
+    padding: 0 0.35rem;
+    border: 1px dashed var(--line);
+    border-radius: 4px;
+    color: var(--muted);
+    align-self: flex-start;
+  }
+  .note {
+    flex-basis: 100%;
+    margin: 0;
+    padding: 0.35rem 0.9rem;
+    border-top: 1px solid var(--line);
+  }
 </style>

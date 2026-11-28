@@ -13,18 +13,35 @@ export const outbox = $state({
   warned: [] as Warned[],
 });
 
-export type BrokenReference = { log: string; kind: string; id: string; field: string; target: string; names: string; rule?: string };
+export type BrokenReference = {
+  log: string;
+  kind: string;
+  id: string;
+  field: string;
+  target: string;
+  names: string;
+  rule?: string;
+};
 
-export type Warned = { key: string; label: string; references: BrokenReference[] };
+export type Warned = {
+  key: string;
+  label: string;
+  references: BrokenReference[];
+};
 
 let box: Outbox | null = null;
 
 // A write's arguments may come from the page's state, which IndexedDB
 // cannot clone. A photo stays a Blob.
 function plain(value: unknown): unknown {
-  if (value instanceof Blob || value === null || typeof value !== "object") return value;
+  if (value instanceof Blob || value === null || typeof value !== "object")
+    return value;
   if (Array.isArray(value)) return value.map(plain);
-  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined).map(([k, v]) => [k, plain(v)]));
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, plain(v)]),
+  );
 }
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -41,15 +58,30 @@ async function bodyOf(resp: Response): Promise<unknown> {
 
 // One outbox for each generated UI. `onsent` lets the host read its
 // documents again.
-export async function openOutbox(ui: string, onsent: (w: Waiting, body: unknown) => void = () => {}): Promise<void> {
+export async function openOutbox(
+  ui: string,
+  onsent: (w: Waiting, body: unknown) => void = () => {},
+): Promise<void> {
   const key = `outbox/${ui}`;
   box = new Outbox({
     send: async (url, body, contentType) => {
       const resp = contentType
-        ? await writeFetch(url, { method: "POST", headers: { "Content-Type": contentType }, body: body as Blob })
-        : await writeFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        ? await writeFetch(url, {
+            method: "POST",
+            headers: { "Content-Type": contentType },
+            body: body as Blob,
+          })
+        : await writeFetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
       const retry = Number(resp.headers.get("Retry-After"));
-      return { status: resp.status, body: await bodyOf(resp), retryAfter: Number.isFinite(retry) ? retry : undefined };
+      return {
+        status: resp.status,
+        body: await bodyOf(resp),
+        retryAfter: Number.isFinite(retry) ? retry : undefined,
+      };
     },
     store: {
       load: () => idbGet(key).catch(() => undefined),
@@ -60,8 +92,13 @@ export async function openOutbox(ui: string, onsent: (w: Waiting, body: unknown)
   });
   box.onchange = show;
   box.onsent = (w, body) => {
-    const references = (body as { references?: BrokenReference[] } | null)?.references;
-    if (Array.isArray(references) && references.length) outbox.warned = [...outbox.warned, { key: w.key, label: w.label, references }];
+    const references = (body as { references?: BrokenReference[] } | null)
+      ?.references;
+    if (Array.isArray(references) && references.length)
+      outbox.warned = [
+        ...outbox.warned,
+        { key: w.key, label: w.label, references },
+      ];
     onsent(w, body);
   };
   await box.restore();
@@ -89,7 +126,10 @@ export async function sendWaiting(): Promise<void> {
   await box?.flush();
 }
 
-export async function retryWrite(key: string, change: { readSeq?: number; readSeqs?: Record<string, number> } = {}): Promise<Outcome> {
+export async function retryWrite(
+  key: string,
+  change: { readSeq?: number; readSeqs?: Record<string, number> } = {},
+): Promise<Outcome> {
   if (!box) return { key, state: "waiting" };
   return box.retry(key, change);
 }
@@ -99,22 +139,50 @@ export async function discardWrite(key: string): Promise<void> {
 }
 
 export function heldReason(w: Waiting): string {
-  const body = (w.reasons ?? {}) as { refusals?: { problem?: { kind?: string } }[]; references?: BrokenReference[]; conflict?: string; error?: string | { message?: string } };
-  if (w.status === 409) return "Someone else changed this since you read it. Check it, then send it again or discard it.";
+  const body = (w.reasons ?? {}) as {
+    refusals?: { problem?: { kind?: string } }[];
+    references?: BrokenReference[];
+    conflict?: string;
+    error?: string | { message?: string };
+  };
+  if (w.status === 409)
+    return "Someone else changed this since you read it. Check it, then send it again or discard it.";
   if (w.status === 403) return "Your sign-in can't save this.";
-  if (w.status === 422 && Array.isArray(body.references) && body.references.length) return body.references.map(referenceWarning).join(" ");
-  if (w.status === 422 && Array.isArray(body.refusals) && body.refusals.length) {
-    const kinds = body.refusals.map((r) => (r.problem?.kind ?? "").replaceAll("_", " ")).filter(Boolean);
-    return kinds.length ? `Not saved: ${[...new Set(kinds)].join("; ")}.` : "The server refused it.";
+  if (
+    w.status === 422 &&
+    Array.isArray(body.references) &&
+    body.references.length
+  )
+    return body.references.map(referenceWarning).join(" ");
+  if (
+    w.status === 422 &&
+    Array.isArray(body.refusals) &&
+    body.refusals.length
+  ) {
+    const kinds = body.refusals
+      .map((r) => (r.problem?.kind ?? "").replaceAll("_", " "))
+      .filter(Boolean);
+    return kinds.length
+      ? `Not saved: ${[...new Set(kinds)].join("; ")}.`
+      : "The server refused it.";
   }
   if (typeof body.error === "string") return body.error;
   if (typeof body.error?.message === "string") return body.error.message;
-  if (typeof w.reasons === "string" && w.reasons.trim()) return w.reasons.trim();
+  if (typeof w.reasons === "string" && w.reasons.trim())
+    return w.reasons.trim();
   return `The server refused it (${w.status}).`;
 }
 
-export function warnedWrites(): { key: string; label: string; warning: string }[] {
-  return outbox.warned.map((w) => ({ key: w.key, label: w.label, warning: w.references.map(referenceWarning).join(" ") }));
+export function warnedWrites(): {
+  key: string;
+  label: string;
+  warning: string;
+}[] {
+  return outbox.warned.map((w) => ({
+    key: w.key,
+    label: w.label,
+    warning: w.references.map(referenceWarning).join(" "),
+  }));
 }
 
 export function dismissWarning(key: string): void {

@@ -7,14 +7,21 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { files, matching, report } from "../../tools/gates/files.mjs";
 
-const source = (root) => files(root, "web/src").filter((p) => /\.(ts|svelte)$/.test(p));
+const source = (root) =>
+  files(root, "web/src").filter((p) => /\.(ts|svelte)$/.test(p));
 const notTypes = (p) => !p.startsWith("web/src/types/");
-const hosts = (root) => source(root).filter((p) => /^web\/src\/uis\/[^/]+\/host\.svelte\.ts$/.test(p));
+const hosts = (root) =>
+  source(root).filter((p) =>
+    /^web\/src\/uis\/[^/]+\/host\.svelte\.ts$/.test(p),
+  );
 
 export const RULES = [
   {
     name: "bus-in-components",
-    files: (root) => source(root).filter((p) => /^web\/src\/(components|uis\/[^/]+|picker)\/[^/]+\.svelte$/.test(p)),
+    files: (root) =>
+      source(root).filter((p) =>
+        /^web\/src\/(components|uis\/[^/]+|picker)\/[^/]+\.svelte$/.test(p),
+      ),
     pattern: /from "[./]*(engine|bus)"/,
     fix: "a component imports the engine or the bus; take node values as props",
   },
@@ -32,7 +39,10 @@ export const RULES = [
   },
   {
     name: "bus-outside-engine",
-    files: (root) => source(root).filter((p) => p !== "web/src/engine.ts" && p !== "web/src/bus.worker.ts"),
+    files: (root) =>
+      source(root).filter(
+        (p) => p !== "web/src/engine.ts" && p !== "web/src/bus.worker.ts",
+      ),
     pattern: /from "\.\/bus"|from "(\.\.\/)+bus"/,
     fix: "imports the bus; ask through the engine (src/engine.ts)",
   },
@@ -44,7 +54,8 @@ export const RULES = [
   },
   {
     name: "abi-outside-worker",
-    files: (root) => source(root).filter((p) => p !== "web/src/bus.worker.ts" && notTypes(p)),
+    files: (root) =>
+      source(root).filter((p) => p !== "web/src/bus.worker.ts" && notTypes(p)),
     pattern: /WebAssembly\.|transit_invoke/,
     fix: "loads or calls a module outside the bus worker; ask through the engine (src/engine.ts)",
   },
@@ -53,7 +64,8 @@ export const RULES = [
     // which stop is retired.
     name: "status-test-in-host",
     files: hosts,
-    pattern: /status\)? *[!=]==? *"(retired|published)"|"(retired|published)" *[!=]==? *[A-Za-z_.]*status/,
+    pattern:
+      /status\)? *[!=]==? *"(retired|published)"|"(retired|published)" *[!=]==? *[A-Za-z_.]*status/,
     fix: "tests a lifecycle status; ask the op that owns the rule",
   },
   {
@@ -67,10 +79,17 @@ export const RULES = [
 ];
 
 export function parity(root) {
-  return RULES.flatMap((rule) => matching(root, rule.files(root), rule.pattern).map((h) => `${rule.name}: ${h.path}:${h.line} ${rule.fix}`));
+  return RULES.flatMap((rule) =>
+    matching(root, rule.files(root), rule.pattern).map(
+      (h) => `${rule.name}: ${h.path}:${h.line} ${rule.fix}`,
+    ),
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  process.exitCode = report("WEB GATE FAIL (web/gates/parity.mjs)", parity(root));
+  process.exitCode = report(
+    "WEB GATE FAIL (web/gates/parity.mjs)",
+    parity(root),
+  );
 }

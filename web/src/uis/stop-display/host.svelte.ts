@@ -3,7 +3,20 @@
 // capability that the bus cannot assemble turns its frames off, and nothing
 // here answers in its place.
 
-import { ask, assemble, available, keep, load, produced, readManifest, servedNetwork, servedNetworkPin, together, Doc, type DeploymentManifest } from "../../engine";
+import {
+  ask,
+  assemble,
+  available,
+  keep,
+  load,
+  produced,
+  readManifest,
+  servedNetwork,
+  servedNetworkPin,
+  together,
+  Doc,
+  type DeploymentManifest,
+} from "../../engine";
 import {
   answerGraph,
   applyBuild,
@@ -75,7 +88,11 @@ let byHand: Served | null = null;
 let edits: Doc<EditDocument> | null = null;
 let live: Doc<LiveDay> | null = null;
 let urls: Partial<LiveUrls> = {};
-const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
+const snapshots = {
+  trips: null as Doc | null,
+  vehicles: null as Doc | null,
+  alerts: null as Doc | null,
+};
 let stopId: string | null = null;
 let query = "";
 
@@ -97,9 +114,12 @@ export function label(input: string): string {
 export function status(): string {
   if (display.status) return display.status;
   const state = display.inputs.network;
-  if (!state || state.kind === "reading") return network ? "" : "Loading the agency's network…";
-  if (state.kind === "none" && !network) return "This server publishes no network — load the agency's GTFS zip to begin.";
-  if (state.kind === "failed" && !state.held && !network) return `${inputLabel(state)} This screen will try again.`;
+  if (!state || state.kind === "reading")
+    return network ? "" : "Loading the agency's network…";
+  if (state.kind === "none" && !network)
+    return "This server publishes no network — load the agency's GTFS zip to begin.";
+  if (state.kind === "failed" && !state.held && !network)
+    return `${inputLabel(state)} This screen will try again.`;
   return "";
 }
 
@@ -111,7 +131,6 @@ function fail(e: unknown): void {
   console.error(e);
 }
 
-
 const request = answerGraph(
   [
     {
@@ -121,7 +140,9 @@ const request = answerGraph(
       caps: ["directory"],
       run: async () => {
         if (!network) return;
-        display.routes = (await ask("directory", "routes", { network_hash: network })).routes;
+        display.routes = (
+          await ask("directory", "routes", { network_hash: network })
+        ).routes;
       },
     },
     {
@@ -137,8 +158,15 @@ const request = answerGraph(
           display.found = null;
           return;
         }
-        const { stops } = await ask("directory", "stops", { network_hash: network, limit: FOUND, query: text });
-        display.found = { text, places: stops.map((s) => ({ id: s.stop_id, name: s.name })) };
+        const { stops } = await ask("directory", "stops", {
+          network_hash: network,
+          limit: FOUND,
+          query: text,
+        });
+        display.found = {
+          text,
+          places: stops.map((s) => ({ id: s.stop_id, name: s.name })),
+        };
       },
     },
     {
@@ -153,8 +181,15 @@ const request = answerGraph(
           return;
         }
         const id = stopId;
-        const [stop] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [id] })).stops;
-        display.stop = stop ? { id: stop.stop_id, name: stop.name } : { id, name: id };
+        const [stop] = (
+          await ask("directory", "stops_by_ids", {
+            network_hash: network,
+            ids: [id],
+          })
+        ).stops;
+        display.stop = stop
+          ? { id: stop.stop_id, name: stop.name }
+          : { id, name: id };
       },
     },
     {
@@ -179,7 +214,13 @@ const request = answerGraph(
           with_document: !(await together("rt", "board")),
         };
         const answer = await ask("rt", "live", args);
-        live = produced("live", answer.live ?? undefined, "rt", answer.live_hash, { remint: { op: "live", args } });
+        live = produced(
+          "live",
+          answer.live ?? undefined,
+          "rt",
+          answer.live_hash,
+          { remint: { op: "live", args } },
+        );
       },
     },
     {
@@ -225,7 +266,15 @@ const request = answerGraph(
 
 /// Documents not listed are dropped from every module (the engine's `keep`). The live documents and rt snapshots bound themselves between calls.
 function release(): Promise<void> {
-  return keep([network, boundary, edits, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
+  return keep([
+    network,
+    boundary,
+    edits,
+    live,
+    snapshots.trips,
+    snapshots.vehicles,
+    snapshots.alerts,
+  ]);
 }
 
 function liveFeed(kind: keyof typeof snapshots): Reader<Doc> {
@@ -245,7 +294,12 @@ const readers: Record<string, Reader<any>> = {
   manifest: {
     read: async ({ signal }) => {
       const read = await readManifest(signal);
-      return { value: read.manifest, key: JSON.stringify(read.manifest), asOfMs: read.asOfMs ?? undefined, why: read.why ?? undefined };
+      return {
+        value: read.manifest,
+        key: JSON.stringify(read.manifest),
+        asOfMs: read.asOfMs ?? undefined,
+        why: read.why ?? undefined,
+      };
     },
     adopt: (m: DeploymentManifest | null) => {
       manifest = m;
@@ -259,19 +313,32 @@ const readers: Record<string, Reader<any>> = {
   },
   network: {
     // Follows the deployment (a republish, a new pick, today crossing a pick's date). Only a moved pin reads the network again.
-    read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
+    read: async ({
+      signal,
+      held,
+    }: {
+      signal: AbortSignal;
+      held: Served | null;
+    }) => {
       if (byHand) return { value: byHand, key: byHand.pin };
       if (!manifest) throw new Error("the deployment's manifest is not read");
       const pin = await servedNetworkPin(today(), { manifest, signal });
       if (!pin) return null;
       if (held?.pin === pin) return { value: held, key: pin };
-      const served = await servedNetwork(today(), [...NETWORK_READERS], { manifest, signal });
+      const served = await servedNetwork(today(), [...NETWORK_READERS], {
+        manifest,
+        signal,
+      });
       if (!served) return null;
       // A deployment that names its GTFS URL: the zip's zone.
       setAgencyZone(served.timezone);
       // The pin of an imported zip is the network the page now holds.
-      const now = (await servedNetworkPin(today(), { manifest, signal })) ?? pin;
-      return { value: { network: served.network, boundary: served.boundary, pin: now }, key: now };
+      const now =
+        (await servedNetworkPin(today(), { manifest, signal })) ?? pin;
+      return {
+        value: { network: served.network, boundary: served.boundary, pin: now },
+        key: now,
+      };
     },
     adopt: async (got: Served | null) => {
       network = got?.network ?? null;
@@ -279,8 +346,15 @@ const readers: Record<string, Reader<any>> = {
       // The zone may have just become known (a loaded zip's).
       display.nowSecs = nowSecs();
       // The directory answers the name, because a published network is bytes that this page never parsed.
-      const about = network && (await available("directory")) ? await ask("directory", "about", { network_hash: network }).catch(() => null) : null;
-      display.feed = network ? about?.name || network.value?.name || "the agency's network" : "";
+      const about =
+        network && (await available("directory"))
+          ? await ask("directory", "about", { network_hash: network }).catch(
+              () => null,
+            )
+          : null;
+      display.feed = network
+        ? about?.name || network.value?.name || "the agency's network"
+        : "";
       display.status = "";
       await release();
     },
@@ -297,10 +371,19 @@ const readers: Record<string, Reader<any>> = {
       } catch {
         throw new Error("the edit document is not JSON");
       }
-      return { ...got, value: { document, over: network }, key: `${network.hash ?? network.pin}:${got.key}` };
+      return {
+        ...got,
+        value: { document, over: network },
+        key: `${network.hash ?? network.pin}:${got.key}`,
+      };
     },
-    adopt: async (got: { document: EditDocument; over: Doc<Network> } | null) => {
-      edits = got && got.document?.records?.length > 0 ? new Doc("edits", { value: got.document }, { over: got.over }) : null;
+    adopt: async (
+      got: { document: EditDocument; over: Doc<Network> } | null,
+    ) => {
+      edits =
+        got && got.document?.records?.length > 0
+          ? new Doc("edits", { value: got.document }, { over: got.over })
+          : null;
       await release();
     },
   },
@@ -309,7 +392,12 @@ const readers: Record<string, Reader<any>> = {
   alerts: liveFeed("alerts"),
 };
 
-const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, display.inputs, request);
+const inputs = inputGraph(
+  descriptor.inputs as InputDeclaration[],
+  readers,
+  display.inputs,
+  request,
+);
 
 export async function boot(): Promise<void> {
   void installApp();
@@ -331,20 +419,29 @@ export async function boot(): Promise<void> {
 }
 
 /// The boundary document holds the stop_sequence numbering that the live feeds name.
-export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
+export async function loadFeedBytes(
+  bytes: Uint8Array,
+  label: string,
+): Promise<void> {
   display.busy = true;
   display.status = `Loading ${label}…`;
   try {
     // This is the only time that the page assembles the network module.
     if (!(await available("network"))) {
-      display.status = "The network capability is unavailable — a GTFS zip cannot be imported without it.";
+      display.status =
+        "The network capability is unavailable — a GTFS zip cannot be imported without it.";
       return;
     }
     const feed = new Doc("feed", { bytes });
     const imported = await ask("network", "import", { feed_hash: feed });
     setAgencyZone(imported.timezone);
     byHand = {
-      network: produced("network", imported.network, "network", imported.network_hash),
+      network: produced(
+        "network",
+        imported.network,
+        "network",
+        imported.network_hash,
+      ),
       boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
       pin: `zip:${imported.network_hash}`,
     };

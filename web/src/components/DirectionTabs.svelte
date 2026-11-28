@@ -22,18 +22,40 @@
       class:sel={d.direction === selected}
       onclick={() => onselect(d.direction)}
     >
-      {d.name} <span class="muted">{d.patterns.length} {d.patterns.length === 1 ? "pattern" : "patterns"}</span>
+      {d.name}
+      <span class="muted">
+        {d.patterns.length}
+        {d.patterns.length === 1 ? "pattern" : "patterns"}
+      </span>
     </button>
   {/each}
 </div>
 
 <style>
-  .tabs { display: flex; flex-wrap: wrap; gap: 4px; }
-  button {
-    border: 1px solid var(--line); background: var(--surface); color: inherit; border-radius: 4px;
-    padding: 2px 8px; font: inherit; font-size: 0.85rem; cursor: pointer;
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
   }
-  button:hover { background: var(--hover); }
-  button.sel { background: var(--accent-soft); border-color: var(--accent); }
-  .muted { color: var(--muted); font-size: 0.8rem; }
+  button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: inherit;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  button:hover {
+    background: var(--hover);
+  }
+  button.sel {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .muted {
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
 </style>

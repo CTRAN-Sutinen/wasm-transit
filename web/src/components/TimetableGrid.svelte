@@ -15,14 +15,18 @@
 
   let timepointsOnly = $state(false);
   const columns = $derived(
-    timetable.stops.map((s, i) => ({ ...s, i })).filter((s) => !timepointsOnly || s.timepoint),
+    timetable.stops
+      .map((s, i) => ({ ...s, i }))
+      .filter((s) => !timepointsOnly || s.timepoint),
   );
   const letter = (pattern: string) => {
     const i = timetable.patterns.findIndex((p) => p.pattern === pattern);
     return i < 0 ? "?" : String.fromCharCode(65 + i);
   };
   const added = $derived(timetable.trips.filter((t) => t.added).length);
-  const retimed = $derived(timetable.trips.filter((t) => t.retimed_from_secs != null).length);
+  const retimed = $derived(
+    timetable.trips.filter((t) => t.retimed_from_secs != null).length,
+  );
 
   function hm(secs: number | null): string {
     if (secs == null) return "";
@@ -36,11 +40,19 @@
       {timetable.route_name} · {timetable.direction_name} · {timetable.group}
       <span class="muted">{timetable.trips.length} trips</span>
     </h3>
-    <label class="muted"><input type="checkbox" bind:checked={timepointsOnly} /> timepoints only</label>
+    <label class="muted">
+      <input type="checkbox" bind:checked={timepointsOnly} /> timepoints only
+    </label>
   </header>
   <ul class="legend">
     {#each timetable.patterns as p, i (p.pattern)}
-      <li><b>{String.fromCharCode(65 + i)}</b> {p.name} <span class="muted">{p.trips} trips{p.headway ? " · headway bands" : ""}</span></li>
+      <li>
+        <b>{String.fromCharCode(65 + i)}</b>
+        {p.name}
+        <span class="muted">
+          {p.trips} trips{p.headway ? " · headway bands" : ""}
+        </span>
+      </li>
     {/each}
   </ul>
   {#if baselineName && (added || retimed || timetable.removed.length)}
@@ -49,7 +61,11 @@
       <span class="moved">{retimed} retimed</span>,
       <span class="gone">{timetable.removed.length} gone</span>
       {#if timetable.removed.length}
-        <span class="muted">({timetable.removed.map((r) => `${hm(r.start_secs)} ${letter(r.pattern)}`).join(", ")})</span>
+        <span class="muted">
+          ({timetable.removed
+            .map((r) => `${hm(r.start_secs)} ${letter(r.pattern)}`)
+            .join(", ")})
+        </span>
       {/if}
     </p>
   {/if}
@@ -59,7 +75,11 @@
         <tr>
           <th class="pat"></th>
           {#each columns as s (s.i)}
-            <th class:tp={s.timepoint} class:sel={s.stop === selectedStop} title={s.name}>
+            <th
+              class:tp={s.timepoint}
+              class:sel={s.stop === selectedStop}
+              title={s.name}
+            >
               <button onclick={() => onstop(s.stop)}>{s.name}</button>
             </th>
           {/each}
@@ -72,10 +92,14 @@
             class:added={t.added}
             class:retimed={t.retimed_from_secs != null}
             data-start={t.start_secs}
-            title={t.retimed_from_secs != null ? `was ${hm(t.retimed_from_secs)}` : undefined}
+            title={t.retimed_from_secs != null
+              ? `was ${hm(t.retimed_from_secs)}`
+              : undefined}
           >
             <td class="pat">{letter(t.pattern)}</td>
-            {#each columns as s (s.i)}<td class:sel={s.stop === selectedStop}>{hm(t.times[s.i])}</td>{/each}
+            {#each columns as s (s.i)}<td class:sel={s.stop === selectedStop}>
+                {hm(t.times[s.i])}
+              </td>{/each}
             <td class="blk muted">{t.block ?? "—"}</td>
           </tr>
         {/each}
@@ -85,32 +109,121 @@
 </section>
 
 <style>
-  .timetable { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
-  header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
-  h3 { margin: 0; font-size: 0.95rem; }
-  .muted { color: var(--muted); font-size: 0.8rem; font-weight: normal; }
-  .legend { list-style: none; margin: 0.25rem 0; padding: 0; font-size: 0.8rem; display: flex; flex-wrap: wrap; gap: 0 1rem; }
-  .delta { margin: 0 0 0.25rem; font-size: 0.85rem; }
-  .add { color: var(--accent); font-weight: 600; }
-  .moved { font-weight: 600; }
-  .gone { color: var(--bad); font-weight: 600; }
-  .grid { overflow: auto; min-height: 0; min-width: 0; max-width: 100%; flex: 1; border: 1px solid var(--line); }
-  table { border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
-  th, td { padding: 1px 6px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+  .timetable {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    height: 100%;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  h3 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .muted {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: normal;
+  }
+  .legend {
+    list-style: none;
+    margin: 0.25rem 0;
+    padding: 0;
+    font-size: 0.8rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1rem;
+  }
+  .delta {
+    margin: 0 0 0.25rem;
+    font-size: 0.85rem;
+  }
+  .add {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .moved {
+    font-weight: 600;
+  }
+  .gone {
+    color: var(--bad);
+    font-weight: 600;
+  }
+  .grid {
+    overflow: auto;
+    min-height: 0;
+    min-width: 0;
+    max-width: 100%;
+    flex: 1;
+    border: 1px solid var(--line);
+  }
+  table {
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th,
+  td {
+    padding: 1px 6px;
+    border-bottom: 1px solid var(--line);
+    text-align: center;
+    white-space: nowrap;
+  }
   thead th {
-    position: sticky; top: 0; background: var(--surface); z-index: 1; vertical-align: bottom;
-    max-width: 6.5rem; font-weight: normal;
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 1;
+    vertical-align: bottom;
+    max-width: 6.5rem;
+    font-weight: normal;
   }
   thead th button {
-    writing-mode: vertical-rl; transform: rotate(180deg); max-height: 6.5rem; overflow: hidden; text-overflow: ellipsis;
-    background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 2px 0;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    max-height: 6.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    padding: 2px 0;
   }
-  thead th.tp { font-weight: 600; }
-  th.sel, td.sel { background: var(--accent-soft); }
-  .pat { position: sticky; left: 0; background: var(--surface); font-weight: 600; }
-  thead .pat { z-index: 2; }
-  tr.added td { background: var(--accent-soft); }
-  tr.added td.pat { box-shadow: inset 3px 0 0 var(--accent); }
-  tr.retimed td.pat { box-shadow: inset 3px 0 0 var(--muted); }
-  .blk { text-align: left; }
+  thead th.tp {
+    font-weight: 600;
+  }
+  th.sel,
+  td.sel {
+    background: var(--accent-soft);
+  }
+  .pat {
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    font-weight: 600;
+  }
+  thead .pat {
+    z-index: 2;
+  }
+  tr.added td {
+    background: var(--accent-soft);
+  }
+  tr.added td.pat {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  tr.retimed td.pat {
+    box-shadow: inset 3px 0 0 var(--muted);
+  }
+  .blk {
+    text-align: left;
+  }
 </style>

@@ -10,11 +10,15 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 
-const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+const fixtures = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+);
 const ride = path.join(os.tmpdir(), "transit-e2e-static", "ride");
 const display = path.join(os.tmpdir(), "transit-e2e-static", "display");
 const next = path.join(os.tmpdir(), "transit-e2e-static-next");
-const manifest = (bundle) => JSON.parse(fs.readFileSync(path.join(bundle, "manifest"), "utf8"));
+const manifest = (bundle) =>
+  JSON.parse(fs.readFileSync(path.join(bundle, "manifest"), "utf8"));
 
 test.use({
   baseURL: "http://127.0.0.1:8087",
@@ -44,7 +48,9 @@ function requests(page) {
 }
 
 const networks = async (page) =>
-  (await page.evaluate(() => window.__bus.held("board"))).held.filter((e) => e.kind === "network").map((e) => e.key);
+  (await page.evaluate(() => window.__bus.held("board"))).held
+    .filter((e) => e.kind === "network")
+    .map((e) => e.key);
 
 test("ride now boots from a static host under a prefix", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
@@ -68,9 +74,14 @@ test("ride now boots from a static host under a prefix", async ({ page }) => {
         `/ride/blobs/${m.walks_hash}`,
       ]),
     );
-  expect(asked.filter((p) => !p.startsWith("/ride/")), "every fetch stays inside the bundle").toEqual([]);
+  expect(
+    asked.filter((p) => !p.startsWith("/ride/")),
+    "every fetch stays inside the bundle",
+  ).toEqual([]);
 
-  await expect(page.getByPlaceholder("Search for a stop", { exact: true })).toBeVisible();
+  await expect(
+    page.getByPlaceholder("Search for a stop", { exact: true }),
+  ).toBeVisible();
 });
 
 test.describe("ride now plans a trip from a static host", () => {
@@ -81,47 +92,92 @@ test.describe("ride now plans a trip from a static host", () => {
     await feeds(page);
     await page.goto("/ride/ride-now.html");
     const cards = page.getByTestId("nearby").getByTestId("stop-card");
-    await expect(cards.first().getByTestId("walk")).toHaveText("1 min walk", { timeout: 10_000 });
+    await expect(cards.first().getByTestId("walk")).toHaveText("1 min walk", {
+      timeout: 10_000,
+    });
     await cards.first().getByRole("button").first().click();
-    await page.getByTestId("rider-board").getByRole("button", { name: "Directions to here" }).click();
-    await expect(page.getByLabel("From", { exact: true })).toHaveValue("My location");
-    await expect(page.getByTestId("plan-now")).toContainText("min walk to Main Station");
+    await page
+      .getByTestId("rider-board")
+      .getByRole("button", { name: "Directions to here" })
+      .click();
+    await expect(page.getByLabel("From", { exact: true })).toHaveValue(
+      "My location",
+    );
+    await expect(page.getByTestId("plan-now")).toContainText(
+      "min walk to Main Station",
+    );
   });
 });
 
-test("the stop display answers live from a static host with no edit document", async ({ page }) => {
+test("the stop display answers live from a static host with no edit document", async ({
+  page,
+}) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await feeds(page);
   const asked = requests(page);
   await page.goto("/display/stop-display.html?stop=A&layout=routes");
 
-  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
-  const ten = page.locator('[data-testid="display-group"][data-route="10"]').first();
-  await expect(ten.getByTestId("display-time").first()).toContainText("2 min late");
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+    timeout: 10_000,
+  });
+  const ten = page
+    .locator('[data-testid="display-group"][data-route="10"]')
+    .first();
+  await expect(ten.getByTestId("display-time").first()).toContainText(
+    "2 min late",
+  );
   await expect.poll(() => asked).toContain("/display/edits");
 });
 
-test("each deployment carries its own UI and nothing else", async ({ page, request }) => {
-  for (const absent of ["/ride/stop-display.html", "/ride/service-design.html", "/display/ride-now.html", "/display/service-design.html"]) {
+test("each deployment carries its own UI and nothing else", async ({
+  page,
+  request,
+}) => {
+  for (const absent of [
+    "/ride/stop-display.html",
+    "/ride/service-design.html",
+    "/display/ride-now.html",
+    "/display/service-design.html",
+  ]) {
     expect((await request.get(absent)).status(), absent).toBe(404);
   }
-  expect((await request.get("/display/basemap-assets/sprites/v4/light.json")).status()).toBe(404);
+  expect(
+    (
+      await request.get("/display/basemap-assets/sprites/v4/light.json")
+    ).status(),
+  ).toBe(404);
   const caps = (bundle) => fs.readdirSync(path.join(bundle, "caps"));
   expect(caps(ride).some((f) => f.startsWith("ui-ride-now-"))).toBe(true);
-  expect(caps(ride).some((f) => f.startsWith("ui-stop-display-") || f.startsWith("ui-service-design-"))).toBe(false);
-  expect(caps(display).some((f) => f.startsWith("ui-stop-display-"))).toBe(true);
-  expect(caps(display).some((f) => f.startsWith("ui-ride-now-") || f.startsWith("ui-service-design-"))).toBe(false);
+  expect(
+    caps(ride).some(
+      (f) =>
+        f.startsWith("ui-stop-display-") || f.startsWith("ui-service-design-"),
+    ),
+  ).toBe(false);
+  expect(caps(display).some((f) => f.startsWith("ui-stop-display-"))).toBe(
+    true,
+  );
+  expect(
+    caps(display).some(
+      (f) => f.startsWith("ui-ride-now-") || f.startsWith("ui-service-design-"),
+    ),
+  ).toBe(false);
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await feeds(page);
   await page.goto("/display/?stop=A&layout=routes");
-  await expect(page).toHaveURL(/\/display\/stop-display\.html\?stop=A&layout=routes$/);
-  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
+  await expect(page).toHaveURL(
+    /\/display\/stop-display\.html\?stop=A&layout=routes$/,
+  );
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+    timeout: 10_000,
+  });
 });
 
 // The export writes the `_headers` file that a host must send (server/headers.go;
 // DEPLOYMENTS.md, "Headers every host must send").
 test("each export writes the headers its host must send", () => {
-  const rules = (bundle) => fs.readFileSync(path.join(bundle, "_headers"), "utf8");
+  const rules = (bundle) =>
+    fs.readFileSync(path.join(bundle, "_headers"), "utf8");
   const rideRules = rules(ride);
   const displayRules = rules(display);
   for (const want of [
@@ -134,11 +190,17 @@ test("each export writes the headers its host must send", () => {
     expect(rideRules).toContain(want);
     expect(displayRules).toContain(want);
   }
-  expect(rideRules).toMatch(/\n\/ride-now\.html\n {2}Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'/);
+  expect(rideRules).toMatch(
+    /\n\/ride-now\.html\n {2}Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'/,
+  );
   expect(rideRules).toContain("Permissions-Policy: geolocation=(self)");
-  expect(rideRules).toContain("connect-src 'self' http://feeds.test https://tiles.openfreemap.org");
+  expect(rideRules).toContain(
+    "connect-src 'self' http://feeds.test https://tiles.openfreemap.org",
+  );
   expect(rideRules).not.toContain("/stop-display.html");
-  expect(displayRules).toMatch(/\n\/stop-display\.html\n {2}Content-Security-Policy:/);
+  expect(displayRules).toMatch(
+    /\n\/stop-display\.html\n {2}Content-Security-Policy:/,
+  );
   expect(displayRules).toContain("Permissions-Policy: geolocation=()");
   expect(displayRules).not.toContain("openfreemap");
   expect(displayRules).not.toContain("/ride-now.html");
@@ -149,45 +211,71 @@ test("each export writes the headers its host must send", () => {
 test.describe("offline", () => {
   test.use({ serviceWorkers: "allow" });
 
-  test("the stop display boots offline from a static host", async ({ page, context }) => {
+  test("the stop display boots offline from a static host", async ({
+    page,
+    context,
+  }) => {
     await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
     await feeds(page);
     await page.goto("/display/stop-display.html?stop=A&layout=routes");
-    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
+    await expect
+      .poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), {
+        timeout: 20_000,
+      })
+      .toBe(true);
     await page.reload();
-    await expect(page.locator('[data-testid="display-group"][data-route="10"]').first()).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator('[data-testid="display-group"][data-route="10"]').first(),
+    ).toBeVisible({ timeout: 10_000 });
 
     await context.setOffline(true);
     await page.reload();
-    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
-    await expect(page.locator('[data-testid="display-group"][data-route="10"]').first()).toBeVisible();
+    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+      timeout: 10_000,
+    });
+    await expect(
+      page.locator('[data-testid="display-group"][data-route="10"]').first(),
+    ).toBeVisible();
     await context.setOffline(false);
   });
 
-  test("ride now boots offline from a static host", async ({ page, context }) => {
+  test("ride now boots offline from a static host", async ({
+    page,
+    context,
+  }) => {
     await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
     await feeds(page);
     await page.goto("/ride/ride-now.html");
-    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
+    await expect
+      .poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), {
+        timeout: 20_000,
+      })
+      .toBe(true);
     await page.reload();
     const first = page.getByTestId("nearby").getByTestId("stop-card").first();
     await expect(first).toContainText("8:15", { timeout: 10_000 });
 
     await context.setOffline(true);
     await page.reload();
-    await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toContainText("8:15", { timeout: 10_000 });
+    await expect(
+      page.getByTestId("nearby").getByTestId("stop-card").first(),
+    ).toContainText("8:15", { timeout: 10_000 });
     await context.setOffline(false);
   });
 });
 
-test("an open display re-pins a redeploy without a reload", async ({ page }) => {
+test("an open display re-pins a redeploy without a reload", async ({
+  page,
+}) => {
   const bundle = display;
   const original = fs.readFileSync(path.join(bundle, "manifest"));
   try {
     await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
     await feeds(page);
     await page.goto("/display/stop-display.html?stop=A&layout=routes");
-    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
+    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+      timeout: 10_000,
+    });
     await page.evaluate(() => (window.__notReloaded = true));
     const [held] = await networks(page);
     expect(held).toBe(manifest(bundle).network_hash);
@@ -196,14 +284,17 @@ test("an open display re-pins a redeploy without a reload", async ({ page }) => 
     // manifest still finds its documents. The manifest goes last.
     for (const blob of fs.readdirSync(path.join(next, "blobs"))) {
       const to = path.join(bundle, "blobs", blob);
-      if (!fs.existsSync(to)) fs.copyFileSync(path.join(next, "blobs", blob), to);
+      if (!fs.existsSync(to))
+        fs.copyFileSync(path.join(next, "blobs", blob), to);
     }
     fs.copyFileSync(path.join(next, "manifest"), path.join(bundle, "manifest"));
     const moved = manifest(bundle).network_hash;
     expect(moved).not.toBe(held);
 
     await page.clock.fastForward(20_000);
-    await expect.poll(() => networks(page), { timeout: 10_000 }).toEqual([moved]);
+    await expect
+      .poll(() => networks(page), { timeout: 10_000 })
+      .toEqual([moved]);
     expect(await page.evaluate(() => window.__notReloaded)).toBe(true);
   } finally {
     fs.writeFileSync(path.join(bundle, "manifest"), original);

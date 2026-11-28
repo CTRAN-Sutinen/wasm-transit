@@ -12,7 +12,11 @@ export function timeText(secs: number): string {
   return `${h}:${String(m).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
 }
 
-export function stampText(unix: number, zone: string | undefined, date?: string): string {
+export function stampText(
+  unix: number,
+  zone: string | undefined,
+  date?: string,
+): string {
   const at = new Date(unix * 1000);
   const opts = (o: Intl.DateTimeFormatOptions) => {
     try {
@@ -30,7 +34,11 @@ export function stampText(unix: number, zone: string | undefined, date?: string)
 
 export function dateText(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export function minutesText(secs: number): string {
@@ -59,7 +67,9 @@ export function titleText(d: Disruption): string {
   if (d.from === "stops") return d.stops?.[0]?.name ?? d.stops?.[0]?.id ?? "";
   if (d.trip) {
     const start = d.start_secs != null ? timeText(d.start_secs) : "Every trip";
-    const from = d.first_stop ? ` from ${d.first_stop.name ?? d.first_stop.id}` : "";
+    const from = d.first_stop
+      ? ` from ${d.first_stop.name ?? d.first_stop.id}`
+      : "";
     return `${start}${from}`;
   }
   const n = d.stops?.length ?? 0;
@@ -67,8 +77,10 @@ export function titleText(d: Disruption): string {
 }
 
 export function datesText(d: Disruption, today: string): string {
-  if (d.start_date && d.start_date === d.end_date) return d.start_date === today ? "" : dateText(d.start_date);
-  if (d.start_date && d.end_date) return `${dateText(d.start_date)} – ${dateText(d.end_date)}`;
+  if (d.start_date && d.start_date === d.end_date)
+    return d.start_date === today ? "" : dateText(d.start_date);
+  if (d.start_date && d.end_date)
+    return `${dateText(d.start_date)} – ${dateText(d.end_date)}`;
   if (d.end_date) return `Until ${dateText(d.end_date)}`;
   if (d.start_date) return `Since ${dateText(d.start_date)}`;
   return "";
@@ -78,7 +90,10 @@ export function whoText(by: string): string {
   return by.includes("@") ? by.slice(0, by.indexOf("@")) : by;
 }
 
-export function zonedParts(unix: number, zone: string | undefined): { date: string; time: string } {
+export function zonedParts(
+  unix: number,
+  zone: string | undefined,
+): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: zone,
     hourCycle: "h23",
@@ -89,17 +104,27 @@ export function zonedParts(unix: number, zone: string | undefined): { date: stri
     minute: "2-digit",
   }).formatToParts(new Date(unix * 1000));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${get("hour")}:${get("minute")}` };
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    time: `${get("hour")}:${get("minute")}`,
+  };
 }
 
-export function zonedUnix(date: string, time: string, zone: string | undefined): number {
+export function zonedUnix(
+  date: string,
+  time: string,
+  zone: string | undefined,
+): number {
   const guess = Date.parse(`${date}T${time || "00:00"}:00Z`) / 1000;
   const seen = zonedParts(guess, zone);
   const offset = Date.parse(`${seen.date}T${seen.time}:00Z`) / 1000 - guess;
   return guess - offset;
 }
 
-export function whenText(unix: number | null, zone: string | undefined): string {
+export function whenText(
+  unix: number | null,
+  zone: string | undefined,
+): string {
   if (unix == null) return "No end";
   const { date } = zonedParts(unix, zone);
   return `${dateText(date)}, ${stampText(unix, zone, date)}`;

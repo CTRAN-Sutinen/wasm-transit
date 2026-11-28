@@ -20,13 +20,21 @@ export function serviceClock(nowMs: number, zone?: string): ServiceClock {
 // The previous service date at the same instant, so a board can read the
 // after-midnight trips that are still leaving. `length_secs` is 90000 the
 // night the clocks go back and 82800 going forward.
-export type PreviousClock = { date: string; from_secs: number; length_secs: number };
+export type PreviousClock = {
+  date: string;
+  from_secs: number;
+  length_secs: number;
+};
 
 export function previousClock(nowMs: number, zone?: string): PreviousClock {
   const tz = known(zone);
   const [y, m, d] = wall(nowMs, tz);
   const prev = new Date(Date.UTC(y, m - 1, d - 1));
-  const [py, pm, pd] = [prev.getUTCFullYear(), prev.getUTCMonth() + 1, prev.getUTCDate()];
+  const [py, pm, pd] = [
+    prev.getUTCFullYear(),
+    prev.getUTCMonth() + 1,
+    prev.getUTCDate(),
+  ];
   const start = anchor(py, pm, pd, tz);
   return {
     date: isoDate(py, pm, pd),
@@ -66,7 +74,14 @@ function wall(ms: number, tz?: string): number[] {
     second: "numeric",
   }).formatToParts(ms);
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-  return [get("year"), get("month"), get("day"), get("hour"), get("minute"), get("second")];
+  return [
+    get("year"),
+    get("month"),
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second"),
+  ];
 }
 
 function offset(ms: number, tz?: string): number {
@@ -75,7 +90,13 @@ function offset(ms: number, tz?: string): number {
 }
 
 // Noon is never in a clock change, so one correction settles it.
-function zonedUtc(y: number, m: number, d: number, h: number, tz?: string): number {
+function zonedUtc(
+  y: number,
+  m: number,
+  d: number,
+  h: number,
+  tz?: string,
+): number {
   const guess = Date.UTC(y, m - 1, d, h);
   const first = guess - offset(guess, tz);
   return guess - offset(first, tz);

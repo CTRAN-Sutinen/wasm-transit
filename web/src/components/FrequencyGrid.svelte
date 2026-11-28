@@ -26,15 +26,31 @@
   const inWindow = (h: number) => !!window && h >= window.from && h < window.to;
   /// Strength runs from 0 to 1. It is full at a longest wait of 10 minutes or
   /// less and none at 75 or more. This is drawing, not a standard.
-  const strength = (secs: number) => Math.max(0, Math.min(1, (75 * 60 - secs) / (65 * 60)));
+  const strength = (secs: number) =>
+    Math.max(0, Math.min(1, (75 * 60 - secs) / (65 * 60)));
   function cell(h: RouteHourGaps | undefined) {
-    if (!h) return { text: "", sub: "", bg: "transparent", fg: "var(--muted)", title: "" };
+    if (!h)
+      return {
+        text: "",
+        sub: "",
+        bg: "transparent",
+        fg: "var(--muted)",
+        title: "",
+      };
     if (h.longest_gap_secs == null) {
-      return { text: "·", sub: `${h.departures} dep`, bg: "transparent", fg: "var(--muted)", title: `${h.departures} departures, no gap starts in the hour` };
+      return {
+        text: "·",
+        sub: `${h.departures} dep`,
+        bg: "transparent",
+        fg: "var(--muted)",
+        title: `${h.departures} departures, no gap starts in the hour`,
+      };
     }
     const s = strength(h.longest_gap_secs);
     const longest = Math.round(h.longest_gap_secs / 60);
-    const shortest = Math.round((h.shortest_gap_secs ?? h.longest_gap_secs) / 60);
+    const shortest = Math.round(
+      (h.shortest_gap_secs ?? h.longest_gap_secs) / 60,
+    );
     return {
       // A wait past two hours reads in hours ("9.8 h"), since three digits of
       // minutes look like a slip.
@@ -47,36 +63,71 @@
   }
 </script>
 
-<section class="grid-panel" aria-label="Frequency by hour" data-testid="frequency-grid">
+<section
+  class="grid-panel"
+  aria-label="Frequency by hour"
+  data-testid="frequency-grid"
+>
   <header>
     <h2>Frequency by hour</h2>
-    <span class="muted">each cell: the longest wait in minutes (gaps starting in the hour, at the route's busiest stop) — the shortest beneath it when trips vary</span>
+    <span class="muted">
+      each cell: the longest wait in minutes (gaps starting in the hour, at the
+      route's busiest stop) — the shortest beneath it when trips vary
+    </span>
   </header>
   <div class="scroll">
     <table style:--cols={hours.length}>
       <thead>
         <tr>
           <th class="route">Route</th>
-          {#each hours as h (h)}<th class="hr" class:win={inWindow(h)} class:out={!!window && !inWindow(h)}>{h % 24}</th>{/each}
-          <th class="n">Trips</th><th class="n">Span</th><th class="n">Rev h</th><th class="n">Rev mi</th>
+          {#each hours as h (h)}<th
+              class="hr"
+              class:win={inWindow(h)}
+              class:out={!!window && !inWindow(h)}
+            >
+              {h % 24}
+            </th>{/each}
+          <th class="n">Trips</th><th class="n">Span</th><th class="n">
+            Rev h
+          </th><th class="n">Rev mi</th>
         </tr>
       </thead>
       <tbody>
         {#each frequency.routes as r (r.route_id)}
           {@const byHour = new Map(r.hours.map((h) => [h.hour, h]))}
-          <tr class:changed={changed.includes(r.route_id)} class:sel={r.route_id === selected} onclick={() => onroute(r.route_id)}>
+          <tr
+            class:changed={changed.includes(r.route_id)}
+            class:sel={r.route_id === selected}
+            onclick={() => onroute(r.route_id)}
+          >
             <th class="route" scope="row">
-              <button type="button" onclick={() => onroute(r.route_id)}>{r.name}</button>
-              {#if changed.includes(r.route_id)}<span class="dot" title="changed against the baseline"></span>{/if}
+              <button type="button" onclick={() => onroute(r.route_id)}>
+                {r.name}
+              </button>
+              {#if changed.includes(r.route_id)}<span
+                  class="dot"
+                  title="changed against the baseline"
+                ></span>{/if}
             </th>
             {#each hours as h (h)}
               {@const c = cell(byHour.get(h))}
-              <td class="hr" class:win={inWindow(h)} class:out={!!window && !inWindow(h)} title={c.title}>
-                <span class="cell" style:background={c.bg} style:color={c.fg}><b>{c.text}</b>{#if c.sub}<i>{c.sub}</i>{/if}</span>
+              <td
+                class="hr"
+                class:win={inWindow(h)}
+                class:out={!!window && !inWindow(h)}
+                title={c.title}
+              >
+                <span class="cell" style:background={c.bg} style:color={c.fg}>
+                  <b>{c.text}</b>{#if c.sub}<i>{c.sub}</i>{/if}
+                </span>
               </td>
             {/each}
             <td class="n">{count(r.stats.trips)}</td>
-            <td class="n muted">{clock(r.stats.first_start_secs)}–{clock(r.stats.last_arrival_secs)}</td>
+            <td class="n muted">
+              {clock(r.stats.first_start_secs)}–{clock(
+                r.stats.last_arrival_secs,
+              )}
+            </td>
             <td class="n">{fixed(r.stats.revenue_hours)}</td>
             <td class="n">{count(Math.round(r.stats.revenue_miles))}</td>
           </tr>
@@ -85,41 +136,177 @@
     </table>
   </div>
   <footer class="muted">
-    <span class="key"><i style:background="color-mix(in oklab, #1d4ed8 100%, var(--surface))"></i>≤ 10 min</span>
-    <span class="key"><i style:background="color-mix(in oklab, #1d4ed8 50%, var(--surface))"></i>≈ 40</span>
-    <span class="key"><i style:background="var(--surface)" style:border="1px solid var(--line)"></i>≥ 75</span>
-    {#if changed.length}<span class="key"><i class="changed-key"></i>changed against the baseline</span>{/if}
+    <span class="key">
+      <i style:background="color-mix(in oklab, #1d4ed8 100%, var(--surface))"
+      ></i>≤ 10 min
+    </span>
+    <span class="key">
+      <i style:background="color-mix(in oklab, #1d4ed8 50%, var(--surface))"
+      ></i>≈ 40
+    </span>
+    <span class="key">
+      <i style:background="var(--surface)" style:border="1px solid var(--line)"
+      ></i>≥ 75
+    </span>
+    {#if changed.length}<span class="key">
+        <i class="changed-key"></i>changed against the baseline
+      </span>{/if}
     <span>· one departure, no gap in the hour</span>
   </footer>
 </section>
 
 <style>
-  .grid-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
-  header { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
-  h2 { margin: 0; font-size: 0.9rem; }
-  .muted { color: var(--muted); font-size: 0.78rem; }
-  .scroll { overflow: auto; max-height: 70vh; }
-  table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; font-size: 0.8rem; }
-  thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); font-weight: 500; color: var(--muted); font-size: 0.7rem; padding: 0.35rem 0.2rem; border-bottom: 1px solid var(--line); }
-  th.win { color: var(--accent); background: var(--accent-soft); font-weight: 700; }
-  .route { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; padding: 0 0.6rem; white-space: nowrap; min-width: 6rem; }
-  thead .route { z-index: 3; }
-  .route button { font: inherit; font-weight: 600; border: 0; background: none; padding: 0; cursor: pointer; color: var(--text); font-family: ui-monospace, monospace; }
-  td.hr { padding: 1px; min-width: 2.3rem; }
-  td.hr.win { background: var(--accent-soft); }
-  .hr.out { opacity: 0.22; }
-  .cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 2.1rem; border-radius: 3px; line-height: 1.05; }
-  .cell b { font-size: 0.8rem; }
-  .cell i { font-style: normal; font-size: 0.62rem; opacity: 0.85; }
-  td.n { text-align: right; padding: 0 0.5rem; white-space: nowrap; border-bottom: 1px solid var(--line); }
-  th.n { text-align: right; padding: 0.35rem 0.5rem; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover .route, tbody tr:hover td.n { background: var(--hover); }
-  tr.sel .route { color: var(--accent); }
-  tr.changed .route { box-shadow: inset 3px 0 0 var(--accent); }
-  .dot { display: inline-block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--accent); margin-left: 0.3rem; }
-  footer { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: center; padding: 0.5rem 0.9rem; border-top: 1px solid var(--line); }
-  .key { display: inline-flex; gap: 0.3rem; align-items: center; }
-  .key i { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; }
-  .changed-key { box-shadow: inset 3px 0 0 var(--accent); border: 1px solid var(--line); }
+  .grid-panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    min-width: 0;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .muted {
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .scroll {
+    overflow: auto;
+    max-height: 70vh;
+  }
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    font-weight: 500;
+    color: var(--muted);
+    font-size: 0.7rem;
+    padding: 0.35rem 0.2rem;
+    border-bottom: 1px solid var(--line);
+  }
+  th.win {
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 700;
+  }
+  .route {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--surface);
+    text-align: left;
+    padding: 0 0.6rem;
+    white-space: nowrap;
+    min-width: 6rem;
+  }
+  thead .route {
+    z-index: 3;
+  }
+  .route button {
+    font: inherit;
+    font-weight: 600;
+    border: 0;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text);
+    font-family: ui-monospace, monospace;
+  }
+  td.hr {
+    padding: 1px;
+    min-width: 2.3rem;
+  }
+  td.hr.win {
+    background: var(--accent-soft);
+  }
+  .hr.out {
+    opacity: 0.22;
+  }
+  .cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 2.1rem;
+    border-radius: 3px;
+    line-height: 1.05;
+  }
+  .cell b {
+    font-size: 0.8rem;
+  }
+  .cell i {
+    font-style: normal;
+    font-size: 0.62rem;
+    opacity: 0.85;
+  }
+  td.n {
+    text-align: right;
+    padding: 0 0.5rem;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th.n {
+    text-align: right;
+    padding: 0.35rem 0.5rem;
+  }
+  tbody tr {
+    cursor: pointer;
+  }
+  tbody tr:hover .route,
+  tbody tr:hover td.n {
+    background: var(--hover);
+  }
+  tr.sel .route {
+    color: var(--accent);
+  }
+  tr.changed .route {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .dot {
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-left: 0.3rem;
+  }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    align-items: center;
+    padding: 0.5rem 0.9rem;
+    border-top: 1px solid var(--line);
+  }
+  .key {
+    display: inline-flex;
+    gap: 0.3rem;
+    align-items: center;
+  }
+  .key i {
+    display: inline-block;
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 3px;
+  }
+  .changed-key {
+    box-shadow: inset 3px 0 0 var(--accent);
+    border: 1px solid var(--line);
+  }
 </style>

@@ -11,10 +11,18 @@
     onrename,
     ondelete,
   }: {
-    plans: { key: string; id: string; name: string; effectiveFrom: string | null }[];
+    plans: {
+      key: string;
+      id: string;
+      name: string;
+      effectiveFrom: string | null;
+    }[];
     activeKey: string;
     compareKey: string;
-    feed: { label: string; info: { feed_version?: string | null } | null } | null;
+    feed: {
+      label: string;
+      info: { feed_version?: string | null } | null;
+    } | null;
     onopen: (key: string) => void;
     oncompare: (key: string) => void;
     onfork: (name: string, effectiveFrom: string, through: string) => void;
@@ -34,7 +42,11 @@
 <section class="panel" aria-label="Plans" data-testid="plan-list">
   <header>
     <h2>Plans</h2>
-    {#if feed}<span class="muted">base: {feed.label}{feed.info?.feed_version ? ` · ${feed.info.feed_version}` : ""}</span>{/if}
+    {#if feed}<span class="muted">
+        base: {feed.label}{feed.info?.feed_version
+          ? ` · ${feed.info.feed_version}`
+          : ""}
+      </span>{/if}
   </header>
   <table>
     <thead><tr><th>Plan</th><th>Picks</th><th></th></tr></thead>
@@ -43,67 +55,273 @@
         <tr class:active={p.key === activeKey}>
           <td>
             {#if renaming === p.key}
-              <form class="rename" onsubmit={(e) => { e.preventDefault(); if (newName.trim()) onrename?.(p.key, newName.trim()); renaming = ""; }}>
+              <form
+                class="rename"
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  if (newName.trim()) onrename?.(p.key, newName.trim());
+                  renaming = "";
+                }}
+              >
                 <!-- svelte-ignore a11y_autofocus -->
-                <input bind:value={newName} aria-label="New name for {p.name}" autofocus onkeydown={(e) => { if (e.key === "Escape") renaming = ""; }} />
+                <input
+                  bind:value={newName}
+                  aria-label="New name for {p.name}"
+                  autofocus
+                  onkeydown={(e) => {
+                    if (e.key === "Escape") renaming = "";
+                  }}
+                />
                 <button type="submit" disabled={!newName.trim()}>Save</button>
-                <button type="button" onclick={() => (renaming = "")}>Cancel</button>
+                <button type="button" onclick={() => (renaming = "")}>
+                  Cancel
+                </button>
               </form>
             {:else}
-            <strong>{p.name}</strong>
-            {#if p.key === activeKey}<span class="tag open">open</span>{/if}
-            {#if p.key === compareKey}<span class="tag">baseline</span>{/if}
+              <strong>{p.name}</strong>
+              {#if p.key === activeKey}<span class="tag open">open</span>{/if}
+              {#if p.key === compareKey}<span class="tag">baseline</span>{/if}
             {/if}
           </td>
-          <td class="muted">{p.effectiveFrom ?? (p.id ? "no date" : "none: the base every fork copies")}</td>
+          <td class="muted">
+            {p.effectiveFrom ??
+              (p.id ? "no date" : "none: the base every fork copies")}
+          </td>
           <td class="actions">
-            {#if p.key !== activeKey}<button type="button" onclick={() => onopen(p.key)}>Open</button>{/if}
-            {#if p.key !== activeKey && p.key !== compareKey}<button type="button" onclick={() => oncompare(p.key)}>Set baseline</button>{/if}
-            {#if onrename}<button type="button" onclick={() => { renaming = p.key; newName = p.name; }} data-testid="rename-plan">Rename</button>{/if}
-            {#if ondelete}<button type="button" class="del" data-testid="delete-plan"
-              onclick={() => { if (confirm(`Remove "${p.name}" from this device? Its changes and undo history go with it. A copy published to the server stays published.`)) ondelete(p.key); }}>Delete</button>{/if}
+            {#if p.key !== activeKey}<button
+                type="button"
+                onclick={() => onopen(p.key)}
+              >
+                Open
+              </button>{/if}
+            {#if p.key !== activeKey && p.key !== compareKey}<button
+                type="button"
+                onclick={() => oncompare(p.key)}
+              >
+                Set baseline
+              </button>{/if}
+            {#if onrename}<button
+                type="button"
+                onclick={() => {
+                  renaming = p.key;
+                  newName = p.name;
+                }}
+                data-testid="rename-plan"
+              >
+                Rename
+              </button>{/if}
+            {#if ondelete}<button
+                type="button"
+                class="del"
+                data-testid="delete-plan"
+                onclick={() => {
+                  if (
+                    confirm(
+                      `Remove "${p.name}" from this device? Its changes and undo history go with it. A copy published to the server stays published.`,
+                    )
+                  )
+                    ondelete(p.key);
+                }}
+              >
+                Delete
+              </button>{/if}
           </td>
         </tr>
       {:else}
-        <tr><td colspan="3" class="muted">No plans yet — import a GTFS feed.</td></tr>
+        <tr>
+          <td colspan="3" class="muted">No plans yet — import a GTFS feed.</td>
+        </tr>
       {/each}
     </tbody>
   </table>
-  <form class="fork" onsubmit={(e) => { e.preventDefault(); onfork(name, date, through); name = ""; }}>
+  <form
+    class="fork"
+    onsubmit={(e) => {
+      e.preventDefault();
+      onfork(name, date, through);
+      name = "";
+    }}
+  >
     <strong>Fork the open plan</strong>
-    <label>Name <input bind:value={name} placeholder="Winter 2027" data-testid="fork-name" /></label>
-    <label>Picks on <input type="date" bind:value={date} data-testid="fork-date" /></label>
-    <label title="Every weekly service type still running at the calendar's end runs through this day; holidays and closed periods are not carried">Runs through <input type="date" bind:value={through} min={date} data-testid="fork-through" /></label>
-    <button type="submit" class="pri" disabled={!name.trim() || !date} title={!name.trim() || !date ? "Give the fork a name and the day it picks" : ""}>Fork</button>
-    <p class="hint">A fork is a copy of the open plan that you can change. "Picks on" is the day it takes effect. "Runs through" is optional: the last day of its period, which carries the weekly service to that day. The fork keeps only the dates in its period.</p>
+    <label>
+      Name <input
+        bind:value={name}
+        placeholder="Winter 2027"
+        data-testid="fork-name"
+      />
+    </label>
+    <label>
+      Picks on <input type="date" bind:value={date} data-testid="fork-date" />
+    </label>
+    <label
+      title="Every weekly service type still running at the calendar's end runs through this day; holidays and closed periods are not carried"
+    >
+      Runs through <input
+        type="date"
+        bind:value={through}
+        min={date}
+        data-testid="fork-through"
+      />
+    </label>
+    <button
+      type="submit"
+      class="pri"
+      disabled={!name.trim() || !date}
+      title={!name.trim() || !date
+        ? "Give the fork a name and the day it picks"
+        : ""}
+    >
+      Fork
+    </button>
+    <p class="hint">
+      A fork is a copy of the open plan that you can change. "Picks on" is the
+      day it takes effect. "Runs through" is optional: the last day of its
+      period, which carries the weekly service to that day. The fork keeps only
+      the dates in its period.
+    </p>
   </form>
   <label class="feed">
     Import a GTFS feed as a new base
-    <input type="file" accept=".zip" onchange={(e) => { const f = e.currentTarget.files?.[0]; if (f) onfeed(f); }} data-testid="feed-input" />
+    <input
+      type="file"
+      accept=".zip"
+      onchange={(e) => {
+        const f = e.currentTarget.files?.[0];
+        if (f) onfeed(f);
+      }}
+      data-testid="feed-input"
+    />
   </label>
 </section>
 
 <style>
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
-  header { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); }
-  h2 { margin: 0; font-size: 0.9rem; }
-  .muted { color: var(--muted); font-size: 0.8rem; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 500; padding: 0.5rem 1rem; border-bottom: 1px solid var(--line); }
-  td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
-  tr.active { background: var(--accent-soft); }
-  .tag { font-size: 0.7rem; padding: 0.05rem 0.35rem; border-radius: 4px; border: 1px solid var(--line); margin-left: 0.3rem; color: var(--muted); }
-  .tag.open { border-color: var(--accent); color: var(--accent); }
-  .actions { text-align: right; white-space: nowrap; }
-  button { font: inherit; font-size: 0.8rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; margin-left: 0.3rem; }
-  button.pri { background: var(--text); color: var(--surface); border-color: var(--text); }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .rename { display: flex; gap: 0.3rem; align-items: center; }
-  .rename input { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
-  .rename button { margin-left: 0; }
-  button.del { color: var(--bad); }
-  .fork { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
-  .fork input { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
-  .hint { flex-basis: 100%; margin: 0; font-size: 0.78rem; color: var(--muted); }
-  .feed { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.7rem 1rem; font-size: 0.8rem; color: var(--muted); }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  header {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .muted {
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th {
+    text-align: left;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  td {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.85rem;
+  }
+  tr.active {
+    background: var(--accent-soft);
+  }
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    margin-left: 0.3rem;
+    color: var(--muted);
+  }
+  .tag.open {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .actions {
+    text-align: right;
+    white-space: nowrap;
+  }
+  button {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    margin-left: 0.3rem;
+  }
+  button.pri {
+    background: var(--text);
+    color: var(--surface);
+    border-color: var(--text);
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .rename {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+  }
+  .rename input {
+    font: inherit;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .rename button {
+    margin-left: 0;
+  }
+  button.del {
+    color: var(--bad);
+  }
+  .fork {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.85rem;
+  }
+  .fork input {
+    font: inherit;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .hint {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .feed {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.7rem 1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
 </style>

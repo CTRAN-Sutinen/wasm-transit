@@ -28,12 +28,18 @@
 <article class="card" data-testid="stop-card">
   <button class="head" onclick={onopen}>
     <span class="name">{name}</span>
-    {#if walk != null}<span class="dist" data-testid="walk">{walkText(walk)}</span>
-    {:else if distance != null}<span class="dist">{distanceText(distance)}</span>{/if}
+    {#if walk != null}<span class="dist" data-testid="walk">
+        {walkText(walk)}
+      </span>
+    {:else if distance != null}<span class="dist">
+        {distanceText(distance)}
+      </span>{/if}
     <span class="chev" aria-hidden="true">›</span>
   </button>
   {#if rows === null}
-    <div class="skeleton" role="progressbar" aria-label="loading departures"><span></span><span></span></div>
+    <div class="skeleton" role="progressbar" aria-label="loading departures">
+      <span></span><span></span>
+    </div>
   {:else if rows.length}
     <DepartureRows {rows} {routes} {pooled} compact />
   {:else}
@@ -43,17 +49,62 @@
 </article>
 
 <style>
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 0.35rem 0.75rem 0.5rem; }
-  .head {
-    width: 100%; display: flex; align-items: baseline; gap: 0.5rem; border: 0; background: none; color: var(--text);
-    font: inherit; text-align: left; padding: 0.4rem 0; cursor: pointer;
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 0.35rem 0.75rem 0.5rem;
   }
-  .name { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dist { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-  .chev { color: var(--muted); font-size: 1.2rem; line-height: 1; }
-  .head:hover .name { color: var(--accent); }
-  .quiet, .note { color: var(--muted); font-size: 0.82rem; margin: 0.2rem 0 0.3rem; }
-  .note { font-size: 0.75rem; }
-  .skeleton { display: grid; gap: 0.4rem; padding: 0.3rem 0 0.4rem; }
-  .skeleton span { height: 1.4rem; border-radius: 6px; }
+  .head {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    padding: 0.4rem 0;
+    cursor: pointer;
+  }
+  .name {
+    font-weight: 700;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dist {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .chev {
+    color: var(--muted);
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+  .head:hover .name {
+    color: var(--accent);
+  }
+  .quiet,
+  .note {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin: 0.2rem 0 0.3rem;
+  }
+  .note {
+    font-size: 0.75rem;
+  }
+  .skeleton {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.3rem 0 0.4rem;
+  }
+  .skeleton span {
+    height: 1.4rem;
+    border-radius: 6px;
+  }
 </style>

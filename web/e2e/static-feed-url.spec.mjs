@@ -9,8 +9,16 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 
-const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
-const feedFile = path.join(os.tmpdir(), "transit-e2e-static-fetch", "feeds", "feed.zip");
+const fixtures = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+);
+const feedFile = path.join(
+  os.tmpdir(),
+  "transit-e2e-static-fetch",
+  "feeds",
+  "feed.zip",
+);
 const FEED_URL = "http://localhost:8088/feeds/feed.zip";
 
 test.use({
@@ -37,7 +45,9 @@ function requests(page) {
 }
 
 const networks = async (page) =>
-  (await page.evaluate(() => window.__bus.held("board"))).held.filter((e) => e.kind === "network").map((e) => e.key);
+  (await page.evaluate(() => window.__bus.held("board"))).held
+    .filter((e) => e.kind === "network")
+    .map((e) => e.key);
 
 test("the stop display boots from the agency's GTFS URL", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
@@ -45,11 +55,20 @@ test("the stop display boots from the agency's GTFS URL", async ({ page }) => {
   const asked = requests(page);
   await page.goto("/display/stop-display.html?stop=A&layout=routes");
 
-  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 15_000 });
-  const ten = page.locator('[data-testid="display-group"][data-route="10"]').first();
-  await expect(ten.getByTestId("display-time").first()).toContainText("2 min late");
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+    timeout: 15_000,
+  });
+  const ten = page
+    .locator('[data-testid="display-group"][data-route="10"]')
+    .first();
+  await expect(ten.getByTestId("display-time").first()).toContainText(
+    "2 min late",
+  );
   expect(asked).toContain(FEED_URL);
-  expect(asked.filter((u) => u.includes("/blobs/")), "no network is published").toEqual([]);
+  expect(
+    asked.filter((u) => u.includes("/blobs/")),
+    "no network is published",
+  ).toEqual([]);
 });
 
 test("ride now boots from the agency's GTFS URL", async ({ page }) => {
@@ -61,14 +80,18 @@ test("ride now boots from the agency's GTFS URL", async ({ page }) => {
   await expect(first).toContainText("8:15");
 });
 
-test("a changed feed is adopted at the next daily check, without a reload", async ({ page }) => {
+test("a changed feed is adopted at the next daily check, without a reload", async ({
+  page,
+}) => {
   const original = fs.readFileSync(feedFile);
   try {
     await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
     await feeds(page);
     const asked = requests(page);
     await page.goto("/display/stop-display.html?stop=A&layout=routes");
-    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 15_000 });
+    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+      timeout: 15_000,
+    });
     await page.evaluate(() => (window.__notReloaded = true));
     const [held] = await networks(page);
     const fetches = () => asked.filter((u) => u === FEED_URL).length;
@@ -78,11 +101,20 @@ test("a changed feed is adopted at the next daily check, without a reload", asyn
 
     await page.clock.fastForward(20_000);
     await page.clock.fastForward(20_000);
-    expect(fetches(), "the feed is checked once a day, not every poll").toBe(booted);
+    expect(fetches(), "the feed is checked once a day, not every poll").toBe(
+      booted,
+    );
     expect(await networks(page)).toEqual([held]);
 
     await page.clock.fastForward(24 * 3600_000);
-    await expect.poll(async () => (await networks(page)).length === 1 && (await networks(page))[0] !== held, { timeout: 15_000 }).toBe(true);
+    await expect
+      .poll(
+        async () =>
+          (await networks(page)).length === 1 &&
+          (await networks(page))[0] !== held,
+        { timeout: 15_000 },
+      )
+      .toBe(true);
     expect(await page.evaluate(() => window.__notReloaded)).toBe(true);
   } finally {
     fs.writeFileSync(feedFile, original);
@@ -92,18 +124,31 @@ test("a changed feed is adopted at the next daily check, without a reload", asyn
 test.describe("offline", () => {
   test.use({ serviceWorkers: "allow" });
 
-  test("the stop display boots offline on the last zip it had", async ({ page, context }) => {
+  test("the stop display boots offline on the last zip it had", async ({
+    page,
+    context,
+  }) => {
     await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
     await feeds(page);
     await page.goto("/display/stop-display.html?stop=A&layout=routes");
-    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
+    await expect
+      .poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), {
+        timeout: 20_000,
+      })
+      .toBe(true);
     await page.reload();
-    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 15_000 });
+    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+      timeout: 15_000,
+    });
 
     await context.setOffline(true);
     await page.reload();
-    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 15_000 });
-    await expect(page.locator('[data-testid="display-group"][data-route="10"]').first()).toBeVisible();
+    await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", {
+      timeout: 15_000,
+    });
+    await expect(
+      page.locator('[data-testid="display-group"][data-route="10"]').first(),
+    ).toBeVisible();
     await context.setOffline(false);
   });
 });

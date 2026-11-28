@@ -3,23 +3,16 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
+    "lib": ["ES2022", "DOM"],
     "strict": true,
     "noEmit": true,
     "allowJs": true,
     "checkJs": false,
     "skipLibCheck": true,
-    "types": [
-      "vite/client"
-    ],
+    "types": ["vite/client"],
     "useUnknownInCatchVariables": false,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }

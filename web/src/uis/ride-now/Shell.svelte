@@ -1,9 +1,38 @@
 <script lang="ts">
   import { tick } from "svelte";
   import {
-    ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
-    setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
-    fromHere, chooseOnMap, rememberFramed, applyUpdate, off, failure, label, status, liveAt, liveError, type Place,
+    ride,
+    loadFeedBytes,
+    setLiveUrls,
+    typed,
+    clearFound,
+    show,
+    openStop,
+    pickDeparture,
+    directions,
+    setEnd,
+    swapEnds,
+    setWhen,
+    toggleSaved,
+    locate,
+    nearPoint,
+    showRoutes,
+    filterRoutes,
+    openRoute,
+    openVehicle,
+    setFollow,
+    directionsToSpot,
+    fromHere,
+    chooseOnMap,
+    rememberFramed,
+    applyUpdate,
+    off,
+    failure,
+    label,
+    status,
+    liveAt,
+    liveError,
+    type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -18,17 +47,36 @@
 
   const FOUND = 25;
   const alerts = $derived(ride.live?.live.alerts ?? []);
-  const saved = $derived(!!ride.stop && ride.saved.some((s) => s.id === ride.stop?.id));
-  const routeColor = $derived(ride.focusRoute ? (ride.routes.find((r) => r.route_id === ride.focusRoute)?.color ?? null) : null);
-  const bus = $derived(ride.vehicle ? (ride.live?.live.vehicles.find((v) => v.key === ride.vehicle?.key) ?? null) : null);
+  const saved = $derived(
+    !!ride.stop && ride.saved.some((s) => s.id === ride.stop?.id),
+  );
+  const routeColor = $derived(
+    ride.focusRoute
+      ? (ride.routes.find((r) => r.route_id === ride.focusRoute)?.color ?? null)
+      : null,
+  );
+  const bus = $derived(
+    ride.vehicle
+      ? (ride.live?.live.vehicles.find((v) => v.key === ride.vehicle?.key) ??
+          null)
+      : null,
+  );
   const following = $derived(ride.view === "bus" && ride.follow);
   const departureBus = $derived(
     ride.departure
-      ? (ride.live?.live.vehicles.find((v) => v.trip === ride.departure?.trip && v.start_secs === ride.departure?.start_secs) ?? null)
+      ? (ride.live?.live.vehicles.find(
+          (v) =>
+            v.trip === ride.departure?.trip &&
+            v.start_secs === ride.departure?.start_secs,
+        ) ?? null)
       : null,
   );
-  const searchFound = $derived(ride.found?.field === "search" ? ride.found : null);
-  const searchAddresses = $derived(ride.addresses?.field === "search" ? ride.addresses : null);
+  const searchFound = $derived(
+    ride.found?.field === "search" ? ride.found : null,
+  );
+  const searchAddresses = $derived(
+    ride.addresses?.field === "search" ? ride.addresses : null,
+  );
 
   let sheetUp = $state(true);
   let narrow = $state(false);
@@ -49,7 +97,12 @@
   });
   const padding = $derived(
     narrow
-      ? { top: 64, right: 24, bottom: sheetUp ? Math.round(height * 0.55) : 120, left: 24 }
+      ? {
+          top: 64,
+          right: 24,
+          bottom: sheetUp ? Math.round(height * 0.55) : 120,
+          left: 24,
+        }
       : { top: 72, right: 72, bottom: 48, left: 456 },
   );
 
@@ -72,11 +125,16 @@
 
   const announcement = $derived.by(() => {
     if (status()) return status();
-    const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-    if (ride.view === "home" && ride.nearby) return `${n(ride.nearby.length, "stop")} near you`;
-    if (ride.view === "stop" && ride.board) return `${n(ride.board.rows.length, "departure")}`;
-    if (ride.view === "routes" && ride.routeRows) return n(ride.routeRows.length, "route");
-    if (ride.view === "trip" && ride.plan) return ride.plan.itinerary ? "Trip found" : "No trip found";
+    const n = (count: number, noun: string) =>
+      `${count} ${noun}${count === 1 ? "" : "s"}`;
+    if (ride.view === "home" && ride.nearby)
+      return `${n(ride.nearby.length, "stop")} near you`;
+    if (ride.view === "stop" && ride.board)
+      return `${n(ride.board.rows.length, "departure")}`;
+    if (ride.view === "routes" && ride.routeRows)
+      return n(ride.routeRows.length, "route");
+    if (ride.view === "trip" && ride.plan)
+      return ride.plan.itinerary ? "Trip found" : "No trip found";
     return "";
   });
 
@@ -103,7 +161,9 @@
       picked={ride.view === "bus" ? (ride.vehicle?.key ?? null) : null}
       follow={following}
       route={ride.routeFocus}
-      routeId={ride.view === "route" || ride.view === "bus" ? ride.focusRoute : null}
+      routeId={ride.view === "route" || ride.view === "bus"
+        ? ride.focusRoute
+        : null}
       {routeColor}
       frameRoute={!following}
       legs={ride.view === "trip" ? ride.paths : null}
@@ -117,7 +177,11 @@
       {padding}
       onstop={stopFromMap}
       onpoint={spotFromMap}
-      onvehicle={(v) => { if (ride.picking) return; sheetUp = true; openVehicle(v); }}
+      onvehicle={(v) => {
+        if (ride.picking) return;
+        sheetUp = true;
+        openVehicle(v);
+      }}
     />
     {#if ride.updateReady && !ride.picking}
       <div class="pick-banner" data-testid="update-ready" role="status">
@@ -127,23 +191,53 @@
     {/if}
     {#if ride.picking}
       <div class="pick-banner" data-testid="pick-banner">
-        Tap the map to set your {ride.picking === "from" ? "start" : "destination"}
-        <button onclick={() => { sheetUp = true; chooseOnMap(null); }}>Cancel</button>
+        Tap the map to set your {ride.picking === "from"
+          ? "start"
+          : "destination"}
+        <button
+          onclick={() => {
+            sheetUp = true;
+            chooseOnMap(null);
+          }}
+        >
+          Cancel
+        </button>
       </div>
     {/if}
   </div>
 
   <header class="corner">
     {#if alerts.length}
-      <button class="alerts-btn" onclick={() => { sheetUp = true; show("alerts"); }} data-testid="alerts-button">
-        <span aria-hidden="true">⚠</span> {alerts.length} alert{alerts.length === 1 ? "" : "s"}
+      <button
+        class="alerts-btn"
+        onclick={() => {
+          sheetUp = true;
+          show("alerts");
+        }}
+        data-testid="alerts-button"
+      >
+        <span aria-hidden="true">⚠</span>
+        {alerts.length} alert{alerts.length === 1 ? "" : "s"}
       </button>
     {/if}
-    <LiveFeeds urls={ride.urls} summary={ride.live?.summary ?? null} at={liveAt()} error={liveError() || failure("LiveFeeds")} off={off("LiveFeeds")} onurls={setLiveUrls} />
+    <LiveFeeds
+      urls={ride.urls}
+      summary={ride.live?.summary ?? null}
+      at={liveAt()}
+      error={liveError() || failure("LiveFeeds")}
+      off={off("LiveFeeds")}
+      onurls={setLiveUrls}
+    />
   </header>
 
   <main class="panel" class:down={narrow && !sheetUp} bind:this={panel}>
-    <button class="handle" onclick={() => (sheetUp = !sheetUp)} aria-label={sheetUp ? "show the map" : "show the panel"}><span></span></button>
+    <button
+      class="handle"
+      onclick={() => (sheetUp = !sheetUp)}
+      aria-label={sheetUp ? "show the map" : "show the panel"}
+    >
+      <span></span>
+    </button>
     <div class="body">
       {#if ride.view === "home"}
         <header class="brand">
@@ -154,17 +248,28 @@
         {#if !ride.feed && !ride.busy}
           <label class="feed">
             <span>Load the agency’s GTFS feed to begin</span>
-            <input type="file" accept=".zip" aria-label="Agency GTFS zip" onchange={async (e) => {
-              const f = e.currentTarget.files?.[0];
-              if (f) await loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name);
-            }} />
+            <input
+              type="file"
+              accept=".zip"
+              aria-label="Agency GTFS zip"
+              onchange={async (e) => {
+                const f = e.currentTarget.files?.[0];
+                if (f)
+                  await loadFeedBytes(
+                    new Uint8Array(await f.arrayBuffer()),
+                    f.name,
+                  );
+              }}
+            />
           </label>
         {:else if ride.busy && !ride.feed}
           <div class="loading"><span></span> Loading the network…</div>
         {:else}
           <PlaceSearch
             label="stop name"
-            placeholder={ride.geocoding ? "Search for a stop or address" : "Search for a stop"}
+            placeholder={ride.geocoding
+              ? "Search for a stop or address"
+              : "Search for a stop"}
             found={searchFound}
             addresses={searchAddresses}
             limit={FOUND}
@@ -175,11 +280,58 @@
           />
           <div class="actions">
             <button class="cta" onclick={() => show("trip")}>
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3l8.5 9-8.5 9-8.5-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M9.5 13.5v-2a1 1 0 011-1H15m-2-2l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 3l8.5 9-8.5 9-8.5-9z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linejoin="round"
+                /><path
+                  d="M9.5 13.5v-2a1 1 0 011-1H15m-2-2l2 2-2 2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
               Get directions
             </button>
             <button class="cta second" onclick={showRoutes}>
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="6" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" /><circle cx="18" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M6 8.2V10a4 4 0 004 4h4a4 4 0 014 4v-2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="6"
+                  cy="6"
+                  r="2.2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                /><circle
+                  cx="18"
+                  cy="18"
+                  r="2.2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                /><path
+                  d="M6 8.2V10a4 4 0 004 4h4a4 4 0 014 4v-2.2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
               Routes
             </button>
           </div>
@@ -187,13 +339,27 @@
 
           <section class="group" data-testid="nearby">
             <div class="group-head">
-              <h2>{ride.near && !ride.near.mine ? `Near ${ride.near.label ?? "this spot"}` : "Near you"}</h2>
+              <h2>
+                {ride.near && !ride.near.mine
+                  ? `Near ${ride.near.label ?? "this spot"}`
+                  : "Near you"}
+              </h2>
               <span class="links">
                 {#if ride.walking && ride.near && !ride.near.mine}
-                  <button class="link" onclick={directionsToSpot} data-testid="directions-here">Directions here</button>
+                  <button
+                    class="link"
+                    onclick={directionsToSpot}
+                    data-testid="directions-here"
+                  >
+                    Directions here
+                  </button>
                 {/if}
                 <button class="link" onclick={locate} disabled={ride.locating}>
-                  {ride.locating ? "Locating…" : ride.near?.mine ? "Update" : "Use my location"}
+                  {ride.locating
+                    ? "Locating…"
+                    : ride.near?.mine
+                      ? "Update"
+                      : "Use my location"}
                 </button>
               </span>
             </div>
@@ -204,17 +370,26 @@
                   name={p.name}
                   distance={p.distance_m ?? null}
                   walk={p.walk_secs ?? null}
-                  rows={b === undefined ? (off("NearbyBoards") ? [] : null) : (b?.rows ?? [])}
+                  rows={b === undefined
+                    ? off("NearbyBoards")
+                      ? []
+                      : null
+                    : (b?.rows ?? [])}
                   pooled={b?.pooled ?? false}
                   routes={ride.routes}
-                  note={b === null || off("NearbyBoards") ? "Departures for this stop are unavailable right now." : ""}
+                  note={b === null || off("NearbyBoards")
+                    ? "Departures for this stop are unavailable right now."
+                    : ""}
                   onopen={() => openStop(p)}
                 />
               {:else}
                 <p class="quiet">No stops near here.</p>
               {/each}
             {:else}
-              <p class="quiet">Share your location to see what leaves near you — or tap anywhere on the map.</p>
+              <p class="quiet">
+                Share your location to see what leaves near you — or tap
+                anywhere on the map.
+              </p>
             {/if}
           </section>
 
@@ -228,7 +403,9 @@
                   rows={b ? b.board.rows : off("SavedList") ? [] : null}
                   pooled={b?.board.pooled ?? false}
                   routes={ride.routes}
-                  note={off("SavedList") ? "Departures are unavailable right now." : ""}
+                  note={off("SavedList")
+                    ? "Departures are unavailable right now."
+                    : ""}
                   onopen={() => openStop({ id: s.id, name: s.label })}
                 />
               {/each}
@@ -240,12 +417,13 @@
               <div class="group-head"><h2>Recent</h2></div>
               <div class="chips">
                 {#each ride.recent as p (p.id)}
-                  <button class="chip-btn" onclick={() => openStop(p)}>{p.name}</button>
+                  <button class="chip-btn" onclick={() => openStop(p)}>
+                    {p.name}
+                  </button>
                 {/each}
               </div>
             </section>
           {/if}
-
         {/if}
       {:else if ride.view === "stop" && ride.stop}
         <RiderBoard
@@ -258,9 +436,27 @@
           liveOff={off("LiveFeeds")}
           {saved}
           picked={ride.departure}
-          tracked={departureBus ? { label: departureBus.label ?? departureBus.vehicle_id ?? departureBus.key } : null}
-          ontrack={() => departureBus && openVehicle({ key: departureBus.key, trip: departureBus.trip, route: departureBus.route })}
-          onpick={(r) => pickDeparture({ trip: r.trip, start_secs: r.start_secs, route: r.route })}
+          tracked={departureBus
+            ? {
+                label:
+                  departureBus.label ??
+                  departureBus.vehicle_id ??
+                  departureBus.key,
+              }
+            : null}
+          ontrack={() =>
+            departureBus &&
+            openVehicle({
+              key: departureBus.key,
+              trip: departureBus.trip,
+              route: departureBus.route,
+            })}
+          onpick={(r) =>
+            pickDeparture({
+              trip: r.trip,
+              start_secs: r.start_secs,
+              route: r.route,
+            })}
           onsave={() => ride.stop && toggleSaved(ride.stop)}
           onfrom={() => ride.stop && directions("from", ride.stop)}
           onto={() => ride.stop && directions("to", ride.stop)}
@@ -297,17 +493,40 @@
           onback={() => show(ride.stop ? "stop" : "home")}
         />
       {:else if ride.view === "routes"}
-        <RouteList rows={ride.routeRows} routes={ride.routes} query={ride.routeQuery} off={off("RouteList")}
-          onfilter={filterRoutes} onopen={openRoute} onback={() => show("home")} />
+        <RouteList
+          rows={ride.routeRows}
+          routes={ride.routes}
+          query={ride.routeQuery}
+          off={off("RouteList")}
+          onfilter={filterRoutes}
+          onopen={openRoute}
+          onback={() => show("home")}
+        />
       {:else if ride.view === "route"}
-        <RouteView route={ride.routes.find((r) => r.route_id === ride.route) ?? null} info={ride.routeInfo} off={off("RouteView")}
-          onstop={openStop} onback={showRoutes} />
+        <RouteView
+          route={ride.routes.find((r) => r.route_id === ride.route) ?? null}
+          info={ride.routeInfo}
+          off={off("RouteView")}
+          onstop={openStop}
+          onback={showRoutes}
+        />
       {:else if ride.view === "bus"}
-        <BusView vehicle={bus} progress={ride.progress} routes={ride.routes} follow={ride.follow} liveOff={off("BusView") || off("LiveFeeds")}
-          onfollow={setFollow} onstop={openStop} onroute={openRoute} onback={() => show("home")} />
+        <BusView
+          vehicle={bus}
+          progress={ride.progress}
+          routes={ride.routes}
+          follow={ride.follow}
+          liveOff={off("BusView") || off("LiveFeeds")}
+          onfollow={setFollow}
+          onstop={openStop}
+          onroute={openRoute}
+          onback={() => show("home")}
+        />
       {:else if ride.view === "alerts"}
         <header class="sub-head">
-          <button class="back" onclick={() => show("home")} aria-label="back">‹</button>
+          <button class="back" onclick={() => show("home")} aria-label="back">
+            ‹
+          </button>
           <h2>Service alerts</h2>
         </header>
         {#if alerts.length}
@@ -325,82 +544,317 @@
       {/if}
     </div>
   </main>
-  <div class="sr-only" role="status" aria-live="polite" data-testid="ride-announce">{announcement}</div>
+  <div
+    class="sr-only"
+    role="status"
+    aria-live="polite"
+    data-testid="ride-announce"
+  >
+    {announcement}
+  </div>
 </div>
 
 <style>
-  .app { position: relative; height: 100dvh; overflow: hidden; background: var(--hover); }
-  .map { position: absolute; inset: 0; }
+  .app {
+    position: relative;
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--hover);
+  }
+  .map {
+    position: absolute;
+    inset: 0;
+  }
 
   .pick-banner {
-    position: absolute; z-index: 3; top: 0.9rem; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 0.75rem;
-    background: var(--text); color: var(--surface); font-size: 0.85rem; font-weight: 600; padding: 0.45rem 0.6rem 0.45rem 0.9rem;
-    border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); white-space: nowrap;
+    position: absolute;
+    z-index: 3;
+    top: 0.9rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--text);
+    color: var(--surface);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.45rem 0.6rem 0.45rem 0.9rem;
+    border-radius: 999px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+    white-space: nowrap;
   }
-  .pick-banner button { border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
-  .corner { position: absolute; top: 0.9rem; right: 0.9rem; display: flex; gap: 0.5rem; align-items: flex-start; z-index: 3; }
+  .pick-banner button {
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .corner {
+    position: absolute;
+    top: 0.9rem;
+    right: 0.9rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    z-index: 3;
+  }
   .alerts-btn {
-    border: 0; cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 700; padding: 0.4rem 0.75rem; border-radius: 999px;
-    background: var(--warn); color: var(--on-accent); box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    background: var(--warn);
+    color: var(--on-accent);
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
   }
 
   .panel {
-    position: absolute; z-index: 2; top: 0.9rem; left: 0.9rem; bottom: 0.9rem; width: 26rem;
-    background: var(--surface); border-radius: 18px; box-shadow: 0 10px 40px rgb(0 0 0 / 0.18);
-    display: flex; flex-direction: column; overflow: hidden;
+    position: absolute;
+    z-index: 2;
+    top: 0.9rem;
+    left: 0.9rem;
+    bottom: 0.9rem;
+    width: 26rem;
+    background: var(--surface);
+    border-radius: 18px;
+    box-shadow: 0 10px 40px rgb(0 0 0 / 0.18);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
-  .handle { display: none; }
-  .body { flex: 1; overflow-y: auto; padding: 1.1rem 1.1rem 1.4rem; display: flex; flex-direction: column; gap: 1rem; }
+  .handle {
+    display: none;
+  }
+  .body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.1rem 1.1rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
 
-  .brand h1 { margin: 0; font-size: 1.35rem; letter-spacing: -0.01em; }
-  .brand p { margin: 0.1rem 0 0; color: var(--muted); }
-  .group { display: grid; gap: 0.5rem; }
-  .group-head { display: flex; align-items: baseline; justify-content: space-between; }
-  .group h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
-  .links { display: flex; gap: 0.9rem; }
-  .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; min-height: 1.5rem; display: inline-flex; align-items: center; }
-  .quiet { color: var(--muted); font-size: 0.88rem; margin: 0; line-height: 1.45; }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .brand h1 {
+    margin: 0;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+  }
+  .brand p {
+    margin: 0.1rem 0 0;
+    color: var(--muted);
+  }
+  .group {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .group h2 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0;
+  }
+  .links {
+    display: flex;
+    gap: 0.9rem;
+  }
+  .link {
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    min-height: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+  }
+  .quiet {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin: 0;
+    line-height: 1.45;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
   .chip-btn {
-    border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 0.82rem;
-    padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.82rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .chip-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .chip-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .cta {
-    display: flex; align-items: center; gap: 0.5rem; border: 0; background: var(--accent); color: var(--on-accent);
-    font: inherit; font-weight: 700; padding: 0.65rem 0.9rem; border-radius: 12px; cursor: pointer; margin-top: -0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 0;
+    background: var(--accent);
+    color: var(--on-accent);
+    font: inherit;
+    font-weight: 700;
+    padding: 0.65rem 0.9rem;
+    border-radius: 12px;
+    cursor: pointer;
+    margin-top: -0.4rem;
   }
-  .cta:hover { filter: brightness(1.08); }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: -0.4rem; }
-  .actions .cta { margin-top: 0; justify-content: center; }
-  .cta.second { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
-  .cta.second:hover { border-color: var(--accent); color: var(--accent); filter: none; }
-  .tip { margin: -0.4rem 0 0; font-size: 0.8rem; color: var(--muted); }
-  .feed { display: grid; gap: 0.4rem; padding: 1rem; border: 2px dashed var(--line); border-radius: 14px; color: var(--muted); }
-  .loading { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); }
-  .loading span { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); }
+  .cta:hover {
+    filter: brightness(1.08);
+  }
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: -0.4rem;
+  }
+  .actions .cta {
+    margin-top: 0;
+    justify-content: center;
+  }
+  .cta.second {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .cta.second:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    filter: none;
+  }
+  .tip {
+    margin: -0.4rem 0 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .feed {
+    display: grid;
+    gap: 0.4rem;
+    padding: 1rem;
+    border: 2px dashed var(--line);
+    border-radius: 14px;
+    color: var(--muted);
+  }
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--muted);
+  }
+  .loading span {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 2px solid var(--line);
+    border-top-color: var(--accent);
+  }
   @media (prefers-reduced-motion: no-preference) {
-    .loading span { animation: spin 0.8s linear infinite; }
+    .loading span {
+      animation: spin 0.8s linear infinite;
+    }
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .sub-head { display: flex; align-items: center; gap: 0.4rem; }
-  .sub-head h2 { margin: 0; font-size: 1.2rem; }
-  .back { border: 0; background: none; color: var(--text); cursor: pointer; border-radius: 10px; width: 2.25rem; height: 2.25rem; font-size: 1.6rem; line-height: 1; }
-  .back:hover { background: var(--hover); }
-  .status { margin: 0; font-size: 0.82rem; color: var(--muted); padding: 0.5rem 0.75rem; background: var(--hover); border-radius: 10px; }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .sub-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .sub-head h2 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+  .back {
+    border: 0;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 10px;
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 1.6rem;
+    line-height: 1;
+  }
+  .back:hover {
+    background: var(--hover);
+  }
+  .status {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 0.5rem 0.75rem;
+    background: var(--hover);
+    border-radius: 10px;
+  }
 
   @media (max-width: 760px) {
     .panel {
-      top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 62dvh;
+      top: auto;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      height: 62dvh;
       border-radius: 18px 18px 0 0;
     }
     @media (prefers-reduced-motion: no-preference) {
-      .panel { transition: transform 0.25s ease; }
+      .panel {
+        transition: transform 0.25s ease;
+      }
     }
-    .panel.down { transform: translateY(calc(62dvh - 7.5rem)); }
-    .handle { display: grid; place-items: center; border: 0; background: none; padding: 0.5rem 0 0.1rem; min-height: 1.75rem; cursor: pointer; }
-    .handle span { width: 2.6rem; height: 0.3rem; border-radius: 999px; background: var(--line); }
-    .body { padding-top: 0.4rem; }
-    .corner { top: 0.6rem; right: 0.6rem; }
+    .panel.down {
+      transform: translateY(calc(62dvh - 7.5rem));
+    }
+    .handle {
+      display: grid;
+      place-items: center;
+      border: 0;
+      background: none;
+      padding: 0.5rem 0 0.1rem;
+      min-height: 1.75rem;
+      cursor: pointer;
+    }
+    .handle span {
+      width: 2.6rem;
+      height: 0.3rem;
+      border-radius: 999px;
+      background: var(--line);
+    }
+    .body {
+      padding-top: 0.4rem;
+    }
+    .corner {
+      top: 0.6rem;
+      right: 0.6rem;
+    }
   }
 </style>

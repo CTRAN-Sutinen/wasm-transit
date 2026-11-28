@@ -25,7 +25,12 @@
 
   let allStops = $state(false);
   const columns = $derived(
-    timetable.stops.map((s, i) => ({ ...s, i })).filter((s, _, all) => allStops || s.timepoint || all.every((x) => !x.timepoint)),
+    timetable.stops
+      .map((s, i) => ({ ...s, i }))
+      .filter(
+        (s, _, all) =>
+          allStops || s.timepoint || all.every((x) => !x.timepoint),
+      ),
   );
   const key = (t: TimetableTrip) => `${t.trip}@${t.start_secs}`;
 
@@ -34,23 +39,41 @@
   const rowH = $derived(columns.length > 8 ? 26 : 44);
   const H = $derived(Math.max(1, columns.length - 1) * rowH + 24);
   const span = $derived.by(() => {
-    const times = timetable.trips.flatMap((t) => t.times.filter((x): x is number => x != null));
+    const times = timetable.trips.flatMap((t) =>
+      t.times.filter((x): x is number => x != null),
+    );
     const lo = Math.floor(Math.min(...times, 6 * 3600) / 3600) * 3600;
     const hi = Math.ceil(Math.max(...times, lo + 3600) / 3600) * 3600;
     return { lo, hi };
   });
-  const x = (secs: number) => LEFT + ((secs - span.lo) / (span.hi - span.lo)) * (W - LEFT);
+  const x = (secs: number) =>
+    LEFT + ((secs - span.lo) / (span.hi - span.lo)) * (W - LEFT);
   const y = (row: number) => 12 + row * rowH;
   function points(t: TimetableTrip, shift = 0): string {
     return columns
-      .map((c, row) => (t.times[c.i] != null ? `${x(t.times[c.i]! + shift).toFixed(1)},${y(row)}` : null))
+      .map((c, row) =>
+        t.times[c.i] != null
+          ? `${x(t.times[c.i]! + shift).toFixed(1)},${y(row)}`
+          : null,
+      )
       .filter(Boolean)
       .join(" ");
   }
-  const hours = $derived(Array.from({ length: (span.hi - span.lo) / 3600 + 1 }, (_, i) => span.lo + i * 3600));
+  const hours = $derived(
+    Array.from(
+      { length: (span.hi - span.lo) / 3600 + 1 },
+      (_, i) => span.lo + i * 3600,
+    ),
+  );
 
   let svg: SVGSVGElement;
-  let drag = $state<{ key: string; trip: string; start: number; startX: number; delta: number } | null>(null);
+  let drag = $state<{
+    key: string;
+    trip: string;
+    start: number;
+    startX: number;
+    delta: number;
+  } | null>(null);
   function secsPerPixel() {
     const width = svg?.getBoundingClientRect().width || W;
     return ((span.hi - span.lo) / (W - LEFT)) * (W / width);
@@ -63,17 +86,25 @@
     } catch {
       // A pointer the browser no longer tracks drags without capture.
     }
-    drag = { key: key(t), trip: t.trip, start: t.start_secs, startX: e.clientX, delta: 0 };
+    drag = {
+      key: key(t),
+      trip: t.trip,
+      start: t.start_secs,
+      startX: e.clientX,
+      delta: 0,
+    };
   }
   function move(e: PointerEvent) {
     if (!drag) return;
-    drag.delta = Math.round(((e.clientX - drag.startX) * secsPerPixel()) / 60) * 60;
+    drag.delta =
+      Math.round(((e.clientX - drag.startX) * secsPerPixel()) / 60) * 60;
   }
   function up() {
     if (drag && drag.delta !== 0) onnudge(drag.trip, drag.start + drag.delta);
     drag = null;
   }
-  const kind = (t: TimetableTrip) => (t.added ? "added" : t.retimed_from_secs != null ? "moved" : "kept");
+  const kind = (t: TimetableTrip) =>
+    t.added ? "added" : t.retimed_from_secs != null ? "moved" : "kept";
   // The key names only what is drawn. A moved or added trip exists only against a
   // baseline, so without one the key is empty.
   const drawn = $derived(new Set(timetable.trips.map(kind)));
@@ -82,16 +113,33 @@
 <section class="panel" aria-label="String-line" data-testid="string-line">
   <header>
     <h2>{timetable.route_name} · to {timetable.direction_name}</h2>
-    <span class="muted">{timetable.trips.length} trips · time across, stops down; a line's slope is its running time</span>
-    <label class="toggle"><input type="checkbox" bind:checked={allStops} /> every stop</label>
+    <span class="muted">
+      {timetable.trips.length} trips · time across, stops down; a line's slope is
+      its running time
+    </span>
+    <label class="toggle">
+      <input type="checkbox" bind:checked={allStops} /> every stop
+    </label>
   </header>
   <div class="frame">
     <div class="names" style:height="{H}px">
       {#each columns as c, row (c.stop)}
         {#if onstop}
-          <button type="button" style:top="{y(row) - 7}px" class:tp={c.timepoint} class:picked={c.stop === selectedStop} aria-pressed={c.stop === selectedStop} title="{c.name} ({c.stop}) — pick this stop" onclick={() => onstop(c.stop)}>{c.name}</button>
+          <button
+            type="button"
+            style:top="{y(row) - 7}px"
+            class:tp={c.timepoint}
+            class:picked={c.stop === selectedStop}
+            aria-pressed={c.stop === selectedStop}
+            title="{c.name} ({c.stop}) — pick this stop"
+            onclick={() => onstop(c.stop)}
+          >
+            {c.name}
+          </button>
         {:else}
-          <span style:top="{y(row) - 7}px" class:tp={c.timepoint}>{c.name}</span>
+          <span style:top="{y(row) - 7}px" class:tp={c.timepoint}>
+            {c.name}
+          </span>
         {/if}
       {/each}
     </div>
@@ -107,18 +155,40 @@
         onpointerup={up}
       >
         {#if window}
-          <rect class="win" x={x(window.from * 3600)} width={x(window.to * 3600) - x(window.from * 3600)} y="0" height={H}></rect>
+          <rect
+            class="win"
+            x={x(window.from * 3600)}
+            width={x(window.to * 3600) - x(window.from * 3600)}
+            y="0"
+            height={H}
+          ></rect>
         {/if}
-        {#each hours as h (h)}<line class="grid" x1={x(h)} x2={x(h)} y1="0" y2={H}></line>{/each}
-        {#each columns as c, row (c.stop)}<line class="grid" x1="0" x2={W} y1={y(row)} y2={y(row)}></line>{/each}
+        {#each hours as h (h)}<line
+            class="grid"
+            x1={x(h)}
+            x2={x(h)}
+            y1="0"
+            y2={H}
+          ></line>{/each}
+        {#each columns as c, row (c.stop)}<line
+            class="grid"
+            x1="0"
+            x2={W}
+            y1={y(row)}
+            y2={y(row)}
+          ></line>{/each}
         {#each timetable.trips as t (key(t))}
           {#if t.retimed_from_secs != null}
-            <polyline class="ghost" points={points(t, t.retimed_from_secs - t.start_secs)}></polyline>
+            <polyline
+              class="ghost"
+              points={points(t, t.retimed_from_secs - t.start_secs)}
+            ></polyline>
           {/if}
         {/each}
         {#each timetable.trips as t (key(t))}
           <g class="trip {kind(t)}" class:sel={selected === key(t)}>
-            <polyline points={points(t, drag?.key === key(t) ? drag.delta : 0)}></polyline>
+            <polyline points={points(t, drag?.key === key(t) ? drag.delta : 0)}
+            ></polyline>
             <polyline
               class="hit"
               class:grab={editable}
@@ -127,57 +197,224 @@
               tabindex="-1"
               aria-label="Trip {t.trip} at {clock(t.start_secs)}"
               onpointerdown={(e) => down(e, t)}
-            ><title>{t.trip} · {clock(t.start_secs)} · runs {Math.round(t.run_secs / 60)} min{t.retimed_from_secs != null ? ` · was ${clock(t.retimed_from_secs)}` : ""}{t.added ? " · added" : ""}</title></polyline>
+            >
+              <title>
+                {t.trip} · {clock(t.start_secs)} · runs {Math.round(
+                  t.run_secs / 60,
+                )} min{t.retimed_from_secs != null
+                  ? ` · was ${clock(t.retimed_from_secs)}`
+                  : ""}{t.added ? " · added" : ""}
+              </title>
+            </polyline>
           </g>
         {/each}
       </svg>
       <div class="ticks">
-        {#each hours as h, i (h)}{#if i % 2 === 0}<span style:left="{(x(h) / W) * 100}%">{clock(h)}</span>{/if}{/each}
+        {#each hours as h, i (h)}{#if i % 2 === 0}<span
+              style:left="{(x(h) / W) * 100}%"
+            >
+              {clock(h)}
+            </span>{/if}{/each}
       </div>
     </div>
   </div>
   <footer>
-    {#if drawn.has("moved") || drawn.has("added")}<span><i class="k kept"></i>unchanged</span>{/if}
-    {#if drawn.has("moved")}<span><i class="k moved"></i>moved</span><span><i class="k ghost"></i>its baseline time</span>{/if}
+    {#if drawn.has("moved") || drawn.has("added")}<span>
+        <i class="k kept"></i>unchanged
+      </span>{/if}
+    {#if drawn.has("moved")}<span><i class="k moved"></i>moved</span><span>
+        <i class="k ghost"></i>its baseline time
+      </span>{/if}
     {#if drawn.has("added")}<span><i class="k added"></i>added</span>{/if}
-    {#if timetable.removed.length}<span class="muted">{timetable.removed.length} baseline trips no longer run</span>{/if}
-    {#if drag}<span class="drag">{drag.trip}: {clock(drag.start)} → {clock(drag.start + drag.delta)}</span>
-    {:else if editable}<span class="muted">drag a line to move that trip alone</span>{/if}
+    {#if timetable.removed.length}<span class="muted">
+        {timetable.removed.length} baseline trips no longer run
+      </span>{/if}
+    {#if drag}<span class="drag">
+        {drag.trip}: {clock(drag.start)} → {clock(drag.start + drag.delta)}
+      </span>
+    {:else if editable}<span class="muted">
+        drag a line to move that trip alone
+      </span>{/if}
   </footer>
 </section>
 
 <style>
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
-  header { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
-  h2 { margin: 0; font-size: 0.9rem; }
-  .muted { color: var(--muted); font-size: 0.78rem; }
-  .toggle { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
-  .frame { display: flex; padding: 0.5rem 0.9rem 0; }
-  .names { position: relative; flex: 0 0 11rem; }
-  .names span { position: absolute; right: 0.5rem; left: 0; font-size: 0.7rem; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 14px; }
-  .names span.tp, .names button.tp { color: var(--text); font-weight: 500; }
-  .names button { position: absolute; right: 0.5rem; left: 0; font: inherit; font-size: 0.7rem; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 14px; border: 0; background: none; padding: 0; cursor: pointer; }
-  .names button:hover { color: var(--accent); text-decoration: underline; }
-  .names button.picked { color: var(--accent); font-weight: 700; }
-  .plot { flex: 1; min-width: 0; }
-  svg { display: block; width: 100%; touch-action: none; }
-  .win { fill: var(--accent-soft); }
-  .grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-  polyline { fill: none; vector-effect: non-scaling-stroke; }
-  .trip polyline:first-child { stroke: var(--text); stroke-width: 1.1; opacity: 0.75; }
-  .trip.moved polyline:first-child { stroke: var(--accent); stroke-width: 2; opacity: 1; }
-  .trip.added polyline:first-child { stroke: #2563eb; stroke-width: 2.2; opacity: 1; }
-  .trip.sel polyline:first-child { stroke-width: 3.2; opacity: 1; }
-  .ghost { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; }
-  .hit { stroke: transparent; stroke-width: 10; cursor: pointer; pointer-events: stroke; }
-  .hit.grab { cursor: ew-resize; }
-  .ticks { position: relative; height: 1.2rem; }
-  .ticks span { position: absolute; transform: translateX(-50%); font-size: 0.68rem; color: var(--muted); }
-  footer { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: center; padding: 0.5rem 0.9rem; border-top: 1px solid var(--line); font-size: 0.78rem; }
-  .k { display: inline-block; width: 1.1rem; height: 3px; vertical-align: middle; margin-right: 0.3rem; border-radius: 2px; }
-  .k.kept { background: var(--text); }
-  .k.moved { background: var(--accent); }
-  .k.ghost { background: repeating-linear-gradient(90deg, var(--muted) 0 3px, transparent 3px 6px); }
-  .k.added { background: #2563eb; }
-  .drag { font-weight: 600; color: var(--accent); }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    min-width: 0;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .muted {
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .toggle {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .frame {
+    display: flex;
+    padding: 0.5rem 0.9rem 0;
+  }
+  .names {
+    position: relative;
+    flex: 0 0 11rem;
+  }
+  .names span {
+    position: absolute;
+    right: 0.5rem;
+    left: 0;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 14px;
+  }
+  .names span.tp,
+  .names button.tp {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .names button {
+    position: absolute;
+    right: 0.5rem;
+    left: 0;
+    font: inherit;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 14px;
+    border: 0;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .names button:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .names button.picked {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .plot {
+    flex: 1;
+    min-width: 0;
+  }
+  svg {
+    display: block;
+    width: 100%;
+    touch-action: none;
+  }
+  .win {
+    fill: var(--accent-soft);
+  }
+  .grid {
+    stroke: var(--line);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  polyline {
+    fill: none;
+    vector-effect: non-scaling-stroke;
+  }
+  .trip polyline:first-child {
+    stroke: var(--text);
+    stroke-width: 1.1;
+    opacity: 0.75;
+  }
+  .trip.moved polyline:first-child {
+    stroke: var(--accent);
+    stroke-width: 2;
+    opacity: 1;
+  }
+  .trip.added polyline:first-child {
+    stroke: #2563eb;
+    stroke-width: 2.2;
+    opacity: 1;
+  }
+  .trip.sel polyline:first-child {
+    stroke-width: 3.2;
+    opacity: 1;
+  }
+  .ghost {
+    stroke: var(--muted);
+    stroke-width: 1.2;
+    stroke-dasharray: 3 3;
+  }
+  .hit {
+    stroke: transparent;
+    stroke-width: 10;
+    cursor: pointer;
+    pointer-events: stroke;
+  }
+  .hit.grab {
+    cursor: ew-resize;
+  }
+  .ticks {
+    position: relative;
+    height: 1.2rem;
+  }
+  .ticks span {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    align-items: center;
+    padding: 0.5rem 0.9rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.78rem;
+  }
+  .k {
+    display: inline-block;
+    width: 1.1rem;
+    height: 3px;
+    vertical-align: middle;
+    margin-right: 0.3rem;
+    border-radius: 2px;
+  }
+  .k.kept {
+    background: var(--text);
+  }
+  .k.moved {
+    background: var(--accent);
+  }
+  .k.ghost {
+    background: repeating-linear-gradient(
+      90deg,
+      var(--muted) 0 3px,
+      transparent 3px 6px
+    );
+  }
+  .k.added {
+    background: #2563eb;
+  }
+  .drag {
+    font-weight: 600;
+    color: var(--accent);
+  }
 </style>

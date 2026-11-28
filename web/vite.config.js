@@ -17,7 +17,8 @@ const uis = fs
   .map((d) => d.name);
 for (const id of uis) {
   for (const need of [`${id}.html`, `src/uis/${id}/ui.json`]) {
-    if (!fs.existsSync(path.join(root, need))) throw new Error(`generated UI "${id}" is missing ${need}`);
+    if (!fs.existsSync(path.join(root, need)))
+      throw new Error(`generated UI "${id}" is missing ${need}`);
   }
 }
 const input = {
@@ -33,14 +34,16 @@ const input = {
 // src/basemap.ts. Without UI the build is every page, as the sync server
 // serves it.
 const only = process.env.UI || null;
-if (only && !uis.includes(only)) throw new Error(`UI=${only}: no generated UI by that id (${uis.join(", ")})`);
+if (only && !uis.includes(only))
+  throw new Error(`UI=${only}: no generated UI by that id (${uis.join(", ")})`);
 function oneUi(id) {
   let outDir = "";
   let drawsMap = false;
   const pub = path.join(root, "public");
   const copy = (rel) => {
     const from = path.join(pub, rel);
-    if (fs.existsSync(from)) fs.cpSync(from, path.join(outDir, rel), { recursive: true });
+    if (fs.existsSync(from))
+      fs.cpSync(from, path.join(outDir, rel), { recursive: true });
   };
   return {
     name: "one-ui",
@@ -49,15 +52,24 @@ function oneUi(id) {
       outDir = path.resolve(config.root, config.build.outDir);
     },
     generateBundle(_, bundle) {
-      drawsMap = Object.values(bundle).some((c) => c.type === "chunk" && Object.keys(c.modules).some((m) => m.endsWith("/src/basemap.ts")));
+      drawsMap = Object.values(bundle).some(
+        (c) =>
+          c.type === "chunk" &&
+          Object.keys(c.modules).some((m) => m.endsWith("/src/basemap.ts")),
+      );
     },
     closeBundle() {
-      const caps = JSON.parse(fs.readFileSync(path.join(pub, "caps/manifest.json"), "utf8"));
+      const caps = JSON.parse(
+        fs.readFileSync(path.join(pub, "caps/manifest.json"), "utf8"),
+      );
       const linked = caps.assemblies?.find((a) => a.ui === id);
       copy("caps/manifest.json");
       if (linked) {
         copy(linked.url);
-        for (const cap of caps.capabilities.filter((c) => linked.capabilities.includes(c.id))) copy(cap.url);
+        for (const cap of caps.capabilities.filter((c) =>
+          linked.capabilities.includes(c.id),
+        ))
+          copy(cap.url);
       }
       copy("live-feeds.json");
       copy("schemas");
@@ -81,9 +93,16 @@ function oneUi(id) {
 // A UI with `"precache_assembly": false` (the staff pages, D-223) stays
 // out of the shared shell, so a rider's install never downloads a
 // planner's modules. A one-UI build (`only`) precaches its own assembly.
-const uiJson = (id) => JSON.parse(fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8"));
-const offline = uis.filter((id) => (!only || id === only) && uiJson(id).offline === true);
-const precached = offline.filter((id) => only || uiJson(id).precache_assembly !== false);
+const uiJson = (id) =>
+  JSON.parse(
+    fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8"),
+  );
+const offline = uis.filter(
+  (id) => (!only || id === only) && uiJson(id).offline === true,
+);
+const precached = offline.filter(
+  (id) => only || uiJson(id).precache_assembly !== false,
+);
 function serviceWorker() {
   let outDir = "";
   return {
@@ -94,19 +113,32 @@ function serviceWorker() {
     },
     closeBundle() {
       const assetsDir = path.join(outDir, "assets");
-      const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).sort().map((f) => `assets/${f}`) : [];
+      const assets = fs.existsSync(assetsDir)
+        ? fs
+            .readdirSync(assetsDir)
+            .sort()
+            .map((f) => `assets/${f}`)
+        : [];
       const capsManifest = path.join(outDir, "caps/manifest.json");
-      const caps = fs.existsSync(capsManifest) ? JSON.parse(fs.readFileSync(capsManifest, "utf8")) : null;
+      const caps = fs.existsSync(capsManifest)
+        ? JSON.parse(fs.readFileSync(capsManifest, "utf8"))
+        : null;
       const shell = [
         ...offline.map((id) => `${id}.html`),
         ...assets,
         ...(caps ? ["caps/manifest.json"] : []),
-        ...(caps?.assemblies ?? []).filter((a) => precached.includes(a.ui)).map((a) => a.url),
+        ...(caps?.assemblies ?? [])
+          .filter((a) => precached.includes(a.ui))
+          .map((a) => a.url),
       ];
       const hash = createHash("sha256");
-      for (const file of shell) hash.update(file).update(fs.readFileSync(path.join(outDir, file)));
+      for (const file of shell)
+        hash.update(file).update(fs.readFileSync(path.join(outDir, file)));
       const build = hash.digest("hex").slice(0, 16);
-      const template = fs.readFileSync(path.join(root, "service-worker.js"), "utf8");
+      const template = fs.readFileSync(
+        path.join(root, "service-worker.js"),
+        "utf8",
+      );
       fs.writeFileSync(
         path.join(outDir, "sw.js"),
         `const BUILD = ${JSON.stringify(build)};\nconst SHELL = ${JSON.stringify(shell)};\nconst OFFLINE = ${JSON.stringify(offline)};\n\n${template}`,
@@ -121,7 +153,11 @@ export default defineConfig({
   base: "./",
   plugins: [svelte(), ...(only ? [oneUi(only)] : []), serviceWorker()],
   build: only
-    ? { target: "esnext", outDir: `dist-ui/${only}`, rollupOptions: { input: { [only]: `${only}.html` } } }
+    ? {
+        target: "esnext",
+        outDir: `dist-ui/${only}`,
+        rollupOptions: { input: { [only]: `${only}.html` } },
+      }
     : { target: "esnext", rollupOptions: { input } },
   publicDir: only ? false : "public",
   worker: { format: "es" },
@@ -132,9 +168,32 @@ export default defineConfig({
     // ^ is a pattern. `^/stops$` matches the document's writes and not the
     // stops page, `/stops.html`.
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/logs", "^/stops$", "^/stop-requests(/|$)", "/attachments", "/service-alerts", "/alert-templates", "^/notes$", "/feed", "/geocode"].map(
+      [
+        "/rt",
+        "/manifest",
+        "/network",
+        "/streets",
+        "/walks",
+        "/edits",
+        "/pointers",
+        "/blobs",
+        "/permissions",
+        "/plans",
+        "/logs",
+        "^/stops$",
+        "^/stop-requests(/|$)",
+        "/attachments",
+        "/service-alerts",
+        "/alert-templates",
+        "^/notes$",
+        "/feed",
+        "/geocode",
+      ].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).
-        (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
+        (route) => [
+          route,
+          process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080",
+        ],
       ),
     ),
   },

@@ -1,11 +1,57 @@
 // The only file of this UI that asks the bus. The rules and the failure table are in
 // docs/architecture/generated-uis/disruptions.md.
 
-import { ask, assemble, available, keep, load, produced, readManifest, served, servedNetwork, servedNetworkPin, Doc, type DeploymentManifest } from "../../engine";
-import { answerGraph, applyBuild, buildWaiting, onBuildReady, clockEvery, clockLabel, clockLabelAt, inputGraph, inputLabel, installApp, nowSecs, previousDay, readFeed, readHeadKept, readLiveFeeds, reason, setAgencyZone, today, type FrameState, type InputDeclaration, type InputState, type LiveUrls, type Reader } from "../kit";
+import {
+  ask,
+  assemble,
+  available,
+  keep,
+  load,
+  produced,
+  readManifest,
+  served,
+  servedNetwork,
+  servedNetworkPin,
+  Doc,
+  type DeploymentManifest,
+} from "../../engine";
+import {
+  answerGraph,
+  applyBuild,
+  buildWaiting,
+  onBuildReady,
+  clockEvery,
+  clockLabel,
+  clockLabelAt,
+  inputGraph,
+  inputLabel,
+  installApp,
+  nowSecs,
+  previousDay,
+  readFeed,
+  readHeadKept,
+  readLiveFeeds,
+  reason,
+  setAgencyZone,
+  today,
+  type FrameState,
+  type InputDeclaration,
+  type InputState,
+  type LiveUrls,
+  type Reader,
+} from "../kit";
 import descriptor from "./ui.json";
 import { resumeSignIn } from "../../signin.svelte";
-import { discardWrite, heldReason, openOutbox, outbox, queueWrite, retryWrite, sendWaiting, type Outcome } from "../../outbox.svelte";
+import {
+  discardWrite,
+  heldReason,
+  openOutbox,
+  outbox,
+  queueWrite,
+  retryWrite,
+  sendWaiting,
+  type Outcome,
+} from "../../outbox.svelte";
 import type { AlertFlag } from "../../types/AlertFlag";
 import type { AlertGap } from "../../types/AlertGap";
 import type { AlertList } from "../../types/AlertList";
@@ -40,7 +86,14 @@ const VIEWS: View[] = ["status", "alerts", "dispatch"];
 
 // `startsNow` stamps the start when the alert is saved, so riders are told
 // from that moment.
-export type AlertForm = { id: string; fresh: boolean; alert: ServiceAlert; template: string; unfilled: Unfilled[]; startsNow: boolean };
+export type AlertForm = {
+  id: string;
+  fresh: boolean;
+  alert: ServiceAlert;
+  template: string;
+  unfilled: Unfilled[];
+  startsNow: boolean;
+};
 
 // The inputs' intervals are in ui.json.
 const POLL_MS = 30_000;
@@ -115,7 +168,11 @@ let alerts: Doc | null = null;
 let notes: Doc | null = null;
 let templates: Doc | null = null;
 let live: Doc<LiveDay> | null = null;
-const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
+const snapshots = {
+  trips: null as Doc | null,
+  vehicles: null as Doc | null,
+  alerts: null as Doc | null,
+};
 let urls: Partial<LiveUrls> = {};
 
 function say(text: string, alert = false): void {
@@ -159,7 +216,8 @@ const request = answerGraph(
       clear: () => ((live = null), (dz.live = null)),
       run: async () => {
         const { trips, vehicles, alerts: rtAlerts } = snapshots;
-        if (!network || !boundary || (!trips && !vehicles)) return void ((live = null), (dz.live = null));
+        if (!network || !boundary || (!trips && !vehicles))
+          return void ((live = null), (dz.live = null));
         const answer = await ask("rt", "live", {
           network_hash: network,
           boundary_hash: boundary,
@@ -167,7 +225,8 @@ const request = answerGraph(
           vp_hash: vehicles ?? undefined,
           alerts_hash: rtAlerts ?? undefined,
         });
-        if (!answer.live) throw new Error("the live answer carries no document");
+        if (!answer.live)
+          throw new Error("the live answer carries no document");
         live = produced("live", answer.live, "rt", answer.live_hash);
         dz.live = answer.live;
       },
@@ -180,7 +239,11 @@ const request = answerGraph(
       clear: () => (dz.day = null),
       run: async () => {
         if (!network) return void (dz.day = null);
-        const { op: _, ...today } = await ask("disruptions", "today", documents());
+        const { op: _, ...today } = await ask(
+          "disruptions",
+          "today",
+          documents(),
+        );
         dz.day = today;
         hold();
       },
@@ -218,7 +281,8 @@ const request = answerGraph(
       caps: ["rt"],
       clear: () => (dz.late = []),
       run: async () => {
-        if (!network || !snapshots.trips || !dz.live) return void (dz.late = []);
+        if (!network || !snapshots.trips || !dz.live)
+          return void (dz.late = []);
         dz.late = (
           await ask("rt", "late_trips", {
             network_hash: network,
@@ -239,7 +303,9 @@ const request = answerGraph(
       run: async () => {
         if (!notes) return void (dz.notes = []);
         const [from, to] = dayBounds(dz.date);
-        dz.notes = (await ask("notes", "between", { notes_hash: notes, from, to })).notes;
+        dz.notes = (
+          await ask("notes", "between", { notes_hash: notes, from, to })
+        ).notes;
       },
     },
     {
@@ -251,8 +317,20 @@ const request = answerGraph(
       run: async () => {
         const text = dz.query.trim();
         if (!network || !text) return void (dz.found = null);
-        const routes = (await ask("directory", "entities", { network_hash: network, kind: "route", query: text })).rows.slice(0, FOUND);
-        const found = (await ask("directory", "stops", { network_hash: network, query: text, limit: FOUND })).stops;
+        const routes = (
+          await ask("directory", "entities", {
+            network_hash: network,
+            kind: "route",
+            query: text,
+          })
+        ).rows.slice(0, FOUND);
+        const found = (
+          await ask("directory", "stops", {
+            network_hash: network,
+            query: text,
+            limit: FOUND,
+          })
+        ).stops;
         dz.found = { routes, stops: found };
       },
     },
@@ -265,7 +343,9 @@ const request = answerGraph(
       clear: () => (dz.openNotes = []),
       run: async () => {
         if (!notes || !dz.open) return void (dz.openNotes = []);
-        dz.openNotes = (await ask("notes", "on", { notes_hash: notes, target: dz.open })).notes;
+        dz.openNotes = (
+          await ask("notes", "on", { notes_hash: notes, target: dz.open })
+        ).notes;
       },
     },
     {
@@ -278,8 +358,12 @@ const request = answerGraph(
       clear: () => ((dz.openStops = []), (dz.openPath = [])),
       run: async () => {
         const d = dz.openItem;
-        const trip = d?.trip && d.start_secs != null ? { trip: d.trip, date: dz.date, start_secs: d.start_secs } : null;
-        if (!network || !trip) return void ((dz.openStops = []), (dz.openPath = []));
+        const trip =
+          d?.trip && d.start_secs != null
+            ? { trip: d.trip, date: dz.date, start_secs: d.start_secs }
+            : null;
+        if (!network || !trip)
+          return void ((dz.openStops = []), (dz.openPath = []));
         const args = { network_hash: network, edits_hash: null, ...trip };
         dz.openStops = (await ask("runcut", "trip_stops", args)).stops;
         dz.openPath = (await ask("runcut", "trip_path", args)).path;
@@ -291,7 +375,19 @@ const request = answerGraph(
       needs: ["network", "preview-query"],
       run: async () => {
         const text = dz.previewQuery.trim();
-        dz.previewFound = network && text ? { routes: [], stops: (await ask("directory", "stops", { network_hash: network, query: text, limit: FOUND })).stops } : null;
+        dz.previewFound =
+          network && text
+            ? {
+                routes: [],
+                stops: (
+                  await ask("directory", "stops", {
+                    network_hash: network,
+                    query: text,
+                    limit: FOUND,
+                  })
+                ).stops,
+              }
+            : null;
       },
     },
     {
@@ -299,7 +395,11 @@ const request = answerGraph(
       frame: "",
       needs: ["network"],
       run: async () => {
-        dz.routes = network && (await available("directory")) ? (await ask("directory", "routes", { network_hash: network })).routes : [];
+        dz.routes =
+          network && (await available("directory"))
+            ? (await ask("directory", "routes", { network_hash: network }))
+                .routes
+            : [];
       },
     },
     {
@@ -310,7 +410,10 @@ const request = answerGraph(
       caps: ["alerts"],
       clear: () => (dz.alerts = null),
       run: async () => {
-        const { op: _, ...list } = await ask("alerts", "list", { alerts_hash: alerts ?? undefined, now: dz.now });
+        const { op: _, ...list } = await ask("alerts", "list", {
+          alerts_hash: alerts ?? undefined,
+          now: dz.now,
+        });
         dz.alerts = list;
       },
     },
@@ -322,7 +425,9 @@ const request = answerGraph(
       caps: ["disruptions"],
       clear: () => (dz.gaps = []),
       run: async () => {
-        dz.gaps = network ? (await ask("disruptions", "gaps", documents())).gaps : [];
+        dz.gaps = network
+          ? (await ask("disruptions", "gaps", documents())).gaps
+          : [];
       },
     },
     {
@@ -332,7 +437,11 @@ const request = answerGraph(
       caps: ["alerts"],
       clear: () => (dz.templates = []),
       run: async () => {
-        dz.templates = (await ask("alerts", "templates", { templates_hash: templates ?? undefined })).templates;
+        dz.templates = (
+          await ask("alerts", "templates", {
+            templates_hash: templates ?? undefined,
+          })
+        ).templates;
       },
     },
     {
@@ -340,8 +449,22 @@ const request = answerGraph(
       frame: "",
       needs: ["network", "form"],
       run: async () => {
-        const ids = [...new Set((dz.form?.alert.informed ?? []).map((e) => e.stop).filter((x): x is string => !!x))];
-        dz.formStops = network && ids.length ? (await ask("directory", "stops_by_ids", { network_hash: network, ids })).stops : [];
+        const ids = [
+          ...new Set(
+            (dz.form?.alert.informed ?? [])
+              .map((e) => e.stop)
+              .filter((x): x is string => !!x),
+          ),
+        ];
+        dz.formStops =
+          network && ids.length
+            ? (
+                await ask("directory", "stops_by_ids", {
+                  network_hash: network,
+                  ids,
+                })
+              ).stops
+            : [];
       },
     },
     {
@@ -352,12 +475,27 @@ const request = answerGraph(
       clear: () => ((dz.refusals = []), (dz.flags = [])),
       run: async () => {
         const form = dz.form;
-        if (!form || !network) return void ((dz.refusals = []), (dz.flags = []));
-        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: stamped(form) });
+        if (!form || !network)
+          return void ((dz.refusals = []), (dz.flags = []));
+        const put = await ask("alerts", "put", {
+          alerts_hash: alerts ?? undefined,
+          id: form.id,
+          alert: stamped(form),
+        });
         dz.refusals = put.refusals;
         if (!put.alerts || !put.alerts_hash) return void (dz.flags = []);
-        const next = produced("service_alerts", put.alerts, "alerts", put.alerts_hash);
-        dz.flags = (await ask("alerts", "flags", { alerts_hash: next, network_hash: network })).flags.filter((f) => f.alert === form.id);
+        const next = produced(
+          "service_alerts",
+          put.alerts,
+          "alerts",
+          put.alerts_hash,
+        );
+        dz.flags = (
+          await ask("alerts", "flags", {
+            alerts_hash: next,
+            network_hash: network,
+          })
+        ).flags.filter((f) => f.alert === form.id);
       },
     },
     {
@@ -368,7 +506,12 @@ const request = answerGraph(
       clear: () => (dz.allStops = []),
       run: async () => {
         if (!network || dz.allStops.length) return;
-        dz.allStops = (await ask("directory", "stops", { network_hash: network, limit: null })).stops;
+        dz.allStops = (
+          await ask("directory", "stops", {
+            network_hash: network,
+            limit: null,
+          })
+        ).stops;
       },
     },
     {
@@ -380,7 +523,12 @@ const request = answerGraph(
       run: async () => {
         const form = dz.form;
         if (!form || !network) return void (dz.reach = null);
-        const { op: _, ...reach } = await ask("board", "alert_reach", { network_hash: network, edits_hash: edits ?? undefined, date: dz.date, alert: stamped(form) });
+        const { op: _, ...reach } = await ask("board", "alert_reach", {
+          network_hash: network,
+          edits_hash: edits ?? undefined,
+          date: dz.date,
+          alert: stamped(form),
+        });
         dz.reach = reach;
       },
     },
@@ -389,18 +537,41 @@ const request = answerGraph(
       // encoded with this alert published.
       id: "preview",
       frame: "Preview",
-      needs: ["network", "docs", "snapshot", "form", "preview-stop", "clock", "preview-open"],
+      needs: [
+        "network",
+        "docs",
+        "snapshot",
+        "form",
+        "preview-stop",
+        "clock",
+        "preview-open",
+      ],
       visible: () => dz.previewOpen,
       caps: ["alerts", "rt", "board"],
       clear: () => ((dz.preview = null), (dz.previewFeed = "")),
       run: async () => {
         const form = dz.form;
-        if (!form || !network || !boundary) return void ((dz.preview = null), (dz.previewFeed = ""));
-        const put = await ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert: { ...stamped(form), status: "published" } });
+        if (!form || !network || !boundary)
+          return void ((dz.preview = null), (dz.previewFeed = ""));
+        const put = await ask("alerts", "put", {
+          alerts_hash: alerts ?? undefined,
+          id: form.id,
+          alert: { ...stamped(form), status: "published" },
+        });
         dz.previewWaits = !put.alerts;
-        if (!put.alerts || !put.alerts_hash) return void ((dz.preview = null), (dz.previewFeed = ""));
-        const doc = produced("service_alerts", put.alerts, "alerts", put.alerts_hash);
-        const encoded = await ask("rt", "encode_alerts", { network_hash: network, alerts_hash: doc, timestamp: dz.now });
+        if (!put.alerts || !put.alerts_hash)
+          return void ((dz.preview = null), (dz.previewFeed = ""));
+        const doc = produced(
+          "service_alerts",
+          put.alerts,
+          "alerts",
+          put.alerts_hash,
+        );
+        const encoded = await ask("rt", "encode_alerts", {
+          network_hash: network,
+          alerts_hash: doc,
+          timestamp: dz.now,
+        });
         dz.previewFeed = encoded.feed_b64;
         const stop = dz.previewStop;
         if (!stop) return void (dz.preview = null);
@@ -411,8 +582,14 @@ const request = answerGraph(
           vp_hash: snapshots.vehicles ?? undefined,
           alerts_hash: produced("rt", undefined, "rt", encoded.rt_hash),
         });
-        if (!previewLive.live) throw new Error("the live answer carries no document");
-        const liveDoc = produced("live", previewLive.live, "rt", previewLive.live_hash);
+        if (!previewLive.live)
+          throw new Error("the live answer carries no document");
+        const liveDoc = produced(
+          "live",
+          previewLive.live,
+          "rt",
+          previewLive.live_hash,
+        );
         dz.preview = (
           await ask("board", "stop_board", {
             network_hash: network,
@@ -462,10 +639,18 @@ function dayBounds(date: string): [number, number] {
       minute: "2-digit",
     }).formatToParts(new Date(guess));
     const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-    const seen = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"));
+    const seen = Date.UTC(
+      get("year"),
+      get("month") - 1,
+      get("day"),
+      get("hour"),
+      get("minute"),
+    );
     return Math.floor((guess - (seen - guess)) / 1000);
   };
-  const next = new Date(Date.parse(`${date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const next = new Date(Date.parse(`${date}T12:00:00Z`) + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
   return [at(date), at(next)];
 }
 
@@ -490,18 +675,25 @@ function readHash(): string[] {
   const q = new URLSearchParams(location.hash.slice(1));
   const changed: string[] = [];
   const view = (q.get("view") ?? "status") as View;
-  if ((VIEWS.includes(view) ? view : "status") !== dz.view) ((dz.view = VIEWS.includes(view) ? view : "status"), changed.push("view"));
+  if ((VIEWS.includes(view) ? view : "status") !== dz.view)
+    ((dz.view = VIEWS.includes(view) ? view : "status"), changed.push("view"));
   const route = q.get("route");
   const stop = q.get("stop");
-  const pick: Pick | null = route ? { kind: "route", id: route, label: q.get("label") ?? route } : stop ? { kind: "stop", id: stop, label: q.get("label") ?? stop } : null;
-  if (JSON.stringify(pick) !== JSON.stringify(dz.pick)) ((dz.pick = pick), changed.push("pick"));
+  const pick: Pick | null = route
+    ? { kind: "route", id: route, label: q.get("label") ?? route }
+    : stop
+      ? { kind: "stop", id: stop, label: q.get("label") ?? stop }
+      : null;
+  if (JSON.stringify(pick) !== JSON.stringify(dz.pick))
+    ((dz.pick = pick), changed.push("pick"));
   let open: AlertSource | null = null;
   try {
     open = q.get("open") ? (JSON.parse(q.get("open")!) as AlertSource) : null;
   } catch {
     open = null;
   }
-  if (JSON.stringify(open) !== JSON.stringify(dz.open)) ((dz.open = open), changed.push("open"));
+  if (JSON.stringify(open) !== JSON.stringify(dz.open))
+    ((dz.open = open), changed.push("open"));
   return changed;
 }
 
@@ -522,7 +714,19 @@ const NETWORK_READERS = ["disruptions", "rt", "directory", "runcut"] as const;
 let manifest: Manifest | null = null;
 
 function release(): Promise<void> {
-  return keep([network, boundary, edits, stops, alerts, notes, templates, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
+  return keep([
+    network,
+    boundary,
+    edits,
+    stops,
+    alerts,
+    notes,
+    templates,
+    live,
+    snapshots.trips,
+    snapshots.vehicles,
+    snapshots.alerts,
+  ]);
 }
 
 // Read again only when the pin moved.
@@ -562,7 +766,12 @@ const readers: Record<string, Reader<any>> = {
   manifest: {
     read: async ({ signal }) => {
       const read = await readManifest(signal);
-      return { value: read.manifest, key: JSON.stringify(read.manifest), asOfMs: read.asOfMs ?? undefined, why: read.why ?? undefined };
+      return {
+        value: read.manifest,
+        key: JSON.stringify(read.manifest),
+        asOfMs: read.asOfMs ?? undefined,
+        why: read.why ?? undefined,
+      };
     },
     adopt: (m: Manifest | null) => {
       manifest = m;
@@ -581,14 +790,26 @@ const readers: Record<string, Reader<any>> = {
   },
   network: {
     // Only a moved pin reads the network again.
-    read: async ({ signal, held }: { signal: AbortSignal; held: Served | null }) => {
+    read: async ({
+      signal,
+      held,
+    }: {
+      signal: AbortSignal;
+      held: Served | null;
+    }) => {
       if (!manifest) throw new Error("the deployment's manifest is not read");
       const pin = await servedNetworkPin(today(), { manifest, signal });
       if (!pin) return null;
       if (held?.pin === pin) return { value: held, key: pin };
-      const got = await servedNetwork(today(), [...NETWORK_READERS], { manifest, signal });
+      const got = await servedNetwork(today(), [...NETWORK_READERS], {
+        manifest,
+        signal,
+      });
       if (!got) return null;
-      return { value: { network: got.network, boundary: got.boundary, pin }, key: pin };
+      return {
+        value: { network: got.network, boundary: got.boundary, pin },
+        key: pin,
+      };
     },
     adopt: async (got: Served | null) => {
       network = got?.network ?? null;
@@ -608,10 +829,19 @@ const readers: Record<string, Reader<any>> = {
       } catch {
         throw new Error("the edit document is not JSON");
       }
-      return { ...got, value: { document, over: network }, key: `${network.pin}:${got.key}` };
+      return {
+        ...got,
+        value: { document, over: network },
+        key: `${network.pin}:${got.key}`,
+      };
     },
-    adopt: async (got: { document: EditDocument; over: Doc<Network> } | null) => {
-      edits = got && got.document?.records?.length > 0 ? new Doc("edits", { value: got.document }, { over: got.over }) : null;
+    adopt: async (
+      got: { document: EditDocument; over: Doc<Network> } | null,
+    ) => {
+      edits =
+        got && got.document?.records?.length > 0
+          ? new Doc("edits", { value: got.document }, { over: got.over })
+          : null;
       await release();
     },
   },
@@ -624,9 +854,21 @@ const readers: Record<string, Reader<any>> = {
   alerts: liveFeed("alerts"),
 };
 
-const inputs = inputGraph(descriptor.inputs as InputDeclaration[], readers, dz.inputs, request);
+const inputs = inputGraph(
+  descriptor.inputs as InputDeclaration[],
+  readers,
+  dz.inputs,
+  request,
+);
 
-const WRITTEN = ["manifest", "edits", "stops", "service_alerts", "notes", "alert_templates"];
+const WRITTEN = [
+  "manifest",
+  "edits",
+  "stops",
+  "service_alerts",
+  "notes",
+  "alert_templates",
+];
 
 export function label(input: string): string {
   return inputLabel(dz.inputs[input]);
@@ -635,33 +877,52 @@ export function label(input: string): string {
 export function status(): string {
   if (dz.status) return dz.status;
   const state = dz.inputs.network;
-  if (!state || state.kind === "reading") return network ? "" : "Reading the network…";
-  if (state.kind === "none" && !network) return "The deployment publishes no network.";
-  if (state.kind === "failed" && !state.held && !network) return inputLabel(state);
+  if (!state || state.kind === "reading")
+    return network ? "" : "Reading the network…";
+  if (state.kind === "none" && !network)
+    return "The deployment publishes no network.";
+  if (state.kind === "failed" && !state.held && !network)
+    return inputLabel(state);
   return "";
 }
 
 export function offline(): boolean {
   const m = dz.inputs.manifest;
-  return m?.kind === "failed" || (m?.kind === "answered" && m.why === "the server is not answering");
+  return (
+    m?.kind === "failed" ||
+    (m?.kind === "answered" && m.why === "the server is not answering")
+  );
 }
 
 export function asOf(): string {
   const m = dz.inputs.manifest;
-  if (!offline() || !m || (m.kind !== "answered" && m.kind !== "failed") || m.asOfMs == null) return "";
+  if (
+    !offline() ||
+    !m ||
+    (m.kind !== "answered" && m.kind !== "failed") ||
+    m.asOfMs == null
+  )
+    return "";
   return clockLabelAt(m.asOfMs);
 }
 
 const FEEDS = ["trips", "vehicles", "alerts"] as const;
 
 export function liveAt(): string {
-  const at = Math.max(0, ...FEEDS.map((k) => dz.inputs[k]).map((s) => (s?.kind === "answered" ? s.atMs : 0)));
+  const at = Math.max(
+    0,
+    ...FEEDS.map((k) => dz.inputs[k]).map((s) =>
+      s?.kind === "answered" ? s.atMs : 0,
+    ),
+  );
   return at ? clockLabelAt(at) : "";
 }
 
 export function liveError(): string {
   return FEEDS.map((k) => dz.inputs[k])
-    .filter((s): s is Extract<InputState, { kind: "failed" }> => s?.kind === "failed")
+    .filter(
+      (s): s is Extract<InputState, { kind: "failed" }> => s?.kind === "failed",
+    )
     .map((s) => `${s.input}: ${s.message}`)
     .join("; ");
 }
@@ -676,7 +937,15 @@ export async function boot(): Promise<void> {
   try {
     await inputs.start();
     writeHash(true);
-    await request("clock", "view", "query", "pick", "open", "form", "preview-stop");
+    await request(
+      "clock",
+      "view",
+      "query",
+      "pick",
+      "open",
+      "form",
+      "preview-stop",
+    );
   } catch (e) {
     say(`Error: ${message(e)}`, true);
   }
@@ -724,10 +993,25 @@ export function showBus(at: { lat: number; lon: number }): void {
   dz.bus = at;
 }
 
-export async function newAlert(source: AlertSource | null = null): Promise<void> {
+export async function newAlert(
+  source: AlertSource | null = null,
+): Promise<void> {
   if (!network) return;
-  const start = await ask("disruptions", "start_alert", { ...documents(), source: source ?? undefined });
-  return openForm({ id: newId("alert"), fresh: true, alert: start.alert, template: "", unfilled: [], startsNow: true }, start.preview_stop ?? null);
+  const start = await ask("disruptions", "start_alert", {
+    ...documents(),
+    source: source ?? undefined,
+  });
+  return openForm(
+    {
+      id: newId("alert"),
+      fresh: true,
+      alert: start.alert,
+      template: "",
+      unfilled: [],
+      startsNow: true,
+    },
+    start.preview_stop ?? null,
+  );
 }
 
 export function startAlertFor(source: AlertSource): Promise<void> {
@@ -735,7 +1019,17 @@ export function startAlertFor(source: AlertSource): Promise<void> {
 }
 
 export function editAlert(id: string, alert: ServiceAlert): Promise<void> {
-  return openForm({ id, fresh: false, alert: $state.snapshot(alert) as ServiceAlert, template: "", unfilled: [], startsNow: false }, null);
+  return openForm(
+    {
+      id,
+      fresh: false,
+      alert: $state.snapshot(alert) as ServiceAlert,
+      template: "",
+      unfilled: [],
+      startsNow: false,
+    },
+    null,
+  );
 }
 
 async function openForm(form: AlertForm, stop: string | null): Promise<void> {
@@ -748,7 +1042,12 @@ async function openForm(form: AlertForm, stop: string | null): Promise<void> {
   const first = stop ?? form.alert.informed.find((e) => e.stop)?.stop ?? null;
   dz.previewStop = null;
   if (first && network) {
-    const [s] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [first] })).stops;
+    const [s] = (
+      await ask("directory", "stops_by_ids", {
+        network_hash: network,
+        ids: [first],
+      })
+    ).stops;
     dz.previewStop = s ? { id: s.stop_id, name: s.name } : null;
   }
   await request("form", "preview-stop", "view", "open");
@@ -756,13 +1055,24 @@ async function openForm(form: AlertForm, stop: string | null): Promise<void> {
 
 function stamped(form: AlertForm): ServiceAlert {
   if (!form.startsNow) return form.alert;
-  const [first, ...rest] = form.alert.communication ?? [{ start: null, end: null }];
-  return { ...form.alert, communication: [{ ...first, start: dz.now }, ...rest] };
+  const [first, ...rest] = form.alert.communication ?? [
+    { start: null, end: null },
+  ];
+  return {
+    ...form.alert,
+    communication: [{ ...first, start: dz.now }, ...rest],
+  };
 }
 
 export function setStartsNow(on: boolean): Promise<void> {
   if (!dz.form) return Promise.resolve();
-  dz.form = on ? { ...dz.form, startsNow: true } : { ...dz.form, startsNow: false, alert: stamped({ ...dz.form, startsNow: true }) };
+  dz.form = on
+    ? { ...dz.form, startsNow: true }
+    : {
+        ...dz.form,
+        startsNow: false,
+        alert: stamped({ ...dz.form, startsNow: true }),
+      };
   return request("form");
 }
 
@@ -773,7 +1083,10 @@ export function openPreview(open: boolean): Promise<void> {
 
 export function addStop(stop: string): Promise<void> {
   if (!dz.form) return Promise.resolve();
-  return changeAlert({ ...dz.form.alert, informed: [...dz.form.alert.informed, { stop }] });
+  return changeAlert({
+    ...dz.form.alert,
+    informed: [...dz.form.alert.informed, { stop }],
+  });
 }
 
 export function closeForm(): Promise<void> {
@@ -788,14 +1101,21 @@ export async function changeAlert(alert: ServiceAlert): Promise<void> {
   dz.form = { ...dz.form, alert };
   const stop = dz.previewStop ? null : alert.informed.find((e) => e.stop)?.stop;
   if (stop && network) {
-    const [s] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [stop] })).stops;
+    const [s] = (
+      await ask("directory", "stops_by_ids", {
+        network_hash: network,
+        ids: [stop],
+      })
+    ).stops;
     if (s) dz.previewStop = { id: s.stop_id, name: s.name };
     return request("form", "preview-stop");
   }
   return request("form");
 }
 
-export function setPreviewStop(stop: { id: string; name: string } | null): Promise<void> {
+export function setPreviewStop(
+  stop: { id: string; name: string } | null,
+): Promise<void> {
   dz.previewStop = stop;
   dz.previewQuery = "";
   dz.previewFound = null;
@@ -811,7 +1131,8 @@ export async function fillTemplate(template: string): Promise<void> {
   const form = dz.form;
   if (!form || !network || !templates) return;
   const period = form.alert.communication?.[0];
-  const dateOf = (unix: number | null | undefined) => (unix == null ? undefined : zonedDate(unix));
+  const dateOf = (unix: number | null | undefined) =>
+    unix == null ? undefined : zonedDate(unix);
   const { filled } = await ask("alerts", "fill", {
     templates_hash: templates,
     template,
@@ -826,7 +1147,15 @@ export async function fillTemplate(template: string): Promise<void> {
     ...form,
     template,
     unfilled: filled.unfilled,
-    alert: { ...form.alert, cause: filled.cause, effect: filled.effect, severity: filled.severity, header: filled.header, description: filled.description, url: filled.url },
+    alert: {
+      ...form.alert,
+      cause: filled.cause,
+      effect: filled.effect,
+      severity: filled.severity,
+      header: filled.header,
+      description: filled.description,
+      url: filled.url,
+    },
   };
   await request("form");
 }
@@ -837,10 +1166,21 @@ export async function fillTemplate(template: string): Promise<void> {
 export function saveAlert(publish: boolean): Promise<boolean> {
   const form = dz.form;
   if (!form) return Promise.resolve(false);
-  const alert: ServiceAlert = { ...stamped(form), status: publish ? "published" : "draft" };
+  const alert: ServiceAlert = {
+    ...stamped(form),
+    status: publish ? "published" : "draft",
+  };
   const label = `${publish ? "Publish" : "Draft"} alert: ${alert.header?.[0]?.text ?? form.id}`;
-  return writeAlerts(publish ? "Published." : "Saved as a draft.", label, { cap: "alerts", op: "put", args: { id: form.id, alert } }, () =>
-    ask("alerts", "put", { alerts_hash: alerts ?? undefined, id: form.id, alert }),
+  return writeAlerts(
+    publish ? "Published." : "Saved as a draft.",
+    label,
+    { cap: "alerts", op: "put", args: { id: form.id, alert } },
+    () =>
+      ask("alerts", "put", {
+        alerts_hash: alerts ?? undefined,
+        id: form.id,
+        alert,
+      }),
   );
 }
 
@@ -851,7 +1191,13 @@ export function endAlert(id: string): Promise<boolean> {
   const at = nowUnix();
   // A period holds through its end second, so the list is read once that
   // second has passed.
-  return writeAlerts("Ended.", `End alert ${id}`, { cap: "alerts", op: "end", args: { id, at } }, () => ask("alerts", "end", { alerts_hash: doc, id, at }), at + 1);
+  return writeAlerts(
+    "Ended.",
+    `End alert ${id}`,
+    { cap: "alerts", op: "end", args: { id, at } },
+    () => ask("alerts", "end", { alerts_hash: doc, id, at }),
+    at + 1,
+  );
 }
 
 async function writeAlerts(
@@ -870,7 +1216,13 @@ async function writeAlerts(
       dz.writeError = "Not saved";
       return false;
     }
-    const outcome = await queueWrite({ log: "alerts", ops: [op], readSeq: logSeqs.alerts, readSeqs: logSeqs, label });
+    const outcome = await queueWrite({
+      log: "alerts",
+      ops: [op],
+      readSeq: logSeqs.alerts,
+      readSeqs: logSeqs,
+      label,
+    });
     if (!(await settled(outcome, "alerts"))) return false;
     dz.form = null;
     dz.now = Math.max(nowUnix(), readAt);
@@ -887,7 +1239,9 @@ async function writeAlerts(
 }
 
 function waitingText(): string {
-  return outbox.needsSignIn ? "Saved on this device. Sign in to send it." : "Saved on this device. It is sent when the server answers.";
+  return outbox.needsSignIn
+    ? "Saved on this device. Sign in to send it."
+    : "Saved on this device. It is sent when the server answers.";
 }
 
 async function afterWrite(): Promise<void> {
@@ -897,7 +1251,10 @@ async function afterWrite(): Promise<void> {
 // A write that the server refused at once stays in its form with the
 // server's reasons, so the outbox does not keep a second copy. Returns true
 // when the write was kept.
-async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<boolean> {
+async function settled(
+  outcome: Outcome,
+  what: "alerts" | "notes",
+): Promise<boolean> {
   if (outcome.state !== "held") return true;
   const w = outbox.held.find((h) => h.key === outcome.key);
   await discardWrite(outcome.key);
@@ -906,7 +1263,8 @@ async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<bool
     await afterWrite();
     dz.writeError = "Changed by someone else. Check it, and save again.";
   } else if (outcome.status === 422) {
-    if (what === "alerts") dz.refusals = (body.refusals ?? []) as AlertRefusal[];
+    if (what === "alerts")
+      dz.refusals = (body.refusals ?? []) as AlertRefusal[];
     else dz.noteRefusals = (body.refusals ?? []) as NoteRefusal[];
     dz.writeError = "Not saved";
   } else dz.writeError = w ? heldReason(w) : `Not saved (${outcome.status})`;
@@ -917,13 +1275,27 @@ async function settled(outcome: Outcome, what: "alerts" | "notes"): Promise<bool
 // names the writer and the time.
 
 // The note keeps the id it was made with through every resend.
-export async function writeNote(target: NoteTarget, text: string, id: string | null = null): Promise<boolean> {
+export async function writeNote(
+  target: NoteTarget,
+  text: string,
+  id: string | null = null,
+): Promise<boolean> {
   dz.busy = true;
   dz.writeError = "";
   dz.noteRefusals = [];
   try {
-    const op = { cap: "notes", op: "write", args: { id: id ?? newId("note"), target, text } };
-    const outcome = await queueWrite({ log: "notes", ops: [op], readSeq: logSeqs.notes, readSeqs: logSeqs, label: `${id ? "Edit note" : "Note"}: ${text.trim().slice(0, 60)}` });
+    const op = {
+      cap: "notes",
+      op: "write",
+      args: { id: id ?? newId("note"), target, text },
+    };
+    const outcome = await queueWrite({
+      log: "notes",
+      ops: [op],
+      readSeq: logSeqs.notes,
+      readSeqs: logSeqs,
+      label: `${id ? "Edit note" : "Note"}: ${text.trim().slice(0, 60)}`,
+    });
     if (!(await settled(outcome, "notes"))) return false;
     if (outcome.state === "sent") await afterWrite();
     else say(waitingText());
@@ -937,7 +1309,11 @@ export async function writeNote(target: NoteTarget, text: string, id: string | n
 }
 
 export function heldWrites(): { key: string; label: string; reason: string }[] {
-  return outbox.held.map((w) => ({ key: w.key, label: w.label, reason: heldReason(w) }));
+  return outbox.held.map((w) => ({
+    key: w.key,
+    label: w.label,
+    reason: heldReason(w),
+  }));
 }
 
 export function sendNow(): Promise<void> {
@@ -947,7 +1323,10 @@ export function sendNow(): Promise<void> {
 export async function retryHeld(key: string): Promise<void> {
   await inputs.read(...WRITTEN);
   const w = outbox.held.find((h) => h.key === key);
-  await retryWrite(key, { readSeq: w?.log ? logSeqs[w.log] : undefined, readSeqs: logSeqs });
+  await retryWrite(key, {
+    readSeq: w?.log ? logSeqs[w.log] : undefined,
+    readSeqs: logSeqs,
+  });
 }
 
 export function discardHeld(key: string): Promise<void> {
@@ -965,14 +1344,21 @@ function newId(kind: string): string {
 }
 
 function zonedDate(unix: number): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: dz.zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(unix * 1000));
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: dz.zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(unix * 1000));
   return parts;
 }
 
 export function downloadFeed(): void {
   if (!dz.previewFeed) return;
   const bytes = Uint8Array.from(atob(dz.previewFeed), (c) => c.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: "application/octet-stream" }),
+  );
   const a = document.createElement("a");
   a.href = url;
   a.download = `alerts-${dz.date}.pb`;

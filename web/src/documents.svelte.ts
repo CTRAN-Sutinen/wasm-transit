@@ -13,12 +13,16 @@ export type DocRecord = {
   version: number;
   bytes: string;
   // Absent for an authored or seeded record.
-  produced_by?: { op: "migrate"; from: string; by: string } | { op: "moved"; from: string };
+  produced_by?:
+    { op: "migrate"; from: string; by: string } | { op: "moved"; from: string };
 };
 
 const DOC_KEY = "caps-documents";
 
-type DocKinds = Record<string, { records: Record<string, DocRecord>; current: string | null }>;
+type DocKinds = Record<
+  string,
+  { records: Record<string, DocRecord>; current: string | null }
+>;
 
 export const documents = $state({
   kinds: {} as DocKinds,
@@ -26,7 +30,10 @@ export const documents = $state({
 });
 
 async function persistDocuments(): Promise<void> {
-  await idbSet(DOC_KEY, JSON.parse(JSON.stringify($state.snapshot(documentData()))));
+  await idbSet(
+    DOC_KEY,
+    JSON.parse(JSON.stringify($state.snapshot(documentData()))),
+  );
 }
 
 function documentData(): { kinds: DocKinds } {
@@ -41,8 +48,13 @@ export async function restoreDocuments(): Promise<void> {
 }
 
 async function hashDocument(bytes: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bytes));
-  const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(bytes),
+  );
+  const hex = Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
   return "sha256:" + hex;
 }
 
@@ -55,11 +67,21 @@ export async function putDocument(
 ): Promise<DocRecord> {
   await restoreDocuments();
   const hash = await hashDocument(bytes);
-  const record: DocRecord = { hash, version, bytes, ...(opts.produced_by ? { produced_by: opts.produced_by } : {}) };
+  const record: DocRecord = {
+    hash,
+    version,
+    bytes,
+    ...(opts.produced_by ? { produced_by: opts.produced_by } : {}),
+  };
   const entry = (documents.kinds[kind] ??= { records: {}, current: null });
   if (opts.replace) {
-    const sources = new Set(Object.values(entry.records).flatMap((r) => (r.produced_by?.op === "migrate" ? [r.produced_by.from] : [])));
-    for (const key of Object.keys(entry.records)) if (!sources.has(key)) delete entry.records[key];
+    const sources = new Set(
+      Object.values(entry.records).flatMap((r) =>
+        r.produced_by?.op === "migrate" ? [r.produced_by.from] : [],
+      ),
+    );
+    for (const key of Object.keys(entry.records))
+      if (!sources.has(key)) delete entry.records[key];
   }
   entry.records[hash] = record;
   entry.current = hash;
@@ -68,7 +90,11 @@ export async function putDocument(
 }
 
 // Keeps what a document was before a migration wrote over it elsewhere.
-export async function keepRecord(kind: string, bytes: string, version: number): Promise<DocRecord> {
+export async function keepRecord(
+  kind: string,
+  bytes: string,
+  version: number,
+): Promise<DocRecord> {
   await restoreDocuments();
   const hash = await hashDocument(bytes);
   const record: DocRecord = { hash, version, bytes };

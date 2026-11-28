@@ -49,7 +49,9 @@
       const { style, initialView } = await pickStyle();
       if (gone) return;
       // svelte-ignore state_referenced_locally
-      const start = at ? { center: [at.lon, at.lat] as [number, number], zoom: 17 } : { center: initialView.center, zoom: initialView.zoom };
+      const start = at
+        ? { center: [at.lon, at.lat] as [number, number], zoom: 17 }
+        : { center: initialView.center, zoom: initialView.zoom };
       // svelte-ignore state_referenced_locally
       if (at) framed = true;
       map = new maplibregl.Map({ container, style, ...start });
@@ -68,14 +70,29 @@
           id: "me",
           type: "circle",
           source: "me",
-          paint: { "circle-radius": 7, "circle-color": "#2563eb", "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
+          paint: {
+            "circle-radius": 7,
+            "circle-color": "#2563eb",
+            "circle-stroke-color": "#fff",
+            "circle-stroke-width": 2.5,
+          },
         });
         map!.addLayer({
           id: "stops",
           type: "circle",
           source: "stops",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 14, 5, 17, 8],
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10,
+              2.5,
+              14,
+              5,
+              17,
+              8,
+            ],
             "circle-color": match(0, "#fff"),
             "circle-stroke-color": match(1, "#334155"),
             "circle-stroke-width": 1.5,
@@ -86,19 +103,32 @@
           type: "circle",
           source: "stops",
           filter: ["==", ["get", "stop_id"], ""],
-          paint: { "circle-radius": 9, "circle-color": "#ea580c", "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
+          paint: {
+            "circle-radius": 9,
+            "circle-color": "#ea580c",
+            "circle-stroke-color": "#fff",
+            "circle-stroke-width": 2.5,
+          },
         });
         map!.addLayer({
           id: "point",
           type: "circle",
           source: "point",
-          paint: { "circle-radius": 8, "circle-color": "#16a34a", "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
+          paint: {
+            "circle-radius": 8,
+            "circle-color": "#16a34a",
+            "circle-stroke-color": "#fff",
+            "circle-stroke-width": 2.5,
+          },
         });
         map!.on("click", (e) => {
           // A click is no finer than a pixel, so six decimals (about 0.1 m) say all it
           // knows. A measured point is typed (PointFields).
-          if (pickingNow) return onpoint(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6));
-          const hit = map!.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
+          if (pickingNow)
+            return onpoint(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6));
+          const hit = map!.queryRenderedFeatures(e.point, {
+            layers: ["stops"],
+          })[0];
           const id = hit?.properties?.stop_id;
           if (id) onstop(String(id));
         });
@@ -130,21 +160,47 @@
     const features = stops.map((s) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [s.lon, s.lat] },
-      properties: { stop_id: s.stop_id, name: s.name ?? s.stop_id, status: s.status },
+      properties: {
+        stop_id: s.stop_id,
+        name: s.name ?? s.stop_id,
+        status: s.status,
+      },
     }));
-    (map.getSource("stops") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
+    (map.getSource("stops") as maplibregl.GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features,
+    } as any);
     if (framed || stops.length === 0) return;
     const first: [number, number] = [stops[0].lon, stops[0].lat];
-    const bounds = stops.reduce((b, s) => b.extend([s.lon, s.lat]), new maplibregl.LngLatBounds(first, first));
+    const bounds = stops.reduce(
+      (b, s) => b.extend([s.lon, s.lat]),
+      new maplibregl.LngLatBounds(first, first),
+    );
     map.fitBounds(bounds, { padding: 40, duration: 0 });
     framed = true;
   });
 
   $effect(() => {
     if (!loaded || !map) return;
-    const features = point ? [{ type: "Feature", geometry: { type: "Point", coordinates: [point.lon, point.lat] }, properties: {} }] : [];
-    (map.getSource("point") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
-    if (point && Math.abs(point.lat) < 85 && Math.abs(point.lon) <= 180 && !map.getBounds().contains([point.lon, point.lat]))
+    const features = point
+      ? [
+          {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+            properties: {},
+          },
+        ]
+      : [];
+    (map.getSource("point") as maplibregl.GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features,
+    } as any);
+    if (
+      point &&
+      Math.abs(point.lat) < 85 &&
+      Math.abs(point.lon) <= 180 &&
+      !map.getBounds().contains([point.lon, point.lat])
+    )
       map.easeTo({ center: [point.lon, point.lat] });
   });
 
@@ -152,17 +208,34 @@
     if (!loaded || !map) return;
     map.setFilter("stop-open", ["==", ["get", "stop_id"], selected]);
     const s = stops.find((x) => x.stop_id === selected);
-    if (s && focus) map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 17) });
-    else if (s && !map.getBounds().contains([s.lon, s.lat])) map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15) });
+    if (s && focus)
+      map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 17) });
+    else if (s && !map.getBounds().contains([s.lon, s.lat]))
+      map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15) });
   });
 
   let metMe = "";
   $effect(() => {
     if (!loaded || !map) return;
-    const features = me ? [{ type: "Feature", geometry: { type: "Point", coordinates: [me.lon, me.lat] }, properties: {} }] : [];
-    (map.getSource("me") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
+    const features = me
+      ? [
+          {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [me.lon, me.lat] },
+            properties: {},
+          },
+        ]
+      : [];
+    (map.getSource("me") as maplibregl.GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features,
+    } as any);
     const key = me ? `${me.lat},${me.lon}` : "";
-    if (me && key !== metMe) map.easeTo({ center: [me.lon, me.lat], zoom: Math.max(map.getZoom(), 16) });
+    if (me && key !== metMe)
+      map.easeTo({
+        center: [me.lon, me.lat],
+        zoom: Math.max(map.getZoom(), 16),
+      });
     metMe = key;
   });
 </script>
@@ -171,24 +244,70 @@
   <div class="canvas" bind:this={container}></div>
   <div class="legend">
     {#each shownStatuses as s (s)}
-      <span data-testid="map-key-{s}"><i class="dot" style="background:{STATUS_COLORS[s][0]};border-color:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]}</span>
+      <span data-testid="map-key-{s}">
+        <i
+          class="dot"
+          style="background:{STATUS_COLORS[s][0]};border-color:{STATUS_COLORS[
+            s
+          ][1]}"
+        ></i>{STATUS_WORDS[s]}
+      </span>
     {/each}
-    {#if selected}<span data-testid="map-key-open"><i class="dot open"></i>the open stop</span>{/if}
+    {#if selected}<span data-testid="map-key-open">
+        <i class="dot open"></i>the open stop
+      </span>{/if}
     {#if me}<span data-testid="map-key-me"><i class="dot me"></i>you</span>{/if}
-    {#if picking}<strong data-testid="map-placing">Click the map to set the location</strong>{:else if hover}<strong>{hover}</strong>{/if}
+    {#if picking}<strong data-testid="map-placing">
+        Click the map to set the location
+      </strong>{:else if hover}<strong>{hover}</strong>{/if}
   </div>
 </div>
 
 <style>
-  .stop-map { position: relative; height: 100%; min-height: 300px; }
-  .canvas { position: absolute; inset: 0; }
+  .stop-map {
+    position: relative;
+    height: 100%;
+    min-height: 300px;
+  }
+  .canvas {
+    position: absolute;
+    inset: 0;
+  }
   .legend {
-    position: absolute; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; align-items: center;
-    padding: 4px 10px; border-radius: 6px; background: var(--surface); font-size: 0.75rem; max-width: calc(100% - 20px);
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.8rem;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 0.75rem;
+    max-width: calc(100% - 20px);
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
   }
-  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; border: 1.5px solid; }
-  .dot.open { background: #ea580c; border-color: #fff; box-shadow: 0 0 0 1px #ea580c; }
-  .dot.me { background: #2563eb; border-color: #fff; box-shadow: 0 0 0 1px #2563eb; }
-  .legend strong { color: var(--accent); }
+  .dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+    border: 1.5px solid;
+  }
+  .dot.open {
+    background: #ea580c;
+    border-color: #fff;
+    box-shadow: 0 0 0 1px #ea580c;
+  }
+  .dot.me {
+    background: #2563eb;
+    border-color: #fff;
+    box-shadow: 0 0 0 1px #2563eb;
+  }
+  .legend strong {
+    color: var(--accent);
+  }
 </style>

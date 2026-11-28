@@ -18,30 +18,63 @@ test.use({ timezoneId: "UTC" });
 /// The runner's replay of a journal file: its report, whatever its exit.
 function replay(file, ...args) {
   try {
-    return JSON.parse(execFileSync("node", [runner, "replay", file, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+    return JSON.parse(
+      execFileSync("node", [runner, "replay", file, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }),
+    );
   } catch (error) {
     return JSON.parse(error.stdout);
   }
 }
 
-test("a page's journal replays through the runner", async ({ page }, testInfo) => {
+test("a page's journal replays through the runner", async ({
+  page,
+}, testInfo) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await page.route("**/edits", (route) =>
-    route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: [] }) }),
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "edit_records",
+        schema_version: 2,
+        records: [],
+      }),
+    }),
   );
   await page.route(/\/rt\?url=/, (route) =>
-    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+    route.fulfill({
+      contentType: "application/octet-stream",
+      body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")),
+    }),
   );
   await page.goto("/stop-display.html?journal&stop=A&layout=routes");
-  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
-  await expect(page.getByTestId("display-live")).toContainText("Live", { timeout: 10_000 });
-  await expect(page.locator('[data-testid="display-group"][data-route="10"]').getByTestId("display-time").first()).toContainText("7 min");
+  await page
+    .getByLabel("Agency GTFS zip")
+    .setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  await expect(page.getByTestId("display-live")).toContainText("Live", {
+    timeout: 10_000,
+  });
+  await expect(
+    page
+      .locator('[data-testid="display-group"][data-route="10"]')
+      .getByTestId("display-time")
+      .first(),
+  ).toContainText("7 min");
 
   const bundle = await page.evaluate(() => globalThis.transitJournal());
-  const lines = bundle.journal.trim().split("\n").map((l) => JSON.parse(l));
+  const lines = bundle.journal
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
   expect(lines.length).toBeGreaterThan(5);
-  expect(lines.every((l) => /^sha256:/.test(l.request) && /^sha256:/.test(l.output))).toBe(true);
-  expect(lines.some((l) => l.cap === "board" && l.op === "grouped_board")).toBe(true);
+  expect(
+    lines.every((l) => /^sha256:/.test(l.request) && /^sha256:/.test(l.output)),
+  ).toBe(true);
+  expect(lines.some((l) => l.cap === "board" && l.op === "grouped_board")).toBe(
+    true,
+  );
   const file = testInfo.outputPath("journal.json");
   fs.writeFileSync(file, JSON.stringify(bundle));
 
@@ -54,6 +87,12 @@ test("a page's journal replays through the runner", async ({ page }, testInfo) =
   const single = replay(file, "--single");
   expect(single.differ).toEqual([]);
   expect(single.cannot.length).toBeGreaterThan(0);
-  expect(single.cannot.every((c) => c.cap === "board" && /^live document /.test(c.why))).toBe(true);
-  expect(single.same + single.unchecked + single.cannot.length).toBe(lines.length);
+  expect(
+    single.cannot.every(
+      (c) => c.cap === "board" && /^live document /.test(c.why),
+    ),
+  ).toBe(true);
+  expect(single.same + single.unchecked + single.cannot.length).toBe(
+    lines.length,
+  );
 });

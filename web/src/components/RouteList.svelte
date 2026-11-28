@@ -21,7 +21,9 @@
     onback: () => void;
   } = $props();
 
-  const colors = $derived(new Map(routes.map((r) => [r.route_id, routeColor(r.color)])));
+  const colors = $derived(
+    new Map(routes.map((r) => [r.route_id, routeColor(r.color)])),
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   function input(e: Event) {
     const text = (e.currentTarget as HTMLInputElement).value;
@@ -35,12 +37,21 @@
     <button class="back" onclick={onback} aria-label="back">‹</button>
     <h2>Routes</h2>
   </header>
-  <input type="search" aria-label="filter routes" placeholder="Filter by number or name" value={query} oninput={input} autocomplete="off" />
+  <input
+    type="search"
+    aria-label="filter routes"
+    placeholder="Filter by number or name"
+    value={query}
+    oninput={input}
+    autocomplete="off"
+  />
 
   {#if off}
     <p class="off">The route directory is unavailable right now.</p>
   {:else if !rows}
-    <div class="skeleton" role="progressbar" aria-label="loading"><span></span><span></span><span></span></div>
+    <div class="skeleton" role="progressbar" aria-label="loading">
+      <span></span><span></span><span></span>
+    </div>
   {:else if rows.length === 0}
     <p class="quiet">No route matches “{query}”.</p>
   {:else}
@@ -48,7 +59,13 @@
       {#each rows as r (r.id)}
         <li>
           <button onclick={() => onopen(r.id)}>
-            <span class="badge" style:--route={colors.get(r.id) ?? null} style:--route-text={colors.get(r.id) ? "#fff" : null}>{r.name}</span>
+            <span
+              class="badge"
+              style:--route={colors.get(r.id) ?? null}
+              style:--route-text={colors.get(r.id) ? "#fff" : null}
+            >
+              {r.name}
+            </span>
             <span class="name">{r.long_name ?? r.name}</span>
             <span class="chev" aria-hidden="true">›</span>
           </button>
@@ -59,30 +76,106 @@
 </section>
 
 <style>
-  header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; }
-  h2 { font-size: 1.2rem; margin: 0; }
-  .back { border: 0; background: none; color: var(--text); cursor: pointer; border-radius: 10px; width: 2.25rem; height: 2.25rem; font-size: 1.6rem; line-height: 1; }
-  .back:hover { background: var(--hover); }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+  }
+  h2 {
+    font-size: 1.2rem;
+    margin: 0;
+  }
+  .back {
+    border: 0;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 10px;
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 1.6rem;
+    line-height: 1;
+  }
+  .back:hover {
+    background: var(--hover);
+  }
   input {
-    width: 100%; font: inherit; padding: 0.6rem 0.8rem; border-radius: 12px; border: 1px solid var(--line);
-    background: var(--hover); color: var(--text);
+    width: 100%;
+    font: inherit;
+    padding: 0.6rem 0.8rem;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--hover);
+    color: var(--text);
   }
-  input:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; background: var(--surface); }
-  ul { list-style: none; margin: 0.6rem 0 0; padding: 0; }
-  li + li { border-top: 1px solid var(--line); }
+  input:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    background: var(--surface);
+  }
+  ul {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+  }
+  li + li {
+    border-top: 1px solid var(--line);
+  }
   li button {
-    width: 100%; display: flex; align-items: center; gap: 0.75rem; border: 0; background: none; color: var(--text);
-    font: inherit; text-align: left; padding: 0.6rem 0.25rem; cursor: pointer; border-radius: 10px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    padding: 0.6rem 0.25rem;
+    cursor: pointer;
+    border-radius: 10px;
   }
-  li button:hover { background: var(--hover); }
+  li button:hover {
+    background: var(--hover);
+  }
   .badge {
-    min-width: 2.8rem; padding: 0.2rem 0.4rem; border-radius: 8px; text-align: center; font-weight: 750;
-    font-variant-numeric: tabular-nums; background: var(--route, var(--accent)); color: var(--route-text, var(--on-accent));
+    min-width: 2.8rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    background: var(--route, var(--accent));
+    color: var(--route-text, var(--on-accent));
   }
-  .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chev { color: var(--muted); font-size: 1.2rem; }
-  .quiet { color: var(--muted); }
-  .off { color: var(--bad); font-size: 0.9rem; }
-  .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
-  .skeleton span { height: 2.4rem; border-radius: 10px; }
+  .name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chev {
+    color: var(--muted);
+    font-size: 1.2rem;
+  }
+  .quiet {
+    color: var(--muted);
+  }
+  .off {
+    color: var(--bad);
+    font-size: 0.9rem;
+  }
+  .skeleton {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+  }
+  .skeleton span {
+    height: 2.4rem;
+    border-radius: 10px;
+  }
 </style>

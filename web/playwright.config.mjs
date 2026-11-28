@@ -51,7 +51,7 @@ export default defineConfig({
     },
     {
       command:
-        'bash -c \'exec go run . -addr 127.0.0.1:8084 -today 2026-08-01 -store mem:// -feed ../web/e2e/fixtures/sample-gtfs.zip -work-orders stub:Maintenance -attachments mem://\'',
+        "bash -c 'exec go run . -addr 127.0.0.1:8084 -today 2026-08-01 -store mem:// -feed ../web/e2e/fixtures/sample-gtfs.zip -work-orders stub:Maintenance -attachments mem://'",
       cwd: "../server",
       url: "http://127.0.0.1:8084",
       reuseExistingServer: false,

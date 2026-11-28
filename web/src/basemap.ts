@@ -17,7 +17,9 @@ const REMOTE_ASSETS = "https://protomaps.github.io/basemaps-assets";
 // text/html), so the check reads the type as well as the status.
 async function served(url: string): Promise<boolean> {
   return fetch(url, { method: "HEAD" })
-    .then((r) => r.ok && !/text\/html/.test(r.headers.get("content-type") ?? ""))
+    .then(
+      (r) => r.ok && !/text\/html/.test(r.headers.get("content-type") ?? ""),
+    )
     .catch(() => false);
 }
 
@@ -32,7 +34,12 @@ async function openArchive(): Promise<Bounds | null> {
     const protocol = new Protocol();
     protocol.add(archive);
     maplibregl.addProtocol("pmtiles", protocol.tile);
-    return { minLon: h.minLon, minLat: h.minLat, maxLon: h.maxLon, maxLat: h.maxLat };
+    return {
+      minLon: h.minLon,
+      minLat: h.minLat,
+      maxLon: h.maxLon,
+      maxLat: h.maxLat,
+    };
   } catch (e) {
     console.info("no local pmtiles basemap, using OpenFreeMap:", e);
     return null;
@@ -44,9 +51,14 @@ async function openArchive(): Promise<Bounds | null> {
 let probed: Promise<{ archive: Bounds | null; assets: string }> | null = null;
 
 function probe() {
-  probed ??= Promise.all([openArchive(), served(`${LOCAL_ASSETS}/sprites/v4/light.json`)]).then(([archive, hasAssets]) => ({
+  probed ??= Promise.all([
+    openArchive(),
+    served(`${LOCAL_ASSETS}/sprites/v4/light.json`),
+  ]).then(([archive, hasAssets]) => ({
     archive,
-    assets: hasAssets ? new URL(LOCAL_ASSETS, document.baseURI).href : REMOTE_ASSETS,
+    assets: hasAssets
+      ? new URL(LOCAL_ASSETS, document.baseURI).href
+      : REMOTE_ASSETS,
   }));
   return probed;
 }
@@ -76,7 +88,9 @@ export async function pickStyle(
             attribution: "Protomaps © OpenStreetMap contributors",
           },
         },
-        layers: basemapLayers("protomaps", namedFlavor("light"), { lang: "en" }),
+        layers: basemapLayers("protomaps", namedFlavor("light"), {
+          lang: "en",
+        }),
       } as maplibregl.StyleSpecification,
       initialView,
     };

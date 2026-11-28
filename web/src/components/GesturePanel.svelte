@@ -62,31 +62,52 @@
   $effect(() => {
     tripTo = selectedTrip ? clock(selectedTrip.start_secs) : "";
   });
-  const selectedTrip = $derived(trips.find((t) => `${t.trip}@${t.start_secs}` === pickedKey) ?? null);
-  const stopName = $derived(stops.find((s) => s.stop === selectedStop)?.name ?? "");
+  const selectedTrip = $derived(
+    trips.find((t) => `${t.trip}@${t.start_secs}` === pickedKey) ?? null,
+  );
+  const stopName = $derived(
+    stops.find((s) => s.stop === selectedStop)?.name ?? "",
+  );
   const firstNow = $derived(trips.length ? clock(trips[0].start_secs) : "");
-  const lastNow = $derived(trips.length ? clock(trips[trips.length - 1].start_secs) : "");
+  const lastNow = $derived(
+    trips.length ? clock(trips[trips.length - 1].start_secs) : "",
+  );
 </script>
 
-<section class="panel" aria-label="Change this direction" data-testid="gestures">
+<section
+  class="panel"
+  aria-label="Change this direction"
+  data-testid="gestures"
+>
   <header>
     <h2>Change this direction</h2>
     {#if !framed}<span class="warn">{locked}</span>{/if}
   </header>
   <div class="scope" data-testid="gesture-scope">
-    <label>Changes the trips of
-      <select value={editType} onchange={(e) => onedittype((e.target as HTMLSelectElement).value)} aria-label="service type to change">
+    <label>
+      Changes the trips of
+      <select
+        value={editType}
+        onchange={(e) => onedittype((e.target as HTMLSelectElement).value)}
+        aria-label="service type to change"
+      >
         {#each members as m (m)}<option value={m}>{m}</option>{/each}
       </select>
     </label>
     {#if members.length > 1 || alsoIn.length > 0}
       <p class="warn" data-testid="sibling-warning">
         Only {editType}'s trips change.
-        {#if members.length > 1}{" "}In this group it runs with {members.filter((m) => m !== editType).join(", ")}, whose trips stay as they are.{/if}
-        {#if alsoIn.length > 0}{" "}{editType} also runs in {alsoIn.length === 1 ? "one other group" : `${alsoIn.length} other groups`}, which this change reaches too:{/if}
+        {#if members.length > 1}{" "}In this group it runs with {members
+            .filter((m) => m !== editType)
+            .join(", ")}, whose trips stay as they are.{/if}
+        {#if alsoIn.length > 0}{" "}{editType} also runs in {alsoIn.length === 1
+            ? "one other group"
+            : `${alsoIn.length} other groups`}, which this change reaches too:{/if}
       </p>
       {#if alsoIn.length > 0}
-        <ul class="also" data-testid="sibling-groups">{#each alsoIn as g (g)}<li>{g}</li>{/each}</ul>
+        <ul class="also" data-testid="sibling-groups">
+          {#each alsoIn as g (g)}<li>{g}</li>{/each}
+        </ul>
       {/if}
     {/if}
   </div>
@@ -99,47 +120,153 @@
           blockers={["D-54", "D-3", "QAF-90"]}
         />
       </div>
-      <form class="g" onsubmit={(e) => { e.preventDefault(); onspan(parseClock(first), parseClock(last)); }} data-testid="gesture-span">
+      <form
+        class="g"
+        onsubmit={(e) => {
+          e.preventDefault();
+          onspan(parseClock(first), parseClock(last));
+        }}
+        data-testid="gesture-span"
+      >
         <h3>Span</h3>
-        <p class="muted" data-testid="span-now">{firstNow ? `Now ${firstNow} to ${lastNow}. Fill in only the end you want to move.` : "No trips run here yet."}</p>
-        <label>First trip <input bind:value={first} placeholder={firstNow || "5:30"} aria-label="first trip" /></label>
-        <label>Last trip <input bind:value={last} placeholder={lastNow || "23:00"} aria-label="last trip" /></label>
-        <button type="submit" disabled={!parseClock(first) && !parseClock(last)}>Apply</button>
+        <p class="muted" data-testid="span-now">
+          {firstNow
+            ? `Now ${firstNow} to ${lastNow}. Fill in only the end you want to move.`
+            : "No trips run here yet."}
+        </p>
+        <label>
+          First trip <input
+            bind:value={first}
+            placeholder={firstNow || "5:30"}
+            aria-label="first trip"
+          />
+        </label>
+        <label>
+          Last trip <input
+            bind:value={last}
+            placeholder={lastNow || "23:00"}
+            aria-label="last trip"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={!parseClock(first) && !parseClock(last)}
+        >
+          Apply
+        </button>
       </form>
-      <form class="g" onsubmit={(e) => { e.preventDefault(); const [a, b] = [parseClock(bandFrom), parseClock(bandTo)]; if (a != null && b != null) onrunning(a, b, delta * 60); }} data-testid="gesture-running">
+      <form
+        class="g"
+        onsubmit={(e) => {
+          e.preventDefault();
+          const [a, b] = [parseClock(bandFrom), parseClock(bandTo)];
+          if (a != null && b != null) onrunning(a, b, delta * 60);
+        }}
+        data-testid="gesture-running"
+      >
         <h3>Running time</h3>
-        <label>From <input bind:value={bandFrom} placeholder="e.g. 15:00" aria-label="band from" /></label>
-        <label>Until <input bind:value={bandTo} placeholder="e.g. 18:00" aria-label="band until" /></label>
-        <label>Change (min) <input type="number" bind:value={delta} aria-label="running time change" /></label>
-        <p class="muted">Trips departing in the band run longer (or shorter), spread along each trip.{#if parseClock(bandFrom) == null || parseClock(bandTo) == null}{" "}Fill in the band (or set the hours at the top) to apply.{/if}</p>
-        <button type="submit" disabled={parseClock(bandFrom) == null || parseClock(bandTo) == null || !delta}>Apply</button>
+        <label>
+          From <input
+            bind:value={bandFrom}
+            placeholder="e.g. 15:00"
+            aria-label="band from"
+          />
+        </label>
+        <label>
+          Until <input
+            bind:value={bandTo}
+            placeholder="e.g. 18:00"
+            aria-label="band until"
+          />
+        </label>
+        <label>
+          Change (min) <input
+            type="number"
+            bind:value={delta}
+            aria-label="running time change"
+          />
+        </label>
+        <p class="muted">
+          Trips departing in the band run longer (or shorter), spread along each
+          trip.{#if parseClock(bandFrom) == null || parseClock(bandTo) == null}{" "}Fill
+            in the band (or set the hours at the top) to apply.{/if}
+        </p>
+        <button
+          type="submit"
+          disabled={parseClock(bandFrom) == null ||
+            parseClock(bandTo) == null ||
+            !delta}
+        >
+          Apply
+        </button>
       </form>
-      <form class="g" onsubmit={(e) => { e.preventDefault(); const to = parseClock(tripTo); if (selectedTrip && to != null) onretime(selectedTrip.trip, to); }} data-testid="gesture-trip">
+      <form
+        class="g"
+        onsubmit={(e) => {
+          e.preventDefault();
+          const to = parseClock(tripTo);
+          if (selectedTrip && to != null) onretime(selectedTrip.trip, to);
+        }}
+        data-testid="gesture-trip"
+      >
         <h3>One trip</h3>
         {#if selectedTrip}
-          <p class="muted">Trip {selectedTrip.trip}, now {clock(selectedTrip.start_secs)}. It keeps its id, its running times, and its block.</p>
-          <label>Leaves at <input bind:value={tripTo} aria-label="trip leaves at" /></label>
-          <button type="submit" disabled={parseClock(tripTo) == null}>Move</button>
+          <p class="muted">
+            Trip {selectedTrip.trip}, now {clock(selectedTrip.start_secs)}. It
+            keeps its id, its running times, and its block.
+          </p>
+          <label>
+            Leaves at <input bind:value={tripTo} aria-label="trip leaves at" />
+          </label>
+          <button type="submit" disabled={parseClock(tripTo) == null}>
+            Move
+          </button>
         {:else}
-          <p class="muted">Pick a line on the string-line — or drag it — to move that trip alone.</p>
+          <p class="muted">
+            Pick a line on the string-line — or drag it — to move that trip
+            alone.
+          </p>
         {/if}
       </form>
       <div class="g" data-testid="gesture-stops">
         <h3>Stops</h3>
         {#if selectedStop}
-          <p class="picked" data-testid="picked-stop">{stopName} <span class="muted">{selectedStop}</span></p>
-          <button type="button" onclick={() => onremovestop(selectedStop)}>Drop it from the direction</button>
-          <form onsubmit={(e) => { e.preventDefault(); if (newStop.trim()) oninsertstop(newStop.trim(), selectedStop); newStop = ""; }}>
+          <p class="picked" data-testid="picked-stop">
+            {stopName} <span class="muted">{selectedStop}</span>
+          </p>
+          <button type="button" onclick={() => onremovestop(selectedStop)}>
+            Drop it from the direction
+          </button>
+          <form
+            onsubmit={(e) => {
+              e.preventDefault();
+              if (newStop.trim()) oninsertstop(newStop.trim(), selectedStop);
+              newStop = "";
+            }}
+          >
             {#if allStops.length}
               <span class="muted">Insert a stop after it</span>
-              <Combobox label="Stop to insert" bind:value={newStop} options={allStops} placeholder="Find a stop by name or id…" />
+              <Combobox
+                label="Stop to insert"
+                bind:value={newStop}
+                options={allStops}
+                placeholder="Find a stop by name or id…"
+              />
             {:else}
-              <label>Insert stop id after it <input bind:value={newStop} aria-label="stop to insert" /></label>
+              <label>
+                Insert stop id after it <input
+                  bind:value={newStop}
+                  aria-label="stop to insert"
+                />
+              </label>
             {/if}
             <button type="submit" disabled={!newStop.trim()}>Insert</button>
           </form>
         {:else}
-          <p class="muted">Pick a stop first: click its name beside the string-line, or its column in the timetable. Then drop it, or insert a stop after it.</p>
+          <p class="muted">
+            Pick a stop first: click its name beside the string-line, or its
+            column in the timetable. Then drop it, or insert a stop after it.
+          </p>
         {/if}
       </div>
     </div>
@@ -147,24 +274,116 @@
 </section>
 
 <style>
-  .panel { background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; }
-  header { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
-  h2 { margin: 0; font-size: 0.9rem; }
-  h3 { margin: 0; font-size: 0.8rem; }
-  .warn { color: var(--warn); font-size: 0.8rem; }
-  .scope { padding: 0.5rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
-  .scope p { margin: 0.35rem 0 0; }
-  .also { margin: 0.25rem 0 0; padding-left: 1.2rem; color: var(--warn); font-size: 0.78rem; columns: 2 18rem; }
-  .picked { margin: 0; font-weight: 600; }
-  .g:last-child { flex-basis: 18rem; }
-  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
-  .forms { display: flex; flex-wrap: wrap; gap: 0.6rem; padding: 0.7rem 0.9rem; }
-  .g { flex: 1 1 13rem; min-width: 0; display: flex; flex-direction: column; gap: 0.35rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.8rem; }
-  .g:first-child { border: 0; padding: 0; }
-  label { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
-  input { width: 5.5rem; font: inherit; padding: 0.15rem 0.35rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
-  .muted { color: var(--muted); margin: 0; }
-  button { align-self: flex-start; font: inherit; padding: 0.2rem 0.65rem; border-radius: 6px; border: 1px solid var(--text); background: var(--text); color: var(--surface); cursor: pointer; }
-  button:disabled { opacity: 0.4; cursor: default; }
-  form { display: flex; flex-direction: column; gap: 0.35rem; }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  h3 {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+  .warn {
+    color: var(--warn);
+    font-size: 0.8rem;
+  }
+  .scope {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.85rem;
+  }
+  .scope p {
+    margin: 0.35rem 0 0;
+  }
+  .also {
+    margin: 0.25rem 0 0;
+    padding-left: 1.2rem;
+    color: var(--warn);
+    font-size: 0.78rem;
+    columns: 2 18rem;
+  }
+  .picked {
+    margin: 0;
+    font-weight: 600;
+  }
+  .g:last-child {
+    flex-basis: 18rem;
+  }
+  fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .forms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0.7rem 0.9rem;
+  }
+  .g {
+    flex: 1 1 13rem;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.8rem;
+  }
+  .g:first-child {
+    border: 0;
+    padding: 0;
+  }
+  label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  input {
+    width: 5.5rem;
+    font: inherit;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .muted {
+    color: var(--muted);
+    margin: 0;
+  }
+  button {
+    align-self: flex-start;
+    font: inherit;
+    padding: 0.2rem 0.65rem;
+    border-radius: 6px;
+    border: 1px solid var(--text);
+    background: var(--text);
+    color: var(--surface);
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
 </style>

@@ -22,7 +22,12 @@ export type BusReply = { ok: unknown; reset?: boolean } | { error: string };
 
 // A capability's bulk op carries `index` in its high 16 bits. A JSON
 // request names its capability when the module is `linked`.
-export type Route = { module: string; hash: string; index: number; linked: boolean };
+export type Route = {
+  module: string;
+  hash: string;
+  index: number;
+  linked: boolean;
+};
 
 export type Assembly = {
   statuses: Record<string, CapStatus>;
@@ -38,8 +43,12 @@ const pending = new Map<number, (reply: BusReply) => void>();
 
 function bus(): Worker {
   if (!worker) {
-    worker = new Worker(new URL("./bus.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<{ id: number; reply: BusReply }>) => {
+    worker = new Worker(new URL("./bus.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    worker.onmessage = (
+      event: MessageEvent<{ id: number; reply: BusReply }>,
+    ) => {
       const resolve = pending.get(event.data.id);
       pending.delete(event.data.id);
       resolve?.(event.data.reply);
@@ -58,7 +67,9 @@ function post(request: BusRequest): Promise<BusReply> {
   });
 }
 
-export async function call(request: BusRequest): Promise<{ ok: unknown; reset: boolean }> {
+export async function call(
+  request: BusRequest,
+): Promise<{ ok: unknown; reset: boolean }> {
   bus();
   const reply = await post(request);
   if ("error" in reply) throw new Error(reply.error);

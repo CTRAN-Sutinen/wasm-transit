@@ -5,9 +5,16 @@
 
 import { ReadFailed, type Answered } from "./inputs.ts";
 
-export type Seen = { status: number; header: (name: string) => string | null; text: string };
+export type Seen = {
+  status: number;
+  header: (name: string) => string | null;
+  text: string;
+};
 
-export function retryAfterMs(value: string | null, nowMs: number): number | null {
+export function retryAfterMs(
+  value: string | null,
+  nowMs: number,
+): number | null {
   if (!value) return null;
   const secs = Number(value);
   if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
@@ -17,10 +24,23 @@ export function retryAfterMs(value: string | null, nowMs: number): number | null
 
 // The age is the server's (`X-Store-Stale`, `X-Store-As-Of`), never
 // the time of this read.
-export function headAnswer(seen: Seen, absent: number[], nowMs: number): Answered<string> | null {
+export function headAnswer(
+  seen: Seen,
+  absent: number[],
+  nowMs: number,
+): Answered<string> | null {
   if (absent.includes(seen.status)) return null;
-  if (seen.status < 200 || seen.status > 299) throw new ReadFailed(`HTTP ${seen.status}`, { retryAfterMs: retryAfterMs(seen.header("Retry-After"), nowMs) });
-  if (seen.header("X-Store-Stale") !== "true") return { value: seen.text, key: seen.text };
+  if (seen.status < 200 || seen.status > 299)
+    throw new ReadFailed(`HTTP ${seen.status}`, {
+      retryAfterMs: retryAfterMs(seen.header("Retry-After"), nowMs),
+    });
+  if (seen.header("X-Store-Stale") !== "true")
+    return { value: seen.text, key: seen.text };
   const asOf = Number(seen.header("X-Store-As-Of"));
-  return { value: seen.text, key: seen.text, asOfMs: Number.isFinite(asOf) && asOf > 0 ? asOf : 0, why: "the server's store is not answering" };
+  return {
+    value: seen.text,
+    key: seen.text,
+    asOfMs: Number.isFinite(asOf) && asOf > 0 ? asOf : 0,
+    why: "the server's store is not answering",
+  };
 }

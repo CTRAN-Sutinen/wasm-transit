@@ -17,7 +17,12 @@ function pageProbe() {
         perf.loaf.push({
           duration: e.duration,
           blocking: e.blockingDuration,
-          scripts: e.scripts.map((s) => ({ fn: s.sourceFunctionName, src: s.sourceURL, invoker: s.invoker, duration: s.duration })),
+          scripts: e.scripts.map((s) => ({
+            fn: s.sourceFunctionName,
+            src: s.sourceURL,
+            invoker: s.invoker,
+            duration: s.duration,
+          })),
         });
       }
     }).observe({ type: "long-animation-frame", buffered: true });
@@ -55,9 +60,14 @@ export class Probe {
     if (this.bus) return this.bus;
     const browser = await this.page.context().browser().newBrowserCDPSession();
     const { targetInfos } = await browser.send("Target.getTargets");
-    const target = targetInfos.find((t) => t.type === "worker" && /bus\.worker/.test(t.url));
+    const target = targetInfos.find(
+      (t) => t.type === "worker" && /bus\.worker/.test(t.url),
+    );
     if (!target) return null;
-    const { sessionId } = await browser.send("Target.attachToTarget", { targetId: target.targetId, flatten: false });
+    const { sessionId } = await browser.send("Target.attachToTarget", {
+      targetId: target.targetId,
+      flatten: false,
+    });
     let next = 1;
     const waiting = new Map();
     browser.on("Target.receivedMessageFromTarget", (e) => {
@@ -73,7 +83,12 @@ export class Probe {
       new Promise((resolve, reject) => {
         const id = next++;
         waiting.set(id, { resolve, reject });
-        browser.send("Target.sendMessageToTarget", { sessionId, message: JSON.stringify({ id, method, params }) }).catch(reject);
+        browser
+          .send("Target.sendMessageToTarget", {
+            sessionId,
+            message: JSON.stringify({ id, method, params }),
+          })
+          .catch(reject);
       });
     await send("Profiler.enable");
     await send("Profiler.setSamplingInterval", { interval: 200 });
@@ -111,7 +126,10 @@ export class Probe {
       return Object.fromEntries(
         await Promise.all(
           [...byModule].map(async ([module, cap]) => {
-            const [{ memory, resets }, { held }] = await Promise.all([window.__bus.memory(cap), window.__bus.held(cap)]);
+            const [{ memory, resets }, { held }] = await Promise.all([
+              window.__bus.memory(cap),
+              window.__bus.held(cap),
+            ]);
             return [module, { memory, resets, held: held.length }];
           }),
         ),
@@ -119,15 +137,23 @@ export class Probe {
     });
     const wasmTotal = Object.values(wasm).reduce((a, b) => a + b.memory, 0);
     const bus = await this.worker().catch(() => null);
-    const workerHeap = bus ? await bus.send("Runtime.getHeapUsage").catch(() => null) : null;
+    const workerHeap = bus
+      ? await bus.send("Runtime.getHeapUsage").catch(() => null)
+      : null;
     return {
       jsHeapMB: round(heap.usedSize / MB),
       workerHeapMB: workerHeap ? round(workerHeap.usedSize / MB) : null,
       arrayBuffersMB: round((heap.backingStorageSize ?? 0) / MB),
       wasmMB: round(wasmTotal / MB),
-      wasmByCapMB: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, round(v.memory / MB)])),
-      heldByCap: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, v.held])),
-      resetsByCap: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, v.resets])),
+      wasmByCapMB: Object.fromEntries(
+        Object.entries(wasm).map(([k, v]) => [k, round(v.memory / MB)]),
+      ),
+      heldByCap: Object.fromEntries(
+        Object.entries(wasm).map(([k, v]) => [k, v.held]),
+      ),
+      resetsByCap: Object.fromEntries(
+        Object.entries(wasm).map(([k, v]) => [k, v.resets]),
+      ),
       domNodes: m.Nodes,
       listeners: m.JSEventListeners,
     };
@@ -155,18 +181,27 @@ export class Probe {
     if (profile) {
       const { profile: p } = await this.cdp.send("Profiler.stop");
       const file = `${String(this.steps.length).padStart(2, "0")}-${name.replace(/[^a-z0-9]+/gi, "-")}.cpuprofile`;
-      fs.writeFileSync(path.join(this.outDir, "profiles", file), JSON.stringify(p));
+      fs.writeFileSync(
+        path.join(this.outDir, "profiles", file),
+        JSON.stringify(p),
+      );
       top = summarize(p);
       top.file = `profiles/${file}`;
       if (bus) {
         const { profile: w } = await bus.send("Profiler.stop");
         const wfile = file.replace(/\.cpuprofile$/, "-worker.cpuprofile");
-        fs.writeFileSync(path.join(this.outDir, "profiles", wfile), JSON.stringify(w));
+        fs.writeFileSync(
+          path.join(this.outDir, "profiles", wfile),
+          JSON.stringify(w),
+        );
         top.worker = { ...summarize(w), file: `profiles/${wfile}` };
       }
     }
     const after = await this.counters();
-    const frames = await this.page.evaluate(() => ({ loaf: window.__perf.loaf.slice(), longtasks: window.__perf.longtasks.slice() }));
+    const frames = await this.page.evaluate(() => ({
+      loaf: window.__perf.loaf.slice(),
+      longtasks: window.__perf.longtasks.slice(),
+    }));
     const mem = await this.memory();
     const step = {
       name,
@@ -184,7 +219,12 @@ export class Probe {
         .slice(0, 3)
         .map((f) => ({
           ms: round(f.duration),
-          scripts: f.scripts.slice(0, 3).map((s) => `${s.invoker} → ${s.fn || "(anon)"} ${round(s.duration)}ms`),
+          scripts: f.scripts
+            .slice(0, 3)
+            .map(
+              (s) =>
+                `${s.invoker} → ${s.fn || "(anon)"} ${round(s.duration)}ms`,
+            ),
         })),
       memory: mem,
       profile: top,
@@ -195,7 +235,10 @@ export class Probe {
 
   write(extra = {}) {
     const report = { ...extra, steps: this.steps, samples: this.samples };
-    fs.writeFileSync(path.join(this.outDir, "report.json"), JSON.stringify(report, null, 2));
+    fs.writeFileSync(
+      path.join(this.outDir, "report.json"),
+      JSON.stringify(report, null, 2),
+    );
     fs.writeFileSync(path.join(this.outDir, "summary.md"), markdown(report));
     return report;
   }
@@ -207,7 +250,9 @@ export class Probe {
 export function summarize(profile) {
   const byId = new Map(profile.nodes.map((n) => [n.id, n]));
   const self = new Map();
-  profile.samples.forEach((id, i) => self.set(id, (self.get(id) ?? 0) + (profile.timeDeltas[i + 1] ?? 0)));
+  profile.samples.forEach((id, i) =>
+    self.set(id, (self.get(id) ?? 0) + (profile.timeDeltas[i + 1] ?? 0)),
+  );
   const fns = new Map();
   const buckets = new Map();
   let total = 0;
@@ -228,8 +273,17 @@ export function summarize(profile) {
     buckets.set(bucket, (buckets.get(bucket) ?? 0) + us);
   }
   const ms = (us) => round(us / 1000);
-  const sorted = (m, n) => [...m].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ name: k, ms: ms(v) }));
-  return { busyMs: ms(total), programMs: ms(program), buckets: sorted(buckets, 12), functions: sorted(fns, 20) };
+  const sorted = (m, n) =>
+    [...m]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n)
+      .map(([k, v]) => ({ name: k, ms: ms(v) }));
+  return {
+    busyMs: ms(total),
+    programMs: ms(program),
+    buckets: sorted(buckets, 12),
+    functions: sorted(fns, 20),
+  };
 }
 
 // Turns a Rust v0 symbol such as `_RNvNtCs…_4sha26sha25611compress256` into
@@ -239,7 +293,7 @@ export function demangle(sym) {
   if (!sym.startsWith("_R")) return sym;
   const s = sym.slice(2);
   const idents = [];
-  for (let i = 0; i < s.length; ) {
+  for (let i = 0; i < s.length;) {
     // A crate root or an impl carries a disambiguator: s<base62>_.
     if ("CMXY".includes(s[i]) && s[i + 1] === "s") {
       i = s.indexOf("_", i) + 1 || s.length;
@@ -274,8 +328,18 @@ function bucketOf(fn, url) {
 }
 
 function markdown(r) {
-  const out = [`# Perf baseline — ${r.ui}`, "", `${r.when} · feed ${r.feed} · live ${r.live} · ${r.build}`, ""];
-  out.push("## Steps", "", "| step | wall ms | main-thread ms | script ms | layout+style ms | long tasks (max ms) | worker busy ms | JS heap MB | wasm MB | DOM nodes |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  const out = [
+    `# Perf baseline — ${r.ui}`,
+    "",
+    `${r.when} · feed ${r.feed} · live ${r.live} · ${r.build}`,
+    "",
+  ];
+  out.push(
+    "## Steps",
+    "",
+    "| step | wall ms | main-thread ms | script ms | layout+style ms | long tasks (max ms) | worker busy ms | JS heap MB | wasm MB | DOM nodes |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+  );
   for (const s of r.steps) {
     out.push(
       `| ${s.name} | ${s.wallMs} | ${s.mainThreadMs} | ${s.scriptMs} | ${round(s.layoutMs + s.styleMs)} | ${s.longTasks} (${s.longestTaskMs}) | ${s.profile?.worker?.busyMs ?? ""} | ${s.memory.jsHeapMB} | ${s.memory.wasmMB} | ${s.memory.domNodes} |`,
@@ -283,28 +347,50 @@ function markdown(r) {
   }
   out.push("", "## Where the CPU went (self time, per step)", "");
   for (const s of r.steps.filter((s) => s.profile)) {
-    out.push(`### ${s.name} — ${s.profile.busyMs} ms attributed, ${s.profile.programMs} ms (program) (\`${s.profile.file}\`)`, "");
+    out.push(
+      `### ${s.name} — ${s.profile.busyMs} ms attributed, ${s.profile.programMs} ms (program) (\`${s.profile.file}\`)`,
+      "",
+    );
     out.push(s.profile.buckets.map((b) => `${b.name} ${b.ms}`).join(" · "), "");
-    for (const f of s.profile.functions.slice(0, 8)) out.push(`- ${f.ms} ms ${f.name}`);
+    for (const f of s.profile.functions.slice(0, 8))
+      out.push(`- ${f.ms} ms ${f.name}`);
     out.push("");
     const w = s.profile.worker;
     if (w) {
-      out.push(`#### the bus worker — ${w.busyMs} ms attributed (\`${w.file}\`)`, "");
+      out.push(
+        `#### the bus worker — ${w.busyMs} ms attributed (\`${w.file}\`)`,
+        "",
+      );
       out.push(w.buckets.map((b) => `${b.name} ${b.ms}`).join(" · "), "");
-      for (const f of w.functions.slice(0, 8)) out.push(`- ${f.ms} ms ${f.name}`);
+      for (const f of w.functions.slice(0, 8))
+        out.push(`- ${f.ms} ms ${f.name}`);
       out.push("");
     }
   }
   if (r.samples.length) {
-    const caps = [...new Set(r.samples.flatMap((s) => Object.keys(s.wasmByCapMB)))];
-    out.push("## Memory over time (after GC; per module: linear MB (documents held, resets))", "", `| sample | JS heap MB | worker heap MB | array buffers MB | DOM nodes | listeners | ${caps.join(" | ")} |`, `|---|---:|---:|---:|---:|---:|${caps.map(() => "---:").join("|")}|`);
+    const caps = [
+      ...new Set(r.samples.flatMap((s) => Object.keys(s.wasmByCapMB))),
+    ];
+    out.push(
+      "## Memory over time (after GC; per module: linear MB (documents held, resets))",
+      "",
+      `| sample | JS heap MB | worker heap MB | array buffers MB | DOM nodes | listeners | ${caps.join(" | ")} |`,
+      `|---|---:|---:|---:|---:|---:|${caps.map(() => "---:").join("|")}|`,
+    );
     for (const s of r.samples) {
-      out.push(`| ${s.label} | ${s.jsHeapMB} | ${s.workerHeapMB ?? ""} | ${s.arrayBuffersMB} | ${s.domNodes} | ${s.listeners} | ${caps.map((c) => (s.wasmByCapMB[c] == null ? "" : `${s.wasmByCapMB[c]} (${s.heldByCap?.[c] ?? "?"} held${s.resetsByCap?.[c] ? `, ${s.resetsByCap[c]} resets` : ""})`)).join(" | ")} |`);
+      out.push(
+        `| ${s.label} | ${s.jsHeapMB} | ${s.workerHeapMB ?? ""} | ${s.arrayBuffersMB} | ${s.domNodes} | ${s.listeners} | ${caps.map((c) => (s.wasmByCapMB[c] == null ? "" : `${s.wasmByCapMB[c]} (${s.heldByCap?.[c] ?? "?"} held${s.resetsByCap?.[c] ? `, ${s.resetsByCap[c]} resets` : ""})`)).join(" | ")} |`,
+      );
     }
     out.push("");
   }
   if (r.ticks?.length) {
-    const q = (xs, p) => round([...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(p * xs.length))]);
+    const q = (xs, p) =>
+      round(
+        [...xs].sort((a, b) => a - b)[
+          Math.min(xs.length - 1, Math.floor(p * xs.length))
+        ],
+      );
     const main = r.ticks.map((t) => t.mainThreadMs);
     out.push(
       "## Poll ticks (soak)",

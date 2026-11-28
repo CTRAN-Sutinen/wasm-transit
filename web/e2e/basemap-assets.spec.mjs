@@ -8,7 +8,10 @@ import path from "node:path";
 import fs from "node:fs";
 
 const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-test.skip(!fs.existsSync(path.join(webDir, "public/basemap.pmtiles")), "no local basemap.pmtiles (just basemap)");
+test.skip(
+  !fs.existsSync(path.join(webDir, "public/basemap.pmtiles")),
+  "no local basemap.pmtiles (just basemap)",
+);
 
 test.use({
   geolocation: { latitude: 45.515, longitude: -73.515 },
@@ -17,7 +20,12 @@ test.use({
 
 async function quiet(page) {
   await page.route(/\/rt\?url=/, (route) => route.fulfill({ status: 404 }));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
+  await page.route("**/edits", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: '{"kind":"edit_records","schema_version":2,"records":[]}',
+    }),
+  );
 }
 
 async function styleUrls(page) {
@@ -29,7 +37,10 @@ async function styleUrls(page) {
   });
 }
 
-test("with the assets installed the style reads them from the app's own origin", async ({ page, baseURL }) => {
+test("with the assets installed the style reads them from the app's own origin", async ({
+  page,
+  baseURL,
+}) => {
   await quiet(page);
   const outside = [];
   page.on("request", (r) => {
@@ -42,20 +53,32 @@ test("with the assets installed the style reads them from the app's own origin",
   );
 
   const { glyphs, sprite } = await styleUrls(page);
-  expect(glyphs).toBe(`${baseURL}/basemap-assets/fonts/{fontstack}/{range}.pbf`);
+  expect(glyphs).toBe(
+    `${baseURL}/basemap-assets/fonts/{fontstack}/{range}.pbf`,
+  );
   expect(sprite).toBe(`${baseURL}/basemap-assets/sprites/v4/light`);
   await page.waitForTimeout(500);
   expect(outside, "no label asset comes from the network").toEqual([]);
 });
 
-test("without them the style falls back to protomaps.github.io", async ({ page }) => {
+test("without them the style falls back to protomaps.github.io", async ({
+  page,
+}) => {
   await quiet(page);
   // The static server's own answer for a file it does not hold; the
   // network fallback is stubbed so the spec needs no uplink.
-  await page.route("**/basemap-assets/**", (route) => route.fulfill({ status: 404 }));
-  await page.route(/protomaps\.github\.io/, (route) => route.fulfill({ status: 404 }));
+  await page.route("**/basemap-assets/**", (route) =>
+    route.fulfill({ status: 404 }),
+  );
+  await page.route(/protomaps\.github\.io/, (route) =>
+    route.fulfill({ status: 404 }),
+  );
 
   const { glyphs, sprite } = await styleUrls(page);
-  expect(glyphs).toBe("https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf");
-  expect(sprite).toBe("https://protomaps.github.io/basemaps-assets/sprites/v4/light");
+  expect(glyphs).toBe(
+    "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
+  );
+  expect(sprite).toBe(
+    "https://protomaps.github.io/basemaps-assets/sprites/v4/light",
+  );
 });

@@ -20,7 +20,10 @@ import path from "node:path";
 import { Probe } from "./probe.mjs";
 import { headerSecs, snapshots } from "./live.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 const rtDir = path.resolve(root, process.env.PERF_RT ?? "testdata/perf-rt");
 const LOOPS = Number(process.env.PERF_LOOPS ?? 3);
 const STOP = process.env.PERF_STOP ?? "fisher";
@@ -29,25 +32,42 @@ const POLL_MS = 20_000;
 
 test("stop display: boot, the poll, the soak", async ({ page }) => {
   const snaps = snapshots(rtDir);
-  expect(snaps.length, `recorded snapshots in ${rtDir} (node web/perf/record-rt.mjs)`).toBeGreaterThan(4);
+  expect(
+    snaps.length,
+    `recorded snapshots in ${rtDir} (node web/perf/record-rt.mjs)`,
+  ).toBeGreaterThan(4);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const probe = new Probe(page, path.join(root, "web/perf-results", `${stamp}-stop-display`));
+  const probe = new Probe(
+    page,
+    path.join(root, "web/perf-results", `${stamp}-stop-display`),
+  );
 
   let tick = 0;
   await page.route(/\/rt\?url=/, (route) => {
     const url = decodeURIComponent(route.request().url());
     const kind = /VehiclePositions/i.test(url) ? "vehicles" : "trips";
     const body = snaps[tick % snaps.length][kind];
-    return body ? route.fulfill({ contentType: "application/octet-stream", body }) : route.fulfill({ status: 404 });
+    return body
+      ? route.fulfill({ contentType: "application/octet-stream", body })
+      : route.fulfill({ status: 404 });
   });
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) =>
+    route.fulfill({ contentType: "application/json", body: "[]" }),
+  );
   await page.clock.install({ time: headerSecs(snaps[0].trips) * 1000 });
   await probe.start();
 
   async function settle() {
     await page.waitForTimeout(300);
     await page.evaluate(
-      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestIdleCallback(() => r(), { timeout: 5000 })))),
+      () =>
+        new Promise((r) =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+              requestIdleCallback(() => r(), { timeout: 5000 }),
+            ),
+          ),
+        ),
     );
   }
 
@@ -67,14 +87,22 @@ test("stop display: boot, the poll, the soak", async ({ page }) => {
   await page.goto("/live-feeds.json");
   await probe.step("boot: setup → a stop's groups, live", async () => {
     await page.goto("/stop-display.html");
-    await expect(page.getByTestId("display-setup")).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId("display-setup")).toBeVisible({
+      timeout: 120_000,
+    });
     await page.getByTestId("layout-routes").click();
     const input = page.getByLabel("Stop", { exact: true });
     await input.pressSequentially(STOP, { delay: 60 });
-    await expect(page.getByRole("option").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("option").first()).toBeVisible({
+      timeout: 30_000,
+    });
     await input.press("Enter");
-    await expect(page.getByTestId("display-group").first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("display-live")).toContainText("Live", { timeout: 30_000 });
+    await expect(page.getByTestId("display-group").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("display-live")).toContainText("Live", {
+      timeout: 30_000,
+    });
     await settle();
   });
   const stopName = await page.getByTestId("display-stop").textContent();
@@ -89,7 +117,9 @@ test("stop display: boot, the poll, the soak", async ({ page }) => {
     const before = await probe.counters();
     await pollTick();
     const after = await probe.counters();
-    const longTasks = await page.evaluate(() => window.__perf.longtasks.slice());
+    const longTasks = await page.evaluate(() =>
+      window.__perf.longtasks.slice(),
+    );
     ticks.push({
       tick,
       mainThreadMs: Math.round((after.taskMs - before.taskMs) * 10) / 10,
@@ -97,7 +127,10 @@ test("stop display: boot, the poll, the soak", async ({ page }) => {
       longTasks: longTasks.length,
       longestTaskMs: Math.round(Math.max(0, ...longTasks)),
     });
-    if (tick % SAMPLE_EVERY === 0 || tick === total - 1) await probe.sample(`tick ${tick} (${Math.round((tick * POLL_MS) / 60_000)} min)`);
+    if (tick % SAMPLE_EVERY === 0 || tick === total - 1)
+      await probe.sample(
+        `tick ${tick} (${Math.round((tick * POLL_MS) / 60_000)} min)`,
+      );
   }
   await expect(page.getByTestId("display-group").first()).toBeVisible();
 
@@ -109,5 +142,7 @@ test("stop display: boot, the poll, the soak", async ({ page }) => {
     build: "dist-perf (unminified, wasm name sections)",
     ticks,
   });
-  console.log(`perf report: ${path.relative(root, probe.outDir)}/summary.md (${report.steps.length} steps, ${ticks.length} soak ticks)`);
+  console.log(
+    `perf report: ${path.relative(root, probe.outDir)}/summary.md (${report.steps.length} steps, ${ticks.length} soak ticks)`,
+  );
 });

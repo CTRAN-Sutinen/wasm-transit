@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 
-const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+const fixtures = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+);
 const server = "http://127.0.0.1:8084";
 
 test.use({ baseURL: server, timezoneId: "UTC" });
@@ -38,31 +41,49 @@ const detour = {
   ],
 };
 
-test("a detour written to the disruptions log reaches the stop display", async ({ page, request }) => {
+test("a detour written to the disruptions log reaches the stop display", async ({
+  page,
+  request,
+}) => {
   const posted = await request.post(`${server}/edits`, { data: detour });
   expect(posted.status()).toBe(200);
   const fold = await (await request.get(`${server}/edits`)).json();
   expect(fold.records.map((r) => r.id)).toContain("e-disruptions-log");
-  const log = await (await request.get(`${server}/logs/disruptions?since=0`)).json();
-  const entry = log.entries.map((e) => e.entry).find((e) => e.changes.some((c) => c.id === "e-disruptions-log"));
+  const log = await (
+    await request.get(`${server}/logs/disruptions?since=0`)
+  ).json();
+  const entry = log.entries
+    .map((e) => e.entry)
+    .find((e) => e.changes.some((c) => c.id === "e-disruptions-log"));
   expect(entry.kind).toBe("log_entry");
   expect(entry.intent.op).toBe("POST /edits");
   expect(log.document).toBe(posted.headers()["etag"].replaceAll('"', ""));
 
   await request.post(`${server}/edits`, { data: detour });
-  const again = await (await request.get(`${server}/logs/disruptions?since=0`)).json();
+  const again = await (
+    await request.get(`${server}/logs/disruptions?since=0`)
+  ).json();
   expect(again.head).toBe(log.head);
 
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await page.route(/\/rt\?url=/, (route) =>
-    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+    route.fulfill({
+      contentType: "application/octet-stream",
+      body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")),
+    }),
   );
   await page.goto("/stop-display.html?stop=C&layout=route");
-  await expect(page.getByTestId("display-stop")).toHaveText("Main & 3rd", { timeout: 15_000 });
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 3rd", {
+    timeout: 15_000,
+  });
   await expect(
     page
       .locator('[data-testid="display-group"][data-route="10"]')
-      .filter({ has: page.getByTestId("display-dest").getByText("Downtown", { exact: true }) })
+      .filter({
+        has: page
+          .getByTestId("display-dest")
+          .getByText("Downtown", { exact: true }),
+      })
       .getByTestId("display-none"),
   ).toHaveText("Detoured — not serving this stop");
 });

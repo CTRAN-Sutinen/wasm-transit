@@ -38,7 +38,6 @@ export function setActivePlan(id: string): void {
   localStorage.setItem(ACTIVE_PLAN_KEY, id);
 }
 
-
 const PLANS_KEY = "transit:plans";
 const ACTIVE_PLAN_KEY = "transit:active-plan";
 let plansWrite: Promise<unknown> = Promise.resolve();
@@ -68,7 +67,11 @@ let storeRefused = false;
 
 function persistPlans(): void {
   if (storeRefused) return;
-  const set: PlanSet = { kind: "plan_set", schema_version: PLAN_SET_VERSION, plans };
+  const set: PlanSet = {
+    kind: "plan_set",
+    schema_version: PLAN_SET_VERSION,
+    plans,
+  };
   plansWrite = plansWrite
     .then(() => idbSet(PLANS_KEY, set))
     .catch((e) => console.warn("plan persistence failed:", e));
@@ -124,7 +127,10 @@ export async function restorePlans(
  * whole-document round trip through a module, so a host that opens few of
  * many plans reads only those. Plan metadata (`plan`) reads the same in
  * every stored shape, so a host may list plans before reading them. */
-export async function readPlan(id: string, read: (stored: unknown) => Promise<ReadPlan | null>): Promise<Network | null> {
+export async function readPlan(
+  id: string,
+  read: (stored: unknown) => Promise<ReadPlan | null>,
+): Promise<Network | null> {
   const doc = plans[id];
   if (!doc || readPlans.has(id)) return doc ?? null;
   try {
@@ -137,4 +143,3 @@ export async function readPlan(id: string, read: (stored: unknown) => Promise<Re
   readPlans.add(id);
   return plans[id];
 }
-

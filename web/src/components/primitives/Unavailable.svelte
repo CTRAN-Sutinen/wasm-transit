@@ -29,10 +29,18 @@
           ? `${state.name.replace(/^the /, "").replace(/^./, (c) => c.toUpperCase())} could not be read. The page will try again.`
           : reason,
   );
-  const retry = $derived(state && state.kind !== "failed" ? undefined : onretry);
+  const retry = $derived(
+    state && state.kind !== "failed" ? undefined : onretry,
+  );
 </script>
 
-<div class="unavailable" class:failed={!!failure} role="status" data-testid="unavailable" data-state={state?.kind ?? (error ? "failed" : "")}>
+<div
+  class="unavailable"
+  class:failed={!!failure}
+  role="status"
+  data-testid="unavailable"
+  data-state={state?.kind ?? (error ? "failed" : "")}
+>
   <div class="head">
     <span class="icon" aria-hidden="true">{failure ? "!" : "–"}</span>
     <strong>{title}</strong>
@@ -59,19 +67,56 @@
     background: var(--surface);
     font-size: 0.85rem;
   }
-  .unavailable.failed { border-style: solid; border-color: var(--bad); }
-  .head { display: flex; gap: 0.5rem; align-items: center; color: var(--text); }
+  .unavailable.failed {
+    border-style: solid;
+    border-color: var(--bad);
+  }
+  .head {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    color: var(--text);
+  }
   .icon {
-    display: inline-flex; width: 1.2rem; height: 1.2rem; border-radius: 50%;
-    align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700;
+    display: inline-flex;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
     border: 1px solid var(--line);
   }
-  .failed .icon { background: var(--bad); color: var(--surface); border-color: var(--bad); }
-  p { margin: 0.35rem 0 0; }
-  .foot { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; align-items: center; }
-  .blocker {
-    font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 4px;
-    border: 1px dashed var(--line); color: var(--muted);
+  .failed .icon {
+    background: var(--bad);
+    color: var(--surface);
+    border-color: var(--bad);
   }
-  button { font: inherit; padding: 0.2rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+  p {
+    margin: 0.35rem 0 0;
+  }
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    align-items: center;
+  }
+  .blocker {
+    font-size: 0.75rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+  }
+  button {
+    font: inherit;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
 </style>

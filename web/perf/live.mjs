@@ -20,7 +20,8 @@ export function snapshots(rtDir) {
 // starts where the recording did.
 export function headerSecs(buf) {
   const varint = (i) => {
-    let x = 0, s = 1;
+    let x = 0,
+      s = 1;
     for (;;) {
       const c = buf[i++];
       x += (c & 0x7f) * s;

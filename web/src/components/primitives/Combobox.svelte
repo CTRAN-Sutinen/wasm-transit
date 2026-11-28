@@ -44,7 +44,10 @@
     const q = settled.trim().toLowerCase();
     if (!q) return options;
     return options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q) || !!o.sub?.toLowerCase().includes(q),
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        o.value.toLowerCase().includes(q) ||
+        !!o.sub?.toLowerCase().includes(q),
     );
   });
   const shown = $derived(hits.slice(0, cap));
@@ -140,7 +143,9 @@
       {#if !shown.length}
         <li class="combo-empty">no matches</li>
       {:else if hits.length > shown.length}
-        <li class="combo-more">{hits.length - shown.length} more — keep typing</li>
+        <li class="combo-more">
+          {hits.length - shown.length} more — keep typing
+        </li>
       {/if}
     </ul>
   {/if}
@@ -149,21 +154,71 @@
 <style>
   /* The list floats over the page and never pushes it, so every page that
      places the component gets the same look. */
-  .combo { position: relative; width: 100%; }
+  .combo {
+    position: relative;
+    width: 100%;
+  }
   input {
-    width: 100%; box-sizing: border-box; height: 1.9rem; font: inherit; font-size: 0.85rem; padding: 0 0.55rem;
-    border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
+    width: 100%;
+    box-sizing: border-box;
+    height: 1.9rem;
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
   }
-  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
   .combo-list {
-    position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; right: 0; min-width: 16rem;
-    max-height: 18rem; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
-    background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22); font-size: 0.85rem;
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    min-width: 16rem;
+    max-height: 18rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+    font-size: 0.85rem;
   }
-  li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.22rem 0.45rem; border-radius: 6px; cursor: pointer; }
-  li.active { background: var(--accent-soft); }
-  .combo-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .combo-sub { color: var(--muted); white-space: nowrap; flex-shrink: 0; font-size: 0.78rem; }
-  .combo-more, .combo-empty { color: var(--muted); font-size: 0.78rem; cursor: default; }
+  li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.22rem 0.45rem;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  li.active {
+    background: var(--accent-soft);
+  }
+  .combo-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .combo-sub {
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0.78rem;
+  }
+  .combo-more,
+  .combo-empty {
+    color: var(--muted);
+    font-size: 0.78rem;
+    cursor: default;
+  }
 </style>

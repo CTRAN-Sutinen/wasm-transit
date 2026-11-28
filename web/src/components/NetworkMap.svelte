@@ -10,7 +10,12 @@
     changed,
     selected,
     onroute,
-  }: { routes: RouteLines[]; changed: string[]; selected: string; onroute: (route: string) => void } = $props();
+  }: {
+    routes: RouteLines[];
+    changed: string[];
+    selected: string;
+    onroute: (route: string) => void;
+  } = $props();
 
   let container: HTMLDivElement;
   let map: maplibregl.Map | null = null;
@@ -20,12 +25,22 @@
 
   type Collection = { type: "FeatureCollection"; features: LineFeature[] };
 
-  function features(rs: RouteLines[], changedIds: string[], open: string): Collection {
+  function features(
+    rs: RouteLines[],
+    changedIds: string[],
+    open: string,
+  ): Collection {
     const out: LineFeature[] = [];
     for (const r of rs) {
-      const state = r.route_id === open ? 2 : changedIds.includes(r.route_id) ? 1 : 0;
+      const state =
+        r.route_id === open ? 2 : changedIds.includes(r.route_id) ? 1 : 0;
       for (const l of r.lines) {
-        const f = lineFeature(l, { route_id: r.route_id, name: r.name, state, color: r.color ? `#${r.color}` : null });
+        const f = lineFeature(l, {
+          route_id: r.route_id,
+          name: r.name,
+          state,
+          color: r.color ? `#${r.color}` : null,
+        });
         if (f) out.push(f);
       }
     }
@@ -37,25 +52,53 @@
     (async () => {
       const { style, initialView } = await pickStyle();
       if (gone) return;
-      map = new maplibregl.Map({ container, style, center: initialView.center, zoom: initialView.zoom });
+      map = new maplibregl.Map({
+        container,
+        style,
+        center: initialView.center,
+        zoom: initialView.zoom,
+      });
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
       map.on("load", () => {
-        map!.addSource("routes", { type: "geojson", data: { type: "FeatureCollection", features: [] } as any });
+        map!.addSource("routes", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] } as any,
+        });
         map!.addLayer({
           id: "routes-casing",
           type: "line",
           source: "routes",
-          layout: { "line-join": "round", "line-cap": "round", "line-sort-key": ["get", "state"] },
-          paint: { "line-width": ["match", ["get", "state"], 2, 9, 1, 7, 5], "line-color": "#fff", "line-opacity": 0.9 },
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+            "line-sort-key": ["get", "state"],
+          },
+          paint: {
+            "line-width": ["match", ["get", "state"], 2, 9, 1, 7, 5],
+            "line-color": "#fff",
+            "line-opacity": 0.9,
+          },
         });
         map!.addLayer({
           id: "routes",
           type: "line",
           source: "routes",
-          layout: { "line-join": "round", "line-cap": "round", "line-sort-key": ["get", "state"] },
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+            "line-sort-key": ["get", "state"],
+          },
           paint: {
             "line-width": ["match", ["get", "state"], 2, 6, 1, 4.5, 2.5],
-            "line-color": ["match", ["get", "state"], 2, "#7c2d12", 1, "#ea580c", "#64748b"],
+            "line-color": [
+              "match",
+              ["get", "state"],
+              2,
+              "#7c2d12",
+              1,
+              "#ea580c",
+              "#64748b",
+            ],
             "line-opacity": ["match", ["get", "state"], 0, 0.75, 1],
           },
         });
@@ -82,12 +125,17 @@
 
   $effect(() => {
     if (!loaded || !map) return;
-    (map.getSource("routes") as maplibregl.GeoJSONSource).setData(features(routes, changed, selected) as any);
+    (map.getSource("routes") as maplibregl.GeoJSONSource).setData(
+      features(routes, changed, selected) as any,
+    );
     if (framed) return;
     const coords = routes.flatMap((r) => r.lines.flat());
     if (coords.length === 0) return;
     const first: [number, number] = [coords[0].lon, coords[0].lat];
-    const bounds = coords.reduce((b, c) => b.extend([c.lon, c.lat]), new maplibregl.LngLatBounds(first, first));
+    const bounds = coords.reduce(
+      (b, c) => b.extend([c.lon, c.lat]),
+      new maplibregl.LngLatBounds(first, first),
+    );
     map.fitBounds(bounds, { padding: 40, duration: 0 });
     framed = true;
   });
@@ -103,14 +151,40 @@
 </div>
 
 <style>
-  .network-map { position: relative; height: 100%; min-height: 300px; }
-  .canvas { position: absolute; inset: 0; }
+  .network-map {
+    position: relative;
+    height: 100%;
+    min-height: 300px;
+  }
+  .canvas {
+    position: absolute;
+    inset: 0;
+  }
   .legend {
-    position: absolute; left: 10px; bottom: 10px; display: flex; gap: 0.8rem; align-items: center;
-    padding: 4px 10px; border-radius: 6px; background: var(--surface); font-size: 0.75rem;
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 0.75rem;
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
   }
-  .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
-  .sw.base { background: #64748b; }
-  .sw.changed { background: #ea580c; }
+  .sw {
+    display: inline-block;
+    width: 18px;
+    height: 4px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .sw.base {
+    background: #64748b;
+  }
+  .sw.changed {
+    background: #ea580c;
+  }
 </style>

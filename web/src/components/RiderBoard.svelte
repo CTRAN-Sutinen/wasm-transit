@@ -50,8 +50,23 @@
       <h2>{name}</h2>
       <span class="id">Stop #{stopId}</span>
     </div>
-    <button class="save" class:on={saved} onclick={onsave} aria-pressed={saved} aria-label={saved ? "Remove from saved" : "Save this stop"} title={saved ? "Saved" : "Save"}>
-      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill={saved ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+    <button
+      class="save"
+      class:on={saved}
+      onclick={onsave}
+      aria-pressed={saved}
+      aria-label={saved ? "Remove from saved" : "Save this stop"}
+      title={saved ? "Saved" : "Save"}
+    >
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <path
+          d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"
+          fill={saved ? "currentColor" : "none"}
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linejoin="round"
+        />
+      </svg>
     </button>
   </header>
   <div class="actions">
@@ -60,11 +75,17 @@
   </div>
 
   {#if off}
-    <p class="off">Departures are unavailable right now — the board capability did not load.</p>
+    <p class="off">
+      Departures are unavailable right now — the board capability did not load.
+    </p>
   {:else if error}
-    <p class="off">Couldn’t load departures for this stop right now ({error}).</p>
+    <p class="off">
+      Couldn’t load departures for this stop right now ({error}).
+    </p>
   {:else if !board}
-    <div class="skeleton" role="progressbar" aria-label="loading departures"><span></span><span></span><span></span></div>
+    <div class="skeleton" role="progressbar" aria-label="loading departures">
+      <span></span><span></span><span></span>
+    </div>
   {:else}
     {#if board.alerts.length}
       <AlertList alerts={board.alerts} {routes} compact />
@@ -73,17 +94,27 @@
     {#if picked}
       <div class="track" data-testid="track">
         {#if tracked}
-          <span><span class="dot"></span> Bus {tracked.label} is on its way</span>
+          <span>
+            <span class="dot"></span> Bus {tracked.label} is on its way
+          </span>
           <button onclick={ontrack}>Track this bus ›</button>
         {:else}
-          <span class="quiet-inline">This bus isn’t reporting its position — its route is on the map.</span>
+          <span class="quiet-inline">
+            This bus isn’t reporting its position — its route is on the map.
+          </span>
         {/if}
       </div>
     {/if}
 
     {#if board.rows.length}
       <div data-testid="board-rows">
-        <DepartureRows rows={board.rows} {routes} pooled={board.pooled} {picked} onpick={(r) => onpick(r as BoardRow)} />
+        <DepartureRows
+          rows={board.rows}
+          {routes}
+          pooled={board.pooled}
+          {picked}
+          onpick={(r) => onpick(r as BoardRow)}
+        />
       </div>
     {:else}
       <p class="quiet">No more departures from here today.</p>
@@ -95,7 +126,11 @@
         <ul>
           {#each board.skipped.filter((s) => s.cancel) as s (s.trip + s.start_secs + s.stop)}
             {@const c = clock(s.departure_secs)}
-            <li><span class="t">{c.hm}<small>{c.ap}</small></span> <b>{s.route_name}</b> {s.destination}</li>
+            <li>
+              <span class="t">{c.hm}<small>{c.ap}</small></span>
+              <b>{s.route_name}</b>
+              {s.destination}
+            </li>
           {/each}
         </ul>
       </div>
@@ -103,11 +138,17 @@
 
     {#if board.skipped.some((s) => !s.cancel)}
       <div class="detour" data-testid="board-skipped">
-        <h3><span class="sign" aria-hidden="true">⤳</span> Detour — not stopping here</h3>
+        <h3>
+          <span class="sign" aria-hidden="true">⤳</span> Detour — not stopping here
+        </h3>
         <ul>
           {#each board.skipped.filter((s) => !s.cancel) as s (s.trip + s.start_secs + s.stop)}
             {@const c = clock(s.departure_secs)}
-            <li><span class="t">{c.hm}<small>{c.ap}</small></span> <b>{s.route_name}</b> {s.destination}</li>
+            <li>
+              <span class="t">{c.hm}<small>{c.ap}</small></span>
+              <b>{s.route_name}</b>
+              {s.destination}
+            </li>
           {/each}
         </ul>
       </div>
@@ -126,40 +167,160 @@
 </section>
 
 <style>
-  header { display: flex; align-items: center; gap: 0.4rem; }
-  .back, .save {
-    border: 0; background: none; color: var(--text); cursor: pointer; border-radius: 10px;
-    width: 2.25rem; height: 2.25rem; display: grid; place-items: center; font-size: 1.6rem; line-height: 1; flex: none;
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
-  .back:hover, .save:hover { background: var(--hover); }
-  .save { color: var(--muted); }
-  .save.on { color: var(--accent); }
-  .title { flex: 1; min-width: 0; }
-  h2 { font-size: 1.2rem; margin: 0; line-height: 1.2; }
-  .id { color: var(--muted); font-size: 0.78rem; }
-  .actions { display: flex; gap: 0.4rem; margin: 0.6rem 0 0.4rem; flex-wrap: wrap; }
+  .back,
+  .save {
+    border: 0;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 10px;
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    font-size: 1.6rem;
+    line-height: 1;
+    flex: none;
+  }
+  .back:hover,
+  .save:hover {
+    background: var(--hover);
+  }
+  .save {
+    color: var(--muted);
+  }
+  .save.on {
+    color: var(--accent);
+  }
+  .title {
+    flex: 1;
+    min-width: 0;
+  }
+  h2 {
+    font-size: 1.2rem;
+    margin: 0;
+    line-height: 1.2;
+  }
+  .id {
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .actions {
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.6rem 0 0.4rem;
+    flex-wrap: wrap;
+  }
   .actions button {
-    border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 0.85rem;
-    padding: 0.35rem 0.75rem; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    cursor: pointer;
   }
-  .actions button:hover { border-color: var(--accent); color: var(--accent); }
-  .detour { margin-top: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 12px; background: color-mix(in srgb, var(--warn) 12%, transparent); }
-  .detour h3 { font-size: 0.85rem; margin: 0 0 0.3rem; }
-  .detour ul { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; display: grid; gap: 0.15rem; }
-  .detour .t { font-variant-numeric: tabular-nums; font-weight: 600; display: inline-block; min-width: 4rem; }
-  .detour small { color: var(--muted); margin-left: 0.1em; }
-  .sign { color: var(--warn); }
-  .quiet { color: var(--muted); margin: 1rem 0; }
-  .source { color: var(--muted); font-size: 0.78rem; margin: 0.75rem 0 0; display: flex; align-items: center; gap: 0.4rem; }
-  .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
-  .off { color: var(--bad); font-size: 0.9rem; }
+  .actions button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .detour {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+  }
+  .detour h3 {
+    font-size: 0.85rem;
+    margin: 0 0 0.3rem;
+  }
+  .detour ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.85rem;
+    display: grid;
+    gap: 0.15rem;
+  }
+  .detour .t {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    display: inline-block;
+    min-width: 4rem;
+  }
+  .detour small {
+    color: var(--muted);
+    margin-left: 0.1em;
+  }
+  .sign {
+    color: var(--warn);
+  }
+  .quiet {
+    color: var(--muted);
+    margin: 1rem 0;
+  }
+  .source {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0.75rem 0 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent);
+  }
+  .off {
+    color: var(--bad);
+    font-size: 0.9rem;
+  }
   .track {
-    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0.3rem 0 0.4rem;
-    padding: 0.5rem 0.7rem; border-radius: 12px; background: var(--accent-soft); font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0.3rem 0 0.4rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 12px;
+    background: var(--accent-soft);
+    font-size: 0.85rem;
   }
-  .track span { display: flex; align-items: center; gap: 0.4rem; }
-  .track button { border: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
-  .quiet-inline { color: var(--muted); }
-  .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
-  .skeleton span { height: 2.6rem; border-radius: 10px; }
+  .track span {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .track button {
+    border: 0;
+    background: var(--accent);
+    color: var(--on-accent);
+    font: inherit;
+    font-weight: 700;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .quiet-inline {
+    color: var(--muted);
+  }
+  .skeleton {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+  }
+  .skeleton span {
+    height: 2.6rem;
+    border-radius: 10px;
+  }
 </style>

@@ -51,7 +51,16 @@ function host({ random = () => 0, visible = true } = {}) {
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-const declared = (id, more = {}) => ({ id, name: `the ${id}`, from: `GET ${id}`, every_s: 30, limit_s: 10, keeps: "last", feeds: [id], ...more });
+const declared = (id, more = {}) => ({
+  id,
+  name: `the ${id}`,
+  from: `GET ${id}`,
+  every_s: 30,
+  limit_s: 10,
+  keeps: "last",
+  feeds: [id],
+  ...more,
+});
 
 // `next` is a value (keyed by itself), null for "none kept", an Error to
 // fail, or "hang" for a read that never answers.
@@ -79,7 +88,11 @@ function reader() {
 test("the first read answers a document: the page adopts it, and its graph inputs change", async () => {
   const h = host();
   const r = reader();
-  const run = inputs([declared("edits", { feeds: ["edits", "clock"] })], { edits: r }, h);
+  const run = inputs(
+    [declared("edits", { feeds: ["edits", "clock"] })],
+    { edits: r },
+    h,
+  );
   await run.start();
   assert.deepEqual(r.adopted, ["v1"]);
   assert.deepEqual(h.requested, [["clock", "edits"]]);
@@ -114,7 +127,11 @@ test("none kept and failed are two states, never the same null", async () => {
   none.next = null;
   const failed = reader();
   failed.next = new Error("HTTP 502");
-  const run = inputs([declared("stops"), declared("edits")], { stops: none, edits: failed }, h);
+  const run = inputs(
+    [declared("stops"), declared("edits")],
+    { stops: none, edits: failed },
+    h,
+  );
   await run.start();
   assert.equal(h.states.stops.kind, "none");
   assert.equal(h.states.edits.kind, "failed");
@@ -128,7 +145,11 @@ test("a read that never answers fails at its time limit, and the poll goes on", 
   const hang = reader();
   hang.next = "hang";
   const other = reader();
-  const run = inputs([declared("edits", { limit_s: 5 }), declared("live")], { edits: hang, live: other }, h);
+  const run = inputs(
+    [declared("edits", { limit_s: 5 }), declared("live")],
+    { edits: hang, live: other },
+    h,
+  );
   const started = run.start();
   await h.advance(5_000);
   await started;
@@ -188,7 +209,11 @@ test("an answer from the upstream's working copy carries the upstream's age, not
   assert.equal(h.states.edits.asOfMs, 5_000);
   r.next = new Error("offline");
   await h.advance(30_000);
-  assert.equal(h.states.edits.asOfMs, 5_000, "a later failure keeps the upstream's age");
+  assert.equal(
+    h.states.edits.asOfMs,
+    5_000,
+    "a later failure keeps the upstream's age",
+  );
 });
 
 test("an input past its age is old: answered or held", async () => {
@@ -223,7 +248,11 @@ test("each input is read at its own interval", async () => {
   const h = host();
   const fast = reader();
   const slow = reader();
-  const run = inputs([declared("live", { every_s: 20 }), declared("edits", { every_s: 60 })], { live: fast, edits: slow }, h);
+  const run = inputs(
+    [declared("live", { every_s: 20 }), declared("edits", { every_s: 60 })],
+    { live: fast, edits: slow },
+    h,
+  );
   await run.start();
   await h.advance(60_000);
   assert.equal(fast.reads, 4);
@@ -273,7 +302,11 @@ test("an input read after another sees what that one adopted in the same poll", 
   net.adopt = (v) => void (network = v);
   const edits = reader();
   edits.next = () => `edits over ${network}`;
-  const run = inputs([declared("network"), declared("edits", { after: ["network"] })], { network: net, edits }, h);
+  const run = inputs(
+    [declared("network"), declared("edits", { after: ["network"] })],
+    { network: net, edits },
+    h,
+  );
   await run.start();
   assert.deepEqual(edits.adopted, ["edits over v1"]);
   assert.deepEqual(h.requested, [["edits", "network"]]);
@@ -338,21 +371,41 @@ test("an adopt that throws fails its input, and the poll goes on", async () => {
 test("a refusal is said with its reason; only a read with no answer says no answer", async () => {
   const h = host();
   const refused = reader();
-  refused.next = new Error("the served network registers as sha256:1, the server pins sha256:0");
+  refused.next = new Error(
+    "the served network registers as sha256:1, the server pins sha256:0",
+  );
   const silent = reader();
   silent.next = new ReadFailed("no answer");
-  const run = inputs([declared("network"), declared("edits")], { network: refused, edits: silent }, h);
+  const run = inputs(
+    [declared("network"), declared("edits")],
+    { network: refused, edits: silent },
+    h,
+  );
   await run.start();
   const clock = () => "7:55 AM";
   assert.equal(h.states.network.refused, true);
   assert.equal(h.states.edits.refused, false);
-  assert.equal(labelOf(h.states.network, clock), "Network could not be read: the served network registers as sha256:1, the server pins sha256:0.");
-  assert.equal(labelOf(h.states.edits, clock), "Edits could not be read: no answer since 7:55 AM.");
+  assert.equal(
+    labelOf(h.states.network, clock),
+    "Network could not be read: the served network registers as sha256:1, the server pins sha256:0.",
+  );
+  assert.equal(
+    labelOf(h.states.edits, clock),
+    "Edits could not be read: no answer since 7:55 AM.",
+  );
 });
 
 test("a declaration and its reader match, one for one", () => {
   const h = host();
   assert.throws(() => inputs([declared("edits")], {}, h), /edits/);
   assert.throws(() => inputs([], { edits: reader() }, h), /edits/);
-  assert.throws(() => inputs([declared("edits", { after: ["network"] })], { edits: reader() }, h), /network/);
+  assert.throws(
+    () =>
+      inputs(
+        [declared("edits", { after: ["network"] })],
+        { edits: reader() },
+        h,
+      ),
+    /network/,
+  );
 });

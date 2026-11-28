@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 
-const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+const fixtures = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+);
 
 test.use({
   baseURL: "http://127.0.0.1:8083",
@@ -18,16 +21,25 @@ test.use({
 async function open(page) {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await page.route(/\/rt\?url=/, (route) =>
-    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+    route.fulfill({
+      contentType: "application/octet-stream",
+      body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")),
+    }),
   );
   await page.goto("/ride-now.html");
-  await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toContainText("Main Station", { timeout: 10_000 });
+  await expect(
+    page.getByTestId("nearby").getByTestId("stop-card").first(),
+  ).toContainText("Main Station", { timeout: 10_000 });
 }
 
-test("a view change moves focus to the new heading and is announced", async ({ page }) => {
+test("a view change moves focus to the new heading and is announced", async ({
+  page,
+}) => {
   await open(page);
   await expect(page.getByRole("main")).toHaveCount(1);
-  await expect(page.getByTestId("ride-announce")).toContainText(/\d+ stops? near you/);
+  await expect(page.getByTestId("ride-announce")).toContainText(
+    /\d+ stops? near you/,
+  );
 
   await page.getByRole("button", { name: "Get directions" }).click();
   await expect(page.getByRole("heading", { name: "Get there" })).toBeFocused();
@@ -40,10 +52,14 @@ test("a view change moves focus to the new heading and is announced", async ({ p
   await expect(page.getByTestId("ride-announce")).toContainText(/\d+ routes?/);
 
   await page.getByTestId("route-list").locator("li button").first().click();
-  await expect(page.getByTestId("route-view").getByRole("heading")).toBeFocused();
+  await expect(
+    page.getByTestId("route-view").getByRole("heading"),
+  ).toBeFocused();
 });
 
-test("the when radio group is one tab stop and takes the arrow keys", async ({ page }) => {
+test("the when radio group is one tab stop and takes the arrow keys", async ({
+  page,
+}) => {
   await open(page);
   await page.getByRole("button", { name: "Get directions" }).click();
   const group = page.getByRole("radiogroup", { name: "when" });
@@ -65,7 +81,9 @@ test("the when radio group is one tab stop and takes the arrow keys", async ({ p
   await expect(radios.nth(3)).toBeFocused();
 });
 
-test("text on the accent fill takes the on-accent token in both modes", async ({ page }) => {
+test("text on the accent fill takes the on-accent token in both modes", async ({
+  page,
+}) => {
   await open(page);
   const cta = page.getByRole("button", { name: "Get directions" });
   const colors = async () =>
@@ -74,22 +92,36 @@ test("text on the accent fill takes the on-accent token in both modes", async ({
       return { text: s.color, fill: s.backgroundColor };
     });
   await page.emulateMedia({ colorScheme: "light" });
-  expect(await colors()).toEqual({ text: "rgb(255, 255, 255)", fill: "rgb(194, 65, 12)" });
+  expect(await colors()).toEqual({
+    text: "rgb(255, 255, 255)",
+    fill: "rgb(194, 65, 12)",
+  });
   await page.emulateMedia({ colorScheme: "dark" });
-  expect(await colors()).toEqual({ text: "rgb(28, 25, 23)", fill: "rgb(251, 146, 60)" });
+  expect(await colors()).toEqual({
+    text: "rgb(28, 25, 23)",
+    fill: "rgb(251, 146, 60)",
+  });
 });
 
-test("the live dot pulses only without a reduced-motion preference", async ({ page }) => {
+test("the live dot pulses only without a reduced-motion preference", async ({
+  page,
+}) => {
   await open(page);
   const dot = page.getByTestId("live-feeds").locator(".dot");
   await expect(page.getByTestId("live-feeds")).toContainText("Live");
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  expect(await dot.evaluate((el) => getComputedStyle(el).animationName)).not.toBe("none");
+  expect(
+    await dot.evaluate((el) => getComputedStyle(el).animationName),
+  ).not.toBe("none");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  expect(await dot.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+  expect(await dot.evaluate((el) => getComputedStyle(el).animationName)).toBe(
+    "none",
+  );
 });
 
-test("the live-feeds panel closes on Escape and on an outside press, and keeps focus", async ({ page }) => {
+test("the live-feeds panel closes on Escape and on an outside press, and keeps focus", async ({
+  page,
+}) => {
   await open(page);
   const pill = page.getByTestId("live-feeds").getByRole("button").first();
   const panel = page.getByRole("dialog", { name: "Live feeds" });
@@ -125,7 +157,9 @@ test.describe("a feed URL that fails", () => {
     ["ride now", "/ride/ride-now.html"],
     ["stop display", "/display/stop-display.html?stop=A&layout=routes"],
   ]) {
-    test(`${ui} says the schedule could not be read, and tries again`, async ({ page }) => {
+    test(`${ui} says the schedule could not be read, and tries again`, async ({
+      page,
+    }) => {
       let down = true;
       await page.route("http://localhost:8088/feeds/feed.zip", (route) =>
         down
@@ -138,7 +172,9 @@ test.describe("a feed URL that fails", () => {
       );
       await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
       await page.goto(url);
-      const message = page.getByRole("status").filter({ hasText: "could not be read" });
+      const message = page
+        .getByRole("status")
+        .filter({ hasText: "could not be read" });
       await expect(message.first()).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText("publishes no network")).toHaveCount(0);
 

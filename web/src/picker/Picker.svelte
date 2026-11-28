@@ -9,16 +9,22 @@
     generated?: string;
   };
 
-  const found = import.meta.glob<Ui>("../uis/*/ui.json", { eager: true, import: "default" });
-  const uis = Object.values(found).sort((a, b) => a.title.localeCompare(b.title));
+  const found = import.meta.glob<Ui>("../uis/*/ui.json", {
+    eager: true,
+    import: "default",
+  });
+  const uis = Object.values(found).sort((a, b) =>
+    a.title.localeCompare(b.title),
+  );
 </script>
 
 <main class="picker">
   <header>
     <h1>Transit UIs</h1>
     <p class="muted">
-      Each one was generated for a set of questions. They are composed from the same render
-      components over the same capability bus, so they give the same answers.
+      Each one was generated for a set of questions. They are composed from the
+      same render components over the same capability bus, so they give the same
+      answers.
     </p>
   </header>
 
@@ -32,32 +38,79 @@
             {#each ui.questions as q}<li>{q}</li>{/each}
           </ul>
           <span class="meta">
-            {ui.components.length} components{#if ui.generated} · generated {ui.generated}{/if}
+            {ui.components.length} components{#if ui.generated}
+              · generated {ui.generated}{/if}
           </span>
         </a>
       </li>
     {:else}
-      <li class="muted">No generated UIs yet: add one under <code>src/uis/&lt;id&gt;/</code>.</li>
+      <li class="muted">
+        No generated UIs yet: add one under <code>src/uis/&lt;id&gt;/</code>.
+      </li>
     {/each}
   </ul>
-
 </main>
 
 <style>
-  .picker { max-width: 56rem; margin: 0 auto; padding: 2rem 16px; }
-  :global(body) { overflow: auto; }
-  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
-  header p { margin: 0 0 1.5rem; max-width: 40rem; }
-  .uis { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
-  .card {
-    display: flex; flex-direction: column; gap: 0.5rem; height: 100%;
-    padding: 1rem; border: 1px solid var(--line); border-radius: 8px;
-    color: inherit; text-decoration: none;
+  .picker {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 2rem 16px;
   }
-  .card:hover { border-color: var(--accent); background: var(--hover); }
-  .title { font-weight: 600; font-size: 1.05rem; color: var(--accent); }
-  .summary { font-size: 0.9rem; }
-  .questions { margin: 0; padding-left: 1.1rem; font-size: 0.82rem; color: var(--muted); }
-  .meta { margin-top: auto; font-size: 0.75rem; color: var(--muted); }
-  code { font-size: 0.85em; }
+  :global(body) {
+    overflow: auto;
+  }
+  h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.5rem;
+  }
+  header p {
+    margin: 0 0 1.5rem;
+    max-width: 40rem;
+  }
+  .uis {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .card:hover {
+    border-color: var(--accent);
+    background: var(--hover);
+  }
+  .title {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--accent);
+  }
+  .summary {
+    font-size: 0.9rem;
+  }
+  .questions {
+    margin: 0;
+    padding-left: 1.1rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .meta {
+    margin-top: auto;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  code {
+    font-size: 0.85em;
+  }
 </style>

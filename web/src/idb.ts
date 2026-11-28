@@ -18,7 +18,10 @@ function open(): Promise<IDBDatabase> {
   return db;
 }
 
-function request<T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function request<T>(
+  mode: IDBTransactionMode,
+  op: (s: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
   return open().then(
     (d) =>
       new Promise<T>((resolve, reject) => {

@@ -14,11 +14,21 @@
       <li>
         {#await src(a.hash) then url}
           {#if !url}
-            <span class="none" title={a.name}>{a.caption || a.name || "photo"} (sign in to see)</span>
+            <span class="none" title={a.name}>
+              {a.caption || a.name || "photo"} (sign in to see)
+            </span>
           {:else if a.type.startsWith("image/")}
-            <a href={url} target="_blank" rel="noopener"><img src={url} alt={a.caption || a.name || "photo"} data-testid="attachment-img" /></a>
+            <a href={url} target="_blank" rel="noopener">
+              <img
+                src={url}
+                alt={a.caption || a.name || "photo"}
+                data-testid="attachment-img"
+              />
+            </a>
           {:else}
-            <a href={url} target="_blank" rel="noopener" download={a.name}>{a.name || "document"}</a>
+            <a href={url} target="_blank" rel="noopener" download={a.name}>
+              {a.name || "document"}
+            </a>
           {/if}
           {#if a.caption}<span class="caption">{a.caption}</span>{/if}
         {/await}
@@ -28,8 +38,33 @@
 {/if}
 
 <style>
-  .thumbs { list-style: none; padding: 0; margin: 0.2rem 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
-  li { display: flex; flex-direction: column; gap: 0.1rem; max-width: 7rem; font-size: 0.75rem; }
-  img { width: 7rem; height: 5rem; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); display: block; }
-  .caption, .none { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .thumbs {
+    list-style: none;
+    padding: 0;
+    margin: 0.2rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    max-width: 7rem;
+    font-size: 0.75rem;
+  }
+  img {
+    width: 7rem;
+    height: 5rem;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    display: block;
+  }
+  .caption,
+  .none {
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 </style>

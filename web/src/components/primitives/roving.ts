@@ -5,12 +5,16 @@
 /// radio group does.
 export function roving(group: HTMLElement) {
   const onkey = (e: KeyboardEvent) => {
-    const items = [...group.querySelectorAll<HTMLElement>('[role="radio"], [role="tab"]')];
+    const items = [
+      ...group.querySelectorAll<HTMLElement>('[role="radio"], [role="tab"]'),
+    ];
     const at = items.indexOf(document.activeElement as HTMLElement);
     if (at < 0) return;
     let to: number;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") to = (at + 1) % items.length;
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") to = (at - 1 + items.length) % items.length;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown")
+      to = (at + 1) % items.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+      to = (at - 1 + items.length) % items.length;
     else if (e.key === "Home") to = 0;
     else if (e.key === "End") to = items.length - 1;
     else return;

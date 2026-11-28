@@ -3,7 +3,15 @@
 // final view fetches tiles that are thrown away.
 
 import { test, expect } from "@playwright/test";
-import { RIDER_ZOOM, archiveView, boundsOf, sameView, shouldFrameNetwork, startView, within } from "../src/viewport.ts";
+import {
+  RIDER_ZOOM,
+  archiveView,
+  boundsOf,
+  sameView,
+  shouldFrameNetwork,
+  startView,
+  within,
+} from "../src/viewport.ts";
 
 // A metro-sized archive (Portland–Vancouver), as `just basemap` extracts.
 const metro = { minLon: -123.2, minLat: 45.25, maxLon: -122.1, maxLat: 45.95 };
@@ -16,11 +24,16 @@ test("the archive's view is its center, zoomed to its width", () => {
   expect(v.center[1]).toBeCloseTo(45.6, 6);
   expect(v.zoom).toBe(Math.round(Math.log2(360 / 1.1)) + 1);
   // A sliver of an archive never zooms past what the formula floors.
-  expect(archiveView({ minLon: 0, minLat: 0, maxLon: 0, maxLat: 0 }).zoom).toBeGreaterThanOrEqual(2);
+  expect(
+    archiveView({ minLon: 0, minLat: 0, maxLon: 0, maxLat: 0 }).zoom,
+  ).toBeGreaterThanOrEqual(2);
 });
 
 test("a fix inside the archive is where the map starts, at the rider's zoom", () => {
-  expect(startView(metro, downtown)).toEqual({ center: [downtown.lon, downtown.lat], zoom: RIDER_ZOOM });
+  expect(startView(metro, downtown)).toEqual({
+    center: [downtown.lon, downtown.lat],
+    zoom: RIDER_ZOOM,
+  });
 });
 
 test("a fix tiles do not cover is not a start: the archive's own view", () => {
@@ -39,7 +52,10 @@ test.describe("the view the network was last framed on", () => {
   });
 
   test("yields to a fix the tiles cover", () => {
-    expect(startView(metro, downtown, framed)).toEqual({ center: [downtown.lon, downtown.lat], zoom: RIDER_ZOOM });
+    expect(startView(metro, downtown, framed)).toEqual({
+      center: [downtown.lon, downtown.lat],
+      zoom: RIDER_ZOOM,
+    });
   });
 
   test("is the start when the fix is not covered either", () => {
@@ -47,7 +63,9 @@ test.describe("the view the network was last framed on", () => {
   });
 
   test("is not the start where tiles do not cover it: the archive's view", () => {
-    expect(startView(metro, null, { center: [-73.5, 45.5], zoom: 12 })).toEqual(archiveView(metro));
+    expect(startView(metro, null, { center: [-73.5, 45.5], zoom: 12 })).toEqual(
+      archiveView(metro),
+    );
   });
 
   test("with no archive the world is covered: it is the start", () => {
@@ -56,7 +74,10 @@ test.describe("the view the network was last framed on", () => {
 });
 
 test("with no archive the world is covered: a fix anywhere is the start", () => {
-  expect(startView(null, elsewhere)).toEqual({ center: [elsewhere.lon, elsewhere.lat], zoom: RIDER_ZOOM });
+  expect(startView(null, elsewhere)).toEqual({
+    center: [elsewhere.lon, elsewhere.lat],
+    zoom: RIDER_ZOOM,
+  });
   expect(startView(null, null)).toEqual({ center: [0, 0], zoom: 1 });
 });
 
@@ -82,7 +103,9 @@ test("two views are the same when no pixel would move", () => {
   const a = { center: [-122.85, 45.7], zoom: 8.7 };
   expect(sameView(a, { ...a })).toBe(true);
   // A hundredth of a pixel at this zoom.
-  expect(sameView(a, { center: [-122.85 + 0.00001, 45.7], zoom: 8.7 })).toBe(true);
+  expect(sameView(a, { center: [-122.85 + 0.00001, 45.7], zoom: 8.7 })).toBe(
+    true,
+  );
   // A whole screen away, or a zoom step apart, is a different view.
   expect(sameView(a, { center: [-122.5, 45.7], zoom: 8.7 })).toBe(false);
   expect(sameView(a, { center: a.center, zoom: 9.7 })).toBe(false);
@@ -93,7 +116,13 @@ test.describe("framing the network", () => {
     { lat: 45.5, lon: -122.8 },
     { lat: 45.7, lon: -122.5 },
   ]);
-  const none = { stops: network, start: null, here: null, selected: false, locating: false };
+  const none = {
+    stops: network,
+    start: null,
+    here: null,
+    selected: false,
+    locating: false,
+  };
 
   test("nothing better known: frame it", () => {
     expect(shouldFrameNetwork(none)).toBe(true);
