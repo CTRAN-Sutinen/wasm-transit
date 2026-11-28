@@ -3,6 +3,7 @@
   import type { RequestCount } from "../types/RequestCount";
   import type { StopOn } from "../types/StopOn";
   import { jobWords, requestStatusWords } from "./stopWords";
+  import Toggle from "./primitives/Toggle.svelte"
 
   let {
     requests,
@@ -37,6 +38,16 @@
   type Col = "id" | "stop" | "job" | "status" | "requested" | "wo";
   let by = $state<Col>("requested");
   let down = $state(true);
+
+  const COLS: [Col, string][] = [
+    ["id", "Request"],
+    ["stop", "Stop"],
+    ["job", "Job"],
+    ["status", "Status"],
+    ["requested", "Requested"],
+    ["wo", "Work order"],
+  ];
+
   const key = (r: IdRequest, c: Col): string =>
     c === "id"
       ? r.id
@@ -49,6 +60,7 @@
             : c === "requested"
               ? (r.request.requested_on ?? "")
               : (r.request.work_order?.id ?? "");
+
   const rows = $derived(
     [...requests].sort(
       (a, b) =>
@@ -58,14 +70,7 @@
   );
   const sort = (c: Col) =>
     by === c ? (down = !down) : ((by = c), (down = c === "requested"));
-  const COLS: [Col, string][] = [
-    ["id", "Request"],
-    ["stop", "Stop"],
-    ["job", "Job"],
-    ["status", "Status"],
-    ["requested", "Requested"],
-    ["wo", "Work order"],
-  ];
+
 </script>
 
 <section class="work" data-testid="work-queue">
@@ -73,40 +78,34 @@
     <h1>Work</h1>
     <div class="filters" role="group" aria-label="Status">
       {#each vocab.statuses as s (s)}
-        <button
-          type="button"
+        <Toggle
           class="filter"
-          class:on={statuses.includes(s)}
-          aria-pressed={statuses.includes(s)}
+          on={statuses.includes(s)}
           onclick={() => onfilter(toggle(statuses, s, vocab.statuses), jobs)}
-          data-testid="work-filter-{s}"
+          testid="work-filter-{s}"
         >
           {requestStatusWords(s)}<span class="n">{count(s)}</span>
-        </button>
+        </Toggle>
       {/each}
     </div>
     <div class="filters" role="group" aria-label="Job">
-      <button
-        type="button"
+      <Toggle
         class="filter"
-        class:on={!jobs.length}
-        aria-pressed={!jobs.length}
+        on={!jobs.length}
         onclick={() => onfilter(statuses, [])}
-        data-testid="work-job-all"
+        testid="work-job-all"
       >
         All jobs
-      </button>
+      </Toggle>
       {#each vocab.jobs as j (j)}
-        <button
-          type="button"
+        <Toggle
           class="filter"
-          class:on={jobs.includes(j)}
-          aria-pressed={jobs.includes(j)}
+          on={jobs.includes(j)}
           onclick={() => onfilter(statuses, toggle(jobs, j, vocab.jobs))}
-          data-testid="work-job-{j}"
+          testid="work-job-{j}"
         >
           {jobWords(j)}
-        </button>
+        </Toggle>
       {/each}
     </div>
     <span class="muted total">
