@@ -3,7 +3,7 @@
   import type { RequestCount } from "../types/RequestCount";
   import type { StopOn } from "../types/StopOn";
   import { jobWords, requestStatusWords } from "./stopWords";
-  import Toggle from "./primitives/Toggle.svelte"
+  import Toggle from "./primitives/Toggle.svelte";
 
   let {
     requests,
@@ -70,7 +70,6 @@
   );
   const sort = (c: Col) =>
     by === c ? (down = !down) : ((by = c), (down = c === "requested"));
-
 </script>
 
 <section class="work" data-testid="work-queue">

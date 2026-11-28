@@ -6,6 +6,7 @@
   import type { AlertRow } from "../types/AlertRow";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import type { ServiceAlert } from "../types/ServiceAlert";
+  import Tablist from "./primitives/Tablist.svelte";
 
   let {
     gaps,
@@ -105,6 +106,9 @@
 
   <section data-testid="alert-list">
     <h2>Service alerts</h2>
+    <Tablist items={TABS} bind:selected={tab} label="Alerts" testid="alerts-tabs">
+
+    </Tablist>
     <div class="tabs" role="tablist">
       {#each TABS as t (t.id)}
         <button

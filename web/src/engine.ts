@@ -501,9 +501,7 @@ async function getOk(
 // only when the answer is a working copy: the server's (`X-Store-Stale`,
 // `X-Store-As-Of`) or the service worker's last copy (`X-Served-From:
 // last-copy`, its `Date`). `answered` is false when the worker answered.
-export async function readManifest(
-  signal?: AbortSignal,
-): Promise<{
+export async function readManifest(signal?: AbortSignal): Promise<{
   manifest: DeploymentManifest;
   asOfMs: number | null;
   why: string | null;
