@@ -1,7 +1,7 @@
 <script lang="ts">
   import "./forms.css";
-  import TaskFrame from "./TaskFrame.svelte";
-  import Combobox from "./Combobox.svelte";
+  import TaskFrame from "./primitives/TaskFrame.svelte";
+  import Combobox from "./primitives/Combobox.svelte";
 
   type StopOpt = { value: string; label: string; sub?: string; fromStops: boolean };
   type Spec = {

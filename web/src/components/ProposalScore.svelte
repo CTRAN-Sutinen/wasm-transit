@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Unavailable from "./Unavailable.svelte";
+  import Unavailable from "./primitives/Unavailable.svelte";
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import type { Suggestion } from "../types/transit_runs/Suggestion";
   import { change, count, fixed } from "./designFormat";

@@ -1,8 +1,8 @@
 <script lang="ts">
   /// Every gesture acts on one service type, a member of the selected group.
   /// The panel names what else runs with it, since those trips stay as they are (D-95).
-  import Unavailable from "./Unavailable.svelte";
-  import Combobox from "./Combobox.svelte";
+  import Unavailable from "./primitives/Unavailable.svelte";
+  import Combobox from "./primitives/Combobox.svelte";
   import type { TimetableStop } from "../types/TimetableStop";
   import type { TimetableTrip } from "../types/TimetableTrip";
   import { clock, parseClock } from "./designFormat";

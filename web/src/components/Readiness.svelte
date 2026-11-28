@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Unavailable from "./Unavailable.svelte";
+  import Unavailable from "./primitives/Unavailable.svelte";
   import type { NetworkError } from "../types/NetworkError";
   import type { NetworkWarning } from "../types/NetworkWarning";
   import { clock, issueWords } from "./designFormat";

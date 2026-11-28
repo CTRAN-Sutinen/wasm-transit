@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Combobox from "./Combobox.svelte";
+  import Combobox from "./primitives/Combobox.svelte";
 
   type Opt = { value: string; label: string; sub?: string };
   let {

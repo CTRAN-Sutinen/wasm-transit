@@ -53,8 +53,8 @@
   import FeedReview from "../../components/FeedReview.svelte";
   import SignInControl from "../../components/SignInControl.svelte";
   import { signin, signIn, signOut } from "../../signin.svelte";
-  import Combobox from "../../components/Combobox.svelte";
-  import Unavailable from "../../components/Unavailable.svelte";
+  import Combobox from "../../components/primitives/Combobox.svelte";
+  import Unavailable from "../../components/primitives/Unavailable.svelte";
   import { STATUS_COLORS, STATUS_WORDS } from "../../components/stopWords";
 
   let find = $state("");

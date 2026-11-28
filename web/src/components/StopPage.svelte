@@ -7,7 +7,7 @@
   import type { StopOn } from "../types/StopOn";
   import type { SiteQuestion } from "../types/cap_stops/SiteQuestion";
   import type { IdRequest } from "../types/cap_requests/IdRequest";
-  import AttachmentThumbs from "./AttachmentThumbs.svelte";
+  import AttachmentThumbs from "./primitives/AttachmentThumbs.svelte";
   import { EVENT_WORDS, SITE_GROUPS, STATUS_COLORS, STATUS_WORDS, amenityWords, answerWords, changeWords, jobWords, refWords, requestStatusWords, siteWords } from "./stopWords";
 
   let {

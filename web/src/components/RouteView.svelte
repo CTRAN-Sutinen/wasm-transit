@@ -2,7 +2,7 @@
   import type { RouteDetail } from "../types/RouteDetail";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { routeColor } from "./rideFormat";
-  import { roving } from "./roving";
+  import { roving } from "./primitives/roving";
 
   const uid = crypto.randomUUID();
 

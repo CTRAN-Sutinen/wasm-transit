@@ -4,7 +4,7 @@
   import type { StopRequest } from "../types/StopRequest";
   import type { WorkOrder } from "../types/WorkOrder";
   import Attachments from "./Attachments.svelte";
-  import AttachmentThumbs from "./AttachmentThumbs.svelte";
+  import AttachmentThumbs from "./primitives/AttachmentThumbs.svelte";
   import { JOB_WORDS, answerWords, jobWords, requestProblemWords, requestStatusWords } from "./stopWords";
 
   type Item = { hash: string; type: string; name?: string; caption?: string; taken_on?: string };

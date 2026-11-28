@@ -59,8 +59,8 @@
   import NetworkMap from "../../components/NetworkMap.svelte";
   import StopMap from "../../components/StopMap.svelte";
   import StopRecord from "../../components/StopRecord.svelte";
-  import DayTypePicker from "../../components/DayTypePicker.svelte";
-  import HourWindowPicker from "../../components/HourWindowPicker.svelte";
+  import DayTypePicker from "../../components/primitives/DayTypePicker.svelte";
+  import HourWindowPicker from "../../components/primitives/HourWindowPicker.svelte";
   import ServiceKeys from "../../components/ServiceKeys.svelte";
   import FleetPanel from "../../components/FleetPanel.svelte";
   import NewRouteFlow from "../../components/NewRouteFlow.svelte";
@@ -81,8 +81,8 @@
   import Readiness from "../../components/Readiness.svelte";
   import PickList from "../../components/PickList.svelte";
   import PickTimeline from "../../components/PickTimeline.svelte";
-  import Combobox from "../../components/Combobox.svelte";
-  import Unavailable from "../../components/Unavailable.svelte";
+  import Combobox from "../../components/primitives/Combobox.svelte";
+  import Unavailable from "../../components/primitives/Unavailable.svelte";
   import { today } from "../kit";
 
   // A published pick cannot change. It forks.

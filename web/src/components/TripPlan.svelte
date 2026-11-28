@@ -3,7 +3,7 @@
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import PlaceSearch from "./PlaceSearch.svelte";
   import Itinerary from "./Itinerary.svelte";
-  import { roving } from "./roving";
+  import { roving } from "./primitives/roving";
 
   type Place = { id: string; name: string; lat?: number; lon?: number; detail?: string };
   type Field = "search" | "from" | "to";

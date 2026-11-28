@@ -48,7 +48,7 @@
   import DispatchBoard from "../../components/DispatchBoard.svelte";
   import DisruptionDetail from "../../components/DisruptionDetail.svelte";
   import SignInControl from "../../components/SignInControl.svelte";
-  import Unavailable from "../../components/Unavailable.svelte";
+  import Unavailable from "../../components/primitives/Unavailable.svelte";
   import { dateText } from "../../components/disruptionsFormat";
   import { signin, signIn, signOut } from "../../signin.svelte";
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { DayType } from "../types/DayType";
-  import { weekdaysText } from "./designFormat";
+  import type { DayType } from "../../types/DayType";
+  import { weekdaysText } from "../designFormat";
 
   let { dayTypes, selected, onselect }: { dayTypes: DayType[]; selected: string; onselect: (group: string) => void } = $props();
 

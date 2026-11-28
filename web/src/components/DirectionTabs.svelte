@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DirectionGroup } from "../types/DirectionGroup";
-  import { roving } from "./roving";
+  import { roving } from "./primitives/roving";
 
   let {
     directions,

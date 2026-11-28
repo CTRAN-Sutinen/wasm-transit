@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AttachmentThumbs from "./AttachmentThumbs.svelte";
+  import AttachmentThumbs from "./primitives/AttachmentThumbs.svelte";
 
   type Item = { hash: string; type: string; name?: string; caption?: string; taken_on?: string };
   let {

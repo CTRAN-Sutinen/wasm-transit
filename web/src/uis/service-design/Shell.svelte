@@ -13,7 +13,7 @@
   import { spansText } from "../../components/designFormat";
   import DesignRail from "../../components/DesignRail.svelte";
   import ContextBar from "../../components/ContextBar.svelte";
-  import Unavailable from "../../components/Unavailable.svelte";
+  import Unavailable from "../../components/primitives/Unavailable.svelte";
   import PickTimeline from "../../components/PickTimeline.svelte";
   import PlanList from "../../components/PlanList.svelte";
   import GroupTable from "../../components/GroupTable.svelte";
@@ -25,7 +25,7 @@
   import HubMatrix from "../../components/HubMatrix.svelte";
   import CorridorTable from "../../components/CorridorTable.svelte";
   import StopWaits from "../../components/StopWaits.svelte";
-  import Combobox from "../../components/Combobox.svelte";
+  import Combobox from "../../components/primitives/Combobox.svelte";
   import RouteHeader from "../../components/RouteHeader.svelte";
   import DirectionTabs from "../../components/DirectionTabs.svelte";
   import StringLine from "../../components/StringLine.svelte";

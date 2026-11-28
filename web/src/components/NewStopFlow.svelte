@@ -2,7 +2,7 @@
   import "./forms.css";
   import type { Event } from "../types/Event";
   import type { Refusal } from "../types/Refusal";
-  import TaskFrame from "./TaskFrame.svelte";
+  import TaskFrame from "./primitives/TaskFrame.svelte";
   import PointFields from "./PointFields.svelte";
   import { problemWords } from "./stopWords";
 

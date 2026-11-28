@@ -4,7 +4,7 @@
   import type { Event } from "../types/Event";
   import type { Refusal } from "../types/Refusal";
   import type { StopOn } from "../types/StopOn";
-  import TaskFrame from "./TaskFrame.svelte";
+  import TaskFrame from "./primitives/TaskFrame.svelte";
   import PointFields from "./PointFields.svelte";
   import { EVENT_WORDS, amenityWords, changeWords, changedWords, problemWords } from "./stopWords";
 
